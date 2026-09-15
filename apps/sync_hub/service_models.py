@@ -279,6 +279,7 @@ class SyncRowSampleModel(BaseModel):
     canonical_hex: str = Field(min_length=64, max_length=64)
     updated_at: str | None = None
     origin_device_id: str | None = None
+    modified_at: str | None = None
 
 
 class RowsResponse(BaseModel):

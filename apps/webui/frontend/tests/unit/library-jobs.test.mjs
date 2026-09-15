@@ -22,12 +22,20 @@ test('chunk helper splits 1200 ids into 500/500/200', async () => {
 	assert.equal(chunks[2][199], 't1199');
 });
 
-test('menu builder passes the selection of N ids to run', () => {
-	const src = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
-	assert.match(src, /onstemsdonext \? \(\) => onstemsdonext\(selected\)/);
-	assert.match(src, /onlyricsdonext \? \(\) => onlyricsdonext\(selected\)/);
+test('menu builder passes the selection of N ids to run', async () => {
+	// #2286 (2464797fa) moved the row menu out of TrackTable into
+	// TrackContextMenu, where every multi-target action runs on targetIds.
+	const src = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
+	assert.match(src, /onstemsdonext \? \(\) => onstemsdonext\(targetIds\)/);
+	assert.match(src, /onlyricsdonext \? \(\) => onlyricsdonext\(targetIds\)/);
 	assert.match(src, /Stems: do next/);
 	assert.match(src, /Lyrics: do next/);
+	assert.match(src, /targetIds: menuTargetIds\(row, selectedOrders, selectedIds\)/);
+	// ...and targetIds IS the selection of N ids when the clicked row is in it.
+	const { menuTargetIds } = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');
+	const selectedIds = ['t0', 't1', 't2'];
+	assert.deepEqual(menuTargetIds({ stable_id: 't1', order: 1 }, [0, 1, 2], selectedIds), selectedIds);
+	assert.deepEqual(menuTargetIds({ stable_id: 't9', order: 9 }, [0, 1, 2], selectedIds), ['t9']);
 });
 
 test('LHS dots replace other with lyrics', async () => {

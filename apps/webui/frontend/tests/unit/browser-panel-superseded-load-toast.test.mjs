@@ -55,8 +55,15 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 		.replace(
 			'async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {',
 			'async function _loadPane(p, node) {'
-		);
-	assert.doesNotMatch(functionSource, /: PaneStore|: PlaylistNode|Promise<void>/, 'TypeScript annotation survived stripping');
+		)
+		// 1896d37e1 feat(webui): Autolists tab UI (SMART-06) added an autolist
+		// branch with a TS `as` cast, which new Function cannot parse.
+		.replace('wire as PlaylistTrackRowWire', 'wire');
+	assert.doesNotMatch(
+		functionSource,
+		/: PaneStore|: PlaylistNode|Promise<void>|\bas [A-Z]\w+/,
+		'TypeScript annotation survived stripping'
+	);
 	const factory = Function(
 		'panes',
 		'setLastPlaylist',

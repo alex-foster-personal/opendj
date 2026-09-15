@@ -87,13 +87,17 @@ test('indeterminate progress is reserved for a genuinely unavailable total', () 
 test('TrackTable renders crossed, red, and plain cloud states with explanatory hover', async () => {
 	const source = await readFile('src/lib/components/rb/browser/TrackTable.svelte', 'utf8');
 	const cloudCell = source.slice(source.indexOf('<td class="c-cloud">'), source.indexOf('<td class="c-order"'));
-	assert.match(source, /trackCloudView\(\{/);
-	assert.match(cloudCell, /hasRemoteCopy: row\.has_remote_copy === true/);
+	// 00a092243 hoisted the {@const cloudView} out of the <td> to the top of
+	// the row's {#each} block (Svelte rejects {@const} inside an element).
+	const viewAt = source.indexOf('{@const cloudView = trackCloudView({');
+	assert.ok(viewAt >= 0, 'the per-row cloudView binding moved');
+	const rowCloudView = source.slice(viewAt, source.indexOf('<tr', viewAt));
+	assert.match(rowCloudView, /hasRemoteCopy: row\.has_remote_copy === true/);
+	assert.match(rowCloudView, /bytesTransferred: row\.cloud_transfer\.bytes_transferred/);
 	assert.match(cloudCell, /class:not-on-cloud=/);
 	assert.match(cloudCell, /class:on-cloud-not-local=/);
 	assert.match(cloudCell, /class:on-cloud-and-local=/);
 	assert.match(cloudCell, /title=\{cloudView\.title\}/);
-	assert.match(cloudCell, /row\.cloud_transfer\.bytes_transferred/);
 	assert.doesNotMatch(cloudCell, /audioPrefetchStatus\(row\.stable_id\)/);
 	assert.match(cloudCell, /role="progressbar"/);
 	assert.match(cloudCell, /aria-valuenow=\{cloudView\.transfer\.percent \?\? undefined\}/);

@@ -17,7 +17,7 @@ import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
-import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-ui-state.svelte';
+import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
 import {
 	hydrateWheelSensitivityFromDisk,
 	type WheelSensitivityDisk

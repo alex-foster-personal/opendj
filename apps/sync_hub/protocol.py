@@ -76,6 +76,7 @@ from apps.sync_hub.protocol_common import (
     EPOCH,
     MEMBERSHIP_SPEC,
     MEMBERSHIP_TABLE,
+    MODIFIED_AT,
     NATURAL_KEYS,
     NO_ORIGIN,
     ORIGIN_DEVICE_ID,
@@ -83,6 +84,7 @@ from apps.sync_hub.protocol_common import (
     SPEC_BY_TABLE,
     SYNC_COLUMNS,
     SYNC_TABLES,
+    TRACK_FIELDS_TABLE,
     UPDATED_AT,
     StampFault,
     SyncProtocolError,
@@ -128,15 +130,15 @@ class RowChange:
 
     @property
     def updated_at(self) -> str:
-        return lww_key(self.values)[0]
+        return lww_key(self.values, table=self.table)[0]
 
     @property
     def origin_device_id(self) -> str:
-        return lww_key(self.values)[1]
+        return lww_key(self.values, table=self.table)[1]
 
     @property
     def sort_key(self) -> tuple[str, str]:
-        return lww_key(self.values)
+        return lww_key(self.values, table=self.table)
 
     def to_wire(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -543,6 +545,7 @@ __all__ = [
     "IdentityReject",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
+    "MODIFIED_AT",
     "NATURAL_KEYS",
     "NO_ORIGIN",
     "ORIGIN_DEVICE_ID",
@@ -550,6 +553,7 @@ __all__ = [
     "SPEC_BY_TABLE",
     "SYNC_COLUMNS",
     "SYNC_TABLES",
+    "TRACK_FIELDS_TABLE",
     "UPDATED_AT",
     "MachineRow",
     "RowChange",

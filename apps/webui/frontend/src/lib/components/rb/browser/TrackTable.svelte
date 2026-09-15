@@ -86,10 +86,6 @@
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 	import { trackCloudView } from './track-cloud-state';
-	import {
-		getAnlzEntry,
-		resolveDisplayedAnlz
-	} from '../wave/anlz-cache.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -234,25 +230,6 @@
 		return fallback;
 	}
 
-	/** Marker data for the browser mini-strip, sourced from the exact object
-	 * the main waveform renders. A ready shared-cache entry may outlive a deck
-	 * load and is still real production data; an uncached row stays markerless
-	 * rather than starting one /anlz request per virtual row (LIBUX-12). */
-	function _markerAnlzFor(stableId: string): AnlzData | null {
-		let fallback: AnlzData | null = null;
-		for (const d of DECK_IDS) {
-			const st = deckStates[d];
-			if (st.stable_id !== stableId) continue;
-			const anlz = resolveDisplayedAnlz(st.anlz, stableId);
-			if (anlz === null) continue;
-			if (st.playing) return anlz;
-			fallback ??= anlz;
-		}
-		if (fallback !== null) return fallback;
-		const cached = getAnlzEntry(stableId);
-		return cached?.status === 'ready' ? cached.data : null;
-	}
-
 	function _badgeFor(row: BrowserRow): AnalysisBadge {
 		const fromStore = jobProgress.badges[row.stable_id] ?? {};
 		const vocals = vocalsById[row.stable_id];
@@ -291,6 +268,7 @@
 		selectedOrders,
 		loadedIds,
 		vocalsById,
+		markerAnlzById,
 		sortKey,
 		sortDir,
 		emptyMessage,
@@ -343,6 +321,9 @@
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
 		vocalsById: Record<string, Vocals>;
+		/** Strip marker ANLZ ALREADY in memory (loaded decks / anlz cache),
+		 * resolved by BrowserPanel (LIBUX-12); absent = markerless strip. */
+		markerAnlzById: Record<string, AnlzData>;
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
@@ -1633,7 +1614,7 @@
 							<PreviewStrip
 								strip={row.strip}
 								vocals={vocalsById[row.stable_id] ?? null}
-								markerAnlz={_markerAnlzFor(row.stable_id)}
+								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}

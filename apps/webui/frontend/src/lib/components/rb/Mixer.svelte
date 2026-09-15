@@ -240,7 +240,9 @@
 		flex-direction: column;
 		min-height: 0;
 		padding: 6px 6px 4px;
-		overflow: hidden;
+		/* clip, not hidden: a hidden box is still programmatically scrollable, and
+		 * focusing a wide two-outputs headphone row scrolled it ~82px sideways. */
+		overflow: clip;
 	}
 	/* Pin 246b0f5: "MORE/LESS toggle is too big ... pushing EQs down" -
 	 * shrunk from padding-bottom 4px + 10px/2px-10px buttons (~22px tall)
@@ -312,6 +314,7 @@
 	.hp-row {
 		display: flex;
 		justify-content: flex-start;
+		min-width: 0;
 	}
 	.xfade-row {
 		display: flex;

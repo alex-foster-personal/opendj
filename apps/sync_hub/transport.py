@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -197,7 +197,9 @@ class HubTransport(Protocol):
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """POST JSON to ``path``; return the decoded JSON body."""
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(
+        self, path: str, params: Mapping[str, str | Sequence[str]]
+    ) -> dict[str, Any]:
         """GET ``path`` with query ``params``; return the decoded JSON body."""
 
 
@@ -225,10 +227,12 @@ class HttpTransport:
             {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
         )
 
-    def _url(self, path: str, params: Mapping[str, str] | None = None) -> str:
+    def _url(
+        self, path: str, params: Mapping[str, str | Sequence[str]] | None = None
+    ) -> str:
         url = f"{self._base}{path}"
         if params:
-            url = f"{url}?{urllib.parse.urlencode(dict(params))}"
+            url = f"{url}?{urllib.parse.urlencode(dict(params), doseq=True)}"
         return url
 
     def _send(
@@ -270,7 +274,9 @@ class HttpTransport:
         )
         return self._send(request, timeout_s=self._push_timeout_s)
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(
+        self, path: str, params: Mapping[str, str | Sequence[str]]
+    ) -> dict[str, Any]:
         request = urllib.request.Request(
             self._url(path, params), headers=dict(self._auth), method="GET"
         )

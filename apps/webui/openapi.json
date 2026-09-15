@@ -17097,6 +17097,17 @@
             "title": "Canonical Hex",
             "type": "string"
           },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
           "origin_device_id": {
             "anyOf": [
               {
@@ -32618,6 +32629,21 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+            "in": "query",
+            "name": "bundle_stable_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+              "items": {
+                "type": "string"
+              },
+              "title": "Bundle Stable Ids",
+              "type": "array"
             }
           },
           {

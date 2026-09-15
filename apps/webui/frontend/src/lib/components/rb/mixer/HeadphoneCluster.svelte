@@ -285,8 +285,10 @@
 <style>
 	.hp {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px;
+		min-width: 0;
 	}
 	.hp-icon {
 		color: var(--rb-text-dim);
