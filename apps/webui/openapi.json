@@ -867,6 +867,17 @@
       },
       "AppModeOut": {
         "properties": {
+          "id": {
+            "default": "performance",
+            "enum": [
+              "performance",
+              "library-management",
+              "library",
+              "music-player"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
           "last_gig_at": {
             "anyOf": [
               {
@@ -8583,6 +8594,31 @@
           "items"
         ],
         "title": "LibraryReadinessOut",
+        "type": "object"
+      },
+      "LifecycleQuitIn": {
+        "properties": {
+          "force": {
+            "description": "Must be true for agent and ship clean-quit paths.",
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "force"
+        ],
+        "title": "LifecycleQuitIn",
+        "type": "object"
+      },
+      "LifecycleQuitOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LifecycleQuitOut",
         "type": "object"
       },
       "LocalDataOut": {
@@ -19342,6 +19378,84 @@
         "title": "UpdateApplyRefused",
         "type": "object"
       },
+      "UpdateApplyStatusOut": {
+        "properties": {
+          "claimed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At Utc"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "completed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At Utc"
+          },
+          "enqueued_at_utc": {
+            "title": "Enqueued At Utc",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "installed",
+                  "no-update",
+                  "refused"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "claimed",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "state",
+          "enqueued_at_utc"
+        ],
+        "title": "UpdateApplyStatusOut",
+        "type": "object"
+      },
       "UpdateCheckOut": {
         "description": "What the UI and any agent read.\n\n``applies_via`` is stated because the answer and the action come from\ndifferent components: this route answers, and the Tauri updater inside\nthe desktop shell is what can act. A browser tab can learn an update\nexists and cannot install it, and saying so beats a dead button.",
         "properties": {
@@ -26260,6 +26374,57 @@
         ]
       }
     },
+    "/api/v1/lifecycle/quit": {
+      "post": {
+        "operationId": "request_shell_quit_api_v1_lifecycle_quit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleQuitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleQuitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Shell Quit",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
     "/api/v1/lyrics": {
       "get": {
         "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
@@ -26283,6 +26448,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -31606,6 +31772,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS entry does not exist"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -31615,6 +31784,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS not configured"
           }
         },
         "summary": "Push Missing Stems",
@@ -31686,6 +31858,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
           },
           "422": {
             "content": {
@@ -33988,6 +34163,48 @@
           }
         },
         "summary": "Update Apply",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/update/apply/{command_id}": {
+      "get": {
+        "operationId": "update_apply_status_api_v1_update_apply__command_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "command_id",
+            "required": true,
+            "schema": {
+              "title": "Command Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Apply Status",
         "tags": [
           "health"
         ]

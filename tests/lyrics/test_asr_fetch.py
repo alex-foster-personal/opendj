@@ -1,4 +1,7 @@
-"""ASR hub fetch failures fail loud without cache writes (LYRICS-07)."""
+"""ASR hub fetch failures fail loud without cache writes (LYRICS-07).
+
+[if] ASR hub fetch fails or is unreachable [then] the service raises without writing cache or verdict rows, [else stop].
+"""
 
 from __future__ import annotations
 

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.smartlists.autolist_groups import (
+    AutolistSelectionError,
     GROUP_IDS,
     buckets_with_counts,
     compact_index_rows,
@@ -135,7 +136,17 @@ def query_autolists(
     backend: Annotated[StateBackend, Depends(get_read_state)],
 ) -> AutolistQueryOut:
     sel = _selection_dict(body.selection)
-    rule = selection_to_rule(sel)
+    try:
+        rule = selection_to_rule(sel)
+    except AutolistSelectionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "AUTOLIST_SELECTION_INVALID",
+                "field": exc.field,
+                "message": str(exc),
+            },
+        ) from exc
     if rule is None:
         return AutolistQueryOut(
             items=[], tracks=[], total=0, offset=body.offset, limit=body.limit,

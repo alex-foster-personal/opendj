@@ -2371,6 +2371,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lifecycle/quit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Shell Quit */
+        post: operations["request_shell_quit_api_v1_lifecycle_quit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics": {
         parameters: {
             query?: never;
@@ -5298,6 +5315,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/update/apply/{command_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Apply Status */
+        get: operations["update_apply_status_api_v1_update_apply__command_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update/check": {
         parameters: {
             query?: never;
@@ -5784,11 +5818,11 @@ export interface components {
         /** AppModeOut */
         AppModeOut: {
             /**
-             * App Mode
+             * Id
              * @default performance
              * @enum {string}
              */
-            id?: "performance" | "library-management" | "library" | "music-player";
+            id: "performance" | "library-management" | "library" | "music-player";
             /** Last Gig At */
             last_gig_at?: string | null;
         };
@@ -8793,6 +8827,22 @@ export interface components {
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /** LifecycleQuitIn */
+        LifecycleQuitIn: {
+            /**
+             * Force
+             * @description Must be true for agent and ship clean-quit paths.
+             */
+            force: boolean;
+        };
+        /** LifecycleQuitOut */
+        LifecycleQuitOut: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
         };
         /**
          * LocalDataOut
@@ -12910,6 +12960,26 @@ export interface components {
              * @enum {string}
              */
             status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateApplyStatusOut */
+        UpdateApplyStatusOut: {
+            /** Claimed At Utc */
+            claimed_at_utc?: string | null;
+            /** Command Id */
+            command_id: string;
+            /** Completed At Utc */
+            completed_at_utc?: string | null;
+            /** Enqueued At Utc */
+            enqueued_at_utc: string;
+            /** Error */
+            error?: string | null;
+            /** Outcome */
+            outcome?: ("installed" | "no-update" | "refused") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "claimed" | "succeeded" | "failed";
         };
         /**
          * UpdateCheckOut
@@ -17770,6 +17840,48 @@ export interface operations {
             };
         };
     };
+    request_shell_quit_api_v1_lifecycle_quit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleQuitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleQuitOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_lyric_verdicts_api_v1_lyrics_get: {
         parameters: {
             query?: {
@@ -21282,6 +21394,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description MDT_EXTERNAL_STEM_ROOTS entry does not exist */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -21290,6 +21409,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description MDT_EXTERNAL_STEM_ROOTS not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -21338,6 +21464,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Invalid or missing manifest_path, corrupt manifest, or hydrate refused */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -22947,6 +23080,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UpdateApplyRefused"];
+                };
+            };
+        };
+    };
+    update_apply_status_api_v1_update_apply__command_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

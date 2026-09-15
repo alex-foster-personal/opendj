@@ -59,8 +59,9 @@ Requirements (mini-PRD):
     [if] a branch cut before a gate fix on main prints PASS [then broken]
     -- see scripts/review_gate_freshness.py
   / Debt-only pushes carry coverage when only this PR's debt file changed since
-    the reviewed head (issue #2907, ADR-0049, REVIEW-08; see
-    scripts/review_coverage_carry.py).
+    the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
+    scripts/review_coverage_carry.py). When carry applies, triage prints both
+    SHAs and the local ``git diff --name-only`` path list.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -112,7 +113,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
-from scripts.review_coverage_carry import verdicts_with_carry
+from scripts.review_coverage_carry import print_carry_proofs, verdicts_with_carry
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
@@ -317,7 +318,8 @@ class ReviewerVerdict:
     # field, so a covered row never reads as "ok" and claims a review that did
     # not happen. See `review_sol.substitute_alternatives`.
     substituted_by: str = ""
-    carried_from: str = ""  # debt-only carry source SHA (issue #2907)
+    carried_from: str = ""  # full debt-only carry source SHA (issues #2907, #2871)
+    carried_paths: frozenset[str] = frozenset()  # git diff paths for carry proof
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
@@ -526,6 +528,8 @@ def triage(pr: str) -> int:
         found = evidence.get(verdict.name)
         artifacts = f" [{found.artifact_count} artifact(s)]" if found else ""
         print(f"    {mark} {verdict.name}: {verdict.reason}{artifacts}")
+
+    print_carry_proofs(verdicts, head_sha, CHECKOUT_ROOT)
 
     unavailable, unreviewed, revived = partition_verdicts(verdicts)
     print()

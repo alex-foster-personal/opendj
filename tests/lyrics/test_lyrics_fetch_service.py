@@ -1,4 +1,7 @@
-"""LRCLIB-first then ASR orchestration for line lyrics (LYRICS-07)."""
+"""LRCLIB-first then ASR orchestration for line lyrics (LYRICS-07).
+
+[if] LRCLIB returns synced lyrics [then] ASR is not fetched and cache reflects LRCLIB, [else stop].
+"""
 
 from __future__ import annotations
 
