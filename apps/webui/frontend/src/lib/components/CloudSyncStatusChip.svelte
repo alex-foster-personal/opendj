@@ -57,6 +57,7 @@
 		href={CHIP_HREF}
 		class="chip"
 		class:error={chipState() === 'error'}
+		class:update-required={chipState() === 'update_required'}
 		class:ok={chipState() === 'ok'}
 		class:inconclusive={chipState() === 'inconclusive'}
 		title={title}
@@ -116,6 +117,11 @@
 	.chip.error {
 		border-color: var(--danger);
 		color: var(--danger);
+	}
+
+	.chip.update-required {
+		border-color: var(--warning, #b8860b);
+		color: var(--warning, #b8860b);
 	}
 
 	.chip.inconclusive {

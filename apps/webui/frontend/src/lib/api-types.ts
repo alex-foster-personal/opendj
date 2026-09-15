@@ -5711,6 +5711,11 @@ export interface components {
         ApplyIn: {
             /** Cluster Key */
             cluster_key: string;
+            /**
+             * Confirm Cue Loss
+             * @default false
+             */
+            confirm_cue_loss: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -6785,6 +6790,8 @@ export interface components {
             running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
+            /** @description Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine. */
+            update_required?: components["schemas"]["UpdateRequiredOut"] | null;
         };
         /**
          * CloudTransferOut
@@ -12730,6 +12737,20 @@ export interface components {
              * @enum {string}
              */
             status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateRequiredOut */
+        UpdateRequiredOut: {
+            /** Action */
+            action: string;
+            /**
+             * Code
+             * @constant
+             */
+            code: "SYNC_WIRE_VERSION";
+            /** Local Wire Version */
+            local_wire_version: number;
+            /** Peer Wire Version */
+            peer_wire_version: number;
         };
         /** UploadFileResult */
         UploadFileResult: {
