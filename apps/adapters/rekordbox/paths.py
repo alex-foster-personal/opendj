@@ -257,6 +257,12 @@ def _resolve_local_audio_path(stable_id: str) -> Path | None:
     """
     from apps.shared.state import locations as state_locations
 
+    if not config.STATE_DB.exists():
+        # No state layer on this machine means no track_locations rows, so
+        # nothing is materialised here: a fresh data dir lists every track
+        # with artwork_available False rather than answering 500 (#2917
+        # follow-up). Same guard as ``track_rows.bulk_rb_meta``.
+        return None
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         return state_locations.local_audio_path(state, stable_id)
