@@ -44,47 +44,52 @@ _INTENT_BLOCK = re.compile(
     r"Marked pytest scopes need[^:]*:\s*\n((?:\s+(?:E\s+)?tests/[^\n]+\n?)+)",
     re.MULTILINE,
 )
+def _scopes_from_intent_blocks(output: str) -> list[str]:
+    """Scopes listed under a 'Marked pytest scopes need ...' assertion."""
+    found: list[str] = [
+        hit.group(1)
+        for match in _INTENT_BLOCK.finditer(output)
+        for hit in map(_SCOPE_LINE.match, match.group(1).splitlines())
+        if hit
+    ]
+    if "Marked pytest scopes need" not in output:
+        return found
+    collecting = False
+    for line in output.splitlines():
+        if "Marked pytest scopes need" in line:
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        hit = _SCOPE_LINE.match(line)
+        if hit:
+            found.append(hit.group(1))
+        elif line.strip() and found:
+            collecting = False
+    return found
+
+
+def _scopes_from_assertions(output: str) -> list[str]:
+    """Scopes named by the unregistered, stale-known and missing-scope assertions."""
+    found: list[str] = []
+    for match in _UNREGISTERED.finditer(output):
+        found.extend(re.split(r",\s*", match.group(1).strip()))
+    for match in _STALE_KNOWN.finditer(output):
+        found.extend(re.findall(r"'([^']+)'", match.group(1)))
+    for match in _MISSING_SCOPE.finditer(output):
+        found.append(match.group(1))
+    return found
+
+
 def extract_scopes(output: str) -> list[str]:
     """Return deduplicated scope/suite paths parsed from pytest failure output."""
     scopes: list[str] = []
     seen: set[str] = set()
-
-    def add(scope: str) -> None:
-        cleaned = scope.strip().strip("'\"")
+    for raw in _scopes_from_intent_blocks(output) + _scopes_from_assertions(output):
+        cleaned = raw.strip().strip("'\"")
         if cleaned and _VALID_SCOPE.match(cleaned) and cleaned not in seen:
             seen.add(cleaned)
             scopes.append(cleaned)
-
-    for match in _INTENT_BLOCK.finditer(output):
-        for line in match.group(1).splitlines():
-            hit = _SCOPE_LINE.match(line)
-            if hit:
-                add(hit.group(1))
-
-    if "Marked pytest scopes need" in output:
-        collecting = False
-        for line in output.splitlines():
-            if "Marked pytest scopes need" in line:
-                collecting = True
-                continue
-            if collecting:
-                hit = _SCOPE_LINE.match(line)
-                if hit:
-                    add(hit.group(1))
-                elif line.strip() and scopes:
-                    collecting = False
-
-    for match in _UNREGISTERED.finditer(output):
-        for part in re.split(r",\s*", match.group(1).strip()):
-            add(part)
-
-    for match in _STALE_KNOWN.finditer(output):
-        for part in re.findall(r"'([^']+)'", match.group(1)):
-            add(part)
-
-    for match in _MISSING_SCOPE.finditer(output):
-        add(match.group(1))
-
     return scopes
 
 
@@ -93,9 +98,7 @@ def _is_collection_failure(returncode: int, output: str) -> bool:
         return True
     if returncode in {2, 4, 5}:
         return True
-    if returncode != 0 and "no tests ran" in output.lower():
-        return True
-    return False
+    return returncode != 0 and "no tests ran" in output.lower()
 
 
 def run_pytest(repo_root: Path) -> tuple[int, str]:
