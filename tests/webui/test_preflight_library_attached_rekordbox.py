@@ -4,6 +4,8 @@ When the Pioneer rekordbox app folder exists on disk but ``master.db`` is not
 reachable (for example a removable drive is unplugged), ``library-attached``
 must name that cause and offer a folder-import fallback -- not the generic
 empty-library message.
+
+[if] rekordbox is installed but master.db is unreachable [then] library-attached names that cause and offers import, [else stop].
 """
 
 from __future__ import annotations

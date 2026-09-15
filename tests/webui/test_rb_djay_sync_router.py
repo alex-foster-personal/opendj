@@ -1,4 +1,7 @@
-"""HTTP parity tests for SYNC-01..06 rb-djay sync wiring (issue #2764)."""
+"""HTTP parity tests for SYNC-01..06 rb-djay sync wiring (issue #2764).
+
+[if] rb-djay sync HTTP routes are called [then] status, plan, and apply wiring match SYNC contracts, [else stop].
+"""
 from __future__ import annotations
 
 import csv

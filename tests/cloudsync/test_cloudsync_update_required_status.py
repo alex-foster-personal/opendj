@@ -26,7 +26,7 @@ def _write_results(data_dir: Path, results: list[dict[str, object]]) -> None:
 
 @pytest.mark.requirement("CSSTATUS-06")
 def test_read_status_exposes_update_required_for_wire_mismatch(tmp_path: Path) -> None:
-    """[if] cloudsync-status.json records SYNC_WIRE_VERSION on hello [then] update_required is typed."""
+    """[if] cloudsync-status.json records SYNC_WIRE_VERSION on hello [then] update_required is typed, [else stop]."""
     _write_results(
         tmp_path,
         [{
