@@ -19,6 +19,10 @@ from apps.webui.server.backend import (
 )
 from apps.webui.server.etag import compute_etag
 
+# SEC-01 (issue #2689): the TestClient host-allowlist default lives once in
+# the root tests/conftest.py (it applies fleet-wide, not just to this
+# suite) -- see tests/testclient_host_allowlist.py for why.
+
 WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
 
 
