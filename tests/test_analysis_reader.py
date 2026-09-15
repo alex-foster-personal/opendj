@@ -98,6 +98,66 @@ def test_iter_analysis_via_secondary_index(tmp_path: Path):
     assert a.is_straight_grid is True
 
 
+def test_iter_analysis_via_secondary_index_rowid_keyed(tmp_path: Path):
+    """Real djay builds index by rowid, not uuid (issue #3036)."""
+    p = tmp_path / "media.db"
+    con = sqlite3.connect(str(p))
+    con.execute(
+        "CREATE TABLE database2 (rowid INTEGER PRIMARY KEY, collection TEXT, key TEXT, data BLOB)"
+    )
+    con.execute(
+        "CREATE TABLE secondaryIndex_mediaItemAnalyzedDataIndex ("
+        " rowid INTEGER PRIMARY KEY, bpm REAL, manualBPM REAL, keySignatureIndex INTEGER)"
+    )
+    con.execute(
+        "INSERT INTO database2 (collection, key, data) VALUES (?,?,?)",
+        ("mediaItemAnalyzedData", "abc123hexuuid00000000000000000001", b"TSAF"),
+    )
+    con.execute(
+        "INSERT INTO secondaryIndex_mediaItemAnalyzedDataIndex VALUES (?,?,?,?)",
+        (1, 130.0, 130.5, 21),
+    )
+    con.commit()
+    con.close()
+
+    out = list(djay_iter_analysis(p))
+    assert len(out) == 1
+    a = out[0]
+    assert a.uuid_or_id == "abc123hexuuid00000000000000000001"
+    assert a.bpm == pytest.approx(130.0)
+    assert a.manual_bpm == pytest.approx(130.5)
+    assert a.key_camelot == "8A"
+
+
+def test_iter_analysis_index_without_uuid_or_rowid_falls_back(tmp_path: Path):
+    """Malformed index table must not crash; use TSAF fallback."""
+    p = tmp_path / "media.db"
+    con = sqlite3.connect(str(p))
+    con.execute("CREATE TABLE database2 (collection TEXT, key TEXT, data BLOB)")
+    con.execute(
+        "CREATE TABLE secondaryIndex_mediaItemAnalyzedDataIndex (bpm REAL)"
+    )
+    import struct
+
+    blob = (
+        b"TSAF" + b"\x00" * 12
+        + b"\x13\x00\x00\x00" + struct.pack("<f", 118.0) + b"\x08bpm\x00"
+        + b"\x08uuid-fallback\x00"
+    )
+    con.execute(
+        "INSERT INTO database2 VALUES ('mediaItemAnalyzedData', 'uuid-fallback', ?)",
+        (blob,),
+    )
+    con.commit()
+    con.close()
+
+    out = list(djay_iter_analysis(p))
+    assert len(out) >= 1
+    by_uuid = {a.uuid_or_id: a for a in out}
+    assert by_uuid.get("uuid-fallback")
+    assert by_uuid["uuid-fallback"].bpm == pytest.approx(118.0, abs=0.01)
+
+
 def test_iter_analysis_fallback_scan(tmp_path: Path):
     """When secondary index is missing, fall back to TSAF blob scan."""
     p = tmp_path / "media.db"
@@ -127,3 +187,36 @@ def test_iter_analysis_fallback_scan(tmp_path: Path):
     assert by_uuid.get("uuid-a")
     a = by_uuid["uuid-a"]
     assert a.bpm == pytest.approx(120.0, abs=0.01)
+
+
+def test_iter_analysis_index_without_uuid_falls_back_to_blob_scan(tmp_path: Path):
+    """[if] the analysed-data index table has no uuid column [then] the TSAF blob
+    scan runs instead of a SELECT on a missing column, [else stop]. (#3036)"""
+    import struct
+
+    p = tmp_path / "media.db"
+    con = sqlite3.connect(str(p))
+    con.execute("CREATE TABLE database2 (collection TEXT, key TEXT, data BLOB)")
+    con.execute(
+        "CREATE TABLE secondaryIndex_mediaItemAnalyzedDataIndex ("
+        " bpm REAL, keySignatureIndex INTEGER)"
+    )
+    blob = (
+        b"TSAF" + b"\x00" * 12
+        + b"\x13\x00\x00\x00" + struct.pack("<f", 120.0) + b"\x08bpm\x00"
+        + b"\x08uuid-a\x00"
+    )
+    con.execute(
+        "INSERT INTO database2 VALUES ('mediaItemAnalyzedData', 'uuid-a', ?)",
+        (blob,),
+    )
+    con.execute(
+        "INSERT INTO database2 VALUES ('mediaItemUserData', 'uuid-a', ?)",
+        (b"TSAF" + b"\x00" * 12 + b"\x08uuid-a\x00",),
+    )
+    con.commit()
+    con.close()
+
+    out = list(djay_iter_analysis(p))
+    assert len(out) >= 1
+    assert out[0].uuid_or_id == "uuid-a"

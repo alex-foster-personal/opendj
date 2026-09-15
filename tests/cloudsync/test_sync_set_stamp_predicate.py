@@ -1,4 +1,7 @@
-"""CSSTATUS-08: fence stamp faults and normalize_stamps share one predicate."""
+"""CSSTATUS-08: fence stamp faults and normalize_stamps share one predicate.
+
+[if] the fence reports a stamp fault [then] normalize_stamps repairs that same row, [else stop].
+"""
 
 from __future__ import annotations
 

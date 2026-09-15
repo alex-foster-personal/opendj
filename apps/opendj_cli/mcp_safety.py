@@ -132,6 +132,22 @@ def validate_api_path(path: str) -> None:
         )
 
 
+def guard_update_apply(environ: Mapping[str, str] | None = None) -> None:
+    """Refuse to install an update unless the destructive gate is open.
+
+    Applying an update replaces the running app and restarts it, which is the
+    widest-blast-radius call this server has, so it sits behind the same gate
+    as the destructive library verbs rather than inventing a second one.
+    """
+    if destructive_enabled(environ):
+        return
+    raise SafetyRefusal(
+        "destructive_blocked",
+        "applying an update replaces and restarts the installed app; set "
+        f"{ENABLE_DESTRUCTIVE_ENV}=1 to allow it",
+    )
+
+
 def guard_library_request(method: str, path: str, environ: Mapping[str, str] | None = None) -> None:
     upper = method.upper()
     for marker in _WRITEBACK_HTTP_MARKERS:

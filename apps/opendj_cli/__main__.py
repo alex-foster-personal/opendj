@@ -8,6 +8,7 @@
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
     opendj install-cli [--target ~/.local/bin/opendj]
+    opendj update check | opendj update apply [--timeout-s SECONDS]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -84,6 +85,7 @@ _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
+_UPDATE_COMMAND = "update"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -628,29 +630,24 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     return head, rest
 
 
-def _split_api_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
-    """Return global argv and api argv when ``api`` is the subcommand.
+def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list[str]] | None:
+    """Return global argv and subcommand argv when ``name`` is the subcommand.
 
-    Everything after ``api`` is handed to :mod:`api_cli`, including a
-    request-body ``--json`` that would collide with this module's output flag.
+    Everything after the subcommand is handed to its own module, including
+    flags this parser does not know: ``api`` carries a request-body ``--json``
+    that would collide with this module's output flag, and ``update`` carries
+    ``--timeout-s``. Both would be refused as "unrecognized arguments" before
+    their module ever saw them.
     """
-    if _API_COMMAND not in tokens:
+    if name not in tokens:
         return None
-    index = tokens.index(_API_COMMAND)
-    return list(tokens[:index]), list(tokens[index + 1 :])
-
-
-def _split_mcp_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
-    """Return global argv and mcp argv when ``mcp`` is the subcommand."""
-    if _MCP_COMMAND not in tokens:
-        return None
-    index = tokens.index(_MCP_COMMAND)
+    index = tokens.index(name)
     return list(tokens[:index]), list(tokens[index + 1 :])
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
-    mcp_split = _split_mcp_tokens(tokens)
+    mcp_split = _split_subcommand(tokens, _MCP_COMMAND)
     if mcp_split is not None:
         global_tokens, mcp_tokens = mcp_split
         args = _parser(as_json="--json" in global_tokens).parse_args(
@@ -662,7 +659,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         from apps.opendj_cli import mcp_cli
 
         return mcp_cli.run(mcp_tokens, lock=args.lock)
-    api_split = _split_api_tokens(tokens)
+    update_split = _split_subcommand(tokens, _UPDATE_COMMAND)
+    if update_split is not None:
+        global_tokens, update_tokens = update_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _UPDATE_COMMAND]
+        )
+        if args.list_verbs:
+            print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import update_cli
+
+        return update_cli.run(update_tokens, as_json=args.json, lock=args.lock)
+    api_split = _split_subcommand(tokens, _API_COMMAND)
     if api_split is not None:
         global_tokens, api_tokens = api_split
         args = _parser(as_json="--json" in global_tokens).parse_args(

@@ -4,53 +4,31 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import pytest
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.types import CallToolResult
 
+from tests.opendj_cli import mcp_support
 from tests.opendj_cli.conftest import Engine
+from tests.opendj_cli.mcp_support import tool_payload
 
 
-def _tool_payload(result: CallToolResult) -> dict[str, Any]:
-    assert result.structured_content is not None
-    assert isinstance(result.structured_content, dict)
-    encoded = result.structured_content.get("result")
-    assert not isinstance(encoded, str), "double-encoded structuredContent"
-    return result.structured_content
+def _stdio_params(engine: Engine) -> Any:
+    return mcp_support.stdio_params(engine.lock_path)
 
 
-def _stdio_params(engine: Engine) -> StdioServerParameters:
-    return StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(engine.lock_path), "mcp"],
-    )
-
-
-async def _call_tool(
-    engine: Engine,
-    tool: str,
-    arguments: dict[str, Any],
-) -> CallToolResult:
-    params = _stdio_params(engine)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool, arguments)
+async def _call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> Any:
+    return await mcp_support.call_tool_async(engine.lock_path, tool, arguments)
 
 
 def call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    return _tool_payload(asyncio.run(_call_tool(engine, tool, arguments)))
+    return tool_payload(asyncio.run(_call_tool(engine, tool, arguments)))
 
 
-def call_tool_result(engine: Engine, tool: str, arguments: dict[str, Any]) -> CallToolResult:
+def call_tool_result(engine: Engine, tool: str, arguments: dict[str, Any]) -> Any:
     return asyncio.run(_call_tool(engine, tool, arguments))
 
 
@@ -102,16 +80,9 @@ def test_command_master_mute_persists_to_ui_prefs(engine: Engine, tmp_path: Path
 def test_status_engine_down(tmp_path: Any) -> None:
     """[if] no engine is running [then] status is isError with engine_not_running, [else stop]."""
     missing = tmp_path / "missing.engine.lock"
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(missing), "mcp"],
-    )
 
-    async def _status() -> CallToolResult:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await session.call_tool("status", {})
+    async def _status() -> Any:
+        return await mcp_support.call_tool_async(missing, "status", {})
 
     started = time.monotonic()
     result = asyncio.run(_status())
@@ -269,25 +240,28 @@ def test_app_state_non_success_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_tools_list_carries_annotations(engine: Engine) -> None:
-    """[if] tools/list runs [then] every tool carries readOnlyHint, [else stop]."""
+    """[if] tools/list runs [then] every tool carries readOnlyHint, and the
+    calls that change the world carry destructiveHint, [else stop]."""
     engine.page().start()
-    params = _stdio_params(engine)
-
     async def _list_tools() -> list[Any]:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                listed = await session.list_tools()
-                return listed.tools
+        async with mcp_support.session(_stdio_params(engine)) as session:
+            listed = await session.list_tools()
+            return listed.tools
 
     tools = asyncio.run(_list_tools())
     assert tools
     for tool in tools:
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is not None
-    destructive = {tool.name: tool.annotations.destructive_hint for tool in tools}
+    by_name = {tool.name: tool.annotations for tool in tools}
+    destructive = {name: annotation.destructive_hint for name, annotation in by_name.items()}
     assert destructive["library"] is True
     assert destructive["command"] is True
+    # AGENT-13: the updater is on this surface too, and apply is destructive.
+    assert destructive["update_apply"] is True
+    assert by_name["update_check"].read_only_hint is True
+    # An unset hint is not a destructive claim; only a True one would be.
+    assert destructive["update_check"] is not True
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -336,34 +310,33 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
         texts = [block.text for block in result.content if block.type == "text"]
         assert any("engine_not_running" in text for text in texts)
     else:
-        payload = _tool_payload(result)
+        payload = tool_payload(result)
         assert str(payload.get("health", "")).startswith("UNREACHABLE")
 
 
 @pytest.mark.requirement("AGENT-11")
-def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
-    """[if] HOME has no engine lock [then] status/command/library/open_route each surface isError True with their error code readable in the text, [else stop].
+def test_home_empty_tmp_dir_is_error_for_every_tool(tmp_path: Any) -> None:
+    """[if] HOME has no engine lock [then] every tool surfaces isError True with
+    its error code readable in the text, [else stop].
 
     Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an
-    empty temp dir so ``resolve_origin`` naturally finds no lock file.
+    empty temp dir so ``resolve_origin`` naturally finds no lock file. The
+    destructive gate is closed explicitly rather than inherited, so ``library``
+    and ``update_apply`` are refused deterministically by the rail whose code
+    the case names, on a machine where nothing has been enabled.
     """
-    env = {**os.environ, "HOME": str(tmp_path)}
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "mcp"],
-        env=env,
-    )
+    env = mcp_support.naive_home_env(tmp_path)
 
-    async def _call(tool: str, arguments: dict[str, Any]) -> CallToolResult:
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool, arguments)
+    async def _call(tool: str, arguments: dict[str, Any]) -> Any:
+        return await mcp_support.call_tool_async(None, tool, arguments, env=env)
 
     cases: list[tuple[str, dict[str, Any], str]] = [
         ("status", {}, "engine_not_running"),
         ("command", {"verb": "play", "args": ["1"]}, "engine_not_running"),
         ("library", {"method": "FROB", "path": "/x"}, '"error": "usage"'),
         ("open_route", {"route": "/settings"}, "engine_not_running"),
+        ("update_check", {}, "engine_not_running"),
+        ("update_apply", {}, "destructive_blocked"),
     ]
     for tool, arguments, expected_code in cases:
         result = asyncio.run(_call(tool, arguments))
@@ -412,7 +385,8 @@ def test_no_unconverted_error_document_returns() -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks with no limit against an 8500-track library
+    """[if] library GETs /tracks with no limit [then] the page stays under the MCP budget, [else stop].
+    [if] library GETs /tracks with no limit against an 8500-track library
     [then] the wire result stays comfortably under the 25k-token MCP budget
     and says how to page the rest, [else stop]."""
     result = call_tool_result(
@@ -442,7 +416,8 @@ def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) 
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks?limit=100000 [then] the engine still refuses
+    """[if] library GETs /tracks over the limit [then] it refuses with a readable message, [else stop].
+    [if] library GETs /tracks?limit=100000 [then] the engine still refuses
     (422) and the body is a readable object, not an escaped JSON string,
     [else stop]."""
     payload = call_tool(
@@ -456,7 +431,8 @@ def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
+    """[if] library GETs /tracks with fields [then] rows carry only those fields, [else stop].
+    [if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
     every row is projected to just those keys, [else stop]."""
     payload = call_tool(
         big_library_engine,
@@ -477,7 +453,8 @@ def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Eng
 def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
     big_library_engine: Engine,
 ) -> None:
-    """[if] the auto-limited page's next_cursor is paged again [then] it
+    """[if] a bounded page returns a cursor [then] the next call pages with it, [else stop].
+    [if] the auto-limited page's next_cursor is paged again [then] it
     returns fresh, distinct tracks: a real engine page, never a client-side
     truncated slice of the first, [else stop]."""
     first = call_tool(big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"})
