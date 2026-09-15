@@ -1082,7 +1082,11 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_master_select'/);
 	assert.match(mixer, /type: 'headphone_input_select'/);
 	assert.match(headphones, /onclick=\{onacquire\}/);
-	assert.match(headphones, /Grant browser access to a second audio output/);
+	// bf60d7d67 feat(webui): pin master and cue sinks from I/O menu (#2409)
+	// replaced the "+ OUT" grant button (title "Grant browser access to a second
+	// audio output") with the I/O button, which still calls onacquire.
+	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{onacquire\}/);
+	assert.match(headphones, /I\/O briefly uses the built-in mic so device names appear/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
