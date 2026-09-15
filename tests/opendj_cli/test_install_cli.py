@@ -83,20 +83,36 @@ def test_install_cli_refuses_outside_payload(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.requirement("AGENT-05")
-def test_help_lists_install_cli() -> None:
-    """[if] an agent runs opendj --help [then] install-cli appears, [else stop]."""
+def test_help_lists_the_installed_app_verbs() -> None:
+    """[if] an agent runs opendj --help [then] install-cli and BOTH update verbs
+    appear, [else stop].
+
+    AGENT-13: an agent on a machine with only the installed app has no repo to
+    read, so a verb that is missing from --help is a verb it cannot find.
+    """
     with redirect_stdout(io.StringIO()) as captured:
         with pytest.raises(SystemExit) as exc:
             main(["--help"])
     assert exc.value.code == 0
-    assert "install-cli" in captured.getvalue()
+    printed = captured.getvalue()
+    assert "install-cli" in printed
     assert "install-cli" in LIBRARY_EPILOG
+    assert "opendj update check" in printed
+    assert "opendj update apply" in printed
+    assert "opendj update check" in LIBRARY_EPILOG
+    assert "opendj update apply" in LIBRARY_EPILOG
 
 
 @pytest.mark.requirement("AGENT-05")
-def test_list_verbs_footer_lists_install_cli() -> None:
-    """[if] an agent runs opendj --list-verbs [then] install-cli appears, [else stop]."""
+def test_list_verbs_footer_lists_the_installed_app_verbs() -> None:
+    """[if] an agent runs opendj --list-verbs [then] install-cli and both update
+    verbs appear, [else stop]."""
     with redirect_stdout(io.StringIO()) as captured:
         main(["--list-verbs"])
-    assert "install-cli" in captured.getvalue()
+    printed = captured.getvalue()
+    assert "install-cli" in printed
     assert "install-cli" in LIST_VERBS_FOOTER
+    assert "opendj update check" in printed
+    assert "opendj update apply" in printed
+    assert "opendj update check" in LIST_VERBS_FOOTER
+    assert "opendj update apply" in LIST_VERBS_FOOTER
