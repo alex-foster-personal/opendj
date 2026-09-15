@@ -86,7 +86,7 @@ _actionlint() {
   local out="$1" rc=0
   shift
   "$SECURITY_BIN_DIR/actionlint" -shellcheck= -pyflakes= \
-    -format '{{range $e := .}}{{$e.Filepath}}:{{$e.Line}} {{$e.Kind}} {{$e.Message}}{{"\n"}}{{end}}' \
+    -format '{{range $e := .}}{{$e.Filepath}}:{{$e.Line}} {{$e.Kind}} {{$e.Message}}{{println}}{{end}}' \
     "$@" >"$out" || rc=$?
   if [[ $rc -ne 0 && $rc -ne 1 ]]; then
     echo "actionlint exited $rc" >&2

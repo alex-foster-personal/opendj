@@ -64,10 +64,11 @@ sec_py osv-lint-config "$CONFIG" --max-days "$MAX_IGNORE_DAYS" ||
 
 # ----- select manifests -------------------------------------------------------------------------
 if [[ "$MODE" == "pr" ]]; then
-  mapfile -t changed < <(sec_changed_files)
+  changed=()
+  while IFS= read -r path; do changed+=("$path"); done < <(sec_changed_files)
   targets=()
   for manifest in "${MANIFESTS[@]}"; do
-    for path in "${changed[@]}"; do [[ "$path" == "$manifest" ]] && targets+=("$manifest"); done
+    for path in ${changed[@]+"${changed[@]}"}; do [[ "$path" == "$manifest" ]] && targets+=("$manifest"); done
   done
   if [[ ${#targets[@]} -eq 0 ]]; then
     sec_row "$SCANNER" "$MODE" "not run" 0 SKIP "no manifest changed vs $(sec_base_sha | cut -c1-9)"
@@ -95,7 +96,9 @@ if [[ "$MODE" == "pr" ]]; then
   base="$(sec_base_sha)"
   mkdir -p "$OUT/base"
   # Manifests the PR adds do not exist on base; everything in them is new.
-  mapfile -t on_base < <(git -C "$SECURITY_REPO_ROOT" ls-tree -r --name-only "$base" -- "${targets[@]}")
+  on_base=()
+  while IFS= read -r path; do on_base+=("$path"); done < <(
+    git -C "$SECURITY_REPO_ROOT" ls-tree -r --name-only "$base" -- "${targets[@]}")
   if [[ ${#on_base[@]} -gt 0 ]]; then
     git -C "$SECURITY_REPO_ROOT" archive "$base" -- "${on_base[@]}" | tar -x -C "$OUT/base"
     _osv_scan "$OUT/base.json" "$OUT/base" "${on_base[@]}" || _unknown_exit "base scan errored"

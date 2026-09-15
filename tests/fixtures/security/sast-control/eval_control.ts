@@ -1,10 +1,11 @@
 // Semgrep positive control for the p/typescript pack. Never imported or built.
-// scripts/security/scan_sast.sh fails as UNKNOWN when this file produces no finding.
+// scripts/security/scan_sast.sh fails as UNKNOWN when this file produces no finding
+// for javascript.browser.security.wildcard-postmessage-configuration.
 
-export function runUserCode(userInput: string): unknown {
-  return eval(userInput);
+export function broadcastToAnyOrigin(data: unknown): void {
+  window.parent.postMessage(data, "*");
 }
 
-export function renderUnsafe(target: HTMLElement, html: string): void {
-  target.innerHTML = html;
+export function runFragmentAsCode(): unknown {
+  return eval(window.location.hash.slice(1));
 }

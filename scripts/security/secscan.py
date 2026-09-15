@@ -51,7 +51,8 @@ class OsvFinding:
         return (self.ecosystem, self.package, self.vuln_id)
 
     def line(self) -> str:
-        return f"{self.vuln_id} {self.ecosystem}/{self.package}@{self.version} ({self.source}) severity={self.severity or 'n/a'}"
+        pkg = f"{self.ecosystem}/{self.package}@{self.version}"
+        return f"{self.vuln_id} {pkg} ({self.source}) severity={self.severity or 'n/a'}"
 
 
 # ----- helpers -----------------------------------------------------------------------------
@@ -91,18 +92,18 @@ def _osv_findings(doc: dict, root: str) -> tuple[list[OsvFinding], dict[str, int
         parsed[source] = parsed.get(source, 0) + len(result.get("packages", []))
         for pkg in result.get("packages", []):
             meta = pkg["package"]
-            for group in pkg.get("groups", []):
-                # One group = one advisory under all its aliases; report the first id.
-                findings.append(
-                    OsvFinding(
-                        source=source,
-                        ecosystem=meta["ecosystem"],
-                        package=meta["name"],
-                        version=meta.get("version", "?"),
-                        vuln_id=sorted(group["ids"])[0],
-                        severity=str(group.get("max_severity", "")),
-                    )
+            # One group = one advisory under all its aliases; report the first id.
+            findings.extend(
+                OsvFinding(
+                    source=source,
+                    ecosystem=meta["ecosystem"],
+                    package=meta["name"],
+                    version=meta.get("version", "?"),
+                    vuln_id=sorted(group["ids"])[0],
+                    severity=str(group.get("max_severity", "")),
                 )
+                for group in pkg.get("groups", [])
+            )
     return findings, parsed
 
 
@@ -157,7 +158,9 @@ def cmd_osv_lint_config(args: argparse.Namespace) -> int:
         if until_date <= today:
             problems.append(f"{vid}: expired {until_date}; fix it or renew with a new reason")
         elif until_date > horizon:
-            problems.append(f"{vid}: ignoreUntil {until_date} is more than {args.max_days} days out")
+            problems.append(
+                f"{vid}: ignoreUntil {until_date} is more than {args.max_days} days out"
+            )
     for problem in problems:
         print(f"[ERROR] osv-scanner.toml {problem}", file=sys.stderr)
     print(f"osv-scanner.toml: {len(entries)} IgnoredVulns entries, {len(problems)} problems")
@@ -168,11 +171,17 @@ def cmd_inventory_check(args: argparse.Namespace) -> int:
     tracked = subprocess.run(
         ["git", "-C", args.root, "ls-files"], check=True, capture_output=True, text=True
     ).stdout.splitlines()
-    manifests = {p for p in tracked if LOCKFILE_PATTERN.search(p) and not p.startswith(CONTROL_PREFIX)}
+    manifests = {
+        p for p in tracked if LOCKFILE_PATTERN.search(p) and not p.startswith(CONTROL_PREFIX)
+    }
     unlisted = sorted(manifests - set(args.expect))
     vanished = sorted(set(args.expect) - manifests)
     for path in unlisted:
-        print(f"[ERROR] manifest not in the scan inventory: {path} (add it to MANIFESTS in scan_deps.sh)", file=sys.stderr)
+        print(
+            f"[ERROR] manifest not in the scan inventory: {path}"
+            " (add it to MANIFESTS in scan_deps.sh)",
+            file=sys.stderr,
+        )
     for path in vanished:
         print(f"[ERROR] inventory lists a manifest git does not track: {path}", file=sys.stderr)
     print(f"inventory: {len(manifests)} tracked manifests, {len(args.expect)} listed")
@@ -186,7 +195,10 @@ def cmd_gitleaks_summary(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         return _unknown(f"gitleaks JSON unreadable: {exc}")
     assert isinstance(doc, list)
-    lines = [f"{f['RuleID']} {f['File']}:{f['StartLine']} commit={str(f.get('Commit', ''))[:9]}" for f in doc]
+    lines = [
+        f"{f['RuleID']} {f['File']}:{f['StartLine']} commit={str(f.get('Commit', ''))[:9]}"
+        for f in doc
+    ]
     _emit(args, args.title, lines, len(doc))
     return 0
 
@@ -204,9 +216,9 @@ def cmd_trufflehog_summary(args: argparse.Namespace) -> int:
             continue
         git = rec.get("SourceMetadata", {}).get("Data", {}).get("Git", {})
         state = "verified" if rec.get("Verified") else "unverified"
-        lines.append(
-            f"{rec['DetectorName']} {state} {git.get('file', '?')}:{git.get('line', '?')} commit={str(git.get('commit', ''))[:9]}"
-        )
+        where = f"{git.get('file', '?')}:{git.get('line', '?')}"
+        commit = str(git.get("commit", ""))[:9]
+        lines.append(f"{rec['DetectorName']} {state} {where} commit={commit}")
     _emit(args, args.title, lines, len(lines))
     return 0
 
@@ -220,12 +232,20 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
     assert isinstance(doc, dict)
     errors = [e for e in doc.get("errors", []) if e.get("level") == "error"]
     for err in errors:
-        print(f"[ERROR] semgrep: {err.get('type')} {str(err.get('message', ''))[:200]}", file=sys.stderr)
+        print(
+            f"[ERROR] semgrep: {err.get('type')} {str(err.get('message', ''))[:200]}",
+            file=sys.stderr,
+        )
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
     if rules is not None:
-        print(f"semgrep loaded {rules} rules, scanned {len(doc.get('paths', {}).get('scanned', []))} files")
+        scanned = len(doc.get("paths", {}).get("scanned", []))
+        print(f"semgrep loaded {rules} rules, scanned {scanned} files")
         if rules < args.min_rules:
             return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
+        if scanned < args.min_files:
+            return _unknown(
+                f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
+            )
     results = doc.get("results", [])
     fired = Counter(r["check_id"].rsplit(".", 1)[-1] for r in results)
     silent = [rule for rule in args.require_rule if fired[rule] == 0]
@@ -257,7 +277,9 @@ def cmd_zizmor_summary(args: argparse.Namespace) -> int:
 
 # ----- cli -------------------------------------------------------------------------------------
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     def add(name: str, func: object, **kwargs: object) -> argparse.ArgumentParser:
@@ -297,6 +319,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("json")
     p.add_argument("--require-rule", action="append", default=[])
     p.add_argument("--min-rules", type=int, default=1)
+    p.add_argument("--min-files", type=int, default=0, help="fewer scanned files is UNKNOWN")
     p.add_argument("--fail-on-error", action="store_true")
 
     p = add("zizmor-summary", cmd_zizmor_summary)

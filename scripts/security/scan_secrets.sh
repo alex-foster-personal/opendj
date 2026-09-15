@@ -105,12 +105,11 @@ scan_full() {
     --json --no-update >"$OUT/history.jsonl" || rc=$?
   [[ $rc -eq 0 ]] || _unknown_exit "$scanner" "history scan errored (exit $rc)"
   sec_py trufflehog-summary "$OUT/history.jsonl" --count-file "$OUT/history.count" \
-    --report-md "$SECURITY_WORK_DIR/report.md" --title "trufflehog: full history (verified + unverifiable)" ||
-    _unknown_exit "$scanner" "history output unparseable"
+    --report-md "$SECURITY_WORK_DIR/report.md" --title "trufflehog: full history (verified + unverifiable)" \
+    >"$OUT/history.txt" || _unknown_exit "$scanner" "history output unparseable"
+  cat "$OUT/history.txt"
   local findings unverifiable
   findings="$(cat "$OUT/history.count")"
-  unverifiable="$(grep -c ' unverified ' "$OUT/history.jsonl.summary" 2>/dev/null || true)"
-  sec_py trufflehog-summary "$OUT/history.jsonl" >"$OUT/history.txt"
   unverifiable="$(grep -c ' unverified ' "$OUT/history.txt" || true)"
   if [[ "$findings" -eq 0 ]]; then
     sec_row "$scanner" "$MODE" "fired($control_hits)" 0 PASS "full history, verified live secrets only"

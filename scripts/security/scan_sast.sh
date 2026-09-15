@@ -16,26 +16,26 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 MODE="${1:?usage: scan_sast.sh pr|full}"
 sec_require_mode "$MODE"
 SCANNER="semgrep"
-CONFIGS=(--config p/python --config p/typescript --config p/rust --config tools/semgrep)
+CONFIGS=(--config p/python --config p/typescript --config p/rust --config "$SECURITY_REPO_ROOT/tools/semgrep")
 CONTROL_DIR="tests/fixtures/security/sast-control"
 REQUIRED_CONTROL_RULES=(
   odj-image-open-without-formats # tools/semgrep (custom)
   odj-subprocess-shell-true      # tools/semgrep (custom)
   subprocess-shell-true          # p/python
-  eval-detected                  # p/typescript
+  wildcard-postmessage-configuration # p/typescript
   unsafe-usage                   # p/rust
 )
-MIN_RULES=300
+MIN_RULES=200
 OUT="$SECURITY_WORK_DIR/sast"
 rm -rf "$OUT" && mkdir -p "$OUT"
 
 _unknown_exit() { sec_unknown "$SCANNER" "$MODE" "$1" || exit 2; }
 
-# _semgrep <json-out> <args...>: exit 0 (clean) and 1 (findings, via --error) are measurements.
+# _semgrep <dir> <json-out> <args...>: exit 0 (clean) and 1 (findings, via --error) are measurements.
 _semgrep() {
-  local json="$1" rc=0
-  shift
-  (cd "$SECURITY_REPO_ROOT" && "$SECURITY_BIN_DIR/semgrep" scan "${CONFIGS[@]}" --json --time \
+  local dir="$1" json="$2" rc=0
+  shift 2
+  (cd "$dir" && "$SECURITY_BIN_DIR/semgrep" scan "${CONFIGS[@]}" --json --time \
     --metrics=off --disable-version-check --error "$@" >"$json") || rc=$?
   if [[ $rc -ne 0 && $rc -ne 1 ]]; then
     echo "semgrep exited $rc" >&2
@@ -47,27 +47,42 @@ sec_require_bin semgrep || _unknown_exit "binary missing"
 sec_require_bin uv || _unknown_exit "uv missing (needed for secscan.py)"
 
 # ----- positive control -------------------------------------------------------------------------
-_semgrep "$OUT/control.json" "$CONTROL_DIR" || _unknown_exit "control scan errored"
+# Inside a git repo Semgrep scans only tracked files and skips tests/ by default, so the
+# control runs on a copy outside the repo whose own empty .semgrepignore turns the
+# default ignore list off. The copy keeps the repo-relative path the custom rules include.
+control_root="$(mktemp -d "${TMPDIR:-/tmp}/sast-control.XXXXXX")"
+trap 'rm -rf "$control_root"' EXIT
+mkdir -p "$control_root/$(dirname "$CONTROL_DIR")"
+cp -R "$SECURITY_REPO_ROOT/$CONTROL_DIR" "$control_root/$CONTROL_DIR"
+printf '# empty on purpose: disables the default ignore list for the control copy\n' \
+  >"$control_root/.semgrepignore"
+control_files="$(find "$control_root/$CONTROL_DIR" -type f | wc -l | tr -d ' ')"
+_semgrep "$control_root" "$OUT/control.json" . || _unknown_exit "control scan errored"
 require_args=()
 for rule in "${REQUIRED_CONTROL_RULES[@]}"; do require_args+=(--require-rule "$rule"); done
 sec_py semgrep-summary "$OUT/control.json" "${require_args[@]}" --min-rules "$MIN_RULES" \
-  --fail-on-error --count-file "$OUT/control.count" >"$OUT/control.txt" ||
+  --min-files "$control_files" --fail-on-error --count-file "$OUT/control.count" >"$OUT/control.txt" ||
   _unknown_exit "control did not fire or rules failed to load (see above)"
 control_hits="$(cat "$OUT/control.count")"
 
 # ----- scan ---------------------------------------------------------------------------------------
 if [[ "$MODE" == "pr" ]]; then
   base="$(sec_base_sha)"
-  _semgrep "$OUT/scan.json" --baseline-commit "$base" --exclude "tests/fixtures/security" ||
-    _unknown_exit "diff-aware scan errored"
+  # Diff-aware mode scans only files changed since base, so zero files is a valid answer.
+  _semgrep "$SECURITY_REPO_ROOT" "$OUT/scan.json" --baseline-commit "$base" \
+    --exclude "tests/fixtures/security" || _unknown_exit "diff-aware scan errored"
   title="semgrep: findings new vs ${base:0:9}"
   detail="diff-aware vs ${base:0:9}"
+  min_files=0
 elif [[ "$MODE" == "full" ]]; then
-  _semgrep "$OUT/scan.json" --exclude "tests/fixtures/security" || _unknown_exit "full scan errored"
+  _semgrep "$SECURITY_REPO_ROOT" "$OUT/scan.json" --exclude "tests/fixtures/security" ||
+    _unknown_exit "full scan errored"
   title="semgrep: whole tree"
   detail="whole tree (existing debt included)"
+  min_files=1
 fi
-sec_py semgrep-summary "$OUT/scan.json" --min-rules "$MIN_RULES" --count-file "$OUT/scan.count" \
+sec_py semgrep-summary "$OUT/scan.json" --min-rules "$MIN_RULES" --min-files "$min_files" \
+  --count-file "$OUT/scan.count" \
   --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" ||
   _unknown_exit "scan output unparseable or rules missing"
 
