@@ -150,7 +150,7 @@ def test_library_writeback_blocked(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
-    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked, [else stop]."""
+    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked."""
     engine.page().start()
     result = call_tool_result(
         engine,
@@ -321,15 +321,14 @@ def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
     )
 
     async def _call(tool: str, arguments: dict[str, Any]) -> CallToolResult:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await session.call_tool(tool, arguments)
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            return await session.call_tool(tool, arguments)
 
-    cases = [
+    cases: list[tuple[str, dict[str, Any], str]] = [
         ("status", {}, "engine_not_running"),
         ("command", {"verb": "play", "args": ["1"]}, "engine_not_running"),
-        ("library", {"method": "FROB", "path": "/x"}, "usage"),
+        ("library", {"method": "FROB", "path": "/x"}, '"error": "usage"'),
         ("open_route", {"route": "/settings"}, "engine_not_running"),
     ]
     for tool, arguments, expected_code in cases:
@@ -347,7 +346,7 @@ def test_command_safety_refusal_is_error(engine: Engine) -> None:
     result = call_tool_result(engine, "command", {})
     assert result.is_error is True
     texts = [block.text for block in result.content if block.type == "text"]
-    assert any("usage" in text for text in texts)
+    assert any('"error": "usage"' in text for text in texts)
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -358,7 +357,7 @@ def test_command_order_failed_is_error(engine: Engine) -> None:
     result = call_tool_result(engine, "command", {"order": {"sequence": []}})
     assert result.is_error is True
     texts = [block.text for block in result.content if block.type == "text"]
-    assert any("order_failed" in text for text in texts)
+    assert any('"error": "order_failed"' in text for text in texts)
 
 
 @pytest.mark.requirement("AGENT-11")
