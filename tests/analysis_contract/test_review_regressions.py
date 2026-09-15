@@ -412,7 +412,7 @@ def test_a_combined_write_that_fails_on_the_default_restores_the_toggle(
             finally:
                 locker.rollback()
                 locker.close()
-            assert resp.status_code == 500
+            assert resp.status_code == 503, resp.text[:300]  # busy is 503 since 0a0d095fb
 
             after = client.get("/api/v1/analysis/source").json()
             assert after["lanes"]["beatgrid"]["toggle"] == "unset", (
@@ -491,7 +491,7 @@ def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
                 agent.join()
                 locker.rollback()
                 locker.close()
-            assert resp.status_code == 500
+            assert resp.status_code == 503, resp.text[:300]  # busy is 503 since 0a0d095fb
 
             after = client.get("/api/v1/analysis/source").json()
             assert after["lanes"]["beatgrid"]["toggle"] == "rbx", (
