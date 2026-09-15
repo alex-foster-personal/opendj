@@ -62,7 +62,7 @@ import hashlib
 import json
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Literal
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
@@ -102,6 +102,55 @@ class Incompatibility:
 
     code: str
     message: str
+
+
+@dataclasses.dataclass(frozen=True)
+class UpdateRequiredState:
+    """Typed wire-version mismatch surfaced to operators and the UI."""
+
+    code: Literal["SYNC_WIRE_VERSION"]
+    local_wire_version: int
+    peer_wire_version: int
+    action: str
+
+
+_UPDATE_REQUIRED_ACTION: str = "install the latest Open DJ"
+_LOCAL_WIRE_RE = re.compile(r"this machine speaks v(\d+)", re.IGNORECASE)
+_PEER_WIRE_RE = re.compile(
+    r"(?:peer|hub) speaks sync wire v(\d+)", re.IGNORECASE
+)
+
+
+def parse_update_required(error_message: str) -> UpdateRequiredState | None:
+    """Return a typed update-required state when ``error_message`` is wire mismatch."""
+    if not error_message.strip():
+        return None
+    code: str | None = None
+    json_start = error_message.find("{")
+    if json_start >= 0:
+        tail = error_message[json_start:]
+        try:
+            payload = json.loads(tail)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+            if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+                code = detail["code"]
+    if code is None and CODE_WIRE in error_message:
+        code = CODE_WIRE
+    if code != CODE_WIRE and "SyncVersionMismatch" not in error_message:
+        return None
+    local_match = _LOCAL_WIRE_RE.search(error_message)
+    peer_match = _PEER_WIRE_RE.search(error_message)
+    if local_match is None or peer_match is None:
+        return None
+    return UpdateRequiredState(
+        code=CODE_WIRE,
+        local_wire_version=int(local_match.group(1)),
+        peer_wire_version=int(peer_match.group(1)),
+        action=_UPDATE_REQUIRED_ACTION,
+    )
 
 
 # ----- the gate ----------------------------------------------------------------
@@ -292,12 +341,14 @@ __all__ = [
     "WIRE_FINGERPRINTS",
     "WIRE_VERSION",
     "Incompatibility",
+    "UpdateRequiredState",
     "WireShapeError",
     "check_clauses",
     "fingerprint_history_problems",
     "fresh_ladder_drift",
     "incompatibility",
     "measure_wire_shape",
+    "parse_update_required",
     "wire_fingerprint",
     "wire_shape_drift",
 ]

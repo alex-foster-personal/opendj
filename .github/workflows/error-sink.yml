@@ -97,7 +97,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
           OPENDJ_TELEMETRY: "0"
-          OPENDJ_HOST_LABEL: ${{ runner.name }}
+          OPENDJ_HOST_LABEL: github-actions
           OPENDJ_BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
           # workflow_run fields reach the shell through env, never inline
           # (zizmor template-injection): a workflow name is attacker-shaped text.
@@ -112,5 +112,5 @@ jobs:
             --kind build \
             --source-site "build:${WORKFLOW_NAME}" \
             --sha "${OPENDJ_BUILD_SHA}" \
-            --host "${OPENDJ_HOST_LABEL}" \
+            --host "github-actions" \
             --message "CI failed workflow=${WORKFLOW_NAME} run=${RUN_ID} conclusion=${RUN_CONCLUSION} url=${RUN_URL} sha=${OPENDJ_BUILD_SHA}"

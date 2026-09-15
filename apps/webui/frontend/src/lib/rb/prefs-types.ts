@@ -37,6 +37,11 @@ export interface LevelCalibrationPrefs {
 	ceiling_enabled: boolean;
 }
 
+/** PERFMODE-11 Gig stamp mirror of ui-prefs `app_mode.last_gig_at`. */
+export interface AppModePrefs {
+	last_gig_at: string | null;
+}
+
 /** Spotify source-panel pin + recent memory (#315). localStorage only. */
 export interface SpotifyLibraryPref {
 	pinned_ids: string[];

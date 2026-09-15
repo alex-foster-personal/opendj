@@ -522,7 +522,7 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
         genre=genre,
         comment=comment,
         duration_s=duration_ms // 1000 if duration_ms is not None else None,
-        artwork_available=rb_vendor.local_artwork_available(file_path),
+        artwork_available=rb_vendor.local_artwork_available(stable_id),
         analysis_available=False,
         beatgrid_issue=None,
         cue_count=0,

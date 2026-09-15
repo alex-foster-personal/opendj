@@ -20,8 +20,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.testclient_host_allowlist import install_loopback_testclient_default
-
 # SEC-01 (issue #2689): the daemon host allowlist middleware
 # (apps/webui/server/request_guard.py) rejects any request whose Host header
 # is not allowlisted. starlette.testclient.TestClient defaults base_url to
@@ -35,7 +33,16 @@ from tests.testclient_host_allowlist import install_loopback_testclient_default
 # every call site. A caller that passes its own base_url (e.g. to exercise a
 # foreign-host rejection, see tests/webui/test_request_guard.py) is
 # untouched -- this only changes the default.
-install_loopback_testclient_default()
+#
+# Gated on starlette being installed: CI runs some quality suites (the
+# frontend typing gate among them) in an isolated pytest-only environment,
+# and this conftest loads for them too. Without starlette no TestClient can
+# exist, so there is no default to patch; importing the helper there would
+# only fail every such suite at conftest load.
+if importlib.util.find_spec("starlette") is not None:
+    from tests.testclient_host_allowlist import install_loopback_testclient_default
+
+    install_loopback_testclient_default()
 
 
 def _can_import(module_name: str) -> bool:

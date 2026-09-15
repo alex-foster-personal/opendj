@@ -109,18 +109,18 @@ test('laneTimingsToRows emits eight rows with shared capture metadata', () => {
 		],
 		{
 			date: '2026-09-11',
-			round: 'issue-2057',
+			round: 'issue-2310',
 			machine: 'test-host',
 			source: 'pnpm test:live:stem-decode-workers PERF-STEMDEC-02, <N> distinct 44.1kHz FLACs, Playwright <engine>, warm pool, decode only',
-			captureId: 'issue-2057-stemdec-02',
+			captureId: 'issue-2310-stemdec-02',
 			fixtureCount: 4
 		}
 	);
 	assert.equal(rows.length, 8);
 	for (const row of rows) {
-		assert.equal(row.round, 'issue-2057');
+		assert.equal(row.round, 'issue-2310');
 		assert.equal(row.unit, 'ms');
-		assert.equal(row.capture_id, 'issue-2057-stemdec-02');
+		assert.equal(row.capture_id, 'issue-2310-stemdec-02');
 		assert.equal(typeof row.value, 'number');
 	}
 	assert.ok(rows.some((r) => r.kpi === 'stem_decode_2way_ms_chromium_main'));

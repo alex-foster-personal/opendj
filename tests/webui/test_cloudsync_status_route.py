@@ -79,6 +79,36 @@ def test_status_exposes_a_recorded_error(tmp_path: Path, monkeypatch):
     assert body["recent_results"][0]["status"] == "error"
 
 
+def test_status_exposes_update_required_for_wire_mismatch(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MDT_CLOUDSYNC_SCHEDULER", "1")
+    monkeypatch.setenv("MDT_CLOUDSYNC_HUB_URL", "https://hub.example.test")
+    message = (
+        'POST https://agentbox.<tailnet>:8870/api/v1/sync/hello -> HTTP 409: '
+        '{"detail":{"code":"SYNC_WIRE_VERSION","message":"peer speaks sync wire v4, '
+        'this machine speaks v3 (schema v14 vs v13). The synced row shapes differ, '
+        'so no row may cross; upgrade whichever machine is on the lower wire version, '
+        'then sync again."}}'
+    )
+    (tmp_path / "cloudsync-status.json").write_text(json.dumps({"results": [{
+        "finished_at": "2026-09-15T06:00:00+00:00",
+        "status": "error",
+        "message": message,
+        "pushed": 0,
+        "pulled": 0,
+    }]}), encoding="utf-8")
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["update_required"] == {
+        "code": "SYNC_WIRE_VERSION",
+        "local_wire_version": 3,
+        "peer_wire_version": 4,
+        "action": "install the latest Open DJ",
+    }
+
+
 def test_status_keeps_only_the_newest_five_results(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MDT_CLOUDSYNC_SCHEDULER", "1")
     monkeypatch.setenv("MDT_CLOUDSYNC_HUB_URL", "https://hub.example.test")
@@ -127,7 +157,26 @@ def test_identity_backlog_counts_held_inferred_tracks(tmp_path: Path) -> None:
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 2}
+    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 2}
+
+
+def test_status_reports_hash_pending_and_quarantined_counts(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "state.db"
+    conn = state_db.open_rw(db_path, apply_schema=True)
+    try:
+        _insert_identified_track(conn, "trk-held-a", title="a", updated_at=_T0, origin=_DEV_A)
+        _insert_identified_track(conn, "trk-held-b", title="b", updated_at=_T0, origin=_DEV_A)
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hash_pending"] == 2
+    assert body["quarantined"] == 0
 
 
 def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) -> None:
@@ -150,4 +199,4 @@ def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) 
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 0}
+    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 0}

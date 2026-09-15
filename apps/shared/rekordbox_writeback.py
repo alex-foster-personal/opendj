@@ -230,21 +230,21 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         kind="http",
         entrypoint="POST /api/v1/rb-djay-sync/analysis/apply",
         target="live master.db bpm/key/loudness and CSV analysis sync",
-        guard_site="apps/webui/server/routes/rb_djay_sync.py",
+        guard_site="apps/sync/djay_sync_service.py",
     ),
     WriteSurface(
         surface_id="http.rb_djay_sync.ratings.apply",
         kind="http",
         entrypoint="POST /api/v1/rb-djay-sync/ratings/apply",
         target="live master.db and djay MediaLibrary.db ratings",
-        guard_site="apps/webui/server/routes/rb_djay_sync.py",
+        guard_site="apps/sync/djay_sync_service.py",
     ),
     WriteSurface(
         surface_id="http.rb_djay_sync.cues.apply",
         kind="http",
         entrypoint="POST /api/v1/rb-djay-sync/cues/apply",
         target="live master.db djmdCue (scaffold live path only)",
-        guard_site="apps/webui/server/routes/rb_djay_sync.py",
+        guard_site="apps/sync/djay_sync_service.py",
     ),
     # ----- module / CLI ---------------------------------------------------
     WriteSurface(

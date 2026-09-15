@@ -140,6 +140,40 @@ def test_track_out_lyrics_available_when_cache_file_exists(
     assert response.json()["lyrics_available"] is True
 
 
+def test_track_out_lyrics_available_for_asr_cache(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            "track-with-asr-lyrics",
+            "inferred",
+            "ASR Lyrics",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+    write(
+        cache_path(tmp_path, "track-with-asr-lyrics"),
+        Lyrics(
+            stable_id="track-with-asr-lyrics",
+            source="asr",
+            lines=(LyricLine(start_ms=500, text="hello world"),),
+        ),
+    )
+
+    response = flags_client.get("/api/v1/tracks/track-with-asr-lyrics")
+
+    assert response.status_code == 200
+    assert response.json()["lyrics_available"] is True
+
+
 @pytest.mark.requires_mutagen
 def test_track_out_artwork_available_false_for_audio_without_picture(
     flags_client: TestClient, tmp_path: Path

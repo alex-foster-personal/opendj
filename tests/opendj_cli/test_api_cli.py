@@ -235,6 +235,65 @@ def test_api_dead_lock_names_lock_file(
     assert "engine lock file" in captured.err
 
 
+@pytest.mark.requirement("AGENT-05")
+def test_api_ui_prefs_topbar_round_trip(
+    library_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] opendj api PUTs beat_sync_max [then] GET returns the same value, [else stop]."""
+    base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    put_code = main(
+        [
+            "api",
+            "PUT",
+            "/api/v1/ui-prefs",
+            "--json",
+            '{"beat_sync_max": false, "auto_play_enabled": false}',
+        ]
+    )
+    assert put_code == api_cli.EXIT_OK
+    capsys.readouterr()
+
+    assert main(["api", "GET", "/api/v1/ui-prefs"]) == api_cli.EXIT_OK
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["beat_sync_max"] is False
+    assert body["auto_play_enabled"] is False
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_api_ui_prefs_library_browser_round_trip(
+    library_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] opendj api PUTs hide_broken_links and wheel_sensitivity [then] GET matches, [else stop]."""
+    base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    put_code = main(
+        [
+            "api",
+            "PUT",
+            "/api/v1/ui-prefs",
+            "--json",
+            '{"hide_broken_links": true, "wheel_sensitivity": {"mouse": 2.0, "trackpad": 0.2}}',
+        ]
+    )
+    assert put_code == api_cli.EXIT_OK
+    capsys.readouterr()
+
+    assert main(["api", "GET", "/api/v1/ui-prefs"]) == api_cli.EXIT_OK
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["hide_broken_links"] is True
+    assert body["wheel_sensitivity"]["mouse"] == 2.0
+    assert body["wheel_sensitivity"]["trackpad"] == 0.2
+
+
 def test_api_prefers_worktree_port_over_lock(
     library_daemon: tuple[str, int],
     tmp_path: Path,
