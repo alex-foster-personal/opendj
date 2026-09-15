@@ -59,6 +59,21 @@ permissions:
   contents: read
   issues: write
 
+# issue #2505 asked this group to collapse to one pending run per branch, the
+# way stable-evidence.yml collapses per head_sha, so a burst of upstream
+# completions does not queue one guard run per completion. It stays keyed per
+# run id + attempt instead, on purpose: `scripts/ci_cost_guard.py` prices
+# exactly the one RUN_ID it is given and has no cross-run aggregation, so
+# collapsing the group would let GitHub's own concurrency queue (which keeps
+# only the newest PENDING run per group and drops earlier pending ones,
+# cancel-in-progress or not) silently evict a run's pricing before it ever
+# executes. That is not a lost log line the way a skipped stable-evidence
+# append is: it is a run this guard exists to price, including a run that got
+# cancelled after burning its full timeout (the $0.30 threshold is sized
+# around exactly that case - see the table above). Losing that price silently
+# is worse than the fan-out it would save, so per-run-id grouping stays and
+# is pinned by
+# test_ci_cost_guard_concurrency_group_stays_keyed_per_run.
 concurrency:
   group: ci-cost-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
