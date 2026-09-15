@@ -127,8 +127,10 @@ test('an empty deck is not blamed on the grid: nothing is loaded to analyse yet'
 // (b) transport source guards: no grid gate survives in the transport path
 //-----------------------------------------------------------------------------
 
+// e9493db18 (fix(rescue): schedule simultaneous play restore at shared context time, #2704)
+// added startAtContextSec to play(), so every play() anchor below moved with the signature.
 const TRANSPORT_ANCHORS = [
-	'	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+	'	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {',
 	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
@@ -192,7 +194,7 @@ test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () =
 });
 
 test('play decides sync from the effective flag, not the raw one', () => {
-	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
 	assert.ok(
 		body.includes('effectiveBeatSync('),
 		'if play reads st.beat_sync_enabled directly then a gridless deck with the default ' +
@@ -422,7 +424,7 @@ test('LATENCY-02 QUANTIZED LAUNCH refuses on a gridless deck while plain play st
 	});
 	assert.equal(refused.kind, 'refuse');
 	assert.match(refused.reason, /QUANTIZED LAUNCH/);
-	const playBody = engineBlockAfter('async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	const playBody = engineBlockAfter('async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
 	assert.doesNotMatch(playBody, /requireBeatGrid\(st, 'play'\)/);
 });
 

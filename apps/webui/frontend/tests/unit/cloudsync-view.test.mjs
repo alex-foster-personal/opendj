@@ -137,9 +137,13 @@ test('picking unset is refused, and a real mode sends no stray budget', () => {
 });
 
 test('only runtime-wired asset kinds escape the inert PARITY-TODO marker', () => {
-	/** if an unwired kind has no inert tooltip, or karaoke_words is marked inert, then broken */
+	/** if an unwired kind has no inert tooltip, or audio / karaoke_words is marked inert, then broken */
+	// 6c5105e4d (test(cloud): cover CLOUDSYNC-10 believed-state acceptance gaps, #2660)
+	// wired audio deck load to its stored policy via resolve_playback_source, and
+	// moved 'audio' into RUNTIME_WIRED_ASSET_KINDS; audio now escapes the marker.
 	assert.equal(view.inertKindTitle('karaoke_words'), null);
-	for (const kind of ['audio', 'stem_bundle', 'anlz_cache', 'vocal_cache', 'lyrics_cache']) {
+	assert.equal(view.inertKindTitle('audio'), null);
+	for (const kind of ['stem_bundle', 'anlz_cache', 'vocal_cache', 'lyrics_cache']) {
 		assert.match(view.inertKindTitle(kind), /not implemented - see PARITY-TODO/);
 	}
 });
