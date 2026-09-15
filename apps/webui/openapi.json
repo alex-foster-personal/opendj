@@ -7661,6 +7661,33 @@
         "title": "IdentityBacklogOut",
         "type": "object"
       },
+      "IdentityRejectModel": {
+        "description": "One identity-collapse rejection: the offered PK lost to a hub survivor.",
+        "properties": {
+          "offered_pk": {
+            "minLength": 1,
+            "title": "Offered Pk",
+            "type": "string"
+          },
+          "survivor_pk": {
+            "minLength": 1,
+            "title": "Survivor Pk",
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "offered_pk",
+          "survivor_pk"
+        ],
+        "title": "IdentityRejectModel",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -9530,11 +9557,13 @@
             "type": "string"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
           },
           "name": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Name",
             "type": "string"
@@ -13262,6 +13291,7 @@
             "type": "array"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
@@ -13315,6 +13345,13 @@
             "default": 0,
             "title": "Hash Pending",
             "type": "integer"
+          },
+          "identity_rejects": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRejectModel"
+            },
+            "title": "Identity Rejects",
+            "type": "array"
           },
           "quarantined": {
             "default": 0,
@@ -17059,6 +17096,17 @@
             "minLength": 64,
             "title": "Canonical Hex",
             "type": "string"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
           },
           "origin_device_id": {
             "anyOf": [
@@ -25988,6 +26036,19 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": {
+                    "code": "TAG_READER_UNAVAILABLE",
+                    "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                  }
+                }
+              }
+            },
+            "description": "Optional mutagen tag reader ([tags] extra) is not installed."
           }
         },
         "summary": "Upload",
@@ -32537,6 +32598,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
@@ -32567,6 +32629,21 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+            "in": "query",
+            "name": "bundle_stable_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+              "items": {
+                "type": "string"
+              },
+              "title": "Bundle Stable Ids",
+              "type": "array"
             }
           },
           {
@@ -32684,14 +32761,7 @@
             "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows)"
           },
           "503": {
             "content": {
@@ -32838,6 +32908,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"

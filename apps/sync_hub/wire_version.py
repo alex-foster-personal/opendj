@@ -68,7 +68,10 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
 
 #: The sync protocol's version. See the module docstring for what bumps it.
-WIRE_VERSION: int = 4
+#: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
+#: field older peers ignore, advertised by the ``identity-reject/v1``
+#: capability token: NOT a wire change under the rule above, so no bump.
+WIRE_VERSION: int = 5
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -84,6 +87,17 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     3: "00a3594073b7dc9b",
     # v4: playlists forbid_duplicates (LIBM-D2 / #2416). Measured Sun 13 Sep 2026.
     4: "6985ab3a573661be",
+    # v5: track_fields LWW falls back to modified_at when updated_at is NULL
+    # (issue #3101). Row shape unchanged; semantic contract marker below.
+    5: "8945d178ba66d099",
+}
+
+#: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
+#: see a meaning change, so a wire bump that changes LWW ordering without
+#: altering columns records its contract here and folds it into
+#: :func:`measure_wire_shape`.
+WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
+    5: "track_fields_modified_at_lww_fallback",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for
@@ -266,10 +280,14 @@ def _table_shape(conn: sqlite3.Connection, table: str) -> dict[str, Any]:
 
 def measure_wire_shape(conn: sqlite3.Connection) -> dict[str, Any]:
     """Everything a row must agree on to cross the wire, read off ``conn``."""
-    return {
+    shape: dict[str, Any] = {
         "tables": {table: _table_shape(conn, table) for table in protocol.DIGEST_TABLES},
         "machine_row": [field.name for field in dataclasses.fields(protocol.MachineRow)],
     }
+    contract = WIRE_SEMANTIC_CONTRACTS.get(WIRE_VERSION)
+    if contract is not None:
+        shape["semantic_contract"] = contract
+    return shape
 
 
 def wire_fingerprint(shape: dict[str, Any]) -> str:
@@ -339,6 +357,7 @@ __all__ = [
     "CODE_SCHEMA",
     "CODE_WIRE",
     "WIRE_FINGERPRINTS",
+    "WIRE_SEMANTIC_CONTRACTS",
     "WIRE_VERSION",
     "Incompatibility",
     "UpdateRequiredState",

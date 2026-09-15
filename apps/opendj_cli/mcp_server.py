@@ -40,7 +40,14 @@ from apps.opendj_cli.mcp_safety import (
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.opendj_cli.mcp_update_tools import register_update_tools
 from apps.opendj_cli.orders import single
-from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
+from apps.opendj_cli.origin import (
+    EngineIdentityMismatch,
+    EngineNotRunning,
+    EngineOrigin,
+    resolve_origin,
+    resolve_verified_origin,
+    unreachable,
+)
 from apps.opendj_cli.shell_navigate import REMEDY_VERB, open_shell_route
 from apps.opendj_cli.verbs import InvocationError, parse_invocation
 
@@ -102,8 +109,25 @@ def _engine_not_running(error: EngineNotRunning) -> ToolError:
     )
 
 
+def _engine_identity_mismatch(error: EngineIdentityMismatch) -> ToolError:
+    return _tool_error(
+        {
+            "error": "engine_identity_mismatch",
+            "lock_path": str(error.lock_path),
+            "lock_boot_id": error.lock_boot_id,
+            "health_boot_id": error.health_boot_id,
+            "port": error.port,
+            "message": str(error),
+        }
+    )
+
+
 def _resolve_origin() -> EngineOrigin:
     return resolve_origin(_state.lock_path)
+
+
+def _resolve_verified_origin() -> EngineOrigin:
+    return resolve_verified_origin(_state.lock_path)
 
 
 def _parse_order_payload(
@@ -246,10 +270,7 @@ def _bound_list_page(
         )
     retry_limit = _shrunk_page_limit(len(parsed_body["items"]), tokens, MCP_LIST_TOKEN_BUDGET)
     retry_path = _build_path(base_path, [*query, ("limit", str(retry_limit))])
-    try:
-        retry_response = do_request(retry_path)
-    except httpx.TransportError as error:
-        raise _engine_not_running(unreachable(origin, error)) from error
+    retry_response = _library_do_request(origin, do_request, retry_path)
     retry_body = _apply_projection(_parse_app_state_body(retry_response), projection)
     bounded: dict[str, Any] = {
         "status_code": retry_response.status_code,
@@ -280,6 +301,21 @@ def _bound_list_page(
     return bounded
 
 
+def _library_do_request(
+    origin: EngineOrigin,
+    do_request: Callable[[str], httpx.Response],
+    target_path: str,
+) -> httpx.Response:
+    try:
+        return do_request(target_path)
+    except httpx.TransportError as error:
+        raise _engine_not_running(unreachable(origin, error)) from error
+    except httpx.InvalidURL as error:
+        raise _tool_error({"error": "usage", "message": str(error)}) from error
+    except httpx.UnsupportedProtocol as error:
+        raise _tool_error({"error": "usage", "message": str(error)}) from error
+
+
 def create_server() -> MCPServer:
     server = MCPServer(name=SERVER_NAME, version=SERVER_VERSION)
 
@@ -287,7 +323,9 @@ def create_server() -> MCPServer:
     def status() -> dict[str, Any]:
         """Engine origin from the lock file, health, and build-info."""
         try:
-            origin = _resolve_origin()
+            origin = _resolve_verified_origin()
+        except EngineIdentityMismatch as error:
+            raise _engine_identity_mismatch(error) from error
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
         try:
@@ -335,7 +373,7 @@ def create_server() -> MCPServer:
     ) -> dict[str, Any]:
         """Dispatch one AGENT-03 order and return the page result document."""
         try:
-            origin = _resolve_origin()
+            origin = _resolve_verified_origin()
             parsed_order = _parse_order_payload(order, verb, args)
             guarded_order, safety = guard_order(
                 parsed_order,
@@ -345,6 +383,8 @@ def create_server() -> MCPServer:
             raise _tool_error(
                 {"error": error.code, "message": str(error), **error.fields}
             ) from error
+        except EngineIdentityMismatch as error:
+            raise _engine_identity_mismatch(error) from error
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
 
@@ -434,10 +474,9 @@ def create_server() -> MCPServer:
                     upper, url, headers=request_headers, content=request_body
                 )
 
-        try:
-            response = _do_request(_build_path(base_path, query))
-        except httpx.TransportError as error:
-            raise _engine_not_running(unreachable(origin, error)) from error
+        response = _library_do_request(
+            origin, _do_request, _build_path(base_path, query)
+        )
 
         parsed_body = _apply_projection(_parse_app_state_body(response), projection)
 

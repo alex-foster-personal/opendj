@@ -12,21 +12,27 @@ from __future__ import annotations
 from apps.engine_core.origin import (
     DEFAULT_LOCK_PATH,
     LOCK_PATH_ENV,
+    EngineIdentityMismatch,
     EngineNotRunning,
     EngineOrigin,
     lock_document,
     lock_path,
     resolve_origin,
+    resolve_verified_origin,
     unreachable,
+    verify_engine_identity,
 )
 
 __all__ = [
     "DEFAULT_LOCK_PATH",
     "LOCK_PATH_ENV",
+    "EngineIdentityMismatch",
     "EngineNotRunning",
     "EngineOrigin",
     "lock_document",
     "lock_path",
     "resolve_origin",
+    "resolve_verified_origin",
     "unreachable",
+    "verify_engine_identity",
 ]

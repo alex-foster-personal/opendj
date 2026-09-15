@@ -66,12 +66,18 @@ from apps.sync_hub import (
     entitlement_gate,
     generation,
     hash_pending as hash_pending_api,
+    policy_push,
+    policy_store,
     protocol,
     service_credentials,
     service_enroll,
     service_shortfall,
     service_storage,
     wire_version,
+)
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    clamp_machine_row_for_wire,
 )
 from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
@@ -80,6 +86,7 @@ from apps.sync_hub.service_models import (
     HashPendingResponse,
     HelloRequest,
     HelloResponse,
+    IdentityRejectModel,
     MachineModel,
     PullResponse,
     PushRequest,
@@ -210,7 +217,8 @@ def _hub_identity(request: Request, conn: sqlite3.Connection) -> str:
 
 def _machine_models(conn: sqlite3.Connection) -> list[MachineModel]:
     return [
-        MachineModel(**machine.to_wire()) for machine in engine.machines_snapshot(conn)
+        MachineModel(**clamp_machine_row_for_wire(machine).to_wire())
+        for machine in engine.machines_snapshot(conn)
     ]
 
 
@@ -238,6 +246,20 @@ def _protocol_error(exc: protocol.SyncProtocolError) -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
+    )
+
+
+def _policy_push_error(exc: policy_push.SyncPolicyViolationError) -> HTTPException:
+    """422: offered policy rows break a blocking rule."""
+    blocking = [v for v in exc.outcome.violations if v.blocking]
+    message = blocking[0].message if blocking else "policy violation on push batch"
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "SYNC_POLICY_VIOLATION",
+            "message": message,
+            "violations": policy_push.blocking_violations_wire(exc.outcome),
+        },
     )
 
 
@@ -448,6 +470,12 @@ def enroll(
         **_auth("push"),
         **SYNC_VERSION_RESPONSES,
         **entitlement_gate.refusals("push"),
+        422: {
+            "description": (
+                "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION "
+                "(blocking policy rule on offered sync_policies / playlist_pins rows)"
+            ),
+        },
     },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
@@ -477,6 +505,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                     changes, payload.capabilities, "push"
                 )
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
+                policy_push.evaluate_push_policies(conn, payload.machine_id, changes)
                 result = engine.hub_apply(conn, changes)
                 # INSIDE the transaction: a refusal must roll the whole batch
                 # back, which is what main's mid-apply raise did and what the
@@ -492,6 +521,13 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             _generation(request, conn)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
+        except policy_push.SyncPolicyViolationError as exc:
+            raise _policy_push_error(exc) from exc
+        except policy_store.PolicyInputError as exc:
+            raise HTTPException(
+                status_code=exc.status,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         except sqlite3.OperationalError as exc:
@@ -502,6 +538,14 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             seq=result.seq,
             quarantined=result.quarantined,
             hash_pending=result.hash_pending,
+            identity_rejects=[
+                IdentityRejectModel(
+                    table=reject.table,
+                    offered_pk=reject.offered_pk,
+                    survivor_pk=reject.survivor_pk,
+                )
+                for reject in result.identity_rejects
+            ],
         )
 
 
@@ -512,13 +556,22 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
 )
 def pull(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
     since_seq: int = Query(0, ge=0, description="last hub_changelog.seq applied"),
     limit: int = Query(
         engine.DEFAULT_PULL_LIMIT,
         ge=1,
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
+    ),
+    bundle_stable_ids: list[str] = Query(
+        default=[],
+        description=(
+            "optional track stable_id values whose live bundles are appended "
+            "for identity repair without advancing the changelog cursor"
+        ),
     ),
     capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> PullResponse:
@@ -538,26 +591,44 @@ def pull(
         _require_registered(conn, machine_id)
         _gate(request, conn, machine_id, "read")
         try:
-            batch = engine.hub_changes_since(conn, since_seq, limit=limit)
-            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
+            if bundle_stable_ids:
+                rows = engine.hub_track_bundles(conn, bundle_stable_ids)
+                seq = since_seq
+                has_more = False
+                skipped = 0
+                quarantined = 0
+            else:
+                batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+                rows = batch.rows
+                seq = batch.seq
+                has_more = batch.has_more
+                skipped = batch.skipped
+                quarantined = batch.quarantined
+                _refuse_unless_capable(
+                    capabilities_,
+                    "pull",
+                    service_shortfall.pull_shortfall(batch),
+                )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return PullResponse(
-            rows=_row_models(batch.rows),
-            seq=batch.seq,
+            rows=_row_models(rows),
+            seq=seq,
             machines=_machine_models(conn),
-            has_more=batch.has_more,
-            skipped=batch.skipped,
-            quarantined=batch.quarantined,
+            has_more=has_more,
+            skipped=skipped,
+            quarantined=quarantined,
         )
 
 
 @router.get("/status", response_model=StatusResponse, responses=_auth("status"))
 def status(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
 ) -> StatusResponse:
     """Hub identity, current seq, known machines and synced row counts."""
     with _hub_conn(request) as conn:
@@ -685,6 +756,7 @@ def rows(
                     canonical_hex=sample.canonical_hex,
                     updated_at=sample.updated_at,
                     origin_device_id=sample.origin_device_id,
+                    modified_at=sample.modified_at,
                 )
                 for sample in page
             ],

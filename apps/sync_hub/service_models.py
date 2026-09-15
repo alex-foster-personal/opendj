@@ -19,13 +19,17 @@ from pydantic import BaseModel, Field
 
 from apps.sync_hub import enrollment, service_enroll
 from apps.sync_hub.machine_credentials import CredentialVerdict
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    MACHINE_NAME_MAX_LENGTH,
+)
 
 
 class MachineModel(BaseModel):
     """One ``machines`` row on the wire."""
 
-    machine_id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
+    name: str = Field(min_length=1, max_length=MACHINE_NAME_MAX_LENGTH)
     platform: str = Field(min_length=1)
     is_hub: bool = False
     data_root: str | None = None
@@ -41,6 +45,14 @@ class RowModel(BaseModel):
     values: dict[str, Any]
     members: list[dict[str, Any]] | None = None
     hash_pending: bool | None = None
+
+
+class IdentityRejectModel(BaseModel):
+    """One identity-collapse rejection: the offered PK lost to a hub survivor."""
+
+    table: str = Field(min_length=1)
+    offered_pk: str = Field(min_length=1)
+    survivor_pk: str = Field(min_length=1)
 
 
 #: Carried on every request that can move rows (``hello``, ``push``,
@@ -179,7 +191,7 @@ class EnrollRequest(BaseModel):
 
 
 class PushRequest(BaseModel):
-    machine_id: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
     schema_version: int
     wire_version: int | None = _WIRE_VERSION_FIELD
     rows: list[RowModel]
@@ -209,6 +221,10 @@ class PushResponse(BaseModel):
     #: ``accepted + rejected + quarantined`` equals the rows offered.
     quarantined: int = 0
     hash_pending: int = 0
+    #: Identity-collapse rejections: the offered PK lost to a stored survivor
+    #: (issue #3057). Only emitted for ``tracks`` rows where the hub
+    #: kept a different PK for the same content identity.
+    identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
 
 
 class PullResponse(BaseModel):
@@ -263,6 +279,7 @@ class SyncRowSampleModel(BaseModel):
     canonical_hex: str = Field(min_length=64, max_length=64)
     updated_at: str | None = None
     origin_device_id: str | None = None
+    modified_at: str | None = None
 
 
 class RowsResponse(BaseModel):
@@ -296,6 +313,7 @@ __all__ = [
     "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
+    "IdentityRejectModel",
     "MachineModel",
     "PullResponse",
     "PushRequest",

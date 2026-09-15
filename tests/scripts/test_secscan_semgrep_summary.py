@@ -1,9 +1,9 @@
-"""secscan semgrep-summary: an empty diff is SKIP, a missing rule set is still UNKNOWN.
+"""secscan semgrep-summary: expected diff scope is UNKNOWN when semgrep under-reports.
 
-- if a diff-aware run scanned 0 files and loaded 0 rules under --skip-if-nothing-scanned then exit 3
-- if the same empty run lacks that flag (full mode) then exit 2, never a pass
-- if files were scanned but 0 rules loaded then exit 2 even with the flag
+- if rules loaded but 0 files scanned with --expected-scannable > 0 then exit 2
+- if a Python-changing diff scope expects files but semgrep loads 0 rules then exit 2
 - if files were scanned with rules loaded and no results then exit 0 with count 0
+- if full mode sees 0 rules and 0 scanned without --expected-scannable then exit 2
 """
 
 from __future__ import annotations
@@ -37,23 +37,27 @@ def _doc(rules: int, scanned: int) -> dict:
     }
 
 
-def test_empty_diff_is_skip_with_the_flag(tmp_path: Path) -> None:
-    rc, count = _summary(tmp_path, _doc(rules=0, scanned=0), "--skip-if-nothing-scanned")
-    assert rc == 3, "an empty diff-aware scope must read SKIP"
-    assert count == "0"
+def test_rules_loaded_with_zero_files_is_unknown(tmp_path: Path) -> None:
+    rc, _ = _summary(tmp_path, _doc(rules=5, scanned=0), "--expected-scannable", "3")
+    assert rc == 2, "rules loaded with zero files scanned must read UNKNOWN"
 
 
-def test_empty_scan_without_the_flag_is_unknown(tmp_path: Path) -> None:
+def test_python_diff_empty_rules_is_unknown(tmp_path: Path) -> None:
+    rc, _ = _summary(tmp_path, _doc(rules=0, scanned=0), "--expected-scannable", "1")
+    assert rc == 2, "a scannable diff with an empty rule set must read UNKNOWN"
+
+
+def test_empty_scan_without_expected_scannable_is_unknown(tmp_path: Path) -> None:
     rc, _ = _summary(tmp_path, _doc(rules=0, scanned=0))
     assert rc == 2, "outside diff-aware mode an empty scan is unmeasured, never a pass"
 
 
-def test_files_scanned_with_no_rules_is_unknown_even_with_the_flag(tmp_path: Path) -> None:
-    rc, _ = _summary(tmp_path, _doc(rules=0, scanned=3), "--skip-if-nothing-scanned")
-    assert rc == 2, "rules that failed to load must not hide behind the empty-diff SKIP"
+def test_files_scanned_with_no_rules_is_unknown_with_expected_scannable(tmp_path: Path) -> None:
+    rc, _ = _summary(tmp_path, _doc(rules=0, scanned=3), "--expected-scannable", "3")
+    assert rc == 2, "rules that failed to load must not hide behind a scannable diff"
 
 
 def test_clean_scan_passes(tmp_path: Path) -> None:
-    rc, count = _summary(tmp_path, _doc(rules=154, scanned=3), "--skip-if-nothing-scanned")
+    rc, count = _summary(tmp_path, _doc(rules=154, scanned=3), "--expected-scannable", "3")
     assert rc == 0
     assert count == "0"

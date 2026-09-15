@@ -8470,6 +8470,18 @@ export interface components {
              */
             unsyncable_inferred: number;
         };
+        /**
+         * IdentityRejectModel
+         * @description One identity-collapse rejection: the offered PK lost to a hub survivor.
+         */
+        IdentityRejectModel: {
+            /** Offered Pk */
+            offered_pk: string;
+            /** Survivor Pk */
+            survivor_pk: string;
+            /** Table */
+            table: string;
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -10759,6 +10771,8 @@ export interface components {
              * @default 0
              */
             hash_pending: number;
+            /** Identity Rejects */
+            identity_rejects?: components["schemas"]["IdentityRejectModel"][];
             /**
              * Quarantined
              * @default 0
@@ -12225,6 +12239,8 @@ export interface components {
         SyncRowSampleModel: {
             /** Canonical Hex */
             canonical_hex: string;
+            /** Modified At */
+            modified_at?: string | null;
             /** Origin Device Id */
             origin_device_id?: string | null;
             /** Pk */
@@ -17550,6 +17566,23 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Optional mutagen tag reader ([tags] extra) is not installed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "detail": {
+                     *         "code": "TAG_READER_UNAVAILABLE",
+                     *         "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                     *       }
+                     *     }
+                     */
+                    "application/json": unknown;
+                };
+            };
         };
     };
     decide_upload_api_v1_ingest_upload_decide_post: {
@@ -21936,6 +21969,8 @@ export interface operations {
                 since_seq?: number;
                 /** @description max changelog entries to consume in this chunk */
                 limit?: number;
+                /** @description optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor */
+                bundle_stable_ids?: string[];
                 /** @description protocol features the caller understands */
                 capabilities?: string[];
             };
@@ -22037,14 +22072,12 @@ export interface operations {
                     "application/json": components["schemas"]["SyncErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows) */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
             /** @description HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
             503: {

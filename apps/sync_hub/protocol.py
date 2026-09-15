@@ -65,6 +65,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.sync_hub import sync_set
+from apps.sync_hub.machine_wire_limits import (
+    MachineWireLimitError,
+    validate_machine_wire_fields,
+)
 from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
@@ -72,6 +76,7 @@ from apps.sync_hub.protocol_common import (
     EPOCH,
     MEMBERSHIP_SPEC,
     MEMBERSHIP_TABLE,
+    MODIFIED_AT,
     NATURAL_KEYS,
     NO_ORIGIN,
     ORIGIN_DEVICE_ID,
@@ -79,6 +84,7 @@ from apps.sync_hub.protocol_common import (
     SPEC_BY_TABLE,
     SYNC_COLUMNS,
     SYNC_TABLES,
+    TRACK_FIELDS_TABLE,
     UPDATED_AT,
     StampFault,
     SyncProtocolError,
@@ -124,15 +130,15 @@ class RowChange:
 
     @property
     def updated_at(self) -> str:
-        return lww_key(self.values)[0]
+        return lww_key(self.values, table=self.table)[0]
 
     @property
     def origin_device_id(self) -> str:
-        return lww_key(self.values)[1]
+        return lww_key(self.values, table=self.table)[1]
 
     @property
     def sort_key(self) -> tuple[str, str]:
-        return lww_key(self.values)
+        return lww_key(self.values, table=self.table)
 
     def to_wire(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -185,6 +191,31 @@ class RowChange:
 
 
 @dataclass(frozen=True)
+class IdentityReject:
+    """One identity-collapse rejection on push: the offered PK lost to a stored survivor."""
+
+    table: str
+    offered_pk: str
+    survivor_pk: str
+
+    def to_wire(self) -> dict[str, str]:
+        return {
+            "table": self.table,
+            "offered_pk": self.offered_pk,
+            "survivor_pk": self.survivor_pk,
+        }
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> IdentityReject:
+        table = _require_str(payload, "table")
+        return cls(
+            table=table,
+            offered_pk=_require_str(payload, "offered_pk"),
+            survivor_pk=_require_str(payload, "survivor_pk"),
+        )
+
+
+@dataclass(frozen=True)
 class MachineRow:
     """One ``machines`` row on the wire (registry, not LWW)."""
 
@@ -210,9 +241,15 @@ class MachineRow:
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> MachineRow:
         raw_root = payload.get("data_root")
+        machine_id = _require_str(payload, "machine_id")
+        name = _require_str(payload, "name")
+        try:
+            validate_machine_wire_fields(machine_id, name)
+        except MachineWireLimitError as exc:
+            raise SyncProtocolError(str(exc)) from exc
         return cls(
-            machine_id=_require_str(payload, "machine_id"),
-            name=_require_str(payload, "name"),
+            machine_id=machine_id,
+            name=name,
             platform=_require_str(payload, "platform"),
             is_hub=bool(payload.get("is_hub", False)),
             data_root=None if raw_root is None else str(raw_root),
@@ -505,8 +542,10 @@ __all__ = [
     "DELETED_AT",
     "DIGEST_TABLES",
     "EPOCH",
+    "IdentityReject",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
+    "MODIFIED_AT",
     "NATURAL_KEYS",
     "NO_ORIGIN",
     "ORIGIN_DEVICE_ID",
@@ -514,6 +553,7 @@ __all__ = [
     "SPEC_BY_TABLE",
     "SYNC_COLUMNS",
     "SYNC_TABLES",
+    "TRACK_FIELDS_TABLE",
     "UPDATED_AT",
     "MachineRow",
     "RowChange",

@@ -14,8 +14,11 @@ from typing import Any, Literal
 
 from apps.sync_hub import capabilities, protocol, sync_set
 from apps.sync_hub.protocol_common import (
+    MODIFIED_AT,
+    SyncProtocolError,
     canonical_bytes,
     canonical_row,
+    decode_row_pk,
     encode_row_pk,
     lww_key,
     table_columns,
@@ -51,21 +54,34 @@ class HubRowSample:
     canonical_hex: str
     updated_at: str | None
     origin_device_id: str | None
+    modified_at: str | None = None
 
 
 def format_pk(table: str, pk: Sequence[str]) -> str:
     return f"{table}/{'/'.join(pk)}"
 
 
-def _stamp_label(values: Mapping[str, Any] | None) -> str | None:
+def _stamp_label(table: str, values: Mapping[str, Any] | None) -> str | None:
     if values is None:
         return None
-    stamp = lww_key(values)
+    stamp = lww_key(values, table=table)
     return f"{stamp[0]}@{stamp[1] or '-'}"
 
 
+def _hub_stamp_values(hub_row: HubRowSample) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "updated_at": hub_row.updated_at,
+        "origin_device_id": hub_row.origin_device_id,
+    }
+    if hub_row.modified_at is not None:
+        values[MODIFIED_AT] = hub_row.modified_at
+    return values
+
+
 def _newer_side(
-    local: Mapping[str, Any] | None, hub: Mapping[str, Any] | None
+    table: str,
+    local: Mapping[str, Any] | None,
+    hub: Mapping[str, Any] | None,
 ) -> Literal["local", "hub", "equal", "missing_local", "missing_hub", "unknown"]:
     if local is None and hub is None:
         return "unknown"
@@ -73,7 +89,7 @@ def _newer_side(
         return "missing_local"
     if hub is None:
         return "missing_hub"
-    local_key, hub_key = lww_key(local), lww_key(hub)
+    local_key, hub_key = lww_key(local, table=table), lww_key(hub, table=table)
     if local_key == hub_key:
         return "equal"
     return "local" if local_key > hub_key else "hub"
@@ -81,6 +97,41 @@ def _newer_side(
 
 def _canonical_hex(table: str, columns: Sequence[str], row: Sequence[Any]) -> str:
     return hashlib.sha256(canonical_bytes(canonical_row(table, columns, row))).hexdigest()
+
+
+def _pk_column_types(
+    conn: sqlite3.Connection, table: str, pk_columns: Sequence[str]
+) -> dict[str, str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    col_types = {str(row[1]): str(row[2]).upper() for row in rows}
+    return {column: col_types[column] for column in pk_columns}
+
+
+def _coerce_pk_bind(value: str, col_type: str) -> Any:
+    if "INT" in col_type:
+        return int(value)
+    return value
+
+
+def _pk_after_predicate(
+    conn: sqlite3.Connection,
+    table: str,
+    spec: protocol.TableSpec,
+    cursor_pk: tuple[str | None, ...],
+) -> tuple[str, tuple[Any, ...]]:
+    if len(cursor_pk) != len(spec.pk):
+        raise SyncProtocolError(
+            f"cursor pk length {len(cursor_pk)} does not match "
+            f"{table} pk length {len(spec.pk)}"
+        )
+    pk_types = _pk_column_types(conn, table, spec.pk)
+    pk_cols = ", ".join(spec.pk)
+    placeholders = ", ".join("?" for _ in spec.pk)
+    bound = tuple(
+        _coerce_pk_bind(str(value), pk_types[column])
+        for column, value in zip(spec.pk, cursor_pk, strict=True)
+    )
+    return f"({pk_cols}) > ({placeholders})", bound
 
 
 def iter_eligible_local_rows(
@@ -118,17 +169,20 @@ def hub_sync_row_page(
     columns = table_columns(conn, table)
     order_by = ", ".join(spec.pk)
     pk_index = {column: index for index, column in enumerate(columns)}
+    select_sql = f"SELECT {', '.join(columns)} FROM {table}"
+    where_params: tuple[Any, ...] = ()
+    if cursor is not None:
+        cursor_pk = decode_row_pk(cursor)
+        where_sql, where_params = _pk_after_predicate(conn, table, spec, cursor_pk)
+        select_sql = f"{select_sql} WHERE {where_sql}"
+    select_sql = f"{select_sql} ORDER BY {order_by}"
+
     rows: list[HubRowSample] = []
     next_cursor: str | None = None
-    for db_row in conn.execute(
-        f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
-    ):
+    for db_row in conn.execute(select_sql, where_params):
         if sync_set.excluded_reason(conn, table, columns, db_row, spec, held) is not None:
             continue
         pk = tuple(str(db_row[pk_index[column]]) for column in spec.pk)
-        encoded = encode_row_pk(pk)
-        if cursor is not None and encoded <= cursor:
-            continue
         canonical = canonical_row(table, columns, db_row)
         rows.append(
             HubRowSample(
@@ -136,10 +190,11 @@ def hub_sync_row_page(
                 canonical_hex=_canonical_hex(table, columns, db_row),
                 updated_at=canonical.get("updated_at"),
                 origin_device_id=canonical.get("origin_device_id"),
+                modified_at=canonical.get(MODIFIED_AT),
             )
         )
         if len(rows) >= limit:
-            next_cursor = encoded
+            next_cursor = encode_row_pk(pk)
             break
     if len(rows) < limit:
         next_cursor = None
@@ -180,6 +235,7 @@ def _fetch_hub_rows(
                 canonical_hex=canonical_hex,
                 updated_at=item.get("updated_at"),
                 origin_device_id=item.get("origin_device_id"),
+                modified_at=item.get(MODIFIED_AT),
             )
         next_cursor = payload.get("next_cursor")
         if not next_cursor:
@@ -205,24 +261,21 @@ def divergent_rows(
                     DigestDiffRow(
                         table=table,
                         pk=pk,
-                        local_stamp=_stamp_label(local_canonical),
+                        local_stamp=_stamp_label(table, local_canonical),
                         hub_stamp=None,
                         newer_side="missing_hub",
                         reason="row exists locally but not on hub",
                     )
                 )
             elif hub_row.canonical_hex != local_hex:
-                hub_canonical = {
-                    "updated_at": hub_row.updated_at,
-                    "origin_device_id": hub_row.origin_device_id,
-                }
+                hub_canonical = _hub_stamp_values(hub_row)
                 found.append(
                     DigestDiffRow(
                         table=table,
                         pk=pk,
-                        local_stamp=_stamp_label(local_canonical),
-                        hub_stamp=_stamp_label(hub_canonical),
-                        newer_side=_newer_side(local_canonical, hub_canonical),
+                        local_stamp=_stamp_label(table, local_canonical),
+                        hub_stamp=_stamp_label(table, hub_canonical),
+                        newer_side=_newer_side(table, local_canonical, hub_canonical),
                         reason="canonical bytes differ",
                     )
                 )
@@ -262,24 +315,21 @@ def sample_divergence(
                     DigestDiffRow(
                         table=table,
                         pk=pk,
-                        local_stamp=_stamp_label(local_canonical),
+                        local_stamp=_stamp_label(table, local_canonical),
                         hub_stamp=None,
                         newer_side="missing_hub",
                         reason="row exists locally but not on hub",
                     )
                 )
             elif hub_row.canonical_hex != local_hex:
-                hub_canonical = {
-                    "updated_at": hub_row.updated_at,
-                    "origin_device_id": hub_row.origin_device_id,
-                }
+                hub_canonical = _hub_stamp_values(hub_row)
                 found.append(
                     DigestDiffRow(
                         table=table,
                         pk=pk,
-                        local_stamp=_stamp_label(local_canonical),
-                        hub_stamp=_stamp_label(hub_canonical),
-                        newer_side=_newer_side(local_canonical, hub_canonical),
+                        local_stamp=_stamp_label(table, local_canonical),
+                        hub_stamp=_stamp_label(table, hub_canonical),
+                        newer_side=_newer_side(table, local_canonical, hub_canonical),
                         reason="canonical bytes differ",
                     )
                 )
@@ -293,12 +343,7 @@ def sample_divergence(
                     table=table,
                     pk=pk,
                     local_stamp=None,
-                    hub_stamp=_stamp_label(
-                        {
-                            "updated_at": hub_row.updated_at,
-                            "origin_device_id": hub_row.origin_device_id,
-                        }
-                    ),
+                    hub_stamp=_stamp_label(table, _hub_stamp_values(hub_row)),
                     newer_side="missing_local",
                     reason="row exists on hub but not locally",
                 )

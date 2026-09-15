@@ -570,6 +570,7 @@ def assert_merge_safe(
 __all__ = [
     "IdentityDecision",
     "SyncIdentityPreflightError",
+    "_follow_remap",
     "assert_identity_ready",
     "assert_merge_safe",
     "hub_library_size",

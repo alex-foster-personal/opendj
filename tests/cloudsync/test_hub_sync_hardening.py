@@ -288,15 +288,10 @@ def test_a_relocated_location_id_merges_instead_of_wedging(
         conn_b.close()
 
 
-def test_a_duplicate_natural_key_tie_resolves_the_same_way_on_both_peers(
+def test_a_duplicate_natural_key_tie_respects_apply_authority(
     spoke_a: Path,
 ) -> None:
-    """Equal stamps, two ids: the survivor is the smaller key, both sides.
-
-    Without a deterministic tiebreak the two rows reject each other forever
-    and the digest never matches -- the shape of finding 5b, one table over.
-    Applying the same pair in both directions must pick the same winner.
-    """
+    """[if] natural keys tie [then] hub elects and spoke trusts pull, [else stop]."""
     conn = _open(spoke_a)
     try:
         machine = sync_stamp.ensure_local_machine(conn)
@@ -317,7 +312,7 @@ def test_a_duplicate_natural_key_tie_resolves_the_same_way_on_both_peers(
         values = dict(protocol.canonical_row("track_locations", columns, stored))
 
         lower = dict(values, location_id="a" * 32)
-        engine.spoke_apply(
+        engine.hub_apply(
             conn,
             [
                 protocol.RowChange(
@@ -328,7 +323,7 @@ def test_a_duplicate_natural_key_tie_resolves_the_same_way_on_both_peers(
         assert [row[0] for row in _locations(conn)] == ["a" * 32]
 
         higher = dict(values, location_id="d" * 32)
-        engine.spoke_apply(
+        engine.hub_apply(
             conn,
             [
                 protocol.RowChange(
@@ -339,6 +334,34 @@ def test_a_duplicate_natural_key_tie_resolves_the_same_way_on_both_peers(
         assert [row[0] for row in _locations(conn)] == [
             "a" * 32
         ], "the higher key won on a tie; two peers would disagree"
+
+        conn.execute("DELETE FROM track_locations")
+        _insert_location(
+            conn,
+            location_id="b" * 32,
+            stable_id="trk-1",
+            machine_id=machine,
+            file_path="/Music/a.mp3",
+            updated_at=_T1,
+            origin=_DEV_A,
+        )
+        engine.spoke_apply(
+            conn,
+            [
+                protocol.RowChange(
+                    table="track_locations", pk=("a" * 32,), values=lower
+                )
+            ],
+        )
+        engine.spoke_apply(
+            conn,
+            [
+                protocol.RowChange(
+                    table="track_locations", pk=("d" * 32,), values=higher
+                )
+            ],
+        )
+        assert [row[0] for row in _locations(conn)] == ["d" * 32]
     finally:
         conn.close()
 

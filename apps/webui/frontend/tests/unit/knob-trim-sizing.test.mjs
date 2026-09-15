@@ -58,7 +58,9 @@ test('Knob.svelte exposes a size prop that drives the visual SVG and makes the w
 	assert.match(src, /size\?:\s*number/, 'Props interface should declare an optional size prop');
 	assert.match(
 		src,
-		/size\s*=\s*30\s*\}:\s*Props\s*=\s*\$props\(\)/,
+		// accentColor (3504858fa, MIXUX-04) and resetValue (bf60d7d67, #2409)
+		// now follow size in the destructure, so match the default inside it.
+		/\bsize\s*=\s*30\s*,[^}]*\}:\s*Props\s*=\s*\$props\(\)/,
 		'size should default to the historic 30px dial so every other caller is unaffected'
 	);
 	assert.match(src, /<svg[^>]*\bwidth=\{size\}/, 'svg width must be driven by the size prop');
@@ -115,8 +117,22 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 		'LESS_TRIM_SIZE must actually be smaller than MORE mode TRIM_SIZE, or LESS saves no height'
 	);
 
-	for (const label of ['HI', 'MID', 'LOW']) {
-		const knobLine = src.match(knobTag(label));
+	// 3504858fa (MIXUX-04) routes each EQ dial through dialView() so the STEM
+	// button can relabel it, so the tag carries label={hiDial.label} rather than
+	// label="HI". The derivation still pins each dial to its EQ band + label.
+	const dialKnobTag = (dial) =>
+		new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label=\\{${dial}\\.label\\}(?:(?!/>)[\\s\\S])*?/>`);
+	for (const [label, dial, band] of [
+		['HI', 'hiDial', 'high'],
+		['MID', 'midDial', 'mid'],
+		['LOW', 'lowDial', 'low']
+	]) {
+		assert.match(
+			src,
+			new RegExp(`const ${dial} = \\$derived\\.by\\(\\(\\) => dialView\\('${band}', eq\\w+, '${label}',`),
+			`${dial} must be the ${label} EQ band dial`
+		);
+		const knobLine = src.match(dialKnobTag(dial));
 		assert.ok(knobLine, `${label} Knob element not found`);
 		assert.match(
 			knobLine[0],

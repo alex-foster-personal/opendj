@@ -4,6 +4,7 @@
  */
 
 import { subscribe, TOPIC_SHELL_QUIT, type Unsubscribe } from '$lib/api/events-bus';
+import { reportClientError } from '$lib/client-error-reporting';
 import { flushPerformanceSessionSnapshot } from '$lib/rb/performance-session.svelte';
 import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
@@ -64,6 +65,14 @@ export async function confirmQuit(deps?: Pick<QuitGateDeps, 'flushSnapshot' | 'e
 	try {
 		flush();
 		await exit();
+	} catch (error) {
+		// exit() rejects when the ACL refuses process:allow-exit (issue #3058).
+		// Report deliberately, under the quit-gate source, instead of letting it
+		// surface only as a generic window.onunhandledrejection accident: that
+		// kept the failure diagnosable only by luck, with no quit-path context.
+		// Kind stays 'unhandled-rejection' on purpose -- ops already greps that
+		// exact string for this failure mode.
+		reportClientError(error, { source: 'quit-gate', route: 'lifecycle/quit' }, 'unhandled-rejection');
 	} finally {
 		confirming = false;
 	}

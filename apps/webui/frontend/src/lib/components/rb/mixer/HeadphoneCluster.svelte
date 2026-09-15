@@ -50,7 +50,7 @@
 	const livenessAlert = $derived(headphoneLivenessAlertText(livenessVerdict));
 	const mixBullets = [
 		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
-		'In MAIN, MIX blends cue into the speakers. In two outputs, MIX feeds headphones only.'
+		'In MAIN, master always plays at full on the speakers and MIX sets how much cue is blended on top (full cue at left). In two outputs, MIX feeds headphones only.'
 	];
 	const levelBullets = [
 		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
@@ -285,8 +285,10 @@
 <style>
 	.hp {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px;
+		min-width: 0;
 	}
 	.hp-icon {
 		color: var(--rb-text-dim);
