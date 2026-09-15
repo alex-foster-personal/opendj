@@ -288,6 +288,8 @@
 	}
 
 	function _openNow(): void {
+		if (!wrapEl) return;
+		wrapEl.getBoundingClientRect();
 		hovered = true;
 		_ensureIngestConfig();
 		void refreshOrders();
