@@ -23,6 +23,9 @@ installed app shell navigation (AGENT-12, issue #2866):
   opendj open performance
   opendj open /performance
 
+installed app PATH (AGENT-05, issue #2751):
+  opendj install-cli [--target ~/.local/bin/opendj]   symlink bundled launcher to ~/.local/bin
+
 installed app MCP (AGENT-11, issue #2753):
   opendj mcp
   claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp
