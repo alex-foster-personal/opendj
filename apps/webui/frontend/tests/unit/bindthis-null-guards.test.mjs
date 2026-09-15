@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
 globalThis.Node = globalThis.Node ?? class {};
 
 function readSource(relPath) {
@@ -80,9 +82,33 @@ function extractEnclosingIf(source, file, anchor) {
 	assert.notEqual(anchorIdx, -1, `${anchor} not found in ${file}`);
 	const ifStart = source.lastIndexOf('if (', anchorIdx);
 	assert.notEqual(ifStart, -1, `enclosing 'if (' not found before anchor in ${file}`);
-	const braceStart = source.indexOf('{', ifStart);
+	const conditionEnd = matchParen(source, ifStart + 'if '.length);
+	const afterCondition = source.slice(conditionEnd + 1).trimStart();
+	if (afterCondition.startsWith('return')) {
+		// Early-return guard (`if (!el) return;` then the dereference, the shape
+		// a355a5066 gave AnalysisDotsPopover._openNow): the guard does not
+		// enclose the anchor, so take the guard through the anchor statement so
+		// the dereference it protects is still executed.
+		return source.slice(ifStart, anchorIdx + anchor.length);
+	}
+	const braceStart = source.indexOf('{', conditionEnd);
+	assert.ok(braceStart < anchorIdx, `'if (' before anchor in ${file} neither returns nor encloses it`);
 	const braceEnd = matchBrace(source, braceStart);
+	assert.ok(braceEnd > anchorIdx, `'if (' block before anchor in ${file} does not enclose it`);
 	return source.slice(ifStart, braceEnd + 1);
+}
+
+function matchParen(source, openParenIdx) {
+	assert.equal(source[openParenIdx], '(', `expected '(' at ${openParenIdx}`);
+	let depth = 0;
+	for (let i = openParenIdx; i < source.length; i++) {
+		if (source[i] === '(') depth++;
+		else if (source[i] === ')') {
+			depth -= 1;
+			if (depth === 0) return i;
+		}
+	}
+	throw new Error('unbalanced parens starting at ' + openParenIdx);
 }
 
 function compile(code) {
@@ -155,10 +181,39 @@ test('QuickDrawMenu.svelte: onMount outside-pointerdown handler does not throw o
 
 // --------------------------------------------------------- RefreshAnalysisButton
 
-test('RefreshAnalysisButton.svelte: onEnter popover-placement guard does not throw once wrapEl has unmounted to null', () => {
+// 2cc5bd75c (UX-FLOAT-01, #2308) moved popover placement out of onEnter into
+// the shared `triggerFloatingAction`, fed `getTrigger: () => wrapEl ?? null`.
+// The null guard now lives in two pieces, both exercised for real: the
+// component's own getTrigger arrow (extracted verbatim) must map an unmounted
+// wrapEl to null, and the real action's place() must return on a null trigger.
+test('RefreshAnalysisButton.svelte: popover placement does not throw once wrapEl has unmounted to null', async () => {
 	const source = readSource('RefreshAnalysisButton.svelte');
-	const block = extractEnclosingIf(source, 'RefreshAnalysisButton.svelte', 'wrapEl.getBoundingClientRect();');
-	assert.doesNotThrow(() => runWrapElGuard(block, null));
+	const getTriggerText = /getTrigger:\s*(\(\)\s*=>\s*wrapEl\s*\?\?\s*null)/.exec(source);
+	assert.ok(getTriggerText, 'getTrigger: () => wrapEl ?? null not found in RefreshAnalysisButton.svelte');
+	const getTrigger = new Function('wrapEl', `return ${compile(getTriggerText[1])}`)(null);
+	assert.equal(getTrigger(), null, 'an unmounted wrapEl must reach the action as null, not undefined');
+
+	const { triggerFloatingAction } = await loadTypeScriptModule('src/lib/ui/clamp-to-viewport.ts');
+	const saved = {
+		ResizeObserver: globalThis.ResizeObserver,
+		window: globalThis.window,
+		requestAnimationFrame: globalThis.requestAnimationFrame
+	};
+	globalThis.ResizeObserver = FakeResizeObserver;
+	globalThis.window = { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} };
+	globalThis.requestAnimationFrame = (cb) => cb();
+	try {
+		const node = { offsetWidth: 100, offsetHeight: 40, style: {} };
+		let action;
+		assert.doesNotThrow(() => {
+			action = triggerFloatingAction(node, { getTrigger, preferred: 'below', gap: 4 });
+			action.update({ getTrigger, preferred: 'below', gap: 4 });
+		});
+		assert.deepEqual(node.style, {}, 'a null trigger must leave the popover unplaced');
+		action.destroy();
+	} finally {
+		Object.assign(globalThis, saved);
+	}
 });
 
 // ------------------------------------------------------------ AnalysisDotsPopover

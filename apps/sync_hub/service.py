@@ -566,6 +566,13 @@ def pull(
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
     ),
+    bundle_stable_ids: list[str] = Query(
+        default=[],
+        description=(
+            "optional track stable_id values whose live bundles are appended "
+            "for identity repair without advancing the changelog cursor"
+        ),
+    ),
     capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> PullResponse:
     """One chunk of the rows the hub accepted after ``since_seq``.
@@ -584,19 +591,35 @@ def pull(
         _require_registered(conn, machine_id)
         _gate(request, conn, machine_id, "read")
         try:
-            batch = engine.hub_changes_since(conn, since_seq, limit=limit)
-            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
+            if bundle_stable_ids:
+                rows = engine.hub_track_bundles(conn, bundle_stable_ids)
+                seq = since_seq
+                has_more = False
+                skipped = 0
+                quarantined = 0
+            else:
+                batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+                rows = batch.rows
+                seq = batch.seq
+                has_more = batch.has_more
+                skipped = batch.skipped
+                quarantined = batch.quarantined
+                _refuse_unless_capable(
+                    capabilities_,
+                    "pull",
+                    service_shortfall.pull_shortfall(batch),
+                )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return PullResponse(
-            rows=_row_models(batch.rows),
-            seq=batch.seq,
+            rows=_row_models(rows),
+            seq=seq,
             machines=_machine_models(conn),
-            has_more=batch.has_more,
-            skipped=batch.skipped,
-            quarantined=batch.quarantined,
+            has_more=has_more,
+            skipped=skipped,
+            quarantined=quarantined,
         )
 
 
@@ -733,6 +756,7 @@ def rows(
                     canonical_hex=sample.canonical_hex,
                     updated_at=sample.updated_at,
                     origin_device_id=sample.origin_device_id,
+                    modified_at=sample.modified_at,
                 )
                 for sample in page
             ],

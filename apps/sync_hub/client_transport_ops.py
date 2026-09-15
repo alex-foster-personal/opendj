@@ -20,6 +20,10 @@ from typing import Any
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import capabilities, client_refusal, engine, protocol, wire_version
+from apps.sync_hub.engine_identity_map import (
+    IdentityRepairRequest,
+    apply_hub_identity_rejects,
+)
 from apps.sync_hub.transport import (
     API_PREFIX,
     HubTransport,
@@ -164,6 +168,7 @@ class _PullOutcome:
     #: Incoming rows THIS machine refused because the LOCAL row they meet
     #: cannot be ordered. Always measured, so never None.
     quarantined: int = 0
+    identity_repairs: tuple[IdentityRepairRequest, ...] = ()
 
 
 def _post_push_chunk(
@@ -287,6 +292,107 @@ def _identity_rejects_from(payload: Mapping[str, object]) -> list[protocol.Ident
     return [protocol.IdentityReject.from_wire(item) for item in raw]
 
 
+def _dedupe_repairs(
+    repairs: Sequence[IdentityRepairRequest],
+) -> tuple[IdentityRepairRequest, ...]:
+    seen: set[tuple[str, str]] = set()
+    ordered: list[IdentityRepairRequest] = []
+    for repair in repairs:
+        key = (repair.hub_survivor_pk, repair.offer_pk)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(repair)
+    return tuple(ordered)
+
+
+def _pull_repair_bundles(
+    channel: HubTransport,
+    conn: sqlite3.Connection,
+    machine_id: str,
+    hub_machine_id: str,
+    stable_ids: Sequence[str],
+    *,
+    in_transaction: bool = False,
+) -> tuple[int, tuple[IdentityRepairRequest, ...]]:
+    """Fetch hub survivor bundles and apply them hub-authoritatively."""
+    if not stable_ids:
+        return 0, ()
+    payload = channel.get(
+        f"{API_PREFIX}/pull",
+        {
+            "machine_id": machine_id,
+            "bundle_stable_ids": list(stable_ids),
+            "capabilities": capabilities.QUARANTINE_V1,
+        },
+    )
+    incoming = _rows_from(payload, "pull")
+
+    def _apply() -> engine.ApplyResult:
+        engine.merge_machines(
+            conn, _machines_from(payload, "pull"), caller_id=hub_machine_id
+        )
+        return engine.spoke_apply(conn, incoming)
+
+    if in_transaction:
+        result = _apply()
+    else:
+        with _transaction(conn):
+            result = _apply()
+    return len(incoming), result.identity_repairs
+
+
+def _run_identity_repair(
+    channel: HubTransport,
+    conn: sqlite3.Connection,
+    machine_id: str,
+    hub_machine_id: str,
+    fleet: Sequence[protocol.MachineRow],
+    repairs: Sequence[IdentityRepairRequest],
+    *,
+    in_transaction: bool = False,
+) -> tuple[int, int]:
+    """Bounded one-round identity repair within the current sync transaction."""
+    deduped = _dedupe_repairs(repairs)
+    if not deduped:
+        return 0, 0
+    survivors = tuple({repair.hub_survivor_pk for repair in deduped})
+    _pull_repair_bundles(
+        channel,
+        conn,
+        machine_id,
+        hub_machine_id,
+        survivors,
+        in_transaction=in_transaction,
+    )
+    offer_rows: list[protocol.RowChange] = []
+    for repair in deduped:
+        offer_rows.extend(engine.identity_repair_offer(conn, repair.offer_pk))
+    if not offer_rows:
+        return 0, 0
+    push = _push_in_batches(
+        channel,
+        machine_id,
+        offer_rows,
+        fleet,
+        batch_rows=1,
+    )
+
+    def _apply_rejects() -> None:
+        if push.identity_rejects:
+            apply_hub_identity_rejects(conn, push.identity_rejects)
+        engine.finalize_identity_repairs(
+            conn, tuple(repair.offer_pk for repair in deduped)
+        )
+
+    if in_transaction:
+        _apply_rejects()
+    else:
+        with _transaction(conn):
+            _apply_rejects()
+    return len(offer_rows), push.accepted + push.rejected
+
+
 def _pull_in_chunks(
     channel: HubTransport,
     conn: sqlite3.Connection,
@@ -312,6 +418,7 @@ def _pull_in_chunks(
     requests = 0
     quarantined = 0
     reported: list[Any] = []
+    identity_repairs: list[IdentityRepairRequest] = []
     cursor = int(since_seq)
     pending: list[protocol.RowChange] = []
     while True:
@@ -344,6 +451,7 @@ def _pull_in_chunks(
                     result = engine.spoke_apply(conn, pending)
                     applied += result.accepted
                     quarantined += result.quarantined
+                    identity_repairs.extend(result.identity_repairs)
             return _PullOutcome(
                 pulled=pulled,
                 applied=applied,
@@ -351,6 +459,7 @@ def _pull_in_chunks(
                 seq=chunk_seq,
                 hub_quarantined=_total_reported(reported),
                 quarantined=quarantined,
+                identity_repairs=_dedupe_repairs(identity_repairs),
             )
         if chunk_seq <= cursor:
             raise SyncTransportError(
@@ -365,12 +474,14 @@ __all__ = [
     "_PullOutcome",
     "_PushOutcome",
     "_batched",
+    "_dedupe_repairs",
     "_int_from",
     "_local_machine_row",
     "_machines_from",
     "_pull_in_chunks",
     "_push_in_batches",
     "_rows_from",
+    "_run_identity_repair",
     "_total_reported",
     "_transaction",
     "state_db_path",

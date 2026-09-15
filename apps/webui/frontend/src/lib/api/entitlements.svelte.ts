@@ -55,7 +55,7 @@
  *     [then ⛔️] broken
  */
 
-import { api, unwrap } from './client';
+import { api, readApiErrorStatus, unwrap } from './client';
 import type { components } from '../api-types';
 
 type EntitlementsOut = components['schemas']['EntitlementsOut'];
@@ -109,7 +109,12 @@ class EntitlementStore {
 		} catch (exc) {
 			this.#load = null;
 			this.error = _message(exc);
-			console.error('[entitlements] load failed; nothing is treated as refused', exc);
+			// Legacy daemons omit /api/v1/entitlements (404). Fail-open is the
+			// truthful result; suppress the expected compatibility miss so it is
+			// not reported as a runtime error flood. Real failures stay loud.
+			if (readApiErrorStatus(exc) !== 404) {
+				console.error('[entitlements] load failed; nothing is treated as refused', exc);
+			}
 		}
 	}
 

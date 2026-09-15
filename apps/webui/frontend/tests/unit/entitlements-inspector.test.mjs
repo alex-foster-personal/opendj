@@ -60,7 +60,7 @@ function inspectorBundle() {
 	return bundleSvelteEntry(`
 		export { collectInspectorSnapshot } from './src/routes/admin/entitlements-inspector.ts';
 		export { capabilities, jobsRefusal, progressRefusal, eventsRefusal } from '$lib/api/capabilities.svelte';
-		export { entitlements } from '$lib/api/entitlements.svelte';
+		export { entitlements, planRefusal } from '$lib/api/entitlements.svelte';
 		export { buildFlags, storeBuildRefusal } from '$lib/api/store-build.svelte';
 		export { rekordboxWriteback } from '$lib/rb/rekordbox-writeback.svelte';
 		export { default as EntitlementsInspectorComponent } from './src/routes/admin/EntitlementsInspector.svelte';
@@ -233,6 +233,40 @@ test('SSR: engine capabilities, empty entitlements, loaded flags', async () => {
 	assert.ok(html.includes('engine'));
 	assert.ok(html.includes(PROGRESS_MISSING));
 	assert.ok(!html.includes('Every capability openDJ ships is available'));
+});
+
+test('legacy daemon 404: fail-open without console.error flood', async () => {
+	const consoleErrors = [];
+	console.error = (...args) => {
+		consoleErrors.push(args);
+	};
+	routeFetch({
+		'/api/v1/entitlements': () => new Response(null, { status: 404 })
+	});
+	await bundle.entitlements.load();
+
+	assert.equal(consoleErrors.length, 0);
+	assert.equal(bundle.entitlements.loaded, false);
+	assert.ok(bundle.entitlements.error !== null);
+	assert.equal(bundle.entitlements.plan, null);
+	assert.equal(bundle.entitlements.features.length, 0);
+	assert.equal(bundle.planRefusal('cloudsync'), null);
+});
+
+test('non-404 entitlement failure still reaches console.error', async () => {
+	const consoleErrors = [];
+	console.error = (...args) => {
+		consoleErrors.push(args);
+	};
+	routeFetch({
+		'/api/v1/entitlements': () => jsonResponse({ detail: 'nope' }, 500)
+	});
+	await bundle.entitlements.load();
+
+	assert.equal(consoleErrors.length, 1);
+	assert.match(String(consoleErrors[0][0]), /\[entitlements\] load failed/);
+	assert.equal(bundle.entitlements.loaded, false);
+	assert.ok(bundle.entitlements.error !== null);
 });
 
 test('SSR: entitlements error still lists flags', async () => {

@@ -1,10 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "updater",
-  "description": "The auto-update channel, granted to the bootstrap page AND to the bundled engine's loopback origin. The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below the check-for-updates control would be inert in the shipped app. The port is OS-assigned per launch (engine::free_loopback_port), which is why the pattern wildcards it rather than naming one. Scope and risk are documented in docs/auto-update.md -- read that before widening this.",
+  "description": "The auto-update channel, granted to the bootstrap page AND to the bundled engine's loopback origin. The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below the check-for-updates control would be inert in the shipped app. The port is OS-assigned per launch (engine::free_loopback_port), which is why the pattern wildcards it rather than naming one. Scope and risk are documented in docs/auto-update.md -- read that before widening this. process:allow-exit is granted here too (issue #3058): quit-gate.ts's confirmQuit() calls the plugin's exit() for BOTH the in-app Cmd-Q confirm dialog (INSTALL-21) and the ship flow's lifecycle/quit route (OPS-07), and without it the ACL silently rejected exit() on every path, not just the one the issue reported. Grant exactly allow-exit alongside allow-restart -- nothing wider.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
   },
-  "permissions": ["updater:default", "process:allow-restart"]
+  "permissions": ["updater:default", "process:allow-restart", "process:allow-exit"]
 }

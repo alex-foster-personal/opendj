@@ -46,14 +46,22 @@ other name below) keeps the surface it had.
 """
 from __future__ import annotations
 
-from apps.sync_hub.engine_apply import ApplyResult, hub_apply, spoke_apply
+from apps.sync_hub.engine_apply import (
+    ApplyResult,
+    finalize_identity_repairs,
+    hub_apply,
+    spoke_apply,
+)
 from apps.sync_hub.engine_changes import (
     ChangeBatch,
     HeldRow,
     Offer,
     hub_changes_since,
+    hub_track_bundles,
+    identity_repair_offer,
     relog_held,
     spoke_push,
+    still_held_rows,
 )
 from apps.sync_hub.engine_common import (
     CHANGELOG_TABLES,
@@ -98,9 +106,12 @@ __all__ = [
     "assert_identity_ready",
     "assert_merge_safe",
     "current_seq",
+    "finalize_identity_repairs",
     "hub_apply",
     "hub_changes_since",
     "hub_library_size",
+    "hub_track_bundles",
+    "identity_repair_offer",
     "local_seq",
     "machines_snapshot",
     "merge_machines",
@@ -110,6 +121,7 @@ __all__ = [
     "settled_push_seq",
     "spoke_apply",
     "spoke_push",
+    "still_held_rows",
     "upsert_machine",
     "write_watermark",
 ]
