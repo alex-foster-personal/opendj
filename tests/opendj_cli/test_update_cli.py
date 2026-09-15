@@ -31,11 +31,11 @@ import pytest
 
 from apps.opendj_cli.__main__ import main
 from apps.opendj_cli.update_cli import (
-    EXIT_NOT_APPLIED,
     EXIT_APPLY_FAILED,
+    EXIT_NOT_APPLIED,
     EXIT_USAGE,
 )
-from tests.opendj_cli.conftest import Updater
+from tests.opendj_cli.updater_rig import Updater
 
 RUNNING_VERSION = "0.1.0"
 RELEASED_VERSION = "0.1.1"

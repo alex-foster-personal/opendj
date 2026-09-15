@@ -96,7 +96,7 @@ from apps.engine_core.build_info import (
     BuildInfoUnavailable,
     resolve_build_info,
 )
-from apps.opendj_cli.origin import EngineNotRunning, resolve_origin
+from apps.engine_core.origin import EngineNotRunning, resolve_origin
 from apps.shared import platform_paths
 from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
 

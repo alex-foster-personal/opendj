@@ -40,8 +40,8 @@ from typing import Any
 from apps.engine_core.update_channel import (
     APPLY_TIMEOUT_S,
     EXIT_APPLIED,
-    EXIT_NOT_APPLIED,
     EXIT_APPLY_FAILED,
+    EXIT_NOT_APPLIED,
     ApplyOutcome,
     apply_via_engine,
     check_via_engine,

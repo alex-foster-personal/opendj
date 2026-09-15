@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -355,8 +356,10 @@ def test_the_cli_exists_and_refuses_an_unreachable_channel() -> None:
     assert payload["status"] in {"endpoint-unreachable", "identity-unavailable"}
 
 
-def _apply_http_handler(calls: dict[str, int] | None = None):
-    state = calls if calls is not None else {"build_info": 0, "apply_status_polls": 0}
+def _apply_http_handler(calls: dict[str, Any] | None = None):
+    state: dict[str, Any] = (
+        calls if calls is not None else {"build_info": 0, "apply_status_polls": 0}
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         announced = state.get("announced_version") or _bump_patch_version(RUNNING_VERSION)
