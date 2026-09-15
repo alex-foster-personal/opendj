@@ -24,6 +24,7 @@ from apps.sync_hub.engine_common import (
 )
 from apps.sync_hub.engine_identity import (
     IdentityDecision,
+    log_hash_conflict,
     names_held_parent,
     remap_track_children,
     resolve_track_identity,
@@ -44,6 +45,13 @@ log = logging.getLogger("apps.sync_hub.engine")
 #: The two columns the merge orders a stored row by. Read together so one
 #: SELECT serves both the sort key and the fault check.
 _STAMP_COLUMNS: tuple[str, str] = (protocol.UPDATED_AT, protocol.ORIGIN_DEVICE_ID)
+
+
+def _as_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 # ----- apply -----------------------------------------------------------------
@@ -70,6 +78,7 @@ class ApplyResult:
     rejected: int
     seq: int
     quarantined: int = 0
+    hash_pending: int = 0
     faults: tuple[protocol.StampFault, ...] = ()
     identity_conflicts: int = 0
 
@@ -389,6 +398,7 @@ def _apply(
     accepted = 0
     rejected = 0
     quarantined = 0
+    hash_pending = 0
     identity_conflicts = 0
     faults: list[protocol.StampFault] = []
     remap: dict[str, str] = load_identity_remap(conn)
@@ -399,6 +409,8 @@ def _apply(
         )
         if outcome == "accepted":
             accepted += 1
+            if change.hash_pending:
+                hash_pending += 1
         elif outcome == "rejected":
             rejected += 1
         else:
@@ -411,6 +423,7 @@ def _apply(
         rejected=rejected,
         seq=current_seq(conn),
         quarantined=quarantined,
+        hash_pending=hash_pending,
         faults=tuple(faults),
         identity_conflicts=identity_conflicts,
     )
@@ -546,6 +559,27 @@ def _resolve_against_stored(
         faults = _faults_of(spec.name, stored)
         if faults:
             return _Resolution(loses=False, faults=faults)
+        if change.table == "tracks":
+            incoming_hash = _as_text(change.values.get("content_hash"))
+            stored_row = conn.execute(
+                "SELECT content_hash FROM tracks WHERE stable_id = ?",
+                (change.pk[0],),
+            ).fetchone()
+            stored_hash = (
+                _as_text(stored_row[0]) if stored_row is not None else None
+            )
+            if (
+                incoming_hash
+                and stored_hash
+                and incoming_hash != stored_hash
+            ):
+                log_hash_conflict(
+                    str(change.pk[0]),
+                    incoming_hash,
+                    stored_hash,
+                    change.sort_key,
+                    _sort_key_of(stored),
+                )
         return _Resolution(loses=change.sort_key <= _sort_key_of(stored))
     return _resolve_against_duplicates(conn, spec, change, conflict_pks)
 

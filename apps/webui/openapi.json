@@ -3557,6 +3557,18 @@
             "title": "Endpoint Source",
             "type": "string"
           },
+          "hash_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "live tracks offered as hash_pending on the hub (ADR-0047)",
+            "title": "Hash Pending"
+          },
           "heartbeat_at": {
             "anyOf": [
               {
@@ -3600,6 +3612,18 @@
                 "type": "null"
               }
             ]
+          },
+          "quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rows held out of the sync set for stamp or identity-dup reasons",
+            "title": "Quarantined"
           },
           "reason": {
             "anyOf": [
@@ -5069,6 +5093,13 @@
       },
       "DigestResponse": {
         "properties": {
+          "hash_pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Hash Pending",
+            "type": "object"
+          },
           "overall": {
             "title": "Overall",
             "type": "string"
@@ -6693,6 +6724,48 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HashPendingResponse": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "total",
+          "schema_version",
+          "wire_version"
+        ],
+        "title": "HashPendingResponse",
+        "type": "object"
+      },
       "HeadphoneOutputDeviceOut": {
         "properties": {
           "id": {
@@ -7481,14 +7554,20 @@
       },
       "IdentityBacklogOut": {
         "properties": {
+          "hash_pending": {
+            "description": "live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.",
+            "title": "Hash Pending",
+            "type": "integer"
+          },
           "unsyncable_inferred": {
-            "description": "live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.",
+            "description": "live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.",
             "title": "Unsyncable Inferred",
             "type": "integer"
           }
         },
         "required": [
-          "unsyncable_inferred"
+          "unsyncable_inferred",
+          "hash_pending"
         ],
         "title": "IdentityBacklogOut",
         "type": "object"
@@ -13042,6 +13121,11 @@
             "title": "Has More",
             "type": "boolean"
           },
+          "hash_pending": {
+            "default": 0,
+            "title": "Hash Pending",
+            "type": "integer"
+          },
           "machines": {
             "items": {
               "$ref": "#/components/schemas/MachineModel"
@@ -13136,6 +13220,11 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "hash_pending": {
+            "default": 0,
+            "title": "Hash Pending",
             "type": "integer"
           },
           "quarantined": {
@@ -14660,6 +14749,17 @@
       "RowModel": {
         "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
         "properties": {
+          "hash_pending": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash Pending"
+          },
           "members": {
             "anyOf": [
               {
@@ -32015,6 +32115,100 @@
           }
         },
         "summary": "Enroll",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/hash-pending": {
+      "get": {
+        "description": "List ``stable_id`` values on this hub still awaiting ``content_hash``.",
+        "operationId": "hash_pending_list_api_v1_sync_hash_pending_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HashPendingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "hash-pending refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "hash-pending refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Hash Pending List",
         "tags": [
           "sync"
         ]
