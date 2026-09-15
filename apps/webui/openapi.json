@@ -25988,6 +25988,19 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": {
+                    "code": "TAG_READER_UNAVAILABLE",
+                    "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                  }
+                }
+              }
+            },
+            "description": "Optional mutagen tag reader ([tags] extra) is not installed."
           }
         },
         "summary": "Upload",
