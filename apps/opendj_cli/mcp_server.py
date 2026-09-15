@@ -1,8 +1,13 @@
 """Stdio MCP server for installed Open DJ (AGENT-11).
 
-Six tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
-``library``, ``ui_url``, and ``open_route``. Safety rails live in
-:mod:`mcp_safety`.
+Eight tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
+``library``, ``ui_url``, ``open_route``, ``update_check``, and
+``update_apply``. Safety rails live in :mod:`mcp_safety`.
+
+The two update tools are the agent-native half of the updater (AGENT-13,
+issue #2942): the same ``check_via_engine`` and ``apply_via_engine`` the
+packaged CLI and the module entry point call, so the MCP server cannot
+acquire its own idea of what "installed" means.
 """
 
 from __future__ import annotations
@@ -15,9 +20,6 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import httpx
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
 
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
 from apps.opendj_cli.client import (
@@ -34,6 +36,8 @@ from apps.opendj_cli.mcp_safety import (
     guard_order,
     validate_api_path,
 )
+from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
+from apps.opendj_cli.mcp_update_tools import register_update_tools
 from apps.opendj_cli.orders import single
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
 from apps.opendj_cli.shell_navigate import REMEDY_VERB, open_shell_route
@@ -530,6 +534,12 @@ def create_server() -> MCPServer:
             document["reachable"] = False
         return document
 
+    register_update_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     return server
 
 

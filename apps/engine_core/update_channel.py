@@ -79,8 +79,10 @@ import platform
 import re
 import sys
 import time
-from dataclasses import dataclass
-from typing import Literal
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, status
@@ -94,7 +96,7 @@ from apps.engine_core.build_info import (
     BuildInfoUnavailable,
     resolve_build_info,
 )
-from apps.opendj_cli.origin import EngineNotRunning, resolve_origin
+from apps.engine_core.origin import EngineNotRunning, resolve_origin
 from apps.shared import platform_paths
 from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
 
@@ -121,6 +123,10 @@ APPLY_STATUS_POLL_INTERVAL_S: float = 1.0
 
 #: After the shell claims apply and the old engine dies, poll the relaunched
 #: engine's build-info for this long before giving up.
+#: How long the app has to come back once the engine has gone away underneath
+#: the status poll. Post-claim engine death IS the relaunch (issue #2989), and
+#: the restart takes longer than a round trip, so it gets its own window rather
+#: than whatever is left of APPLY_TIMEOUT_S.
 RELAUNCH_BUILD_INFO_TIMEOUT_S: float = 120.0
 
 #: The error code a caller branches on when the channel could not answer.
@@ -162,6 +168,33 @@ UpdateStatus = Literal[
 ANSWERED: frozenset[str] = frozenset(
     {"update-available", "up-to-date", "ahead-of-channel"}
 )
+
+#: The statuses an agent may ACT on, which is a strictly smaller set than
+#: ANSWERED. `ahead-of-channel` is a real answer (this build is newer than the
+#: channel) and not an actionable one, so a script that ran `update check &&
+#: update apply` on a zero exit must never be told it holds an update it does
+#: not. Exit 0 is reserved for these two.
+ACTIONABLE_STATUSES: frozenset[str] = frozenset({"up-to-date", "update-available"})
+
+#: Two fault codes that are NOT ``UpdateStatus`` values, and say so in their
+#: names. The status vocabulary describes the CHANNEL; these describe the
+#: ENGINE that was asked about it, and collapsing them into a channel fault
+#: would hide which of the two components to go and look at.
+STATUS_ENGINE_UNREACHABLE: str = "engine-unreachable"
+STATUS_ENGINE_MALFORMED: str = "engine-response-malformed"
+
+#: Exit codes shared by every surface that speaks to the updater, so a caller
+#: branching on them gets the same answer from the CLI, the MCP tool and the
+#: module entry point.
+EXIT_APPLIED: int = 0
+EXIT_NOT_APPLIED: int = 2
+EXIT_APPLY_FAILED: int = 3
+
+#: How long the shell has to report the order done, counted from the moment it
+#: is posted. The status poll that waits for that word had no bound at all,
+#: which let a shell that never answered hang the caller forever.
+APPLY_TIMEOUT_S: float = 600.0
+
 
 
 class UpdateCheckError(RuntimeError):
@@ -609,6 +642,452 @@ def add_update_apply_route(
         return UpdateApplyStatusOut(**status_payload)
 
 
+# ----- outcomes -----------------------------------------------------------
+@dataclass(frozen=True)
+class CheckOutcome:
+    """What one check against a running engine found.
+
+    ``document`` is the engine's own answer, passed through unchanged: the
+    surfaces render it, they do not re-derive it, so three callers cannot
+    print three different stories about one channel.
+    """
+
+    status: str
+    detail: str | None
+    document: dict[str, Any]
+
+    @property
+    def actionable(self) -> bool:
+        return self.status in ACTIONABLE_STATUSES
+
+
+@dataclass(frozen=True)
+class ApplyOutcome:
+    """What one apply did, and what it can honestly claim.
+
+    ``code`` is the exit code every surface returns, and it is ``EXIT_APPLIED``
+    only for an install the before/after read PROVES: the announced version is
+    running and the build identity moved. ``reason`` is the machine-readable
+    half; ``status`` and ``detail`` are the channel's own words where it named
+    them, so an agent never has to parse prose to find out what happened.
+    """
+
+    code: int
+    reason: str
+    status: str | None = None
+    detail: str | None = None
+    check: dict[str, Any] = field(default_factory=dict)
+    before: dict[str, str | None] = field(default_factory=dict)
+    after: dict[str, str | None] = field(default_factory=dict)
+    shell_status: dict[str, Any] | None = None
+    command_id: str | None = None
+    advertised_version: str | None = None
+
+    @property
+    def applied(self) -> bool:
+        return self.code == EXIT_APPLIED
+
+
+# ----- the shared client core ---------------------------------------------
+def check_via_engine(origin: str, *, client: httpx.Client | None = None) -> CheckOutcome:
+    """Ask a RUNNING engine what the channel offers.
+
+    The engine answers for the build IT is running, which is the only identity
+    that matters to a caller on a user machine: there is no checkout to
+    resolve locally, and resolving one would compare the channel against a
+    different build than the app the user is looking at. Every way this can
+    fail to get an answer is a named fault carrying the URL, never a
+    reassurance.
+    """
+    if client is not None:
+        return _check_with(client, origin)
+    with httpx.Client() as owned:
+        return _check_with(owned, origin)
+
+
+def _check_with(client: httpx.Client, origin: str) -> CheckOutcome:
+    url = f"{origin.rstrip('/')}{UPDATE_CHECK_PATH}"
+    try:
+        response = client.get(url, timeout=REQUEST_TIMEOUT_S)
+    except httpx.HTTPError as exc:
+        return _fault(STATUS_ENGINE_UNREACHABLE, f"{url}: {exc}")
+    try:
+        document = response.json()
+    except ValueError:
+        return _fault(
+            STATUS_ENGINE_MALFORMED,
+            f"{url} answered HTTP {response.status_code} with a body that is not JSON",
+        )
+    status_field = document.get("status") if isinstance(document, dict) else None
+    if not isinstance(status_field, str) or status_field == "":
+        return _fault(
+            STATUS_ENGINE_MALFORMED,
+            f"{url} answered HTTP {response.status_code} with no 'status' field: "
+            f"{json.dumps(document)[:500]}",
+        )
+    detail = document.get("detail")
+    return CheckOutcome(
+        status=status_field,
+        detail=detail if isinstance(detail, str) and detail != "" else None,
+        document=document,
+    )
+
+
+def _fault(status: str, detail: str) -> CheckOutcome:
+    return CheckOutcome(status=status, detail=detail, document={"status": status, "detail": detail})
+
+
+def apply_via_engine(
+    origin: str,
+    timeout_s: float = APPLY_TIMEOUT_S,
+    *,
+    lock_path: Path | None = None,
+    progress: Callable[[str], None] | None = None,
+    client: httpx.Client | None = None,
+) -> ApplyOutcome:
+    """Install the announced release, then PROVE the relaunched app is it.
+
+    THE whole relaunch-and-compare path, in one place. ``apply`` is the call
+    whose correctness matters most, and a second copy of it is how two
+    surfaces drift: the packaged CLI and the module entry point both call
+    here, and neither can quietly acquire its own idea of what "installed"
+    means.
+
+    A zero exit is a CLAIM, so it is earned twice over: ``app_version`` must
+    be the version the channel announced, and ``git_sha_full`` must have
+    moved off the build that was running. Anything less is named and
+    non-zero. Every wait is bounded by ``timeout_s``, counted from the moment
+    the order is posted, because an install that never completes must fail
+    loudly rather than hang the agent that asked for it.
+    """
+    if client is not None:
+        return _apply_with(client, origin, timeout_s, lock_path, progress)
+    with httpx.Client() as owned:
+        return _apply_with(owned, origin, timeout_s, lock_path, progress)
+
+
+def _apply_with(
+    client: httpx.Client,
+    origin: str,
+    timeout_s: float,
+    lock_path: Path | None,
+    progress: Callable[[str], None] | None,
+) -> ApplyOutcome:
+    base = origin.rstrip("/")
+    before = _read_identity(client, f"{base}{BUILD_INFO_PATH}")
+    if isinstance(before, ApplyOutcome):
+        return before
+
+    check = check_via_engine(base, client=client)
+    announced_version = _announced_version(check)
+    if check.status != "update-available" or announced_version is None:
+        shortfall = _check_shortfall(check)
+        return _contextualise(shortfall, check, before, announced_version, None)
+
+    # ONE deadline from here, so the install and the restart can never add up
+    # to twice the wait a caller asked for.
+    deadline = time.monotonic() + timeout_s
+    command_id = _start_install(client, base)
+    if isinstance(command_id, ApplyOutcome):
+        return _contextualise(command_id, check, before, announced_version, None)
+    if progress is not None:
+        progress(f"enqueued {announced_version} (command_id={command_id})")
+
+    installed = _await_install(client, base, command_id, deadline, timeout_s)
+    if isinstance(installed, ApplyOutcome):
+        return _contextualise(installed, check, before, announced_version, command_id)
+    if installed.relaunch_detected:
+        relaunch_deadline = time.monotonic() + RELAUNCH_BUILD_INFO_TIMEOUT_S
+        if progress is not None:
+            progress("engine relaunch detected; polling build-info via lock file")
+    else:
+        relaunch_deadline = time.monotonic() + timeout_s
+        if progress is not None:
+            progress(f"waiting for the relaunched app to report {announced_version}")
+
+    after = _await_relaunch(client, base, before, lock_path, relaunch_deadline)
+    return _verdict(before, after, check, announced_version, command_id, timeout_s)
+
+
+def _read_identity(client: httpx.Client, url: str) -> dict[str, str | None] | ApplyOutcome:
+    """The running build's identity, or why it could not be read."""
+    try:
+        response = client.get(url, timeout=REQUEST_TIMEOUT_S)
+    except httpx.HTTPError as exc:
+        return _not_applied("engine-unreachable", detail=f"{url}: {exc}")
+    if response.status_code != 200:
+        return _not_applied(
+            "build-info-unavailable",
+            detail=(
+                f"{url} answered HTTP {response.status_code}: {response.text[:500]}"
+            ),
+        )
+    return _build_identity_slice(response.json())
+
+
+def _announced_version(check: CheckOutcome) -> str | None:
+    announced = check.document.get("available_version")
+    return announced if isinstance(announced, str) and announced != "" else None
+
+
+def _check_shortfall(check: CheckOutcome) -> ApplyOutcome:
+    """Why the channel is not offering an installable release."""
+    if check.status != "update-available":
+        return _not_applied(
+            "check-not-update-available",
+            status=check.status,
+            detail=check.detail or f"update check reported {check.status}",
+        )
+    return _not_applied(
+        "announced-version-missing",
+        status=check.status,
+        detail="update-available without available_version",
+    )
+
+
+def _start_install(client: httpx.Client, base: str) -> str | ApplyOutcome:
+    """Post the order and return its command id, or why nothing was posted."""
+    apply_url = f"{base}{UPDATE_APPLY_PATH}"
+    try:
+        response = client.post(apply_url, timeout=REQUEST_TIMEOUT_S)
+    except httpx.HTTPError as exc:
+        return _not_applied("apply-unreachable", detail=f"{apply_url}: {exc}")
+    if response.status_code != 202:
+        refusal = _refusal_body(response)
+        return _not_applied(
+            "apply-refused",
+            status=refusal.get("status"),
+            detail=refusal.get("detail")
+            or f"{apply_url} answered HTTP {response.status_code}: {response.text[:500]}",
+        )
+    accepted = _json_object(response)
+    command_id = accepted.get("command_id") if accepted is not None else None
+    if not isinstance(command_id, str) or command_id == "":
+        return _not_applied(
+            "apply-response-missing-command-id",
+            detail=f"{apply_url} answered 202 without a command_id",
+        )
+    return command_id
+
+
+@dataclass(frozen=True)
+class _InstallWait:
+    """What the install wait saw: the shell's word, or the engine going away.
+
+    A relaunch kills the engine that was serving the status route, so a
+    refusal AFTER the order was claimed is evidence the install started, not a
+    failure. Telling those apart is the whole reason this is a value rather
+    than a status document.
+    """
+
+    status: dict[str, Any] | None = None
+    relaunch_detected: bool = False
+
+
+def _await_install(
+    client: httpx.Client, base: str, command_id: str, deadline: float, timeout_s: float
+) -> _InstallWait | ApplyOutcome:
+    """Wait for the shell to report the order done, bounded by the deadline.
+
+    Returns what the shell said, or the outcome that says why the wait ended.
+    The shell is the only component that may install an update, so this is the
+    only evidence that an install was even attempted.
+    """
+    status_url = f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}"
+    seen_claimed = False
+    while True:
+        if time.monotonic() >= deadline:
+            return replace(
+                _not_applied(
+                    "install-timeout",
+                    status="update-available",
+                    detail=(
+                        f"the shell did not report {command_id} installed within "
+                        f"{timeout_s:g}s"
+                    ),
+                ),
+                code=EXIT_APPLY_FAILED,
+            )
+        try:
+            response = client.get(status_url, timeout=REQUEST_TIMEOUT_S)
+        except httpx.HTTPError as exc:
+            if seen_claimed:
+                return _InstallWait(relaunch_detected=True)
+            return _not_applied(
+                "install-status-unreachable", detail=f"{status_url}: {exc}"
+            )
+        if response.status_code == 404 and seen_claimed:
+            return _InstallWait(relaunch_detected=True)
+        status_body = _json_object(response)
+        if status_body is None:
+            return _not_applied(
+                "install-status-malformed",
+                detail=(
+                    f"{status_url} answered HTTP {response.status_code}: "
+                    f"{response.text[:500]}"
+                ),
+            )
+        state = status_body.get("state")
+        if state in ("claimed", "succeeded"):
+            seen_claimed = True
+        if state == "failed":
+            error = status_body.get("error")
+            return replace(
+                _not_applied(
+                    "shell-failed",
+                    status="failed",
+                    detail=(
+                        error
+                        if isinstance(error, str) and error != ""
+                        else f"the shell reported command {command_id} failed"
+                    ),
+                ),
+                code=EXIT_APPLY_FAILED,
+                shell_status=status_body,
+            )
+        if state == "succeeded":
+            return _InstallWait(status=status_body)
+        time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
+
+
+def _await_relaunch(
+    client: httpx.Client,
+    base: str,
+    before: dict[str, str | None],
+    lock_path: Path | None,
+    deadline: float,
+) -> dict[str, str | None]:
+    """Poll build-info until the running identity moves, or the deadline passes.
+
+    The origin is re-resolved every pass: the relaunched app writes its own
+    lock, and it may well bind a different port than the one it replaced.
+    """
+    after = before
+    backoff = 1.0
+    while time.monotonic() < deadline:
+        poll_base = base
+        try:
+            poll_base = resolve_origin(lock_path).base_url
+        except EngineNotRunning:
+            poll_base = base
+        try:
+            response = client.get(
+                f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
+            )
+        except httpx.HTTPError:
+            response = None
+        if response is not None and response.status_code == 200:
+            after = _build_identity_slice(response.json())
+            if _version_higher(before, after):
+                return after
+        time.sleep(backoff)
+        backoff = min(backoff * 1.5, 10.0)
+    return after
+
+
+def _not_applied(reason: str, *, status: str | None = None, detail: str) -> ApplyOutcome:
+    """The apply was never attempted: the channel or the engine said no."""
+    return ApplyOutcome(code=EXIT_NOT_APPLIED, reason=reason, status=status, detail=detail)
+
+
+def _apply_failed(reason: str, *, detail: str) -> ApplyOutcome:
+    """The apply was attempted and did not land the announced build."""
+    return ApplyOutcome(
+        code=EXIT_APPLY_FAILED,
+        reason=reason,
+        status="update-available",
+        detail=detail,
+    )
+
+
+def _contextualise(
+    outcome: ApplyOutcome,
+    check: CheckOutcome,
+    before: dict[str, str | None],
+    announced_version: str | None,
+    command_id: str | None,
+    after: dict[str, str | None] | None = None,
+) -> ApplyOutcome:
+    """Attach the run's context to a bare outcome, so every surface has it."""
+    return replace(
+        outcome,
+        check=check.document,
+        before=before,
+        after=before if after is None else after,
+        command_id=command_id,
+        advertised_version=announced_version,
+    )
+
+
+def _verdict(
+    before: dict[str, str | None],
+    after: dict[str, str | None],
+    check: CheckOutcome,
+    announced_version: str,
+    command_id: str,
+    timeout_s: float,
+) -> ApplyOutcome:
+    """Did the relaunch land the announced build? Name the shortfall if not."""
+    shortfall = _shortfall(before, after, announced_version, timeout_s)
+    if shortfall is not None:
+        return _contextualise(shortfall, check, before, announced_version, command_id, after)
+    applied = ApplyOutcome(
+        code=EXIT_APPLIED,
+        reason="applied",
+        status="update-available",
+        detail=f"{announced_version} is running",
+    )
+    return _contextualise(applied, check, before, announced_version, command_id, after)
+
+
+def _shortfall(
+    before: dict[str, str | None],
+    after: dict[str, str | None],
+    announced_version: str,
+    timeout_s: float,
+) -> ApplyOutcome | None:
+    """Why the relaunch is not the install that was asked for, if it is not."""
+    if not _version_higher(before, after):
+        return _apply_failed(
+            "relaunch-timeout",
+            detail=(
+                f"the app still reports {before.get('app_version')} "
+                f"({before.get('git_sha_full')}) {timeout_s:g}s after the shell "
+                "reported the install done"
+            ),
+        )
+    if after.get("app_version") != announced_version:
+        return _apply_failed(
+            "version-not-announced",
+            detail=(
+                f"the relaunched app reports app_version {after.get('app_version')!r}, "
+                f"and the channel announced {announced_version!r}"
+            ),
+        )
+    if after.get("git_sha_full") == before.get("git_sha_full"):
+        return _apply_failed(
+            "build-unchanged",
+            detail=(
+                f"the relaunched app reports the same git_sha_full "
+                f"{after.get('git_sha_full')!r} as the build it replaced"
+            ),
+        )
+    return None
+
+
+def _json_object(response: httpx.Response) -> dict[str, Any] | None:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _refusal_body(response: httpx.Response) -> dict[str, Any]:
+    body = _json_object(response)
+    return body if body is not None else {}
+
+
 # ----- CLI ----------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     """``python -m apps.engine_core.update_channel check``.
@@ -649,8 +1128,11 @@ def main(argv: list[str] | None = None) -> int:
     apply.add_argument(
         "--timeout-s",
         type=float,
-        default=600.0,
-        help="seconds to wait for build identity to change after apply (default: 600)",
+        default=APPLY_TIMEOUT_S,
+        help=(
+            "seconds to wait for the shell to install and the app to relaunch "
+            f"(default: {APPLY_TIMEOUT_S:g})"
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -675,21 +1157,13 @@ def _check_locally(endpoint: str) -> int:
 
 
 def _check_via_engine(origin: str) -> int:
-    url = f"{origin.rstrip('/')}{UPDATE_CHECK_PATH}"
-    try:
-        with httpx.Client() as client:
-            response = client.get(url, timeout=REQUEST_TIMEOUT_S)
-    except httpx.HTTPError as exc:
-        print(
-            json.dumps(
-                {"status": "endpoint-unreachable", "detail": f"{url}: {exc}"},
-                indent=2,
-            )
-        )
-        return 2
-    body = response.json()
-    print(json.dumps(body, indent=2))
-    return 0 if body.get("status") in ANSWERED else 2
+    """Print the running engine's answer, and exit 0 only for an actionable one."""
+    outcome = check_via_engine(origin)
+    print(json.dumps(outcome.document, indent=2))
+    if not outcome.actionable:
+        print(f"[ERROR] {outcome.status}: {outcome.detail}", file=sys.stderr)
+        return EXIT_NOT_APPLIED
+    return EXIT_APPLIED
 
 
 def _emit(result: UpdateCheckOut) -> int:
@@ -730,146 +1204,41 @@ def _version_higher(
     return there > here
 
 
-def _wait_for_higher_build_info(
-    client: httpx.Client,
-    before: dict[str, str | None],
-    deadline: float,
-) -> dict[str, str | None]:
-    """Poll resolve_origin() + GET /build-info until higher version or deadline."""
-    backoff = 1.0
-    after = before
-    while time.monotonic() < deadline:
-        poll_base = ""
-        try:
-            poll_base = resolve_origin().base_url.rstrip("/")
-        except EngineNotRunning:
-            pass
-        if poll_base:
-            try:
-                after_resp = client.get(
-                    f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
-                )
-            except httpx.HTTPError:
-                time.sleep(backoff)
-                backoff = min(backoff * 1.5, 10.0)
-                continue
-            if after_resp.status_code == 200:
-                after = _build_identity_slice(after_resp.json())
-                if _version_higher(before, after):
-                    break
-        time.sleep(backoff)
-        backoff = min(backoff * 1.5, 10.0)
-    return after
+def _apply_via_engine(origin: str, timeout_s: float = APPLY_TIMEOUT_S) -> int:
+    """Print what one apply found, and return its exit code.
+
+    A renderer over :func:`apply_via_engine`, not a second implementation:
+    the packaged CLI prints the SAME outcome the same way, so the two cannot
+    disagree about whether an install landed.
+    """
+    outcome = apply_via_engine(origin, timeout_s, progress=_stderr_progress)
+    _emit_apply(outcome)
+    return outcome.code
 
 
-def _apply_via_engine(origin: str, timeout_s: float) -> int:
-    base = origin.rstrip("/")
-    with httpx.Client() as client:
-        try:
-            before_resp = client.get(
-                f"{base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
-            )
-        except httpx.HTTPError as exc:
-            print(json.dumps({"error": f"{base}{BUILD_INFO_PATH}: {exc}"}, indent=2))
-            return 2
-        if before_resp.status_code != 200:
-            print(before_resp.text)
-            return 2
-        before = _build_identity_slice(before_resp.json())
+def _stderr_progress(message: str) -> None:
+    print(f"[APPLY] {message}", file=sys.stderr)
 
-        try:
-            check_resp = client.get(
-                f"{base}{UPDATE_CHECK_PATH}", timeout=REQUEST_TIMEOUT_S
-            )
-        except httpx.HTTPError as exc:
-            print(json.dumps({"error": f"{base}{UPDATE_CHECK_PATH}: {exc}"}, indent=2))
-            return 2
-        check_body = check_resp.json()
-        print(json.dumps(check_body, indent=2))
-        if check_body.get("status") != "update-available":
-            return 2
 
-        try:
-            apply_resp = client.post(
-                f"{base}{UPDATE_APPLY_PATH}", timeout=REQUEST_TIMEOUT_S
-            )
-        except httpx.HTTPError as exc:
-            print(json.dumps({"error": f"{base}{UPDATE_APPLY_PATH}: {exc}"}, indent=2))
-            return 2
-        if apply_resp.status_code == 409:
-            print(json.dumps(apply_resp.json(), indent=2))
-            return 2
-        if apply_resp.status_code != 202:
-            print(apply_resp.text)
-            return 2
-        accepted = apply_resp.json()
-        command_id = accepted.get("command_id")
-        if not isinstance(command_id, str) or command_id == "":
-            print(json.dumps({"error": "apply response missing command_id"}, indent=2))
-            return 2
+def _emit_apply(outcome: ApplyOutcome) -> None:
+    if outcome.check:
+        print(json.dumps(outcome.check, indent=2))
+    if outcome.shell_status is not None:
+        print(json.dumps(outcome.shell_status, indent=2))
+    if outcome.before or outcome.after:
         print(
-            f"[APPLY] enqueued {accepted.get('available_version')} "
-            f"(command_id={command_id})",
-            file=sys.stderr,
-        )
-
-        seen_claimed = False
-        state: object = None
-        while True:
-            try:
-                status_resp = client.get(
-                    f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}",
-                    timeout=REQUEST_TIMEOUT_S,
-                )
-            except httpx.HTTPError as exc:
-                if seen_claimed:
-                    break
-                print(
-                    json.dumps(
-                        {
-                            "error": (
-                                f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}: "
-                                f"{exc}"
-                            )
-                        },
-                        indent=2,
-                    )
-                )
-                return 2
-            if status_resp.status_code == 404:
-                if seen_claimed:
-                    break
-                print(status_resp.text)
-                return 2
-            if status_resp.status_code != 200:
-                print(status_resp.text)
-                return 2
-            status_body = status_resp.json()
-            state = status_body.get("state")
-            if state in ("claimed", "succeeded"):
-                seen_claimed = True
-            if state == "failed":
-                print(json.dumps(status_body, indent=2))
-                return 3
-            if state == "succeeded":
-                break
-            time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
-
-        if seen_claimed and state != "succeeded":
-            print(
-                "[APPLY] engine relaunch detected; polling build-info via lock file",
-                file=sys.stderr,
+            json.dumps(
+                {
+                    "before": outcome.before,
+                    "after": outcome.after,
+                    "changed": outcome.applied,
+                    "reason": outcome.reason,
+                },
+                indent=2,
             )
-            deadline = time.monotonic() + RELAUNCH_BUILD_INFO_TIMEOUT_S
-        else:
-            deadline = time.monotonic() + timeout_s
-
-        after = _wait_for_higher_build_info(client, before, deadline)
-
-    higher = _version_higher(before, after)
-    summary = {"before": before, "after": after, "changed": higher}
-    print(json.dumps(summary, indent=2))
-    return 0 if higher else 3
+        )
+    if outcome.code != EXIT_APPLIED:
+        print(f"[ERROR] {outcome.reason}: {outcome.detail}", file=sys.stderr)
 
 
 if __name__ == "__main__":
