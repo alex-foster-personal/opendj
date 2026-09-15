@@ -435,6 +435,11 @@
       "acceptable": 4000,
       "breaking": 8000,
       "lower_is_better": true,
+      "spec_cells": {
+        "target": "<=2900ms",
+        "acceptable": "<=4000ms",
+        "breaking": ">8000ms"
+      },
       "capture_method": "client perf-span open-to-library-rows from navigationStart to first track row paint",
       "absent_verdict": "UNKNOWN"
     },

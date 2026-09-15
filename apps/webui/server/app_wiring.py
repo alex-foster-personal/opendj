@@ -96,6 +96,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
+from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -462,6 +463,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         client_events_routes.router,
         performance_telemetry_routes.router,
         performance_headphones_routes.router,
+        rescue_snapshots_routes.router,
         bench_routes.router,
         bulk_edit_routes.router,
         find_replace_routes.router,

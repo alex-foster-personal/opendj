@@ -12,7 +12,7 @@
 
 	import { readApiErrorStatus } from '$lib/api/client';
 	import { api } from '$lib/api/client';
-	import { getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
+	import { getIdentityBacklog, getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
 	import {
 		getCloudSyncConfig,
 		putCloudSyncConfig,
@@ -30,6 +30,7 @@
 		envOverrideNotes,
 		forceSyncNowRequest,
 		formFromConfig,
+		identityBacklogNote,
 		presentCloudSyncError,
 		presentCloudSyncResultError,
 		statusHeadline,
@@ -54,6 +55,8 @@
 	}
 
 	let status = $state<CloudSyncStatus | null>(null);
+	/** null = not yet loaded (or failed to load); the note stays hidden either way. */
+	let identityBacklogCount = $state<number | null>(null);
 	let config = $state<CloudSyncConfigOut | null>(null);
 	let loadError = $state<string | null>(null);
 	let form = $state<ConfigFormFields>({ enabled: false, hubUrl: '', machineName: '' });
@@ -91,16 +94,31 @@
 		}
 	}
 
+	/**
+	 * Best-effort: the identity backlog is a supplementary telemetry note, not
+	 * core status, so a failure here must never block the status panel from
+	 * rendering (same reasoning as `fetchUiMirrorForGate`).
+	 */
+	async function fetchIdentityBacklog(): Promise<number | null> {
+		try {
+			return (await getIdentityBacklog()).unsyncable_inferred;
+		} catch {
+			return null;
+		}
+	}
+
 	async function refresh(): Promise<void> {
 		try {
-			const [nextStatus, nextConfig, nextMirror] = await Promise.all([
+			const [nextStatus, nextConfig, nextMirror, nextBacklog] = await Promise.all([
 				getStatus(),
 				getCloudSyncConfig(),
-				fetchUiMirrorForGate()
+				fetchUiMirrorForGate(),
+				fetchIdentityBacklog()
 			]);
 			status = nextStatus;
 			config = nextConfig;
 			uiMirror = nextMirror;
+			identityBacklogCount = nextBacklog;
 			loadError = null;
 		} catch (exc) {
 			loadError = message(exc);
@@ -196,6 +214,7 @@
 	}
 
 	const headline = $derived(statusHeadline(status));
+	const backlogNote = $derived(identityBacklogNote(identityBacklogCount));
 </script>
 
 <section aria-label="CloudSync status" class="status-tab">
@@ -228,6 +247,15 @@
 			<p class="headline" class:err={headline.tone === 'error'} class:warn={headline.tone === 'warn'} class:ok={headline.tone === 'ok'} data-testid="cloudsync-status-headline">
 				{headline.text}
 			</p>
+			{#if backlogNote !== null}
+				<p
+					class="headline warn"
+					data-testid="cloudsync-identity-backlog-note"
+					title="apps/sync_hub/sync_set.py::count_unsyncable_inferred, live count of tracks excluded from every sync digest for missing identity"
+				>
+					{backlogNote}
+				</p>
+			{/if}
 			<details class="tech-detail">
 				<summary>Technical detail</summary>
 				<dl>

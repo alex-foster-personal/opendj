@@ -1,6 +1,6 @@
 """Shared PERFMODE-04 pressure-elevated predicate (no webui dependency).
 
-The sampler and cache live in ``apps.webui.server.machine_pressure``; this
+The sampler and cache live in ``apps.shared.machine_pressure``; this
 module holds only the locked threshold logic so ``apps.shared`` and domain
 packages can gate on an already-read payload without importing the delivery
 layer.

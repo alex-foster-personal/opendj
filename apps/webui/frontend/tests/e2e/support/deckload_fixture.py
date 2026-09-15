@@ -116,6 +116,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.analysis.lanes import LaneResult
+from apps.analysis.record import AnalysisRecord
+from apps.analysis.store import upsert_record
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 
@@ -544,6 +547,68 @@ def _stable_ids_in_track_order(
     return ordered
 
 
+def _constant_beatgrid_payload(bpm: float, grid_span_s: float = 300.0) -> dict[str, object]:
+    interval = 60.0 / bpm
+    beats: list[dict[str, object]] = []
+    n = 1
+    index = 0
+    while index * interval < grid_span_s:
+        beats.append({"t": round(index * interval, 3), "n": n, "bpm": bpm})
+        n = 1 if n == 4 else n + 1
+        index += 1
+    if beats[-1]["t"] < grid_span_s:
+        beats.append({"t": grid_span_s, "n": n, "bpm": bpm})
+    return {
+        "beats": beats,
+        "beat_count": len(beats),
+        "static_grid_untrusted": False,
+        "tempo_changes": [],
+    }
+
+
+def _seed_own_beatgrids(state_db_path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
+    now = datetime.now(UTC).isoformat()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for stable_id, _title, _file_path in rows:
+            record = AnalysisRecord(
+                stable_id=stable_id,
+                backend="own_beatgrid.inapp",
+                backend_version="1.0.0",
+                analyzed_at=now,
+                duration_s=300.0,
+                sample_rate=SAMPLE_RATE_HZ,
+                bpm=128.0,
+                bpm_confidence=1.0,
+                key_camelot="8A",
+                key_openkey="1m",
+                key_confidence=1.0,
+                energy=6,
+                energy_source="inferred",
+                producer="inapp",
+                producer_version="1.0.0",
+                uses_model=False,
+                model_sha256=None,
+                decode_fingerprint="fixture-rescue-playback",
+                lanes={
+                    "beatgrid": LaneResult(
+                        status="ok",
+                        payload=_constant_beatgrid_payload(128.0),
+                    )
+                },
+            )
+            upsert_record(record, conn=conn, cascade=False, version_bump=False)
+    finally:
+        conn.close()
+
+
+def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
+    """Extend the autoplay-chain library with own beatgrid records for rescue e2e."""
+    rows = build_autoplay_chain(data_dir)
+    _seed_own_beatgrids(data_dir / "state" / "state.db", rows)
+    return rows
+
+
 def build_autoplay_hunt(
     data_dir: Path,
 ) -> list[tuple[str, str | None, str | None]]:
@@ -695,14 +760,26 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--seed-rescue-playback",
+        action="store_true",
+        help=(
+            "autoplay-chain library plus own beatgrid records for rescue "
+            "playback e2e (performance suite only)"
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         default=None,
         help="absolute path to write a machine-readable JSON manifest",
     )
     args = parser.parse_args(argv)
-    if args.seed_autoplay_chain and args.seed_autoplay_hunt:
+    if sum(
+        int(flag)
+        for flag in (args.seed_autoplay_chain, args.seed_autoplay_hunt, args.seed_rescue_playback)
+    ) > 1:
         raise SystemExit(
-            "[ERROR] --seed-autoplay-chain and --seed-autoplay-hunt are mutually exclusive"
+            "[ERROR] --seed-autoplay-chain, --seed-autoplay-hunt, and "
+            "--seed-rescue-playback are mutually exclusive"
         )
     data_dir = Path(args.data_dir).expanduser()
     if not data_dir.is_absolute():
@@ -714,7 +791,11 @@ def main(argv: list[str] | None = None) -> int:
     autoplay_hunt_playlist_a_name: str | None = None
     autoplay_hunt_playlist_b_id: str | None = None
     autoplay_hunt_playlist_b_name: str | None = None
-    if args.seed_autoplay_hunt:
+    if args.seed_rescue_playback:
+        rows = build_rescue_playback(data_dir)
+        autoplay_chain_playlist_id = AUTOPLAY_CHAIN_PLAYLIST_ID
+        autoplay_chain_playlist_name = AUTOPLAY_CHAIN_PLAYLIST_NAME
+    elif args.seed_autoplay_hunt:
         rows = build_autoplay_hunt(data_dir)
         autoplay_hunt_playlist_a_id = HUNT_PLAYLIST_A_ID
         autoplay_hunt_playlist_a_name = HUNT_PLAYLIST_A_NAME

@@ -12,7 +12,7 @@ runner memory and harvested SSH and cloud keys, specifically on **self-hosted** 
 
 Our exposure, measured Mon 14 Sep 2026:
 
-- **45 self-hosted runners** (`agentbox*`, and `nucbox-wsl*` on Ben's machine), selected
+- **45 self-hosted runners** (`agentbox*` and `nucbox-wsl*`), selected
   via the repo variables `CI_RUNS_ON_LINUX` / `CI_RUNS_ON_E2E` /
   `CI_RUNS_ON_UNPRIVILEGED_LINUX`.
 - **6 workflows without a top-level `permissions:` block**, so they get the default

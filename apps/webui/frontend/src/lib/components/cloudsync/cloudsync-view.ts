@@ -555,6 +555,27 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 	return { tone: 'warn', text: 'Syncing...' };
 }
 
+/**
+ * Plain-language note for the identity-hold sync backlog (CLOUDSYNC-16,
+ * Mon 14 Sep 2026: an 'inconclusive' result's only advice was
+ * "run Sync now again", which does nothing when the true cause is rows that
+ * can never sync until fingerprinted -- retrying re-runs the same exclusion
+ * every time). Shown as a SEPARATE line from `statusHeadline`, never folded
+ * into it: the backlog and any given sync's outcome are correlated on a
+ * real library but not proven to be the same event on any one run, so this
+ * never claims causation, only reports the count honestly.
+ */
+export function identityBacklogNote(count: number | null): string | null {
+	if (count === null || count <= 0) return null;
+	const plural = count !== 1;
+	return (
+		`${count} track${plural ? 's' : ''} in this library cannot sync yet: ` +
+		`${plural ? 'they lack' : 'it lacks'} an audio fingerprint or ISRC to identify ` +
+		`${plural ? 'them' : 'it'} by. Run backfill_content_hash once the audio is reachable, ` +
+		`or add an ISRC tag -- retrying Sync now will not change this.`
+	);
+}
+
 export type CloudSyncTab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';
 
 export const CLOUDSYNC_TABS: ReadonlyArray<{ id: CloudSyncTab; label: string }> = [
