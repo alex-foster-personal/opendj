@@ -72,8 +72,10 @@ export function assertHeadphoneOutputMode(mode: unknown): asserts mode is Headph
 	}
 }
 
-/** Main-output cue/master gains. Practice with no monitor selected reuses
- * `headphoneMixGains`; any selected monitor (or `two_outputs`) is master-only. */
+/** Main-output cue/master gains. Practice with no monitor selected keeps master
+ * at unity (the room must never be silenced by MIX) and blends the cue bus on
+ * top using the `headphoneMixGains` cue leg; any selected monitor (or
+ * `two_outputs`) is master-only. */
 export function practiceMainGains(
 	mode: unknown,
 	selectedOutputDeviceId: string | null,
@@ -89,7 +91,7 @@ export function practiceMainGains(
 	if (mode !== 'practice' || selectedOutputDeviceId !== null) {
 		return { cue: 0, master: 1 };
 	}
-	return headphoneMixGains(mix);
+	return { cue: headphoneMixGains(mix).cue, master: 1 };
 }
 
 /** Split-cable L/R gains. Left is master-only mono (room); right is the cue
