@@ -20,9 +20,12 @@ import { compile } from 'svelte/compiler';
 const filename = fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url));
 const source = readFileSync(filename, 'utf8');
 
+/** Extract `function NAME(...) { ... }` verbatim, keeping a leading `async`
+ * (2cc5bd75c, UX-FLOAT-01 #2308, made the two place functions async). */
 function extractFunction(name) {
-	const start = source.indexOf(`function ${name}(`);
-	assert.notEqual(start, -1, `${name} not found in TopBar.svelte`);
+	const match = new RegExp(`(async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+	assert.ok(match, `${name} not found in TopBar.svelte`);
+	const start = match.index;
 	const bodyStart = source.indexOf('{', start);
 	let depth = 0;
 	let end = bodyStart;
@@ -61,12 +64,14 @@ test('_dismissModeMenuOnEscape does not throw once modePickerEl has unmounted to
 	);
 });
 
-test('_placeModeMenu does not throw once modePickerEl has unmounted to null', () => {
-	assert.doesNotThrow(() => runExtracted('_placeModeMenu', 'modePickerEl', null));
+// Both are async, so a null dereference surfaces as a rejected promise rather
+// than a synchronous throw; await it so the guard is genuinely exercised.
+test('_placeModeMenu does not throw once modePickerEl has unmounted to null', async () => {
+	await assert.doesNotReject(() => runExtracted('_placeModeMenu', 'modePickerEl', null));
 });
 
-test('_placeAutoPlayMenu does not throw once autoPlayWrapEl has unmounted to null', () => {
-	assert.doesNotThrow(() => runExtracted('_placeAutoPlayMenu', 'autoPlayWrapEl', null));
+test('_placeAutoPlayMenu does not throw once autoPlayWrapEl has unmounted to null', async () => {
+	await assert.doesNotReject(() => runExtracted('_placeAutoPlayMenu', 'autoPlayWrapEl', null));
 });
 
 test('_dismissModeMenuOnOutsidePointer still dismisses on a genuine outside pointerdown', () => {
