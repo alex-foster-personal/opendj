@@ -82,6 +82,7 @@ _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
+_MCP_COMMAND = "mcp"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -608,8 +609,28 @@ def _split_api_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | No
     return list(tokens[:index]), list(tokens[index + 1 :])
 
 
+def _split_mcp_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
+    """Return global argv and mcp argv when ``mcp`` is the subcommand."""
+    if _MCP_COMMAND not in tokens:
+        return None
+    index = tokens.index(_MCP_COMMAND)
+    return list(tokens[:index]), list(tokens[index + 1 :])
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
+    mcp_split = _split_mcp_tokens(tokens)
+    if mcp_split is not None:
+        global_tokens, mcp_tokens = mcp_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _MCP_COMMAND]
+        )
+        if args.list_verbs:
+            print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import mcp_cli
+
+        return mcp_cli.run(mcp_tokens, lock=args.lock)
     api_split = _split_api_tokens(tokens)
     if api_split is not None:
         global_tokens, api_tokens = api_split

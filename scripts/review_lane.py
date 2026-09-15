@@ -144,7 +144,7 @@ def normalized_finding_title(text: str) -> str:
     anywhere for a human to notice.
 
     `-` is decorative rather than semantic, because this repo writes `--`
-    where other prose writes an U+2014 character, so a bare hyphen is far more often a
+    where other prose writes a long dash, so a bare hyphen is far more often a
     dash than a minus. It survives only in SIGN position (before a digit,
     after a non-word character), which is where it is the negation half of
     `+` and where no dash ever appears.

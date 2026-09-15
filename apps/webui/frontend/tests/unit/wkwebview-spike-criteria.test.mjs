@@ -232,13 +232,13 @@ test('rendered evidence carries the host header, every criterion row and no inve
 	assert.equal(markdown.split('\n').filter((line) => line.startsWith('| WKV-')).length, SPIKE_CRITERIA.length);
 });
 
-test('the harness and the criteria module hold no U+2014 or U+2013 characters and no synthetic audio', () => {
+test('the harness and the criteria module hold no disallowed dash characters and no synthetic audio', () => {
 	const files = ['spike-criteria.mjs', 'harness.mjs', 'README.md'].map((name) =>
 		fileURLToPath(new URL(`../manual/wkwebview-spike/${name}`, import.meta.url))
 	);
 	for (const file of files) {
 		const text = readFileSync(file, 'utf8');
-		assert.doesNotMatch(text, /[\u2013\u2014]/, `${file} must not contain an U+2014 or U+2013 characters`);
+		assert.doesNotMatch(text, /[\u2013\u2014]/, `${file} must not contain a disallowed dash character`);
 		assert.doesNotMatch(
 			text,
 			/OscillatorNode|createOscillator|createBufferSource\(/,
