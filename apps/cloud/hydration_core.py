@@ -7,6 +7,13 @@ in ``hydration.py``, which imports :func:`resolve_policy` and
 :func:`cache_path` back from here -- a one-way dependency, never the other
 way round.
 
+Believed-state unions four inputs on every read:
+
+1. durable ``track_locations`` (including ``available`` probe stamps);
+2. ephemeral in-process ``transfer_status`` (progress only, never presence);
+3. on-disk cache bytes under the kind's ``local_cache_path`` root; and
+4. ``apps.cloud.policy.CFG`` cache budgets (used by eviction after writes).
+
 READ PATH (:func:`resolve_playback_source`), in ADR order:
 
 1. a pinned local file -- ``track_locations`` ``kind='local'``,
@@ -227,6 +234,46 @@ class PlaybackSource:
     reason: str | None = None
 
 
+def _unavailable_marked_local(
+    conn: sqlite3.Connection, stable_id: str, machine_id: str
+) -> PlaybackSource | None:
+    """Return unavailable when a local row is explicitly marked gone.
+
+    ``available=0`` is a deliberate probe stamp: the operator or eviction
+    path declared the path not playable on this machine. Do not fall through
+    to presigned R2 for that case.
+    """
+    rows = conn.execute(
+        """
+        SELECT location_id, file_path
+        FROM track_locations
+        WHERE stable_id = ?
+          AND machine_id = ?
+          AND kind = 'local'
+          AND available = 0
+          AND deleted_at IS NULL
+          AND file_path IS NOT NULL
+          AND file_path != ''
+        ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, rowid
+        """,
+        (stable_id, machine_id),
+    ).fetchall()
+    for location_id, file_path in rows:
+        candidate = Path(str(file_path))
+        if candidate.is_file():
+            continue
+        return PlaybackSource(
+            origin="unavailable",
+            mode="pinned",
+            policy_source="sync_policies",
+            reason=(
+                f"track_locations row {location_id!r} marked unavailable "
+                f"(available=0) at {file_path!r}"
+            ),
+        )
+    return None
+
+
 def _local_file(conn: sqlite3.Connection, stable_id: str) -> Path | None:
     """First on-disk local copy, primary role first, else ``None``.
 
@@ -250,7 +297,9 @@ def _local_file(conn: sqlite3.Connection, stable_id: str) -> Path | None:
     ).fetchall()
     for (file_path,) in rows:
         candidate = Path(str(file_path))
-        if candidate.is_file():
+        # FIFOs and other special nodes are playable paths even when
+        # ``is_file()`` is false; ``exists()`` is the right gate here.
+        if candidate.exists() and not candidate.is_dir():
             return candidate
     return None
 
@@ -329,6 +378,16 @@ def resolve_playback_source(
             policy_source=policy.source,
             path=local,
             content_hash=content_hash,
+        )
+
+    marked_unavailable = _unavailable_marked_local(conn, stable_id, machine_id)
+    if marked_unavailable is not None:
+        return PlaybackSource(
+            origin="unavailable",
+            mode=policy.mode,
+            policy_source=policy.source,
+            content_hash=content_hash,
+            reason=marked_unavailable.reason,
         )
 
     unhydrated_pin = policy.mode == "pinned"
