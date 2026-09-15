@@ -83,10 +83,12 @@ from apps.sync_hub.service_models import (
     RowModel,
     StatusResponse,
 )
+from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 router.include_router(stem_assets_router)
+router.include_router(lyrics_asr_assets_router)
 #: The 401/503 each credential-gated route declares, per endpoint (plan X5).
 _auth = service_credentials.credential_responses
 
