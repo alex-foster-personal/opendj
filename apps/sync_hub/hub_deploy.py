@@ -26,7 +26,8 @@ CLI::
     python -m apps.sync_hub.hub_deploy default-data-dir
     python -m apps.sync_hub.hub_deploy argv   --uv UV --data-dir D --port P
     python -m apps.sync_hub.hub_deploy render --kind systemd|launchd --out-dir O --repo-root R \\
-        --uv UV --data-dir D --port P --backup-dest B --keep N [--upload-r2 --doppler DOPPLER]
+        --uv UV --data-dir D --port P --backup-dest B --keep N [--upload-r2 --doppler DOPPLER] \\
+        [--serve-r2 --doppler DOPPLER --serve-doppler-config CONFIG]
     python -m apps.sync_hub.hub_deploy init   --data-dir D
     python -m apps.sync_hub.hub_deploy status --data-dir D --url http://127.0.0.1:P
 """
@@ -142,10 +143,18 @@ def assert_dedicated_data_dir(data_dir: Path) -> None:
 # ----- commands --------------------------------------------------------------
 
 
-def hub_serve_argv(*, uv: str, data_dir: Path, port: int) -> list[str]:
+def hub_serve_argv(
+    *,
+    uv: str,
+    data_dir: Path,
+    port: int,
+    serve_r2: bool = False,
+    doppler: str | None = None,
+    serve_doppler_config: str | None = None,
+) -> list[str]:
     """The exact hub command every launcher runs. Loopback, always."""
     assert_dedicated_data_dir(data_dir)
-    return [
+    argv = [
         uv,
         "run",
         "--no-sync",
@@ -160,6 +169,17 @@ def hub_serve_argv(*, uv: str, data_dir: Path, port: int) -> list[str]:
         "--port",
         str(port),
     ]
+    if not serve_r2:
+        return argv
+    if not serve_doppler_config:
+        raise HubDeployError("--serve-r2 needs --serve-doppler-config")
+    if not doppler:
+        raise HubDeployError("--serve-r2 needs --doppler (absolute path to the doppler CLI)")
+    return _doppler_wrap(doppler, serve_doppler_config, argv)
+
+
+def _doppler_wrap(doppler: str, config: str, inner: Sequence[str]) -> list[str]:
+    return [doppler, "run", "-p", CFG.DOPPLER_PROJECT, "-c", config, "--", *inner]
 
 
 def hub_backup_argv(
@@ -184,8 +204,7 @@ def hub_backup_argv(
         return argv
     if not doppler:
         raise HubDeployError("--upload-r2 needs --doppler (absolute path to the doppler CLI)")
-    wrapper = [doppler, "run", "-p", CFG.DOPPLER_PROJECT, "-c", CFG.DOPPLER_CONFIG, "--"]
-    return [*wrapper, *argv, "--upload-r2"]
+    return _doppler_wrap(doppler, CFG.DOPPLER_CONFIG, [*argv, "--upload-r2"])
 
 
 # ----- rendering -------------------------------------------------------------
@@ -242,10 +261,19 @@ class RenderInputs:
     keep: int
     upload_r2: bool
     doppler: str | None
+    serve_r2: bool = False
+    serve_doppler_config: str | None = None
 
 
 def _placeholder_values(kind: Kind, inputs: RenderInputs) -> dict[str, dict[str, str]]:
-    serve = hub_serve_argv(uv=inputs.uv, data_dir=inputs.data_dir, port=inputs.port)
+    serve = hub_serve_argv(
+        uv=inputs.uv,
+        data_dir=inputs.data_dir,
+        port=inputs.port,
+        serve_r2=inputs.serve_r2,
+        doppler=inputs.doppler,
+        serve_doppler_config=inputs.serve_doppler_config,
+    )
     backup = hub_backup_argv(
         uv=inputs.uv,
         data_dir=inputs.data_dir,
@@ -408,8 +436,18 @@ def _build_parser() -> argparse.ArgumentParser:
     render.add_argument("--keep", required=True, type=int)
     render.add_argument("--upload-r2", action="store_true")
     render.add_argument(
-        "--doppler", default=None, help="absolute path to doppler (with --upload-r2)"
+        "--doppler", default=None, help="absolute path to doppler (with --upload-r2 or --serve-r2)"
     )
+    argv.add_argument(
+        "--doppler", default=None, help="absolute path to doppler (with --serve-r2)"
+    )
+    for command in (argv, render):
+        command.add_argument("--serve-r2", action="store_true")
+        command.add_argument(
+            "--serve-doppler-config",
+            default=None,
+            help="Doppler config for --serve-r2 (project is CFG.DOPPLER_PROJECT)",
+        )
     init = sub.add_parser(
         "init", help="create the hub DB and register the hub (needs MDT_IS_HUB=1)"
     )
@@ -426,11 +464,27 @@ def _cmd_default_data_dir(_args: argparse.Namespace) -> int:
 
 
 def _cmd_argv(args: argparse.Namespace) -> int:
-    print(shlex.join(hub_serve_argv(uv=args.uv, data_dir=args.data_dir, port=args.port)))
+    print(
+        shlex.join(
+            hub_serve_argv(
+                uv=args.uv,
+                data_dir=args.data_dir,
+                port=args.port,
+                serve_r2=args.serve_r2,
+                doppler=args.doppler,
+                serve_doppler_config=args.serve_doppler_config,
+            )
+        )
+    )
     return 0
 
 
 def _cmd_render(args: argparse.Namespace) -> int:
+    if args.serve_r2:
+        print(
+            f"[INFO] serve doppler project={CFG.DOPPLER_PROJECT} "
+            f"config={args.serve_doppler_config}"
+        )
     inputs = RenderInputs(
         repo_root=args.repo_root,
         uv=args.uv,
@@ -440,6 +494,8 @@ def _cmd_render(args: argparse.Namespace) -> int:
         keep=args.keep,
         upload_r2=args.upload_r2,
         doppler=args.doppler,
+        serve_r2=args.serve_r2,
+        serve_doppler_config=args.serve_doppler_config,
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, text in render_units(args.kind, inputs).items():
