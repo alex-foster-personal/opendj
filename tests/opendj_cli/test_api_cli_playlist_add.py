@@ -75,7 +75,9 @@ def test_api_post_items_add_duplicate_allowed(
 ) -> None:
     base_url, _db = library_daemon
     monkeypatch.setattr(
-        api_cli, "resolve_backend_base_url", lambda environ=None: base_url,
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
     )
     import httpx
 
@@ -109,7 +111,9 @@ def test_api_post_items_add_noop_when_forbid_duplicates(
 ) -> None:
     base_url, _db = library_daemon
     monkeypatch.setattr(
-        api_cli, "resolve_backend_base_url", lambda environ=None: base_url,
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
     )
     import httpx
 
