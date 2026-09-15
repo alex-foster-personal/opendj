@@ -44,11 +44,16 @@ def test_push_missing_dry_run_without_scripts_package(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """if push_missing imports scripts at call time then the packaged engine 500s."""
+    # Every change below is monkeypatch-owned so it is undone at teardown.
+    # Inserting the finder into the live sys.meta_path leaked it into every
+    # later test in the same worker: 25 unrelated tests then failed with
+    # "scripts is not shipped in the engine payload" (trunk-red, Tue 15 Sep
+    # 2026, #2410).
     for key in list(sys.modules):
         if key == "scripts" or key.startswith("scripts."):
-            sys.modules.pop(key, None)
-    sys.modules.pop("apps.lyrics.stems_sync", None)
-    sys.meta_path.insert(0, _RefuseScripts())
+            monkeypatch.delitem(sys.modules, key, raising=False)
+    monkeypatch.delitem(sys.modules, "apps.lyrics.stems_sync", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [_RefuseScripts(), *sys.meta_path])
 
     data_dir = tmp_path / "data"
     external = tmp_path / "external-stems"
