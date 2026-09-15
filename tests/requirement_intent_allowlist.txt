@@ -63,8 +63,6 @@ tests/engine_core/test_build_info.py
 tests/fixtures/test_resolver.py
 tests/integration/test_phase08_smoke.py
 tests/integration/test_phase4_smoke.py
-tests/launcher/test_bootstrap_phase5.py
-tests/launcher/test_launcher_fts5.py
 tests/open_dj/test_canon.py
 tests/open_dj/test_cli.py
 tests/open_dj/test_cli_conformance.py

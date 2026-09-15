@@ -11,9 +11,23 @@
 
 // All real code lives in the library crate (src/lib.rs); this binary is a
 // thin entry point so `search_bench` can share the same modules.
-use launcher::commands::{drag::start_track_drag, frecency::{get_frecent_top, record_drag},
-               hotkey::{maybe_show_first_run_notification, register_hotkey, tray_tooltip},
-               search::search_tracks, window::toggle_palette_visibility};
+//
+// The four `#[tauri::command]` fns are referenced by their FULL path inline
+// in `generate_handler!` below, not imported by bare name here. Tauri's
+// command macro expands each fn into a sibling hidden macro
+// (`__cmd__<name>`) at the SAME module path; `generate_handler!` looks that
+// sibling up via the identifier it was given, so a bare-name `use` (which
+// only brings the fn's value-namespace item into scope, not the
+// differently-named macro-namespace one) leaves it unresolvable across the
+// bin/lib crate boundary -- `error: cannot find macro '__cmd__<name>' in
+// this scope` for every command, every time (issue #2759 packaging CI: this
+// was latent because nothing had ever compiled `launcher` end to end
+// before). Fully qualifying the path in `generate_handler!` is Tauri's own
+// documented fix for multi-module commands.
+use launcher::commands::{
+    hotkey::{maybe_show_first_run_notification, register_hotkey, tray_tooltip},
+    window::toggle_palette_visibility,
+};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -75,10 +89,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_track_drag,
-            search_tracks,
-            get_frecent_top,
-            record_drag,
+            launcher::commands::drag::start_track_drag,
+            launcher::commands::search::search_tracks,
+            launcher::commands::frecency::get_frecent_top,
+            launcher::commands::frecency::record_drag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyper-K launcher");
