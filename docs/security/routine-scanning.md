@@ -53,7 +53,13 @@ Findings, rules and policies live on the Semgrep AppSec Platform dashboard.
   so the job is skipped for them, not failed. The workflow never uses
   `pull_request_target`.
 - **No silent fallback.** An empty token fails the step with an explicit error. It never
-  degrades to a tokenless CE run.
+  degrades to a tokenless CE run. `--no-suppress-errors` makes a scan that could not run
+  go red: by default `semgrep ci` exits 0 on errors when there are no blocking findings.
+- **Git credentials.** On PRs `semgrep ci` shallow-fetches the base and head commits from
+  origin even when the checkout already has them. The checkout keeps
+  `persist-credentials: false`; the read-only job token reaches git only inside the
+  `semgrep ci` step, as a masked `http.extraheader` passed through `GIT_CONFIG_*`
+  environment variables, so nothing is written to `.git/config`.
 - **Report-only.** `semgrep ci` exits non-zero on findings from rules in Block mode on the
   platform, and on scan errors. The job is not a required check (ADR-0043), the same as
   the `scan (pr)` job.
