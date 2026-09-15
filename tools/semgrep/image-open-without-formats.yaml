@@ -1,0 +1,17 @@
+# Positive control: tests/fixtures/security/sast-control/image_open_no_formats.py
+rules:
+  - id: odj-image-open-without-formats
+    languages: [python]
+    severity: ERROR
+    message: >-
+      PIL.Image.open() without formats= lets every Pillow decoder (EPS, McIdas, PCF, ...)
+      parse the bytes before any format check. Pass formats=[<expected>]. See the Pillow
+      item in docs/security/security.md#patch-priority.
+    paths:
+      include:
+        - "/apps/webui/server/**"
+        - "/apps/engine_core/**"
+        - "/tests/fixtures/security/sast-control/**"
+    patterns:
+      - pattern: PIL.Image.open(...)
+      - pattern-not: PIL.Image.open(..., formats=$FORMATS, ...)

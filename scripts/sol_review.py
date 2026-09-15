@@ -302,7 +302,7 @@ def summary_body(
     model: str,
     findings: list[Finding],
     carried: list[Finding],
-    unreviewed: list[str] | None = None,
+    unreviewed: list[str],
 ) -> str:
     counts = {s: sum(1 for f in findings if f.severity == s) for s in sorted(BADGE_COLORS)}
     tally = ", ".join(f"{s} {n}" for s, n in counts.items() if n)
@@ -334,8 +334,8 @@ def summary_body(
             lines += [f"- {f.verdict} {f.severity}: {where} -- {withheld(f.title)}"]
             if f.detail:
                 lines += [f"  {withheld(f.detail)}"]
-    lines += unreviewed_note(unreviewed or [])
-    lines += ["", marker(sha, seat, model, skipped=frozenset(unreviewed or []))]
+    lines += unreviewed_note(unreviewed)
+    lines += ["", marker(sha, seat, model, skipped=frozenset(unreviewed))]
     return "\n".join(lines)
 
 
@@ -369,7 +369,15 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
         )
     run_id = uuid.uuid4().hex[:12]
     prompt, _ = build_prompt(
-        pr, sha, title, diff, run_id, CFG.MAX_DIFF_BYTES, CFG.MAX_FINDINGS, SOL_FENCE
+        pr,
+        sha,
+        title,
+        diff,
+        run_id,
+        CFG.MAX_DIFF_BYTES,
+        CFG.MAX_FINDINGS,
+        SOL_FENCE,
+        unreviewed,
     )
     output, used, model = review_with_codex(prompt, seat)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)

@@ -42,11 +42,13 @@ _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
 _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH = True
+_DEFAULT_MASTER_MUTED = False
 _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "beat_sync_max": _DEFAULT_BEAT_SYNC_MAX,
     "auto_play_enabled": _DEFAULT_AUTO_PLAY_ENABLED,
     "auto_play_enforce_order": _DEFAULT_AUTO_PLAY_ENFORCE_ORDER,
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
+    "master_muted": _DEFAULT_MASTER_MUTED,
 }
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
@@ -591,6 +593,7 @@ class UiPrefsOut(BaseModel):
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
     auto_play_maximize_reach: bool = _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH
+    master_muted: bool = _DEFAULT_MASTER_MUTED
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
@@ -624,6 +627,7 @@ class UiPrefsPatch(BaseModel):
     auto_play_enabled: bool | None = None
     auto_play_enforce_order: bool | None = None
     auto_play_maximize_reach: bool | None = None
+    master_muted: bool | None = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
     next_only_filter: bool | None = None
@@ -659,6 +663,18 @@ def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
         value = getattr(body, key)
         if value is not None:
             current[key] = value
+
+
+def persist_master_muted(request: Request, muted: bool) -> None:
+    """Merge master_muted into ui-prefs.json synchronously (CLI/MCP belt)."""
+    if not isinstance(muted, bool):
+        raise TypeError("muted must be boolean")
+    path = _path(request)
+    current = _load(path)
+    current["master_muted"] = muted
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    publish("library.changed", {"kind": "ui_prefs", "ids": []})
 
 
 @router.get("", response_model=UiPrefsOut)

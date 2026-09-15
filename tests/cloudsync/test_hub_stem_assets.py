@@ -20,7 +20,6 @@ from apps.cloud.stem_hydration import hydrate_one
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
     STEM_BUNDLE_PRESIGN_FAILED,
-    STEM_HUB_UNREACHABLE,
     STEM_HYDRATION_NOT_ARMED,
     DirectR2Source,
     HubPresignedSource,
@@ -292,8 +291,8 @@ def test_manifest_route_502_when_hub_unreachable(tmp_path: Path) -> None:
     app.include_router(stems_router, prefix="/api/v1")
     with TestClient(app) as client:
         response = client.get("/api/v1/tracks/any-track/stems")
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == STEM_HUB_UNREACHABLE
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "SYNC_HUB_UNREACHABLE"
 
 
 def test_manifest_route_502_stem_hydration_not_armed_when_configured_unarmed(

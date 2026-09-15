@@ -1,5 +1,6 @@
 """Track rows union active transfers with stale locations (CLOUDSYNC-10).
 
+[if] a track has an active transfer or stale location row [then] the believed-state union surfaces it on the row, [else stop].
 [if] track rows union active transfers with stale locations [then] missing files stay unavailable while transfers are active, [else stop].
 """
 from __future__ import annotations

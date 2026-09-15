@@ -3,8 +3,8 @@
 Lives under ``apps`` (not ``scripts``) because the packaged engine ships
 ``apps`` only: the stems push-missing route maps errors that quote this name
 to structured 4xx/503 responses, so the route module must import it without
-``scripts`` on ``sys.path``. ``scripts.stem_inventory`` re-exports it and owns
-the fail-fast reader.
+``scripts`` on ``sys.path``. ``apps.stems.inventory`` owns the fail-fast reader;
+``scripts.stem_inventory`` is a thin CLI wrapper.
 """
 
 from __future__ import annotations

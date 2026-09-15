@@ -39,9 +39,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts import local_stems_to_r2 as migrate
-from scripts import r2_stems, stem_inventory
-from scripts.local_stems_to_r2 import Upload
+from apps.stems import inventory as stem_inventory
+from apps.stems import r2_migration as migrate
+from apps.stems import r2_stems
+from apps.stems.r2_migration import Upload
 
 PRESET = "mel-band-roformer-ov8-seg256"
 ID_A = "a" * 40
