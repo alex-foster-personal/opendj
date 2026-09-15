@@ -14,8 +14,10 @@ from typing import Any, Literal
 
 from apps.sync_hub import capabilities, protocol, sync_set
 from apps.sync_hub.protocol_common import (
+    SyncProtocolError,
     canonical_bytes,
     canonical_row,
+    decode_row_pk,
     encode_row_pk,
     lww_key,
     table_columns,
@@ -83,6 +85,41 @@ def _canonical_hex(table: str, columns: Sequence[str], row: Sequence[Any]) -> st
     return hashlib.sha256(canonical_bytes(canonical_row(table, columns, row))).hexdigest()
 
 
+def _pk_column_types(
+    conn: sqlite3.Connection, table: str, pk_columns: Sequence[str]
+) -> dict[str, str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    col_types = {str(row[1]): str(row[2]).upper() for row in rows}
+    return {column: col_types[column] for column in pk_columns}
+
+
+def _coerce_pk_bind(value: str, col_type: str) -> Any:
+    if "INT" in col_type:
+        return int(value)
+    return value
+
+
+def _pk_after_predicate(
+    conn: sqlite3.Connection,
+    table: str,
+    spec: protocol.TableSpec,
+    cursor_pk: tuple[str | None, ...],
+) -> tuple[str, tuple[Any, ...]]:
+    if len(cursor_pk) != len(spec.pk):
+        raise SyncProtocolError(
+            f"cursor pk length {len(cursor_pk)} does not match "
+            f"{table} pk length {len(spec.pk)}"
+        )
+    pk_types = _pk_column_types(conn, table, spec.pk)
+    pk_cols = ", ".join(spec.pk)
+    placeholders = ", ".join("?" for _ in spec.pk)
+    bound = tuple(
+        _coerce_pk_bind(str(value), pk_types[column])
+        for column, value in zip(spec.pk, cursor_pk, strict=True)
+    )
+    return f"({pk_cols}) > ({placeholders})", bound
+
+
 def iter_eligible_local_rows(
     conn: sqlite3.Connection, table: str
 ) -> Iterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
@@ -118,17 +155,20 @@ def hub_sync_row_page(
     columns = table_columns(conn, table)
     order_by = ", ".join(spec.pk)
     pk_index = {column: index for index, column in enumerate(columns)}
+    select_sql = f"SELECT {', '.join(columns)} FROM {table}"
+    where_params: tuple[Any, ...] = ()
+    if cursor is not None:
+        cursor_pk = decode_row_pk(cursor)
+        where_sql, where_params = _pk_after_predicate(conn, table, spec, cursor_pk)
+        select_sql = f"{select_sql} WHERE {where_sql}"
+    select_sql = f"{select_sql} ORDER BY {order_by}"
+
     rows: list[HubRowSample] = []
     next_cursor: str | None = None
-    for db_row in conn.execute(
-        f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
-    ):
+    for db_row in conn.execute(select_sql, where_params):
         if sync_set.excluded_reason(conn, table, columns, db_row, spec, held) is not None:
             continue
         pk = tuple(str(db_row[pk_index[column]]) for column in spec.pk)
-        encoded = encode_row_pk(pk)
-        if cursor is not None and encoded <= cursor:
-            continue
         canonical = canonical_row(table, columns, db_row)
         rows.append(
             HubRowSample(
@@ -139,7 +179,7 @@ def hub_sync_row_page(
             )
         )
         if len(rows) >= limit:
-            next_cursor = encoded
+            next_cursor = encode_row_pk(pk)
             break
     if len(rows) < limit:
         next_cursor = None
