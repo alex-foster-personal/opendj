@@ -3617,6 +3617,17 @@
               }
             ],
             "title": "Signed In As"
+          },
+          "update_required": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRequiredOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine."
           }
         },
         "required": [
@@ -19155,6 +19166,35 @@
           "platform_key"
         ],
         "title": "UpdateCheckOut",
+        "type": "object"
+      },
+      "UpdateRequiredOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "code": {
+            "const": "SYNC_WIRE_VERSION",
+            "title": "Code",
+            "type": "string"
+          },
+          "local_wire_version": {
+            "title": "Local Wire Version",
+            "type": "integer"
+          },
+          "peer_wire_version": {
+            "title": "Peer Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "local_wire_version",
+          "peer_wire_version",
+          "action"
+        ],
+        "title": "UpdateRequiredOut",
         "type": "object"
       },
       "UploadFileResult": {

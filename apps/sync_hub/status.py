@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -28,6 +28,7 @@ from typing import Any, Literal
 from apps.shared.state import sync_stamp
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import heartbeat as sync_heartbeat
+from apps.sync_hub.wire_version import UpdateRequiredState, parse_update_required
 
 SCHEDULER_ENV: str = sync_config.SCHEDULER_ENV
 ENDPOINT_ENV: str = sync_config.ENDPOINT_ENV
@@ -113,9 +114,10 @@ class CloudSyncStatus:
     rows_pending: int | None
     endpoint: str | None
     recent_results: tuple[SyncResult, ...]
+    update_required: UpdateRequiredState | None
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        wire: dict[str, Any] = {
             "enabled": self.enabled,
             "configured": self.configured,
             "running": self.running,
@@ -131,6 +133,11 @@ class CloudSyncStatus:
             "endpoint": self.endpoint,
             "recent_results": [result.to_wire() for result in self.recent_results],
         }
+        if self.update_required is not None:
+            wire["update_required"] = asdict(self.update_required)
+        else:
+            wire["update_required"] = None
+        return wire
 
 
 def status_path(data_dir: Path) -> Path:
@@ -254,6 +261,11 @@ def read_status(
         reason = "CloudSync is configured but its scheduler is not running (no fresh heartbeat)."
     results = read_results(Path(data_dir))
     latest = results[0] if results else None
+    update_required = (
+        None
+        if latest is None or latest.status != "error"
+        else parse_update_required(latest.message)
+    )
     return CloudSyncStatus(
         enabled=effective.configured and running,
         configured=effective.configured,
@@ -272,6 +284,7 @@ def read_status(
         rows_pending=None,
         endpoint=effective.hub_url,
         recent_results=results,
+        update_required=update_required,
     )
 
 
@@ -281,6 +294,7 @@ __all__ = [
     "CloudSyncStatus",
     "CloudSyncStatusError",
     "SyncResult",
+    "UpdateRequiredState",
     "journal_deferred",
     "read_status",
     "status_path",
