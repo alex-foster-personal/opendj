@@ -8,7 +8,9 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from apps.engine_core import warning_log
+import pytest
+
+from apps.engine_core import log_disk, warning_log
 from apps.engine_core.warning_log import _WarningJsonHandler, configure_warning_log
 
 
@@ -128,3 +130,66 @@ def test_warning_log_scheduler_survives_enospc(
     handler.emit(record)
     assert calls == 2
     assert capsys.readouterr().err.count("no space left on device") == 2
+
+
+def test_warning_log_caps_archive_count_at_twenty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "engine-warn.log"
+    for index in range(25):
+        archive = tmp_path / f"engine-warn.log.202609{index:02}T000000Z"
+        archive.write_text(f"archive-{index}", encoding="utf-8")
+        os.utime(archive, (index + 1, index + 1))
+    path.write_text("live", encoding="utf-8")
+    monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
+
+    warning_log._rotate_if_needed(path, 1)
+
+    archives = list(tmp_path.glob("engine-warn.log.*"))
+    assert len(archives) <= warning_log.MAX_ARCHIVE_COUNT
+
+
+def test_warning_log_skips_rotation_on_low_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "engine-warn.log"
+    path.write_text("live", encoding="utf-8")
+    monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
+    log_disk.reset_rotation_state_for_tests()
+    monkeypatch.setattr(
+        log_disk,
+        "disk_free_bytes",
+        lambda _path: 0,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="apps.engine_core.log_disk"):
+        warning_log._rotate_if_needed(path, 1)
+        warning_log._rotate_if_needed(path, 1)
+
+    assert path.exists()
+    errors = [rec for rec in caplog.records if rec.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "rotation disabled" in errors[0].message
+
+
+def test_warning_log_rotation_resumes_after_disk_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "engine-warn.log"
+    path.write_text("live", encoding="utf-8")
+    monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
+    log_disk.reset_rotation_state_for_tests()
+    monkeypatch.setattr(log_disk, "disk_free_bytes", lambda _path: 0)
+
+    warning_log._rotate_if_needed(path, 1)
+    assert path.exists()
+
+    log_disk.reset_rotation_state_for_tests()
+    monkeypatch.setattr(
+        log_disk,
+        "disk_free_bytes",
+        lambda _path: log_disk.ENGINE_LOG_MIN_FREE_BYTES,
+    )
+    warning_log._rotate_if_needed(path, 1)
+    assert not path.exists()
+    assert len(list(tmp_path.glob("engine-warn.log.*"))) == 1

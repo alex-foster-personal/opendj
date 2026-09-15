@@ -236,6 +236,7 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         # which reads MDT_DATA_DIR at import time.
         import uvicorn
 
+        from apps.engine_core.access_log import configure_access_log_sampling
         from apps.engine_core.app import create_app
         from apps.engine_core.warning_log import configure_warning_log
         from apps.shared.telemetry import TelemetryConfigError, init_telemetry
@@ -249,6 +250,7 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         if warning_log is not None:
             logging.basicConfig(level=logging.INFO)
             configure_warning_log(Path(warning_log), warning_boot_id)
+        configure_access_log_sampling()
 
         # BEFORE create_app, not after: the Sentry FastAPI integration wraps
         # route handlers as they are registered, so a later init would leave

@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager};
 use url::Url;
 
 use crate::engine;
+use crate::engine_log::{disk_free_bytes, ENGINE_LOG_MIN_FREE_BYTES};
 use crate::launch;
 use crate::shell_health::{ShellHealthServer, ShellHealthSnapshot, utc_timestamp_iso};
 
@@ -25,6 +26,7 @@ pub enum SupervisorPhase {
     Dead,
     Reaping,
     Restarting,
+    AwaitingDiskSpace,
     Fatal,
     AwaitingRelaunch,
 }
@@ -215,16 +217,37 @@ fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
                     return;
                 }
                 guard = supervisor.inner.lock().expect("supervisor mutex");
+                if is_low_disk(&guard.paths.data_dir) {
+                    enter_awaiting_disk(app, supervisor, &mut guard);
+                    return;
+                }
             }
             if dead_at.elapsed() >= RECOVERY_TIMEOUT && guard.phase == SupervisorPhase::Restarting
             {
-                guard.phase = SupervisorPhase::Fatal;
-                engine::append_shell_log("ERROR", "engine fatal: restart failed within 30s");
-                update_surfaces(app, supervisor, &guard);
-                show_fatal_dialog(app, &guard);
+                if is_low_disk(&guard.paths.data_dir) {
+                    enter_awaiting_disk(app, supervisor, &mut guard);
+                } else {
+                    guard.phase = SupervisorPhase::Fatal;
+                    engine::append_shell_log("ERROR", "engine fatal: restart failed within 30s");
+                    update_surfaces(app, supervisor, &guard);
+                    show_fatal_dialog(app, &guard);
+                }
             } else if guard.phase == SupervisorPhase::Restarting {
                 publish_restarting(app, supervisor, &guard);
             }
+        }
+        SupervisorPhase::AwaitingDiskSpace => {
+            if disk_space_recovered(&guard.paths.data_dir) {
+                let app_clone = app.clone();
+                drop(guard);
+                if attempt_restart(&app_clone, supervisor, false) {
+                    engine::append_shell_log("INFO", "engine restarted after low disk recovered");
+                    return;
+                }
+                guard = supervisor.inner.lock().expect("supervisor mutex");
+                guard.phase = SupervisorPhase::AwaitingDiskSpace;
+            }
+            publish_awaiting_disk(app, supervisor, &guard);
         }
         SupervisorPhase::Fatal | SupervisorPhase::AwaitingRelaunch | SupervisorPhase::Dead => {
             publish_dead(app, supervisor, &guard);
@@ -428,6 +451,46 @@ fn write_parent_file(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn is_low_disk(data_dir: &Path) -> bool {
+    disk_free_bytes(data_dir)
+        .map(|free| free < ENGINE_LOG_MIN_FREE_BYTES)
+        .unwrap_or(false)
+}
+
+fn disk_space_recovered(data_dir: &Path) -> bool {
+    disk_free_bytes(data_dir)
+        .map(|free| free >= ENGINE_LOG_MIN_FREE_BYTES)
+        .unwrap_or(false)
+}
+
+fn enter_awaiting_disk(
+    app: &AppHandle,
+    supervisor: &EngineSupervisor,
+    guard: &mut RuntimeState,
+) {
+    guard.phase = SupervisorPhase::AwaitingDiskSpace;
+    engine::append_shell_log("WARN", "engine awaiting disk space recovery");
+    update_surfaces(app, supervisor, guard);
+}
+
+fn publish_awaiting_disk(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeState) {
+    supervisor.shell_health.update(ShellHealthSnapshot {
+        status: "waiting".into(),
+        engine: "waiting-disk".into(),
+        lock_pid: guard.lock_pid,
+        lock_port: guard.lock_port,
+        exit_code: guard.exit_code,
+        reason: Some("low-disk".into()),
+    });
+    set_window_title(
+        app,
+        &format!(
+            "{} - waiting for disk space",
+            guard.paths.product_name
+        ),
+    );
+}
+
 fn publish_running(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeState) {
     let (lock_pid, lock_port) = launch::read_lock_fields(&launch::lock_path(&guard.paths.data_dir))
         .or_else(|| guard.supervised.as_ref().map(|s| (s.pid().unwrap_or(0), s.port())))
@@ -438,6 +501,7 @@ fn publish_running(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Runti
         lock_pid: Some(lock_pid),
         lock_port: Some(lock_port),
         exit_code: None,
+        reason: None,
     });
     set_window_title(app, &guard.paths.product_name);
 }
@@ -449,6 +513,7 @@ fn publish_restarting(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Ru
         lock_pid: guard.lock_pid,
         lock_port: guard.lock_port,
         exit_code: guard.exit_code,
+        reason: None,
     });
     set_window_title(app, &format!("{} - engine restarting", guard.paths.product_name));
 }
@@ -460,6 +525,7 @@ fn publish_dead(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeS
         lock_pid: guard.lock_pid,
         lock_port: guard.lock_port,
         exit_code: guard.exit_code,
+        reason: None,
     });
     set_window_title(app, &format!("{} - engine dead", guard.paths.product_name));
 }
@@ -468,6 +534,7 @@ fn update_surfaces(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Runti
     match guard.phase {
         SupervisorPhase::Running => publish_running(app, supervisor, guard),
         SupervisorPhase::Restarting => publish_restarting(app, supervisor, guard),
+        SupervisorPhase::AwaitingDiskSpace => publish_awaiting_disk(app, supervisor, guard),
         SupervisorPhase::Dead | SupervisorPhase::Fatal | SupervisorPhase::AwaitingRelaunch => {
             publish_dead(app, supervisor, guard);
             navigate_fatal_bootstrap(app, guard, supervisor.shell_health.port());
