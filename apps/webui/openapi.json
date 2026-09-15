@@ -19378,6 +19378,84 @@
         "title": "UpdateApplyRefused",
         "type": "object"
       },
+      "UpdateApplyStatusOut": {
+        "properties": {
+          "claimed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At Utc"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "completed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At Utc"
+          },
+          "enqueued_at_utc": {
+            "title": "Enqueued At Utc",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "installed",
+                  "no-update",
+                  "refused"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "claimed",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "state",
+          "enqueued_at_utc"
+        ],
+        "title": "UpdateApplyStatusOut",
+        "type": "object"
+      },
       "UpdateCheckOut": {
         "description": "What the UI and any agent read.\n\n``applies_via`` is stated because the answer and the action come from\ndifferent components: this route answers, and the Tauri updater inside\nthe desktop shell is what can act. A browser tab can learn an update\nexists and cannot install it, and saying so beats a dead button.",
         "properties": {
@@ -34085,6 +34163,48 @@
           }
         },
         "summary": "Update Apply",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/update/apply/{command_id}": {
+      "get": {
+        "operationId": "update_apply_status_api_v1_update_apply__command_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "command_id",
+            "required": true,
+            "schema": {
+              "title": "Command Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Apply Status",
         "tags": [
           "health"
         ]

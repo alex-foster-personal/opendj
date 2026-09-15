@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, BuildIdentity, BuildInfoOut
 from apps.engine_core.update_channel import (
     UPDATE_APPLY_PATH,
+    UPDATE_APPLY_STATUS_PATH,
     UPDATE_ENDPOINT,
     add_update_apply_route,
     add_update_check_route,
@@ -194,5 +196,167 @@ def test_second_apply_while_first_pending_returns_409(monkeypatch) -> None:
             assert second.status_code == 409
             detail = second.json()["detail"]
             assert command_id in detail
+
+    asyncio.run(run())
+
+
+def _apply_status_path(command_id: str) -> str:
+    return UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)
+
+
+def test_apply_status_pending_before_claim(monkeypatch) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
+        if request.url == UPDATE_ENDPOINT
+        else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
+        ) as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            assert apply.status_code == 202
+            command_id = apply.json()["command_id"]
+
+            status = await client.get(_apply_status_path(command_id))
+            assert status.status_code == 200
+            body = status.json()
+            assert body["command_id"] == command_id
+            assert body["state"] == "pending"
+            assert body["outcome"] is None
+            assert body["error"] is None
+            assert isinstance(body["enqueued_at_utc"], str) and body["enqueued_at_utc"] != ""
+            assert body["claimed_at_utc"] is None
+            assert body["completed_at_utc"] is None
+
+    asyncio.run(run())
+
+
+def test_apply_status_claimed_after_shell_next(monkeypatch) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
+        if request.url == UPDATE_ENDPOINT
+        else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
+        ) as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            command_id = apply.json()["command_id"]
+
+            nxt = await client.get("/api/v1/commands/next", params={"consumer": "shell"})
+            assert nxt.status_code == 200
+
+            status = await client.get(_apply_status_path(command_id))
+            assert status.status_code == 200
+            body = status.json()
+            assert body["state"] == "claimed"
+            assert isinstance(body["claimed_at_utc"], str) and body["claimed_at_utc"] != ""
+            assert body["completed_at_utc"] is None
+            assert body["outcome"] is None
+            assert body["error"] is None
+
+    asyncio.run(run())
+
+
+def test_apply_status_failed_after_shell_result(monkeypatch, caplog) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
+        if request.url == UPDATE_ENDPOINT
+        else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
+        ) as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            command_id = apply.json()["command_id"]
+
+            nxt = await client.get("/api/v1/commands/next", params={"consumer": "shell"})
+            assert nxt.status_code == 200
+
+            with caplog.at_level(logging.WARNING, logger="apps.webui.server.shell_commands"):
+                result = await client.post(
+                    f"/api/v1/commands/{command_id}/result",
+                    json={
+                        "status": "failed",
+                        "outcome": "refused",
+                        "error": "minisign verify failed",
+                    },
+                )
+            assert result.status_code == 202
+
+            status = await client.get(_apply_status_path(command_id))
+            assert status.status_code == 200
+            body = status.json()
+            assert body["state"] == "failed"
+            assert body["outcome"] == "refused"
+            assert body["error"] == "minisign verify failed"
+            assert isinstance(body["completed_at_utc"], str) and body["completed_at_utc"] != ""
+
+            warnings = [
+                record
+                for record in caplog.records
+                if record.levelname == "WARNING"
+                and "shell apply-update" in record.getMessage()
+            ]
+            assert len(warnings) == 1
+            message = warnings[0].getMessage()
+            assert command_id in message
+            assert "refused" in message
+            assert "minisign verify failed" in message
+
+    asyncio.run(run())
+
+
+def test_apply_status_succeeded_after_shell_result(monkeypatch) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
+        if request.url == UPDATE_ENDPOINT
+        else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
+        ) as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            command_id = apply.json()["command_id"]
+
+            nxt = await client.get("/api/v1/commands/next", params={"consumer": "shell"})
+            assert nxt.status_code == 200
+
+            result = await client.post(
+                f"/api/v1/commands/{command_id}/result",
+                json={"status": "succeeded", "outcome": "installed"},
+            )
+            assert result.status_code == 202
+
+            status = await client.get(_apply_status_path(command_id))
+            assert status.status_code == 200
+            body = status.json()
+            assert body["state"] == "succeeded"
+            assert body["outcome"] == "installed"
+            assert body["error"] is None
+            assert isinstance(body["completed_at_utc"], str) and body["completed_at_utc"] != ""
+
+    asyncio.run(run())
+
+
+def test_apply_status_404_unknown_id() -> None:
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
+        ) as client:
+            status = await client.get(_apply_status_path("deadbeefdeadbeefdeadbeefdeadbeef"))
+            assert status.status_code == 404
 
     asyncio.run(run())

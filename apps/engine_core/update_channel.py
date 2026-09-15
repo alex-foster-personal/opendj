@@ -83,7 +83,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -114,6 +114,10 @@ UPDATE_ENDPOINT: str = (
 
 UPDATE_CHECK_PATH: str = "/api/v1/update/check"
 UPDATE_APPLY_PATH: str = "/api/v1/update/apply"
+UPDATE_APPLY_STATUS_PATH: str = "/api/v1/update/apply/{command_id}"
+
+#: How often the apply CLI polls command status before checking build-info.
+APPLY_STATUS_POLL_INTERVAL_S: float = 1.0
 
 #: The error code a caller branches on when the channel could not answer.
 CODE_UPDATE_CHECK_FAILED: str = "update_check_failed"
@@ -174,6 +178,16 @@ class UpdateApplyAccepted(BaseModel):
 class UpdateApplyRefused(BaseModel):
     status: UpdateStatus
     detail: str
+
+
+class UpdateApplyStatusOut(BaseModel):
+    command_id: str
+    state: Literal["pending", "claimed", "succeeded", "failed"]
+    outcome: Literal["installed", "no-update", "refused"] | None = None
+    error: str | None = None
+    enqueued_at_utc: str
+    claimed_at_utc: str | None = None
+    completed_at_utc: str | None = None
 
 
 class UpdateCheckOut(BaseModel):
@@ -578,6 +592,18 @@ def add_update_apply_route(
             command_id=command_id,
         )
 
+    @app.get(
+        UPDATE_APPLY_STATUS_PATH,
+        response_model=UpdateApplyStatusOut,
+        tags=["health"],
+        name="update_apply_status",
+    )
+    def update_apply_status(request: Request, command_id: str) -> UpdateApplyStatusOut:
+        status_payload = shell_broker(request).get_status(command_id)
+        if status_payload is None:
+            raise HTTPException(status_code=404, detail="unknown apply command")
+        return UpdateApplyStatusOut(**status_payload)
+
 
 # ----- CLI ----------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
@@ -734,11 +760,49 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
             print(apply_resp.text)
             return 2
         accepted = apply_resp.json()
+        command_id = accepted.get("command_id")
+        if not isinstance(command_id, str) or command_id == "":
+            print(json.dumps({"error": "apply response missing command_id"}, indent=2))
+            return 2
         print(
             f"[APPLY] enqueued {accepted.get('available_version')} "
-            f"(command_id={accepted.get('command_id')})",
+            f"(command_id={command_id})",
             file=sys.stderr,
         )
+
+        while True:
+            try:
+                status_resp = client.get(
+                    f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}",
+                    timeout=REQUEST_TIMEOUT_S,
+                )
+            except httpx.HTTPError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "error": (
+                                f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}: "
+                                f"{exc}"
+                            )
+                        },
+                        indent=2,
+                    )
+                )
+                return 2
+            if status_resp.status_code == 404:
+                print(status_resp.text)
+                return 2
+            if status_resp.status_code != 200:
+                print(status_resp.text)
+                return 2
+            status_body = status_resp.json()
+            state = status_body.get("state")
+            if state == "failed":
+                print(json.dumps(status_body, indent=2))
+                return 3
+            if state == "succeeded":
+                break
+            time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
 
         deadline = time.monotonic() + timeout_s
         backoff = 1.0
