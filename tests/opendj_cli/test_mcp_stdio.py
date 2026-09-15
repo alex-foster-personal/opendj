@@ -225,6 +225,22 @@ def test_app_state_rejects_invalid_paths(engine: Engine) -> None:
 
 
 @pytest.mark.requirement("AGENT-11")
+def test_library_rejects_oversized_path(engine: Engine) -> None:
+    """[if] library path builds a URL over httpx's ceiling [then] isError names usage, [else stop]."""
+    engine.page().start()
+    oversized_path = "/api/v1/tracks?limit=1&junk=" + ("A" * 500_000)
+    result = call_tool_result(
+        engine,
+        "library",
+        {"method": "GET", "path": oversized_path},
+    )
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any('"error": "usage"' in text for text in texts)
+    assert not any(text == "Error executing tool library" for text in texts)
+
+
+@pytest.mark.requirement("AGENT-11")
 def test_app_state_non_success_is_error(engine: Engine) -> None:
     """[if] app_state hits a 404 path [then] isError is true and names the status, [else stop]."""
     engine.page().start()

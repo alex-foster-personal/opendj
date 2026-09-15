@@ -246,10 +246,7 @@ def _bound_list_page(
         )
     retry_limit = _shrunk_page_limit(len(parsed_body["items"]), tokens, MCP_LIST_TOKEN_BUDGET)
     retry_path = _build_path(base_path, [*query, ("limit", str(retry_limit))])
-    try:
-        retry_response = do_request(retry_path)
-    except httpx.TransportError as error:
-        raise _engine_not_running(unreachable(origin, error)) from error
+    retry_response = _library_do_request(origin, do_request, retry_path)
     retry_body = _apply_projection(_parse_app_state_body(retry_response), projection)
     bounded: dict[str, Any] = {
         "status_code": retry_response.status_code,
@@ -278,6 +275,21 @@ def _bound_list_page(
             }
         )
     return bounded
+
+
+def _library_do_request(
+    origin: EngineOrigin,
+    do_request: Callable[[str], httpx.Response],
+    target_path: str,
+) -> httpx.Response:
+    try:
+        return do_request(target_path)
+    except httpx.TransportError as error:
+        raise _engine_not_running(unreachable(origin, error)) from error
+    except httpx.InvalidURL as error:
+        raise _tool_error({"error": "usage", "message": str(error)}) from error
+    except httpx.UnsupportedProtocol as error:
+        raise _tool_error({"error": "usage", "message": str(error)}) from error
 
 
 def create_server() -> MCPServer:
@@ -434,10 +446,9 @@ def create_server() -> MCPServer:
                     upper, url, headers=request_headers, content=request_body
                 )
 
-        try:
-            response = _do_request(_build_path(base_path, query))
-        except httpx.TransportError as error:
-            raise _engine_not_running(unreachable(origin, error)) from error
+        response = _library_do_request(
+            origin, _do_request, _build_path(base_path, query)
+        )
 
         parsed_body = _apply_projection(_parse_app_state_body(response), projection)
 
