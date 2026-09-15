@@ -865,6 +865,34 @@
         "title": "AnlzCueOut",
         "type": "object"
       },
+      "AppModeOut": {
+        "properties": {
+          "id": {
+            "default": "performance",
+            "enum": [
+              "performance",
+              "library-management",
+              "library",
+              "music-player"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "last_gig_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Gig At"
+          }
+        },
+        "title": "AppModeOut",
+        "type": "object"
+      },
       "AppPostureOut": {
         "properties": {
           "label": {
@@ -8568,6 +8596,31 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
+      "LifecycleQuitIn": {
+        "properties": {
+          "force": {
+            "description": "Must be true for agent and ship clean-quit paths.",
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "force"
+        ],
+        "title": "LifecycleQuitIn",
+        "type": "object"
+      },
+      "LifecycleQuitOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LifecycleQuitOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -8769,6 +8822,39 @@
           "text"
         ],
         "title": "LyricLineOut",
+        "type": "object"
+      },
+      "LyricsAsrPresignResponse": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "default": 900,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "url",
+          "content_hash",
+          "size_bytes"
+        ],
+        "title": "LyricsAsrPresignResponse",
         "type": "object"
       },
       "LyricsCachedIdsOut": {
@@ -18696,6 +18782,9 @@
       },
       "UiPrefsOut": {
         "properties": {
+          "app_mode": {
+            "$ref": "#/components/schemas/AppModeOut"
+          },
           "app_posture": {
             "default": "prep",
             "enum": [
@@ -18733,6 +18822,11 @@
             "title": "Confirm",
             "type": "object"
           },
+          "hide_broken_links": {
+            "default": false,
+            "title": "Hide Broken Links",
+            "type": "boolean"
+          },
           "hide_todo_settings": {
             "default": false,
             "title": "Hide Todo Settings",
@@ -18745,6 +18839,15 @@
           },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
+          },
+          "library_density": {
+            "default": "compact",
+            "enum": [
+              "compact",
+              "cosy"
+            ],
+            "title": "Library Density",
+            "type": "string"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -18781,6 +18884,16 @@
             "title": "Lyrics Waveform Overlay",
             "type": "boolean"
           },
+          "midi_enabled": {
+            "default": false,
+            "title": "Midi Enabled",
+            "type": "boolean"
+          },
+          "next_only_filter": {
+            "default": false,
+            "title": "Next Only Filter",
+            "type": "boolean"
+          },
           "perf_tier": {
             "default": "auto",
             "enum": [
@@ -18791,6 +18904,11 @@
             ],
             "title": "Perf Tier",
             "type": "string"
+          },
+          "remixes_filter": {
+            "default": false,
+            "title": "Remixes Filter",
+            "type": "boolean"
           },
           "show_agent_pins": {
             "default": true,
@@ -18810,6 +18928,14 @@
             ],
             "title": "Theme",
             "type": "string"
+          },
+          "vocals_filter": {
+            "default": false,
+            "title": "Vocals Filter",
+            "type": "boolean"
+          },
+          "wheel_sensitivity": {
+            "$ref": "#/components/schemas/WheelSensitivityOut"
           }
         },
         "title": "UiPrefsOut",
@@ -18817,6 +18943,16 @@
       },
       "UiPrefsPatch": {
         "properties": {
+          "app_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppModeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "app_posture": {
             "anyOf": [
               {
@@ -18898,6 +19034,17 @@
             ],
             "title": "Confirm"
           },
+          "hide_broken_links": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Broken Links"
+          },
           "hide_todo_settings": {
             "anyOf": [
               {
@@ -18929,6 +19076,21 @@
                 "type": "null"
               }
             ]
+          },
+          "library_density": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compact",
+                  "cosy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Density"
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -19001,6 +19163,28 @@
             ],
             "title": "Lyrics Waveform Overlay"
           },
+          "midi_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midi Enabled"
+          },
+          "next_only_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Only Filter"
+          },
           "perf_tier": {
             "anyOf": [
               {
@@ -19017,6 +19201,17 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "remixes_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixes Filter"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -19054,6 +19249,27 @@
               }
             ],
             "title": "Theme"
+          },
+          "vocals_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vocals Filter"
+          },
+          "wheel_sensitivity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WheelSensitivityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "UiPrefsPatch",
@@ -19109,6 +19325,135 @@
           "playlist_ids"
         ],
         "title": "UndoRecordOut",
+        "type": "object"
+      },
+      "UpdateApplyAccepted": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "available_version": {
+            "title": "Available Version",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available_version",
+          "command_id"
+        ],
+        "title": "UpdateApplyAccepted",
+        "type": "object"
+      },
+      "UpdateApplyRefused": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "update-available",
+              "up-to-date",
+              "ahead-of-channel",
+              "endpoint-unreachable",
+              "endpoint-refused",
+              "manifest-malformed",
+              "platform-unsupported",
+              "identity-unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "detail"
+        ],
+        "title": "UpdateApplyRefused",
+        "type": "object"
+      },
+      "UpdateApplyStatusOut": {
+        "properties": {
+          "claimed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At Utc"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "completed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At Utc"
+          },
+          "enqueued_at_utc": {
+            "title": "Enqueued At Utc",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "installed",
+                  "no-update",
+                  "refused"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "claimed",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "state",
+          "enqueued_at_utc"
+        ],
+        "title": "UpdateApplyStatusOut",
         "type": "object"
       },
       "UpdateCheckOut": {
@@ -19881,6 +20226,22 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WheelSensitivityOut": {
+        "properties": {
+          "mouse": {
+            "default": 1.0,
+            "title": "Mouse",
+            "type": "number"
+          },
+          "trackpad": {
+            "default": 0.3333333333333333,
+            "title": "Trackpad",
+            "type": "number"
+          }
+        },
+        "title": "WheelSensitivityOut",
         "type": "object"
       },
       "WorktreePortsOut": {
@@ -23659,8 +24020,22 @@
     },
     "/api/v1/commands/next": {
       "get": {
-        "description": "Let the sole open performance page claim its next agent order.",
+        "description": "Let a consumer claim its next command.",
         "operationId": "next_command_api_v1_commands_next_get",
+        "parameters": [
+          {
+            "description": "performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update",
+            "in": "query",
+            "name": "consumer",
+            "required": false,
+            "schema": {
+              "default": "performance",
+              "description": "performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update",
+              "title": "Consumer",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -23669,6 +24044,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Next Command",
@@ -23679,7 +24064,7 @@
     },
     "/api/v1/commands/{order_id}/result": {
       "post": {
-        "description": "Resolve an order with page-produced per-step statuses and mirror delta.",
+        "description": "Resolve a performance order or a shell command result.",
         "operationId": "complete_command_api_v1_commands__order_id__result_post",
         "parameters": [
           {
@@ -25989,6 +26374,57 @@
         ]
       }
     },
+    "/api/v1/lifecycle/quit": {
+      "post": {
+        "operationId": "request_shell_quit_api_v1_lifecycle_quit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleQuitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleQuitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Shell Quit",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
     "/api/v1/lyrics": {
       "get": {
         "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
@@ -26012,6 +26448,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -30909,6 +31346,9 @@
           "400": {
             "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
           },
+          "404": {
+            "description": "Unknown playlist name (detail + known sibling keys)"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -31335,6 +31775,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS entry does not exist"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -31344,6 +31787,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS not configured"
           }
         },
         "summary": "Push Missing Stems",
@@ -31415,6 +31861,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
           },
           "422": {
             "content": {
@@ -31626,6 +32075,74 @@
         "summary": "Hello",
         "tags": [
           "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+      "get": {
+        "description": "Mint a short-lived GET URL for one ASR transcript JSON object.",
+        "operationId": "get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsAsrPresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "404": {
+            "description": "LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed"
+          },
+          "503": {
+            "description": "lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Lyrics Asr Presign",
+        "tags": [
+          "sync",
+          "sync-lyrics-asr"
         ]
       }
     },
@@ -33620,6 +34137,79 @@
         "summary": "Put Ui Prefs",
         "tags": [
           "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/update/apply": {
+      "post": {
+        "operationId": "update_apply_api_v1_update_apply_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyRefused"
+                }
+              }
+            },
+            "description": "apply refused; no shell command enqueued"
+          }
+        },
+        "summary": "Update Apply",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/update/apply/{command_id}": {
+      "get": {
+        "operationId": "update_apply_status_api_v1_update_apply__command_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "command_id",
+            "required": true,
+            "schema": {
+              "title": "Command Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Apply Status",
+        "tags": [
+          "health"
         ]
       }
     },

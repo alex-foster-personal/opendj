@@ -17,6 +17,7 @@ from tests.opendj_cli.test_cli_end_to_end import _argv
 def test_open_performance_moves_shell_and_reports_client_open(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] the shell is running [then] open performance reports client_open and route, [else stop]."""
     shell = engine.shell()
     shell.start()
     try:
@@ -32,7 +33,7 @@ def test_open_performance_moves_shell_and_reports_client_open(
 def test_state_auto_ensures_performance_on_cold_launch(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Cold launch: no page open, shell simulator opens performance within 10 s."""
+    """[if] no page is open on cold launch [then] state auto-opens performance within 10s, [else stop]."""
     shell = engine.shell()
     shell.start()
     try:
@@ -51,6 +52,7 @@ def test_state_auto_ensures_performance_on_cold_launch(
 def test_no_performance_page_names_remedy_when_shell_never_opens(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] the shell never opens a performance page [then] state names the open_route remedy, [else stop]."""
     started = time.monotonic()
     assert main(_argv(engine, "state")) == EXIT_NO_PAGE
     elapsed = time.monotonic() - started

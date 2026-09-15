@@ -5,9 +5,10 @@ Issue #2673. Reads JSONL deltas from nucbox and remote Mac hosts, groups by a
 stable fingerprint (source_site + message class with numbers, ids and paths
 masked), and opens or updates GitHub issues when thresholds fire.
 
-Triage scope is runtime engine/client JSONL errors only. OBS-01 ``kind=build`` /
-``build:*`` CI telemetry remains in the sink for grep but is excluded from flood
-filing (issue #2845).
+Triage scope is runtime engine/client JSONL errors only. Build/CI rows
+(``kind=build`` or ``source_site`` starting with ``build:``) stay in the JSONL
+for grepping (ADR-0017 / OBS-01) but are excluded from flood filing (ADR-0047;
+issues #2845, #2846).
 
 MINI-PRD
     R1 Fixture dry-run ........................................... done + regression
@@ -161,6 +162,11 @@ def _should_triage_record(raw: dict[str, Any]) -> bool:
     return True
 
 
+def _triage_runtime_record(record: SinkRecord) -> bool:
+    """Filter records_in paths that bypass parse_record (tests, direct injection)."""
+    return _should_triage_record(record.raw)
+
+
 def parse_record(line: str, host_label: str) -> SinkRecord | None:
     line = line.strip()
     if not line:
@@ -190,6 +196,8 @@ def parse_record(line: str, host_label: str) -> SinkRecord | None:
 def aggregate(records: list[SinkRecord]) -> dict[str, FingerprintStats]:
     out: dict[str, FingerprintStats] = {}
     for record in records:
+        if not _triage_runtime_record(record):
+            continue
         fp = triage_fingerprint(record.source_site, record.message)
         if fp not in out:
             out[fp] = FingerprintStats(fingerprint=fp)

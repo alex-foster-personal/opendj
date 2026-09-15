@@ -7,6 +7,8 @@ Regression lines:
   - if dry-run fixture has one new flood and one existing issue then one create
     and one comment command print
   - if kpi last_run is older than 2h then health FAIL for sink-triage freshness
+
+[if] sink fingerprints and thresholds fire [then] triage creates or comments on issues, [else stop].
 """
 
 from __future__ import annotations
@@ -38,15 +40,36 @@ from scripts.sink_triage import (
 pytestmark = pytest.mark.requirement("OPS-34")
 
 
-def _record(site: str, message: str, host: str = "silver") -> SinkRecord:
+def _record(
+    site: str,
+    message: str,
+    host: str = "silver",
+    *,
+    kind: str | None = None,
+) -> SinkRecord:
+    raw: dict[str, str] = {
+        "source_site": site,
+        "message": message,
+        "host": host,
+        "build_sha": "abc123",
+    }
+    if kind is not None:
+        raw["kind"] = kind
     return SinkRecord(
         host=host,
         source_site=site,
         message=message,
         build_sha="abc123",
         error_id="eid-test",
-        raw={"source_site": site, "message": message, "host": host, "build_sha": "abc123"},
+        raw=raw,
     )
+
+
+_CI_FAILURE_MESSAGE = (
+    "CI failed workflow=CI run=34705584177 conclusion=failure "
+    "url=https://github.com/maintainer/music-dj-tools/actions/runs/34705584177 "
+    "sha=98159af7b5fb6d8ef7fd255a43a5d4386a4530b8"
+)
 
 
 def _build_e2e_message(run_id: int = 34705843143) -> str:
@@ -274,6 +297,43 @@ def test_kpi_health_fails_when_last_run_stale(tmp_path: Path) -> None:
     )
     assert "sink-triage last_run=" in proc.stdout
     assert "health FAIL sink-triage last run within" in proc.stdout
+
+
+def test_build_kind_records_are_excluded_from_triage(tmp_path: Path) -> None:
+    assert triage_fingerprint("build:CI", _CI_FAILURE_MESSAGE) == "9e91f071611f"
+    records = [
+        _record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}", kind="build")
+        for i in range(100)
+    ]
+    result = run_triage(
+        sources=[],
+        state_path=tmp_path / "state.json",
+        kpi_path=tmp_path / "kpi.json",
+        repo="maintainer/music-dj-tools",
+        dry_run=True,
+        records_in=records,
+    )
+    assert result.new_issues == 0
+    assert result.comments == 0
+    assert result.fingerprints_seen == 0
+
+
+def test_build_source_site_without_kind_is_excluded(tmp_path: Path) -> None:
+    records = [
+        _record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}")
+        for i in range(100)
+    ]
+    result = run_triage(
+        sources=[],
+        state_path=tmp_path / "state.json",
+        kpi_path=tmp_path / "kpi.json",
+        repo="maintainer/music-dj-tools",
+        dry_run=True,
+        records_in=records,
+    )
+    assert result.new_issues == 0
+    assert result.comments == 0
+    assert result.fingerprints_seen == 0
 
 
 def test_aggregate_counts_hosts_and_examples() -> None:

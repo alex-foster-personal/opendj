@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import sqlite3
 import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
@@ -26,6 +27,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
@@ -52,6 +54,8 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
     handle_slice_not_contiguous,
     handle_smartlist_immutable,
+    handle_sqlite_busy_operational_error,
+    handle_state_store_busy,
     handle_target_inside_slice,
 )
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
@@ -89,6 +93,7 @@ from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
+from .routes import lifecycle as lifecycle_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
@@ -417,6 +422,10 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
     app.add_exception_handler(BulkLimitError, handle_bulk_limit)
     app.add_exception_handler(BackendError, handle_backend_error)
+    app.add_exception_handler(StateStoreBusyError, handle_state_store_busy)
+    app.add_exception_handler(
+        sqlite3.OperationalError, handle_sqlite_busy_operational_error,
+    )
 
 
 def _configure_cors(app: FastAPI) -> None:
@@ -532,6 +541,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
+        lifecycle_routes.router,
         lyrics_search_routes.router,
         lyrics_words_routes.router,
         health_routes.router,

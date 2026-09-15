@@ -15,6 +15,8 @@
 	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
+	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
+	import { installQuitGate } from '$lib/shell/quit-gate';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
 		LIBRARY_ATTACHED_CHECK_ID,
@@ -30,9 +32,12 @@
 	import { settingsOverlay } from '$lib/settings/overlay.svelte';
 	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
+	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
+	import { installShellCommandPoll } from '$lib/rb/shell-commands';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
@@ -87,6 +92,12 @@
 		connectEventsBus();
 	});
 
+	// PERFMODE-11: stamp Gig activity at most once per minute without blocking paint.
+	$effect(() => {
+		if (!isPerformance) return;
+		touchLastGigAt();
+	});
+
 	/**
 	 * THE first-run gate, at the root so there is exactly one of it.
 	 *
@@ -123,6 +134,17 @@
 		openSetupForFirstRun();
 	});
 
+	// Run as soon as the client router is live; onMount alone is too late for
+	// domcontentloaded e2e and causes a visible library flash on cold open.
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		installBootLandingRedirect({
+			goto,
+			getPathname: () => $page.url.pathname,
+			readBootStamp: readBootStampMirror
+		});
+	});
+
 	onMount(() => {
 		// THE capability probe: one health GET, before anything daemon-specific
 		// decides whether it is real. Every other surface reads the answer.
@@ -135,16 +157,20 @@
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
+		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
 		const uninstallShellNavigation = installShellNavigationPoll();
+		const uninstallShellCommands = installShellCommandPoll();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
 			uninstallHotkeysOverlay();
+			uninstallQuitGate();
 			stopInstruments();
 			uninstallShellNavigation();
+			uninstallShellCommands();
 			clearInterval(id);
 		};
 	});
@@ -264,6 +290,7 @@
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
 <HotkeysOverlay />
+<QuitConfirmOverlay />
 
 <ToastStack items={toasts} />
 <BrandLaunch />

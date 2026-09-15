@@ -50,7 +50,7 @@ def _journal_wire_mismatch(data_dir: Path) -> None:
 def test_next_wait_s_backoffs_beyond_base_interval_when_update_required(
     tmp_path: Path,
 ) -> None:
-    """[if] wire versions still differ [then] scheduled sync attempts back off beyond 60s."""
+    """[if] wire versions still differ [then] scheduled sync attempts back off beyond 60s, [else stop]."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     app = _app(data_dir)

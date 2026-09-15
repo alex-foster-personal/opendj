@@ -2667,6 +2667,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tauri-plugin-wdio-webdriver",
+ "url",
 ]
 
 [[package]]

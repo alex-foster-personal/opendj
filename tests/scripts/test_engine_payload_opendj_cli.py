@@ -47,6 +47,7 @@ def _minimal_payload_for_cli_launcher(tmp_path: Path) -> Path:
 
 @pytest.mark.requirement("AGENT-05")
 def test_bin_opendj_exists_and_is_executable(tmp_path: Path) -> None:
+    """[if] a minimal engine payload is built [then] bin/opendj exists and is executable, [else stop]."""
     root = _minimal_payload_for_cli_launcher(tmp_path)
     launcher = root / CLI_LAUNCHER_RELATIVE
     assert launcher.is_file()
@@ -55,6 +56,7 @@ def test_bin_opendj_exists_and_is_executable(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("AGENT-05")
 def test_cli_launcher_template_matches_engine_env_contract() -> None:
+    """[if] the payload launcher templates are rendered [then] they match the engine env contract, [else stop]."""
     for template in (LAUNCHER_TEMPLATE, CLI_LAUNCHER_TEMPLATE):
         assert "unset MDT_REKORDBOX_WRITEBACK_ENABLED" in template
         assert "PYTHONDONTWRITEBYTECODE=1" in template
@@ -66,6 +68,7 @@ def test_cli_launcher_template_matches_engine_env_contract() -> None:
 
 @pytest.mark.requirement("AGENT-05")
 def test_bin_opendj_list_verbs_from_clean_env_outside_repo(tmp_path: Path) -> None:
+    """[if] bin/opendj runs outside the repo with a clean env [then] --list-verbs succeeds, [else stop]."""
     root = _minimal_payload_for_cli_launcher(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()

@@ -362,13 +362,12 @@ def delete_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> bool
     return s3.delete_object(cfg.audio_bucket, asset_object_key(content_hash))
 
 
-def _fetch_presigned_asset_impl(
+def _read_presigned_body(
     url: str,
     content_hash: str,
-    dest: Path,
     *,
     timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
-) -> Path:
+) -> bytes:
     digest = validate_content_hash(content_hash)
     request = urllib.request.Request(url, method="GET")
     try:
@@ -389,6 +388,17 @@ def _fetch_presigned_asset_impl(
         raise AssetStoreError(
             f"presigned body for {digest} hashes to {actual}, not the requested digest"
         )
+    return body
+
+
+def _fetch_presigned_asset_impl(
+    url: str,
+    content_hash: str,
+    dest: Path,
+    *,
+    timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
+) -> Path:
+    body = _read_presigned_body(url, content_hash, timeout_s=timeout_s)
     target = Path(dest)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
@@ -513,13 +523,32 @@ def presign_url(
     dragging boto3 into the base venv. ``now`` exists so the signature is
     reproducible in a test.
     """
+    return presign_object_key(
+        cfg,
+        asset_object_key(content_hash),
+        expiry_seconds,
+        method=method,
+        now=now,
+    )
+
+
+def presign_object_key(
+    cfg: CloudConfig,
+    object_key: str,
+    expiry_seconds: int = DEFAULT_PRESIGN_EXPIRY_SECONDS,
+    *,
+    method: HttpMethod = "GET",
+    now: datetime | None = None,
+) -> str:
+    """Return a short-lived signed URL for an arbitrary bucket object key."""
     require_credentials(cfg)
+    if not object_key or object_key.startswith("/"):
+        raise AssetStoreError(f"object_key must be a non-empty relative path; got {object_key!r}")
     if not 0 < expiry_seconds <= MAX_PRESIGN_EXPIRY_SECONDS:
         raise AssetStoreError(
             f"expiry_seconds must be in 1..{MAX_PRESIGN_EXPIRY_SECONDS}; "
             f"got {expiry_seconds}"
         )
-    key = asset_object_key(content_hash)
     stamp = (now or datetime.now(UTC)).astimezone(UTC)
     host_override = os.environ.get(PRESIGN_HOST_ENV, "").strip()
     presign_host = host_override or f"{cfg.r2_account_id}.r2.cloudflarestorage.com"
@@ -531,8 +560,7 @@ def presign_url(
     signed = sigv4_presigned_url(
         method=method,
         host=presign_host,
-        # R2 is path-style: the bucket is the first path segment.
-        canonical_uri="/" + quote(f"{cfg.audio_bucket}/{key}", safe="/"),
+        canonical_uri="/" + quote(f"{cfg.audio_bucket}/{object_key}", safe="/"),
         access_key_id=cfg.r2_access_key_id,
         secret_access_key=cfg.r2_secret_access_key,
         expiry_seconds=expiry_seconds,
@@ -541,6 +569,20 @@ def presign_url(
     if scheme == "http":
         return "http://" + signed.removeprefix("https://")
     return signed
+
+
+def fetch_presigned_bytes(
+    url: str,
+    content_hash: str,
+    *,
+    timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
+) -> bytes:
+    """Download ``url`` and verify the body matches ``content_hash``."""
+    from apps.cloud.hydration_pool import run_download
+
+    return run_download(
+        lambda: _read_presigned_body(url, content_hash, timeout_s=timeout_s)
+    )
 
 
 # --- production adapter --------------------------------------------------
@@ -632,8 +674,10 @@ __all__ = [
     "delete_asset",
     "fetch_asset",
     "fetch_presigned_asset",
+    "fetch_presigned_bytes",
     "head_asset",
     "object_exists",
+    "presign_object_key",
     "presign_url",
     "push_asset",
     "require_credentials",

@@ -34,13 +34,16 @@ export type PolicyCellMode = SyncMode | typeof UNSET;
 
 /**
  * Asset kinds whose stored policy something in production actually acts on.
- * Only karaoke_words has a policy-driven producer today
- * (apps/lyrics/artifacts.py pushes through apps.cloud.asset_store). For the
- * rest, resolve_playback_source / apply_policy_after_produce / evict_cache
- * have no production caller, so a stored mode syncs but changes nothing on
+ * Audio deck load and karaoke_words have production callers today
+ * (resolve_playback_source for audio; apps/lyrics/artifacts.py for
+ * karaoke_words). For the rest, apply_policy_after_produce / evict_cache
+ * have no production caller yet, so a stored mode syncs but changes nothing on
  * disk. Those columns are marked inert, never hidden.
  */
-export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = ['karaoke_words'];
+export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = [
+	'audio',
+	'karaoke_words'
+];
 
 export function isRuntimeWired(kind: AssetKind): boolean {
 	return RUNTIME_WIRED_ASSET_KINDS.includes(kind);

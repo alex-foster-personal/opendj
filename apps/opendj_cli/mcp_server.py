@@ -7,6 +7,7 @@ Six tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -60,12 +61,25 @@ class _SessionState:
 _state = _SessionState()
 
 
-def _engine_not_running(error: EngineNotRunning) -> dict[str, Any]:
-    return {
-        "error": "engine_not_running",
-        "lock_path": str(error.lock_path),
-        "message": str(error),
-    }
+def _tool_error(document: dict[str, Any]) -> ToolError:
+    """Every error-document return path routes through here (issue #2895).
+
+    ``document`` must carry a machine-readable ``error`` code; it is
+    serialized as JSON so the code stays parseable in the ToolError text,
+    not flattened into prose.
+    """
+    assert "error" in document, "error document must carry a machine-readable code"
+    return ToolError(json.dumps(document))
+
+
+def _engine_not_running(error: EngineNotRunning) -> ToolError:
+    return _tool_error(
+        {
+            "error": "engine_not_running",
+            "lock_path": str(error.lock_path),
+            "message": str(error),
+        }
+    )
 
 
 def _resolve_origin() -> EngineOrigin:
@@ -138,12 +152,12 @@ def create_server() -> MCPServer:
         try:
             origin = _resolve_origin()
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         try:
             health = _fetch_json(origin, "/api/v1/health")
             build_info = _fetch_json(origin, "/api/v1/build-info")
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         return {
             "lock_path": str(origin.lock_path),
             "origin": origin.base_url,
@@ -160,18 +174,25 @@ def create_server() -> MCPServer:
             validate_api_path(path)
             origin = _resolve_origin()
         except SafetyRefusal as error:
-            return {"error": error.code, **error.fields, "message": str(error)}
+            raise _tool_error(
+                {"error": error.code, "message": str(error), **error.fields}
+            ) from error
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         url = f"{origin.base_url}{path}"
         try:
             with httpx.Client(timeout=PROBE_TIMEOUT_S) as client:
                 response = client.get(url)
         except httpx.TransportError as error:
-            return _engine_not_running(unreachable(origin, error))
+            raise _engine_not_running(unreachable(origin, error)) from error
         if not response.is_success:
-            raise ToolError(
-                f"engine GET {path} -> {response.status_code}: {response.text[:500]}"
+            raise _tool_error(
+                {
+                    "error": "upstream_error",
+                    "status_code": response.status_code,
+                    "message": f"engine GET {path} -> {response.status_code}: "
+                    f"{response.text[:500]}",
+                }
             )
         body = _parse_app_state_body(response)
         if isinstance(body, dict):
@@ -193,24 +214,28 @@ def create_server() -> MCPServer:
                 last_mirror_delta=_state.last_mirror_delta,
             )
         except SafetyRefusal as error:
-            return {"error": error.code, "message": str(error), **error.fields}
+            raise _tool_error(
+                {"error": error.code, "message": str(error), **error.fields}
+            ) from error
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
 
         client = EngineClient(origin=origin)
         try:
             result = client.post_order(guarded_order)
         except NoPerformancePage as error:
-            return {
-                "error": "no_performance_page",
-                "origin": origin.base_url,
-                "remedy": REMEDY_VERB,
-                "message": str(error),
-            }
+            raise _tool_error(
+                {
+                    "error": "no_performance_page",
+                    "origin": origin.base_url,
+                    "remedy": REMEDY_VERB,
+                    "message": str(error),
+                }
+            ) from error
         except (OrderRejected, OrderTimedOut, MalformedResult) as error:
-            return {"error": "order_failed", "message": str(error)}
+            raise _tool_error({"error": "order_failed", "message": str(error)}) from error
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
 
         mirror_delta = result.get("mirror_delta")
         if isinstance(mirror_delta, dict):
@@ -236,9 +261,11 @@ def create_server() -> MCPServer:
         """
         upper = method.upper()
         if upper not in HTTP_METHODS:
-            return {"error": "usage", "message": f"unknown HTTP method {method!r}"}
+            raise _tool_error({"error": "usage", "message": f"unknown HTTP method {method!r}"})
         if not path.startswith("/"):
-            return {"error": "usage", "message": f"PATH must start with '/', got {path!r}"}
+            raise _tool_error(
+                {"error": "usage", "message": f"PATH must start with '/', got {path!r}"}
+            )
         try:
             guard_library_request(upper, path)
             origin = _resolve_origin()
@@ -248,11 +275,13 @@ def create_server() -> MCPServer:
                 _parse_library_fields(fields),
             )
         except SafetyRefusal as error:
-            return {"error": error.code, **error.fields, "message": str(error)}
+            raise _tool_error(
+                {"error": error.code, "message": str(error), **error.fields}
+            ) from error
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         except ValueError as error:
-            return {"error": "usage", "message": str(error)}
+            raise _tool_error({"error": "usage", "message": str(error)}) from error
 
         url = f"{origin.base_url}{path}"
         request_headers = {"Accept": "application/json"}
@@ -269,7 +298,7 @@ def create_server() -> MCPServer:
                     content=request_body,
                 )
         except httpx.TransportError as error:
-            return _engine_not_running(unreachable(origin, error))
+            raise _engine_not_running(unreachable(origin, error)) from error
 
         payload: dict[str, Any] = {
             "status_code": response.status_code,
@@ -287,23 +316,27 @@ def create_server() -> MCPServer:
         try:
             origin = _resolve_origin()
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         try:
             if route != "/performance" and not route.startswith("/performance/"):
-                return {
-                    "error": "usage",
-                    "message": f"route {route!r} is not allowlisted; use /performance",
-                }
+                raise _tool_error(
+                    {
+                        "error": "usage",
+                        "message": f"route {route!r} is not allowlisted; use /performance",
+                    }
+                )
             result = open_shell_route(origin, route)
         except NoPerformancePage as error:
-            return {
-                "error": "no_performance_page",
-                "remedy": REMEDY_VERB,
-                "origin": origin.base_url,
-                "message": str(error),
-            }
+            raise _tool_error(
+                {
+                    "error": "no_performance_page",
+                    "remedy": REMEDY_VERB,
+                    "origin": origin.base_url,
+                    "message": str(error),
+                }
+            ) from error
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         return {"accepted": True, **result}
 
     @server.tool(annotations=_READ_ONLY)
@@ -314,7 +347,7 @@ def create_server() -> MCPServer:
         try:
             origin = _resolve_origin()
         except EngineNotRunning as error:
-            return _engine_not_running(error)
+            raise _engine_not_running(error) from error
         url = f"{origin.base_url}{route}"
         document: dict[str, Any] = {"url": url, "note": UI_URL_NOTE}
         try:

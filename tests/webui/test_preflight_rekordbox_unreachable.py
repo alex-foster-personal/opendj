@@ -1,4 +1,7 @@
-"""PREFLIGHT-02 / issue #2722 P1-3: rekordbox installed but library unreachable."""
+"""PREFLIGHT-02 / issue #2722 P1-3: rekordbox installed but library unreachable.
+
+[if] the rekordbox app folder exists but master.db is missing [then] preflight surfaces unreachable remediation, [else stop].
+"""
 
 from __future__ import annotations
 

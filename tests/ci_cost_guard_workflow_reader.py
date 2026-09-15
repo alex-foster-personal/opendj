@@ -123,7 +123,8 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
     chained = CHAINED_RUNNER_SWITCH.fullmatch(expr)
     assert chained, (
         f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
-        "price. Only the `fromJSON(vars.X || '<json>')` runner switch is "
+        "price. Only the `fromJSON(vars.X || '<json>')` runner switch and chained "
+        "`fromJSON(vars.A || vars.B || ... || '<json>')` fallbacks are "
         "understood; widen this deliberately rather than letting an unreadable "
         "expression be priced by guesswork."
     )

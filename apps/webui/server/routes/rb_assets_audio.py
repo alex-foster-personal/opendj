@@ -58,7 +58,10 @@ def get_track_audio(
     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
     """
     share = getattr(request.state, "share_audience", "local") == "share"
-    picked = rb_vendor.resolve_playable_audio(stable_id, share=share)
+    jobs_store = getattr(request.app.state, "jobs_store", None)
+    picked = rb_vendor.resolve_playable_audio(
+        stable_id, share=share, jobs_store=jobs_store
+    )
     probe = probe_readable_byte(picked.path, timeout_s=AUDIO_ACCESS_TIMEOUT_S)
     if probe.outcome == "timeout" or (
         probe.outcome == "error" and probe.errno in _BLOCKED_ACCESS_ERRNOS
