@@ -18696,6 +18696,17 @@
       },
       "UiPrefsOut": {
         "properties": {
+          "app_mode": {
+            "default": "performance",
+            "enum": [
+              "performance",
+              "library-management",
+              "library",
+              "music-player"
+            ],
+            "title": "App Mode",
+            "type": "string"
+          },
           "app_posture": {
             "default": "prep",
             "enum": [
@@ -18817,6 +18828,23 @@
       },
       "UiPrefsPatch": {
         "properties": {
+          "app_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "performance",
+                  "library-management",
+                  "library",
+                  "music-player"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Mode"
+          },
           "app_posture": {
             "anyOf": [
               {

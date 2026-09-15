@@ -1,31 +1,32 @@
 /**
- * PERFMODE-07 app-mode selector contract.
+ * PERFMODE-07 / PERFMODE-13 app-mode selector contract.
  *
  * `/performance` remains the rekordbox Performance-mode UI route. The chooser
  * label for that route is Gig (issue #2039). Route rename is out of scope.
  *
  * A mode transition is a same-origin route, rather than private component
  * state. That makes the human menu and an agent's HTTP navigation identical.
- * A mode whose real feature contract does not exist stays fail-closed.
  *
- * v1 (issue #2040) does not advertise unbuilt modes on the chooser unless
- * app_mode.show_unbuildable is on; the rows stay in APP_MODES fail-closed.
+ * PERFMODE-13 (#2699) advertises four selectable modes with gain/lose copy.
+ * Removed app_mode.show_unbuildable in #2699; all modes advertised.
  *
  * v1 (issue #2041) adds per-mode feature-flag maps: performance keeps
- * usb.export and local_stems.executor in-scope; unbuilt modes are empty.
+ * usb.export and local_stems.executor in-scope; other modes are empty.
  * Maps cannot set APP_MODES.available.
  */
 
-export type AppModeId = 'performance' | 'library-management' | 'music-player';
+import type { AppModeIconId } from './app-mode-icons';
+
+export type AppModeId = 'performance' | 'library-management' | 'library' | 'music-player';
 
 export interface AppMode {
 	id: AppModeId;
 	label: string;
 	href: string;
-	thumbnail: 'decks' | 'library' | 'player';
-	description: string;
+	iconId: AppModeIconId;
+	gain: string;
+	lose: string;
 	available: boolean;
-	unavailableReason?: string;
 }
 
 export const APP_MODES: readonly AppMode[] = [
@@ -33,39 +34,48 @@ export const APP_MODES: readonly AppMode[] = [
 		id: 'performance',
 		label: 'Gig',
 		href: '/performance',
-		thumbnail: 'decks',
-		description: 'Four-deck live surface with the audio engine and live controls.',
+		iconId: 'gig',
+		gain: 'Four-deck live surface with the full audio engine',
+		lose: 'Highest RAM and CPU',
 		available: true
 	},
 	{
 		id: 'library-management',
-		label: 'Library Management',
+		label: 'Prep',
+		href: '/prep',
+		iconId: 'prep',
+		gain: 'Analysis, stems, tagging, and playlist work with background workers on',
+		lose: 'No live decks',
+		available: true
+	},
+	{
+		id: 'library',
+		label: 'Library',
 		href: '/',
-		thumbnail: 'library',
-		description: 'Planned: manage the local library while background workflows continue.',
-		available: false,
-		unavailableReason: 'Library Management mode is not implemented. The existing library page is not this mode.'
+		iconId: 'library',
+		gain: 'Browse and search the library',
+		lose: 'No decks, no workers; lowest RAM and CPU',
+		available: true
 	},
 	{
 		id: 'music-player',
-		label: 'Music Player',
+		label: 'Trackify',
 		href: '/music-player',
-		thumbnail: 'player',
-		description: 'Low-resource listening with autoplay and streaming-service control.',
-		available: false,
-		unavailableReason: 'Music Player is unavailable until its real playback contract is implemented.'
+		iconId: 'trackify',
+		gain: 'Single-deck listening with autoplay; runs unsupervised',
+		lose: 'No mixer, no stems',
+		available: true
 	}
 ];
 
 export const APP_MODE_FEATURE_FLAG_IDS: Readonly<Record<AppModeId, readonly string[]>> = {
 	performance: ['usb.export', 'local_stems.executor'],
 	'library-management': [],
+	library: [],
 	'music-player': []
 };
 
 export const LOCAL_STEMS_EXECUTOR_FLAG_ID = 'local_stems.executor';
-
-export const SHOW_UNBUILDABLE_APP_MODES_FLAG_ID = 'app_mode.show_unbuildable';
 
 export function modeFeatureEnabled(modeId: AppModeId, flagId: string): boolean {
 	const known = new Set<string>();
@@ -79,25 +89,6 @@ export function modeFeatureEnabled(modeId: AppModeId, flagId: string): boolean {
 		);
 	}
 	return APP_MODE_FEATURE_FLAG_IDS[modeId].includes(flagId);
-}
-
-export function showUnbuildableAppModes(
-	flagsLoaded: boolean,
-	flag: { enabled: boolean } | null
-): boolean {
-	if (!flagsLoaded) return false;
-	if (flag === null) {
-		throw new Error(
-			`undeclared feature flag ${SHOW_UNBUILDABLE_APP_MODES_FLAG_ID}: ` +
-				'add a FlagDef to apps/feature_flags/store.FLAGS before reading it.'
-		);
-	}
-	return flag.enabled;
-}
-
-export function chooserAppModes(showUnbuildable: boolean): readonly AppMode[] {
-	if (showUnbuildable) return APP_MODES;
-	return APP_MODES.filter((mode) => mode.available);
 }
 
 export function appModeForPath(pathname: string): AppMode {

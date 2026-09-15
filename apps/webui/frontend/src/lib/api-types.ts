@@ -12618,6 +12618,12 @@ export interface components {
         /** UiPrefsOut */
         UiPrefsOut: {
             /**
+             * App Mode
+             * @default performance
+             * @enum {string}
+             */
+            app_mode: "performance" | "library-management" | "library" | "music-player";
+            /**
              * App Posture
              * @default prep
              * @enum {string}
@@ -12715,6 +12721,8 @@ export interface components {
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            /** App Mode */
+            app_mode?: ("performance" | "library-management" | "library" | "music-player") | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
             /** Auto Play Enabled */

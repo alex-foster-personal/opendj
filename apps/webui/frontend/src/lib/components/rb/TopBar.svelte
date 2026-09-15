@@ -11,6 +11,7 @@
 	 * Master volume renders the shared mixer read model and dispatches through
 	 * the same typed command path used by browser IPC and presets.
 	 */
+	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { DECK_IDS, engine, getDeckState, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
@@ -27,6 +28,7 @@
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
+		setAppMode,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
 		toggleLyricsGlobal,
@@ -61,15 +63,13 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
-	import { buildFlags } from '$lib/api/store-build.svelte';
 	import {
 		APP_MODES,
 		LOCAL_STEMS_EXECUTOR_FLAG_ID,
-		SHOW_UNBUILDABLE_APP_MODES_FLAG_ID,
-		chooserAppModes,
-		modeFeatureEnabled,
-		showUnbuildableAppModes
+		appModeForPath,
+		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
+	import { modeIconClass } from '$lib/rb/app-mode-icons';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -96,16 +96,25 @@
 		throw new Error('APP_MODES is missing the live /performance route');
 	}
 
-	const showUnbuildableModes = $derived(
-		showUnbuildableAppModes(
-			buildFlags.loaded,
-			buildFlags.flag(SHOW_UNBUILDABLE_APP_MODES_FLAG_ID)
-		)
+	const activeMode = $derived.by(() => {
+		try {
+			return appModeForPath($page.url.pathname);
+		} catch {
+			return APP_MODES.find((mode) => mode.id === uiPrefs.app_mode) ?? liveAppMode;
+		}
+	});
+
+	const modePickerTitle = $derived(
+		`App mode picker - ${activeMode.label} is the current mode`
 	);
-	const chooserModes = $derived(chooserAppModes(showUnbuildableModes));
+
 	const stemsProgressLive = $derived(
 		modeFeatureEnabled(liveAppMode.id, LOCAL_STEMS_EXECUTOR_FLAG_ID)
 	);
+
+	function _selectAppMode(modeId: (typeof APP_MODES)[number]['id']): void {
+		setAppMode(modeId);
+	}
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -154,7 +163,6 @@
 
 	async function _placeModeMenu(): Promise<void> {
 		if (!modePickerEl?.open) return;
-		void buildFlags.load();
 		const rect = modePickerEl.getBoundingClientRect();
 		await tick();
 		const menuRect = modeMenuEl?.getBoundingClientRect() ?? { width: 220, height: 180 };
@@ -349,33 +357,29 @@
 	{/if}
 
 	<details class="mode-picker" bind:this={modePickerEl} use:modePickerToggle>
-		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">
-			{liveAppMode.label.toUpperCase()}
+		<summary class="mode-dd" aria-label="Choose app mode" title={modePickerTitle}>
+			{activeMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
 			</svg>
 		</summary>
 		<div class="mode-menu" bind:this={modeMenuEl} style={modeMenuStyle} aria-label="App modes">
 			<p class="mode-menu-heading">Choose app mode</p>
-			{#each chooserModes as mode (mode.id)}
-				{#if mode.available}
-					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
-						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
-						<span class="mode-copy">
-							<strong>{mode.label}</strong>
-							<span>{mode.description}</span>
-						</span>
-					</a>
-				{:else}
-					<button class="mode-card" type="button" disabled={!mode.available} title={mode.unavailableReason}>
-						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
-						<span class="mode-copy">
-							<strong>{mode.label}</strong>
-							<span>{mode.description}</span>
-						</span>
-						<span class="mode-unavailable">Not available</span>
-					</button>
-				{/if}
+			{#each APP_MODES as mode (mode.id)}
+				<a
+					class="mode-card"
+					data-testid="mode-card"
+					href={mode.href}
+					aria-current={mode.id === activeMode.id ? 'page' : undefined}
+					onclick={() => _selectAppMode(mode.id)}
+				>
+					<span class={`mode-thumbnail ${modeIconClass(mode.iconId)}`} aria-hidden="true"></span>
+					<span class="mode-copy">
+						<strong>{mode.label}</strong>
+						<span class="mode-gain" data-testid="mode-gain">{mode.gain}</span>
+						<span class="mode-lose" data-testid="mode-lose">{mode.lose}</span>
+					</span>
+				</a>
 			{/each}
 		</div>
 	</details>
@@ -1183,10 +1187,6 @@
 		background: color-mix(in srgb, var(--rb-accent) 12%, transparent);
 		outline: none;
 	}
-	button.mode-card:disabled {
-		cursor: not-allowed;
-		opacity: 0.52;
-	}
 	.mode-copy {
 		display: grid;
 		gap: 2px;
@@ -1198,13 +1198,11 @@
 		font-size: 10px;
 		letter-spacing: 0.03em;
 	}
-	.mode-copy > span {
-		color: var(--rb-text-dim);
+	.mode-gain {
+		color: var(--rb-text);
 	}
-	.mode-unavailable {
+	.mode-lose {
 		color: var(--rb-text-dim);
-		font-size: 8px;
-		text-transform: uppercase;
 	}
 	.mode-thumbnail {
 		display: block;
@@ -1213,19 +1211,25 @@
 		border-radius: 2px;
 		background-color: #141920;
 	}
-	.mode-thumbnail.decks {
+	.mode-thumbnail.gig {
 		background:
 			linear-gradient(90deg, transparent 48%, #72b9ff 48% 52%, transparent 52%),
 			linear-gradient(#161d26 45%, #72b9ff 45% 52%, #161d26 52%);
+	}
+	.mode-thumbnail.prep {
+		background:
+			linear-gradient(180deg, #72b9ff 0 18%, transparent 18% 82%, #346c3e 82% 100%),
+			repeating-linear-gradient(90deg, #1a222c 0 4px, #161d26 4px 8px);
 	}
 	.mode-thumbnail.library {
 		background:
 			linear-gradient(90deg, #3b79ad 0 22%, transparent 22% 28%, #346c3e 28% 50%, transparent 50% 56%, #7a5c33 56% 78%, transparent 78%),
 			#161d26;
 	}
-	.mode-thumbnail.player {
+	.mode-thumbnail.trackify {
 		background:
-			radial-gradient(circle at 50% 50%, #a8b2bf 0 12%, #303b48 13% 31%, #72b9ff 32% 36%, #161d26 37%);
+			radial-gradient(circle at 50% 50%, #a8b2bf 0 12%, #303b48 13% 31%, #72b9ff 32% 36%, #161d26 37%),
+			linear-gradient(90deg, transparent 42%, #72b9ff 42% 58%, transparent 58%);
 	}
 
 	.icon-cluster {

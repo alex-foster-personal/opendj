@@ -10,6 +10,7 @@ import {
 } from './deck-layout-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
+import { APP_MODE_PREF_IDS, type AppModePrefs } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
 import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
 import { setResolvedPosture } from './app-posture';
@@ -61,6 +62,7 @@ export type DiskPrefsPatch = {
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
 	app_posture?: AppPosturePref;
+	app_mode?: AppModePrefs['app_mode'];
 	beat_sync_max?: boolean;
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
@@ -100,6 +102,7 @@ export interface PrefsHydrateTarget {
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
 	app_posture: AppPosturePref;
+	app_mode: AppModePrefs['app_mode'];
 	beat_sync_max: boolean;
 	auto_play_enabled: boolean;
 	auto_play_enforce_order: boolean;
@@ -187,6 +190,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
 				applyPrefetchCaps();
+			}
+			if (
+				body.app_mode !== undefined &&
+				(APP_MODE_PREF_IDS as readonly string[]).includes(body.app_mode)
+			) {
+				uiPrefs.app_mode = body.app_mode;
 			}
 			for (const key of [
 				'beat_sync_max',

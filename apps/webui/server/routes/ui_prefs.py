@@ -22,9 +22,11 @@ _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
 AppPosturePref = Literal["prep", "gig"]
+AppModePref = Literal["performance", "library-management", "library", "music-player"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
 _DEFAULT_APP_POSTURE: AppPosturePref = "prep"
+_DEFAULT_APP_MODE: AppModePref = "performance"
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -264,6 +266,23 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_app_mode(raw: dict[str, Any]) -> str:
+    if "app_mode" not in raw:
+        return _DEFAULT_APP_MODE
+    value = raw["app_mode"]
+    if value not in ("performance", "library-management", "library", "music-player"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    "app_mode must be performance|library-management|library|music-player"
+                ),
+            },
+        )
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -277,6 +296,7 @@ def _load(path: Path) -> dict[str, Any]:
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
+            "app_mode": _DEFAULT_APP_MODE,
             **_TOPBAR_BOOL_DEFAULTS,
             **_lyrics_defaults(),
         }
@@ -345,6 +365,7 @@ def _load(path: Path) -> dict[str, Any]:
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
+        "app_mode": _parse_app_mode(raw),
         **_parse_topbar_bool_prefs(raw),
         **_parse_lyrics(raw),
     }
@@ -393,6 +414,7 @@ class UiPrefsOut(BaseModel):
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
     perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
     app_posture: AppPosturePref = _DEFAULT_APP_POSTURE
+    app_mode: AppModePref = _DEFAULT_APP_MODE
     beat_sync_max: bool = _DEFAULT_BEAT_SYNC_MAX
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
@@ -418,6 +440,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_deck_line: bool | None = None
     perf_tier: PerfTierPref | None = None
     app_posture: AppPosturePref | None = None
+    app_mode: AppModePref | None = None
     beat_sync_max: bool | None = None
     auto_play_enabled: bool | None = None
     auto_play_enforce_order: bool | None = None
@@ -475,6 +498,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["perf_tier"] = body.perf_tier
     if body.app_posture is not None:
         current["app_posture"] = body.app_posture
+    if body.app_mode is not None:
+        current["app_mode"] = body.app_mode
     _merge_topbar_bool_prefs(current, body)
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
