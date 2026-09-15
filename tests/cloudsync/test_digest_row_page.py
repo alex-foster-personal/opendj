@@ -1,4 +1,7 @@
-"""hub_sync_row_page pagination (issue #3059, CSSTATUS-09 infrastructure)."""
+"""hub_sync_row_page pagination (issue #3059, CSSTATUS-09 infrastructure).
+
+[if] a hub row page resumes after a cursor [then] every row is served once, [else stop].
+"""
 
 from __future__ import annotations
 
