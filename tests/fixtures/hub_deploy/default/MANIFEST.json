@@ -1,0 +1,7 @@
+{
+  "main_sha": "d9a243e969b3c39b5cb222627230f1dfb3ada342",
+  "uv": "/usr/local/bin/uv",
+  "repo_root": "/golden/music-dj-tools",
+  "data_dir": "/golden/opendj-hub",
+  "port": 8870
+}
