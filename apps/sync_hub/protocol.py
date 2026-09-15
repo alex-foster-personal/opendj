@@ -189,6 +189,31 @@ class RowChange:
 
 
 @dataclass(frozen=True)
+class IdentityReject:
+    """One identity-collapse rejection on push: the offered PK lost to a stored survivor."""
+
+    table: str
+    offered_pk: str
+    survivor_pk: str
+
+    def to_wire(self) -> dict[str, str]:
+        return {
+            "table": self.table,
+            "offered_pk": self.offered_pk,
+            "survivor_pk": self.survivor_pk,
+        }
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> IdentityReject:
+        table = _require_str(payload, "table")
+        return cls(
+            table=table,
+            offered_pk=_require_str(payload, "offered_pk"),
+            survivor_pk=_require_str(payload, "survivor_pk"),
+        )
+
+
+@dataclass(frozen=True)
 class MachineRow:
     """One ``machines`` row on the wire (registry, not LWW)."""
 
@@ -515,6 +540,7 @@ __all__ = [
     "DELETED_AT",
     "DIGEST_TABLES",
     "EPOCH",
+    "IdentityReject",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
     "NATURAL_KEYS",
