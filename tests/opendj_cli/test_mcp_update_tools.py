@@ -12,18 +12,11 @@ and a real relaunch. There is no mock of the updater anywhere in this file.
 
 from __future__ import annotations
 
-import asyncio
-import os
-import sys
 from typing import Any
 
 import pytest
-from mcp import StdioServerParameters
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
-from mcp.types import CallToolResult
 
-from tests.opendj_cli.mcp_support import tool_payload
+from tests.opendj_cli import mcp_support
 from tests.opendj_cli.updater_rig import Updater
 
 RUNNING_VERSION = "0.1.0"
@@ -32,31 +25,14 @@ RUNNING_SHA = "0d41a28c0000000000000000000000000000beef"
 RELEASED_SHA = "deadbeef0000000000000000000000000000beef"
 
 
-def _updater_params(
-    updater: Updater, *, env: dict[str, str] | None = None
-) -> StdioServerParameters:
-    return StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(updater.lock_path), "mcp"],
-        env=env,
-    )
-
-
 def _call_updater(
     updater: Updater,
     tool: str,
     arguments: dict[str, Any],
     *,
     env: dict[str, str] | None = None,
-) -> CallToolResult:
-    params = _updater_params(updater, env=env)
-
-    async def _call() -> CallToolResult:
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool, arguments)
-
-    return asyncio.run(_call())
+) -> Any:
+    return mcp_support.call_tool(updater.lock_path, tool, arguments, env=env)
 
 
 @pytest.mark.requirement("AGENT-13")
@@ -68,7 +44,7 @@ def test_update_check_reports_the_channel(updater: Updater) -> None:
     )
     result = _call_updater(updater, "update_check", {})
     assert result.is_error is False
-    payload = tool_payload(result)
+    payload = mcp_support.tool_payload(result)
     assert payload["status"] == "update-available"
     assert payload["current_version"] == RUNNING_VERSION
     assert payload["available_version"] == RELEASED_VERSION
@@ -101,7 +77,7 @@ def test_update_apply_is_gated_like_the_other_destructive_calls(updater: Updater
             app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
         )
     )
-    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": ""}
+    env = mcp_support.closed_gate_env()
     result = _call_updater(updater, "update_apply", {}, env=env)
     assert result.is_error is True
     texts = [block.text for block in result.content if block.type == "text"]
@@ -122,12 +98,12 @@ def test_update_apply_installs_and_reports_both_identities(updater: Updater) -> 
             app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
         )
     )
-    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"}
+    env = mcp_support.destructive_env()
     result = _call_updater(updater, "update_apply", {"timeout_s": 60.0}, env=env)
     updater.wait_for_shell()
     assert updater.shell_error is None
     assert result.is_error is False, result.content
-    payload = tool_payload(result)
+    payload = mcp_support.tool_payload(result)
     assert payload["applied"] is True
     assert payload["before"]["app_version"] == RUNNING_VERSION
     assert payload["after"]["app_version"] == RELEASED_VERSION
@@ -150,7 +126,7 @@ def test_update_apply_is_an_error_when_the_install_does_not_land(updater: Update
             "error": "minisign verify failed",
         },
     )
-    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"}
+    env = mcp_support.destructive_env()
     result = _call_updater(updater, "update_apply", {"timeout_s": 60.0}, env=env)
     updater.wait_for_shell()
     assert result.is_error is True

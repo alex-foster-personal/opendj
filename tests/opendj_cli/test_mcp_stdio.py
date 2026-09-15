@@ -4,46 +4,31 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import pytest
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.types import CallToolResult
 
+from tests.opendj_cli import mcp_support
 from tests.opendj_cli.conftest import Engine
 from tests.opendj_cli.mcp_support import tool_payload
 
 
-def _stdio_params(engine: Engine) -> StdioServerParameters:
-    return StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(engine.lock_path), "mcp"],
-    )
+def _stdio_params(engine: Engine) -> Any:
+    return mcp_support.stdio_params(engine.lock_path)
 
 
-async def _call_tool(
-    engine: Engine,
-    tool: str,
-    arguments: dict[str, Any],
-) -> CallToolResult:
-    params = _stdio_params(engine)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool, arguments)
+async def _call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> Any:
+    return await mcp_support.call_tool_async(engine.lock_path, tool, arguments)
 
 
 def call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return tool_payload(asyncio.run(_call_tool(engine, tool, arguments)))
 
 
-def call_tool_result(engine: Engine, tool: str, arguments: dict[str, Any]) -> CallToolResult:
+def call_tool_result(engine: Engine, tool: str, arguments: dict[str, Any]) -> Any:
     return asyncio.run(_call_tool(engine, tool, arguments))
 
 
@@ -95,16 +80,9 @@ def test_command_master_mute_persists_to_ui_prefs(engine: Engine, tmp_path: Path
 def test_status_engine_down(tmp_path: Any) -> None:
     """[if] no engine is running [then] status is isError with engine_not_running, [else stop]."""
     missing = tmp_path / "missing.engine.lock"
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(missing), "mcp"],
-    )
 
-    async def _status() -> CallToolResult:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await session.call_tool("status", {})
+    async def _status() -> Any:
+        return await mcp_support.call_tool_async(missing, "status", {})
 
     started = time.monotonic()
     result = asyncio.run(_status())
@@ -265,14 +243,10 @@ def test_tools_list_carries_annotations(engine: Engine) -> None:
     """[if] tools/list runs [then] every tool carries readOnlyHint, and the
     calls that change the world carry destructiveHint, [else stop]."""
     engine.page().start()
-    params = _stdio_params(engine)
-
     async def _list_tools() -> list[Any]:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                listed = await session.list_tools()
-                return listed.tools
+        async with mcp_support.session(_stdio_params(engine)) as session:
+            listed = await session.list_tools()
+            return listed.tools
 
     tools = asyncio.run(_list_tools())
     assert tools
@@ -351,17 +325,10 @@ def test_home_empty_tmp_dir_is_error_for_every_tool(tmp_path: Any) -> None:
     and ``update_apply`` are refused deterministically by the rail whose code
     the case names, on a machine where nothing has been enabled.
     """
-    env = {**os.environ, "HOME": str(tmp_path), "OPENDJ_MCP_ENABLE_DESTRUCTIVE": ""}
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "mcp"],
-        env=env,
-    )
+    env = mcp_support.naive_home_env(tmp_path)
 
-    async def _call(tool: str, arguments: dict[str, Any]) -> CallToolResult:
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool, arguments)
+    async def _call(tool: str, arguments: dict[str, Any]) -> Any:
+        return await mcp_support.call_tool_async(None, tool, arguments, env=env)
 
     cases: list[tuple[str, dict[str, Any], str]] = [
         ("status", {}, "engine_not_running"),
