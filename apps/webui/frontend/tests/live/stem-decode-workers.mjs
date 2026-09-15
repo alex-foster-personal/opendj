@@ -308,9 +308,15 @@ async function main() {
 				const decode = await import('/decode.mjs');
 				const ctx = new OfflineAudioContext(2, 1, 44100);
 
+				const copyBundle = (bytes, parts) =>
+					Object.fromEntries(parts.map((part) => [part, bytes[part].slice(0)]));
+
 				const fetchParts = async (parts) => {
 					const entries = await Promise.all(
-						parts.map(async (part) => [part, await (await fetch('/stem/' + part)).arrayBuffer()])
+						parts.map(async (part) => {
+							const raw = await (await fetch('/stem/' + part)).arrayBuffer();
+							return [part, raw.slice(0)];
+						})
 					);
 					return Object.fromEntries(entries);
 				};
@@ -319,10 +325,10 @@ async function main() {
 				decode.stemDecodeSession.resetPool();
 
 				const fourBytes = await fetchParts(four);
-				const twoBytes = {
-					vocals: fourBytes.vocals,
-					instrumental: fourBytes.drums
-				};
+				const twoBytes = () => ({
+					vocals: fourBytes.vocals.slice(0),
+					instrumental: fourBytes.drums.slice(0)
+				});
 
 				const reference4 = Object.fromEntries(
 					await Promise.all(
@@ -331,33 +337,40 @@ async function main() {
 				);
 				const reference2 = Object.fromEntries(
 					await Promise.all(
-						two.map(async (part) => [part, await ctx.decodeAudioData(twoBytes[part].slice(0))])
+						two.map(async (part) => [
+							part,
+							await ctx.decodeAudioData(twoBytes()[part].slice(0))
+						])
 					)
 				);
 
-				await decode.decodeStemParts(ctx, fourBytes, four);
-				await decode.decodeStemParts(ctx, fourBytes, four);
+				await decode.decodeStemParts(ctx, copyBundle(fourBytes, four), four);
+				await decode.decodeStemParts(ctx, copyBundle(fourBytes, four), four);
 				const lane4AfterFour = decode.stemDecodeSession.lane(4);
 				const lane2AfterFour = decode.stemDecodeSession.lane(2);
 
-				await decode.decodeStemParts(ctx, twoBytes, two);
-				await decode.decodeStemParts(ctx, twoBytes, two);
+				await decode.decodeStemParts(ctx, copyBundle(twoBytes(), two), two);
+				await decode.decodeStemParts(ctx, copyBundle(twoBytes(), two), two);
 				const lane2AfterTwo = decode.stemDecodeSession.lane(2);
 				const lane4AfterTwo = decode.stemDecodeSession.lane(4);
 
 				const widths = {};
-				for (const [width, parts, bytes, reference] of [
+				for (const [width, parts, bytesForWidth, reference] of [
 					[4, four, fourBytes, reference4],
-					[2, two, twoBytes, reference2]
+					[2, two, twoBytes(), reference2]
 				]) {
 					decode.stemDecodeSession.forceLane('main-thread');
 					const tb = performance.now();
-					await decode.decodeStemParts(ctx, bytes, parts);
+					await decode.decodeStemParts(ctx, copyBundle(bytesForWidth, parts), parts);
 					const baselineMs = Math.round(performance.now() - tb);
 
 					decode.stemDecodeSession.forceLane('workers');
 					const t1 = performance.now();
-					const run = await decode.decodeStemParts(ctx, bytes, parts);
+					const run = await decode.decodeStemParts(
+						ctx,
+						copyBundle(bytesForWidth, parts),
+						parts
+					);
 					const workerMs = Math.round(performance.now() - t1);
 
 					let maxAbsDiff = 0;
@@ -516,11 +529,11 @@ async function main() {
 	if (CLI.appendLedger) {
 		const rows = laneTimingsToRows(ledgerEngineResults, {
 			date: new Date().toISOString().slice(0, 10),
-			round: 'issue-2057',
+			round: 'issue-2310',
 			machine: hostname(),
 			source:
 				'pnpm test:live:stem-decode-workers PERF-STEMDEC-02, <N> distinct 44.1kHz FLACs, Playwright <engine>, warm pool, decode only',
-			captureId: 'issue-2057-stemdec-02',
+			captureId: 'issue-2310-stemdec-02',
 			fixtureCount: FOUR_PARTS.length
 		});
 		appendLedger(CLI.ledgerPath, rows);

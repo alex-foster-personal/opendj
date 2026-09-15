@@ -29,6 +29,7 @@ from apps.analysis.backends.own_key import record_from_estimate
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import open_conn, upsert_record
+from apps.webui.server.rb_vendor_pkg.own_key_overlay import OWN_KEY_MISSING_REASON
 from apps.analysis_key import canon, flags, profiles, segments
 from apps.analysis_key.lane_payload import depends_on_identity
 from apps.webui.server.rb_vendor_pkg.own_key_overlay import apply_own_key_segments
@@ -136,7 +137,24 @@ def _matching_beatgrid_record(stable_id: str) -> AnalysisRecord:
     )
 
 
+def _insert_track(state_db: Path, stable_id: str) -> None:
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).isoformat()
+    conn = open_conn(state_db)
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (stable_id, "inferred", f"title-{stable_id}", now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _seed_two_segment_record(state_db: Path, stable_id: str) -> None:
+    _insert_track(state_db, stable_id)
     grid = _matching_beatgrid_record(stable_id)
     upsert_record(grid, db_path=state_db)
     depends_on = depends_on_identity(
@@ -187,6 +205,8 @@ def test_key_segments_prints_the_same_block_the_wire_payload_carries(
 
 
 def test_key_segments_with_no_own_record_reports_missing(state_db: Path) -> None:
+    stable_id = "sid-no-record"
+    _insert_track(state_db, stable_id)
     conn = open_conn(state_db)
     try:
         selection.set_default(conn, "key", "own")
@@ -194,13 +214,14 @@ def test_key_segments_with_no_own_record_reports_missing(state_db: Path) -> None
         conn.close()
 
     done = _run_track_cli(
-        ["track", "key-segments", "sid-no-record", "--json"],
+        ["track", "key-segments", stable_id, "--json"],
         data_dir=state_db.parent.parent,
     )
     printed = json.loads(done.stdout)
 
     assert done.returncode == 0
     assert printed["status"] == "missing"
+    assert printed["reason"] == OWN_KEY_MISSING_REASON
     assert printed["segments"] == []
 
 
@@ -210,6 +231,7 @@ def test_track_rejects_an_unknown_verb() -> None:
 
 
 def test_key_segments_with_default_rbx_source_reports_missing(state_db: Path) -> None:
+    _insert_track(state_db, "sid-rbx")
     done = _run_track_cli(
         ["track", "key-segments", "sid-rbx", "--json"],
         data_dir=state_db.parent.parent,
@@ -219,6 +241,18 @@ def test_key_segments_with_default_rbx_source_reports_missing(state_db: Path) ->
     assert printed["status"] == "missing"
     assert printed["reason"] == "key lane source is rekordbox, not own"
     assert printed["segments"] == []
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_key_segments_unknown_stable_id_is_not_found(state_db: Path) -> None:
+    """[if] key-segments runs for an unknown stable_id [then] error.code is not_found, [else stop]."""
+    done = _run_track_cli(
+        ["track", "key-segments", "does-not-exist", "--json"],
+        data_dir=state_db.parent.parent,
+    )
+    printed = json.loads(done.stdout)
+    assert done.returncode != 0
+    assert printed["error"]["code"] == "not_found"
 
 
 def test_top_level_state_db_reaches_the_track_parser(state_db: Path) -> None:

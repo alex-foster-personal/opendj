@@ -18705,8 +18705,28 @@
             "title": "App Posture",
             "type": "string"
           },
+          "auto_play_enabled": {
+            "default": true,
+            "title": "Auto Play Enabled",
+            "type": "boolean"
+          },
+          "auto_play_enforce_order": {
+            "default": false,
+            "title": "Auto Play Enforce Order",
+            "type": "boolean"
+          },
+          "auto_play_maximize_reach": {
+            "default": true,
+            "title": "Auto Play Maximize Reach",
+            "type": "boolean"
+          },
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
+          },
+          "beat_sync_max": {
+            "default": true,
+            "title": "Beat Sync Max",
+            "type": "boolean"
           },
           "confirm": {
             "additionalProperties": true,
@@ -18812,6 +18832,39 @@
             ],
             "title": "App Posture"
           },
+          "auto_play_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enabled"
+          },
+          "auto_play_enforce_order": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enforce Order"
+          },
+          "auto_play_maximize_reach": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Maximize Reach"
+          },
           "auto_sync": {
             "anyOf": [
               {
@@ -18821,6 +18874,17 @@
                 "type": "null"
               }
             ]
+          },
+          "beat_sync_max": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Sync Max"
           },
           "confirm": {
             "anyOf": [
