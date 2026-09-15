@@ -68,7 +68,7 @@ from apps.engine_core.jobs.runner import (
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.setup.api import router as setup_router
-from apps.engine_core.update_channel import add_update_check_route
+from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
@@ -186,6 +186,7 @@ def create_app(
     # verification. Here so an agent and a browser tab can ask the same
     # question the shell's button asks.
     add_update_check_route(app)
+    add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
     add_rescue_routes(app)
