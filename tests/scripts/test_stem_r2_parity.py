@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 
 from apps.cloud import r2_keys
-from scripts import r2_stems
+from apps.stems import r2_stems
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FARM_SOURCE = REPO_ROOT / "scripts" / "modal_vocal_farm.py"

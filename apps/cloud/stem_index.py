@@ -1,6 +1,6 @@
 """Stem bundle hydration index: ``stable_id -> {filename: sha256}`` (ADR-0024).
 
-THE GAP THIS CLOSES: ``scripts/local_stems_to_r2.py`` content-addresses every
+THE GAP THIS CLOSES: ``apps.stems.r2_migration`` content-addresses every
 pushed stem file and journals the (legacy_key, key) mapping to
 ``data/state/stem-r2-migration.jsonl`` -- but that journal lives only on the
 machine that ran the push. A machine with no local bundle (silver, or any
@@ -127,7 +127,7 @@ def build_index_from_journal(journal_path: Path) -> StemAssetIndex:
     this machine.
 
     Tolerates a torn FINAL line exactly like the journal's own writer/reader
-    (``scripts/local_stems_to_r2.py._truncate_torn_tail`` /
+    (``apps.stems.r2_migration._truncate_torn_tail`` /
     ``_journaled_mappings``): a process killed mid-append leaves a truncated
     last record, and that must not block reading everything recorded before
     it. An earlier malformed line is real corruption and still raises.
