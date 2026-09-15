@@ -32,11 +32,10 @@ fn low_disk_state() -> &'static Mutex<LowDiskState> {
 
 #[cfg(test)]
 pub fn set_test_disk_free_bytes(free: Option<u64>) {
-    TEST_DISK_FREE_BYTES
+    *TEST_DISK_FREE_BYTES
         .get_or_init(|| Mutex::new(None))
         .lock()
-        .expect("test disk free mutex")
-        .replace(free);
+        .expect("test disk free mutex") = free;
 }
 
 #[cfg(test)]
