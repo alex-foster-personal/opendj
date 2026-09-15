@@ -58,6 +58,12 @@ def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
     assert "gh variable set" not in body
 
 
+def test_ci_failure_poster_uses_canonical_host_not_runner_name() -> None:
+    body = WORKFLOW.read_text(encoding="utf-8")
+    assert '--host "github-actions"' in body
+    assert '--host "${{ runner.name }}"' not in body
+
+
 def test_dropping_macos_packaging_from_the_watch_list_fails() -> None:
     """A headless dmg / packaging failure cannot silently leave the watch list."""
     mutated = deepcopy(_workflow())
