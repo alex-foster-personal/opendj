@@ -82,6 +82,15 @@ test('STEM dials use stem colors distinct from default EQ accent', async () => {
 	assert.match(knob, /if \(accentColor\) return 'none'/);
 
 	const strip = await source('mixer/ChannelStrip.svelte');
-	assert.match(strip, /accentColor={hiDial\.accentColor}/);
+	// 3504858fa (MIXUX-04) passes accentColor as a conditional spread so an
+	// EQ dial never receives an explicit accentColor={undefined}
+	// (exactOptionalPropertyTypes); a STEM dial still gets its stem color.
+	for (const dial of ['hiDial', 'midDial', 'lowDial']) {
+		assert.match(
+			strip,
+			new RegExp(`\\{\\.\\.\\.\\(${dial}\\.accentColor \\? \\{ accentColor: ${dial}\\.accentColor \\} : \\{\\}\\)\\}`),
+			`${dial} must forward its stem accentColor to Knob`
+		);
+	}
 	assert.match(strip, /STEM_COLORS\[stem\]/);
 });
