@@ -33,7 +33,7 @@ from .migrations_v11 import _V11
 from .migrations_v12 import _V12
 from .migrations_v13 import _V13
 from .migrations_v14 import _V14
-from .migrations_v15 import _V15
+from .migrations_v15 import _V15, backfill_track_fields_stamps
 
 SCHEMA_VERSION: int = 15
 
@@ -96,6 +96,8 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         try:
             for stmt in statements:
                 conn.execute(stmt)
+            if target_version == 15:
+                backfill_track_fields_stamps(conn, transactional=False)
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
                 (target_version, datetime.now(UTC).isoformat()),
