@@ -29,7 +29,13 @@ installed app PATH (AGENT-05, issue #2751):
 installed app MCP (AGENT-11, issue #2753):
   opendj mcp
   claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp
-  MCP tools: status, app_state, command, library, ui_url (browser only), open_route (shell)"""
+  MCP tools: status, app_state, command, library, ui_url (browser only),
+  open_route (shell), update_check (read-only), update_apply (destructive)
+
+installed app UPDATE (AGENT-13, issue #2942; exits 0 only for current or
+update-available, and for an apply that relaunched into the announced build):
+  opendj update check                                   # channel status + versions
+  opendj update apply [--timeout-s SECONDS]             # install and relaunch"""
 
 LIBRARY_EPILOG = _LIBRARY_LINES
 

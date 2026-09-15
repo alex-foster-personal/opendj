@@ -25,7 +25,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -354,10 +356,13 @@ def test_the_cli_exists_and_refuses_an_unreachable_channel() -> None:
     assert payload["status"] in {"endpoint-unreachable", "identity-unavailable"}
 
 
-def _apply_http_handler(calls: dict[str, int] | None = None):
-    state = calls if calls is not None else {"build_info": 0, "apply_status_polls": 0}
+def _apply_http_handler(calls: dict[str, Any] | None = None):
+    state: dict[str, Any] = (
+        calls if calls is not None else {"build_info": 0, "apply_status_polls": 0}
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
+        announced = state.get("announced_version") or _bump_patch_version(RUNNING_VERSION)
         if request.url.path.endswith("/build-info"):
             state["build_info"] = state.get("build_info", 0) + 1
             first = state["build_info"] == 1
@@ -373,24 +378,43 @@ def _apply_http_handler(calls: dict[str, int] | None = None):
                     "git_dirty": False,
                     "built_at_utc": "2026-08-31T12:00:00Z",
                     "built_at_kind": "payload-build",
-                    "app_version": RUNNING_VERSION if first else _bump_patch_version(RUNNING_VERSION),
+                    "app_version": (
+                        RUNNING_VERSION
+                        if first
+                        else state.get("after_version") or announced
+                    ),
                 },
             )
         if request.url.path.endswith("/update/check"):
             status = state.get("check_status", "update-available")
-            return httpx.Response(200, json={"status": status, "available_version": "0.1.1"})
+            return httpx.Response(
+                200, json={"status": status, "available_version": announced}
+            )
         if request.url.path.endswith("/update/apply") and request.method == "POST":
             return httpx.Response(
                 202,
                 json={
                     "accepted": True,
-                    "available_version": "0.1.1",
+                    "available_version": announced,
                     "command_id": "abc123",
                 },
             )
         if "/update/apply/" in request.url.path:
             state["apply_status_polls"] = state.get("apply_status_polls", 0) + 1
             apply_status = state.get("apply_status", "succeeded")
+            if apply_status == "never":
+                return httpx.Response(
+                    200,
+                    json={
+                        "command_id": "abc123",
+                        "state": "claimed",
+                        "outcome": None,
+                        "error": None,
+                        "enqueued_at_utc": "2026-09-15T08:00:00.000Z",
+                        "claimed_at_utc": "2026-09-15T08:00:01.000Z",
+                        "completed_at_utc": None,
+                    },
+                )
             if apply_status == "failed":
                 return httpx.Response(
                     200,
@@ -584,6 +608,54 @@ def test_apply_cli_exits_zero_when_build_identity_changes(monkeypatch) -> None:
         lambda *a, **k: type("O", (), {"base_url": "http://127.0.0.1:8685"})(),
     )
     assert _apply_via_engine("http://127.0.0.1:8685", 5.0) == 0
+
+
+def test_apply_refuses_a_relaunch_that_is_not_the_announced_version(
+    monkeypatch,
+) -> None:
+    """A relaunch onto some OTHER build is not the install that was asked for."""
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(
+        _apply_http_handler({"build_info": 0, "after_version": "0.1.2"})
+    )
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    monkeypatch.setattr(
+        module,
+        "resolve_origin",
+        lambda *a, **k: type("O", (), {"base_url": "http://127.0.0.1:8685"})(),
+    )
+    assert _apply_via_engine("http://127.0.0.1:8685", 2.0) == 3
+
+
+def test_apply_bounds_the_install_wait(monkeypatch) -> None:
+    """A shell that never reports leaves the caller waiting, not hanging.
+
+    The bound is the point: an unbounded wait here hangs the agent that asked
+    for the install, which is worse than a non-zero exit it can read.
+    """
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(
+        _apply_http_handler({"build_info": 0, "apply_status": "never"})
+    )
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    monkeypatch.setattr(module, "APPLY_STATUS_POLL_INTERVAL_S", 0.0)
+    started = time.monotonic()
+    assert _apply_via_engine("http://127.0.0.1:8685", 1.0) == 3
+    assert time.monotonic() - started < 30.0
+
+
+def test_check_via_engine_exits_nonzero_when_the_engine_answers_nonsense() -> None:
+    """A body that is not the check document is a fault, never a quiet pass."""
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html>"))
+    with httpx.Client(transport=transport) as client:
+        outcome = module.check_via_engine("http://127.0.0.1:8685", client=client)
+    assert outcome.status == module.STATUS_ENGINE_MALFORMED
+    assert outcome.actionable is False
+    assert "8685" in (outcome.detail or "")
 
 
 def test_apply_cli_exits_3_when_shell_reports_failed(monkeypatch, capsys) -> None:
