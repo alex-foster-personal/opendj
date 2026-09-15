@@ -32,6 +32,11 @@ class _CountingStemIndexFetcher:
         return self._index
 
 
+class _RequestCounter:
+    def __init__(self) -> None:
+        self.count = 0
+
+
 @dataclass
 class BootedStemHub:
     url: str
@@ -39,6 +44,7 @@ class BootedStemHub:
     server: uvicorn.Server
     thread: threading.Thread
     fetcher: _CountingStemIndexFetcher
+    request_counter: _RequestCounter
 
 
 def stem_index_payload(stable_id: str) -> dict[str, dict[str, str]]:
@@ -58,6 +64,7 @@ def _stem_hub_app(
     *,
     name: str,
     fetcher: _CountingStemIndexFetcher,
+    request_counter: _RequestCounter,
 ) -> FastAPI:
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(data_dir))
@@ -65,6 +72,13 @@ def _stem_hub_app(
     app.state.sync_hub_machine_name = name
     app.state.stem_index_fetcher = fetcher
     app.include_router(sync_service.router, prefix="/api/v1")
+
+    @app.middleware("http")
+    async def count_index_requests(request, call_next):
+        if request.url.path.endswith("/sync/stems/index"):
+            request_counter.count += 1
+        return await call_next(request)
+
     return app
 
 
@@ -81,8 +95,14 @@ def boot_stem_hub(
         _init_data_dir(data_dir)
     bind_port = port if port is not None else free_port()
     fetcher = _CountingStemIndexFetcher(index)
+    request_counter = _RequestCounter()
     config = uvicorn.Config(
-        _stem_hub_app(data_dir, name=name, fetcher=fetcher),
+        _stem_hub_app(
+            data_dir,
+            name=name,
+            fetcher=fetcher,
+            request_counter=request_counter,
+        ),
         host="127.0.0.1",
         port=bind_port,
         log_level="warning",
@@ -94,6 +114,7 @@ def boot_stem_hub(
         server,
         thread,
         fetcher,
+        request_counter,
     )
 
 
@@ -104,6 +125,24 @@ def stop_stem_hub(hub: BootedStemHub) -> None:
 
 def read_hit_count(hub: BootedStemHub) -> int:
     return hub.fetcher.hit_count
+
+
+def read_index_request_count(hub: BootedStemHub) -> int:
+    return hub.request_counter.count
+
+
+def write_unknown_credential(spoke_dir: Path) -> None:
+    """Valid sync credential this hub has never seen (real 401, not a forged one)."""
+    import secrets
+
+    from apps.sync_hub import machine_credentials
+
+    path = spoke_dir / "sync-credential"
+    path.write_text(
+        machine_credentials.CREDENTIAL_PREFIX + secrets.token_urlsafe(32),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
 
 
 def enroll_spoke(spoke_dir: Path, hub_url: str) -> None:

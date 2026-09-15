@@ -30,6 +30,8 @@ def maybe_rearm_stem_hydration(app: FastAPI) -> bool:
     data_dir = Path(data_dir)
     interval = stem_index.INDEX_REFRESH_RETRY_INTERVAL_S
     with _rearm_lock:
+        if getattr(app.state, "stem_hydration_source", None) is not None:
+            return True
         now = time.monotonic()
         last = _last_rearm_attempt_mono.get(data_dir)
         if last is not None and now - last < interval:

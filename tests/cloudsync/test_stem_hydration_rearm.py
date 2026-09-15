@@ -14,8 +14,10 @@ from tests.cloudsync.stem_rearm_hub_rig import (
     build_spoke_app,
     enroll_spoke,
     read_hit_count,
+    read_index_request_count,
     stem_index_payload,
     stop_stem_hub,
+    write_unknown_credential,
 )
 
 pytestmark = pytest.mark.requirement("STEM-32")
@@ -86,7 +88,70 @@ def test_structural_401_never_retries_rearm(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """MUTATION TARGET: retrying structural reasons must fail this test."""
+    """A real hub 401 (well-formed but hub-unknown credential, MDT_SYNC_CREDENTIAL_MODE=enforce)
+    must classify structural and never retry-hit the hub.
+
+    MUTATION TARGET: dropping the `unarmed_kind == "structural"` guard in
+    `maybe_rearm_stem_hydration` must fail this test (both the direct-call assertion and, if the
+    route-level gate in routes/stems.py were also loosened, the HTTP-level assertions).
+    """
+    monkeypatch.setenv("MDT_SYNC_CREDENTIAL_MODE", "enforce")
+    stable_id = "structural-auth-track"
+    hub_root = tmp_path / "hub"
+    hub = boot_stem_hub(hub_root, index=stem_index_payload(stable_id))
+    spoke_dir = tmp_path / "spoke"
+    spoke_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        sync_config.write_config(
+            spoke_dir,
+            sync_config.CloudSyncConfig(
+                enabled=True,
+                hub_url=hub.url,
+                machine_name="spoke",
+            ),
+        )
+        write_unknown_credential(spoke_dir)
+
+        app, client = build_spoke_app(spoke_dir, monkeypatch)
+        assert app.state.stem_hydration_unarmed_kind == "structural"
+        assert "hub refused sync credential" in (app.state.stem_hydration_unarmed_reason or "")
+        # Boot-time arming itself made exactly one real HTTP call to the hub.
+        assert read_index_request_count(hub) == 1
+        assert read_hit_count(hub) == 0  # refused before the index fetcher is ever reached
+
+        first = client.get(f"/api/v1/tracks/{stable_id}/stems")
+        assert first.status_code == 502
+        assert first.json()["detail"]["code"] == STEM_HYDRATION_NOT_ARMED
+        assert read_index_request_count(hub) == 1
+
+        time.sleep(0.25)
+        second = client.get(f"/api/v1/tracks/{stable_id}/stems")
+        assert second.status_code == 502
+        assert second.json()["detail"]["code"] == STEM_HYDRATION_NOT_ARMED
+        assert read_index_request_count(hub) == 1
+        assert read_hit_count(hub) == 0
+
+        # routes/stems.py never calls maybe_rearm_stem_hydration for a structural kind, so the
+        # HTTP-level assertions above cannot alone prove THIS function's own guard still holds -
+        # call it directly.
+        from apps.webui.server.stem_hydration_rearm import maybe_rearm_stem_hydration
+
+        armed_now = maybe_rearm_stem_hydration(app)
+        assert armed_now is False
+        assert read_index_request_count(hub) == 1
+    finally:
+        stop_stem_hub(hub)
+
+
+def test_structural_malformed_local_credential_never_retries_rearm(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local credential-file validation failure (malformed prefix) is structural and never retries.
+
+    This failure mode never reaches the network either way, so it does not by itself prove the
+    re-arm guard - see test_structural_401_never_retries_rearm for that.
+    """
     stable_id = "structural-auth-track"
     hub_root = tmp_path / "hub"
     hub = boot_stem_hub(
