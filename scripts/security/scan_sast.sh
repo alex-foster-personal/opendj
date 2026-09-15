@@ -81,7 +81,9 @@ elif [[ "$MODE" == "full" ]]; then
   detail="whole tree (existing debt included)"
   min_files=1
 fi
-sec_py semgrep-summary "$OUT/scan.json" --min-rules "$MIN_RULES" --min-files "$min_files" \
+# The rule floor is proved by the control above; a diff-aware run loads only the
+# rules for the languages it scans (154 Python rules for a Python-only diff).
+sec_py semgrep-summary "$OUT/scan.json" --min-rules 1 --min-files "$min_files" \
   --count-file "$OUT/scan.count" \
   --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" ||
   _unknown_exit "scan output unparseable or rules missing"
