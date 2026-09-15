@@ -19,6 +19,24 @@ import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './p
 
 export type UiTheme = 'dark' | 'light';
 
+export type TopbarDiskPrefKey =
+	| 'beat_sync_max'
+	| 'auto_play_enabled'
+	| 'auto_play_enforce_order'
+	| 'auto_play_maximize_reach';
+
+export function setTopbarDiskPref(
+	uiPrefs: Pick<PrefsHydrateTarget, TopbarDiskPrefKey>,
+	persist: () => void,
+	sync: (patch: Pick<DiskPrefsPatch, TopbarDiskPrefKey>) => void,
+	key: TopbarDiskPrefKey,
+	next: boolean
+): void {
+	uiPrefs[key] = next;
+	persist();
+	void sync({ [key]: next });
+}
+
 export type DiskPrefsPatch = {
 	confirm?: {
 		delete_playlist?: boolean;
@@ -43,6 +61,10 @@ export type DiskPrefsPatch = {
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
 	app_posture?: AppPosturePref;
+	beat_sync_max?: boolean;
+	auto_play_enabled?: boolean;
+	auto_play_enforce_order?: boolean;
+	auto_play_maximize_reach?: boolean;
 };
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -78,6 +100,10 @@ export interface PrefsHydrateTarget {
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
 	app_posture: AppPosturePref;
+	beat_sync_max: boolean;
+	auto_play_enabled: boolean;
+	auto_play_enforce_order: boolean;
+	auto_play_maximize_reach: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -161,6 +187,15 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
 				applyPrefetchCaps();
+			}
+			for (const key of [
+				'beat_sync_max',
+				'auto_play_enabled',
+				'auto_play_enforce_order',
+				'auto_play_maximize_reach'
+			] as const) {
+				const value = body[key];
+				if (typeof value === 'boolean') uiPrefs[key] = value;
 			}
 			persist();
 		} catch {
