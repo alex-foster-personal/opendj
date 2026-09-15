@@ -57,6 +57,57 @@ const STARTING_WINDOW_H_PT: f64 = 1449.0;
 const ENGINE_LOG: &str = "logs/engine.log";
 const PARENT_FILE: &str = ".engine.parent";
 
+// ----- diagnostic flags ----------------------------------------------------
+// `payload/bin/opendj` and `payload/bin/opendj-engine` are argparse programs:
+// `--help`/`-h` prints usage and exits before touching anything else. This
+// shell has no argparse, but an agent probing it with the same flag must get
+// the same contract, not a second GUI instance (issue #2868). Checked before
+// `install_signal_handlers`, the single-instance plugin, or anything that
+// resolves the data dir, so a diagnostic probe truly touches nothing.
+const USAGE: &str = "\
+usage: opendj-desktop [-h] [--version]
+
+Open DJ desktop shell -- boots the bundled engine and opens the app window.
+Run with no arguments to launch normally.
+
+options:
+  -h, --help     show this help message and exit
+  --version      show the shell's version and exit
+";
+
+#[derive(Debug, PartialEq, Eq)]
+enum DiagnosticFlag {
+    Help,
+    Version,
+}
+
+/// Pure so the guard is unit-testable: no argv global, no process exit.
+fn parse_diagnostic_flag<'a>(args: impl Iterator<Item = &'a str>) -> Option<DiagnosticFlag> {
+    for arg in args {
+        match arg {
+            "-h" | "--help" => return Some(DiagnosticFlag::Help),
+            "--version" => return Some(DiagnosticFlag::Version),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Print usage or version for a diagnostic flag and report the process exit
+/// code, or `None` when the caller should proceed to launch the app.
+fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>) -> Option<i32> {
+    match parse_diagnostic_flag(args)? {
+        DiagnosticFlag::Help => {
+            print!("{USAGE}");
+            Some(0)
+        }
+        DiagnosticFlag::Version => {
+            println!("opendj-desktop {}", env!("CARGO_PKG_VERSION"));
+            Some(0)
+        }
+    }
+}
+
 static SIGNAL_RECEIVED: AtomicBool = AtomicBool::new(false);
 static ON_SHUTDOWN: OnceLock<Mutex<Option<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
 
@@ -332,6 +383,29 @@ fn install_signal_handlers() {
     });
 }
 
+/// Second-launch callback for `tauri_plugin_single_instance`: surface the
+/// running instance instead of letting a second launch re-run the launch
+/// plan against the same data dir and `.engine.lock` (issue #2868). The
+/// plugin already killed the second process by the time this runs, so
+/// there is no second `Supervised` to shut down here.
+fn focus_existing_window(app: &AppHandle, _argv: Vec<String>, _cwd: String) {
+    match app.get_webview_window(WINDOW_LABEL) {
+        Some(window) => {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+            engine::append_shell_log(
+                "single-instance",
+                "second launch focused the existing window",
+            );
+        }
+        None => engine::append_shell_log(
+            "WARN",
+            "second launch detected but no existing window to focus",
+        ),
+    }
+}
+
 /// The only place this shell ever gives up, and it does so loudly.
 /// INSTALL-21: delegate quit decisions to the engine-served UI. Rust only blocks
 /// the OS quit and forwards the request; no product logic lives here.
@@ -353,17 +427,32 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = handle_diagnostic_flags(args.iter().map(String::as_str)) {
+        std::process::exit(code);
+    }
+
     install_signal_handlers();
 
-    // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
-    // debug, so a developer build cannot silently lack the surface a shipped
-    // one has. The plugin owns the whole apply path -- fetch, minisign verify
-    // against `plugins.updater.pubkey`, swap the bundle -- because signature
-    // verification must not be separable from installation. The engine's
-    // /api/v1/update/check answers the same question for agents and for a
-    // browser tab, and reads the SAME endpoint constant; see docs/auto-update.md
-    // for why the check is duplicated rather than shared.
+    // SINGLE-INSTANCE GUARD (issue #2868). Must be the FIRST plugin
+    // registered: the crate's own docs say plugins run in registration
+    // order, and this one has to claim the instance lock before anything
+    // else runs. Without it, a second launch -- an agent probing the
+    // binary, `open -n`, a double-click -- re-runs the whole launch plan in
+    // `start_engine` against the SAME `.engine.lock`, which can then Adopt
+    // the running engine or SIGTERM/SIGKILL it out from under the user's
+    // live session (`launch.rs::stop_holder_pid`). The guard belongs here,
+    // at launch admission, not in the lock logic itself.
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(focus_existing_window))
+        // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
+        // debug, so a developer build cannot silently lack the surface a shipped
+        // one has. The plugin owns the whole apply path -- fetch, minisign verify
+        // against `plugins.updater.pubkey`, swap the bundle -- because signature
+        // verification must not be separable from installation. The engine's
+        // /api/v1/update/check answers the same question for agents and for a
+        // browser tab, and reads the SAME endpoint constant; see docs/auto-update.md
+        // for why the check is duplicated rather than shared.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init());
@@ -540,5 +629,56 @@ mod tests {
             starting_window_size(None),
             (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT)
         );
+    }
+
+    // - if a normal launch (no args, or app-owned args) is read as --help
+    //   then the app never opens -> broken
+    // - if --help is missed because it is not the FIRST argv item then an
+    //   agent's probe still launches a second GUI -> broken (issue #2868)
+    // - if -h and --help are not treated identically then usage depends on
+    //   which spelling an agent happened to pick -> broken
+
+    fn flag_of(args: &[&str]) -> Option<DiagnosticFlag> {
+        parse_diagnostic_flag(args.iter().copied())
+    }
+
+    #[test]
+    fn no_args_means_launch_the_app() {
+        assert_eq!(flag_of(&[]), None);
+    }
+
+    #[test]
+    fn dash_h_is_help() {
+        assert_eq!(flag_of(&["-h"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn double_dash_help_is_help() {
+        assert_eq!(flag_of(&["--help"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn double_dash_version_is_version() {
+        assert_eq!(flag_of(&["--version"]), Some(DiagnosticFlag::Version));
+    }
+
+    #[test]
+    fn help_is_found_even_when_not_the_first_argument() {
+        assert_eq!(flag_of(&["--foo", "--help"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn an_unrelated_argument_means_launch_the_app() {
+        assert_eq!(flag_of(&["--engine-origin-probe"]), None);
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_reports_exit_zero_for_help() {
+        assert_eq!(handle_diagnostic_flags(["--help"].into_iter()), Some(0));
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_returns_none_for_a_normal_launch() {
+        assert_eq!(handle_diagnostic_flags(std::iter::empty()), None);
     }
 }
