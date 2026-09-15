@@ -2093,7 +2093,7 @@ def test_availability_commit_fails_fast_without_busy_timeout(
     contender = state_db.open_rw(state_db_path)
     contender.execute("PRAGMA busy_timeout = 0")
     try:
-        with pytest.raises(sqlite3.OperationalError):
+        with pytest.raises(state_db.StateStoreBusyError):
             avail.commit_availability_batch(
                 contender,
                 [row],

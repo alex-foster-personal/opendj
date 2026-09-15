@@ -407,8 +407,10 @@ class LibraryAvailabilityWorker:
         for attempt in range(AVAILABILITY_LOCK_RETRIES):
             try:
                 return fn()
-            except sqlite3.OperationalError as exc:
-                if not state_db.is_sqlite_busy(exc):
+            except (sqlite3.OperationalError, state_db.StateStoreBusyError) as exc:
+                # writer_common wraps SQLITE_BUSY as StateStoreBusyError since
+                # 0a0d095fb; both shapes are the same transient lock.
+                if isinstance(exc, sqlite3.OperationalError) and not state_db.is_sqlite_busy(exc):
                     raise
                 if attempt + 1 >= AVAILABILITY_LOCK_RETRIES:
                     log.warning(
@@ -523,8 +525,8 @@ class LibraryAvailabilityWorker:
             chunk = round_rows[start : start + self._batch_size]
             try:
                 self._commit_batch(conn, chunk)
-            except sqlite3.OperationalError as exc:
-                if state_db.is_sqlite_busy(exc):
+            except (sqlite3.OperationalError, state_db.StateStoreBusyError) as exc:
+                if isinstance(exc, state_db.StateStoreBusyError) or state_db.is_sqlite_busy(exc):
                     self._requeue_priority_ids(round_cursor.priority_taken)
                     raise
                 raise
