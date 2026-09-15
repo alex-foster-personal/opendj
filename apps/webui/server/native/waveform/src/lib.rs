@@ -94,7 +94,7 @@ fn bands_payload<'py>(
         // Array extraction and Python-list construction require the GIL. The
         // pure numeric kernel does not, and sync FastAPI routes can overlap in
         // the server's worker pool, so let other requests run during it.
-        let materialized = py.allow_threads(move || downsample_max_rounded(&values, points));
+        let materialized = py.detach(move || downsample_max_rounded(&values, points));
         length = materialized.len();
         output.set_item(name, PyList::new(py, materialized)?)?;
     }
