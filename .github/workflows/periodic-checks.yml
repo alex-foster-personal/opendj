@@ -75,10 +75,12 @@ concurrency:
   group: periodic-checks
   cancel-in-progress: false
 
+# issues: read at the top (the window job reads ledger comments); only the jobs
+# that post to the ledger issue widen to issues: write (zizmor excessive-permissions).
 permissions:
   actions: read
   contents: read
-  issues: write
+  issues: read
 
 env:
   LEDGER_ISSUE: "1492"
@@ -171,6 +173,7 @@ jobs:
       # NEXT job regardless of whether THIS one needed them.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
@@ -316,6 +319,7 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -456,6 +460,7 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -591,6 +596,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
 
@@ -725,6 +731,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
 
@@ -884,6 +891,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
           clean: true
@@ -994,6 +1002,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: true
 
@@ -1053,6 +1062,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: true
 
@@ -1157,6 +1167,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: main
           clean: false
 
@@ -1417,6 +1428,10 @@ jobs:
   # count would grow without bound.
   # ---------------------------------------------------------------------------
   report:
+    permissions:
+      actions: read
+      contents: read
+      issues: write
     name: ledger comment
     needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, dmg-smoke-cadence, duplicate-writer]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
@@ -1475,6 +1490,7 @@ jobs:
       # (tests/scripts/test_ci_workspace_reuse.py): same runner, same rule.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs

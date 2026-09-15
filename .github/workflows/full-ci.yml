@@ -62,6 +62,9 @@ env:
   # for a root-run interpreter.
   PYTHONDONTWRITEBYTECODE: "1"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: full pytest + coverage
@@ -177,6 +180,7 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           # A caller's pinned SHA when there is one; empty falls back to the
           # workflow event's own ref, which is the dispatch behavior.
           ref: ${{ inputs.ref }}
