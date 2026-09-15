@@ -31,7 +31,6 @@
 	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
-	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
@@ -41,10 +40,6 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
-
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
 
 	let { children } = $props();
 
