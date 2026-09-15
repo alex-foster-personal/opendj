@@ -1,7 +1,8 @@
 """Stdio MCP server for installed Open DJ (AGENT-11).
 
-Five tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
-``library``, and ``ui_url``. Safety rails live in :mod:`mcp_safety`.
+Six tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
+``library``, ``ui_url``, and ``open_route``. Safety rails live in
+:mod:`mcp_safety`.
 """
 
 from __future__ import annotations
@@ -31,13 +32,16 @@ from apps.opendj_cli.mcp_safety import (
 )
 from apps.opendj_cli.orders import single
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
+from apps.opendj_cli.shell_navigate import REMEDY_VERB, open_shell_route
 from apps.opendj_cli.verbs import InvocationError, parse_invocation
 
 SERVER_NAME = "opendj-mcp"
 SERVER_VERSION = "0.1.0"
 PROBE_TIMEOUT_S = 3.0
 UI_URL_NOTE = (
-    "Open in browser MCP; release builds have no WebDriver seam (AGENT-07)."
+    "Open in browser MCP only; does not move the installed desktop shell window. "
+    "Use open_route for shell navigation (AGENT-12). Release builds have no "
+    "WebDriver seam (AGENT-07)."
 )
 
 
@@ -182,9 +186,14 @@ def create_server() -> MCPServer:
         client = EngineClient(origin=origin)
         try:
             result = client.post_order(guarded_order)
-        except NoPerformancePage:
+        except NoPerformancePage as error:
             return _json_text(
-                {"error": "no_performance_page", "origin": origin.base_url}
+                {
+                    "error": "no_performance_page",
+                    "origin": origin.base_url,
+                    "remedy": REMEDY_VERB,
+                    "message": str(error),
+                }
             )
         except (OrderRejected, OrderTimedOut, MalformedResult) as error:
             return _json_text({"error": "order_failed", "message": str(error)})
@@ -261,6 +270,37 @@ def create_server() -> MCPServer:
         if response.headers:
             payload["headers"] = dict(response.headers)
         return _json_text(payload)
+
+    @server.tool()
+    def open_route(route: str = "/performance") -> str:
+        """Navigate the installed desktop shell to a route (AGENT-12)."""
+        if not route.startswith("/"):
+            route = f"/{route}"
+        try:
+            origin = _resolve_origin()
+        except EngineNotRunning as error:
+            return _engine_not_running(error)
+        try:
+            if route != "/performance" and not route.startswith("/performance/"):
+                return _json_text(
+                    {
+                        "error": "usage",
+                        "message": f"route {route!r} is not allowlisted; use /performance",
+                    }
+                )
+            result = open_shell_route(origin, route)
+        except NoPerformancePage as error:
+            return _json_text(
+                {
+                    "error": "no_performance_page",
+                    "remedy": REMEDY_VERB,
+                    "origin": origin.base_url,
+                    "message": str(error),
+                }
+            )
+        except EngineNotRunning as error:
+            return _engine_not_running(error)
+        return _json_text({"accepted": True, **result})
 
     @server.tool()
     def ui_url(route: str = "/") -> str:
