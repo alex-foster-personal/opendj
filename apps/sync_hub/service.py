@@ -536,6 +536,13 @@ def pull(
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
     ),
+    bundle_stable_ids: list[str] = Query(
+        default=[],
+        description=(
+            "optional track stable_id values whose live bundles are appended "
+            "for identity repair without advancing the changelog cursor"
+        ),
+    ),
     capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> PullResponse:
     """One chunk of the rows the hub accepted after ``since_seq``.
@@ -555,13 +562,21 @@ def pull(
         _gate(request, conn, machine_id, "read")
         try:
             batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+            bundle_rows = engine.hub_track_bundles(conn, bundle_stable_ids)
+            rows = list(batch.rows)
+            seen = {(row.table, row.pk) for row in rows}
+            for row in bundle_rows:
+                key = (row.table, row.pk)
+                if key not in seen:
+                    seen.add(key)
+                    rows.append(row)
             _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return PullResponse(
-            rows=_row_models(batch.rows),
+            rows=_row_models(rows),
             seq=batch.seq,
             machines=_machine_models(conn),
             has_more=batch.has_more,

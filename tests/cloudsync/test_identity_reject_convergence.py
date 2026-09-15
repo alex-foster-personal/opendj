@@ -1,12 +1,16 @@
-"""CLOUDSYNC-07: hub-authority identity-collapse rejection convergence (issue #3057).
+"""CLOUDSYNC-07: hub-authority identity-collapse rejection convergence (issue #3057, #3100).
 
 When hub and spoke elect opposite survivors for the same content identity,
 the push response must name the hub survivor so the spoke can converge.
+Reversed persisted remap rows must be deleted and one-round repair must
+re-pull hub survivors and re-offer former local survivors.
 
 [if] mirror-image elections diverge [then] one sync converges without digest mismatch, [else stop].
 """
 from __future__ import annotations
 
+import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,20 +20,30 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import capabilities, client, engine, protocol, sync_set, wire_version
+from apps.sync_hub.transport import API_PREFIX, HttpTransport
 from apps.sync_hub.engine_identity import _follow_remap
 from apps.sync_hub.engine_identity_map import (
+    REMAP_TABLE,
     apply_hub_identity_rejects,
     effective_identity_remap,
     load_identity_remap,
     record_identity_remap,
 )
-from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _TestClientTransport
+from tests.cloudsync.test_hub_sync import (
+    _DEV_A,
+    _DEV_B,
+    _T0,
+    _TestClientTransport,
+    _insert_playlist,
+    _set_members,
+)
 from tests.cloudsync.test_track_identity_collapse import (
     _HASH_A,
     _hub_app,
     _insert_field,
     _insert_identified_track,
     _insert_location,
+    _insert_vendor,
     _incoming_track,
     _open_hub,
     _track_ids,
@@ -310,3 +324,340 @@ def test_remap_chain_follows_hub_survivor(tmp_path: Path) -> None:
         assert _PK_C not in held.identity_losers
     finally:
         conn.close()
+
+
+def _seed_track_children(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    location_id: str,
+    playlist_id: str = "pl-mirror",
+) -> None:
+    """Children on one track PK for remap convergence tests."""
+    _insert_field(
+        conn,
+        stable_id,
+        field_name="bpm",
+        value_json="128.0",
+        updated_at=_STAMP,
+        origin=_DEV_A,
+    )
+    _insert_location(
+        conn,
+        location_id=location_id,
+        stable_id=stable_id,
+        file_path=f"/Music/{stable_id}.mp3",
+        updated_at=_STAMP,
+        origin=_DEV_A,
+    )
+    _insert_vendor(
+        conn,
+        stable_id,
+        vendor="rekordbox",
+        vendor_id="rb-mirror",
+        updated_at=_STAMP,
+        origin=_DEV_A,
+    )
+    _insert_playlist(conn, playlist_id, name="mirror", updated_at=_STAMP, origin=_DEV_A)
+    _set_members(conn, playlist_id, [stable_id], updated_at=_STAMP, origin=_DEV_A)
+
+
+def _seed_peer_mirror_state(
+    conn: sqlite3.Connection, *, loser: str, survivor: str
+) -> None:
+    """Both identity rows on one peer; shared children on the hub PK only."""
+    for pk in (_PK_HUB, _PK_SPOKE):
+        _insert_identified_track(
+            conn,
+            pk,
+            title="mirror",
+            content_hash=_HASH_A,
+            updated_at=_STAMP,
+            origin=_DEV_A,
+        )
+    _seed_track_children(
+        conn,
+        _PK_HUB,
+        location_id="loc-mirror",
+        playlist_id="pl-mirror",
+    )
+    record_identity_remap(conn, {}, loser, survivor)
+
+
+@dataclass
+class _RepairObservingTransport:
+    """Count bundle repair pulls through a real TestClient transport."""
+
+    inner: _TestClientTransport
+    bundle_pulls: int = 0
+
+    def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.inner.post(path, payload)
+
+    def get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        bundle = params.get("bundle_stable_ids")
+        if bundle:
+            self.bundle_pulls += 1
+        return self.inner.get(path, params)
+
+
+def test_apply_hub_identity_rejects_validates_pks(tmp_path: Path) -> None:
+    """[if] hub reject PKs are empty or equal [then] SyncProtocolError, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        with pytest.raises(protocol.SyncProtocolError, match="non-empty"):
+            apply_hub_identity_rejects(
+                conn,
+                [
+                    protocol.IdentityReject(
+                        table="tracks",
+                        offered_pk="",
+                        survivor_pk=_PK_HUB,
+                    )
+                ],
+            )
+        with pytest.raises(protocol.SyncProtocolError, match="must differ"):
+            apply_hub_identity_rejects(
+                conn,
+                [
+                    protocol.IdentityReject(
+                        table="tracks",
+                        offered_pk=_PK_HUB,
+                        survivor_pk=_PK_HUB,
+                    )
+                ],
+            )
+    finally:
+        conn.close()
+
+
+def test_http_transport_repeated_bundle_stable_ids() -> None:
+    """[if] repair pull names multiple bundle ids [then] url repeats the key, [else stop]."""
+    transport = HttpTransport("http://hub.example.invalid")
+    url = transport._url(
+        f"{API_PREFIX}/pull",
+        {"machine_id": "spoke", "bundle_stable_ids": [_PK_HUB, _PK_SPOKE]},
+    )
+    assert "bundle_stable_ids=" in url
+    assert url.count("bundle_stable_ids=") == 2
+
+
+def test_spoke_apply_defers_drop_until_repair_offer(tmp_path: Path) -> None:
+    """[if] hub row wins on pull [then] former survivor stays for repair offer, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        _insert_identified_track(
+            conn,
+            _PK_SPOKE,
+            title="local survivor",
+            content_hash=_HASH_A,
+            updated_at="2026-09-13T16:45:34.823926+00:00",
+            origin=_DEV_A,
+        )
+        conn.commit()
+        incoming = _incoming_track(
+            conn,
+            _PK_HUB,
+            title="hub copy",
+            updated_at=_STAMP,
+            content_hash=_HASH_A,
+        )
+        result = engine.spoke_apply(conn, [incoming])
+        assert result.accepted == 1
+        assert _PK_SPOKE in _track_ids(conn)
+        offer = engine.identity_repair_offer(conn, _PK_SPOKE)
+        assert len(offer) == 1
+        assert offer[0].pk == (_PK_SPOKE,)
+    finally:
+        conn.close()
+
+
+def test_reversed_remap_row_deleted_on_hub_reject(tmp_path: Path) -> None:
+    """[if] spoke holds reversed remap [then] hub reject deletes it and remaps children, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        for pk in (_PK_HUB, _PK_SPOKE):
+            _insert_identified_track(
+                conn,
+                pk,
+                title="mirror",
+                content_hash=_HASH_A,
+                updated_at=_STAMP,
+                origin=_DEV_A,
+            )
+        _seed_track_children(conn, _PK_SPOKE, location_id="loc-spoke")
+        record_identity_remap(conn, {}, _PK_HUB, _PK_SPOKE)
+        conn.commit()
+
+        apply_hub_identity_rejects(
+            conn,
+            [
+                protocol.IdentityReject(
+                    table="tracks",
+                    offered_pk=_PK_SPOKE,
+                    survivor_pk=_PK_HUB,
+                )
+            ],
+        )
+        conn.commit()
+
+        persisted = load_identity_remap(conn)
+        assert persisted == {_PK_SPOKE: _PK_HUB}
+        assert (
+            conn.execute(
+                f"SELECT 1 FROM {REMAP_TABLE} WHERE loser_pk = ?", (_PK_HUB,)
+            ).fetchone()
+            is None
+        )
+        assert (
+            conn.execute(
+                "SELECT stable_id FROM track_fields WHERE field_name = 'bpm'"
+            ).fetchone()[0]
+            == _PK_HUB
+        )
+        assert (
+            conn.execute(
+                "SELECT stable_id FROM track_locations WHERE location_id = 'loc-spoke'"
+            ).fetchone()[0]
+            == _PK_HUB
+        )
+        assert (
+            conn.execute(
+                "SELECT stable_id FROM track_vendor_ids WHERE vendor = 'rekordbox'"
+            ).fetchone()[0]
+            == _PK_HUB
+        )
+        assert (
+            conn.execute(
+                "SELECT stable_id FROM playlist_memberships WHERE playlist_id = 'pl-mirror'"
+            ).fetchone()[0]
+            == _PK_HUB
+        )
+    finally:
+        conn.close()
+
+
+def test_spoke_apply_prefers_hub_pk_over_local_stamp(tmp_path: Path) -> None:
+    """[if] hub row matches local identity [then] incoming hub PK wins on pull, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        _insert_identified_track(
+            conn,
+            _PK_SPOKE,
+            title="local newer",
+            content_hash=_HASH_A,
+            updated_at="2026-09-13T16:45:34.823926+00:00",
+            origin=_DEV_A,
+        )
+        conn.commit()
+        incoming = _incoming_track(
+            conn,
+            _PK_HUB,
+            title="hub copy",
+            updated_at=_STAMP,
+            content_hash=_HASH_A,
+        )
+        result = engine.spoke_apply(conn, [incoming])
+        assert result.accepted == 1
+        assert load_identity_remap(conn)[_PK_SPOKE] == _PK_HUB
+        assert _PK_HUB in _track_ids(conn)
+    finally:
+        conn.close()
+
+
+def test_hub_apply_keeps_local_identity_election(tmp_path: Path) -> None:
+    """[if] hub receives conflicting identity row [then] hub apply keeps local election, [else stop]."""
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            _PK_HUB,
+            title="hub survivor",
+            content_hash=_HASH_A,
+            updated_at=_STAMP,
+            origin=_DEV_A,
+        )
+        conn.commit()
+        incoming = _incoming_track(
+            conn,
+            _PK_SPOKE,
+            title="spoke offered",
+            updated_at=_STAMP,
+            content_hash=_HASH_A,
+        )
+        incoming = protocol.RowChange(
+            table=incoming.table,
+            pk=incoming.pk,
+            values={**incoming.values, "origin_device_id": _DEV_A},
+        )
+        result = engine.hub_apply(conn, [incoming])
+        assert result.rejected == 1
+        assert result.identity_rejects[0].survivor_pk == _PK_HUB
+    finally:
+        conn.close()
+
+
+def test_reversed_remap_converges_in_one_sync(tmp_path: Path) -> None:
+    """[if] peers hold opposite remaps for one identity [then] one run_sync converges, [else stop]."""
+    spoke = tmp_path / "spoke"
+    hub_dir = tmp_path / "hub"
+    hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
+    try:
+        _seed_peer_mirror_state(hub_conn, loser=_PK_SPOKE, survivor=_PK_HUB)
+        hub_conn.commit()
+    finally:
+        hub_conn.close()
+
+    spoke_conn = state_db.open_rw(client.state_db_path(spoke))
+    try:
+        _seed_peer_mirror_state(spoke_conn, loser=_PK_HUB, survivor=_PK_SPOKE)
+        spoke_conn.commit()
+    finally:
+        spoke_conn.close()
+
+    with TestClient(_hub_app(hub_dir)) as http:
+        observing = _RepairObservingTransport(_TestClientTransport(http))
+        result = client.run_sync(
+            spoke,
+            "http://hub.invalid",
+            transport=observing,
+            name="spoke",
+        )
+        quiet = client.run_sync(
+            spoke,
+            "http://hub.invalid",
+            transport=_TestClientTransport(http),
+            name="spoke",
+        )
+
+    assert observing.bundle_pulls == 1
+    assert not result.digest_inconclusive
+    assert not quiet.digest_inconclusive
+
+    spoke_after = state_db.open_rw(client.state_db_path(spoke))
+    hub_after = state_db.open_rw(client.state_db_path(hub_dir))
+    try:
+        assert load_identity_remap(spoke_after) == {_PK_SPOKE: _PK_HUB}
+        assert (
+            spoke_after.execute(
+                f"SELECT 1 FROM {REMAP_TABLE} WHERE loser_pk = ?", (_PK_HUB,)
+            ).fetchone()
+            is None
+        )
+        local_digest = protocol.sync_digest(spoke_after)
+        remote_digest = protocol.sync_digest(hub_after)
+        assert local_digest.overall == remote_digest.overall
+        for table in (
+            "tracks",
+            "track_fields",
+            "track_locations",
+            "track_vendor_ids",
+            "playlist_memberships",
+        ):
+            assert local_digest.tables[table] == remote_digest.tables[table]
+    finally:
+        spoke_after.close()
+        hub_after.close()
+
+    assert quiet.pushed == 0
+    assert quiet.pulled == 0
