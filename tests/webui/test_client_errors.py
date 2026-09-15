@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 
+#: The request guard (#2689) refuses TestClient's default ``Host: testserver``.
+_LOOPBACK = "http://127.0.0.1"
+
 
 def _payload() -> dict[str, object]:
     return {
@@ -34,7 +37,7 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
         enable_cors=False,
         client_error_log_dir=tmp_path,
     )
-    with TestClient(app) as client:
+    with TestClient(app, base_url=_LOOPBACK) as client:
         response = client.post("/api/v1/client-errors", json=_payload())
 
     assert response.status_code == 202
@@ -61,7 +64,7 @@ def test_list_client_errors_includes_stack_and_url(tmp_path: Path) -> None:
         enable_cors=False,
         client_error_log_dir=tmp_path,
     )
-    with TestClient(app) as client:
+    with TestClient(app, base_url=_LOOPBACK) as client:
         created = client.post("/api/v1/client-errors", json=_payload())
         event_id = created.json()["event_id"]
         rows = client.get("/api/v1/client-errors").json()
@@ -89,7 +92,7 @@ def test_client_error_accepts_browser_capture_kinds(tmp_path: Path) -> None:
         payload = _payload()
         payload["kind"] = kind
         payload["client_event_id"] = f"{kind}-probe"
-        with TestClient(app) as client:
+        with TestClient(app, base_url=_LOOPBACK) as client:
             response = client.post("/api/v1/client-errors", json=payload)
         assert response.status_code == 202, kind
 
@@ -103,7 +106,7 @@ def test_client_error_rejects_unbounded_stack(tmp_path: Path) -> None:
     )
     payload = _payload()
     payload["stack"] = "x" * 32769
-    with TestClient(app) as client:
+    with TestClient(app, base_url=_LOOPBACK) as client:
         response = client.post("/api/v1/client-errors", json=payload)
 
     assert response.status_code == 422
@@ -119,7 +122,7 @@ def test_client_error_triage_hides_decided_event_without_rewriting_daily_log(
         enable_cors=False,
         client_error_log_dir=tmp_path,
     )
-    with TestClient(app) as client:
+    with TestClient(app, base_url=_LOOPBACK) as client:
         created = client.post("/api/v1/client-errors", json=_payload())
         event_id = created.json()["event_id"]
         daily_log = next(tmp_path.glob("webui-client-errors-*.log"))
@@ -147,3 +150,25 @@ def test_client_error_triage_hides_decided_event_without_rewriting_daily_log(
     }
 
 pytestmark = pytest.mark.rb_parity
+
+
+def test_client_error_log_line_is_warning_not_a_second_sentry_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """if the route logs a reported browser error at ERROR then broken: warning_log
+    forwards ERROR records to Sentry, so the one error would be sent twice."""
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    route_logger = "apps.webui.server.routes.client_errors"
+    with (
+        caplog.at_level("WARNING", logger=route_logger),
+        TestClient(app, base_url=_LOOPBACK) as client,
+    ):
+        response = client.post("/api/v1/client-errors", json=_payload())
+    assert response.status_code == 202
+    lines = [r for r in caplog.records if r.getMessage().startswith("browser error")]
+    assert [r.levelname for r in lines] == ["WARNING"]
