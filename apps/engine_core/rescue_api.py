@@ -92,11 +92,13 @@ def add_rescue_routes(app: FastAPI) -> None:
         except RescueRestoreError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         cfg = request.app.state.engine_cfg
-        present = _present_stable_ids(cfg.data_dir)
+        # None means the library could not be read, so every track is treated
+        # as loadable. An EMPTY set is an answer, not an unknown: a library
+        # whose tracks are all soft-deleted has nothing to reload.
         raw_outcomes = compute_deck_outcomes(
             entry.payload,
             mode=mode,
-            present_stable_ids=present if present else None,
+            present_stable_ids=_present_stable_ids(cfg.data_dir),
         )
         return RescueRestoreOut(
             snapshot_id=entry.id,

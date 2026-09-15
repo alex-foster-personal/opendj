@@ -43,6 +43,23 @@ class UpdateRequiredOut(BaseModel):
     action: str
 
 
+class DigestDiffSampleOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    table: str
+    stable_id: str
+    newer_side: str
+    stamp: str = ""
+
+
+class CredentialNoticeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    verdict: str
+    action: str
+    hub_machine_id: str
+
+
 class CloudSyncStatusOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -84,6 +101,14 @@ class CloudSyncStatusOut(BaseModel):
             "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire "
             "versions and the install action for this machine."
         ),
+    )
+    digest_diff: list[DigestDiffSampleOut] | None = Field(
+        default=None,
+        description="Sample divergent rows when the latest result is a digest mismatch.",
+    )
+    credential_notice: CredentialNoticeOut | None = Field(
+        default=None,
+        description="One-shot re-enroll notice while the hub reads the credential as missing.",
     )
 
 

@@ -7,6 +7,8 @@
 [if] a layout restore is older than 24 h [then] it is refused with 422, [else stop].
 [if] a deck's track is soft-deleted in the library [then] restore reports it missing, [else stop].
 [if] a deck's track is live in the library [then] a play restore still resumes it, [else stop].
+[if] every library track is soft-deleted [then] restore reports the deck missing, [else stop].
+[if] the library cannot be read [then] it reads as unknown, never as empty, [else stop].
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from fastapi.testclient import TestClient
 from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig, apply_env_contract, prepare_layout
 from apps.engine_core.rescue.store import RescueStore
-from apps.engine_core.rescue_api import RESTORE_PATH, SNAPSHOTS_PATH
+from apps.engine_core.rescue_api import RESTORE_PATH, SNAPSHOTS_PATH, _present_stable_ids
 from apps.shared.state import db as state_db
 
 pytestmark = pytest.mark.requirement("RESCUE-04")
@@ -166,11 +168,8 @@ def test_play_restore_three_hours_refused(client: TestClient, data_dir: Path) ->
     assert "10 min" in response.json()["detail"]
 
 
-def test_play_restore_five_minutes_reports_resumed(client: TestClient, data_dir: Path) -> None:
-    _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
-    response = client.post(RESTORE_PATH, json={"play": True})
-    assert response.status_code == 200
-    body = response.json()
+def test_play_restore_five_minutes_reports_resumed(data_dir: Path) -> None:
+    body = _restore_with_library(data_dir, library={"a" * 40: False})
     assert body["mode"] == "play"
     assert body["decks"]["1"]["outcome"] == "resumed"
 
@@ -201,14 +200,13 @@ def _seed_library_track(data_dir: Path, stable_id: str, *, deleted: bool) -> Non
         conn.close()
 
 
-def _restore_with_library(data_dir: Path, *, deleted: bool) -> dict:
+def _restore_with_library(data_dir: Path, *, library: dict[str, bool]) -> dict:
+    """Seed `library` ({stable_id: deleted}), then play-restore a snapshot whose
+    deck 1 holds "a" * 40."""
     # Seed the library before the engine starts: its lifespan creates the state
-    # schema, and a writer racing that creation sees a half-built database. The
-    # extra live track keeps the library non-empty: the route treats an empty
-    # set of live ids as "unknown" and loads everything, which is a separate
-    # case from the deleted-row filter under test here.
-    _seed_library_track(data_dir, "b" * 40, deleted=False)
-    _seed_library_track(data_dir, "a" * 40, deleted=deleted)
+    # schema, and a writer racing that creation sees a half-built database.
+    for stable_id, deleted in library.items():
+        _seed_library_track(data_dir, stable_id, deleted=deleted)
     _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
     app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=8787))
     with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -218,7 +216,7 @@ def _restore_with_library(data_dir: Path, *, deleted: bool) -> dict:
 
 
 def test_restore_reports_a_soft_deleted_track_missing(data_dir: Path) -> None:
-    body = _restore_with_library(data_dir, deleted=True)
+    body = _restore_with_library(data_dir, library={"b" * 40: False, "a" * 40: True})
     assert body["decks"]["1"]["outcome"] == "missing", (
         "if a soft-deleted track restores as loadable, then rescue reloads a track "
         "the user deleted"
@@ -226,8 +224,28 @@ def test_restore_reports_a_soft_deleted_track_missing(data_dir: Path) -> None:
 
 
 def test_play_restore_resumes_a_live_library_track(data_dir: Path) -> None:
-    body = _restore_with_library(data_dir, deleted=False)
+    body = _restore_with_library(data_dir, library={"b" * 40: False, "a" * 40: False})
     assert body["decks"]["1"]["outcome"] == "resumed", (
         "if a live library track restores as missing, then the deleted-row filter "
         "hides tracks it should keep"
+    )
+
+
+def test_a_library_of_only_tombstones_restores_the_deck_missing(data_dir: Path) -> None:
+    body = _restore_with_library(data_dir, library={"a" * 40: True})
+    assert body["decks"]["1"]["outcome"] == "missing", (
+        "if an all-deleted library reads as unknown, then rescue reloads every "
+        "track the user deleted"
+    )
+
+
+def test_an_unreadable_library_is_unknown_and_an_all_deleted_one_is_empty(
+    tmp_path: Path, data_dir: Path
+) -> None:
+    assert _present_stable_ids(tmp_path / "no-such-data-dir") is None, (
+        "if a missing library reads as empty, then every deck restores missing"
+    )
+    _seed_library_track(data_dir, "a" * 40, deleted=True)
+    assert _present_stable_ids(data_dir) == set(), (
+        "if an all-deleted library reads as unknown, then deleted tracks reload"
     )

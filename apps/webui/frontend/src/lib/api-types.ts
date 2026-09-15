@@ -4640,6 +4640,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/rows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rows
+         * @description Paginated sync-eligible canonical rows for post-sync diff (CSSTATUS-09).
+         */
+        get: operations["rows_api_v1_sync_rows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/status": {
         parameters: {
             query?: never;
@@ -6906,6 +6926,13 @@ export interface components {
              * @description the effective config is on and names a hub
              */
             configured: boolean;
+            /** @description One-shot re-enroll notice while the hub reads the credential as missing. */
+            credential_notice?: components["schemas"]["CredentialNoticeOut"] | null;
+            /**
+             * Digest Diff
+             * @description Sample divergent rows when the latest result is a digest mismatch.
+             */
+            digest_diff?: components["schemas"]["DigestDiffSampleOut"][] | null;
             /**
              * Enabled
              * @description configured AND running: a scheduler heartbeat is fresh
@@ -7275,6 +7302,15 @@ export interface components {
              */
             ownership: "owned" | "unowned" | "foreign" | "revoked";
         };
+        /** CredentialNoticeOut */
+        CredentialNoticeOut: {
+            /** Action */
+            action: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Verdict */
+            verdict: string;
+        };
         /** CredentialsOut */
         CredentialsOut: {
             /** Blockers */
@@ -7476,6 +7512,20 @@ export interface components {
             vendor: string;
             /** Vendor Pl Id */
             vendor_pl_id: string;
+        };
+        /** DigestDiffSampleOut */
+        DigestDiffSampleOut: {
+            /** Newer Side */
+            newer_side: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Stamp
+             * @default
+             */
+            stamp: string;
+            /** Table */
+            table: string;
         };
         /** DigestResponse */
         DigestResponse: {
@@ -11294,6 +11344,13 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RowsResponse */
+        RowsResponse: {
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Rows */
+            rows: components["schemas"]["SyncRowSampleModel"][];
+        };
         /** SchedulerResumeOut */
         SchedulerResumeOut: {
             /** Ok */
@@ -12160,6 +12217,20 @@ export interface components {
              * @enum {string}
              */
             mode: "pinned" | "cached" | "stream" | "excluded";
+        };
+        /**
+         * SyncRowSampleModel
+         * @description One sync-eligible row for digest diff (CSSTATUS-09).
+         */
+        SyncRowSampleModel: {
+            /** Canonical Hex */
+            canonical_hex: string;
+            /** Origin Device Id */
+            origin_device_id?: string | null;
+            /** Pk */
+            pk: string[];
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** SyncRunIn */
         SyncRunIn: {
@@ -21985,6 +22056,58 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HubStorageErrorResponse"];
                 };
+            };
+        };
+    };
+    rows_api_v1_sync_rows_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description sync-set table name */
+                table: string;
+                limit?: number;
+                cursor?: string | null;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RowsResponse"];
+                };
+            };
+            /** @description rows refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description rows refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
