@@ -25,12 +25,14 @@ TOPBAR_DEFAULTS: dict[str, Any] = {
     "auto_play_enabled": True,
     "auto_play_enforce_order": False,
     "auto_play_maximize_reach": True,
+    "master_muted": False,
 }
 TOPBAR_WRITES: dict[str, Any] = {
     "beat_sync_max": False,
     "auto_play_enabled": False,
     "auto_play_enforce_order": True,
     "auto_play_maximize_reach": False,
+    "master_muted": True,
 }
 
 
@@ -51,7 +53,7 @@ def prefs_client(tmp_path: Path) -> TestClient:
         yield client
 
 
-def test_ui_prefs_defaults_include_the_four_topbar_prefs(prefs_client: TestClient) -> None:
+def test_ui_prefs_defaults_include_the_five_topbar_prefs(prefs_client: TestClient) -> None:
     body = prefs_client.get("/api/v1/ui-prefs").json()
     for key, want in TOPBAR_DEFAULTS.items():
         assert body[key] == want, key
@@ -70,13 +72,14 @@ def test_ui_prefs_topbar_key_round_trips_to_disk(
     assert prefs_client.get("/api/v1/ui-prefs").json()[key] == value
 
 
-def test_ui_prefs_topbar_put_leaves_the_other_three_alone(prefs_client: TestClient) -> None:
+def test_ui_prefs_topbar_put_leaves_the_other_four_alone(prefs_client: TestClient) -> None:
     assert prefs_client.put("/api/v1/ui-prefs", json={"beat_sync_max": False}).status_code == 200
     body = prefs_client.get("/api/v1/ui-prefs").json()
     assert body["beat_sync_max"] is False
     assert body["auto_play_enabled"] is TOPBAR_DEFAULTS["auto_play_enabled"]
     assert body["auto_play_enforce_order"] is TOPBAR_DEFAULTS["auto_play_enforce_order"]
     assert body["auto_play_maximize_reach"] is TOPBAR_DEFAULTS["auto_play_maximize_reach"]
+    assert body["master_muted"] is TOPBAR_DEFAULTS["master_muted"]
 
 
 @pytest.mark.parametrize("key", tuple(TOPBAR_DEFAULTS))

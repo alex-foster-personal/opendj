@@ -14,6 +14,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from apps.webui.server.routes.ui_prefs import persist_master_muted
 from apps.webui.server.shell_commands import shell_broker
 
 router = APIRouter(prefix="/commands", tags=["agent-commands"])
@@ -113,6 +114,42 @@ def _order(body: dict[str, Any]) -> dict[str, Any]:
     return {"kind": kind, "payload": payload}
 
 
+def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
+    """Last master_mute muted value in the order, or None if absent."""
+    last: bool | None = None
+
+    def walk(commands: list[Any]) -> None:
+        nonlocal last
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+            if command.get("type") == "master_mute" and isinstance(command.get("muted"), bool):
+                last = command["muted"]
+
+    if "single" in body:
+        payload = body["single"]
+        if isinstance(payload, dict):
+            walk([payload])
+        return last
+    for kind in ("sequence", "parallel"):
+        payload = body.get(kind)
+        if isinstance(payload, list):
+            walk(payload)
+    if "ramp" in body:
+        payload = body["ramp"]
+        if isinstance(payload, dict):
+            command = payload.get("command")
+            if isinstance(command, dict):
+                walk([command])
+    return last
+
+
+def _persist_master_mute_from_order(request: Request, body: dict[str, Any]) -> None:
+    muted = _master_mute_from_order(body)
+    if muted is not None:
+        persist_master_muted(request, muted)
+
+
 @router.post("", response_model=None)
 async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     """Submit one declared order and wait for the real browser result."""
@@ -122,6 +159,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
         order = _order(body)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    _persist_master_mute_from_order(request, body)
     broker = _broker(request)
     order_id, result = broker.submit(order)
     try:
