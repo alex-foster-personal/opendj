@@ -200,6 +200,60 @@ test('a failed status probe shows the library, not the overlay', async () => {
 	assert.equal(await mod.resolveFirstRun(), false);
 });
 
+test('resolveFirstRunWithMeta surfaces probe timeout instead of silent false', async () => {
+	mod.capabilities._resetForTests();
+	globalThis.fetch = async () => jsonResponse({ status: 'ok' }, 503);
+	const result = await mod.resolveFirstRunWithMeta({ probeTimeoutMs: 300, probeIntervalMs: 50 });
+	assert.equal(result.show, false);
+	assert.ok(result.error, 'expected a visible timeout error');
+});
+
+test('unknown flavor retries until engine answers then requests setup status', async () => {
+	mod.capabilities._resetForTests();
+	let healthCalls = 0;
+	const paths = [];
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') {
+			healthCalls += 1;
+			if (healthCalls < 2) {
+				return jsonResponse({ status: 'ok' }, 503);
+			}
+			return jsonResponse(engineHealth());
+		}
+		paths.push(path);
+		return jsonResponse(status({ should_show_wizard: true }));
+	};
+	const result = await mod.resolveFirstRunWithMeta();
+	assert.equal(result.show, true);
+	assert.equal(result.error, null);
+	assert.ok(paths.includes('/api/v1/setup/status'));
+});
+
+test('legacy flavor never requests setup status', async () => {
+	mod.capabilities._resetForTests();
+	const paths = [];
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		paths.push(path);
+		if (path === '/api/v1/health') {
+			return jsonResponse({
+				status: 'ok',
+				state_db: { path: 'data/state/state.db', tracks: 0, playlists: 0 },
+				cloud: { lock_holder: null },
+				syncthing: null,
+				bind_host: '127.0.0.1',
+				version: '0.1.0'
+			});
+		}
+		return jsonResponse(status());
+	};
+	const result = await mod.resolveFirstRunWithMeta();
+	assert.equal(result.show, false);
+	assert.equal(result.error, null);
+	assert.ok(!paths.includes('/api/v1/setup/status'));
+});
+
 // -------------------------------------------------------------- the markup
 
 test('the gate lives in the root layout, not on the library page', () => {

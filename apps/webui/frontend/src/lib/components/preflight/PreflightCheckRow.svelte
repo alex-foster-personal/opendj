@@ -30,23 +30,34 @@
 	let {
 		check,
 		navigate,
+		mode = 'boot',
 		label: labelOverride,
 		detail: detailOverride
 	}: {
 		check: PreflightCheck;
 		navigate?: ((path: string) => unknown) | undefined;
+		mode?: 'boot' | 'admin';
 		label?: string;
 		detail?: string;
 	} = $props();
-
-	const label = $derived(labelOverride ?? check.label);
-	const detail = $derived(detailOverride ?? check.detail);
 
 	let setupBusy = $state(false);
 	let setupError = $state<string | null>(null);
 
 	const offersRunSetup = $derived(
 		check.id === 'library-attached' && (check.status === 'pending' || check.status === 'fail')
+	);
+
+	const displayLabel = $derived(
+		labelOverride ??
+			(mode === 'boot' && check.user_label ? check.user_label : check.label)
+	);
+	const displayDetail = $derived(
+		detailOverride ??
+			(mode === 'boot' && check.user_detail ? check.user_detail : check.detail)
+	);
+	const displayRemediation = $derived(
+		mode === 'boot' && check.user_remediation ? check.user_remediation : check.remediation
 	);
 
 	function lightClass(status: PreflightCheck['status']): string {
@@ -75,16 +86,18 @@
 <li data-check-id={check.id} data-check-status={check.status}>
 	<details open={check.status !== 'pass'}>
 		<summary>
-			<span class="light {lightClass(check.status)}" title={`${label}: ${check.status}`}
+			<span class="light {lightClass(check.status)}" title={`${displayLabel}: ${check.status}`}
 			></span>
-			<span class="label">{label}</span>
-			<span class="status-word">{check.status}</span>
+			<span class="label">{displayLabel}</span>
+			{#if mode === 'admin'}
+				<span class="status-word">{check.status}</span>
+			{/if}
 		</summary>
-		<p class="detail" title={detail}>{detail}</p>
-		{#if check.remediation}
-			<p class="remediation">{check.remediation}</p>
-			{#if settingsUrl(check.remediation)}
-				<a href={settingsUrl(check.remediation)} class="settings-link"> Open System Settings </a>
+		<p class="detail" title={displayDetail}>{displayDetail}</p>
+		{#if displayRemediation}
+			<p class="remediation">{displayRemediation}</p>
+			{#if settingsUrl(displayRemediation)}
+				<a href={settingsUrl(displayRemediation)} class="settings-link"> Open System Settings </a>
 			{/if}
 		{/if}
 		{#if offersRunSetup}
