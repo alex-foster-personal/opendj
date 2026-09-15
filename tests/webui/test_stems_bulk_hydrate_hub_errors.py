@@ -204,7 +204,7 @@ def test_bulk_hydrate_hub_5xx_mid_pass_returns_200_partial_hub_error(
 def test_part_route_hub_unreachable_returns_503_sync_hub_unreachable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] hub unreachable during async part hydration [then] 503 SYNC_HUB_UNREACHABLE."""
+    """[if] hub unreachable during async part hydration [then] 503 SYNC_HUB_UNREACHABLE, [else stop]."""
     data_dir = tmp_path / "data"
     cfg = _cfg()
     s3 = InMemoryAssetS3()
@@ -235,7 +235,7 @@ def test_part_route_hub_unreachable_returns_503_sync_hub_unreachable(
 def test_bulk_hydrate_healthy_hub_regression(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] hub path is not used and source is healthy [then] bulk-hydrate unchanged."""
+    """[if] hub path is not used and source is healthy [then] bulk-hydrate unchanged, [else stop]."""
     data_dir = tmp_path / "custom-data"
     cfg = _cfg()
     s3 = InMemoryAssetS3()

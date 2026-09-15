@@ -185,7 +185,7 @@ def test_library_writeback_blocked(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
-    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked."""
+    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked, [else stop]."""
     engine.page().start()
     result = call_tool_result(
         engine,
@@ -342,8 +342,7 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
-    """[if] HOME has no engine lock [then] status/command/library/open_route each
-    surface isError True with their error code readable in the text, [else stop].
+    """[if] HOME has no engine lock [then] status/command/library/open_route each surface isError True with their error code readable in the text, [else stop].
 
     Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an
     empty temp dir so ``resolve_origin`` naturally finds no lock file.
@@ -375,8 +374,7 @@ def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_safety_refusal_is_error(engine: Engine) -> None:
-    """[if] command runs with neither order nor verb [then] isError names usage
-    (a SafetyRefusal), [else stop]."""
+    """[if] command runs with neither order nor verb [then] isError names usage (a SafetyRefusal), [else stop]."""
     engine.page().start()
     result = call_tool_result(engine, "command", {})
     assert result.is_error is True
@@ -386,8 +384,7 @@ def test_command_safety_refusal_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_order_failed_is_error(engine: Engine) -> None:
-    """[if] the engine route rejects a malformed order body [then] isError names
-    order_failed, [else stop]."""
+    """[if] the engine route rejects a malformed order body [then] isError names order_failed, [else stop]."""
     engine.page().start()
     result = call_tool_result(engine, "command", {"order": {"sequence": []}})
     assert result.is_error is True
@@ -397,8 +394,7 @@ def test_command_order_failed_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_no_unconverted_error_document_returns() -> None:
-    """[if] mcp_server.py is scanned for a bare error-document return [then] none
-    remain, proven by a control literal that DOES trip the pattern, [else stop].
+    """[if] mcp_server.py is scanned for a bare error-document return [then] none remain, proven by a control literal that DOES trip the pattern, [else stop].
 
     Guards the class fix in issue #2895: the next error path added to
     mcp_server.py cannot silently regress to isError:false.
