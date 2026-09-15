@@ -110,6 +110,77 @@ test('compact 800x600 performance top bar shows Stage, compact lyric cue, and co
 	});
 });
 
+/**
+ * The sign-in control is the one thing in this row with no other door on this
+ * route (issue #2357): the shell topbar that carries the account bauble
+ * everywhere else is not rendered on /performance. It used to be
+ * `display: none` below 825px - the harden-lane capture width - so the route
+ * had no sign-in affordance at all, and above that width it was a bare circle
+ * whose words lived only in aria-label.
+ *
+ * Two claims, both measured here rather than in CSS text:
+ *  1. the control is visible, labelled and hittable at every width, and
+ *  2. the row does not OVERFLOW while it is. That second one is the whole
+ *     difficulty: `.rb-topbar` is `overflow: hidden`, so a row that does not
+ *     fit silently clips its right-hand end - which is where this control
+ *     lives. A label that fits by pushing the row past its own width would
+ *     pass a visibility check and still be cut in half on screen.
+ */
+const SIGN_IN_WIDTHS = [800, 820, 1024, 1280, 1366, 1440, 1920];
+
+test('the performance top bar keeps a labelled, hittable sign-in control at every width', async ({
+	page
+}) => {
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+
+	// What the daemon says about its own OAuth client decides which face the
+	// control wears; the test asserts the control AGREES with it either way.
+	const configured = await page.evaluate(async () => {
+		const response = await fetch('/api/v1/health');
+		const body = (await response.json()) as { google_oauth_configured?: unknown };
+		if (typeof body.google_oauth_configured !== 'boolean') {
+			throw new Error('health did not answer google_oauth_configured as a boolean');
+		}
+		return body.google_oauth_configured;
+	});
+	const expectedLabel = configured ? 'Sign in with Google' : 'Sign-in unavailable';
+
+	for (const width of SIGN_IN_WIDTHS) {
+		await page.setViewportSize({ width, height: width === 800 ? 600 : 800 });
+		const button = page.locator('.bauble-root .bauble');
+		await expect(button).toBeVisible();
+		if (configured) await expect(button).toBeEnabled();
+		else await expect(button).toBeDisabled();
+		await expect(page.locator('.bauble-root .bauble-label')).toHaveText(expectedLabel);
+		await expect
+			.poll(async () => (await _hitTarget(page, '.bauble-root .bauble')).hit, {
+				message: `${width}px sign-in control did not settle on its own hit target`
+			})
+			.toBe(true);
+		// The bail-out: a row that is wider than its own box clips this control
+		// (it is the right-most child) with no console error and no scrollbar.
+		const overflow = await page.locator('header.rb-topbar').evaluate((bar) => ({
+			overflow: bar.scrollWidth - bar.clientWidth,
+			right: bar.getBoundingClientRect().right
+		}));
+		expect(
+			overflow.overflow,
+			`${width}px: the top bar overflows by ${overflow.overflow}px, so its right-hand ` +
+				`end (the sign-in control) is clipped`
+		).toBeLessThanOrEqual(0);
+		const rect = await button.evaluate((element) => {
+			const r = element.getBoundingClientRect();
+			return { right: r.right, left: r.left, width: r.width };
+		});
+		expect(rect.right, `${width}px: sign-in control runs past the viewport`).toBeLessThanOrEqual(
+			width
+		);
+		expect(rect.left).toBeGreaterThanOrEqual(0);
+		expect(rect.width).toBeGreaterThan(0);
+	}
+});
+
 test('loaded deck Stage opens the performance karaoke overlay and closes cleanly', async ({ page }) => {
 	test.skip(
 		!HAS_MANIFEST,

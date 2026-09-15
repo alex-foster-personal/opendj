@@ -63,6 +63,7 @@ from apps.sync_hub import (
     enrollment,
     entitlement_gate,
     generation,
+    hash_pending as hash_pending_api,
     protocol,
     service_credentials,
     service_enroll,
@@ -74,6 +75,7 @@ from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
     DigestResponse,
     EnrollRequest,
+    HashPendingResponse,
     HelloRequest,
     HelloResponse,
     MachineModel,
@@ -83,10 +85,12 @@ from apps.sync_hub.service_models import (
     RowModel,
     StatusResponse,
 )
+from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 router.include_router(stem_assets_router)
+router.include_router(lyrics_asr_assets_router)
 #: The 401/503 each credential-gated route declares, per endpoint (plan X5).
 _auth = service_credentials.credential_responses
 
@@ -328,6 +332,22 @@ def _refuse_unless_capable(
     )
 
 
+def _refuse_hash_pending_unless_capable(
+    changes: Sequence[protocol.RowChange],
+    advertised: Sequence[str],
+    endpoint: str,
+) -> None:
+    """Refuse a batch carrying ``hash_pending`` rows the caller cannot read."""
+    pending = sum(1 for change in changes if change.hash_pending)
+    if not pending:
+        return
+    if capabilities.understands_hash_pending(advertised):
+        return
+    raise protocol.SyncProtocolError(
+        capabilities.hash_pending_refusal(endpoint, pending, advertised)
+    )
+
+
 # ----- endpoints -----------------------------------------------------------
 
 
@@ -449,6 +469,9 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         _gate(request, conn, payload.machine_id, "write")
         try:
             with _transaction(conn):
+                _refuse_hash_pending_unless_capable(
+                    changes, payload.capabilities, "push"
+                )
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
                 result = engine.hub_apply(conn, changes)
                 # INSIDE the transaction: a refusal must roll the whole batch
@@ -474,6 +497,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             rejected=result.rejected,
             seq=result.seq,
             quarantined=result.quarantined,
+            hash_pending=result.hash_pending,
         )
 
 
@@ -618,12 +642,50 @@ def digest(
             overall=computed.overall,
             seq=computed.seq,
             quarantined=dict(computed.quarantined or {}),
+            hash_pending=dict(computed.hash_pending or {}),
+        )
+
+
+@router.get(
+    "/hash-pending",
+    response_model=HashPendingResponse,
+    responses=_auth("hash-pending"),
+)
+def hash_pending_list(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    limit: int = Query(500, ge=1, le=5000),
+    cursor: str | None = Query(default=None),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
+) -> HashPendingResponse:
+    """List ``stable_id`` values on this hub still awaiting ``content_hash``."""
+    if not capabilities.understands_hash_pending(capabilities_):
+        raise _protocol_error(
+            protocol.SyncProtocolError(
+                capabilities.hash_pending_refusal(
+                    "hash-pending", 1, capabilities_
+                )
+            )
+        )
+    with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "hash-pending")
+        _require_registered(conn, machine_id)
+        page = hash_pending_api.list_hash_pending(
+            conn, limit=limit, cursor=cursor
+        )
+        return HashPendingResponse(
+            stable_ids=list(page.stable_ids),
+            total=page.total,
+            next_cursor=page.next_cursor,
+            schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
         )
 
 
 __all__ = [
     "DigestResponse",
     "EnrollRequest",
+    "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
     "MachineModel",

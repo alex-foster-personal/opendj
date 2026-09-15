@@ -97,7 +97,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
           OPENDJ_TELEMETRY: "0"
-          OPENDJ_HOST_LABEL: ${{ runner.name }}
+          OPENDJ_HOST_LABEL: github-actions
           OPENDJ_BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
           # workflow_run fields reach the shell through env, never inline
           # (zizmor template-injection): a workflow name is attacker-shaped text.

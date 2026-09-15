@@ -22,6 +22,9 @@
  * - if an unresolved or failed probe grants ANY capability then the UI is
  *   guessing which daemon it is talking to
  * - if a second probe() re-requests after a success then it is a poll, not a probe
+ * - if an unanswered or absent google_oauth_configured reads as false then the
+ *   sign-in control reads as unavailable on every boot and on every daemon
+ *   that predates the field
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -210,6 +213,51 @@ test('concurrent probes share one in-flight request', async () => {
 	assert.equal(a, 'engine');
 	assert.equal(b, 'engine');
 	assert.equal(requested.length, 1);
+});
+
+// ------------------------------------------------- the Google OAuth bit
+
+test('the probe carries google_oauth_configured off the health body', async () => {
+	serve(engineHealth({ google_oauth_configured: false }));
+
+	assert.equal(await caps.probe(), 'engine');
+	assert.equal(caps.googleOAuthConfigured, false);
+
+	caps._resetForTests();
+	serve(legacyHealth({ google_oauth_configured: true }));
+	assert.equal(await caps.probe(), 'legacy');
+	assert.equal(caps.googleOAuthConfigured, true);
+});
+
+test('an unanswered probe leaves the OAuth bit UNKNOWN, not false', async () => {
+	// false and "nobody has answered yet" are different claims: the first says
+	// the daemon has no OAuth client and the control must read as unavailable,
+	// the second says we do not know. Collapsing them would make every boot
+	// flash an unavailable sign-in.
+	assert.equal(caps.googleOAuthConfigured, null);
+
+	globalThis.fetch = async () => {
+		throw new TypeError('fetch failed');
+	};
+	assert.equal(await caps.probe(), 'unknown');
+	assert.equal(caps.googleOAuthConfigured, null);
+});
+
+test('a daemon that predates the field answers UNKNOWN, not false', async () => {
+	// A legacy body with no `google_oauth_configured` key. Absent is not "no
+	// client", so it must not disable sign-in on a daemon that has one.
+	serve(legacyHealth());
+	await caps.probe();
+
+	assert.equal(caps.googleOAuthConfigured, null);
+});
+
+test('a NON-BOOLEAN google_oauth_configured is a named contract break', async () => {
+	serve(engineHealth({ google_oauth_configured: 'yes' }));
+
+	assert.equal(await caps.probe(), 'unknown');
+	assert.match(caps.error, /google_oauth_configured as string, expected a boolean/);
+	assert.equal(caps.googleOAuthConfigured, null);
 });
 
 // ------------------------------------------------------- the jobs surface

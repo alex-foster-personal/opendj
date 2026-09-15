@@ -8,10 +8,14 @@ name: ADR Check
 # 1. ABSENT on some of the PRs it exists for. ci.yml's `pull_request`
 #    `paths` filter excludes `**.md` and `docs/**`, so a docs-only ADR
 #    migration would schedule no ci.yml run. The gated surfaces
-#    (`apps/cloud/`, `apps/engine_core/`, webui server state,
-#    REQUIREMENTS.md, top-level lockfiles) DO reach ci.yml, but the body
-#    line is metadata: it must re-run when the body changes, not only
-#    when those paths change.
+#    (`apps/cloud/`, `apps/engine_core/`, `apps/sync_hub/`,
+#    `apps/webui/server/routes/`, `apps/database/`, `*/migrations/*`,
+#    `.github/workflows/`, webui server state, REQUIREMENTS.md,
+#    frontend/contract files) DO reach ci.yml, but the body line is
+#    metadata: it must re-run when the body changes, not only when those
+#    paths change. The duplicate-id check (issue #2678) is repo-wide and
+#    fires even on a PR that touches nothing gated, which is a second
+#    reason this cannot be a `paths:`-filtered ci.yml step.
 # 2. STALE relative to the metadata it reads. Title and body change with
 #    no new head SHA. `edited` is in the list below; the other three are
 #    restated because naming `types` REPLACES the implicit list.

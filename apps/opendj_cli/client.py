@@ -19,6 +19,7 @@ from apps.opendj_cli.origin import EngineOrigin, unreachable
 
 MIRROR_PATH = "/api/v1/state/ui-mirror"
 COMMANDS_PATH = "/api/v1/commands"
+UI_PREFS_PATH = "/api/v1/ui-prefs"
 
 # A page claims an order within one poll tick (50 ms) and a ramp completes in
 # its own declared duration, so this only fires on a wedged page or a wedged
@@ -52,25 +53,48 @@ class EngineClient:
 
     def mirror(self) -> dict[str, Any]:
         """The current UI mirror, or a refusal that says why there is none."""
+        from apps.opendj_cli.shell_navigate import (
+            ensure_performance_page,
+            no_performance_page_message,
+        )
+
         response = self._request("GET", MIRROR_PATH, timeout=MIRROR_TIMEOUT_S)
         if response.status_code == 409:
-            raise NoPerformancePage(
-                f"engine at {self.origin.base_url} has no performance page on "
-                "record, so there is no mirror to read (409 client_open=false)"
-            )
+            if ensure_performance_page(self.origin):
+                response = self._request("GET", MIRROR_PATH, timeout=MIRROR_TIMEOUT_S)
+                if response.status_code == 200:
+                    return self._document(response)
+            raise NoPerformancePage(no_performance_page_message(self.origin))
+        self._require_ok(response)
+        return self._document(response)
+
+    def ui_prefs(self) -> dict[str, Any]:
+        """Disk-backed ui prefs (includes persisted master_muted)."""
+        response = self._request("GET", UI_PREFS_PATH, timeout=MIRROR_TIMEOUT_S)
         self._require_ok(response)
         return self._document(response)
 
     def post_order(self, order: dict[str, Any]) -> dict[str, Any]:
         """Submit one AGENT-03 order and wait for the page's own result."""
+        from apps.opendj_cli.shell_navigate import (
+            ensure_performance_page,
+            no_performance_page_message,
+        )
+
         response = self._request(
             "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
         )
         if response.status_code == 409:
-            raise NoPerformancePage(
-                f"engine at {self.origin.base_url} has no performance page on "
-                "record; the order was refused, not held (409 client_open=false)"
-            )
+            if ensure_performance_page(self.origin):
+                response = self._request(
+                    "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
+                )
+                if response.status_code != 409:
+                    if response.status_code == 422:
+                        raise OrderRejected(self._detail(response))
+                    self._require_ok(response)
+                    return self._document(response)
+            raise NoPerformancePage(no_performance_page_message(self.origin))
         if response.status_code == 422:
             raise OrderRejected(self._detail(response))
         self._require_ok(response)

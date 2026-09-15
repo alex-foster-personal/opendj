@@ -11,8 +11,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+
+from apps.webui.server.routes.ui_prefs import persist_master_muted
+from apps.webui.server.shell_commands import shell_broker
 
 router = APIRouter(prefix="/commands", tags=["agent-commands"])
 
@@ -111,6 +114,42 @@ def _order(body: dict[str, Any]) -> dict[str, Any]:
     return {"kind": kind, "payload": payload}
 
 
+def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
+    """Last master_mute muted value in the order, or None if absent."""
+    last: bool | None = None
+
+    def walk(commands: list[Any]) -> None:
+        nonlocal last
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+            if command.get("type") == "master_mute" and isinstance(command.get("muted"), bool):
+                last = command["muted"]
+
+    if "single" in body:
+        payload = body["single"]
+        if isinstance(payload, dict):
+            walk([payload])
+        return last
+    for kind in ("sequence", "parallel"):
+        payload = body.get(kind)
+        if isinstance(payload, list):
+            walk(payload)
+    if "ramp" in body:
+        payload = body["ramp"]
+        if isinstance(payload, dict):
+            command = payload.get("command")
+            if isinstance(command, dict):
+                walk([command])
+    return last
+
+
+def _persist_master_mute_from_order(request: Request, body: dict[str, Any]) -> None:
+    muted = _master_mute_from_order(body)
+    if muted is not None:
+        persist_master_muted(request, muted)
+
+
 @router.post("", response_model=None)
 async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     """Submit one declared order and wait for the real browser result."""
@@ -120,6 +159,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
         order = _order(body)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    _persist_master_mute_from_order(request, body)
     broker = _broker(request)
     order_id, result = broker.submit(order)
     try:
@@ -129,8 +169,28 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
 
 
 @router.get("/next", response_model=None)
-async def next_command(request: Request) -> dict[str, Any] | JSONResponse | None:
-    """Let the sole open performance page claim its next agent order."""
+async def next_command(
+    request: Request,
+    consumer: str = Query(
+        default="performance",
+        description=(
+            "performance: AGENT-03 orders for the open /performance page; "
+            "shell: desktop-shell commands such as apply-update"
+        ),
+    ),
+) -> dict[str, Any] | JSONResponse | None:
+    """Let a consumer claim its next command."""
+    if consumer == "shell":
+        claimed = shell_broker(request).claim()
+        if claimed is None:
+            return None
+        command_id, command = claimed
+        return {"id": command_id, "kind": "shell", "command": command}
+    if consumer not in {"performance"}:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown consumer: {consumer!r}; use performance or shell",
+        )
     if not _page_is_open(request):
         return JSONResponse(status_code=409, content={"client_open": False})
     claimed = _broker(request).claim()
@@ -140,12 +200,39 @@ async def next_command(request: Request) -> dict[str, Any] | JSONResponse | None
     return {"id": order_id, **order}
 
 
+def _is_shell_result(body: dict[str, Any]) -> bool:
+    return "outcome" in body and "steps" not in body
+
+
+def _is_performance_result(body: dict[str, Any]) -> bool:
+    return isinstance(body.get("steps"), list) and isinstance(body.get("mirror_delta"), dict)
+
+
 @router.post("/{order_id}/result", status_code=202)
 async def complete_command(
     order_id: str, request: Request, body: dict[str, Any]
 ) -> dict[str, bool]:
-    """Resolve an order with page-produced per-step statuses and mirror delta."""
-    if not isinstance(body.get("steps"), list) or not isinstance(body.get("mirror_delta"), dict):
+    """Resolve a performance order or a shell command result."""
+    if _is_shell_result(body) and _is_performance_result(body):
+        raise HTTPException(
+            status_code=422,
+            detail="result cannot mix shell outcome fields with performance steps",
+        )
+    if _is_shell_result(body):
+        status = body.get("status")
+        outcome = body.get("outcome")
+        if status not in {"succeeded", "failed"}:
+            raise HTTPException(status_code=422, detail="shell result requires status")
+        if outcome not in {"installed", "no-update", "refused"}:
+            raise HTTPException(status_code=422, detail="shell result requires outcome")
+        try:
+            shell_broker(request).complete(order_id, body)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="unknown shell command") from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"accepted": True}
+    if not _is_performance_result(body):
         raise HTTPException(status_code=422, detail="result requires steps and mirror_delta")
     try:
         _broker(request).complete(order_id, body)

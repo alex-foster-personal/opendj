@@ -64,6 +64,10 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
         r"scripts\.build_reqs_json\s+--check",
     ),
     (
+        "dev-server registry launch.json drift",
+        r"launch-json-check",
+    ),
+    (
         "tech debt index PR-head guard",
         r"scripts\.debt_index\s+--check",
     ),
