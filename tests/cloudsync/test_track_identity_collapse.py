@@ -573,7 +573,7 @@ def test_run_sync_second_library_does_not_push_unidentifiable_rows(
 def test_merge_safe_refuses_only_a_first_sync_into_a_populated_hub(
     tmp_path: Path,
 ) -> None:
-    """ADR-0047: hash_pending rows no longer trigger merge_safe refusal."""
+    """ADR-0068: hash_pending rows no longer trigger merge_safe refusal."""
     conn = _open_hub(tmp_path)
     try:
         _insert_identified_track(

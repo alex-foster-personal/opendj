@@ -179,7 +179,7 @@ def resolve_track_identity(
     Fingerprint-tier PKs are already global; this function only fires for a
     different stored PK sharing ``content_hash`` or a normalizable ISRC.
     Path-tier ``stable_id`` is ignored on purpose. Rows offered as
-    ``hash_pending`` skip merge-key lookup until a hash arrives (ADR-0047).
+    ``hash_pending`` skip merge-key lookup until a hash arrives (ADR-0068).
     """
     if change.table != "tracks":
         return IdentityDecision(kind="none")
@@ -532,7 +532,7 @@ def log_hash_conflict(
 def assert_identity_ready(conn: sqlite3.Connection) -> None:
     """Refuse to start a sync while inferred-tier rows still lack identity.
 
-    Superseded for hash_pending rows (ADR-0047): they travel to the hub and
+    Superseded for hash_pending rows (ADR-0068): they travel to the hub and
     backfill later. This guard now applies only when a caller explicitly
     opts out of hash_pending (legacy tests and preflight helpers).
     """
@@ -559,7 +559,7 @@ def assert_merge_safe(
 ) -> None:
     """Apply :func:`assert_identity_ready`, but only where a merge can happen.
 
-    ADR-0047: identity-less inferred rows travel as ``hash_pending``, so the
+    ADR-0068: identity-less inferred rows travel as ``hash_pending``, so the
     old first-sync refusal no longer applies. This helper remains for tests
     that still exercise the explicit preflight path via
     :func:`assert_identity_ready`.

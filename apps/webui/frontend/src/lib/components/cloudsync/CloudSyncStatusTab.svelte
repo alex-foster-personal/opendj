@@ -299,7 +299,7 @@
 					<dt>Hash pending</dt>
 					<dd
 						data-testid="cloudsync-status-hash-pending"
-						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0047)"
+						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0068)"
 					>
 						{status.hash_pending ?? 'not measured'}
 					</dd>

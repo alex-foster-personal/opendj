@@ -6196,7 +6196,7 @@ export interface components {
             endpoint_source: "env" | "file" | "default";
             /**
              * Hash Pending
-             * @description live tracks offered as hash_pending on the hub (ADR-0047)
+             * @description live tracks offered as hash_pending on the hub (ADR-0068)
              */
             hash_pending?: number | null;
             /**

@@ -66,7 +66,7 @@ class CloudSyncStatusOut(BaseModel):
     rows_pending: int | None
     hash_pending: int | None = Field(
         default=None,
-        description="live tracks offered as hash_pending on the hub (ADR-0047)",
+        description="live tracks offered as hash_pending on the hub (ADR-0068)",
     )
     quarantined: int | None = Field(
         default=None,
