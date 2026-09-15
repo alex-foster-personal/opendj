@@ -5,6 +5,10 @@ Issue #2673. Reads JSONL deltas from nucbox and remote Mac hosts, groups by a
 stable fingerprint (source_site + message class with numbers, ids and paths
 masked), and opens or updates GitHub issues when thresholds fire.
 
+Build/CI rows (``kind=build`` or ``source_site`` starting with ``build:``) stay
+in the JSONL for grepping (ADR-0017) but are excluded from flood filing
+(ADR-0047 / issue #2846).
+
 MINI-PRD
     R1 Fixture dry-run ........................................... done + regression
        [if] a fixture sink has three fingerprints (one above threshold, one below,
@@ -134,6 +138,15 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _triage_runtime_record(record: SinkRecord) -> bool:
+    kind = record.raw.get("kind")
+    if isinstance(kind, str) and kind.strip().lower() == "build":
+        return False
+    if record.source_site.strip().lower().startswith("build:"):
+        return False
+    return True
+
+
 def triage_fingerprint(source_site: str, message: str) -> str:
     site = source_site.strip().lower()
     klass = classify_message(message)
@@ -173,6 +186,8 @@ def parse_record(line: str, host_label: str) -> SinkRecord | None:
 def aggregate(records: list[SinkRecord]) -> dict[str, FingerprintStats]:
     out: dict[str, FingerprintStats] = {}
     for record in records:
+        if not _triage_runtime_record(record):
+            continue
         fp = triage_fingerprint(record.source_site, record.message)
         if fp not in out:
             out[fp] = FingerprintStats(fingerprint=fp)
