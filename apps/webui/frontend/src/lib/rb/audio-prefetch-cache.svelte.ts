@@ -25,16 +25,33 @@ import { audioUrl } from '$lib/rb/api-rb';
 import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
 import { prefetchByteCapForPosture, prefetchTrackCapForPosture, setResolvedPosture } from '$lib/rb/app-posture';
 import { prefetchByteCap, prefetchTrackCap } from '$lib/rb/perf-tier';
+import { pressureScaledPrefetchByteCap, pressureScaledPrefetchTrackCap } from '$lib/rb/prefetch-pressure-caps';
 
 export { setResolvedPosture };
 
-/** Soft cap on how many full files stay warm. Tier-driven via perf-tier. */
+/** Soft cap on how many full files stay warm. Tier -> posture -> pressure (PERFMODE-04 Q29). */
 export function MAX_AUDIO_PREFETCH_TRACKS(): number {
-	return prefetchTrackCapForPosture(prefetchTrackCap());
+	return pressureScaledPrefetchTrackCap(prefetchTrackCapForPosture(prefetchTrackCap()));
 }
-/** Hard byte budget. Tier-driven via perf-tier. */
+/** Hard byte budget. Tier -> posture -> pressure (PERFMODE-04 Q29). */
 export function MAX_AUDIO_PREFETCH_BYTES(): number {
-	return prefetchByteCapForPosture(prefetchByteCap());
+	return pressureScaledPrefetchByteCap(prefetchByteCapForPosture(prefetchByteCap()));
+}
+
+/**
+ * PERFMODE-04 shed bridge (audio-prefetch-cache-caps job). Null until
+ * app-init.ts arms the background demand shed, following the same nullable
+ * component-scope-bridge pattern as setSilenceDropoutHandler.
+ */
+let _shedRequest: ((id: 'audio-prefetch-cache-caps') => void) | null = null;
+
+export function setAudioPrefetchShedRequest(fn: ((id: 'audio-prefetch-cache-caps') => void) | null): void {
+	_shedRequest = fn;
+}
+
+/** Drain callback: kick the pump for whatever is currently wanted. */
+export async function resumeAudioPrefetchOwedPump(): Promise<void> {
+	void _pump();
 }
 
 export type AudioPrefetchStatus = 'loading' | 'ready' | 'error';
@@ -180,7 +197,11 @@ export function ensureAudioPrefetch(stable_id: string): void {
 	if (_inflightSid === stable_id && cur?.status === 'loading') return;
 	_wanted = stable_id;
 	if (cur === undefined) _entries[stable_id] = { status: 'loading' };
-	void _pump();
+	// Intent is recorded above unconditionally (harmless, instant); only the
+	// fetch pump itself is gated, so a shed under pressure never loses which
+	// track was wanted, it just starts fetching it later.
+	if (_shedRequest !== null) _shedRequest('audio-prefetch-cache-caps');
+	else void _pump();
 }
 
 /** Reactive status for row markers; undefined = never requested. */
