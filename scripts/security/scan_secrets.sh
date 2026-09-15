@@ -18,6 +18,14 @@ MODE="${1:?usage: scan_secrets.sh pr|full}"
 sec_require_mode "$MODE"
 GITLEAKS_CONFIG="$SECURITY_REPO_ROOT/.gitleaks.toml"
 KEY_MATERIAL_PROBES=(x.pem x.key x.p12 x.p8 x.mobileprovision credentials.json service-account-x.json)
+# trufflehog path suppressions, one per entry: regex|expires (YYYY-MM-DD)|reason.
+# These candidates fail verification by design (placeholders), which would keep the
+# weekly scan UNKNOWN forever. An expired entry turns the scan UNKNOWN until renewed.
+TRUFFLEHOG_PATH_SUPPRESSIONS=(
+  '^\.planning/bifrost2-handoff/sync-kit/[^/]+/skills/cloudflare/references/hyperdrive/|2026-12-13|vendored Cloudflare Hyperdrive docs: postgres:// examples with placeholder host and password'
+  '^\.pnpm-store/|2026-12-13|pnpm store committed by mistake, history only: third-party package files'
+  '^apps/webui/frontend/tests/unit/progress-repo-base\.test\.mjs$|2026-12-13|code-comment example URL (x-access-token placeholder, host "host")'
+)
 OUT="$SECURITY_WORK_DIR/secrets"
 rm -rf "$OUT" && mkdir -p "$OUT"
 
@@ -34,6 +42,19 @@ _control_repo() {
   git -C "$repo" -c user.name=control -c user.email=control@example.invalid \
     commit --quiet -m "control: synthetic token"
   echo "$repo"
+}
+
+# Writes the regexes of unexpired path suppressions to $1; an expired one is UNKNOWN.
+_trufflehog_exclude_file() {
+  local out="$1" entry regex expires today
+  today="$(date -u +%F)"
+  : >"$out"
+  for entry in "${TRUFFLEHOG_PATH_SUPPRESSIONS[@]}"; do
+    regex="${entry%%|*}"
+    expires="$(printf '%s' "$entry" | cut -d'|' -f2)"
+    [[ "$expires" > "$today" ]] || _unknown_exit trufflehog "path suppression expired $expires: $regex"
+    printf '%s\n' "$regex" >>"$out"
+  done
 }
 
 # .gitignore must keep key material out of git (secret-scanning.md acceptance).
@@ -100,9 +121,10 @@ scan_full() {
 
   # --results=verified,unknown: verified = live secret (FAIL); unknown = verification
   # errored (network/auth), which is UNKNOWN rather than clean.
+  _trufflehog_exclude_file "$OUT/exclude-paths.txt"
   rc=0
   "$SECURITY_BIN_DIR/trufflehog" git "file://$SECURITY_REPO_ROOT" --results=verified,unknown \
-    --json --no-update >"$OUT/history.jsonl" || rc=$?
+    --exclude-paths "$OUT/exclude-paths.txt" --json --no-update >"$OUT/history.jsonl" || rc=$?
   [[ $rc -eq 0 ]] || _unknown_exit "$scanner" "history scan errored (exit $rc)"
   sec_py trufflehog-summary "$OUT/history.jsonl" --count-file "$OUT/history.count" \
     --report-md "$SECURITY_WORK_DIR/report.md" --title "trufflehog: full history (verified + unverifiable)" \
