@@ -21,6 +21,15 @@ function readManifest(): FixtureManifest {
 	return JSON.parse(readFileSync(FIXTURE_MANIFEST_PATH, 'utf8')) as FixtureManifest;
 }
 
+interface PerfEventRow {
+	kind: string;
+	deck: number | null;
+	stages?: Record<string, number>;
+}
+
+/** Stage key for the post-clamp schedule time the LATENCY-03 ring stores. */
+const RESCUE_SCHEDULE_TIME_STAGE = 'scheduled_offset_ms' as const;
+
 async function dispatch(
 	page: import('@playwright/test').Page,
 	command: Record<string, unknown>
@@ -143,18 +152,32 @@ test.describe('RESCUE-02/03 playback restore', () => {
 			})
 			.toEqual([true, true, true]);
 
-		const perfRows = await page.evaluate(() => (window as any).__mdtPerfLog());
+		const perfRows = await page.evaluate(() => {
+			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
+			if (read === undefined) {
+				throw new Error('__mdtPerfLog is not installed; the latency instrument is missing');
+			}
+			return read();
+		});
+
 		const scheduleRows = perfRows.filter(
-			(row: { kind: string; deck?: number }) =>
-				row.kind === 'transport-schedule' && deckIds.includes(row.deck as 1 | 3 | 4)
+			(row) =>
+				row.kind === 'transport-schedule' &&
+				row.deck !== null &&
+				deckIds.includes(row.deck as (typeof deckIds)[number])
 		);
+
 		const times = scheduleRows
-			.map((row: { effectiveWhenSec?: number; scheduled_offset_ms?: number }) => row.effectiveWhenSec)
-			.filter((value: number | undefined): value is number => value !== undefined);
-		if (times.length >= 2) {
-			const skewMs = (Math.max(...times) - Math.min(...times)) * 1000;
-			expect(skewMs).toBeLessThan(5);
-		}
+			.map((row) => row.stages?.[RESCUE_SCHEDULE_TIME_STAGE])
+			.filter((value): value is number => value !== undefined);
+
+		expect(
+			times.length,
+			'every restored deck must log one timed transport-schedule row; fewer means a deck was not scheduled on rescue resume'
+		).toBe(deckIds.length);
+
+		const skewMs = Math.max(...times) - Math.min(...times);
+		expect(skewMs).toBeLessThan(5);
 
 		const after = await query(page);
 		const elapsedWallMs = Date.now() - capturedAt;
