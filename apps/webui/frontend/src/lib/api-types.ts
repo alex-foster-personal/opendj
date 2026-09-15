@@ -4557,6 +4557,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
@@ -4575,6 +4579,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
@@ -20980,6 +20988,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_track_audio_api_v1_tracks__stable_id__audio_get: {
@@ -21008,6 +21023,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
