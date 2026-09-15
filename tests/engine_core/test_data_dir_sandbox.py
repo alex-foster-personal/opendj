@@ -52,7 +52,10 @@ payload = {
     "secure_context": True,
     "audio_worklet_available": False,
 }
-with TestClient(app) as client:
+# SEC-01 (#2689): this runs in a bare subprocess, so it never imports
+# tests/conftest.py's TestClient default -- base_url must be explicit here
+# or the daemon host allowlist 403s every request.
+with TestClient(app, base_url="http://127.0.0.1") as client:
     errors = client.post("/api/v1/client-errors", json=payload)
     events = client.post("/api/v1/client-events", json={
         "client_event_id": "sandbox-probe-2",
