@@ -136,8 +136,10 @@ export interface CloudSyncStatus {
 	rows_pending: number | null;
 	/** Live tracks offered as hash_pending while awaiting content_hash (ADR-0047). */
 	hash_pending: number | null;
-	/** Rows held out of the sync set for stamp or identity-dup reasons. */
+	/** Direct stamp faults and identity-dup losers only (CSSTATUS-07). */
 	quarantined: number | null;
+	/** Every row held outside the sync set, including transitive holds. */
+	excluded_total: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
 	update_required: CloudSyncUpdateRequired | null;

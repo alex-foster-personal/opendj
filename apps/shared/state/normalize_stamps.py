@@ -160,14 +160,6 @@ def _repair_for(value: str) -> tuple[str, Reason]:
     return sync_stamp.to_canonical(value), "naive-assumed-utc"
 
 
-def _is_orderable(value: str) -> bool:
-    try:
-        sync_stamp.parse_canonical(value)
-    except sync_stamp.SyncStampError:
-        return False
-    return True
-
-
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
@@ -191,7 +183,7 @@ def scan(conn: sqlite3.Connection) -> list[Repair]:
         ).fetchall()
         for rowid, stored in rows:
             value = str(stored)
-            if _is_orderable(value):
+            if sync_stamp.is_orderable(value):
                 continue
             replacement, reason = _repair_for(value)
             repairs.append(
