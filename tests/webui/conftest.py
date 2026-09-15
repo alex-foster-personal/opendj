@@ -25,6 +25,13 @@ from apps.webui.server.etag import compute_etag
 
 WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
 
+# request_guard's host allowlist (issue #2689) checks the literal HTTP Host
+# header; httpx's TestClient default base_url sends "testserver", which
+# matches nothing in the allowlist. Every fixture below passes hostname=
+# "test-host" to create_app(), so pinning base_url to that same name is the
+# one consistent value the app will actually accept.
+TEST_HOST_BASE_URL = "http://test-host"
+
 
 @pytest.fixture(autouse=True)
 def _restore_serving_lanes_after_test() -> Iterator[None]:
@@ -146,7 +153,7 @@ def client(
         port=18697, frontend_port=19411,
         lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
     )
-    with TestClient(app) as c:
+    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
         yield c
 
 
@@ -157,7 +164,7 @@ def insecure_client(
     _stub_rb_vendor(monkeypatch)
     app = create_app(backend=seed_backend, bind_host="0.0.0.0",
                      hostname="test-host")
-    with TestClient(app) as c:
+    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
         yield c
 
 
@@ -171,7 +178,7 @@ def locked_client(
         lock_status_fn=lambda: {"holder": "other-host",
                                  "expires_at": "2099-01-01T00:00:00Z"},
     )
-    with TestClient(app) as c:
+    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
         yield c
 
 

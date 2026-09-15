@@ -144,6 +144,20 @@ def test_startup_refuses_non_loopback_without_allowlist() -> None:
     )
 
 
+def test_configured_hostname_is_allowed_without_the_env_allowlist() -> None:
+    """``hostname=`` is the same value the real daemon sets from
+    MUSIC_DJ_HOSTNAME (``_build_default_app``); a client addressing this
+    daemon by its own advertised name must not need MUSIC_DJ_ALLOWED_HOSTS
+    too. This is also what every ``TestClient(app)`` call without an
+    explicit loopback ``base_url`` relies on (default Host: testserver)."""
+    app = create_app(
+        backend=InMemoryBackend(), mount_frontend=False, hostname="test-host",
+    )
+    client = TestClient(app)
+    resp = client.get("/api/v1/health", headers={"Host": "test-host"})
+    assert resp.status_code == 200
+
+
 def test_origin_guard_disabled_when_cors_disabled() -> None:
     client = _client(enable_cors=False)
     resp = client.post(
