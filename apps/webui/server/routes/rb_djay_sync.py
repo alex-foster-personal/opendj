@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled, require_writeback_enabled
 
-from ..rb_djay_sync_service import (
+from apps.sync.djay_sync_service import (
     RbDjaySyncError,
     get_status,
     list_djay_playlists,
