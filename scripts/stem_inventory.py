@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from apps.stems.external_roots import EXTERNAL_ROOTS_ENV
 from scripts.r2_stems import (
     DEFAULT_BUCKET,
     R2_STEM_PREFIX,
@@ -118,7 +119,8 @@ _STABLE_ID_RE = re.compile(r"^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$")
 # a hard error rather than an empty tuple: an empty tuple would make the
 # inventory silently stop counting this store's bundles and still print a
 # healthy-looking report, which is exactly the failure #910 introduced.
-EXTERNAL_ROOTS_ENV: str = "MDT_EXTERNAL_STEM_ROOTS"
+# The variable NAME lives in apps.stems.external_roots (re-exported above)
+# because the packaged engine's routes quote it and ship without scripts/.
 
 
 def _external_roots() -> tuple[Path, ...]:

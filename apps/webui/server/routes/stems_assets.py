@@ -18,12 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.cloud.asset_store import AssetStoreError
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import stems_sync
+from apps.stems.external_roots import EXTERNAL_ROOTS_ENV
 from apps.vocals.errors import UnknownPlaylistError
 from apps.webui.server.routes.stems_parity_guard import (
     guard_stems_parity_call,
     unknown_playlist_response,
 )
-from scripts.stem_inventory import EXTERNAL_ROOTS_ENV
 
 router = APIRouter(tags=["stems"])
 
