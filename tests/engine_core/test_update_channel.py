@@ -55,6 +55,13 @@ TAURI_CONF: Path = REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 RUNNING_VERSION: str = json.loads(TAURI_CONF.read_text(encoding="utf-8"))["version"]
 RUNNING_SHA_FULL: str = "0d41a28c0000000000000000000000000000beef"
 KEY: str = "darwin-aarch64"
+OLD_ENGINE_PORT: int = 8685
+NEW_ENGINE_PORT: int = 9999
+
+
+def _bump_patch_version(version: str) -> str:
+    parsed = parse_version(version, "test fixture")
+    return f"{parsed.major}.{parsed.minor}.{parsed.patch + 1}"
 
 
 def _identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
@@ -366,7 +373,7 @@ def _apply_http_handler(calls: dict[str, int] | None = None):
                     "git_dirty": False,
                     "built_at_utc": "2026-08-31T12:00:00Z",
                     "built_at_kind": "payload-build",
-                    "app_version": RUNNING_VERSION if first else "0.1.1",
+                    "app_version": RUNNING_VERSION if first else _bump_patch_version(RUNNING_VERSION),
                 },
             )
         if request.url.path.endswith("/update/check"):
@@ -427,6 +434,124 @@ def _apply_http_handler(calls: dict[str, int] | None = None):
     return handler
 
 
+def _relaunch_apply_http_handler(*, after_version: str | None = None):
+    state = {"apply_status_polls": 0}
+    higher_version = after_version or _bump_patch_version(RUNNING_VERSION)
+
+    def old_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/build-info"):
+            return httpx.Response(
+                200,
+                json={
+                    "source": "payload",
+                    "engine_version": "0.1.0",
+                    "git_sha": RUNNING_SHA_FULL[:8],
+                    "git_sha_full": RUNNING_SHA_FULL,
+                    "git_branch": "main",
+                    "git_dirty": False,
+                    "built_at_utc": "2026-08-31T12:00:00Z",
+                    "built_at_kind": "payload-build",
+                    "app_version": RUNNING_VERSION,
+                },
+            )
+        if request.url.path.endswith("/update/check"):
+            return httpx.Response(
+                200,
+                json={"status": "update-available", "available_version": higher_version},
+            )
+        if request.url.path.endswith("/update/apply") and request.method == "POST":
+            return httpx.Response(
+                202,
+                json={
+                    "accepted": True,
+                    "available_version": higher_version,
+                    "command_id": "abc123",
+                },
+            )
+        if "/update/apply/" in request.url.path:
+            state["apply_status_polls"] += 1
+            if state["apply_status_polls"] == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "command_id": "abc123",
+                        "state": "claimed",
+                        "outcome": None,
+                        "error": None,
+                        "enqueued_at_utc": "2026-09-15T08:00:00.000Z",
+                        "claimed_at_utc": "2026-09-15T08:00:01.000Z",
+                        "completed_at_utc": None,
+                    },
+                )
+            raise httpx.ConnectError("connection refused")
+        raise AssertionError(f"unexpected OLD URL {request.url}")
+
+    def new_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/build-info"):
+            return httpx.Response(
+                200,
+                json={
+                    "source": "payload",
+                    "engine_version": "0.1.0",
+                    "git_sha": "deadbeef",
+                    "git_sha_full": "deadbeef0000000000000000000000000000beef",
+                    "git_branch": "main",
+                    "git_dirty": False,
+                    "built_at_utc": "2026-09-15T10:00:57Z",
+                    "built_at_kind": "payload-build",
+                    "app_version": higher_version,
+                },
+            )
+        raise AssertionError(f"unexpected NEW URL {request.url}")
+
+    def routing_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.port == NEW_ENGINE_PORT:
+            return new_handler(request)
+        if request.url.port == OLD_ENGINE_PORT:
+            return old_handler(request)
+        raise AssertionError(f"unexpected port in {request.url}")
+
+    return routing_handler
+
+
+def _apply_http_handler_status_connect_error_before_claim():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/build-info"):
+            return httpx.Response(
+                200,
+                json={
+                    "source": "payload",
+                    "engine_version": "0.1.0",
+                    "git_sha": RUNNING_SHA_FULL[:8],
+                    "git_sha_full": RUNNING_SHA_FULL,
+                    "git_branch": "main",
+                    "git_dirty": False,
+                    "built_at_utc": "2026-08-31T12:00:00Z",
+                    "built_at_kind": "payload-build",
+                    "app_version": RUNNING_VERSION,
+                },
+            )
+        if request.url.path.endswith("/update/check"):
+            return httpx.Response(
+                200,
+                json={"status": "update-available", "available_version": "0.1.1"},
+            )
+        if request.url.path.endswith("/update/apply") and request.method == "POST":
+            return httpx.Response(
+                202,
+                json={
+                    "accepted": True,
+                    "available_version": "0.1.1",
+                    "command_id": "abc123",
+                },
+            )
+        if "/update/apply/" in request.url.path:
+            raise httpx.ConnectError("connection refused")
+        raise AssertionError(f"unexpected URL {request.url}")
+
+    return handler
+
+
 def _mock_client_factory(module, transport: httpx.MockTransport):
     original = module.httpx.Client
 
@@ -473,3 +598,56 @@ def test_apply_cli_exits_3_when_shell_reports_failed(monkeypatch, capsys) -> Non
     captured = capsys.readouterr()
     assert '"state": "failed"' in captured.out
     assert "minisign verify failed" in captured.out
+
+
+def test_apply_cli_exits_zero_after_engine_relaunch(monkeypatch, capsys) -> None:
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(_relaunch_apply_http_handler())
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    monkeypatch.setattr(module, "APPLY_STATUS_POLL_INTERVAL_S", 0.0)
+    monkeypatch.setattr(module.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        module,
+        "resolve_origin",
+        lambda *a, **k: type(
+            "O",
+            (),
+            {"base_url": f"http://127.0.0.1:{NEW_ENGINE_PORT}"},
+        )(),
+    )
+    assert _apply_via_engine(f"http://127.0.0.1:{OLD_ENGINE_PORT}", 1.0) == 0
+    captured = capsys.readouterr()
+    assert '"changed": true' in captured.out
+    assert _bump_patch_version(RUNNING_VERSION) in captured.out
+    assert "engine relaunch detected" in captured.err
+
+
+def test_apply_cli_exits_3_when_relaunch_reports_same_version(monkeypatch) -> None:
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(
+        _relaunch_apply_http_handler(after_version=RUNNING_VERSION)
+    )
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    monkeypatch.setattr(module, "APPLY_STATUS_POLL_INTERVAL_S", 0.0)
+    monkeypatch.setattr(module, "RELAUNCH_BUILD_INFO_TIMEOUT_S", 0.01)
+    monkeypatch.setattr(module.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        module,
+        "resolve_origin",
+        lambda *a, **k: type(
+            "O",
+            (),
+            {"base_url": f"http://127.0.0.1:{NEW_ENGINE_PORT}"},
+        )(),
+    )
+    assert _apply_via_engine(f"http://127.0.0.1:{OLD_ENGINE_PORT}", 1.0) == 3
+
+
+def test_apply_cli_exits_2_when_status_errors_before_claim(monkeypatch) -> None:
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(_apply_http_handler_status_connect_error_before_claim())
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    assert _apply_via_engine("http://127.0.0.1:8685", 1.0) == 2
