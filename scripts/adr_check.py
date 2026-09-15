@@ -121,6 +121,10 @@ def duplicate_adr_ids(adr_dir: Path) -> dict[str, list[str]]:
     if not adr_dir.is_dir():
         return {}
     for path in sorted(adr_dir.glob("ADR-*.md")):
+        if path.stat().st_size == 0:
+            # Renumbering leaves zero-byte tombstones until git rm; they must
+            # not keep a colliding id live for the gate.
+            continue
         match = re.match(r"ADR-(\d{4})-", path.name)
         if match:
             claimed.setdefault(match.group(1), []).append(path.name)

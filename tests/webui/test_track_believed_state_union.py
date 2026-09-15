@@ -1,4 +1,7 @@
-"""Track rows union active transfers with stale locations (CLOUDSYNC-10)."""
+"""Track rows union active transfers with stale locations (CLOUDSYNC-10).
+
+[if] a track has an active transfer or stale location row [then] the believed-state union surfaces it on the row, [else stop].
+"""
 from __future__ import annotations
 
 import os

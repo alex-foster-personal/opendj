@@ -1,4 +1,7 @@
-"""NATIVE-13 path-collision refusal during folder and rekordbox ingest."""
+"""NATIVE-13 path-collision refusal during folder and rekordbox ingest.
+
+[if] ingest would create colliding paths [then] assert_no_path_collisions refuses before state is written, [else stop].
+"""
 from __future__ import annotations
 
 import struct
