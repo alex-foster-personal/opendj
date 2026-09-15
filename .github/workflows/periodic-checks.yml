@@ -265,6 +265,106 @@ jobs:
           echo "- row 10 (windows parity): \`${wp_run}\` (${wp_reason})" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
+  # Watchdog for `window` itself (issue #2906). Every downstream job
+  # (report/skip-report/windows-parity-report/windows-parity-skip-report) is
+  # gated on `needs.window.result == 'success'`, so a failure IN `window` had
+  # no path to the ledger at all: five weeks silent until #2905 fixed the one
+  # cause (agentbox `gh` 2.62 lacking `--slurp`) that was actually tripping it.
+  # This job is the missing CLASS fix: it fires on ANY future `window` failure,
+  # not just that one.
+  #
+  # It must not read anything `window` would only have produced on success --
+  # that is the exact mistake being fixed -- so its evidence comes from the
+  # Actions API for this run's own `merge window` job, never from
+  # `needs.window.outputs.*`.
+  #
+  # CANCELLED counts as failure here, unlike trunk-job-verdict.yml's own
+  # `!= 'cancelled'` exclusion. That exclusion exists because ordinary PR CI
+  # churn cancels runs constantly, and alerting on every one would be alert
+  # fatigue. `window` has no such churn: it runs on a fixed schedule or a
+  # manual dispatch, its concurrency group sets `cancel-in-progress: false`,
+  # and nothing else in this workflow can cancel it. The only way `window`
+  # reads `cancelled` is a human or an external actor stopping the run, which
+  # is exactly the "reads as neutral in every dashboard" case
+  # trunk-job-verdict.yml was built to stop, so it is alarmed here rather than
+  # excused.
+  #
+  # SKIPPED is not reachable for `window`: it is the first job in this
+  # workflow, carries no `if:` of its own, and has no `needs:`, so nothing
+  # upstream can skip it. No branch here handles a state its subject cannot
+  # enter.
+  # ---------------------------------------------------------------------------
+  window-failure-report:
+    name: ledger comment (window job failed)
+    needs: [window]
+    if: always() && (needs.window.result == 'failure' || needs.window.result == 'cancelled')
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Record the window failure and fail visibly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WINDOW_RESULT: ${{ needs.window.result }}
+        run: |
+          set -euo pipefail
+          short="${HEAD_SHA:0:8}"
+
+          # `window`'s own outputs are exactly what it may not have produced --
+          # it failed or was cancelled before reaching them. Ask the Actions
+          # API about THIS run's "merge window" job instead: its conclusion
+          # and per-step conclusions exist regardless of what the job's own
+          # script did.
+          job_json="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs" \
+            --jq '[.jobs[] | select(.name == "merge window")][0] // empty')"
+
+          if [ -z "$job_json" ]; then
+            job_url="${RUN_URL}"
+            failed_step="UNKNOWN - the merge window job was not found in this run's job list"
+          else
+            job_url="$(jq -r '.html_url' <<<"$job_json")"
+            failed_step="$(jq -r '
+              [.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled")][0].name
+              // "UNKNOWN - no step reported failure or cancellation"
+            ' <<<"$job_json")"
+          fi
+
+          title="Periodic checks: the window job itself ${WINDOW_RESULT} at $short"
+
+          gh label create ci:periodic-checks-window-failed \
+            --color B60205 \
+            --description "The periodic-checks merge-window job failed or was cancelled before it could report; every downstream row was skipped" \
+            --force
+
+          report_file="${RUNNER_TEMP}/window-failure-${RUN_ID}.md"
+          cat > "$report_file" <<EOF
+          ## periodic-checks.yml: the \`window\` job itself ${WINDOW_RESULT}
+
+          - Commit: \`${HEAD_SHA}\`
+          - Trigger: \`${EVENT_NAME}\`
+          - Run: [${RUN_ID}](${RUN_URL})
+          - Job: [merge window](${job_url})
+          - Failed/cancelled step: \`${failed_step}\`
+
+          Every downstream row (report/skip-report/windows-parity-report) is
+          gated on \`needs.window.result == 'success'\`, so none of them ran
+          and none of them could have reported this. This comment is the only
+          record of this window until a human fixes \`window\` itself.
+
+          <!-- periodic-checks window-failure sha=${HEAD_SHA} run=${RUN_ID} -->
+          EOF
+
+          gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file "$report_file"
+          cat "$report_file" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error title=$title::The periodic-checks window job ${WINDOW_RESULT} on commit $short. See ${RUN_URL}"
+          exit 1
+
+  # ---------------------------------------------------------------------------
   # Row 1: the full pytest suite, including the slow product-edge suites the
   # per-PR fast lane deselects with --ignore (tests/analysis, tests/vocals,
   # tests/sync/usb, tests/sets). Reused from full-ci.yml rather than copied, so
