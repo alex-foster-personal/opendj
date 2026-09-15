@@ -1,4 +1,11 @@
-"""HTTP rescue snapshot ring list/restore windows (RESCUE-04)."""
+"""HTTP rescue snapshot ring list/restore windows (RESCUE-04).
+
+[if] the ring holds a snapshot [then] the list reports its id, age and loaded decks, [else stop].
+[if] a layout restore runs [then] no deck resumes, even one that was playing, [else stop].
+[if] a play restore is under 10 min old [then] the playing deck resumes, [else stop].
+[if] a play restore is older than 10 min [then] it is refused with 422, [else stop].
+[if] a layout restore is older than 24 h [then] it is refused with 422, [else stop].
+"""
 
 from __future__ import annotations
 

@@ -5,6 +5,8 @@ Issue #2762: the installed app ships ``apps/open_dj/glossary.py`` but not the
 layout, so ``python -m apps.open_dj.glossary dump`` fails with
 ``FileNotFoundError`` on a tester's Mac.
 
+[if] app source is staged [then] the synonym map ships and glossary dump/lookup run, [else stop].
+
 Regression one-liners:
   - if ``stage_app_source`` omits ``open-dj/synonym-map.json`` then the
     installed glossary CLI is dead -> broken

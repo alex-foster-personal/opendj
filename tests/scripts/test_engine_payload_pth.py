@@ -52,6 +52,7 @@ def _site_packages(payload: Path) -> Path:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_runtime_prune_list_drops_distutils_precedence_pth() -> None:
+    """[if] _distutils_hack is pruned [then] its .pth is pruned right after it, [else stop]."""
     assert "lib/python3.*/site-packages/_distutils_hack" in RUNTIME_PRUNE_RELATIVE
     assert (
         "lib/python3.*/site-packages/distutils-precedence.pth"
@@ -68,6 +69,7 @@ def test_runtime_prune_list_drops_distutils_precedence_pth() -> None:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_parse_pth_imports_reads_plain_import(tmp_path: Path) -> None:
+    """[if] a .pth line is a plain import [then] parse_pth_imports returns it, [else stop]."""
     pth = tmp_path / "distutils-precedence.pth"
     pth.write_text("import _distutils_hack\n", encoding="utf-8")
     assert parse_pth_imports(pth) == ["_distutils_hack"]
@@ -75,6 +77,7 @@ def test_parse_pth_imports_reads_plain_import(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_parse_pth_imports_reads_dunder_import(tmp_path: Path) -> None:
+    """[if] a .pth line mixes import and __import__ [then] both parse in order, [else stop]."""
     pth = tmp_path / "distutils-precedence.pth"
     pth.write_text("import os; __import__('_distutils_hack')\n", encoding="utf-8")
     assert parse_pth_imports(pth) == ["os", "_distutils_hack"]
@@ -82,6 +85,7 @@ def test_parse_pth_imports_reads_dunder_import(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_parse_pth_imports_ignores_comments_and_blanks(tmp_path: Path) -> None:
+    """[if] a .pth holds only comments and blanks [then] it parses to no imports, [else stop]."""
     pth = tmp_path / "empty.pth"
     pth.write_text("# import foo\n\n", encoding="utf-8")
     assert parse_pth_imports(pth) == []
@@ -89,6 +93,7 @@ def test_parse_pth_imports_ignores_comments_and_blanks(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_verify_pth_imports_passes_when_import_resolves(tmp_path: Path) -> None:
+    """[if] a staged .pth imports a module the runtime has [then] verify passes, [else stop]."""
     payload = _fake_payload_runtime(tmp_path)
     (_site_packages(payload) / "ok.pth").write_text("import json\n", encoding="utf-8")
     verify_pth_imports(payload)
@@ -96,6 +101,7 @@ def test_verify_pth_imports_passes_when_import_resolves(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-22")
 def test_verify_pth_imports_fails_when_import_missing(tmp_path: Path) -> None:
+    """[if] a .pth imports a module the runtime lacks [then] verify names both, [else stop]."""
     payload = _fake_payload_runtime(tmp_path)
     (_site_packages(payload) / "bad.pth").write_text(
         "import _distutils_hack\n",
@@ -112,6 +118,7 @@ def test_verify_pth_imports_fails_when_import_missing(tmp_path: Path) -> None:
 def test_verify_python_startup_stderr_fails_on_distutils_precedence(
     tmp_path: Path,
 ) -> None:
+    """[if] distutils-precedence.pth outlives its module [then] stderr verify fails, [else stop]."""
     payload = _fake_payload_runtime(tmp_path)
     (_site_packages(payload) / "distutils-precedence.pth").write_text(
         "import _distutils_hack\n",
@@ -124,5 +131,6 @@ def test_verify_python_startup_stderr_fails_on_distutils_precedence(
 
 @pytest.mark.requirement("INSTALL-22")
 def test_verify_python_startup_stderr_passes_when_clean(tmp_path: Path) -> None:
+    """[if] a bare runtime starts with empty stderr [then] startup verify passes, [else stop]."""
     payload = _fake_payload_runtime(tmp_path)
     verify_python_startup_stderr(payload)
