@@ -8,9 +8,12 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from apps.engine_core.log_disk import rotation_allowed
+
 MAX_BYTES = 5 * 1024 * 1024
 RETENTION_DAYS = 7
 MAX_TOTAL_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_ARCHIVE_COUNT = 20
 
 
 def _archive_timestamp() -> str:
@@ -36,6 +39,10 @@ def _prune_archives(path: Path) -> None:
         if mtime < cutoff:
             archive.unlink(missing_ok=True)
     archives = _archive_paths(path)
+    while len(archives) > MAX_ARCHIVE_COUNT:
+        oldest = min(archives, key=lambda item: item.stat().st_mtime)
+        oldest.unlink(missing_ok=True)
+        archives = _archive_paths(path)
     total = sum(item.stat().st_size for item in archives if item.exists())
     while total > MAX_TOTAL_ARCHIVE_BYTES and archives:
         oldest = min(archives, key=lambda item: item.stat().st_mtime)
@@ -48,6 +55,8 @@ def _prune_archives(path: Path) -> None:
 def _rotate_if_needed(path: Path, next_bytes: int) -> None:
     size = path.stat().st_size if path.exists() else 0
     if size == 0 or size + next_bytes <= MAX_BYTES:
+        return
+    if not rotation_allowed(path.parent):
         return
     archive = path.with_name(f"{path.name}.{_archive_timestamp()}")
     path.rename(archive)

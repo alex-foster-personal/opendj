@@ -102,3 +102,15 @@ def test_main_wires_supervisor_modules() -> None:
     assert "mod supervisor" in main_rs
     assert "mod shell_health" in main_rs
     assert "start_runtime_supervisor" in main_rs
+
+
+@pytest.mark.requirement("LOGS-05")
+def test_engine_log_disk_guard_constants_in_rust_modules() -> None:
+    """[if] low-disk constants are absent [then] rotation cannot halt, [else stop]."""
+    engine_log = (TAURI_SRC / "engine_log.rs").read_text(encoding="utf-8")
+    supervisor = SUPERVISOR_RS.read_text(encoding="utf-8")
+    assert "ENGINE_LOG_MIN_FREE_BYTES" in engine_log
+    assert "disk_free_bytes" in engine_log
+    assert "ENGINE_LOG_MAX_ARCHIVE_COUNT" in engine_log
+    assert "AwaitingDiskSpace" in supervisor
+    assert "engine restarted after low disk recovered" in supervisor
