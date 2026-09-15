@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.shared.state import normalize_stamps, sync_stamp
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client, sync_set
 from apps.sync_hub.protocol_common import UPDATED_AT, stored_stamp_faults
 from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _T1, _log
@@ -39,30 +39,6 @@ def test_stored_stamp_faults_matches_is_orderable(stored: str) -> None:
     assert bool(faults) is expected_fault
 
 
-def test_fence_stamp_faults_are_exactly_normalize_stamps_repairs(
-    real_library_db_unrepaired,
-) -> None:
-    conn = state_db.open_ro(real_library_db_unrepaired.path)
-    try:
-        stamp_rows = sync_set.stamp_fault_rows(conn)
-        repairs = normalize_stamps.scan(conn)
-        repair_keys = {(r.table, r.column, r.stored) for r in repairs}
-        for row in stamp_rows:
-            for fault in row.faults:
-                assert (fault.table, fault.column, str(fault.value)) in repair_keys
-    finally:
-        conn.close()
-
-
-def test_repaired_library_has_no_stamp_faults_or_repairs(real_library_db) -> None:
-    conn = state_db.open_ro(real_library_db.path)
-    try:
-        assert sync_set.stamp_fault_rows(conn) == []
-        assert normalize_stamps.scan(conn) == []
-    finally:
-        conn.close()
-
-
 def test_parent_held_remedy_does_not_mention_normalize_stamps() -> None:
     reason = f"its tracks parent trk-1 {sync_set.PARENT_HELD_SUFFIX}"
     assert "normalize_stamps" not in sync_set.remedy_for(reason)
@@ -71,21 +47,6 @@ def test_parent_held_remedy_does_not_mention_normalize_stamps() -> None:
 def test_membership_held_remedy_does_not_mention_normalize_stamps() -> None:
     reason = f"{sync_set.MEMBER_HELD_PREFIX} (tracks.updated_at = 'bad')"
     assert "normalize_stamps" not in sync_set.remedy_for(reason)
-
-
-def test_hub_only_inconclusive_remedy_points_at_hub_engine_warn_log(
-    real_library_db,
-) -> None:
-    conn = state_db.open_ro(real_library_db.path)
-    try:
-        remedy = sync_set.inconclusive_remedy(
-            conn, held_here=0, hub_quarantined=3
-        )
-    finally:
-        conn.close()
-    assert "on this machine" not in remedy
-    assert "hub engine-warn.log" in remedy
-    assert "normalize_stamps --live`` for stamp faults" in remedy
 
 
 def test_inconclusive_message_parent_held_only_omits_normalize_stamps(

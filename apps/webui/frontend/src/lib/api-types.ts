@@ -8470,6 +8470,18 @@ export interface components {
              */
             unsyncable_inferred: number;
         };
+        /**
+         * IdentityRejectModel
+         * @description One identity-collapse rejection: the offered PK lost to a hub survivor.
+         */
+        IdentityRejectModel: {
+            /** Offered Pk */
+            offered_pk: string;
+            /** Survivor Pk */
+            survivor_pk: string;
+            /** Table */
+            table: string;
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -10759,6 +10771,8 @@ export interface components {
              * @default 0
              */
             hash_pending: number;
+            /** Identity Rejects */
+            identity_rejects?: components["schemas"]["IdentityRejectModel"][];
             /**
              * Quarantined
              * @default 0
