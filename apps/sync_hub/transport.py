@@ -60,6 +60,16 @@ def refused(label: str, status_code: int, body: str) -> SyncTransportError:
     )
 
 
+def is_unreachable(exc: SyncTransportError) -> bool:
+    """True when the hub never answered (connection refused, DNS, timeout)."""
+    return exc.status_code is None
+
+
+def is_hub_server_error(exc: SyncTransportError) -> bool:
+    """True when the hub answered with HTTP 5xx."""
+    return exc.status_code is not None and exc.status_code >= 500
+
+
 # ----- transport -----------------------------------------------------------
 
 
@@ -153,5 +163,7 @@ __all__ = [
     "HttpTransport",
     "HubTransport",
     "SyncTransportError",
+    "is_hub_server_error",
+    "is_unreachable",
     "refused",
 ]
