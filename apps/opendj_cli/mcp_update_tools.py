@@ -15,10 +15,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
-
 from apps.engine_core.update_channel import (
     APPLY_TIMEOUT_S,
     EXIT_APPLIED,
@@ -26,6 +22,7 @@ from apps.engine_core.update_channel import (
     check_via_engine,
 )
 from apps.opendj_cli.mcp_safety import SafetyRefusal, guard_update_apply
+from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.opendj_cli.origin import EngineNotRunning, resolve_origin
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
