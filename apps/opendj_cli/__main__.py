@@ -640,7 +640,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_CONFIRMED
         from apps.opendj_cli import api_cli
 
-        return api_cli.run(api_tokens, as_json=args.json)
+        return api_cli.run(api_tokens, as_json=args.json, lock=args.lock)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         print_verbs(args.json)
