@@ -30,11 +30,19 @@ from starlette.testclient import TestClient
 #: MUSIC_DJ_ALLOWED_HOSTS or share config, so this default clears the guard
 #: everywhere without depending on any test's env or app configuration.
 LOOPBACK_TEST_BASE_URL = "http://127.0.0.1"
+#: Starlette's own default, which must sit in the first default slot we patch.
+STARLETTE_DEFAULT_BASE_URL = "http://testserver"
 
 
 def install_loopback_testclient_default() -> None:
     """Make ``TestClient(app)`` default to an allowlisted loopback Host."""
     defaults = TestClient.__init__.__defaults__
-    if defaults is None or defaults[0] == LOOPBACK_TEST_BASE_URL:
+    if defaults and defaults[0] == LOOPBACK_TEST_BASE_URL:
         return
+    if not defaults or defaults[0] != STARLETTE_DEFAULT_BASE_URL:
+        raise RuntimeError(
+            "TestClient.__init__ defaults changed shape (first default is "
+            f"{defaults[0] if defaults else None!r}, expected {STARLETTE_DEFAULT_BASE_URL!r}); "
+            "refusing to patch the wrong parameter -- update tests/testclient_host_allowlist.py"
+        )
     TestClient.__init__.__defaults__ = (LOOPBACK_TEST_BASE_URL, *defaults[1:])
