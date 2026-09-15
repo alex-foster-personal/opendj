@@ -141,8 +141,7 @@ def test_library_ui_prefs_topbar_round_trip(engine: Engine) -> None:
         {"method": "GET", "path": "/api/v1/ui-prefs"},
     )
     assert get["status_code"] == 200
-    body = json.loads(get["body"])
-    assert body["auto_play_enforce_order"] is True
+    assert get["body"]["auto_play_enforce_order"] is True
 
 
 @pytest.mark.requirement("AGENT-05")
@@ -164,8 +163,7 @@ def test_library_ui_prefs_library_browser_round_trip(engine: Engine) -> None:
         {"method": "GET", "path": "/api/v1/ui-prefs"},
     )
     assert get["status_code"] == 200
-    body = json.loads(get["body"])
-    assert body["remixes_filter"] is True
+    assert get["body"]["remixes_filter"] is True
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -414,3 +412,84 @@ def test_no_unconverted_error_document_returns() -> None:
     source = source_path.read_text(encoding="utf-8")
     matches = pattern.findall(source)
     assert matches == [], f"unconverted error-document return(s) in mcp_server.py: {matches}"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks with no limit against an 8500-track library
+    [then] the wire result stays comfortably under the 25k-token MCP budget
+    and says how to page the rest, [else stop]."""
+    result = call_tool_result(
+        big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"}
+    )
+    assert result.is_error is not True
+    texts = [block.text for block in result.content if block.type == "text"]
+    estimated_tokens = sum(len(t) for t in texts) // 4
+    assert estimated_tokens < 22_000, (
+        f"library GET /tracks default page was ~{estimated_tokens} tokens, "
+        "not comfortably under the 25k-token MCP budget"
+    )
+
+    payload = result.structured_content
+    assert isinstance(payload, dict)
+    body = payload["body"]
+    assert isinstance(body, dict), "body must be an embedded object, not a re-encoded string"
+    assert isinstance(body["items"], list)
+    assert len(body["items"]) > 0
+    assert body["next_cursor"], "a bounded page short of an 8500-track library must still page"
+    assert "cursor" in payload.get("mcp_note", ""), "must say how to get the rest"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks?limit=100000 [then] the engine still refuses
+    (422) and the body is a readable object, not an escaped JSON string,
+    [else stop]."""
+    payload = call_tool(
+        big_library_engine,
+        "library",
+        {"method": "GET", "path": "/api/v1/tracks?limit=100000"},
+    )
+    assert payload["status_code"] == 422
+    assert isinstance(payload["body"], dict), "422 body must not be a re-encoded string"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
+    every row is projected to just those keys, [else stop]."""
+    payload = call_tool(
+        big_library_engine,
+        "library",
+        {
+            "method": "GET",
+            "path": "/api/v1/tracks?limit=5&fields=stable_id,title,artist,bpm,key",
+        },
+    )
+    assert payload["status_code"] == 200
+    items = payload["body"]["items"]
+    assert len(items) == 5
+    for item in items:
+        assert set(item.keys()) == {"stable_id", "title", "artist", "bpm", "key"}
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
+    big_library_engine: Engine,
+) -> None:
+    """[if] the auto-limited page's next_cursor is paged again [then] it
+    returns fresh, distinct tracks: a real engine page, never a client-side
+    truncated slice of the first, [else stop]."""
+    first = call_tool(big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"})
+    first_ids = {item["stable_id"] for item in first["body"]["items"]}
+    cursor = first["body"]["next_cursor"]
+    assert cursor
+
+    second = call_tool(
+        big_library_engine,
+        "library",
+        {"method": "GET", "path": f"/api/v1/tracks?cursor={cursor}"},
+    )
+    second_ids = {item["stable_id"] for item in second["body"]["items"]}
+    assert second_ids, "the next page must not be empty"
+    assert first_ids.isdisjoint(second_ids)
