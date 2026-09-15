@@ -11,8 +11,9 @@ import sys
 from pathlib import Path
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, digest_diff, protocol
-from apps.sync_hub.client_transport_ops import state_db_path
+from apps.shared.state import sync_stamp
+from apps.sync_hub import digest_diff, protocol
+from apps.sync_hub.client_transport_ops import _local_machine_row, state_db_path
 from apps.sync_hub.transport import HttpTransport
 
 
@@ -30,6 +31,9 @@ def main() -> int:
     conn = state_db.open_ro(state_db_path(args.data_dir))
     try:
         local = protocol.sync_digest(conn)
+        # hello must carry THIS machine's real row: the hub upserts it into
+        # machines, whose platform CHECK and UNIQUE name reject a made-up probe.
+        local_machine = _local_machine_row(conn, sync_stamp.local_machine_id(conn))
     finally:
         conn.close()
     channel = HttpTransport(
@@ -41,15 +45,7 @@ def main() -> int:
     hello = channel.post(
         "/api/v1/sync/hello",
         {
-            "machine": {
-                "machine_id": "probe",
-                "name": "probe",
-                "platform": "cli",
-                "is_hub": False,
-                "data_root": None,
-                "first_seen": "2026-01-01T00:00:00+00:00",
-                "last_seen": "2026-01-01T00:00:00+00:00",
-            },
+            "machine": local_machine.to_wire(),
             "schema_version": 14,
             "wire_version": 4,
             "capabilities": [],
