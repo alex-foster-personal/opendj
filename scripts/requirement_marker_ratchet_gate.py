@@ -54,8 +54,15 @@ def _scopes_from_intent_blocks(output: str) -> list[str]:
     ]
     if "Marked pytest scopes need" not in output:
         return found
+    found.extend(_scopes_after_marker_line(output.splitlines(), found))
+    return found
+
+
+def _scopes_after_marker_line(lines: list[str], already: list[str]) -> list[str]:
+    """Scope lines that follow a 'Marked pytest scopes need' line in plain output."""
+    found: list[str] = []
     collecting = False
-    for line in output.splitlines():
+    for line in lines:
         if "Marked pytest scopes need" in line:
             collecting = True
             continue
@@ -64,7 +71,7 @@ def _scopes_from_intent_blocks(output: str) -> list[str]:
         hit = _SCOPE_LINE.match(line)
         if hit:
             found.append(hit.group(1))
-        elif line.strip() and found:
+        elif line.strip() and (already or found):
             collecting = False
     return found
 
@@ -76,8 +83,7 @@ def _scopes_from_assertions(output: str) -> list[str]:
         found.extend(re.split(r",\s*", match.group(1).strip()))
     for match in _STALE_KNOWN.finditer(output):
         found.extend(re.findall(r"'([^']+)'", match.group(1)))
-    for match in _MISSING_SCOPE.finditer(output):
-        found.append(match.group(1))
+    found.extend(match.group(1) for match in _MISSING_SCOPE.finditer(output))
     return found
 
 
