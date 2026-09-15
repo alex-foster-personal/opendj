@@ -31,12 +31,7 @@
 	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
-	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
