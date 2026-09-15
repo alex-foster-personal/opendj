@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.cloud.asset_store import AssetStoreError
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import stems_sync
-from scripts.stem_inventory import EXTERNAL_ROOTS_ENV
+from apps.stems.external_roots import EXTERNAL_ROOTS_ENV
 
 router = APIRouter(tags=["stems"])
 
