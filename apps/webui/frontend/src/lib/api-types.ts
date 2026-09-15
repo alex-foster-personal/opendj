@@ -5783,6 +5783,12 @@ export interface components {
         };
         /** AppModeOut */
         AppModeOut: {
+            /**
+             * App Mode
+             * @default performance
+             * @enum {string}
+             */
+            id?: "performance" | "library-management" | "library" | "music-player";
             /** Last Gig At */
             last_gig_at?: string | null;
         };

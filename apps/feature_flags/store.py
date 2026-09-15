@@ -118,25 +118,12 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=False,
     ),
-    FlagDef(
-        flag_id="app_mode.show_unbuildable",
-        default=False,
-        owner="maintainer",
-        note=(
-            "PERFMODE-07 v1 hide path (issue #2040). ON re-advertises the unbuilt "
-            "Library Management and Music Player chooser tiles as disabled cards. "
-            "OFF (default) hides those tiles so a first-time user is not promised "
-            "unbuilt modes. Does not implement the modes; APP_MODES rows stay "
-            "available:false. Retire when both modes are available."
-        ),
-        retire_by="2027-03-01",
-        sandbox_gated=False,
-    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (
     "performance",
     "library-management",
+    "library",
     "music-player",
 )
 
@@ -147,6 +134,7 @@ APP_MODE_IDS: tuple[str, ...] = (
 APP_MODE_FEATURE_FLAGS: dict[str, frozenset[str]] = {
     "performance": frozenset({"usb.export", "local_stems.executor"}),
     "library-management": frozenset(),
+    "library": frozenset(),
     "music-player": frozenset(),
 }
 

@@ -23,10 +23,11 @@ _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
 AppPosturePref = Literal["prep", "gig"]
+AppModePref = Literal["performance", "library-management", "library", "music-player"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
 _DEFAULT_APP_POSTURE: AppPosturePref = "prep"
-_DEFAULT_APP_MODE: dict[str, Any] = {"last_gig_at": None}
+_DEFAULT_APP_MODE: dict[str, Any] = {"last_gig_at": None, "id": "performance"}
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -280,18 +281,45 @@ def _parse_last_gig_at(value: Any) -> str | None:
     return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def _parse_app_mode_id(value: Any) -> str:
+    if value is None:
+        return _DEFAULT_APP_MODE["id"]
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "app_mode.id must be a string",
+            },
+        )
+    if value not in ("performance", "library-management", "library", "music-player"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    "app_mode.id must be performance|library-management|library|music-player"
+                ),
+            },
+        )
+    return value
+
+
 def _parse_app_mode(raw: Any) -> dict[str, Any]:
     if raw is None:
         return dict(_DEFAULT_APP_MODE)
+    if isinstance(raw, str):
+        return {**dict(_DEFAULT_APP_MODE), "id": _parse_app_mode_id(raw)}
     if not isinstance(raw, dict):
         raise HTTPException(
             status_code=422,
             detail={"code": "UI_PREFS_INVALID", "message": "app_mode must be an object"},
         )
     out = dict(_DEFAULT_APP_MODE)
-    if "last_gig_at" not in raw:
-        return out
-    out["last_gig_at"] = _parse_last_gig_at(raw["last_gig_at"])
+    if "last_gig_at" in raw:
+        out["last_gig_at"] = _parse_last_gig_at(raw["last_gig_at"])
+    if "id" in raw:
+        out["id"] = _parse_app_mode_id(raw["id"])
     return out
 
 
@@ -410,6 +438,7 @@ class AppModeOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     last_gig_at: str | None = None
+    id: AppModePref = "performance"
 
 
 class LevelCalibrationOut(BaseModel):
