@@ -498,7 +498,7 @@ def test_status_boot_id_mismatch_is_error(engine: Engine, tmp_path: Path) -> Non
 
 @pytest.mark.requirement("AGENT-05")
 def test_command_wrong_role_is_error(engine: Engine, tmp_path: Path) -> None:
-    """[if] lock role is not opendj-engine [then] command is engine_identity_mismatch, [else stop]."""
+    """[if] the lock role is wrong [then] command errors engine_identity_mismatch, [else stop]."""
     bad_lock = tmp_path / "bad.lock"
     bad_lock.write_text(
         json.dumps(
