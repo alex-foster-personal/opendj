@@ -14,6 +14,7 @@ from tests.opendj_cli.test_mcp_stdio import call_tool
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_json_matches_mcp(engine: Engine, capsys: pytest.CaptureFixture[str]) -> None:
+    """[if] status runs with --json [then] its document equals the MCP status doc, [else stop]."""
     engine.page().start()
     mcp_status = call_tool(engine, "status", {})
 
