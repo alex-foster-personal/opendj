@@ -1,7 +1,6 @@
 """Issue #3081: sync hub machine.name and machine_id wire bounds.
 
-[if] a hello carries a machine name or id over the wire limit [then] the hub
-rejects it and no later response grows, [else stop].
+[if] a hello exceeds the machine name or id wire limit [then] the hub rejects it, [else stop].
 """
 from __future__ import annotations
 
