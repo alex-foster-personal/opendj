@@ -21,10 +21,12 @@
 mod engine;
 mod engine_log;
 mod launch;
+mod shell_health;
+mod supervisor;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
@@ -152,50 +154,7 @@ fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
     }
 }
 
-// ----- supervisor ---------------------------------------------------------
-enum Supervised {
-    Spawned(engine::Engine),
-    Adopted {
-        pid: u32,
-        host: String,
-        port: u16,
-    },
-}
-
-impl Supervised {
-    fn origin(&self) -> String {
-        match self {
-            Self::Spawned(running) => running.origin(),
-            Self::Adopted { host, port, .. } => launch::origin_for_adopt(host, *port),
-        }
-    }
-
-    fn shutdown(&mut self) {
-        match self {
-            Self::Spawned(running) => running.shutdown(),
-            Self::Adopted { pid, .. } => launch::stop_holder_pid(*pid),
-        }
-    }
-}
-
-impl Drop for Supervised {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-/// The engine handle, so exit paths can stop what `setup` started.
-struct Supervisor(Mutex<Option<Supervised>>);
-
-impl Supervisor {
-    fn shutdown(&self) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(mut running) = guard.take() {
-                running.shutdown();
-            }
-        }
-    }
-}
+use supervisor::{start_runtime_supervisor, Supervised, SupervisorPaths, RuntimeSupervisorState};
 
 /// Where the installed app keeps its library.
 ///
@@ -259,6 +218,43 @@ fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
         == rfd::MessageDialogResult::Ok
 }
 
+/// Start or adopt the engine and wait for a healthy origin.
+///
+/// Synchronous, before the window exists, on purpose. A native modal on
+/// macOS must run on the main thread, and the failure path here MUST raise
+/// one: the alternative is the blank window this whole design exists to
+/// eliminate. Waiting costs the measured ~1.5s of a cold boot.
+fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
+    let payload = payload_dir(app)?;
+    let data_dir = app_data_dir(app)?;
+    let log_path = data_dir.join(ENGINE_LOG);
+    let lock_path = launch::lock_path(&data_dir);
+    match launch::inspect_lock(&lock_path, engine::health_ok) {
+        LaunchPlan::Adopt { pid, host, port } => {
+            write_parent_file(&data_dir)?;
+            if !engine::health_ok(port) {
+                return Err(engine::EngineError::new(
+                    "Open DJ could not adopt the running engine.",
+                    format!(
+                        "pid {pid} holds the lock but is not answering health \
+                         at port {port}"
+                    ),
+                ));
+            }
+            Ok(Supervised::Adopted { pid, host, port })
+        }
+        LaunchPlan::StopOrQuit { pid, detail } => {
+            if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                launch::stop_holder_pid(pid);
+                spawn_fresh_engine(&payload, &data_dir, &log_path)
+            } else {
+                Err(engine::EngineError::new("Open DJ could not start.", detail))
+            }
+        }
+        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
+    }
+}
+
 fn spawn_fresh_engine(
     payload: &Path,
     data_dir: &Path,
@@ -307,43 +303,6 @@ fn spawn_fresh_engine(
                 }
             }
         }
-    }
-}
-
-/// Start or adopt the engine and wait for a healthy origin.
-///
-/// Synchronous, before the window exists, on purpose. A native modal on
-/// macOS must run on the main thread, and the failure path here MUST raise
-/// one: the alternative is the blank window this whole design exists to
-/// eliminate. Waiting costs the measured ~1.5s of a cold boot.
-fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
-    let payload = payload_dir(app)?;
-    let data_dir = app_data_dir(app)?;
-    let log_path = data_dir.join(ENGINE_LOG);
-    let lock_path = launch::lock_path(&data_dir);
-    match launch::inspect_lock(&lock_path, engine::health_ok) {
-        LaunchPlan::Adopt { pid, host, port } => {
-            write_parent_file(&data_dir)?;
-            if !engine::health_ok(port) {
-                return Err(engine::EngineError::new(
-                    "Open DJ could not adopt the running engine.",
-                    format!(
-                        "pid {pid} holds the lock but is not answering health \
-                         at port {port}"
-                    ),
-                ));
-            }
-            Ok(Supervised::Adopted { pid, host, port })
-        }
-        LaunchPlan::StopOrQuit { pid, detail } => {
-            if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
-                launch::stop_holder_pid(pid);
-                spawn_fresh_engine(&payload, &data_dir, &log_path)
-            } else {
-                Err(engine::EngineError::new("Open DJ could not start.", detail))
-            }
-        }
-        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
     }
 }
 
@@ -431,16 +390,6 @@ fn main() {
                     Err(failure) => fail_visibly(&failure),
                 },
             };
-            let supervisor = Supervisor(Mutex::new(running));
-            if let Some(slot) = ON_SHUTDOWN.get() {
-                let handle_for_shutdown = handle.clone();
-                *slot.lock().expect("shutdown mutex") = Some(Box::new(move || {
-                    if let Some(state) = handle_for_shutdown.try_state::<Supervisor>() {
-                        state.shutdown();
-                    }
-                }));
-            }
-
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
             // serde_json does the escaping, so neither the origin nor the
@@ -480,7 +429,30 @@ fn main() {
                 })
                 .build()?;
 
-            app.manage(supervisor);
+            if let Some(started) = running {
+                let payload = payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
+                let paths = SupervisorPaths {
+                    payload,
+                    data_dir: data_dir.clone(),
+                    log_path: log_path.clone(),
+                    product_name: package.name.clone(),
+                };
+                match start_runtime_supervisor(handle.clone(), started, paths, &data_dir) {
+                    Ok(runtime) => {
+                        if let Some(slot) = ON_SHUTDOWN.get() {
+                            let runtime_for_shutdown = Arc::clone(&runtime);
+                            *slot.lock().expect("shutdown mutex") = Some(Box::new(move || {
+                                runtime_for_shutdown.shutdown();
+                            }));
+                        }
+                        app.manage(RuntimeSupervisorState { supervisor: runtime });
+                    }
+                    Err(failure) => fail_visibly(&failure),
+                }
+            } else if let Some(slot) = ON_SHUTDOWN.get() {
+                *slot.lock().expect("shutdown mutex") = Some(Box::new(|| {}));
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -492,7 +464,8 @@ fn main() {
         // holding the data directory's lock.
         match event {
             RunEvent::ExitRequested { .. } | RunEvent::Exit => {
-                if let Some(supervisor) = handle.try_state::<Supervisor>() {
+                if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
+                    let supervisor = &state.supervisor;
                     supervisor.shutdown();
                 }
             }
