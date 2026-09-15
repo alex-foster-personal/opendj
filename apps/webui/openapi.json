@@ -9530,11 +9530,13 @@
             "type": "string"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
           },
           "name": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Name",
             "type": "string"
@@ -13262,6 +13264,7 @@
             "type": "array"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
@@ -32537,6 +32540,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
@@ -32838,6 +32842,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
