@@ -19,6 +19,8 @@ and ``GET /api/v1/preflight`` must read the identical ``state.db`` path
 (:func:`apps.webui.server.state_paths.resolve_state_db_path`), so a file
 health reports as existing (or attached, with real tracks) can never be
 called "no state.db" by preflight in the same breath.
+
+[if] a dismissed-empty library reports fail [then] the boot gate never clears, [else stop].
 """
 
 from __future__ import annotations

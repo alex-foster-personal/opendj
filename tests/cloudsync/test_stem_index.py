@@ -50,6 +50,7 @@ def _journal_line(*, stable_id: str, preset: str = "4.0.1", files: dict[str, str
 
 @pytest.mark.requirement("STEM-09")
 def test_build_index_from_journal_maps_stable_id_to_file_hashes(tmp_path: Path):
+    """[if] a journal line lists file hashes [then] the index maps filename to hash, [else stop]."""
     journal = tmp_path / "journal.jsonl"
     journal.write_text(
         _journal_line(
@@ -79,11 +80,13 @@ def test_build_index_from_journal_maps_stable_id_to_file_hashes(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-09")
 def test_build_index_missing_journal_is_empty_not_error(tmp_path: Path):
+    """[if] the journal file is missing [then] build_index_from_journal is empty, [else stop]."""
     assert build_index_from_journal(tmp_path / "nope.jsonl") == {}
 
 
 @pytest.mark.requirement("STEM-09")
 def test_build_index_later_line_wins_for_rerendered_bundle(tmp_path: Path):
+    """[if] the journal has two lines, same id [then] the later hash wins, [else stop]."""
     journal = tmp_path / "journal.jsonl"
     journal.write_text(
         _journal_line(stable_id="t", files={"vocals.mp3": "1" * 64}) + "\n"
@@ -96,6 +99,7 @@ def test_build_index_later_line_wins_for_rerendered_bundle(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-09")
 def test_build_index_tolerates_torn_final_line(tmp_path: Path):
+    """[if] the journal's final line is torn [then] the index keeps prior lines, [else stop]."""
     journal = tmp_path / "journal.jsonl"
     good = _journal_line(stable_id="t", files={"vocals.mp3": "1" * 64})
     journal.write_text(good + "\n" + '{"at": "2026", "obje', encoding="utf-8")
@@ -105,6 +109,7 @@ def test_build_index_tolerates_torn_final_line(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-09")
 def test_build_index_raises_on_corrupt_earlier_line(tmp_path: Path):
+    """[if] a non-final journal line is bad JSON [then] build_index raises, [else stop]."""
     journal = tmp_path / "journal.jsonl"
     good = _journal_line(stable_id="t", files={"vocals.mp3": "1" * 64})
     journal.write_text("not json at all\n" + good + "\n", encoding="utf-8")
@@ -115,7 +120,10 @@ def test_build_index_raises_on_corrupt_earlier_line(tmp_path: Path):
 @pytest.mark.requirement("STEM-09")
 def test_build_index_ignores_non_stem_journal_entries(tmp_path: Path):
     """A journal line naming an object outside the legacy stems/ layout (a
-    different rail sharing the shape one day) is skipped, not fatal."""
+    different rail sharing the shape one day) is skipped, not fatal.
+
+    [if] a journal entry's legacy_key is outside stems/ [then] it is skipped, [else stop].
+    """
     journal = tmp_path / "journal.jsonl"
     record = {
         "at": "2026",
@@ -128,7 +136,10 @@ def test_build_index_ignores_non_stem_journal_entries(tmp_path: Path):
 @pytest.mark.requirement("STEM-10")
 def test_publish_index_creates_then_overwrites(cfg: CloudConfig):
     """The one deliberate non-content-addressed R2 write in this codebase:
-    the second publish must REPLACE the body, not treat 'exists' as done."""
+    the second publish must REPLACE the body, not treat 'exists' as done.
+
+    [if] publish_index runs twice, different indexes [then] second overwrites, new etag, [else stop]
+    """
     s3 = FakeS3Client()
     etag1 = publish_index(cfg, s3, {"a": {"manifest.json": "1" * 64}})
     got1 = s3.get_object(cfg.audio_bucket, INDEX_OBJECT_KEY)
@@ -148,12 +159,14 @@ def test_publish_index_creates_then_overwrites(cfg: CloudConfig):
 
 @pytest.mark.requirement("STEM-10")
 def test_fetch_index_absent_object_is_empty(cfg: CloudConfig):
+    """[if] no index has been published [then] fetch_index returns empty, [else stop]."""
     s3 = FakeS3Client()
     assert fetch_index(cfg, s3) == {}
 
 
 @pytest.mark.requirement("STEM-10")
 def test_fetch_index_round_trips_publish(cfg: CloudConfig):
+    """[if] an index is published then fetched [then] fetch_index returns it, [else stop]."""
     s3 = FakeS3Client()
     index = {"track-a": {"vocals.mp3": "f" * 64}}
     publish_index(cfg, s3, index)
@@ -162,6 +175,7 @@ def test_fetch_index_round_trips_publish(cfg: CloudConfig):
 
 @pytest.mark.requirement("STEM-11")
 def test_local_cache_round_trips(tmp_path: Path):
+    """[if] an index is cached then loaded [then] load_cached_index returns it, [else stop]."""
     data_dir = tmp_path / "data"
     index = {"track-a": {"manifest.json": "a" * 64}}
     save_cached_index(data_dir, index)
@@ -170,11 +184,13 @@ def test_local_cache_round_trips(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-11")
 def test_local_cache_missing_is_empty_not_error(tmp_path: Path):
+    """[if] no local cache file exists [then] load_cached_index returns empty, [else stop]."""
     assert load_cached_index(tmp_path / "data") == {}
 
 
 @pytest.mark.requirement("STEM-19")
 def test_local_cache_corrupt_json_raises(tmp_path: Path):
+    """[if] the cache file is bad JSON [then] load_cached_index raises naming it, [else stop]."""
     data_dir = tmp_path / "data"
     path = tmp_path / "data" / "state" / "stem-bundle-index.json"
     path.parent.mkdir(parents=True)
@@ -185,6 +201,7 @@ def test_local_cache_corrupt_json_raises(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-19")
 def test_local_cache_missing_stable_ids_key_raises(tmp_path: Path):
+    """[if] the cache lacks stable_ids [then] load_cached_index raises naming it, [else stop]."""
     data_dir = tmp_path / "data"
     path = tmp_path / "data" / "state" / "stem-bundle-index.json"
     path.parent.mkdir(parents=True)
@@ -195,7 +212,10 @@ def test_local_cache_missing_stable_ids_key_raises(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-22")
 def test_is_allowed_stem_filename_accepts_real_bundle_basenames():
-    """Over-strict allowlist guard: every real demucs/roformer basename must pass."""
+    """Over-strict allowlist guard: every real demucs/roformer basename must pass.
+
+    [if] a name is a real bundle basename [then] is_allowed_stem_filename accepts it, [else stop]
+    """
     positives = [
         MANIFEST_FILENAME,
         "vocals.wav",
@@ -214,6 +234,7 @@ def test_is_allowed_stem_filename_accepts_real_bundle_basenames():
 
 @pytest.mark.requirement("STEM-22")
 def test_is_allowed_stem_filename_rejects_traversal_and_unknown_names():
+    """[if] traversal/unknown ext [then] is_allowed_stem_filename rejects it, [else stop]"""
     negatives = [
         "../x",
         "/etc/passwd",
@@ -228,7 +249,7 @@ def test_is_allowed_stem_filename_rejects_traversal_and_unknown_names():
 
 @pytest.mark.requirement("STEM-22")
 def test_local_cache_disallowed_filename_raises(tmp_path: Path):
-    """[if] a cached index names a traversal filename [then] load raises."""
+    """[if] a cached index names a traversal filename [then] load raises naming it, [else stop]."""
     data_dir = tmp_path / "data"
     path = tmp_path / "data" / "state" / "stem-bundle-index.json"
     path.parent.mkdir(parents=True)
@@ -265,6 +286,8 @@ def test_publish_index_merges_concurrent_updates_under_cas(cfg: CloudConfig):
     ``upsert_object`` fails this test two ways: it never reads first (so B's
     nested publish is never triggered by this hook), and even if it were, it
     would overwrite B's entry outright instead of merging it.
+
+    [if] a second publisher writes mid-read [then] the CAS retry merges, no overwrite, [else stop].
     """
     b_index = {"b": {"manifest.json": "b" * 64}}
     a_index = {"a": {"manifest.json": "a" * 64}}
@@ -318,6 +341,7 @@ class _CountingGetS3(FakeS3Client):
 def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(
     tmp_path: Path, cfg: CloudConfig
 ):
+    """[if] refresh runs twice inside backoff [then] the second call is a no-op, [else stop]."""
     data_dir = tmp_path / "data"
     s3 = _CountingGetS3()
     publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
@@ -332,6 +356,7 @@ def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(
 def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(
     tmp_path: Path, cfg: CloudConfig
 ):
+    """[if] force=True during backoff [then] refresh still makes a fresh R2 request, [else stop]."""
     data_dir = tmp_path / "data"
     s3 = _CountingGetS3()
     publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
@@ -347,6 +372,7 @@ def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(
 def test_refresh_local_cache_from_r2_throttled_records_and_clears_error(
     tmp_path: Path, cfg: CloudConfig
 ):
+    """[if] a refresh fails then later succeeds [then] refresh_error sets, clears, [else stop]."""
     data_dir = tmp_path / "data"
 
     class FailingS3(FakeS3Client):

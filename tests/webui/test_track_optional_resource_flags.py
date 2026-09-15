@@ -140,6 +140,40 @@ def test_track_out_lyrics_available_when_cache_file_exists(
     assert response.json()["lyrics_available"] is True
 
 
+def test_track_out_lyrics_available_for_asr_cache(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            "track-with-asr-lyrics",
+            "inferred",
+            "ASR Lyrics",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+    write(
+        cache_path(tmp_path, "track-with-asr-lyrics"),
+        Lyrics(
+            stable_id="track-with-asr-lyrics",
+            source="asr",
+            lines=(LyricLine(start_ms=500, text="hello world"),),
+        ),
+    )
+
+    response = flags_client.get("/api/v1/tracks/track-with-asr-lyrics")
+
+    assert response.status_code == 200
+    assert response.json()["lyrics_available"] is True
+
+
 @pytest.mark.requires_mutagen
 def test_track_out_artwork_available_false_for_audio_without_picture(
     flags_client: TestClient, tmp_path: Path
@@ -231,7 +265,10 @@ def test_stems_available_true_when_indexed_but_not_local(
     hydration_flags_client: TestClient, tmp_path: Path
 ) -> None:
     """A track with no local bundle but a cached R2 index entry reports
-    stems_available=True so the frontend's probe issues GET /stems."""
+    stems_available=True so the frontend's probe issues GET /stems.
+
+    [if] a track has no bundle but a cached index entry [then] stems_available is True, [else stop].
+    """
     from tests.webui.test_stems_hydration import _cfg, _seed_bundle
 
     stable_id = "indexed-not-local"
@@ -258,6 +295,7 @@ def test_stems_available_true_when_indexed_but_not_local(
 def test_stems_available_false_when_hydration_disabled(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a track is indexed, hydration unbound [then] stems_available is False, [else stop]."""
     stable_id = "indexed-no-hydration"
     data_dir = tmp_path / "data"
     _insert_track(flags_client, tmp_path, stable_id)
@@ -275,6 +313,7 @@ def test_stems_available_false_when_hydration_disabled(
 def test_stems_available_false_when_not_in_index(
     hydration_flags_client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a track has no bundle, no index entry [then] stems_available is False, [else stop]."""
     stable_id = "not-in-index"
     data_dir = tmp_path / "data"
     _insert_track(hydration_flags_client, tmp_path, stable_id)
@@ -289,7 +328,10 @@ def test_stems_available_false_when_not_in_index(
 def test_stems_available_true_from_local_summary_without_hydration(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """Local bundle path is unaffected when hydration is not wired."""
+    """Local bundle path is unaffected when hydration is not wired.
+
+    [if] a local bundle exists, hydration unwired [then] stems_available still True, [else stop].
+    """
     import json
 
     stable_id = "local-bundle-track"

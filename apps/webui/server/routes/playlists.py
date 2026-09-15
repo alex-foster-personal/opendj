@@ -13,6 +13,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 from ..etag import compute_etag
 from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
+from ..rb_djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -180,3 +181,19 @@ def get_playlist(
         # state -- empty buckets the UI already renders as absent.
         diff=PlaylistDiff(),
     )
+
+
+@router.get("/{playlist_id}/rb-djay-diff")
+def get_playlist_rb_djay_diff(
+    playlist_id: str,
+    backend: StateBackend = Depends(get_read_state),
+) -> dict:
+    """Return saved playlist-plan diff buckets for one playlist when computed."""
+    pl = backend.get_playlist(playlist_id)
+    try:
+        return playlist_rb_djay_diff(playlist_name=pl.name)
+    except RbDjaySyncError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc

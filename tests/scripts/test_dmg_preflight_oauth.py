@@ -33,6 +33,7 @@ Regression lines:
   - if doppler-absent vs doppler-present depends on the runner's directory
     layout instead of a deliberate choice, the test's outcome is luck, not
     proof
+  - [if] the engine misses the OAuth id/secret [then] item I fails naming both, never value, [else stop]
 """
 from __future__ import annotations
 

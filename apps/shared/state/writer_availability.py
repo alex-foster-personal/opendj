@@ -1,6 +1,7 @@
 """``StateWriter`` availability upserts with durable events."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
@@ -40,6 +41,7 @@ class _AvailabilityWriterMixin:
         allow_mass_missing: bool = False,
         apply_mass_missing_guard: bool = True,
         always_refresh_checked_at: bool = False,
+        existing_scope_stable_ids: Sequence[str] | None = None,
     ) -> AvailabilityReport:
         """Upsert availability rows and append one event per changed track."""
         stamp = now or self._now_iso()
@@ -51,6 +53,7 @@ class _AvailabilityWriterMixin:
                 allow_mass_missing=allow_mass_missing,
                 apply_mass_missing_guard=apply_mass_missing_guard,
                 always_refresh_checked_at=always_refresh_checked_at,
+                existing_scope_stable_ids=existing_scope_stable_ids,
             )
             for stable_id in write_report.changed_stable_ids:
                 row = next(r for r in rows if r.stable_id == stable_id)

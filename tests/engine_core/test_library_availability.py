@@ -1,4 +1,7 @@
-"""Engine-owned ``track_availability`` probing (issue #2588)."""
+"""Engine-owned ``track_availability`` probing (issue #2588).
+
+[if] a probe round would drop the present count catastrophically [then] it is refused, [else stop].
+"""
 from __future__ import annotations
 
 import json
@@ -1998,3 +2001,286 @@ def test_http_probe_and_status_routes(
             )
         finally:
             conn.close()
+
+
+def test_availability_commit_waits_under_immediate_lock(
+    state_db_path: Path, tmp_path: Path
+) -> None:
+    audio_dir = tmp_path / "lock-wait"
+    audio_dir.mkdir()
+    audio = audio_dir / "one.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = _stable("lock")
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio))
+    finally:
+        conn.close()
+
+    row = avail.AvailabilityRow(stable_id=stable_id, state="present", checked_path=str(audio))
+    errors: queue.Queue[Exception] = queue.Queue()
+    written = threading.Event()
+
+    def _commit_while_locked() -> None:
+        try:
+            writer = state_db.open_rw(state_db_path)
+            try:
+                avail.commit_availability_batch(
+                    writer,
+                    [row],
+                    apply_mass_missing_guard=False,
+                    always_refresh_checked_at=True,
+                    existing_scope_stable_ids=[stable_id],
+                )
+                written.set()
+            finally:
+                writer.close()
+        except Exception as exc:  # noqa: BLE001
+            errors.put(exc)
+
+    def _hold_immediate_lock() -> None:
+        holder = state_db.open_rw(state_db_path)
+        try:
+            holder.execute("BEGIN IMMEDIATE")
+            time.sleep(0.75)
+            holder.execute("COMMIT")
+        finally:
+            holder.close()
+
+    holder = threading.Thread(target=_hold_immediate_lock, daemon=True)
+    holder.start()
+    time.sleep(0.05)
+    committer = threading.Thread(target=_commit_while_locked, daemon=True)
+    committer.start()
+    committer.join(timeout=THREAD_HANG_GUARD_S)
+    holder.join(timeout=THREAD_HANG_GUARD_S)
+
+    if not errors.empty():
+        pytest.fail(f"commit failed: {errors.get_nowait()}")
+    assert written.is_set()
+
+    verify = state_db.open_rw(state_db_path)
+    try:
+        state = verify.execute(
+            "SELECT state FROM track_availability WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+        assert state is not None and state[0] == "present"
+    finally:
+        verify.close()
+
+
+def test_availability_commit_fails_fast_without_busy_timeout(
+    state_db_path: Path, tmp_path: Path
+) -> None:
+    audio_dir = tmp_path / "lock-fail"
+    audio_dir.mkdir()
+    audio = audio_dir / "one.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = _stable("fast")
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio))
+    finally:
+        conn.close()
+
+    row = avail.AvailabilityRow(stable_id=stable_id, state="present", checked_path=str(audio))
+    holder = state_db.open_rw(state_db_path)
+    holder.execute("PRAGMA busy_timeout = 0")
+    holder.execute("BEGIN IMMEDIATE")
+    contender = state_db.open_rw(state_db_path)
+    contender.execute("PRAGMA busy_timeout = 0")
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            avail.commit_availability_batch(
+                contender,
+                [row],
+                apply_mass_missing_guard=False,
+                always_refresh_checked_at=True,
+            )
+    finally:
+        holder.execute("COMMIT")
+        holder.close()
+        contender.close()
+
+
+def _seed_worker_tracks(
+    state_db_path: Path,
+    tmp_path: Path,
+    *,
+    count: int,
+    prefix: str,
+) -> list[str]:
+    audio_dir = tmp_path / prefix
+    audio_dir.mkdir()
+    stable_ids: list[str] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(count):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            stable_id = _stable(f"{prefix}{index}")
+            stable_ids.append(stable_id)
+            _upsert_track(conn, stable_id, str(audio))
+    finally:
+        conn.close()
+    return stable_ids
+
+
+def test_worker_retries_busy_lock_instead_of_failed_phase(
+    data_dir: Path,
+    state_db_path: Path,
+    tmp_path: Path,
+) -> None:
+    _seed_worker_tracks(state_db_path, tmp_path, count=12, prefix="busy-retry-")
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    drain_calls = {"n": 0}
+    original_drain_once = worker._drain_once
+
+    def _counting_drain_once() -> None:
+        drain_calls["n"] += 1
+        return original_drain_once()
+
+    worker._drain_once = _counting_drain_once  # type: ignore[method-assign]
+
+    release_lock = threading.Event()
+    stop_contender = threading.Event()
+
+    def _pulse_write_lock() -> None:
+        while not stop_contender.is_set():
+            holder = state_db.open_rw(state_db_path)
+            try:
+                holder.execute("BEGIN IMMEDIATE")
+                release_lock.wait(timeout=0.15)
+                holder.execute("COMMIT")
+            finally:
+                holder.close()
+            time.sleep(0.02)
+
+    contender = threading.Thread(target=_pulse_write_lock, daemon=True)
+    contender.start()
+    worker.start()
+    time.sleep(0.2)
+    release_lock.set()
+    _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    stop_contender.set()
+    contender.join(timeout=2.0)
+
+    snapshot = worker.status()
+    assert snapshot.phase != "failed"
+    assert snapshot.processed_total > 0
+    assert drain_calls["n"] >= 1
+    worker.stop()
+
+
+def test_worker_failed_phase_only_after_retry_budget_exhausted(
+    data_dir: Path,
+    state_db_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_worker_tracks(state_db_path, tmp_path, count=6, prefix="busy-fail-")
+    monkeypatch.setattr(
+        "apps.engine_core.library_availability.AVAILABILITY_LOCK_RETRIES",
+        2,
+    )
+    monkeypatch.setattr(
+        "apps.engine_core.library_availability._AVAILABILITY_LOCK_BACKOFF_BASE_S",
+        0.01,
+    )
+    monkeypatch.setattr(
+        "apps.engine_core.library_availability._AVAILABILITY_LOCK_BACKOFF_MAX_S",
+        0.02,
+    )
+
+    holder = state_db.open_rw(state_db_path)
+    holder.execute("BEGIN IMMEDIATE")
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=3)
+    worker.start()
+
+    started = time.monotonic()
+    snapshot = worker.status()
+    while time.monotonic() - started < THREAD_HANG_GUARD_S:
+        snapshot = worker.status()
+        if snapshot.phase == "failed":
+            break
+        time.sleep(0.02)
+
+    holder.execute("COMMIT")
+    holder.close()
+    worker.stop()
+
+    assert snapshot.phase == "failed"
+    assert snapshot.last_error is not None
+    assert "lock retries" in snapshot.last_error
+
+
+def test_mid_round_busy_requeues_priority_ids(
+    data_dir: Path,
+    state_db_path: Path,
+    tmp_path: Path,
+) -> None:
+    stable_ids = _seed_worker_tracks(
+        state_db_path, tmp_path, count=8, prefix="prio-requeue-"
+    )
+    priority_id = stable_ids[0]
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=2)
+    worker.request_probe([priority_id])
+
+    requeued: list[list[str]] = []
+    original_requeue = worker._requeue_priority_ids
+
+    def _spy_requeue(ids: list[str]) -> None:
+        requeued.append(list(ids))
+        original_requeue(ids)
+
+    worker._requeue_priority_ids = _spy_requeue  # type: ignore[method-assign]
+
+    stop_holder = threading.Event()
+    holder_ready = threading.Event()
+
+    def _hold_write_lock_until_stopped() -> None:
+        holder = state_db.open_rw(state_db_path)
+        try:
+            holder.execute("BEGIN IMMEDIATE")
+            holder_ready.set()
+            while not stop_holder.wait(timeout=0.05):
+                pass
+            holder.execute("COMMIT")
+        finally:
+            holder.close()
+
+    holder = threading.Thread(target=_hold_write_lock_until_stopped, daemon=True)
+    holder.start()
+    assert holder_ready.wait(timeout=2.0), "contending write lock never acquired"
+    worker.start()
+
+    started = time.monotonic()
+    while time.monotonic() - started < THREAD_HANG_GUARD_S:
+        snapshot = worker.status()
+        if snapshot.phase == "queued" and snapshot.last_error and "locked" in snapshot.last_error:
+            break
+        time.sleep(0.02)
+    else:
+        stop_holder.set()
+        holder.join(timeout=2.0)
+        worker.stop()
+        pytest.fail("worker never entered queued lock-retry state")
+
+    stop_holder.set()
+    holder.join(timeout=2.0)
+    _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+
+    assert any(priority_id in batch for batch in requeued)
+    conn = state_db.open_rw(state_db_path)
+    try:
+        row = conn.execute(
+            "SELECT state FROM track_availability WHERE stable_id = ?",
+            (priority_id,),
+        ).fetchone()
+        assert row is not None
+    finally:
+        conn.close()
+    worker.stop()

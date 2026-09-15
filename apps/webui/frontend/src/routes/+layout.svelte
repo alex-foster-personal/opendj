@@ -23,17 +23,22 @@
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
-	import { resolveFirstRun } from '$lib/setup/first-run';
+	import { bootGateYielded } from '$lib/overlays/overlay-stack';
+	import { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
+	import { accountOverlay } from '$lib/account/overlay.svelte';
+	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
+	import { runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
+	import { settingsOverlay } from '$lib/settings/overlay.svelte';
+	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
+	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
 	import { startAppInstruments } from '$lib/rb/app-init';
+	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
@@ -41,6 +46,10 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
+
+	if (typeof window !== 'undefined') {
+		startLibraryBootHydration();
+	}
 
 	let { children } = $props();
 
@@ -53,7 +62,15 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
-	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, setupOpen));
+	const yieldBootGate = $derived(
+		bootGateYielded({
+			setup: setupOpen,
+			settings: settingsOverlay.open,
+			account: accountOverlay.open,
+			signIn: signInOverlay.open
+		})
+	);
+	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, yieldBootGate));
 	const hideCheckIds = $derived(
 		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
 			? [LIBRARY_ATTACHED_CHECK_ID]
@@ -79,6 +96,12 @@
 		connectEventsBus();
 	});
 
+	// PERFMODE-11: stamp Gig activity at most once per minute without blocking paint.
+	$effect(() => {
+		if (!isPerformance) return;
+		touchLastGigAt();
+	});
+
 	/**
 	 * THE first-run gate, at the root so there is exactly one of it.
 	 *
@@ -92,15 +115,39 @@
 	 * reload, a second tab and an agent all get the same answer. The rule
 	 * itself lives in $lib/setup/first-run, under test.
 	 */
+	function openSetupForFirstRun(): void {
+		openSetupOverlay();
+		// Already on a performance route (the packaged shell's landing
+		// route) means no navigation at all; the overlay is simply raised.
+		if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+	}
+
 	function raiseSetupOnFirstRun(): void {
-		void resolveFirstRun().then((show) => {
-			if (!show) return;
-			openSetupOverlay();
-			// Already on a performance route (the packaged shell's landing
-			// route) means no navigation at all; the overlay is simply raised.
-			if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+		void runFirstRunGate().then((show) => {
+			if (show !== true) return;
+			openSetupForFirstRun();
 		});
 	}
+
+	// When preflight says the library is empty, open setup even if the daemon
+	// suppressed should_show_wizard (e.g. dev checkout) or the first-run probe
+	// raced entitlements. Decoupled from entitlements.load().
+	$effect(() => {
+		if (!needsSetupForEmptyLibrary(preflightGate.checks, setupOpen)) return;
+		if (finalSetupRefusal() !== null) return;
+		openSetupForFirstRun();
+	});
+
+	// Run as soon as the client router is live; onMount alone is too late for
+	// domcontentloaded e2e and causes a visible library flash on cold open.
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		installBootLandingRedirect({
+			goto,
+			getPathname: () => $page.url.pathname,
+			readBootStamp: readBootStampMirror
+		});
+	});
 
 	onMount(() => {
 		// THE capability probe: one health GET, before anything daemon-specific
@@ -118,12 +165,14 @@
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
+		const uninstallShellNavigation = installShellNavigationPoll();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
 			uninstallHotkeysOverlay();
 			uninstallQuitGate();
 			stopInstruments();
+			uninstallShellNavigation();
 			clearInterval(id);
 		};
 	});
@@ -224,12 +273,7 @@
 {/if}
 
 {#if showPreflightIndicator}
-	<PreflightScreen
-		mode="boot"
-		blocking={false}
-		navigate={goto}
-		hideCheckIds={hideCheckIds}
-	/>
+	<PreflightScreen mode="boot" blocking={false} navigate={goto} hideCheckIds={hideCheckIds} />
 {/if}
 
 <SettingsOverlay />

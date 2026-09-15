@@ -18,8 +18,17 @@ FRONTEND_NODE ?= node
 PYTEST_JOBS ?= auto
 PYTEST_COLLECT_FLOOR ?= 3700
 
+# PYTEST_BASETEMP is unset for a normal dev-machine run (pytest falls back to
+# its own default under the system temp dir). CI workflows pass it set to a
+# path under $RUNNER_TEMP, which GitHub wipes per job, so a shard killed by
+# its wall budget leaves no lock file behind to outlive the job (see
+# docs/decisions for the ADR). $@ namespaces it per target, so a composite
+# target (release-check: test + waveform-native-verify) never has the second
+# pytest invocation wipe the first one's basetemp out from under it.
+pytest_basetemp_flag = $(if $(PYTEST_BASETEMP),--basetemp=$(PYTEST_BASETEMP)/$@,)
+
 test:
-	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR)
+	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR) $(pytest_basetemp_flag)
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require
@@ -28,7 +37,7 @@ test:
 # Playwright suite once real DB fixtures are available (tracked in #155).
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
-	$(PYTEST) -q -m rb_parity
+	$(PYTEST) -q -m rb_parity $(pytest_basetemp_flag)
 	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
@@ -37,7 +46,7 @@ rb-parity-final: rb-parity-check
 	cd apps/webui/frontend && pnpm build
 
 cov:
-	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html
+	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html $(pytest_basetemp_flag)
 
 reqs:
 	$(PY) -m scripts.build_reqs_json
@@ -69,7 +78,7 @@ audit-sync:
 	$(PY) -m apps.audit.sync_diff
 
 integration:
-	$(PYTEST) -m integration -q
+	$(PYTEST) -m integration -q $(pytest_basetemp_flag)
 
 clean:
 	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md dist build *.egg-info
@@ -146,7 +155,7 @@ waveform-native-verify:
 			--manifest $(CURDIR)/tests/fixtures/rb-usb-export.manifest.json
 	uv pip install --python $(PY) --reinstall --no-deps dist/music_dj_tools-*.whl
 	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
-		$(PYTEST) -q tests/webui/test_waveform_native.py \
+		$(PYTEST) -q tests/webui/test_waveform_native.py $(pytest_basetemp_flag) \
 			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
 
 waveform-native-release-check: waveform-native-wheel waveform-native-verify

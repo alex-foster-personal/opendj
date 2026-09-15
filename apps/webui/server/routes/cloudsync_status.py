@@ -34,6 +34,15 @@ class RecentResultOut(LastResultOut):
     pulled: int
 
 
+class UpdateRequiredOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: Literal["SYNC_WIRE_VERSION"]
+    local_wire_version: int
+    peer_wire_version: int
+    action: str
+
+
 class CloudSyncStatusOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -57,6 +66,13 @@ class CloudSyncStatusOut(BaseModel):
     rows_pending: int | None
     endpoint: str | None
     recent_results: list[RecentResultOut]
+    update_required: UpdateRequiredOut | None = Field(
+        default=None,
+        description=(
+            "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire "
+            "versions and the install action for this machine."
+        ),
+    )
 
 
 class IdentityBacklogOut(BaseModel):
@@ -124,6 +140,7 @@ __all__ = [
     "UNREADABLE_RESPONSES",
     "CloudSyncStatusOut",
     "IdentityBacklogOut",
+    "UpdateRequiredOut",
     "cloudsync_data_dir",
     "data_dir_for_request",
     "router",

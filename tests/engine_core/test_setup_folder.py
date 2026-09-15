@@ -427,6 +427,27 @@ def test_folder_import_needs_at_least_one_folder(client: TestClient) -> None:
     assert client.post(f"{API}/import/folder", json={"folders": []}).status_code == 422
 
 
+def test_folder_import_rejects_an_empty_string_at_the_input_layer(
+    client: TestClient,
+) -> None:
+    """A blank entry is malformed input, not a folder that happens to be
+    absent -- it must be refused at the schema boundary, before any probe
+    or job-payload code runs."""
+    response = client.post(f"{API}/import/folder", json={"folders": [""]})
+    assert response.status_code == 422, response.text
+
+
+def test_folder_import_rejects_a_relative_path_at_the_input_layer(
+    client: TestClient,
+) -> None:
+    """A relative path is malformed input; it must not fall through to the
+    'folder not found' access check, which answers a different question."""
+    response = client.post(
+        f"{API}/import/folder", json={"folders": ["relative/path"]}
+    )
+    assert response.status_code == 422, response.text
+
+
 def test_folder_import_refuses_the_filesystem_root(client: TestClient) -> None:
     """A root walk is unbounded, so it must fail before a job is enqueued."""
     response = client.post(f"{API}/import/folder", json={"folders": ["/"]})

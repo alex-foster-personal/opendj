@@ -14,7 +14,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from apps.mik import availability as avail
 from apps.shared.scan_mass_missing import MassMissingError
@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE: int = 100
 _POLL_IDLE_S: float = 0.25
+AVAILABILITY_LOCK_RETRIES: int = 3
+_AVAILABILITY_LOCK_BACKOFF_BASE_S: float = 0.25
+_AVAILABILITY_LOCK_BACKOFF_MAX_S: float = 2.0
+
+_T = TypeVar("_T")
 
 #: Upper bound on how many stable_ids a single round gathers before its
 #: first write commits. Well above `ID_BIND_BATCH` (500, the SQL bind-count
@@ -397,6 +402,43 @@ class LibraryAvailabilityWorker:
             self._keyset_cursor = round_cursor.cursor
             self._scan_awaiting_volume = round_cursor.scan_awaiting
 
+    def _attempt_with_lock_retries(self, fn: Callable[[], _T]) -> _T | None:
+        """Run ``fn``; retry transient SQLITE_BUSY up to :data:`AVAILABILITY_LOCK_RETRIES`."""
+        for attempt in range(AVAILABILITY_LOCK_RETRIES):
+            try:
+                return fn()
+            except sqlite3.OperationalError as exc:
+                if not state_db.is_sqlite_busy(exc):
+                    raise
+                if attempt + 1 >= AVAILABILITY_LOCK_RETRIES:
+                    log.warning(
+                        "availability worker database locked after %s retries",
+                        AVAILABILITY_LOCK_RETRIES,
+                    )
+                    with self._lock:
+                        self._status.phase = "failed"
+                        self._status.last_error = (
+                            f"availability writes blocked after "
+                            f"{AVAILABILITY_LOCK_RETRIES} lock retries"
+                        )
+                        self._status.complete = False
+                    return None
+                log.warning(
+                    "availability worker database locked, retry %s/%s",
+                    attempt + 1,
+                    AVAILABILITY_LOCK_RETRIES,
+                )
+                with self._lock:
+                    self._status.phase = "queued"
+                    self._status.last_error = str(exc)
+                backoff = min(
+                    _AVAILABILITY_LOCK_BACKOFF_BASE_S * (2 ** attempt),
+                    _AVAILABILITY_LOCK_BACKOFF_MAX_S,
+                )
+                if self._stop.wait(timeout=backoff):
+                    return None
+        return None
+
     def _requeue_priority_ids(self, stable_ids: list[str]) -> None:
         """Restore priority ids a refused/failed round took but never wrote.
 
@@ -479,7 +521,13 @@ class LibraryAvailabilityWorker:
                 round_completed = False
                 break
             chunk = round_rows[start : start + self._batch_size]
-            self._commit_batch(conn, chunk)
+            try:
+                self._commit_batch(conn, chunk)
+            except sqlite3.OperationalError as exc:
+                if state_db.is_sqlite_busy(exc):
+                    self._requeue_priority_ids(round_cursor.priority_taken)
+                    raise
+                raise
             batches_committed += 1
             self._refresh_status_counts(conn)
             if self._on_batch_committed is not None:
@@ -514,14 +562,14 @@ class LibraryAvailabilityWorker:
         this only chunks the writes and status refreshes -- it must not
         re-run the guard against a partial slice.
         """
-        report = avail.write(
+        report = avail.commit_availability_batch(
             conn,
             rows,
             apply_mass_missing_guard=False,
             allow_mass_missing=False,
             always_refresh_checked_at=True,
+            existing_scope_stable_ids=[row.stable_id for row in rows],
         )
-        conn.commit()
         # Do NOT derive self._keyset_cursor from `rows` here: `rows` is a
         # chunk of `round_rows`, which mixes priority-queue ids in ahead of
         # the keyset-scanned ones (`_collect_round_stable_ids`'s own
@@ -540,14 +588,13 @@ class LibraryAvailabilityWorker:
 
     def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> None:
         rows = avail.probe(conn, volumes_root=self._volumes_root)
-        avail.write(
+        avail.commit_availability_batch(
             conn,
             rows,
             allow_mass_missing=req.allow_mass_missing,
             apply_mass_missing_guard=True,
             always_refresh_checked_at=True,
         )
-        conn.commit()
         with self._lock:
             self._status.processed_total += len(rows)
             self._keyset_cursor = ""
@@ -586,13 +633,17 @@ class LibraryAvailabilityWorker:
                     self._status.last_error = None
             if full_probe is not None:
                 try:
-                    self._run_full_probe(conn, full_probe)
+                    ran = self._attempt_with_lock_retries(
+                        lambda: self._run_full_probe(conn, full_probe)
+                    )
                 except MassMissingError as exc:
                     conn.rollback()
                     with self._lock:
                         self._status.phase = "refused"
                         self._status.last_error = str(exc)
                         self._full_probe = None
+                    return
+                if ran is None:
                     return
                 self._refresh_status_counts(conn)
                 return
@@ -601,7 +652,12 @@ class LibraryAvailabilityWorker:
                 self._status.phase = "running"
                 self._status.last_error = None
 
-            batches_committed, refused = self._run_capped_round(conn)
+            round_result = self._attempt_with_lock_retries(
+                lambda: self._run_capped_round(conn)
+            )
+            if round_result is None:
+                return
+            batches_committed, refused = round_result
             if refused:
                 return
 
@@ -658,6 +714,7 @@ def attach_library_changed_probe(
 
 
 __all__ = [
+    "AVAILABILITY_LOCK_RETRIES",
     "DEFAULT_BATCH_SIZE",
     "MAX_ROUND_IDS",
     "AvailabilityWorkerStatus",

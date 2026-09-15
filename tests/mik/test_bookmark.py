@@ -24,7 +24,7 @@ def test_round_trips_an_ascii_path() -> None:
 
 
 def test_ascii_scrape_would_truncate_but_parser_does_not() -> None:
-    # Real library paths carry accents, U+2014 character-free but non-ASCII all the same.
+    # Real library paths carry accents, free of banned dash characters, but non-ASCII all the same.
     path = "/Users/user/Music/Café del Mar/Ibiza/Señor Coconut.mp3"
     blob = make_bookmark(path)
     assert parse_bookmark_path(blob).path == path

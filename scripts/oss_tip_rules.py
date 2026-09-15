@@ -221,7 +221,19 @@ MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 # agentbox README and `.env.sample`; no Tailscale network carries it. Enumerated,
 # not prefix-matched: `example-tailnet-prod` would be a different network and is
 # reported (#1808).
-_ALLOWED_TAILNETS = frozenset({"example", "example-tailnet"})
+_ALLOWED_TAILNETS = frozenset(
+    {
+        "example",
+        "example-tailnet",
+        # Negative-example label `tests/scripts/test_oss_tip_audit.py` builds to
+        # prove the tailnet-name rule fires; not a network anyone operates.
+        "not-a-real-tailnet",
+        # Negative-example label `tests/webui/test_crate_sync.py` builds to prove
+        # a push destination on the WRONG tailnet is rejected; not a network
+        # anyone operates.
+        "not-this-deployments-tailnet",
+    }
+)
 
 # A URL AUTHORITY immediately before a match means the `/Users/` (or `/home/`,
 # or `C:\Users\`) segment is a URL ROUTE, not a home directory. The GitHub REST

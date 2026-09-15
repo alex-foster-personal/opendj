@@ -21,9 +21,15 @@ from ..etag import compute_etag
 
 router = APIRouter(prefix="/bulk-edit", tags=["bulk-edit"])
 
+# Same cap as find_replace.py's _MAX_STABLE_IDS: an unbounded batch has no
+# input-layer rejection, so it is only ever stopped deep inside the backend
+# (a 404 on the first unknown id, or a full per-row etag scan), never
+# cleanly and never before doing that much work.
+_MAX_STABLE_IDS = 100
+
 
 class BulkEditIn(BaseModel):
-    stable_ids: list[str] = Field(min_length=1)
+    stable_ids: list[str] = Field(min_length=1, max_length=_MAX_STABLE_IDS)
     expected_etags: dict[str, str]
     rating: int | None = None
     notes: str | None = None

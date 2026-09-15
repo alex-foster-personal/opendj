@@ -1,4 +1,7 @@
-"""Install script tests for AGT launchd agents."""
+"""Install script tests for AGT launchd agents.
+
+[if] install_agt_launchd misses its seed or runs on Linux [then] installs on macOS, [else stop].
+"""
 
 from __future__ import annotations
 

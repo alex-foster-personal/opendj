@@ -81,4 +81,55 @@ def serve_presigned_assets(
         thread.join(timeout=10.0)
 
 
-__all__ = ["serve_presigned_assets"]
+@contextmanager
+def serve_presigned_assets_by_key(
+    cfg: CloudConfig, bodies: dict[str, bytes]
+) -> Iterator[str]:
+    """Serve ``bodies`` (object_key -> bytes) on loopback until the block exits."""
+    import os
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            path = unquote(self.path.split("?", 1)[0])
+            prefix = f"/{cfg.audio_bucket}/"
+            if not path.startswith(prefix):
+                self.send_error(404)
+                return
+            key = path[len(prefix) :]
+            body = bodies.get(key)
+            if body is None:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: Any) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host = f"127.0.0.1:{server.server_address[1]}"
+    previous_host = os.environ.get(PRESIGN_HOST_ENV)
+    previous_scheme = os.environ.get(PRESIGN_SCHEME_ENV)
+    os.environ[PRESIGN_HOST_ENV] = host
+    os.environ[PRESIGN_SCHEME_ENV] = "http"
+    try:
+        yield f"http://{host}"
+    finally:
+        if previous_host is None:
+            os.environ.pop(PRESIGN_HOST_ENV, None)
+        else:
+            os.environ[PRESIGN_HOST_ENV] = previous_host
+        if previous_scheme is None:
+            os.environ.pop(PRESIGN_SCHEME_ENV, None)
+        else:
+            os.environ[PRESIGN_SCHEME_ENV] = previous_scheme
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10.0)
+
+
+__all__ = ["serve_presigned_assets", "serve_presigned_assets_by_key"]

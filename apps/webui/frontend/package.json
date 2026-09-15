@@ -2,7 +2,7 @@
   "name": "music-dj-tools-webui",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.11.0",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -30,7 +30,7 @@
     "@storybook/sveltekit": "10.5.10",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.8.0",
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@types/node": "^22.20.1",
     "esbuild": "0.21.5",
     "openapi-typescript": "^7.4.0",

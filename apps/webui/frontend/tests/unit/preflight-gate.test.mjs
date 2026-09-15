@@ -112,6 +112,25 @@ test('re-check and re-request permissions both re-issue the same real GET', asyn
 	assert.equal(preflightStore.preflightGate.cleared, true);
 });
 
+test('consecutive fail polls escalate needsActionCopy after the threshold', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse({ status: 'fail', checks: [failCheckRow()] });
+
+	for (let i = 0; i < 2; i += 1) {
+		await preflightStore.checkPreflight();
+		assert.equal(preflightStore.preflightGate.needsActionCopy, false);
+	}
+	await preflightStore.checkPreflight();
+	assert.equal(preflightStore.preflightGate.consecutiveFailPolls, 3);
+	assert.equal(preflightStore.preflightGate.needsActionCopy, true);
+
+	globalThis.fetch = async () =>
+		jsonResponse({ status: 'pass', checks: [passCheckRow()] });
+	await preflightStore.checkPreflight();
+	assert.equal(preflightStore.preflightGate.consecutiveFailPolls, 0);
+	assert.equal(preflightStore.preflightGate.needsActionCopy, false);
+});
+
 test('a network failure holds the gate and surfaces the real error, never crashes', async () => {
 	globalThis.fetch = async () => {
 		throw new TypeError('fetch failed: ECONNREFUSED');

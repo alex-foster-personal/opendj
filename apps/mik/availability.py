@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 from apps.shared.state.availability_write import (
@@ -51,6 +52,7 @@ from apps.shared.state.availability_write import (
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.locations import ID_BIND_BATCH, list_location_paths
 from apps.shared.state.writer import StateWriter
+from apps.shared.state.writer_common import immediate_transaction
 
 VOLUMES_ROOT = "/Volumes"
 
@@ -216,6 +218,7 @@ def write(
     allow_mass_missing: bool = False,
     apply_mass_missing_guard: bool = True,
     always_refresh_checked_at: bool = False,
+    existing_scope_stable_ids: Sequence[str] | None = None,
 ) -> AvailabilityReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
@@ -238,6 +241,30 @@ def write(
             allow_mass_missing=allow_mass_missing,
             apply_mass_missing_guard=apply_mass_missing_guard,
             always_refresh_checked_at=always_refresh_checked_at,
+            existing_scope_stable_ids=existing_scope_stable_ids,
+        )
+
+
+def commit_availability_batch(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+    *,
+    now: str | None = None,
+    allow_mass_missing: bool = False,
+    apply_mass_missing_guard: bool = True,
+    always_refresh_checked_at: bool = False,
+    existing_scope_stable_ids: Sequence[str] | None = None,
+) -> AvailabilityReport:
+    """Durably commit availability rows after acquiring the writer lock up front."""
+    with immediate_transaction(conn):
+        return write(
+            conn,
+            rows,
+            now=now,
+            allow_mass_missing=allow_mass_missing,
+            apply_mass_missing_guard=apply_mass_missing_guard,
+            always_refresh_checked_at=always_refresh_checked_at,
+            existing_scope_stable_ids=existing_scope_stable_ids,
         )
 
 
@@ -294,6 +321,7 @@ __all__ = [
     "AvailabilityReport",
     "AvailabilityRow",
     "classify_path",
+    "commit_availability_batch",
     "counts",
     "guard_present_drop",
     "probe",

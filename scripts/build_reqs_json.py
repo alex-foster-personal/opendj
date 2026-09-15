@@ -123,7 +123,31 @@ def _parse_v1(lines: list[str]) -> dict:
         if m_cat:
             name, code = m_cat.group(1).strip(), m_cat.group(2).strip()
             current_code = code
-            categories[code] = {"name": name, "requirements": []}
+            # setdefault, not assignment: two "### <Name> (CODE)" headers can
+            # legitimately share one CODE (e.g. "Admin operator surfaces
+            # (ADMIN)" appearing twice, once per shipped PR). A plain
+            # `categories[code] = ...` replaces the dict object the first
+            # header built, silently dropping every requirement already
+            # collected under it -- same silent-miss shape as the _CODE
+            # widenings above, just one level up. v2's parser already uses
+            # setdefault for this reason.
+            existing = categories.setdefault(code, {"name": name, "requirements": []})
+            # A second header reusing CODE with a DIFFERENT name is not the
+            # supported case above -- it is indistinguishable from a typo'd
+            # code on what was meant to be its own category, and setdefault
+            # would silently keep only the first header's name with no
+            # signal (issue found on PR #2803: reqs.json filed the
+            # Diagnostics-tab requirement under "Admin operator surfaces"
+            # with no error). Fail fast instead of guessing which name is
+            # right.
+            if existing["name"] != name:
+                raise ValueError(
+                    f"{SOURCE}: two '### <Name> ({code})' headers share code "
+                    f"{code!r} but disagree on name ({existing['name']!r} vs "
+                    f"{name!r}). Either they are the same category and the "
+                    f"names must match verbatim, or one of them needs its "
+                    f"own code."
+                )
             continue
         if current_code is None:
             continue
