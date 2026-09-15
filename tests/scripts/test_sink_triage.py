@@ -7,6 +7,8 @@ Regression lines:
   - if dry-run fixture has one new flood and one existing issue then one create
     and one comment command print
   - if kpi last_run is older than 2h then health FAIL for sink-triage freshness
+
+[if] sink fingerprints and thresholds fire [then] triage creates or comments on issues, [else stop].
 """
 
 from __future__ import annotations

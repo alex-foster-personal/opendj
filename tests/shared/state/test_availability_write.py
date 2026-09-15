@@ -1,4 +1,7 @@
-"""``track_availability`` upsert primitives (issue #2790 scoped lookup)."""
+"""``track_availability`` upsert primitives (issue #2790 scoped lookup).
+
+[if] availability rows are upserted for a track [then] scoped lookup returns the stored state, [else stop].
+"""
 from __future__ import annotations
 
 import sqlite3

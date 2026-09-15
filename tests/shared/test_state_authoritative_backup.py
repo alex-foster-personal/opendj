@@ -146,7 +146,7 @@ def machine_data_dir(tmp_path: Path) -> Path:
 def test_backup_creates_verified_dated_copy_without_cloudsync(
     machine_data_dir: Path, tmp_path: Path
 ) -> None:
-    """AC1: unenrolled machine with smartlists rows gets a verified dated backup."""
+    """[if] an unenrolled machine has authoritative rows [then] backup creates a verified dated copy, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     assert backup.path.name.startswith("state-authoritative-")
     assert backup.path.name.endswith("UTC.db")
@@ -158,7 +158,7 @@ def test_backup_creates_verified_dated_copy_without_cloudsync(
 def test_selective_restore_smartlists_leaves_tracks_untouched(
     machine_data_dir: Path, tmp_path: Path
 ) -> None:
-    """AC2: restore smartlists only; tracks table unchanged."""
+    """[if] only smartlists are restored from backup [then] tracks remain unchanged, [else stop]."""
     dest = tmp_path / "backups"
     backup = backup_state_db(machine_data_dir, dest, keep=3)
     live = sab.state_db_path(machine_data_dir)
@@ -194,7 +194,7 @@ def test_selective_restore_smartlists_leaves_tracks_untouched(
 def test_corrupted_source_is_refused_and_leaves_no_backup(
     machine_data_dir: Path, tmp_path: Path
 ) -> None:
-    """AC3: corrupted live DB yields no backup file under a restorable name."""
+    """[if] the live state.db fails integrity check [then] backup refuses and writes no file, [else stop]."""
     dest = tmp_path / "backups"
     live = sab.state_db_path(machine_data_dir)
     _corrupt_smartlists_index(live)
@@ -226,7 +226,7 @@ def _drop_a_row_from_partials(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
 def test_backup_row_count_mismatch_deletes_partial(
     machine_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AC3: row-count mismatch deletes partial and raises."""
+    """[if] verified copy row counts diverge mid-backup [then] partial is deleted and backup raises, [else stop]."""
     dest = tmp_path / "backups"
     damaged = _drop_a_row_from_partials(monkeypatch)
     with pytest.raises(StateAuthoritativeBackupError, match="row counts differ"):
@@ -254,7 +254,7 @@ def test_restore_refuses_while_engine_lock_held(
 def test_restore_play_orders_includes_entries(
     machine_data_dir: Path, tmp_path: Path
 ) -> None:
-    """Group restore replaces play_orders and entries together."""
+    """[if] play_orders is restored from backup [then] entries are restored together, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     live = sab.state_db_path(machine_data_dir)
     conn = sqlite3.connect(live)
@@ -280,7 +280,7 @@ def test_restore_play_orders_includes_entries(
 def test_restore_track_fields_notes_tags_only(
     machine_data_dir: Path, tmp_path: Path
 ) -> None:
-    """Restore notes/tags scope leaves rating row untouched."""
+    """[if] track_fields notes and tags are restored [then] rating rows remain untouched, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     live = sab.state_db_path(machine_data_dir)
     conn = sqlite3.connect(live)
