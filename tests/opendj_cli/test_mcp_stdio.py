@@ -127,6 +127,29 @@ def test_library_ui_prefs_topbar_round_trip(engine: Engine) -> None:
     assert body["auto_play_enforce_order"] is True
 
 
+@pytest.mark.requirement("AGENT-05")
+def test_library_ui_prefs_library_browser_round_trip(engine: Engine) -> None:
+    """[if] MCP library PUTs remixes_filter [then] GET returns it, [else stop]."""
+    put = call_tool(
+        engine,
+        "library",
+        {
+            "method": "PUT",
+            "path": "/api/v1/ui-prefs",
+            "fields": {"remixes_filter": "true"},
+        },
+    )
+    assert put["status_code"] == 200
+    get = call_tool(
+        engine,
+        "library",
+        {"method": "GET", "path": "/api/v1/ui-prefs"},
+    )
+    assert get["status_code"] == 200
+    body = json.loads(get["body"])
+    assert body["remixes_filter"] is True
+
+
 @pytest.mark.requirement("AGENT-11")
 def test_library_writeback_blocked(engine: Engine) -> None:
     """[if] library targets writeback apply [then] it returns writeback_blocked, [else stop]."""

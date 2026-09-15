@@ -12714,6 +12714,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Hide Broken Links
+             * @default false
+             */
+            hide_broken_links: boolean;
+            /**
              * Hide Todo Settings
              * @default false
              */
@@ -12724,6 +12729,12 @@ export interface components {
              */
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
+            /**
+             * Library Density
+             * @default compact
+             * @enum {string}
+             */
+            library_density: "compact" | "cosy";
             /**
              * Lyrics Deck Line
              * @default true
@@ -12756,11 +12767,26 @@ export interface components {
              */
             lyrics_waveform_overlay: boolean;
             /**
+             * Midi Enabled
+             * @default false
+             */
+            midi_enabled: boolean;
+            /**
+             * Next Only Filter
+             * @default false
+             */
+            next_only_filter: boolean;
+            /**
              * Perf Tier
              * @default auto
              * @enum {string}
              */
             perf_tier: "auto" | "low" | "standard" | "high";
+            /**
+             * Remixes Filter
+             * @default false
+             */
+            remixes_filter: boolean;
             /**
              * Show Agent Pins
              * @default true
@@ -12777,6 +12803,12 @@ export interface components {
              * @enum {string}
              */
             theme: "dark" | "light";
+            /**
+             * Vocals Filter
+             * @default false
+             */
+            vocals_filter: boolean;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"];
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
@@ -12796,11 +12828,15 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Hide Broken Links */
+            hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Library Density */
+            library_density?: ("compact" | "cosy") | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -12813,14 +12849,23 @@ export interface components {
             lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
             /** Lyrics Waveform Overlay */
             lyrics_waveform_overlay?: boolean | null;
+            /** Midi Enabled */
+            midi_enabled?: boolean | null;
+            /** Next Only Filter */
+            next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Remixes Filter */
+            remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+            /** Vocals Filter */
+            vocals_filter?: boolean | null;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
         };
         /** UndoRecordOut */
         UndoRecordOut: {
@@ -13150,6 +13195,19 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WheelSensitivityOut */
+        WheelSensitivityOut: {
+            /**
+             * Mouse
+             * @default 1
+             */
+            mouse: number;
+            /**
+             * Trackpad
+             * @default 0.3333333333333333
+             */
+            trackpad: number;
         };
         /** WorktreePortsOut */
         WorktreePortsOut: {
