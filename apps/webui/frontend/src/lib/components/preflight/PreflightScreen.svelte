@@ -41,34 +41,28 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
+	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
 	import {
 		checkPreflight,
 		preflightGate,
 		requestPermissions
 	} from '$lib/preflight/preflight.svelte';
-	import {
-		IMPORT_MUSIC_LABEL,
-		runSetup,
-		runSetupBlocked
-	} from '$lib/setup/run-setup';
+	import { firstRunGate, retryFirstRunGate } from '$lib/setup/first-run-gate.svelte';
+	import { runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
-	const BOOT_WELCOME =
-		'Welcome to Open DJ. Import your music to start mixing, or explore with an empty library.';
 
 	let {
 		mode = 'boot',
 		blocking = true,
 		hideCheckIds = [],
-		navigate,
-		firstRunError = null
+		navigate
 	}: {
 		mode?: 'boot' | 'admin';
 		blocking?: boolean;
 		hideCheckIds?: string[];
 		navigate?: (path: string) => unknown;
-		firstRunError?: string | null;
 	} = $props();
 
 	const hiddenIds = $derived(new Set(hideCheckIds));
@@ -77,15 +71,24 @@
 	);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
-	let consecutiveFailPolls = $state(0);
 	let importBusy = $state(false);
 	let importError = $state<string | null>(null);
 
-	const showImportCta = $derived(
-		mode === 'boot' && blocking && needsImportAction(preflightGate.checks)
+	const bootHeadline = $derived(
+		mode === 'boot' && blocking
+			? bootGateHeading(blocking, preflightGate.checks, preflightGate.consecutiveFailPolls)
+			: mode === 'boot'
+				? 'Startup checks'
+				: 'Preflight'
 	);
-	const heading = $derived(
-		bootGateHeading(blocking, preflightGate.checks, consecutiveFailPolls)
+
+	const showImportCta = $derived(
+		mode === 'boot' &&
+			blocking &&
+			(needsImportAction(preflightGate.checks) ||
+				preflightGate.needsActionCopy ||
+				firstRunGate.hasError ||
+				firstRunGate.isResolving)
 	);
 
 	function stopPolling(): void {
@@ -96,11 +99,6 @@
 
 	async function pollPreflight(): Promise<void> {
 		await checkPreflight();
-		if (preflightGate.status === 'fail') {
-			consecutiveFailPolls += 1;
-		} else if (preflightGate.status === 'pass') {
-			consecutiveFailPolls = 0;
-		}
 	}
 
 	function ensurePolling(): void {
@@ -119,7 +117,6 @@
 		}
 		if (preflightGate.cleared) {
 			stopPolling();
-			consecutiveFailPolls = 0;
 		} else {
 			ensurePolling();
 		}
@@ -136,7 +133,7 @@
 			blocking ||
 			visibleChecks.length > 0 ||
 			preflightGate.error !== null ||
-			firstRunError !== null
+			firstRunGate.hasError
 	);
 
 	async function handleImportMusic(): Promise<void> {
@@ -146,8 +143,20 @@
 		importBusy = false;
 	}
 
-	async function retryFirstRun(): Promise<void> {
-		await pollPreflight();
+	async function retrySetupCheck(): Promise<void> {
+		const show = await retryFirstRunGate();
+		if (show !== true || !navigate) return;
+		importBusy = true;
+		importError = await runSetup(navigate);
+		importBusy = false;
+	}
+
+	function bootRowLabel(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckLabel(check, mode);
+	}
+
+	function bootRowDetail(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckDetail(check, mode);
 	}
 </script>
 
@@ -163,42 +172,53 @@
 	style:--preflight-boot-z={mode === 'boot' && blocking ? OVERLAY_Z.preflightBoot : undefined}
 >
 	{#if mode === 'boot' && blocking}
-		<div class="boot-brand">
-			<img class="boot-logo" src="/favicon.svg" alt="" width="48" height="48" />
-			<p class="boot-welcome">{BOOT_WELCOME}</p>
-		</div>
+		<header class="preflight-brand" aria-label="Open DJ">
+			<div class="preflight-mark" aria-hidden="true"></div>
+			<div class="preflight-lockup">
+				<span class="preflight-name">Open DJ</span>
+				<p class="preflight-welcome">
+					Welcome. Import your music to start DJing, or keep going once setup finishes.
+				</p>
+			</div>
+		</header>
 	{/if}
-	<h2>{heading}</h2>
-	{#if firstRunError}
-		<p class="preflight-error" data-testid="preflight-first-run-error">{firstRunError}</p>
-		<button type="button" data-testid="preflight-first-run-retry" onclick={() => void retryFirstRun()}>
-			Retry
-		</button>
-	{/if}
+	<h2>{bootHeadline}</h2>
 	{#if preflightGate.error}
 		<p class="preflight-error">Could not reach the engine: {preflightGate.error}</p>
 	{/if}
-	{#if showImportCta && navigate}
-		<button
-			type="button"
-			class="import-music"
-			data-testid="preflight-import-music"
-			disabled={importBusy || runSetupBlocked() !== null}
-			title={runSetupBlocked() ?? 'Import from a folder or from rekordbox.'}
-			onclick={() => void handleImportMusic()}
-		>
-			{importBusy ? 'Opening setup...' : IMPORT_MUSIC_LABEL}
+	{#if mode === 'boot' && blocking && firstRunGate.hasError}
+		<p class="preflight-error" role="alert">{firstRunGate.error}</p>
+		<button type="button" class="preflight-retry-first-run" onclick={() => void retrySetupCheck()}>
+			Retry setup check
 		</button>
-		{#if importError}
-			<p class="preflight-error">{importError}</p>
-		{/if}
 	{/if}
 	<ul class="preflight-checks">
 		{#each visibleChecks as check (check.id)}
-			<PreflightCheckRow {check} {navigate} {mode} />
+			<PreflightCheckRow
+				{check}
+				{navigate}
+				{mode}
+				label={mode === 'boot' ? bootRowLabel(check) : check.label}
+				detail={mode === 'boot' ? bootRowDetail(check) : check.detail}
+			/>
 		{/each}
 	</ul>
 	<div class="preflight-actions">
+		{#if showImportCta}
+			<button
+				type="button"
+				class="preflight-import"
+				data-testid="preflight-import-music"
+				disabled={importBusy || runSetupBlocked() !== null || !navigate}
+				title={runSetupBlocked() ?? 'Open setup to import rekordbox or a music folder.'}
+				onclick={() => void handleImportMusic()}
+			>
+				{importBusy ? 'Opening setup...' : 'Import your music'}
+			</button>
+			{#if importError}
+				<p class="preflight-error">{importError}</p>
+			{/if}
+		{/if}
 		<button type="button" onclick={() => void checkPreflight()}>Re-check</button>
 		<button
 			type="button"
@@ -208,8 +228,10 @@
 			Re-request permissions
 		</button>
 	</div>
-	{#if mode === 'boot' && blocking}
+	{#if mode === 'boot' && blocking && !preflightGate.needsActionCopy}
 		<p class="note">This screen clears itself automatically once every check passes.</p>
+	{:else if mode === 'boot' && blocking && preflightGate.needsActionCopy}
+		<p class="note">Import your music below to continue, or fix the items above and re-check.</p>
 	{/if}
 </section>
 {/if}
@@ -235,6 +257,28 @@
 		background: var(--surface);
 		color: var(--fg);
 	}
+	.preflight-brand {
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+	}
+	.preflight-mark {
+		width: 3rem;
+		height: 3rem;
+		flex: none;
+		background: url('/favicon.svg') center / contain no-repeat;
+	}
+	.preflight-name {
+		display: block;
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	.preflight-welcome {
+		margin: 0.2rem 0 0;
+		color: var(--muted);
+		font-size: 0.9em;
+	}
 	.preflight-boot {
 		position: fixed;
 		inset: 0;
@@ -252,37 +296,6 @@
 		z-index: -1;
 		background: rgba(0, 0, 0, 0.55);
 		pointer-events: none;
-	}
-	.boot-brand {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
-		text-align: center;
-	}
-	.boot-logo {
-		border-radius: 12px;
-	}
-	.boot-welcome {
-		margin: 0;
-		color: var(--muted);
-		font-size: 0.95em;
-		line-height: 1.4;
-	}
-	.import-music {
-		align-self: stretch;
-		padding: 0.65rem 1rem;
-		font-size: 1rem;
-		font-weight: 600;
-		background: var(--accent);
-		color: var(--bg);
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-	.import-music:disabled {
-		opacity: 0.55;
-		cursor: not-allowed;
 	}
 	.preflight-boot-strip {
 		position: fixed;

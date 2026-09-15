@@ -125,7 +125,7 @@ import type {
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
-import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore';
+import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';

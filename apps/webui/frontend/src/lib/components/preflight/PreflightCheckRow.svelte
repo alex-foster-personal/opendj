@@ -30,11 +30,15 @@
 	let {
 		check,
 		navigate,
-		mode = 'boot'
+		mode = 'boot',
+		label: labelOverride,
+		detail: detailOverride
 	}: {
 		check: PreflightCheck;
 		navigate?: ((path: string) => unknown) | undefined;
 		mode?: 'boot' | 'admin';
+		label?: string;
+		detail?: string;
 	} = $props();
 
 	let setupBusy = $state(false);
@@ -45,10 +49,12 @@
 	);
 
 	const displayLabel = $derived(
-		mode === 'boot' && check.user_label ? check.user_label : check.label
+		labelOverride ??
+			(mode === 'boot' && check.user_label ? check.user_label : check.label)
 	);
 	const displayDetail = $derived(
-		mode === 'boot' && check.user_detail ? check.user_detail : check.detail
+		detailOverride ??
+			(mode === 'boot' && check.user_detail ? check.user_detail : check.detail)
 	);
 	const displayRemediation = $derived(
 		mode === 'boot' && check.user_remediation ? check.user_remediation : check.remediation

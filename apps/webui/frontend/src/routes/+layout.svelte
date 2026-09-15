@@ -21,12 +21,15 @@
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
+	import { bootGateYielded } from '$lib/overlays/overlay-stack';
 	import { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
-	import { resolveFirstRunWithMeta } from '$lib/setup/first-run';
-	import { finalSetupRefusal } from '$lib/setup/setup-api';
+	import { accountOverlay } from '$lib/account/overlay.svelte';
+	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
+	import { runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
-	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { settingsOverlay } from '$lib/settings/overlay.svelte';
+	import { finalSetupRefusal } from '$lib/setup/setup-api';
+	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -54,11 +57,15 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
-	const settingsOpen = $derived(settingsOverlay.open);
-	const blockOnPreflight = $derived(
-		shouldBlockOnPreflight(preflightGate.status, setupOpen, settingsOpen)
+	const yieldBootGate = $derived(
+		bootGateYielded({
+			setup: setupOpen,
+			settings: settingsOverlay.open,
+			account: accountOverlay.open,
+			signIn: signInOverlay.open
+		})
 	);
-	let firstRunError = $state<string | null>(null);
+	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, yieldBootGate));
 	const hideCheckIds = $derived(
 		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
 			? [LIBRARY_ATTACHED_CHECK_ID]
@@ -105,11 +112,9 @@
 	}
 
 	function raiseSetupOnFirstRun(): void {
-		void resolveFirstRunWithMeta().then((result) => {
-			firstRunError = result.error;
-			if (result.show) {
-				openSetupForFirstRun();
-			}
+		void runFirstRunGate().then((show) => {
+			if (show !== true) return;
+			openSetupForFirstRun();
 		});
 	}
 
@@ -156,13 +161,7 @@
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
 	     see PreflightScreen.svelte for the polling policy. While first-run
 	     setup is open the gate yields so the wizard is not buried. -->
-	<PreflightScreen
-		mode="boot"
-		blocking
-		navigate={goto}
-		hideCheckIds={hideCheckIds}
-		{firstRunError}
-	/>
+	<PreflightScreen mode="boot" blocking navigate={goto} hideCheckIds={hideCheckIds} />
 {:else}
 
 {#if health.bindWarning}
@@ -248,13 +247,7 @@
 {/if}
 
 {#if showPreflightIndicator}
-	<PreflightScreen
-		mode="boot"
-		blocking={false}
-		navigate={goto}
-		hideCheckIds={hideCheckIds}
-		{firstRunError}
-	/>
+	<PreflightScreen mode="boot" blocking={false} navigate={goto} hideCheckIds={hideCheckIds} />
 {/if}
 
 <SettingsOverlay />
