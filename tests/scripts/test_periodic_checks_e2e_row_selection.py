@@ -56,7 +56,7 @@ def _extract_e2e_line_script() -> str:
     `if`/`while` shape, so the extraction survives that shape changing."""
     text = WORKFLOW.read_text(encoding="utf-8")
     match = re.search(
-        r'( *e2e_created_floor="\$\(date.*?\n)(?=\n *window_desc=)',
+        r'( *e2e_created_floor=.*)(?=\n *window_desc=)',
         text,
         re.DOTALL,
     )

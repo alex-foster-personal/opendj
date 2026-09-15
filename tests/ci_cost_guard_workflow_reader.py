@@ -72,6 +72,9 @@ def workflow_docs() -> dict[str, dict]:
 RUNNER_SWITCH = re.compile(
     r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
 )
+CHAINED_RUNNER_SWITCH = re.compile(
+    r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}"
+)
 
 
 def runner_labels(job_id: str, runs_on: object) -> list[str]:
@@ -111,14 +114,25 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         f"{job_id} mixes an expression with literal labels ({labels}), so which "
         "runner it selects cannot be read here"
     )
-    match = RUNNER_SWITCH.fullmatch(labels[0].strip())
-    assert match, (
+    expr = labels[0].strip()
+    match = RUNNER_SWITCH.fullmatch(expr)
+    if match:
+        fallback = json.loads(match.group("fallback"))
+        return [fallback] if isinstance(fallback, str) else list(fallback)
+
+    chained = CHAINED_RUNNER_SWITCH.fullmatch(expr)
+    assert chained, (
         f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
         "price. Only the `fromJSON(vars.X || '<json>')` runner switch is "
         "understood; widen this deliberately rather than letting an unreadable "
         "expression be priced by guesswork."
     )
-    fallback = json.loads(match.group("fallback"))
+    inner = chained.group("inner")
+    fallbacks = re.findall(r"\|\|\s*'([^']+)'\s*$", inner)
+    assert fallbacks, (
+        f"{job_id} runner expression {expr!r} has no literal JSON fallback to price"
+    )
+    fallback = json.loads(fallbacks[-1])
     return [fallback] if isinstance(fallback, str) else list(fallback)
 
 

@@ -195,6 +195,7 @@ GREEN_LABELS = [
     "actionable PR backlog under builder-freeze threshold 15",
     "host disk GREEN (level=GREEN free=160.17GB rate=0GB/h hours_to_red=999"
     " ts=2026-09-04T18:28:00.7173594Z; Windows C: per af-disk-watchdog, stale after 15 min)",
+    "sink-triage last run within 7200s (hourly timer opendj-sink-triage.timer)",
     _fatal_label(0),
     PROVISIONING_LABEL,
     "token present for launchers",

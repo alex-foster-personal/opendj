@@ -106,6 +106,11 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
         "reads SHARE_ROOT, writes the replica crate only -- and _assert_within_crate "
         "now ENFORCES that on the local-copy lane, not just the ssh-pull lane"
     ),
+    "apps/webui/server/rb_djay_sync_service.py": (
+        "names REKORDBOX_LIVE_DB only in plan/diff JSON and audit reports; "
+        "open_db() reads the working copy for diffs; live writes go through "
+        "mapped http.rb_djay_sync.* WriteSurfaces guarded in routes/rb_djay_sync.py"
+    ),
     "apps/sync/usb/pioneer/reader.py": "reads an exportLibrary.db",
     "apps/sync/usb/pioneer/differ.py": "diffs two exportLibrary.db reads",
     "apps/sync/usb/pioneer/__init__.py": "package docstring",
@@ -159,6 +164,10 @@ READ_ONLY_DB_HANDLES: dict[str, str] = {
     "apps/sync/playlist_diff.py": "rb_open_db(path) for a read-only diff",
     "apps/sync/usb/state.py": "open_db() no-arg working copy",
     "apps/tags/collect.py": "open_db() no-arg working copy, collects tags",
+    "apps/webui/server/rb_djay_sync_service.py": (
+        "open_db() no-arg working copy for audit diffs/plans; live writes are "
+        "HTTP-guarded elsewhere on this module's apply routes"
+    ),
 }
 
 # Writers keyed off an INJECTED handle. No constructor and no path, so neither

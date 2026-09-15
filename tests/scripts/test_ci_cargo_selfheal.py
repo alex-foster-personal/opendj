@@ -37,7 +37,7 @@ SCRIPT = REPO_ROOT / "scripts" / "ci_cargo_selfheal.sh"
 
 E0786_FIXTURE = (
     "error[E0786]: found invalid metadata files for crate `time_macros` "
-    'in "/home/dev/actions-runner-12/_work/music-dj-tools/music-dj-tools/'
+    'in "/home/runner/actions-runner-12/_work/music-dj-tools/music-dj-tools/'
     'apps/desktop/src-tauri/target/debug/deps/libtime_macros-abc123.so", '
     "found invalid metadata version found: 6\n"
 )
@@ -136,6 +136,7 @@ def _call_count(counter: Path) -> int:
     ids=["E0786-invalid-metadata", "E0463-crate-in-lockfile"],
 )
 def test_corrupted_target_signature_heals_and_retries_once(tmp_path, fixture_text) -> None:
+    """[if] cargo reports E0786 or a lockfile-known E0463 [then] clean once and retry, [else stop]."""
     result, counter, clean_log = _run_selfheal(tmp_path, fixture_text)
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -154,6 +155,7 @@ def test_corrupted_target_signature_heals_and_retries_once(tmp_path, fixture_tex
     ids=["E0425-genuine-error", "E0463-crate-absent-from-lockfile"],
 )
 def test_genuine_compile_error_stays_red_without_retry(tmp_path, fixture_text) -> None:
+    """[if] the failure is a genuine compile error [then] no retry and no clean, [else stop]."""
     result, counter, clean_log = _run_selfheal(tmp_path, fixture_text)
 
     assert result.returncode == 101, result.stdout + result.stderr
@@ -162,6 +164,7 @@ def test_genuine_compile_error_stays_red_without_retry(tmp_path, fixture_text) -
 
 
 def test_first_try_success_never_cleans_or_retries(tmp_path) -> None:
+    """[if] the first build succeeds [then] cargo clean and a retry never run, [else stop]."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     manifest_dir = tmp_path / "crate"

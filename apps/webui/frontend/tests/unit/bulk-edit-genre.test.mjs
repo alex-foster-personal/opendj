@@ -19,6 +19,7 @@ function renderModal() {
 		props: {
 			stableIds: ['sid-1'],
 			etags: { 'sid-1': '"e0"' },
+			rows: [],
 			onclose: () => {},
 			onapplied: () => {}
 		}

@@ -42,7 +42,9 @@ def _present_stable_ids(data_dir: Path) -> set[str] | None:
     try:
         conn = state_db.open_ro(db_path)
         try:
-            rows = conn.execute("SELECT stable_id FROM tracks").fetchall()
+            rows = conn.execute(
+                "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
+            ).fetchall()
             return {str(row[0]) for row in rows}
         finally:
             conn.close()

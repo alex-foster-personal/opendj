@@ -42,10 +42,6 @@
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
-
 	let { children } = $props();
 
 	/** Why the Progress link goes nowhere useful, or null when it works. */
