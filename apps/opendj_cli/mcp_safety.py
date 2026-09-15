@@ -121,7 +121,7 @@ def validate_api_path(path: str) -> None:
     if not path.startswith("/api/v1/"):
         raise SafetyRefusal(
             "invalid_path",
-            f"app_state only proxies /api/v1/* paths, got: {path}",
+            f"only /api/v1/* paths are allowed, got: {path}",
             path=path,
         )
     if ".." in path:

@@ -27,6 +27,7 @@ installed app PATH (AGENT-05, issue #2751):
   opendj install-cli [--target ~/.local/bin/opendj]   symlink bundled launcher to ~/.local/bin
 
 installed app MCP (AGENT-11, issue #2753):
+  opendj status [--json]   lock-file origin, health, build-info (MCP status parity)
   opendj mcp
   claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp
   MCP tools: status, app_state, command, library, ui_url (browser only), open_route (shell)"""
