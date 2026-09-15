@@ -10,11 +10,19 @@ line (specs/native-analysis-v1-lanes/nav1-key-record.md item 3): it must
 print the SAME `key_segments` block the `/anlz` payload carries, reusing the
 identical overlay function rather than a second read of the record.
 
+Issue #3037: this CLI is the one caller in the repo that always intends a
+CONCRETE state DB path, so unlike ``state_conn_ro``'s own generic contract
+(``None`` means "no own record", a legitimate state -- its docstring is load-
+bearing, read it before touching that function), this module resolves a real
+path up front and treats that path's absence as its own distinct failure,
+never folded into "track not found". See ``_resolve_state_db``.
+
 -Claude
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -47,8 +55,43 @@ def run(
 
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
 
+#: ``MDT_DATA_DIR`` is the repo-wide explicit override (apps/adapters/
+#: rekordbox/config.py, apps/shared/platform_paths.py): set it and every data
+#: path, including this one, follows it. Unset, ``config.STATE_DB`` falls
+#: back to a path relative to wherever ``apps/shared/platform_paths.py`` sits
+#: on disk -- the repo root in a checkout, but ``payload/app`` inside the
+#: installed bundle, which is issue #3037. Unset means "no explicit dev
+#: override", so the CLI falls back to the INSTALLED app's own data dir
+#: instead: the directory the running engine's lock file lives in
+#: (apps.engine_core.origin.lock_path), which is that engine's ``--data-dir``
+#: by construction (apps.engine_core.config.EngineConfig.lock_path), and
+#: honors the same ``OPENDJ_LIVE_LOCK_PATH`` override every other opendj_cli
+#: command already reads. The CLI and a sandboxed engine can therefore never
+#: disagree about which data dir is meant, and this never depends on where
+#: the CLI's own code happens to be installed.
+_DATA_DIR_ENV = "MDT_DATA_DIR"
 
-def _track_exists(stable_id: str, state_db: Path | None) -> bool:
+
+def _resolve_state_db(state_db: Path | None) -> Path:
+    """The concrete state DB path this invocation reads.
+
+    ``--state-db`` (explicit) wins outright. Otherwise ``MDT_DATA_DIR`` wins
+    (explicit dev/test override, matching every other reader of that env
+    var). Otherwise the installed app's own data dir, derived from the
+    engine lock file's location rather than this file's own path on disk --
+    see the module docstring and the constant above.
+    """
+    if state_db is not None:
+        return state_db
+    data_dir_override = os.environ.get(_DATA_DIR_ENV, "").strip()
+    if data_dir_override:
+        return Path(data_dir_override) / "state" / "state.db"
+    from apps.engine_core.origin import lock_path
+
+    return lock_path().parent / "state" / "state.db"
+
+
+def _track_exists(stable_id: str, state_db: Path) -> bool:
     conn = state_conn_ro(state_db)
     if conn is None:
         return False
@@ -69,6 +112,31 @@ def _not_found(stable_id: str, *, as_json: bool) -> int:
             json.dumps(
                 {
                     "error": {"code": "not_found", "message": message},
+                    "exit_code": EXIT_FAILED,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"opendj: {message}", file=sys.stderr)
+    return EXIT_FAILED
+
+
+def _state_db_missing(state_db: Path, *, as_json: bool) -> int:
+    """A resolved-but-absent state DB: distinct from "track not found".
+
+    Whether ``state_db`` came from ``--state-db`` or from the installed-app
+    default, this invocation always names one concrete path, so its absence
+    is always this error, never swallowed into "track not found" (issue
+    #3037 defect 2).
+    """
+    message = f"state DB not found: {state_db}"
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "error": {"code": "state_db_not_found", "message": message},
                     "exit_code": EXIT_FAILED,
                 },
                 indent=2,
@@ -106,14 +174,17 @@ def _key_segments(
     if stable_id is None:
         print(_USAGE, file=sys.stderr)
         return 1
-    if not _track_exists(stable_id, state_db):
+    resolved_db = _resolve_state_db(state_db)
+    if not resolved_db.exists():
+        return _state_db_missing(resolved_db, as_json=as_json)
+    if not _track_exists(stable_id, resolved_db):
         return _not_found(stable_id, as_json=as_json)
     # Lazy import: this CLI's other heads never touch the analysis package,
     # and importing it eagerly would pull librosa/numpy into every deck
     # command's startup path for a head most invocations never take.
     from apps.webui.server.rb_vendor_pkg.own_key_overlay import apply_own_key_segments
 
-    overlay = apply_own_key_segments({}, stable_id, state_db_path=state_db)
+    overlay = apply_own_key_segments({}, stable_id, state_db_path=resolved_db)
     block = overlay.get("key_segments")
     if block is None:
         block = {
