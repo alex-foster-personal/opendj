@@ -38,6 +38,7 @@
 		startLibraryBootHydration();
 	}
 	import { startAppInstruments } from '$lib/rb/app-init';
+	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
@@ -142,11 +143,13 @@
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
+		const uninstallShellNavigation = installShellNavigationPoll();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
 			uninstallHotkeysOverlay();
 			stopInstruments();
+			uninstallShellNavigation();
 			clearInterval(id);
 		};
 	});

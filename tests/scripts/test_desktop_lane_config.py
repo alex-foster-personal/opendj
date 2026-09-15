@@ -287,6 +287,14 @@ def test_the_shell_bakes_no_default_engine_origin() -> None:
     assert 'ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN"' in main_rs
 
 
+@pytest.mark.requirement("AGENT-12")
+def test_bootstrap_lands_on_library_root_not_performance() -> None:
+    """Cold launch must stay pinned to ``${origin}/`` until product changes it."""
+    setup_js = (TAURI_CONF.parent.parent / "setup/setup.js").read_text(encoding="utf-8")
+    assert "navigate(`${origin}/`)" in setup_js
+    assert "navigate(`${origin}/performance`)" not in setup_js
+
+
 # ----- the bundled engine ------------------------------------------------
 @pytest.mark.requirement("INSTALL-14")
 def test_the_bundle_stages_the_engine_payload_into_resources() -> None:

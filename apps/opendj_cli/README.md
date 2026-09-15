@@ -19,6 +19,20 @@ codex mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bi
 No repo checkout is required when Open DJ is running and the bundled binary is
 used.
 
+## Installed shell navigation (AGENT-12)
+
+On a cold launch the desktop shell lands on the library route. Mirror-dependent
+verbs auto-request `/performance` via `POST /api/v1/shell/navigate`; only the
+installed shell webview consumes that poll. Explicit navigation:
+
+```bash
+opendj open performance
+opendj --json open /performance
+```
+
+MCP equivalent: `open_route` with `route` defaulting to `/performance`.
+`ui_url` opens a browser tab only and does not move the shell window.
+
 ## MCP tools
 
 | Tool | Purpose |
@@ -27,7 +41,8 @@ used.
 | `app_state` | GET-only proxy to `/api/v1/*` |
 | `command` | AGENT-03 bus dispatch with mirror deltas |
 | `library` | LIBM-11 library HTTP against the engine origin (`body` = JSON string) |
-| `ui_url` | Engine-served SPA URL for browser MCP |
+| `ui_url` | Engine-served SPA URL for browser MCP (does not move the shell) |
+| `open_route` | Navigate the installed desktop shell to `/performance` |
 
 Safety rails are enforced in the server: master mute before play, writeback
 blocked, destructive library verbs gated unless `OPENDJ_MCP_ENABLE_DESTRUCTIVE=1`

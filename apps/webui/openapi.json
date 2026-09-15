@@ -30172,6 +30172,121 @@
         ]
       }
     },
+    "/api/v1/shell/navigate": {
+      "post": {
+        "operationId": "post_shell_navigate_api_v1_shell_navigate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Shell Navigate Api V1 Shell Navigate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/ack": {
+      "post": {
+        "operationId": "ack_shell_navigate_api_v1_shell_navigate_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Ack Shell Navigate Api V1 Shell Navigate Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/pending": {
+      "get": {
+        "operationId": "get_shell_navigate_pending_api_v1_shell_navigate_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Shell Navigate Pending Api V1 Shell Navigate Pending Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Shell Navigate Pending",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",

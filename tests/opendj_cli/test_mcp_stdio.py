@@ -146,6 +146,37 @@ def test_command_play_prepends_master_mute(engine: Engine) -> None:
     assert page.mirror["master"]["muted"] is True
 
 
+@pytest.mark.requirement("AGENT-12")
+def test_open_route_posts_navigate_and_waits_for_mirror(engine: Engine) -> None:
+    """[if] open_route is called [then] shell navigate opens performance, [else stop]."""
+    shell = engine.shell()
+    shell.start()
+    try:
+        payload = call_tool(engine, "open_route", {"route": "/performance"})
+    finally:
+        shell.stop()
+    assert payload["accepted"] is True
+    assert payload["client_open"] is True
+    assert payload["route"] == "/performance"
+
+
+@pytest.mark.requirement("AGENT-12")
+def test_command_auto_ensures_when_page_closed(engine: Engine) -> None:
+    """[if] command runs with no page [then] auto-ensure opens performance, [else stop]."""
+    shell = engine.shell()
+    shell.start()
+    try:
+        payload = call_tool(
+            engine,
+            "command",
+            {"order": {"single": {"type": "master_mute", "muted": True}}},
+        )
+    finally:
+        shell.stop()
+    assert "mirror_delta" in payload
+    assert payload.get("error") != "no_performance_page"
+
+
 @pytest.mark.requirement("AGENT-11")
 def test_app_state_rejects_invalid_paths(engine: Engine) -> None:
     """[if] app_state path is outside /api/v1 [then] it returns invalid_path, [else stop]."""

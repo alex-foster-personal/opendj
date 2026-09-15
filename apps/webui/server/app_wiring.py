@@ -116,6 +116,7 @@ from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
+from .routes import shell as shell_routes
 from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
@@ -521,6 +522,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         settings_ai_routes.router,
         state_routes.router,
         commands_routes.router,
+        shell_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,
         cloudsync_ops_routes.router,
