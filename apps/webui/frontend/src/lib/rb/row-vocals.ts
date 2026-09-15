@@ -16,6 +16,7 @@
  * Lives outside BrowserPanel.svelte so the rule is unit-testable at all.
  */
 
+import type { AnlzData } from '$lib/rb/anlz-types';
 import type { Vocals } from '$lib/rb/api-rb';
 
 /** The only reads this resolver is allowed to make. Both are pure lookups. */
@@ -49,6 +50,45 @@ export function resolveRowVocals(sources: RowVocalsSources): Record<string, Voca
 	for (const row of sources.rows) {
 		const cached = sources.cachedVocals(row.stable_id);
 		if (cached !== undefined) preferAnalyzed(row.stable_id, cached);
+	}
+	return out;
+}
+
+/** The only reads the strip marker resolver is allowed to make. All pure. */
+export interface RowMarkerAnlzSources {
+	/** Rendered rows, in render order. */
+	rows: { stable_id: string }[];
+	/** Each loaded deck's DISPLAYED ANLZ (already resolved against the cache). */
+	decks: { stable_id: string; playing: boolean; anlz: AnlzData | null }[];
+	/**
+	 * READY cached ANLZ by stable_id. MUST be a pure read - a function that can
+	 * start a fetch reintroduces the per-row fan-out (H20).
+	 */
+	cachedAnlz: (stable_id: string) => AnlzData | undefined;
+}
+
+/**
+ * Cue/phrase marker ANLZ per stable_id for the library PreviewStrip (LIBUX-12),
+ * sourced from the exact object the main waveform renders. A playing deck wins
+ * over a paused one; a ready cache entry answers for a row on no deck. A row
+ * with neither is ABSENT (a markerless strip), never a lookup that could fetch.
+ */
+export function resolveRowMarkerAnlz(sources: RowMarkerAnlzSources): Record<string, AnlzData> {
+	const out: Record<string, AnlzData> = {};
+	const playing = new Set<string>();
+	for (const deck of sources.decks) {
+		if (deck.anlz === null || playing.has(deck.stable_id)) continue;
+		if (deck.playing) {
+			out[deck.stable_id] = deck.anlz;
+			playing.add(deck.stable_id);
+		} else if (out[deck.stable_id] === undefined) {
+			out[deck.stable_id] = deck.anlz;
+		}
+	}
+	for (const row of sources.rows) {
+		if (out[row.stable_id] !== undefined) continue;
+		const cached = sources.cachedAnlz(row.stable_id);
+		if (cached !== undefined) out[row.stable_id] = cached;
 	}
 	return out;
 }

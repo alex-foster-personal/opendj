@@ -40,6 +40,7 @@
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
+		resolveRowMarkerAnlz,
 		resolveRowVocals,
 		isAppropriateNext,
 		resolveSearchFilterFallback,
@@ -214,6 +215,7 @@
 		getAnlzEntry,
 		isAnlzEntryUsable,
 		registerAnlzConsumer,
+		resolveDisplayedAnlz,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
@@ -403,6 +405,23 @@
 			cachedVocals: (stable_id: string): Vocals | undefined => {
 				const entry = getAnlzEntry(stable_id);
 				return entry !== undefined && entry.status === 'ready' ? vocalsOf(entry.data) : undefined;
+			}
+		})
+	);
+	// Strip cue/phrase markers (LIBUX-12), resolved here for the same reason as
+	// vocalsById: TrackTable renders per row and must render from props alone.
+	const markerAnlzById = $derived.by(() =>
+		resolveRowMarkerAnlz({
+			rows: pane.rows,
+			decks: DECK_IDS.flatMap((d) => {
+				const st = decks[d];
+				if (st.stable_id === null) return [];
+				return [{ stable_id: st.stable_id, playing: st.playing, anlz: resolveDisplayedAnlz(st.anlz, st.stable_id) }];
+			}),
+			// Pure read, same contract as cachedVocals above.
+			cachedAnlz: (stable_id: string) => {
+				const entry = getAnlzEntry(stable_id);
+				return entry !== undefined && entry.status === 'ready' ? entry.data : undefined;
 			}
 		})
 	);
@@ -3273,6 +3292,7 @@
 			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
+			{markerAnlzById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
