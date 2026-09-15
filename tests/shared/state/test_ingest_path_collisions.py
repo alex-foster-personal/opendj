@@ -24,6 +24,7 @@ from apps.shared.state.ingest.path_collisions import (
     is_streaming_path,
 )
 from apps.shared.state.writer import StateWriter
+from tests.shared.state.test_ingest_rekordbox import _counts
 
 pytestmark = pytest.mark.requirement("NATIVE-13")
 
@@ -229,35 +230,49 @@ def _set_case_only_collision_paths(rb_db: Path, path_a: str, path_b: str) -> Non
 def test_rekordbox_collision_refuses_without_partial_state(
     tmp_rb_db: Path, tmp_path: Path
 ) -> None:
-    """Production Rekordbox6Database reader refuses before partial state."""
+    """Production Rekordbox6Database reader refuses before mutating seeded state."""
     from pyrekordbox import Rekordbox6Database
 
     path_a = str(tmp_path / "Song.wav")
     path_b = str(tmp_path / "song.wav")
-    _set_case_only_collision_paths(tmp_rb_db, path_a, path_b)
-
-    rb = Rekordbox6Database(path=str(tmp_rb_db), unlock=False)
-    try:
-        rows = list(rb_ingest._rb_rows(rb))
-        folder_paths = [row["folder_path"] for row in rows if row["folder_path"]]
-        assert path_a in folder_paths
-        assert path_b in folder_paths
-    finally:
-        rb.close()
 
     conn = state_db.open_rw(tmp_path / "state.db")
     bus = FakeEventBus()
     writer = StateWriter(conn, bus=bus, actor="rb-collision")
     try:
+        rb_ingest.ingest_rb(writer, tmp_rb_db, dry_run=False)
+        seed_counts = _counts(conn)
+        assert seed_counts["tracks"] > 0
+        assert seed_counts["events"] > 0
+        before_counts = _counts(conn)
+        before_events = list(bus.events)
+
+        _set_case_only_collision_paths(tmp_rb_db, path_a, path_b)
+
+        rb = Rekordbox6Database(path=str(tmp_rb_db), unlock=False)
+        try:
+            rows = list(rb_ingest._rb_rows(rb))
+            folder_paths = [row["folder_path"] for row in rows if row["folder_path"]]
+            assert path_a in folder_paths
+            assert path_b in folder_paths
+        finally:
+            rb.close()
+
+        # dry_run=False: live write path must not mutate already-persisted state (#3019)
         with pytest.raises(PathCollisionError) as excinfo:
-            rb_ingest.ingest_rb(writer, tmp_rb_db, dry_run=True)
+            rb_ingest.ingest_rb(writer, tmp_rb_db, dry_run=False)
 
         message = str(excinfo.value)
         assert path_a in message
         assert path_b in message
-        assert _track_count(conn) == 0
-        assert _event_count(conn) == 0
-        assert bus.events == []
+        after_counts = _counts(conn)
+        assert after_counts == before_counts, (
+            f"collision refusal must not mutate state; "
+            f"before={before_counts} after={after_counts}"
+        )
+        assert bus.events == before_events, (
+            "collision refusal must not publish new bus events"
+        )
     finally:
         writer.close()
         conn.close()
