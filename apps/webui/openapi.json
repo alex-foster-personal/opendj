@@ -934,6 +934,11 @@
             "title": "Cluster Key",
             "type": "string"
           },
+          "confirm_cue_loss": {
+            "default": false,
+            "title": "Confirm Cue Loss",
+            "type": "boolean"
+          },
           "survivor": {
             "title": "Survivor",
             "type": "string"
