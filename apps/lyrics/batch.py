@@ -49,16 +49,13 @@ from apps.lyrics.ingest_state import ingest_state
 from apps.lyrics.register_stems import _corpus_pairs, _meta_model, register_pair
 from apps.shared.paths import PROJECT_ROOT, STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
+from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 from apps.stems.artifacts import ROFORMER_STEMS_DIR
 
 REPO_ROOT: Path = PROJECT_ROOT
 LYRICS_EVAL_DIR: Path = STATE_DIR / "lyrics-eval"
 BENCH_DIR: Path = REPO_ROOT / "scripts" / "bench"
-# The documented air-library mirror rule (scripts/lyrics_crate_metadata.py):
-# stale /Users/dev rows resolve to the local ~/Music/air-library tree.
-AIR_PREFIX: str = str(Path.home() / "Music" / "air-library") + "/"
-DEV_PREFIX: str = "/Users/dev/"
 UV_PY: tuple[str, ...] = ("uv", "run", "--no-sync", "python")
 UV_MODAL_PY: tuple[str, ...] = ("uv", "run", "--with", "modal", "python")
 UV_SCRIPT: tuple[str, ...] = ("uv", "run", "--script")
@@ -210,17 +207,6 @@ class Cmds:
 #-----------------------------------------------------------------------------
 
 
-def _resolve_audio(db_file_path: str) -> Path | None:
-    path = Path(db_file_path)
-    if path.is_file():
-        return path
-    if db_file_path.startswith(DEV_PREFIX):
-        mirrored = Path(AIR_PREFIX + db_file_path[len(DEV_PREFIX):])
-        if mirrored.is_file():
-            return mirrored
-    return None
-
-
 def _resolve_tracks(
     corpus: str, stable_ids: list[str], paths: BatchPaths, report: BatchReport,
 ) -> None:
@@ -238,6 +224,7 @@ def _resolve_tracks(
             f"WHERE stable_id IN ({marks}) AND deleted_at IS NULL",
             stable_ids,
         ).fetchall())
+        audio_paths = state_locations.bulk_local_audio_paths(conn, stable_ids)
     finally:
         conn.close()
     unknown = [sid for sid in stable_ids if sid not in rows]
@@ -246,7 +233,7 @@ def _resolve_tracks(
     for i, sid in enumerate(stable_ids):
         track_id = f"{corpus}{i:03d}"
         db_file_path = rows[sid] or ""
-        audio = _resolve_audio(db_file_path) if db_file_path else None
+        audio = audio_paths.get(sid)
         registered = (paths.stems_root / sid / "manifest.json").is_file()
         plan = TrackPlan(stable_id=sid, track_id=track_id,
                          db_file_path=db_file_path, audio_path=audio,

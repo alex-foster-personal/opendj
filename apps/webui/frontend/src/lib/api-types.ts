@@ -1388,7 +1388,7 @@ export interface paths {
         };
         /**
          * Next Command
-         * @description Let the sole open performance page claim its next agent order.
+         * @description Let a consumer claim its next command.
          */
         get: operations["next_command_api_v1_commands_next_get"];
         put?: never;
@@ -1410,7 +1410,7 @@ export interface paths {
         put?: never;
         /**
          * Complete Command
-         * @description Resolve an order with page-produced per-step statuses and mirror delta.
+         * @description Resolve a performance order or a shell command result.
          */
         post: operations["complete_command_api_v1_commands__order_id__result_post"];
         delete?: never;
@@ -4523,6 +4523,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Asr Presign
+         * @description Mint a short-lived GET URL for one ASR transcript JSON object.
+         */
+        get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/pull": {
         parameters: {
             query?: never;
@@ -5261,6 +5281,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Apply */
+        post: operations["update_apply_api_v1_update_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update/check": {
         parameters: {
             query?: never;
@@ -5743,6 +5780,17 @@ export interface components {
              * @enum {string}
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+        };
+        /** AppModeOut */
+        AppModeOut: {
+            /**
+             * App Mode
+             * @default performance
+             * @enum {string}
+             */
+            id?: "performance" | "library-management" | "library" | "music-player";
+            /** Last Gig At */
+            last_gig_at?: string | null;
         };
         /** AppPostureOut */
         AppPostureOut: {
@@ -8831,6 +8879,22 @@ export interface components {
             start_ms: number;
             /** Text */
             text: string;
+        };
+        /** LyricsAsrPresignResponse */
+        LyricsAsrPresignResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Stable Id */
+            stable_id: string;
+            /** Url */
+            url: string;
         };
         /**
          * LyricsCachedIdsOut
@@ -12617,17 +12681,43 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
              * @enum {string}
              */
             app_posture: "prep" | "gig";
+            /**
+             * Auto Play Enabled
+             * @default true
+             */
+            auto_play_enabled: boolean;
+            /**
+             * Auto Play Enforce Order
+             * @default false
+             */
+            auto_play_enforce_order: boolean;
+            /**
+             * Auto Play Maximize Reach
+             * @default true
+             */
+            auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
+            /**
+             * Beat Sync Max
+             * @default true
+             */
+            beat_sync_max: boolean;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             };
+            /**
+             * Hide Broken Links
+             * @default false
+             */
+            hide_broken_links: boolean;
             /**
              * Hide Todo Settings
              * @default false
@@ -12639,6 +12729,12 @@ export interface components {
              */
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
+            /**
+             * Library Density
+             * @default compact
+             * @enum {string}
+             */
+            library_density: "compact" | "cosy";
             /**
              * Lyrics Deck Line
              * @default true
@@ -12671,11 +12767,26 @@ export interface components {
              */
             lyrics_waveform_overlay: boolean;
             /**
+             * Midi Enabled
+             * @default false
+             */
+            midi_enabled: boolean;
+            /**
+             * Next Only Filter
+             * @default false
+             */
+            next_only_filter: boolean;
+            /**
              * Perf Tier
              * @default auto
              * @enum {string}
              */
             perf_tier: "auto" | "low" | "standard" | "high";
+            /**
+             * Remixes Filter
+             * @default false
+             */
+            remixes_filter: boolean;
             /**
              * Show Agent Pins
              * @default true
@@ -12692,21 +12803,40 @@ export interface components {
              * @enum {string}
              */
             theme: "dark" | "light";
+            /**
+             * Vocals Filter
+             * @default false
+             */
+            vocals_filter: boolean;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"];
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
+            /** Auto Play Enabled */
+            auto_play_enabled?: boolean | null;
+            /** Auto Play Enforce Order */
+            auto_play_enforce_order?: boolean | null;
+            /** Auto Play Maximize Reach */
+            auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Beat Sync Max */
+            beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Hide Broken Links */
+            hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Library Density */
+            library_density?: ("compact" | "cosy") | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -12719,14 +12849,23 @@ export interface components {
             lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
             /** Lyrics Waveform Overlay */
             lyrics_waveform_overlay?: boolean | null;
+            /** Midi Enabled */
+            midi_enabled?: boolean | null;
+            /** Next Only Filter */
+            next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Remixes Filter */
+            remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+            /** Vocals Filter */
+            vocals_filter?: boolean | null;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
         };
         /** UndoRecordOut */
         UndoRecordOut: {
@@ -12749,6 +12888,28 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** UpdateApplyAccepted */
+        UpdateApplyAccepted: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /** Available Version */
+            available_version: string;
+            /** Command Id */
+            command_id: string;
+        };
+        /** UpdateApplyRefused */
+        UpdateApplyRefused: {
+            /** Detail */
+            detail: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
         };
         /**
          * UpdateCheckOut
@@ -13034,6 +13195,19 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WheelSensitivityOut */
+        WheelSensitivityOut: {
+            /**
+             * Mouse
+             * @default 1
+             */
+            mouse: number;
+            /**
+             * Trackpad
+             * @default 0.3333333333333333
+             */
+            trackpad: number;
         };
         /** WorktreePortsOut */
         WorktreePortsOut: {
@@ -15867,7 +16041,10 @@ export interface operations {
     };
     next_command_api_v1_commands_next_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update */
+                consumer?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -15881,6 +16058,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -21328,6 +21514,68 @@ export interface operations {
             };
         };
     };
+    get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsAsrPresignResponse"];
+                };
+            };
+            /** @description lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     pull_api_v1_sync_pull_get: {
         parameters: {
             query: {
@@ -22670,6 +22918,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_apply_api_v1_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyAccepted"];
+                };
+            };
+            /** @description apply refused; no shell command enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyRefused"];
                 };
             };
         };

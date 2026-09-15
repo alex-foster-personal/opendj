@@ -1,4 +1,7 @@
-"""Pure classifier tests for transient vs structural stem hydration unarmed."""
+"""Pure classifier tests for transient vs structural stem hydration unarmed.
+
+[if] a stem hydration unarmed error is structural or transient [then] classify it for re-arm policy, [else stop].
+"""
 from __future__ import annotations
 
 import pytest

@@ -36,34 +36,30 @@ import importlib
 import json
 import os
 import socket
-import sqlite3
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.cloud.asset_store import AssetS3Client, boto3_asset_client
 from apps.cloud.config import CloudConfig
+from apps.shared import sqlite_verified_copy as svc
 
 
 class CFG:
     STATE_DB_RELATIVE: Path = Path("state") / "state.db"
     BACKUP_PREFIX: str = "hub-state-"
-    BACKUP_SUFFIX: str = ".db"
-    PARTIAL_PREFIX: str = ".partial-"
-    #: ``%Z`` of an aware UTC datetime prints ``UTC`` itself, so no zone
-    #: letter is ever hand-typed into a stamp (house rule, Mon 31 Aug 2026).
-    STAMP_FORMAT: str = "%Y%m%dT%H%M%S%Z"
+    BACKUP_SUFFIX: str = svc.VerifiedCopyCFG.BACKUP_SUFFIX
+    PARTIAL_PREFIX: str = svc.VerifiedCopyCFG.PARTIAL_PREFIX
+    STAMP_FORMAT: str = svc.VerifiedCopyCFG.STAMP_FORMAT
     R2_KEY_PREFIX: str = "hub-backups"
-    SIDECAR_SUFFIXES: tuple[str, ...] = ("", "-wal", "-shm", "-journal")
-    #: A backup is the whole fleet library, auth and enrollment tables
-    #: included: owner-only, like machine-id.
-    BACKUP_DIR_MODE: int = 0o700
-    BACKUP_FILE_MODE: int = 0o600
+    SIDECAR_SUFFIXES: tuple[str, ...] = svc.VerifiedCopyCFG.SIDECAR_SUFFIXES
+    BACKUP_DIR_MODE: int = svc.VerifiedCopyCFG.BACKUP_DIR_MODE
+    BACKUP_FILE_MODE: int = svc.VerifiedCopyCFG.BACKUP_FILE_MODE
 
 
-class HubBackupError(RuntimeError):
+class HubBackupError(svc.VerifiedCopyError):
     """A backup or restore could not be completed and verified."""
 
 
@@ -83,91 +79,43 @@ def hub_state_db(data_dir: Path) -> Path:
 
 
 def backup_file_name(taken_at: datetime) -> str:
-    if taken_at.utcoffset() != timedelta(0):
-        raise HubBackupError(f"backup stamp must be UTC, got {taken_at.isoformat()}")
-    stamp = taken_at.astimezone(UTC).strftime(CFG.STAMP_FORMAT)
-    return f"{CFG.BACKUP_PREFIX}{stamp}{CFG.BACKUP_SUFFIX}"
+    try:
+        return svc.backup_file_name(prefix=CFG.BACKUP_PREFIX, taken_at=taken_at)
+    except svc.VerifiedCopyError as exc:
+        raise HubBackupError(str(exc)) from exc
 
 
 def list_backups(dest_dir: Path) -> list[Path]:
     """Finished backups, newest first. Stamps sort lexically by time."""
-    pattern = f"{CFG.BACKUP_PREFIX}*{CFG.BACKUP_SUFFIX}"
-    return sorted(Path(dest_dir).glob(pattern), reverse=True)
+    return svc.list_backups(dest_dir, prefix=CFG.BACKUP_PREFIX)
 
 
 # ----- verification ----------------------------------------------------------
 
 
-def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    tables = [
-        row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
-    ]
-    return {
-        name: int(conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]) for name in tables
-    }
-
-
-def _read_only_uri(path: Path) -> str:
-    """Percent-encoded ``file:`` URI: a raw ``#`` or ``?`` would cut the path
-    short and drop ``mode=ro``, so SQLite would open (and create) a different
-    file read-write."""
-    return f"{Path(path).resolve().as_uri()}?mode=ro"
-
-
 def verify_backup(path: Path) -> dict[str, int]:
     """``integrity_check`` must say ok; returns the per-table row counts."""
-    if not Path(path).is_file():
-        raise HubBackupError(f"backup {path} does not exist")
     try:
-        conn = sqlite3.connect(_read_only_uri(path), uri=True)
-    except sqlite3.Error as exc:
-        raise HubBackupError(f"cannot open {path} read-only: {exc}") from exc
-    try:
-        verdict = [row[0] for row in conn.execute("PRAGMA integrity_check")]
-        if verdict != ["ok"]:
-            raise HubBackupError(f"integrity_check failed for {path}: {verdict[:5]}")
-        counts = _row_counts(conn)
-    except sqlite3.DatabaseError as exc:
-        raise HubBackupError(f"{path} is not a readable sqlite database: {exc}") from exc
-    finally:
-        conn.close()
-    if not counts:
-        raise HubBackupError(f"{path} holds no tables; that is not a hub DB")
-    return counts
-
-
-# ----- backup ----------------------------------------------------------------
+        return svc.verify_backup(path, empty_message=f"{path} holds no tables; that is not a hub DB")
+    except svc.VerifiedCopyError as exc:
+        raise HubBackupError(str(exc)) from exc
 
 
 def _copy_snapshot(source: Path, partial: Path) -> dict[str, int]:
-    """Copy ``source`` into ``partial`` and return the counts OF THAT SNAPSHOT."""
-    src = sqlite3.connect(source, isolation_level=None)
     try:
-        src.execute("PRAGMA query_only = ON")
-        src.execute("BEGIN")
-        counts = _row_counts(src)
-        dst = sqlite3.connect(partial, isolation_level=None)
-        try:
-            src.backup(dst)
-            # A standalone single file: no -wal sidecar to lose in transit.
-            dst.execute("PRAGMA journal_mode = DELETE")
-        finally:
-            dst.close()
-        src.execute("COMMIT")
-    except sqlite3.DatabaseError as exc:
-        raise HubBackupError(f"could not copy {source}: {exc}") from exc
-    finally:
-        src.close()
-    return counts
+        return svc.copy_snapshot(source, partial)
+    except svc.VerifiedCopyError as exc:
+        raise HubBackupError(str(exc)) from exc
 
 
 def _require_equal_counts(expected: dict[str, int], actual: dict[str, int], what: str) -> None:
-    if actual != expected:
-        raise HubBackupError(f"{what}: row counts differ, expected {expected}, got {actual}")
+    try:
+        svc.require_equal_counts(expected, actual, what)
+    except svc.VerifiedCopyError as exc:
+        raise HubBackupError(str(exc)) from exc
+
+
+# ----- backup ----------------------------------------------------------------
 
 
 def backup_hub_db(
@@ -186,7 +134,6 @@ def backup_hub_db(
     partial = dest_dir / f"{CFG.PARTIAL_PREFIX}{final.name}"
     if final.exists() or partial.exists():
         raise HubBackupError(f"{final} (or its partial) already exists; refusing to overwrite")
-    # Owner-only from its first byte; SQLite adopts an existing empty file.
     partial.touch(mode=CFG.BACKUP_FILE_MODE, exist_ok=False)
     try:
         snapshot_counts = _copy_snapshot(source, partial)
@@ -207,10 +154,7 @@ def backup_hub_db(
 
 def prune_backups(dest_dir: Path, *, keep: int) -> list[Path]:
     """Delete finished backups beyond the newest ``keep``. Returns what went."""
-    doomed = list_backups(dest_dir)[keep:]
-    for path in doomed:
-        path.unlink()
-    return doomed
+    return svc.prune_backups(dest_dir, prefix=CFG.BACKUP_PREFIX, keep=keep)
 
 
 # ----- restore ---------------------------------------------------------------

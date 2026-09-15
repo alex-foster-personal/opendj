@@ -122,5 +122,12 @@ test('the chip is rendered immediately beside the account bauble', () => {
 	const baubleAt = LAYOUT.indexOf('<UserBauble />');
 	assert.ok(chipAt >= 0, 'the app shell must render the CloudSync status chip');
 	assert.ok(baubleAt > chipAt, 'the CloudSync chip must be beside and before the account bauble');
-	assert.ok(TOPBAR.indexOf('<CloudSyncStatusChip />') < TOPBAR.indexOf('<UserBauble size={20} />'));
+	// Match the tag, not one exact attribute list: the top bar passes props to
+	// the bauble (`size`, plus `showLabel` since issue #2357), so requiring the
+	// literal `<UserBauble size={20} />` makes indexOf return -1 and the
+	// comparison pass for the wrong reason. The invariant under test is ORDER.
+	const chipInTopbar = TOPBAR.indexOf('<CloudSyncStatusChip');
+	const baubleInTopbar = TOPBAR.indexOf('<UserBauble');
+	assert.ok(chipInTopbar >= 0, 'the performance top bar must render the CloudSync status chip');
+	assert.ok(baubleInTopbar > chipInTopbar, 'the chip must sit beside and before the bauble');
 });

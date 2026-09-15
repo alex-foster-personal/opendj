@@ -1,4 +1,7 @@
-"""CLI dispatcher tests for ``python -m apps.sync`` (issue #2764)."""
+"""CLI dispatcher tests for ``python -m apps.sync`` (issue #2764).
+
+[if] apps.sync is invoked with no args or subcommand help [then] usage or help exits zero, [else stop].
+"""
 from __future__ import annotations
 
 import pytest

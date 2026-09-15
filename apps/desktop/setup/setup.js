@@ -179,7 +179,7 @@ export function startBootstrap({
 		if (result.reachable) {
 			stopped = true;
 			countdown.textContent = 'Engine found. Opening Open DJ.';
-			navigate(`${origin}/`);
+			navigate(`${origin}/performance`);
 			return;
 		}
 		showUnreachable(result, attempts);

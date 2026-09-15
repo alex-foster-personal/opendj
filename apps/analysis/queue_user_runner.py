@@ -16,8 +16,8 @@ from pathlib import Path
 
 from apps.analysis import queue_store, queue_user
 from apps.analysis.queue_user_lanes import SKIP_UP_TO_DATE, USER_BATCH_IDS
-from apps.lyrics.cache import LyricsUnavailableError
-from apps.lyrics.service import LyricsService
+from apps.lyrics.asr_source import LyricsAsrFetchError
+from apps.lyrics.service import FetchResult, LyricsFetchService
 from apps.shared.events import publish
 
 log = logging.getLogger("apps.analysis.queue_user_runner")
@@ -115,13 +115,10 @@ def run_claimed(
     try:
         if item.lane == "stems":
             stems_fn(item.stable_id)
+            state = queue_store.ITEM_DONE
+            reason = None
         else:
-            lyrics_fn(item.stable_id)
-        state = queue_store.ITEM_DONE
-        reason = None
-    except LyricsUnavailableError as exc:
-        state = queue_store.ITEM_FAILED
-        reason = str(exc)
+            state, reason = _finish_lyrics(lyrics_fn, item.stable_id)
     except Exception as exc:
         state = queue_store.ITEM_FAILED
         reason = str(exc)
@@ -177,10 +174,20 @@ def _default_stems(stable_id: str) -> None:
     subprocess.run(argv, check=True)
 
 
-def _default_lyrics(data_dir: Path) -> ExecuteFn:
-    service = LyricsService(data_dir)
+def _finish_lyrics(lyrics_fn: ExecuteFn, stable_id: str) -> tuple[str, str | None]:
+    result = lyrics_fn(stable_id)
+    if isinstance(result, FetchResult):
+        return queue_store.ITEM_DONE, result.outcome
+    return queue_store.ITEM_DONE, None
 
-    def _run(stable_id: str) -> None:
-        service.fetch_stable_id(stable_id)
+
+def _default_lyrics(data_dir: Path) -> ExecuteFn:
+    service = LyricsFetchService(data_dir)
+
+    def _run(stable_id: str) -> FetchResult:
+        try:
+            return service.fetch_or_resolve_stable_id(stable_id)
+        except LyricsAsrFetchError as exc:
+            raise RuntimeError(exc.message) from exc
 
     return _run

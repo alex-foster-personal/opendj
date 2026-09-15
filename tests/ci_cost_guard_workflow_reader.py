@@ -72,6 +72,11 @@ def workflow_docs() -> dict[str, dict]:
 RUNNER_SWITCH = re.compile(
     r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
 )
+CHAINED_RUNNER_SWITCH = re.compile(
+    r"\$\{\{\s*fromJSON\(\s*"
+    r"(?:vars\.[A-Z0-9_]+\s*\|\|\s*)+"
+    r"'(?P<fallback>.+?)'\s*\)\s*\}\}"
+)
 
 
 def runner_labels(job_id: str, runs_on: object) -> list[str]:
@@ -111,10 +116,12 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         f"{job_id} mixes an expression with literal labels ({labels}), so which "
         "runner it selects cannot be read here"
     )
-    match = RUNNER_SWITCH.fullmatch(labels[0].strip())
+    label = labels[0].strip()
+    match = RUNNER_SWITCH.fullmatch(label) or CHAINED_RUNNER_SWITCH.fullmatch(label)
     assert match, (
         f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
-        "price. Only the `fromJSON(vars.X || '<json>')` runner switch is "
+        "price. Only the `fromJSON(vars.X || '<json>')` runner switch and chained "
+        "`fromJSON(vars.A || vars.B || ... || '<json>')` fallbacks are "
         "understood; widen this deliberately rather than letting an unreadable "
         "expression be priced by guesswork."
     )

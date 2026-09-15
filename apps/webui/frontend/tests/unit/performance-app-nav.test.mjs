@@ -42,7 +42,8 @@ test('the hatch lives outside rb/ clone chrome and does not touch TopBar or Brow
 	assert.doesNotMatch(BROWSER_PANEL, /performance-app-nav/);
 });
 
-test('library-management mode stays fail-closed on the chooser', () => {
+test('library-management Prep mode is selectable on the chooser', () => {
 	assert.match(APP_MODE, /id:\s*'library-management'/);
-	assert.match(APP_MODE, /available:\s*false/);
+	assert.match(APP_MODE, /label:\s*'Prep'/);
+	assert.match(APP_MODE, /available:\s*true/);
 });
