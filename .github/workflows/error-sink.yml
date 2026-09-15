@@ -112,5 +112,5 @@ jobs:
             --kind build \
             --source-site "build:${WORKFLOW_NAME}" \
             --sha "${OPENDJ_BUILD_SHA}" \
-            --host "${OPENDJ_HOST_LABEL}" \
+            --host "github-actions" \
             --message "CI failed workflow=${WORKFLOW_NAME} run=${RUN_ID} conclusion=${RUN_CONCLUSION} url=${RUN_URL} sha=${OPENDJ_BUILD_SHA}"
