@@ -8585,6 +8585,31 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
+      "LifecycleQuitIn": {
+        "properties": {
+          "force": {
+            "description": "Must be true for agent and ship clean-quit paths.",
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "force"
+        ],
+        "title": "LifecycleQuitIn",
+        "type": "object"
+      },
+      "LifecycleQuitOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LifecycleQuitOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -18786,6 +18811,11 @@
             "title": "Confirm",
             "type": "object"
           },
+          "hide_broken_links": {
+            "default": false,
+            "title": "Hide Broken Links",
+            "type": "boolean"
+          },
           "hide_todo_settings": {
             "default": false,
             "title": "Hide Todo Settings",
@@ -18798,6 +18828,15 @@
           },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
+          },
+          "library_density": {
+            "default": "compact",
+            "enum": [
+              "compact",
+              "cosy"
+            ],
+            "title": "Library Density",
+            "type": "string"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -18834,6 +18873,16 @@
             "title": "Lyrics Waveform Overlay",
             "type": "boolean"
           },
+          "midi_enabled": {
+            "default": false,
+            "title": "Midi Enabled",
+            "type": "boolean"
+          },
+          "next_only_filter": {
+            "default": false,
+            "title": "Next Only Filter",
+            "type": "boolean"
+          },
           "perf_tier": {
             "default": "auto",
             "enum": [
@@ -18844,6 +18893,11 @@
             ],
             "title": "Perf Tier",
             "type": "string"
+          },
+          "remixes_filter": {
+            "default": false,
+            "title": "Remixes Filter",
+            "type": "boolean"
           },
           "show_agent_pins": {
             "default": true,
@@ -18863,6 +18917,14 @@
             ],
             "title": "Theme",
             "type": "string"
+          },
+          "vocals_filter": {
+            "default": false,
+            "title": "Vocals Filter",
+            "type": "boolean"
+          },
+          "wheel_sensitivity": {
+            "$ref": "#/components/schemas/WheelSensitivityOut"
           }
         },
         "title": "UiPrefsOut",
@@ -18961,6 +19023,17 @@
             ],
             "title": "Confirm"
           },
+          "hide_broken_links": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Broken Links"
+          },
           "hide_todo_settings": {
             "anyOf": [
               {
@@ -18992,6 +19065,21 @@
                 "type": "null"
               }
             ]
+          },
+          "library_density": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compact",
+                  "cosy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Density"
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -19064,6 +19152,28 @@
             ],
             "title": "Lyrics Waveform Overlay"
           },
+          "midi_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midi Enabled"
+          },
+          "next_only_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Only Filter"
+          },
           "perf_tier": {
             "anyOf": [
               {
@@ -19080,6 +19190,17 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "remixes_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixes Filter"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -19117,6 +19238,27 @@
               }
             ],
             "title": "Theme"
+          },
+          "vocals_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vocals Filter"
+          },
+          "wheel_sensitivity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WheelSensitivityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "UiPrefsPatch",
@@ -19995,6 +20137,22 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WheelSensitivityOut": {
+        "properties": {
+          "mouse": {
+            "default": 1.0,
+            "title": "Mouse",
+            "type": "number"
+          },
+          "trackpad": {
+            "default": 0.3333333333333333,
+            "title": "Trackpad",
+            "type": "number"
+          }
+        },
+        "title": "WheelSensitivityOut",
         "type": "object"
       },
       "WorktreePortsOut": {
@@ -26127,6 +26285,57 @@
         ]
       }
     },
+    "/api/v1/lifecycle/quit": {
+      "post": {
+        "operationId": "request_shell_quit_api_v1_lifecycle_quit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleQuitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleQuitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Shell Quit",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
     "/api/v1/lyrics": {
       "get": {
         "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
@@ -26150,6 +26359,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

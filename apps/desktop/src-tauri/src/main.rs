@@ -30,7 +30,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 
 /// Test seam, mirroring the repo's ENGINE_CMD seam: point a packaged build
 /// at an engine that is already running, on any loopback port, without
@@ -331,6 +333,14 @@ fn install_signal_handlers() {
 }
 
 /// The only place this shell ever gives up, and it does so loudly.
+/// INSTALL-21: delegate quit decisions to the engine-served UI. Rust only blocks
+/// the OS quit and forwards the request; no product logic lives here.
+fn request_quit_from_webview(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.eval("globalThis.__OPENDJ_requestQuit?.()");
+    }
+}
+
 fn fail_visibly(error: &engine::EngineError) -> ! {
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
@@ -367,6 +377,15 @@ fn main() {
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     let app = builder
+        .on_window_event(|window, event| {
+            if window.label() != WINDOW_LABEL {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                request_quit_from_webview(window.app_handle());
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
             let data_dir = app_data_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
@@ -397,6 +416,7 @@ fn main() {
             let script = format!(
                 "globalThis.OPENDJ_ENGINE_ORIGIN = {};\
                  globalThis.OPENDJ_SHELL_BUILD = {};\
+                 globalThis.__OPENDJ_requestQuit = globalThis.__OPENDJ_requestQuit || function () {{}};\
                  globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ || [];\
                  globalThis.__OPENDJ_enqueueShellClientError = function(kind, message, context) {{\
                    globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.push({{\
@@ -459,14 +479,16 @@ fn main() {
         .expect("error while building Open DJ desktop shell");
 
     app.run(|handle, event| {
-        // ExitRequested covers Apple Event quit; Exit covers the final teardown.
-        // The kill is a process-group kill so no job the engine spawned is left
-        // holding the data directory's lock.
+        // INSTALL-21: ExitRequested is intercepted and delegated to the web UI.
+        // Shutdown runs only on the final Exit after a confirmed quit.
         match event {
-            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+            RunEvent::ExitRequested { api, .. } => {
+                api.prevent_exit();
+                request_quit_from_webview(handle);
+            }
+            RunEvent::Exit => {
                 if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
-                    let supervisor = &state.supervisor;
-                    supervisor.shutdown();
+                    state.supervisor.shutdown();
                 }
             }
             _ => {}

@@ -1,4 +1,7 @@
-"""Library-jobs lyrics lane ASR terminal outcomes (LYRICS-07)."""
+"""Library-jobs lyrics lane ASR terminal outcomes (LYRICS-07).
+
+[if] the library-jobs ASR lane finishes [then] terminal cache and verdict states match success or explicit failure, [else stop].
+"""
 
 from __future__ import annotations
 

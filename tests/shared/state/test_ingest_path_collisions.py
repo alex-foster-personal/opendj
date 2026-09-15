@@ -1,4 +1,7 @@
-"""NATIVE-13 path-collision refusal during folder and rekordbox ingest."""
+"""NATIVE-13 path-collision refusal during folder and rekordbox ingest.
+
+[if] ingest sees colliding paths for different recordings [then] import refuses with PathCollisionError, [else stop].
+"""
 from __future__ import annotations
 
 import struct

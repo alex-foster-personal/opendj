@@ -168,6 +168,7 @@ def substitute_alternatives(
                 outage=verdict.outage,
                 substituted_by=stand_in,
                 carried_from=verdict.carried_from,
+                carried_paths=verdict.carried_paths,
             )
         )
     return out

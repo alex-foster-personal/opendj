@@ -95,6 +95,33 @@ test('hydrateConfirmPrefsFromDisk GETs ui-prefs and applies fields', async () =>
 	assert.equal(prefs.uiPrefs.confirm.relocate, true);
 });
 
+test('hydrateConfirmPrefsFromDisk applies library-browser prefs from GET', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse({
+			hide_broken_links: true,
+			library_density: 'cosy',
+			next_only_filter: true,
+			remixes_filter: true,
+			vocals_filter: true,
+			wheel_sensitivity: { mouse: 2, trackpad: 0.2 },
+			midi_enabled: true
+		});
+
+	prefs.uiPrefs.hide_broken_links = false;
+	prefs.uiPrefs.library_density = 'compact';
+	prefs.uiPrefs.next_only_filter = false;
+	prefs.uiPrefs.remixes_filter = false;
+	prefs.uiPrefs.vocals_filter = false;
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.hide_broken_links, true);
+	assert.equal(prefs.uiPrefs.library_density, 'cosy');
+	assert.equal(prefs.uiPrefs.next_only_filter, true);
+	assert.equal(prefs.uiPrefs.remixes_filter, true);
+	assert.equal(prefs.uiPrefs.vocals_filter, true);
+});
+
 test('hydrateConfirmPrefsFromDisk resolves quietly on non-2xx', async () => {
 	prefs.uiPrefs.theme = 'dark';
 	prefs.uiPrefs.hide_todo_settings = false;

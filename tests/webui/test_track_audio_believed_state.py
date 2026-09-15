@@ -1,4 +1,7 @@
-"""Deck audio route uses believed-state resolution (CLOUDSYNC-10)."""
+"""Deck audio route uses believed-state resolution (CLOUDSYNC-10).
+
+[if] deck audio resolution ignores believed-state rules [then] routes serve wrong or missing audio, [else stop].
+"""
 from __future__ import annotations
 
 import hashlib

@@ -33,6 +33,12 @@ import {
 	type LyricsPrefs
 } from './lyrics-prefs';
 import {
+	APP_MODE_PREF_DEFAULTS,
+	bindAppModePrefSetters,
+	mergeAppModePrefsFromParsed,
+	type AppModePrefs
+} from './app-mode-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
@@ -44,13 +50,19 @@ import {
 	mergePerfTierPrefsFromParsed,
 	type PerfTierPrefs
 } from './perf-tier-prefs';
-import { makePrefsHydrator, setTopbarDiskPref, syncDiskPrefs } from './prefs-hydrate';
+import {
+	makePrefsHydrator,
+	setLibraryBrowserDiskPref,
+	setTopbarDiskPref,
+	syncDiskPrefs
+} from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
+export type { AppModeId } from './app-mode';
 export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
@@ -74,7 +86,7 @@ export type UiTheme = 'dark' | 'light';
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, LyricsPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -197,7 +209,8 @@ const DEFAULTS: RbUiPrefs = {
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
-	...APP_POSTURE_PREF_DEFAULTS
+	...APP_POSTURE_PREF_DEFAULTS,
+	...APP_MODE_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -407,7 +420,10 @@ function _load(): RbUiPrefs {
 		...LIBRARY_FILTER_PREF_DEFAULTS,
 		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY),
 		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
-		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY)
+		...APP_POSTURE_PREF_DEFAULTS,
+		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
+		...APP_MODE_PREF_DEFAULTS,
+		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -427,8 +443,7 @@ export const uiPrefs = $state<RbUiPrefs>(_load());
 _applyThemeDom(uiPrefs.theme);
 
 export function setHideBrokenLinks(next: boolean): void {
-	uiPrefs.hide_broken_links = next;
-	_persist();
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
 }
 
 /** Persist the tree width after clamping it to its documented 220-520px range. */
@@ -467,8 +482,7 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 
 export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
 export function setLibraryDensity(next: LibraryDensity): void {
-	uiPrefs.library_density = next;
-	_persist();
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
 }
 
 export function setBeatSyncMax(next: boolean): void {
@@ -501,7 +515,7 @@ export const {
 	toggleNextOnlyFilter,
 	setRemixesFilter,
 	setVocalsFilter
-} = makeLibraryFilterSetters(uiPrefs, _persist);
+} = makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
@@ -556,6 +570,7 @@ export const {
 
 export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

@@ -23,10 +23,11 @@ _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
 AppPosturePref = Literal["prep", "gig"]
+AppModePref = Literal["performance", "library-management", "library", "music-player"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
 _DEFAULT_APP_POSTURE: AppPosturePref = "prep"
-_DEFAULT_APP_MODE: dict[str, Any] = {"last_gig_at": None}
+_DEFAULT_APP_MODE: dict[str, Any] = {"last_gig_at": None, "id": "performance"}
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -47,6 +48,25 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "auto_play_enforce_order": _DEFAULT_AUTO_PLAY_ENFORCE_ORDER,
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
 }
+
+# Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
+LibraryDensity = Literal["compact", "cosy"]
+_DEFAULT_HIDE_BROKEN_LINKS = False
+_DEFAULT_LIBRARY_DENSITY: LibraryDensity = "compact"
+_DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
+    "next_only_filter": False,
+    "remixes_filter": False,
+    "vocals_filter": False,
+}
+_DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
+_DEFAULT_MIDI_ENABLED = False
+_WHEEL_MIN = 0.05
+_WHEEL_MAX = 4.0
+_LIBRARY_BROWSER_BOOL_KEYS: tuple[str, ...] = (
+    "hide_broken_links",
+    *tuple(_DEFAULT_LIBRARY_FILTER_BOOLS),
+    "midi_enabled",
+)
 
 # Karaoke lyric prefs (PR-4 section C). Every surface ships ON; the loading
 # strategy defaults to the middle setting because preloading a playlist of
@@ -251,6 +271,84 @@ def _parse_topbar_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
     return out
 
 
+def _parse_library_density(raw: dict[str, Any]) -> str:
+    if "library_density" not in raw:
+        return _DEFAULT_LIBRARY_DENSITY
+    value = raw["library_density"]
+    if value not in ("compact", "cosy"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_density must be compact|cosy",
+            },
+        )
+    return value
+
+
+def _library_browser_bool_defaults() -> dict[str, bool]:
+    return {
+        "hide_broken_links": _DEFAULT_HIDE_BROKEN_LINKS,
+        **_DEFAULT_LIBRARY_FILTER_BOOLS,
+        "midi_enabled": _DEFAULT_MIDI_ENABLED,
+    }
+
+
+def _parse_library_browser_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
+    out = _library_browser_bool_defaults()
+    for key in out:
+        if key not in raw:
+            continue
+        val = raw[key]
+        if not isinstance(val, bool):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": f"{key} must be a boolean"},
+            )
+        out[key] = val
+    return out
+
+
+def _parse_wheel_factor(key: str, val: Any) -> float:
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": f"wheel_sensitivity.{key} must be a number",
+            },
+        )
+    factor = float(val)
+    if not _WHEEL_MIN < factor <= _WHEEL_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    f"wheel_sensitivity.{key} must be between {_WHEEL_MIN} "
+                    f"and {_WHEEL_MAX}, got {val}"
+                ),
+            },
+        )
+    return factor
+
+
+def _parse_wheel_sensitivity(raw: Any) -> dict[str, float]:
+    if raw is None:
+        return dict(_DEFAULT_WHEEL_SENSITIVITY)
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "wheel_sensitivity must be an object"},
+        )
+    out = dict(_DEFAULT_WHEEL_SENSITIVITY)
+    for key in ("mouse", "trackpad"):
+        if key not in raw:
+            continue
+        out[key] = _parse_wheel_factor(key, raw[key])
+    return out
+
+
 def _parse_last_gig_at(value: Any) -> str | None:
     if value is None:
         return None
@@ -280,18 +378,45 @@ def _parse_last_gig_at(value: Any) -> str | None:
     return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def _parse_app_mode_id(value: Any) -> str:
+    if value is None:
+        return _DEFAULT_APP_MODE["id"]
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "app_mode.id must be a string",
+            },
+        )
+    if value not in ("performance", "library-management", "library", "music-player"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    "app_mode.id must be performance|library-management|library|music-player"
+                ),
+            },
+        )
+    return value
+
+
 def _parse_app_mode(raw: Any) -> dict[str, Any]:
     if raw is None:
         return dict(_DEFAULT_APP_MODE)
+    if isinstance(raw, str):
+        return {**dict(_DEFAULT_APP_MODE), "id": _parse_app_mode_id(raw)}
     if not isinstance(raw, dict):
         raise HTTPException(
             status_code=422,
             detail={"code": "UI_PREFS_INVALID", "message": "app_mode must be an object"},
         )
     out = dict(_DEFAULT_APP_MODE)
-    if "last_gig_at" not in raw:
-        return out
-    out["last_gig_at"] = _parse_last_gig_at(raw["last_gig_at"])
+    if "last_gig_at" in raw:
+        out["last_gig_at"] = _parse_last_gig_at(raw["last_gig_at"])
+    if "id" in raw:
+        out["id"] = _parse_app_mode_id(raw["id"])
     return out
 
 
@@ -326,6 +451,9 @@ def _load(path: Path) -> dict[str, Any]:
             "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
             **_lyrics_defaults(),
+            **_library_browser_bool_defaults(),
+            "library_density": _DEFAULT_LIBRARY_DENSITY,
+            "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -395,6 +523,9 @@ def _load(path: Path) -> dict[str, Any]:
         "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
         **_parse_lyrics(raw),
+        **_parse_library_browser_bool_prefs(raw),
+        "library_density": _parse_library_density(raw),
+        "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
     }
 
 
@@ -410,6 +541,14 @@ class AppModeOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     last_gig_at: str | None = None
+    id: AppModePref = "performance"
+
+
+class WheelSensitivityOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mouse: float = _DEFAULT_WHEEL_SENSITIVITY["mouse"]
+    trackpad: float = _DEFAULT_WHEEL_SENSITIVITY["trackpad"]
 
 
 class LevelCalibrationOut(BaseModel):
@@ -452,6 +591,13 @@ class UiPrefsOut(BaseModel):
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
     auto_play_maximize_reach: bool = _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH
+    hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
+    library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
+    next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
+    remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
+    vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
+    wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
+    midi_enabled: bool = _DEFAULT_MIDI_ENABLED
 
 
 class UiPrefsPatch(BaseModel):
@@ -478,10 +624,24 @@ class UiPrefsPatch(BaseModel):
     auto_play_enabled: bool | None = None
     auto_play_enforce_order: bool | None = None
     auto_play_maximize_reach: bool | None = None
+    hide_broken_links: bool | None = None
+    library_density: LibraryDensity | None = None
+    next_only_filter: bool | None = None
+    remixes_filter: bool | None = None
+    vocals_filter: bool | None = None
+    wheel_sensitivity: WheelSensitivityOut | None = None
+    midi_enabled: bool | None = None
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
     for key in _TOPBAR_BOOL_DEFAULTS:
+        value = getattr(body, key)
+        if value is not None:
+            current[key] = value
+
+
+def _merge_library_browser_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    for key in _LIBRARY_BROWSER_BOOL_KEYS:
         value = getattr(body, key)
         if value is not None:
             current[key] = value
@@ -536,6 +696,16 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
             {**current["app_mode"], **body.app_mode.model_dump(exclude_unset=True)}
         )
     _merge_topbar_bool_prefs(current, body)
+    _merge_library_browser_bool_prefs(current, body)
+    if body.library_density is not None:
+        current["library_density"] = body.library_density
+    if body.wheel_sensitivity is not None:
+        current["wheel_sensitivity"] = _parse_wheel_sensitivity(
+            {
+                **current["wheel_sensitivity"],
+                **body.wheel_sensitivity.model_dump(exclude_unset=True),
+            }
+        )
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
         # what's stored so a PUT naming only one half cannot silently wipe the
