@@ -225,8 +225,6 @@ jobs:
           THRESHOLD_IN: ${{ inputs.threshold }}
         run: |
           set -euo pipefail
-          echo "TEST-FORCE-FAIL for issue #2906 - proving window-failure-report fires" >&2
-          exit 1
           threshold="${THRESHOLD_IN:-$DEFAULT_THRESHOLD}"
           python3 -m scripts.periodic_window decide \
             --repo "$REPO" \
@@ -337,9 +335,17 @@ jobs:
 
           title="Periodic checks: the window job itself ${WINDOW_RESULT} at $short"
 
+          # --repo is REQUIRED: this job has no actions/checkout step (window
+          # failed before anything meaningful could be checked out), so gh has
+          # no git remote to infer the repository from. Verified empirically
+          # (issue #2906 PR testing): gh label create with neither --repo nor
+          # a git checkout fails outright with "failed to run git: fatal: not
+          # a git repository", which would have killed this step under
+          # set -euo pipefail before it ever reached the ledger comment below.
           gh label create ci:periodic-checks-window-failed \
+            --repo "$REPO" \
             --color B60205 \
-            --description "The periodic-checks merge-window job failed or was cancelled before it could report; every downstream row was skipped" \
+            --description "The window job failed/was cancelled before it could report; downstream rows were skipped" \
             --force
 
           report_file="${RUNNER_TEMP}/window-failure-${RUN_ID}.md"
