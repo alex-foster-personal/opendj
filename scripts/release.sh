@@ -138,6 +138,10 @@ dmg="$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
 built_archive="$(find "$MACOS_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
 [ -n "$built_archive" ] || die "just dmg produced no updater archive in $MACOS_DIR"
 [ -f "$built_archive.sig" ] || die "just dmg produced no updater signature for $built_archive"
+# The updater plugin gunzips the download; a ZIP under the .tar.gz name is
+# refused with "invalid gzip header" and the app stays put (v0.1.2 to v0.1.4).
+archive_magic="$(head -c 2 "$built_archive" | od -An -tx1 | tr -d ' \n')"
+[ "$archive_magic" = "1f8b" ] || die "updater archive $built_archive is not gzip (magic $archive_magic); refusing to publish what the updater cannot install"
 # Tauri names the archive after the product ("Open DJ.app.tar.gz"). GitHub
 # stores an uploaded asset under a space-free name ("Open.DJ.app.tar.gz"), so
 # a manifest URL carrying the space 404s and the in-app updater never installs
