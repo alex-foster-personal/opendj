@@ -122,26 +122,6 @@ SKIP_DIR_NAMES = frozenset(
 # command it excuses.
 INTENTIONAL_SYNC: tuple[tuple[str, str, str], ...] = (
     (
-        "justfile",
-        "pytest -q -n auto",
-        "local full-suite recipe (`just test`) with no venv-sync prerequisite: uv's "
-        "pre-run sync is what provisions .venv in a fresh worktree, and that sync is "
-        "INEXACT (measured, uv 0.12.5: it adds missing deps and prunes nothing), so "
-        "it cannot delete the extras this guard exists to protect",
-    ),
-    (
-        "justfile",
-        "pytest -q {{args}}",
-        "same recipe, single-process variant (`just test-serial`): same provisioning "
-        "sync, same reason",
-    ),
-    (
-        "justfile",
-        "pytest -q {{target}}",
-        "same recipe, scoped variant (`just test-scope`): same provisioning sync, "
-        "same reason",
-    ),
-    (
         "apps/desktop/setup/setup.js",
         "python -m apps.engine_core serve",
         "not a subprocess: the copy-paste command RENDERED on the desktop setup page "

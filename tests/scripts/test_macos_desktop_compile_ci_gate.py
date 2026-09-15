@@ -1,5 +1,7 @@
 """DEVOPS-12 keeps the desktop shell's macOS-only Rust paths in a compile gate.
 
+[if] a desktop shell change lands [then] the macOS workflow runs cargo check on it, [else stop].
+
 Acceptance:
   - [if] a desktop shell change lands [then] the macOS workflow runs cargo check
     against opendj-desktop, [else stop].

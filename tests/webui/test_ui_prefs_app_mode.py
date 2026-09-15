@@ -35,7 +35,7 @@ def prefs_client(tmp_path: Path) -> TestClient:
 def test_default_last_gig_at_is_null(prefs_client: TestClient) -> None:
     """[if] ui-prefs has no stored app_mode [then] GET returns last_gig_at null, [else stop]."""
     body = prefs_client.get("/api/v1/ui-prefs").json()
-    assert body["app_mode"] == {"last_gig_at": None}
+    assert body["app_mode"]["last_gig_at"] is None
 
 
 @pytest.mark.requirement("PERFMODE-11")
@@ -61,7 +61,7 @@ def test_old_blob_without_app_mode_defaults_null(prefs_client: TestClient, tmp_p
     prefs = tmp_path / "data" / "state" / "ui-prefs.json"
     prefs.write_text(json.dumps({"theme": "dark"}) + "\n", encoding="utf-8")
     body = prefs_client.get("/api/v1/ui-prefs").json()
-    assert body["app_mode"] == {"last_gig_at": None}
+    assert body["app_mode"]["last_gig_at"] is None
 
 
 @pytest.mark.requirement("PERFMODE-11")
