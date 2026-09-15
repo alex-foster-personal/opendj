@@ -31,6 +31,8 @@ from apps.sync_hub.engine_identity import (
     rewrite_incoming_change,
 )
 from apps.sync_hub.engine_identity_map import (
+    IdentityRepairRequest,
+    _remove_remap_loser,
     load_identity_remap,
     record_identity_remap,
 )
@@ -82,6 +84,7 @@ class ApplyResult:
     faults: tuple[protocol.StampFault, ...] = ()
     identity_conflicts: int = 0
     identity_rejects: tuple[protocol.IdentityReject, ...] = ()
+    identity_repairs: tuple[IdentityRepairRequest, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,7 @@ class _ApplyOneOutcome:
     status: str
     faults: tuple[protocol.StampFault, ...] = ()
     identity_reject: protocol.IdentityReject | None = None
+    identity_repairs: tuple[IdentityRepairRequest, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -394,6 +398,7 @@ def _apply(
     *,
     record_changelog: bool,
     received_at: str | None = None,
+    hub_authoritative: bool = False,
 ) -> ApplyResult:
     # canonical_now(), not a local isoformat() call (round 3 finding R8): the
     # two disagree on a zero-microsecond tick, where isoformat() omits the
@@ -414,8 +419,17 @@ def _apply(
     remap: dict[str, str] = load_identity_remap(conn)
     held: set[str] = set()
     identity_rejects: list[protocol.IdentityReject] = []
+    identity_repairs: list[IdentityRepairRequest] = []
     for change in ordered:
-        outcome = _apply_one(conn, change, remap, held, record_changelog, stamp)
+        outcome = _apply_one(
+            conn,
+            change,
+            remap,
+            held,
+            record_changelog,
+            stamp,
+            hub_authoritative=hub_authoritative,
+        )
         if outcome.status == "accepted":
             accepted += 1
             if change.hash_pending:
@@ -429,6 +443,7 @@ def _apply(
             faults.extend(outcome.faults)
             if outcome.status == "identity":
                 identity_conflicts += 1
+        identity_repairs.extend(outcome.identity_repairs)
     return ApplyResult(
         accepted=accepted,
         rejected=rejected,
@@ -438,6 +453,7 @@ def _apply(
         faults=tuple(faults),
         identity_conflicts=identity_conflicts,
         identity_rejects=tuple(identity_rejects),
+        identity_repairs=tuple(identity_repairs),
     )
 
 
@@ -448,14 +464,22 @@ def _apply_one(
     held: set[str],
     record_changelog: bool,
     stamp: str,
+    *,
+    hub_authoritative: bool = False,
 ) -> _ApplyOneOutcome:
     """Apply one rewritten row. Returns accepted/rejected/quarantined/identity."""
-    change = rewrite_incoming_change(change, remap)
+    if change.table == "tracks":
+        rewritten = change
+    else:
+        rewritten = rewrite_incoming_change(change, remap)
+    change = rewritten
     if names_held_parent(change, held):
         return _ApplyOneOutcome(status="identity")
     spec = SPEC_BY_TABLE[change.table]
     columns, values = _checked_values(conn, change.table, spec, change)
-    verdict = _resolve_against_stored(conn, spec, change)
+    verdict = _resolve_against_stored(
+        conn, spec, change, hub_authoritative=hub_authoritative
+    )
     if verdict.identity_conflict:
         held.add(change.pk[0])
         _log_identity_conflict(change)
@@ -479,16 +503,34 @@ def _apply_one(
     # identity collapse writes the incoming row first, then moves stored
     # children, then drops the loser. The other order is a FOREIGN KEY
     # failure: the incoming PK is not stored yet.
+    repairs: list[IdentityRepairRequest] = []
     _upsert(conn, change.table, spec, columns, values)
     for stored_pk in verdict.drop_stored_pks:
+        if hub_authoritative:
+            _remove_remap_loser(conn, remap, str(change.pk[0]))
+            for loser, mapped in list(remap.items()):
+                if loser == stored_pk:
+                    continue
+                if mapped == stored_pk:
+                    record_identity_remap(
+                        conn, remap, loser, str(change.pk[0])
+                    )
         record_identity_remap(conn, remap, stored_pk, change.pk[0])
         remap_track_children(conn, stored_pk, change.pk[0])
-        _drop_superseded(conn, spec, (stored_pk,))
+        if hub_authoritative and change.table == "tracks":
+            repairs.append(
+                IdentityRepairRequest(
+                    hub_survivor_pk=str(change.pk[0]),
+                    offer_pk=str(stored_pk),
+                )
+            )
+        else:
+            _drop_superseded(conn, spec, (stored_pk,))
     if change.table == "playlists" and change.members is not None:
         _replace_members(conn, change.pk[0], change.members)
     if record_changelog:
         _log_hub_change(conn, change, stamp)
-    return _ApplyOneOutcome(status="accepted")
+    return _ApplyOneOutcome(status="accepted", identity_repairs=tuple(repairs))
 
 
 def _log_identity_conflict(change: RowChange) -> None:
@@ -520,6 +562,8 @@ def _resolution_from_identity(
     conn: sqlite3.Connection,
     spec: TableSpec,
     decision: IdentityDecision,
+    *,
+    hub_authoritative: bool = False,
 ) -> _Resolution:
     """Translate a content-identity decision into an apply verdict.
 
@@ -535,13 +579,19 @@ def _resolution_from_identity(
         faults = _faults_of(spec.name, stored)
         if faults:
             return _Resolution(loses=False, faults=faults)
+    if hub_authoritative and decision.kind in ("incoming_wins", "incoming_loses"):
+        return _Resolution(loses=False, drop_stored_pks=decision.stored_pks)
     if decision.kind == "incoming_loses":
         return _Resolution(loses=True, rewrite_incoming_to=decision.survivor_pk)
     return _Resolution(loses=False, drop_stored_pks=decision.stored_pks)
 
 
 def _resolve_against_stored(
-    conn: sqlite3.Connection, spec: TableSpec, change: RowChange
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    change: RowChange,
+    *,
+    hub_authoritative: bool = False,
 ) -> _Resolution:
     """Decide ``change`` against what is already stored, or quarantine it.
 
@@ -568,7 +618,9 @@ def _resolve_against_stored(
     if change.table == "tracks":
         decision = resolve_track_identity(conn, change)
         if decision.kind != "none":
-            return _resolution_from_identity(conn, spec, decision)
+            return _resolution_from_identity(
+                conn, spec, decision, hub_authoritative=hub_authoritative
+            )
     conflict_pks = _natural_conflict_pks(conn, spec, change)
     if not conflict_pks:
         stored = _stored_stamps(conn, spec, change.pk)
@@ -598,8 +650,12 @@ def _resolve_against_stored(
                     change.sort_key,
                     _sort_key_of(stored),
                 )
+        if hub_authoritative:
+            return _Resolution(loses=False)
         return _Resolution(loses=change.sort_key <= _sort_key_of(stored))
-    return _resolve_against_duplicates(conn, spec, change, conflict_pks)
+    return _resolve_against_duplicates(
+        conn, spec, change, conflict_pks, hub_authoritative=hub_authoritative
+    )
 
 
 def _resolve_against_duplicates(
@@ -607,6 +663,8 @@ def _resolve_against_duplicates(
     spec: TableSpec,
     change: RowChange,
     conflict_pks: Sequence[tuple[str, ...]],
+    *,
+    hub_authoritative: bool = False,
 ) -> _Resolution:
     """LWW against every local row sharing this row's natural key.
 
@@ -628,6 +686,10 @@ def _resolve_against_duplicates(
         keys.append((tuple(pk), _sort_key_of(stored)))
     if faults:
         return _Resolution(loses=False, faults=tuple(faults))
+    if hub_authoritative:
+        for conflict_pk in conflict_pks:
+            _drop_superseded(conn, spec, conflict_pk)
+        return _Resolution(loses=False)
     if not all(_duplicate_incoming_wins(change, key, pk) for pk, key in keys):
         return _Resolution(loses=True)
     for conflict_pk in conflict_pks:
@@ -649,6 +711,17 @@ def _log_hub_change(conn: sqlite3.Connection, change: RowChange, stamp: str) -> 
     )
 
 
+def finalize_identity_repairs(
+    conn: sqlite3.Connection, offer_pks: Sequence[str]
+) -> None:
+    """Drop former survivor rows after a bounded identity repair offer."""
+    if not offer_pks:
+        return
+    spec = SPEC_BY_TABLE["tracks"]
+    for pk in offer_pks:
+        _drop_superseded(conn, spec, (pk,))
+
+
 def hub_apply(
     conn: sqlite3.Connection,
     changes: Sequence[RowChange],
@@ -662,16 +735,19 @@ def hub_apply(
 def spoke_apply(
     conn: sqlite3.Connection, changes: Sequence[RowChange]
 ) -> ApplyResult:
-    """Merge a hub pull into a spoke DB. Same LWW rule, no changelog.
+    """Merge a hub pull into a spoke DB. Hub rows win identity collapse.
 
     A spoke keeps no changelog: its pull watermark is the hub's ``seq``, so a
     local changelog would only be a second, divergent numbering.
     """
-    return _apply(conn, changes, record_changelog=False)
+    return _apply(
+        conn, changes, record_changelog=False, hub_authoritative=True
+    )
 
 
 __all__ = [
     "ApplyResult",
+    "finalize_identity_repairs",
     "hub_apply",
     "spoke_apply",
 ]

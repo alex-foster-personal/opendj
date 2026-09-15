@@ -32621,6 +32621,21 @@
             }
           },
           {
+            "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+            "in": "query",
+            "name": "bundle_stable_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor",
+              "items": {
+                "type": "string"
+              },
+              "title": "Bundle Stable Ids",
+              "type": "array"
+            }
+          },
+          {
             "description": "protocol features the caller understands",
             "in": "query",
             "name": "capabilities",

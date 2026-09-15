@@ -14,12 +14,21 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_identity import _follow_remap, remap_track_children
 from apps.sync_hub.sync_set import identity_duplicate_remap
 
 REMAP_TABLE: str = "sync_identity_remap"
+
+
+@dataclass(frozen=True)
+class IdentityRepairRequest:
+    """One bounded identity repair: fetch the hub survivor, offer the loser once."""
+
+    hub_survivor_pk: str
+    offer_pk: str
 
 
 def ensure_identity_remap_table(conn: sqlite3.Connection) -> None:
@@ -108,24 +117,51 @@ def effective_identity_remap(conn: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+def _remove_remap_loser(
+    conn: sqlite3.Connection, remap: dict[str, str], loser_pk: str
+) -> None:
+    """Drop one persisted remap row and keep the in-memory map aligned."""
+    if loser_pk in remap:
+        del remap[loser_pk]
+    ensure_identity_remap_table(conn)
+    conn.execute(
+        f"DELETE FROM {REMAP_TABLE} WHERE loser_pk = ?",
+        (loser_pk,),
+    )
+
+
 def apply_hub_identity_rejects(
     conn: sqlite3.Connection,
     rejects: Sequence[protocol.IdentityReject],
-) -> int:
-    """Apply hub-authority collapse remaps after push. Returns count applied."""
+) -> tuple[int, tuple[IdentityRepairRequest, ...]]:
+    """Apply hub-authority collapse remaps after push.
+
+    Hub ``offered_pk`` and ``survivor_pk`` are raw verdicts: never chain-follow
+    the local table before reconciling, or a reversed row makes the reject a
+    no-op. Returns how many rejects landed and bounded repair requests for the
+    same sync round.
+    """
     if not rejects:
-        return 0
+        return 0, ()
     remap = load_identity_remap(conn)
     applied = 0
+    repairs: list[IdentityRepairRequest] = []
     for reject in rejects:
         if reject.table != "tracks":
             raise protocol.SyncProtocolError(
                 f"identity reject for unsupported table {reject.table!r}"
             )
-        offered = _follow_remap(remap, reject.offered_pk)
-        survivor = _follow_remap(remap, reject.survivor_pk)
+        offered = reject.offered_pk
+        survivor = reject.survivor_pk
+        if not offered or not survivor:
+            raise protocol.SyncProtocolError(
+                "identity reject must name non-empty offered_pk and survivor_pk"
+            )
         if offered == survivor:
-            continue
+            raise protocol.SyncProtocolError(
+                "identity reject offered_pk and survivor_pk must differ"
+            )
+        _remove_remap_loser(conn, remap, survivor)
         for loser, mapped in list(remap.items()):
             if loser == offered:
                 continue
@@ -134,7 +170,10 @@ def apply_hub_identity_rejects(
         record_identity_remap(conn, remap, offered, survivor)
         remap_track_children(conn, offered, survivor)
         applied += 1
-    return applied
+        repairs.append(
+            IdentityRepairRequest(hub_survivor_pk=survivor, offer_pk=offered)
+        )
+    return applied, tuple(repairs)
 
 
 def prepare_spoke_identity(conn: sqlite3.Connection) -> int:
@@ -151,7 +190,9 @@ def prepare_spoke_identity(conn: sqlite3.Connection) -> int:
 
 
 __all__ = [
+    "IdentityRepairRequest",
     "REMAP_TABLE",
+    "_remove_remap_loser",
     "apply_hub_identity_rejects",
     "effective_identity_remap",
     "ensure_identity_remap_table",
