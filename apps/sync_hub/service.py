@@ -66,6 +66,8 @@ from apps.sync_hub import (
     entitlement_gate,
     generation,
     hash_pending as hash_pending_api,
+    policy_push,
+    policy_store,
     protocol,
     service_credentials,
     service_enroll,
@@ -238,6 +240,20 @@ def _protocol_error(exc: protocol.SyncProtocolError) -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
+    )
+
+
+def _policy_push_error(exc: policy_push.SyncPolicyViolationError) -> HTTPException:
+    """422: offered policy rows break a blocking rule."""
+    blocking = [v for v in exc.outcome.violations if v.blocking]
+    message = blocking[0].message if blocking else "policy violation on push batch"
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "SYNC_POLICY_VIOLATION",
+            "message": message,
+            "violations": policy_push.blocking_violations_wire(exc.outcome),
+        },
     )
 
 
@@ -448,6 +464,12 @@ def enroll(
         **_auth("push"),
         **SYNC_VERSION_RESPONSES,
         **entitlement_gate.refusals("push"),
+        422: {
+            "description": (
+                "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION "
+                "(blocking policy rule on offered sync_policies / playlist_pins rows)"
+            ),
+        },
     },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
@@ -477,6 +499,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                     changes, payload.capabilities, "push"
                 )
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
+                policy_push.evaluate_push_policies(conn, payload.machine_id, changes)
                 result = engine.hub_apply(conn, changes)
                 # INSIDE the transaction: a refusal must roll the whole batch
                 # back, which is what main's mid-apply raise did and what the
@@ -492,6 +515,13 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             _generation(request, conn)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
+        except policy_push.SyncPolicyViolationError as exc:
+            raise _policy_push_error(exc) from exc
+        except policy_store.PolicyInputError as exc:
+            raise HTTPException(
+                status_code=exc.status,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         except sqlite3.OperationalError as exc:
