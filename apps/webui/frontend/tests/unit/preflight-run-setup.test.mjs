@@ -99,13 +99,16 @@ test('dismissed-empty library-attached row renders a clickable, enabled Run setu
 	assert.ok(html.includes('Setup was dismissed with an empty library'));
 });
 
-test('the true fresh-install fail row renders no Run setup control (the wizard owns that ask)', async () => {
+test('the true fresh-install fail row renders a clickable Run setup control (issue #2722)', async () => {
 	const html = await renderToHtml(bundle.PreflightCheckRowComponent, {
 		check: freshFailLibraryRow(),
 		navigate: () => {}
 	});
 
-	assert.ok(!html.includes(RUN_SETUP_TESTID), 'a not-dismissed fail row must not offer Run setup');
+	assert.ok(html.includes(RUN_SETUP_TESTID), 'fresh fail library-attached must offer Run setup');
+	const buttonMatch = html.match(/<button[^>]*data-testid="preflight-run-setup"[^>]*>/);
+	assert.ok(buttonMatch);
+	assert.doesNotMatch(buttonMatch[0], /disabled/);
 });
 
 test('an attached, healthy library row renders no Run setup control', async () => {

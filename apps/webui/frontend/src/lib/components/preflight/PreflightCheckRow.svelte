@@ -29,13 +29,25 @@
 
 	let {
 		check,
-		navigate
-	}: { check: PreflightCheck; navigate?: ((path: string) => unknown) | undefined } = $props();
+		navigate,
+		label: labelOverride,
+		detail: detailOverride
+	}: {
+		check: PreflightCheck;
+		navigate?: ((path: string) => unknown) | undefined;
+		label?: string;
+		detail?: string;
+	} = $props();
+
+	const label = $derived(labelOverride ?? check.label);
+	const detail = $derived(detailOverride ?? check.detail);
 
 	let setupBusy = $state(false);
 	let setupError = $state<string | null>(null);
 
-	const offersRunSetup = $derived(check.id === 'library-attached' && check.status === 'pending');
+	const offersRunSetup = $derived(
+		check.id === 'library-attached' && (check.status === 'pending' || check.status === 'fail')
+	);
 
 	function lightClass(status: PreflightCheck['status']): string {
 		if (status === 'pass') return 'light-pass';
@@ -63,12 +75,12 @@
 <li data-check-id={check.id} data-check-status={check.status}>
 	<details open={check.status !== 'pass'}>
 		<summary>
-			<span class="light {lightClass(check.status)}" title={`${check.label}: ${check.status}`}
+			<span class="light {lightClass(check.status)}" title={`${label}: ${check.status}`}
 			></span>
-			<span class="label">{check.label}</span>
+			<span class="label">{label}</span>
 			<span class="status-word">{check.status}</span>
 		</summary>
-		<p class="detail" title={check.detail}>{check.detail}</p>
+		<p class="detail" title={detail}>{detail}</p>
 		{#if check.remediation}
 			<p class="remediation">{check.remediation}</p>
 			{#if settingsUrl(check.remediation)}
