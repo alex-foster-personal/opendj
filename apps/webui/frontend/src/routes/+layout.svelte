@@ -33,6 +33,7 @@
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
+	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
@@ -40,6 +41,10 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
+
+	if (typeof window !== 'undefined') {
+		startLibraryBootHydration();
+	}
 
 	let { children } = $props();
 
@@ -137,11 +142,13 @@
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
+		const uninstallShellNavigation = installShellNavigationPoll();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
 			uninstallHotkeysOverlay();
 			stopInstruments();
+			uninstallShellNavigation();
 			clearInterval(id);
 		};
 	});

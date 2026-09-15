@@ -13,9 +13,9 @@ const TAB = source('lib/components/cloudsync/CloudSyncStatusTab.svelte');
 const LAYOUT = source('routes/+layout.svelte');
 const TOPBAR = source('lib/components/rb/TopBar.svelte');
 
-test('the status chip has off, syncing, ok and error render states', () => {
+test('the status chip has off, syncing, ok, error, inconclusive and update_required render states', () => {
 	/** if the shared chip state function loses a render state then broken */
-	for (const state of ['off', 'syncing', 'ok', 'error', 'inconclusive']) {
+	for (const state of ['off', 'syncing', 'ok', 'error', 'inconclusive', 'update_required']) {
 		assert.match(VIEW, new RegExp(`return '${state}'`), `missing ${state} state`);
 	}
 });
@@ -44,6 +44,17 @@ test('the chip binds a derived aria-label and does not render raw diagnostics', 
 	assert.match(CHIP, /aria-label=\{ariaLabel\}/);
 	assert.doesNotMatch(CHIP, /last_result\.message/);
 	assert.match(CHIP, /class:error=\{chipState\(\) === 'error'\}/);
+	assert.match(CHIP, /class:update-required=\{chipState\(\) === 'update_required'\}/);
+	assert.match(CHIP, /\.chip\.update-required/);
+});
+
+// requirement: CSSTATUS-06
+// [if] update_required is set [then] chip and status headline mention App update required
+test('update_required uses warn styling and App update required copy', () => {
+	assert.match(VIEW, /updateRequiredHeadline/);
+	assert.match(VIEW, /App update required to sync/);
+	assert.match(TAB, /statusHeadline\(status\)/);
+	assert.doesNotMatch(CHIP, /\.chip\.update-required[\s\S]*var\(--danger\)/);
 });
 
 // requirement: CSSTATUS-04
@@ -59,7 +70,7 @@ test('the status tab uses shared error presentation and technical details disclo
 		TAB,
 		/`\$\{status\.last_result\.status\}: \$\{status\.last_result\.message\}`/
 	);
-	assert.match(TAB, /presentCloudSyncResultError\(status\.last_result\)\.summary/);
+	assert.match(TAB, /presentCloudSyncResultError\(status\.last_result, status\.update_required\)\.summary/);
 	assert.match(TAB, /<pre class="technical-details">\{status\.last_result\.message\}<\/pre>/);
 	assert.match(TAB, /<pre class="technical-details">\{row\.message\}<\/pre>/);
 	assert.match(
@@ -102,7 +113,7 @@ test('Sync now and a config save tell the chip to re-read at once', () => {
 	const TAB = source('lib/components/cloudsync/CloudSyncStatusTab.svelte');
 	assert.match(CHIP, /window\.addEventListener\(STATUS_CHANGED_EVENT, onStatusChanged\)/);
 	assert.match(TAB, /window\.dispatchEvent\(new CustomEvent\(STATUS_CHANGED_EVENT\)\)/);
-	assert.equal((TAB.match(/announceStatusChanged\(\);/g) ?? []).length, 2, 'after save and after Sync now');
+	assert.equal((TAB.match(/announceStatusChanged\(\);/g) ?? []).length, 3, 'after save, Sync now, and Force sync');
 });
 
 test('the chip is rendered immediately beside the account bauble', () => {

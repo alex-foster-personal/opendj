@@ -19,6 +19,7 @@ import {
 	SYNC_MODES,
 	type AssetKind,
 	type CloudSyncStatus,
+	type CloudSyncUpdateRequired,
 	type SyncMode,
 	type SyncPolicy,
 	type SyncPolicyPutBody
@@ -151,7 +152,7 @@ export function policyBudgetChange(
 
 // ----------------------------------------------------------- status chip
 
-export type ChipState = 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive';
+export type ChipState = 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive' | 'update_required';
 
 /**
  * How often the chip re-reads GET /cloudsync/status (skipped while the tab
@@ -171,6 +172,7 @@ export const STATUS_CHANGED_EVENT = 'cloudsync:status-changed';
  */
 export function chipState(status: CloudSyncStatus | null): ChipState {
 	if (status === null || !status.configured || !status.running) return 'off';
+	if (status.update_required !== null) return 'update_required';
 	if (status.last_result?.status === 'error') return 'error';
 	// Its own state, never folded into 'ok': the sync completed but its
 	// digest compare excluded rows, so agreement was not verified.
@@ -191,8 +193,24 @@ export function relativeTime(value: string | null, nowMs: number = Date.now()): 
 
 export const CHIP_HREF = '/cloudsync';
 
+export function updateRequiredSummary(updateRequired: CloudSyncUpdateRequired): string {
+	return (
+		`App update required to sync: this machine speaks v${updateRequired.local_wire_version}, ` +
+		`the hub speaks v${updateRequired.peer_wire_version}. ${updateRequired.action}.`
+	);
+}
+
+export function updateRequiredHeadline(updateRequired: CloudSyncUpdateRequired): string {
+	return (
+		`App update required to sync: this machine speaks v${updateRequired.local_wire_version}, ` +
+		`the hub speaks v${updateRequired.peer_wire_version}. Install the latest Open DJ on this ` +
+		'machine (or upgrade the other side if this install is already current).'
+	);
+}
+
 export function chipFullLabel(status: CloudSyncStatus | null): string {
 	const state = chipState(status);
+	if (state === 'update_required') return 'sync: update required';
 	if (state === 'ok') return `sync: ok ${relativeTime(status?.last_push_at ?? null)}`;
 	if (state === 'error') return 'sync: error';
 	if (state === 'inconclusive')
@@ -205,6 +223,7 @@ export function chipShortLabel(status: CloudSyncStatus | null): string {
 	if (state === 'off') return 'off';
 	if (state === 'syncing') return 'sync';
 	if (state === 'ok') return 'ok';
+	if (state === 'update_required') return 'upd';
 	if (state === 'error') return 'err';
 	return 'inc';
 }
@@ -218,6 +237,13 @@ export const CLOUDSYNC_REMOTE_409_SUMMARY =
 export const CLOUDSYNC_GENERIC_ERROR_SUMMARY =
 	'CloudSync sync failed. See technical details and try again.';
 export const CLOUDSYNC_TECHNICAL_DETAILS_LABEL = 'Technical details';
+
+export function presentUpdateRequired(
+	updateRequired: CloudSyncUpdateRequired
+): CloudSyncErrorPresentation {
+	const summary = updateRequiredSummary(updateRequired);
+	return { summary, ariaLabel: summary, details: summary, isConflict409: true };
+}
 
 export interface CloudSyncErrorPresentation {
 	summary: string;
@@ -283,10 +309,16 @@ export function presentCloudSyncError(error: unknown): CloudSyncErrorPresentatio
 }
 
 /** Plain-word summary for a journaled sync result row or chip last_result. */
-export function presentCloudSyncResultError(result: {
-	status: string;
-	message: string;
-}): CloudSyncErrorPresentation {
+export function presentCloudSyncResultError(
+	result: {
+		status: string;
+		message: string;
+	},
+	updateRequired: CloudSyncUpdateRequired | null = null
+): CloudSyncErrorPresentation {
+	if (updateRequired !== null) {
+		return presentUpdateRequired(updateRequired);
+	}
 	if (result.status !== 'error') {
 		return {
 			summary: result.message,
@@ -309,6 +341,9 @@ export function chipTitle(status: CloudSyncStatus | null, loadError: string | nu
 	if (state === 'off') {
 		return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
 	}
+	if (state === 'update_required' && status.update_required !== null) {
+		return `${updateRequiredSummary(status.update_required)} ${next}`;
+	}
 	if (state === 'error') {
 		const summary =
 			status.last_result !== null && status.last_result !== undefined
@@ -328,6 +363,9 @@ export function chipTitle(status: CloudSyncStatus | null, loadError: string | nu
 export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string | null): string {
 	if (status === null) {
 		return loadError === null ? 'CloudSync status' : 'CloudSync status unavailable';
+	}
+	if (chipState(status) === 'update_required' && status.update_required !== null) {
+		return updateRequiredSummary(status.update_required);
 	}
 	if (chipState(status) === 'error') {
 		const summary =
@@ -526,6 +564,9 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 			tone: 'off',
 			text: `Automatic sync is off, but a hub URL is saved (${status.endpoint}). Use Sync now below, or turn on automatic sync above.`
 		};
+	}
+	if (status.update_required !== null) {
+		return { tone: 'warn', text: updateRequiredHeadline(status.update_required) };
 	}
 	// A recorded result is checked BEFORE the heartbeat: what the last sync
 	// actually did is more informative than whether the scheduler is alive

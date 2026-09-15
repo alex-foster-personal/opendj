@@ -934,6 +934,11 @@
             "title": "Cluster Key",
             "type": "string"
           },
+          "confirm_cue_loss": {
+            "default": false,
+            "title": "Confirm Cue Loss",
+            "type": "boolean"
+          },
           "survivor": {
             "title": "Survivor",
             "type": "string"
@@ -3612,6 +3617,17 @@
               }
             ],
             "title": "Signed In As"
+          },
+          "update_required": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRequiredOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine."
           }
         },
         "required": [
@@ -18689,8 +18705,28 @@
             "title": "App Posture",
             "type": "string"
           },
+          "auto_play_enabled": {
+            "default": true,
+            "title": "Auto Play Enabled",
+            "type": "boolean"
+          },
+          "auto_play_enforce_order": {
+            "default": false,
+            "title": "Auto Play Enforce Order",
+            "type": "boolean"
+          },
+          "auto_play_maximize_reach": {
+            "default": true,
+            "title": "Auto Play Maximize Reach",
+            "type": "boolean"
+          },
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
+          },
+          "beat_sync_max": {
+            "default": true,
+            "title": "Beat Sync Max",
+            "type": "boolean"
           },
           "confirm": {
             "additionalProperties": true,
@@ -18796,6 +18832,39 @@
             ],
             "title": "App Posture"
           },
+          "auto_play_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enabled"
+          },
+          "auto_play_enforce_order": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enforce Order"
+          },
+          "auto_play_maximize_reach": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Maximize Reach"
+          },
           "auto_sync": {
             "anyOf": [
               {
@@ -18805,6 +18874,17 @@
                 "type": "null"
               }
             ]
+          },
+          "beat_sync_max": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Sync Max"
           },
           "confirm": {
             "anyOf": [
@@ -19150,6 +19230,35 @@
           "platform_key"
         ],
         "title": "UpdateCheckOut",
+        "type": "object"
+      },
+      "UpdateRequiredOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "code": {
+            "const": "SYNC_WIRE_VERSION",
+            "title": "Code",
+            "type": "string"
+          },
+          "local_wire_version": {
+            "title": "Local Wire Version",
+            "type": "integer"
+          },
+          "peer_wire_version": {
+            "title": "Peer Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "local_wire_version",
+          "peer_wire_version",
+          "action"
+        ],
+        "title": "UpdateRequiredOut",
         "type": "object"
       },
       "UploadFileResult": {
@@ -30127,6 +30236,121 @@
         ]
       }
     },
+    "/api/v1/shell/navigate": {
+      "post": {
+        "operationId": "post_shell_navigate_api_v1_shell_navigate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Shell Navigate Api V1 Shell Navigate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/ack": {
+      "post": {
+        "operationId": "ack_shell_navigate_api_v1_shell_navigate_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Ack Shell Navigate Api V1 Shell Navigate Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/pending": {
+      "get": {
+        "operationId": "get_shell_navigate_pending_api_v1_shell_navigate_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Shell Navigate Pending Api V1 Shell Navigate Pending Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Shell Navigate Pending",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",
@@ -31725,7 +31949,7 @@
     },
     "/api/v1/sync/stems/index": {
       "get": {
-        "description": "Return the published stem bundle index for an authenticated spoke.",
+        "description": "Return the published stem bundle index for an authenticated spoke.\n\n``request.app.state.stem_index_fetcher``, when set by the code that built\nthe app, replaces the real R2 index fetch with the callable's return\nvalue. Production never sets it; only test app-builders do. The\ncredential check always runs first regardless.",
         "operationId": "get_stem_index_api_v1_sync_stems_index_get",
         "parameters": [
           {
@@ -33063,7 +33287,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
           }
         },
         "summary": "Get Stem Manifest",
@@ -33205,7 +33429,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
           },
           "503": {
             "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"

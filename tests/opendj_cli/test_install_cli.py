@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
 from apps.opendj_cli import EXIT_FAILED
 from apps.opendj_cli import install_cli
+from apps.opendj_cli.__main__ import main
+from apps.opendj_cli.helptext import LIST_VERBS_FOOTER, LIBRARY_EPILOG
 
 
 def _payload_tree(tmp_path: Path) -> tuple[Path, Path]:
@@ -76,3 +80,23 @@ def test_install_cli_refuses_outside_payload(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(install_cli, "payload_root", lambda: None)
     exit_code = install_cli.run([], as_json=False)
     assert exit_code == EXIT_FAILED
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_help_lists_install_cli() -> None:
+    """[if] an agent runs opendj --help [then] install-cli appears, [else stop]."""
+    with redirect_stdout(io.StringIO()) as captured:
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+    assert exc.value.code == 0
+    assert "install-cli" in captured.getvalue()
+    assert "install-cli" in LIBRARY_EPILOG
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_list_verbs_footer_lists_install_cli() -> None:
+    """[if] an agent runs opendj --list-verbs [then] install-cli appears, [else stop]."""
+    with redirect_stdout(io.StringIO()) as captured:
+        main(["--list-verbs"])
+    assert "install-cli" in captured.getvalue()
+    assert "install-cli" in LIST_VERBS_FOOTER

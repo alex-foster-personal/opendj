@@ -73,7 +73,11 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
             "the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when "
             "the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when "
             "this engine is configured for hydration but could not arm it at boot "
-            "(for example boto3 is absent or the hub was unreachable), "
+            "(for example boto3 is absent or the hub was unreachable). "
+            "Transient boot failures such as hub unreachable or HTTP 403/5xx may "
+            "self-recover on the next throttled stems miss; structural failures "
+            "such as missing boto3, unusable sync credential, or HTTP 401 "
+            "STEM_HUB_AUTH_REFUSED stay terminal until operator action. "
             "STEM_HUB_UNREACHABLE when the configured hub cannot be reached, "
             "STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or "
             "STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
@@ -181,10 +185,25 @@ def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavai
 def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None:
     unarmed_reason = getattr(request.app.state, "stem_hydration_unarmed_reason", None)
     if unarmed_reason is not None:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
-        )
+        unarmed_kind = getattr(request.app.state, "stem_hydration_unarmed_kind", None)
+        if unarmed_kind == "transient":
+            from apps.webui.server.stem_hydration_rearm import maybe_rearm_stem_hydration
+
+            if maybe_rearm_stem_hydration(request.app):
+                unarmed_reason = None
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "STEM_HYDRATION_NOT_ARMED",
+                        "message": unarmed_reason,
+                    },
+                )
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
+            )
     source = getattr(request.app.state, "stem_hydration_source", None)
     data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
     if source is None and getattr(request.app.state, "stem_hydration_cfg", None) is not None:

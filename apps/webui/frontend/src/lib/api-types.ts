@@ -4028,6 +4028,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/shell/navigate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Shell Navigate */
+        post: operations["post_shell_navigate_api_v1_shell_navigate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ack Shell Navigate */
+        post: operations["ack_shell_navigate_api_v1_shell_navigate_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shell Navigate Pending */
+        get: operations["get_shell_navigate_pending_api_v1_shell_navigate_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/smartlists": {
         parameters: {
             query?: never;
@@ -4582,6 +4633,11 @@ export interface paths {
         /**
          * Get Stem Index
          * @description Return the published stem bundle index for an authenticated spoke.
+         *
+         *     ``request.app.state.stem_index_fetcher``, when set by the code that built
+         *     the app, replaces the real R2 index fetch with the callable's return
+         *     value. Production never sets it; only test app-builders do. The
+         *     credential check always runs first regardless.
          */
         get: operations["get_stem_index_api_v1_sync_stems_index_get"];
         put?: never;
@@ -5711,6 +5767,11 @@ export interface components {
         ApplyIn: {
             /** Cluster Key */
             cluster_key: string;
+            /**
+             * Confirm Cue Loss
+             * @default false
+             */
+            confirm_cue_loss: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -6785,6 +6846,8 @@ export interface components {
             running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
+            /** @description Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine. */
+            update_required?: components["schemas"]["UpdateRequiredOut"] | null;
         };
         /**
          * CloudTransferOut
@@ -12560,7 +12623,27 @@ export interface components {
              * @enum {string}
              */
             app_posture: "prep" | "gig";
+            /**
+             * Auto Play Enabled
+             * @default true
+             */
+            auto_play_enabled: boolean;
+            /**
+             * Auto Play Enforce Order
+             * @default false
+             */
+            auto_play_enforce_order: boolean;
+            /**
+             * Auto Play Maximize Reach
+             * @default true
+             */
+            auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
+            /**
+             * Beat Sync Max
+             * @default true
+             */
+            beat_sync_max: boolean;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -12634,7 +12717,15 @@ export interface components {
         UiPrefsPatch: {
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
+            /** Auto Play Enabled */
+            auto_play_enabled?: boolean | null;
+            /** Auto Play Enforce Order */
+            auto_play_enforce_order?: boolean | null;
+            /** Auto Play Maximize Reach */
+            auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Beat Sync Max */
+            beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -12730,6 +12821,20 @@ export interface components {
              * @enum {string}
              */
             status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateRequiredOut */
+        UpdateRequiredOut: {
+            /** Action */
+            action: string;
+            /**
+             * Code
+             * @constant
+             */
+            code: "SYNC_WIRE_VERSION";
+            /** Local Wire Version */
+            local_wire_version: number;
+            /** Peer Wire Version */
+            peer_wire_version: number;
         };
         /** UploadFileResult */
         UploadFileResult: {
@@ -20249,6 +20354,102 @@ export interface operations {
             };
         };
     };
+    post_shell_navigate_api_v1_shell_navigate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ack_shell_navigate_api_v1_shell_navigate_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shell_navigate_pending_api_v1_shell_navigate_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_smartlists_api_v1_smartlists_get: {
         parameters: {
             query?: {
@@ -22238,7 +22439,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -22341,7 +22542,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;
