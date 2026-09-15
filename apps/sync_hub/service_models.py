@@ -47,6 +47,14 @@ class RowModel(BaseModel):
     hash_pending: bool | None = None
 
 
+class IdentityRejectModel(BaseModel):
+    """One identity-collapse rejection: the offered PK lost to a hub survivor."""
+
+    table: str = Field(min_length=1)
+    offered_pk: str = Field(min_length=1)
+    survivor_pk: str = Field(min_length=1)
+
+
 #: Carried on every request that can move rows (``hello``, ``push``,
 #: ``enroll``) and gated per request, like the capability tokens. ``None`` --
 #: the field absent -- is a build from before the wire/schema split, judged by
@@ -213,6 +221,10 @@ class PushResponse(BaseModel):
     #: ``accepted + rejected + quarantined`` equals the rows offered.
     quarantined: int = 0
     hash_pending: int = 0
+    #: Identity-collapse rejections: the offered PK lost to a stored survivor
+    #: (issue #3057). Only emitted for ``tracks`` rows where the hub
+    #: kept a different PK for the same content identity.
+    identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
 
 
 class PullResponse(BaseModel):
@@ -300,6 +312,7 @@ __all__ = [
     "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
+    "IdentityRejectModel",
     "MachineModel",
     "PullResponse",
     "PushRequest",
