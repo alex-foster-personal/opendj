@@ -28,7 +28,15 @@
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { type SetupStatus, getSetupStatus, setupRefusal } from './setup-api';
+import { type SetupStatus, finalSetupRefusal, getSetupStatus } from './setup-api';
+
+export const FIRST_RUN_PROBE_TIMEOUT_MS = 5_000;
+export const FIRST_RUN_PROBE_INTERVAL_MS = 250;
+
+export interface FirstRunResult {
+	show: boolean;
+	error: string | null;
+}
 
 /**
  * The decision, given what is already known. Pure: no fetch, no navigation.
@@ -46,19 +54,54 @@ export function shouldShowFirstRun(
 	return status.should_show_wizard;
 }
 
+function _sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Poll until the daemon flavor is no longer unknown, or timeout. */
+export async function waitForEngineFlavor(
+	timeoutMs = FIRST_RUN_PROBE_TIMEOUT_MS,
+	intervalMs = FIRST_RUN_PROBE_INTERVAL_MS
+): Promise<'engine' | 'legacy' | 'timeout'> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const flavor = await capabilities.probe();
+		if (flavor !== 'unknown') return flavor;
+		await _sleep(intervalMs);
+	}
+	return 'timeout';
+}
+
 /**
- * Probe the daemon and resolve the gate. Returns false rather than throwing:
- * every failure mode here means "show the library", and a caller that had to
- * handle an exception would only translate it back into that same answer.
+ * Probe the daemon and resolve the gate. Returns false rather than throwing
+ * for status-fetch failures (show the library). Probe timeout is NOT silent:
+ * resolveFirstRunWithMeta surfaces it as an error for the boot gate.
  */
-export async function resolveFirstRun(): Promise<boolean> {
-	await capabilities.probe();
-	const refusal = setupRefusal();
-	if (refusal !== null) return false;
+export async function resolveFirstRunWithMeta(
+	options: { probeTimeoutMs?: number; probeIntervalMs?: number } = {}
+): Promise<FirstRunResult> {
+	const flavor = await waitForEngineFlavor(
+		options.probeTimeoutMs ?? FIRST_RUN_PROBE_TIMEOUT_MS,
+		options.probeIntervalMs ?? FIRST_RUN_PROBE_INTERVAL_MS
+	);
+	if (flavor === 'timeout') {
+		return {
+			show: false,
+			error:
+				'Could not reach the app engine in time. Check that the backend is running, then retry.'
+		};
+	}
+	const refusal = finalSetupRefusal();
+	if (refusal !== null) return { show: false, error: null };
 	try {
-		return shouldShowFirstRun(refusal, await getSetupStatus());
+		return { show: shouldShowFirstRun(refusal, await getSetupStatus()), error: null };
 	} catch (exc) {
 		console.error('[library] first-run check failed', exc);
-		return false;
+		return { show: false, error: null };
 	}
+}
+
+export async function resolveFirstRun(): Promise<boolean> {
+	const result = await resolveFirstRunWithMeta();
+	return result.show;
 }

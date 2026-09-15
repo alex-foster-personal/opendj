@@ -21,9 +21,12 @@
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
-	import { resolveFirstRun } from '$lib/setup/first-run';
+	import { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
+	import { resolveFirstRunWithMeta } from '$lib/setup/first-run';
+	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { settingsOverlay } from '$lib/settings/overlay.svelte';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -51,7 +54,11 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
-	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, setupOpen));
+	const settingsOpen = $derived(settingsOverlay.open);
+	const blockOnPreflight = $derived(
+		shouldBlockOnPreflight(preflightGate.status, setupOpen, settingsOpen)
+	);
+	let firstRunError = $state<string | null>(null);
 	const hideCheckIds = $derived(
 		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
 			? [LIBRARY_ATTACHED_CHECK_ID]
@@ -90,15 +97,30 @@
 	 * reload, a second tab and an agent all get the same answer. The rule
 	 * itself lives in $lib/setup/first-run, under test.
 	 */
+	function openSetupForFirstRun(): void {
+		openSetupOverlay();
+		// Already on a performance route (the packaged shell's landing
+		// route) means no navigation at all; the overlay is simply raised.
+		if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+	}
+
 	function raiseSetupOnFirstRun(): void {
-		void resolveFirstRun().then((show) => {
-			if (!show) return;
-			openSetupOverlay();
-			// Already on a performance route (the packaged shell's landing
-			// route) means no navigation at all; the overlay is simply raised.
-			if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+		void resolveFirstRunWithMeta().then((result) => {
+			firstRunError = result.error;
+			if (result.show) {
+				openSetupForFirstRun();
+			}
 		});
 	}
+
+	// When preflight says the library is empty, open setup even if the daemon
+	// suppressed should_show_wizard (e.g. dev checkout) or the first-run probe
+	// raced entitlements. Decoupled from entitlements.load().
+	$effect(() => {
+		if (!needsSetupForEmptyLibrary(preflightGate.checks, setupOpen)) return;
+		if (finalSetupRefusal() !== null) return;
+		openSetupForFirstRun();
+	});
 
 	onMount(() => {
 		// THE capability probe: one health GET, before anything daemon-specific
@@ -134,7 +156,13 @@
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
 	     see PreflightScreen.svelte for the polling policy. While first-run
 	     setup is open the gate yields so the wizard is not buried. -->
-	<PreflightScreen mode="boot" blocking navigate={goto} hideCheckIds={hideCheckIds} />
+	<PreflightScreen
+		mode="boot"
+		blocking
+		navigate={goto}
+		hideCheckIds={hideCheckIds}
+		{firstRunError}
+	/>
 {:else}
 
 {#if health.bindWarning}
@@ -225,6 +253,7 @@
 		blocking={false}
 		navigate={goto}
 		hideCheckIds={hideCheckIds}
+		{firstRunError}
 	/>
 {/if}
 

@@ -33,13 +33,14 @@ export const LIBRARY_ATTACHED_CHECK_ID = 'library-attached';
 
 /** Whether the boot preflight screen should cover the whole app.
  *
- * While the first-run setup overlay is open the wizard is actively resolving
- * library-attached, so the boot gate must not sit on top of it. */
+ * While the first-run setup overlay or settings panel is open the boot gate
+ * must not sit on top of an interactive surface the user is trying to use. */
 export function shouldBlockOnPreflight(
 	status: PreflightOverallStatus,
-	setupOpen: boolean
+	setupOpen: boolean,
+	settingsOpen = false
 ): boolean {
-	if (setupOpen) return false;
+	if (setupOpen || settingsOpen) return false;
 	return status !== 'pass';
 }
 

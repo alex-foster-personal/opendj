@@ -48,6 +48,11 @@ test('shouldBlockOnPreflight: setup open and preflight fail does not block', () 
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('unknown', true), false);
 });
 
+test('shouldBlockOnPreflight: settings open and preflight fail does not block', () => {
+	assert.equal(preflightHelpers.shouldBlockOnPreflight('fail', false, true), false);
+	assert.equal(preflightHelpers.shouldBlockOnPreflight('unknown', false, true), false);
+});
+
 test('shouldBlockOnPreflight: a pass never blocks', () => {
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('pass', false), false);
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('pass', true), false);
