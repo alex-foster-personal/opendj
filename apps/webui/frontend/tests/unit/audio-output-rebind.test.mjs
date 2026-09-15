@@ -118,6 +118,40 @@ describe('installOutputRebind', () => {
 			'if a device change while playing does not cycle the context then the output stays dead - broken');
 	});
 
+	// Tue 15 Sep 2026: master pinned to LG ULTRAWIDE via setSinkId, the maintainer switched
+	// the macOS output to check Spotify, and the rebind suspended the pinned
+	// context anyway: four "clock stalled" toasts, "Audio stopped: suspended",
+	// "re-bound", four more stalls. A pinned sink does not follow the default.
+	it('devicechange with the context pinned to a device = no cycle, logged as skipped', async () => {
+		const h = harness();
+		h.ctx.sinkId = 'lg-ultrawide-id';
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.deepEqual(h.calls, ['perf:audio-output-rebind-skipped'],
+			'if changing the macOS default output cycles a context pinned to another device then every output switch drops audio - broken');
+	});
+
+	it('a stall on a pinned context still cycles (a dead stream is not a default change)', async () => {
+		const h = harness();
+		h.ctx.sinkId = 'lg-ultrawide-id';
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		mod.noteOutputStall(1);
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.deepEqual(h.calls.slice(0, 2), ['suspend', 'resume'],
+			'if a pinned context ignores a real output stall then a dead pinned device stays silent - broken');
+	});
+
+	it('devicechange with an explicit default sink ("") still cycles', async () => {
+		const h = harness();
+		h.ctx.sinkId = '';
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.deepEqual(h.calls.slice(0, 2), ['suspend', 'resume'],
+			'if a context following the system default ignores a device change then the phone-call cutout returns - broken');
+	});
+
 	it('two devicechange events inside the debounce = still one cycle', async () => {
 		const h = harness();
 		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
