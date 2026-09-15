@@ -3,9 +3,15 @@
 Rekordbox ingest now hashes the audio file at ingest time (see
 ``apps.shared.state.ingest.rekordbox``), but any track ingested before that
 fix landed -- or ingested while its audio drive was offline -- still has
-``content_hash IS NULL``. This CLI re-visits exactly those rows, resolves
-``file_path`` through the shared platform resolver, and hashes whatever
-audio is actually reachable on this machine.
+``content_hash IS NULL``. This CLI re-visits exactly those rows and hashes
+whatever audio is actually reachable on **this machine**.
+
+Resolution prefers this machine's local ``track_locations`` row (primary
+first), then falls back to ``tracks.file_path`` through the path map.
+Another machine's ``track_locations`` row is never consulted. The summary
+reports ``resolved_via_location`` and ``resolved_via_track_path`` counts
+alongside the honest ``total`` / ``resolvable`` / ``hashed`` /
+``unresolvable`` denominators.
 
 Requirements (mini-PRD)
 ------------------------
@@ -56,6 +62,8 @@ from typing import Any
 from apps.shared import hashing
 from apps.shared.platform_paths import DATA_DIR, PathMap, load_path_map, resolve_asset_path
 from apps.shared.state import db as state_db
+from apps.shared.state import locations as state_locations
+from apps.shared.state import sync_stamp
 from apps.shared.state.writer import StateWriter
 
 
@@ -67,6 +75,8 @@ class BackfillReport:
     resolvable: int = 0
     hashed: int = 0
     unresolvable: int = 0
+    resolved_via_location: int = 0
+    resolved_via_track_path: int = 0
     live: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -105,6 +115,33 @@ def _candidate_rows(
     return conn.execute(sql).fetchall()
 
 
+def _resolve_hash_path(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    track_file_path: str | None,
+    machine_id: str,
+) -> tuple[str | None, str]:
+    """Prefer this machine's local location, else ``tracks.file_path``.
+
+    Returns ``(path, source)`` where ``source`` is ``"location"`` or
+    ``"track_path"``. Another machine's ``track_locations`` row is never
+    consulted.
+    """
+    if state_locations.locations_table_ready(conn):
+        row = conn.execute(
+            "SELECT file_path FROM track_locations "
+            "WHERE stable_id = ? AND machine_id = ? AND deleted_at IS NULL "
+            "AND kind = 'local' AND file_path IS NOT NULL "
+            "ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+            "created_at, location_id "
+            "LIMIT 1",
+            (stable_id, machine_id),
+        ).fetchone()
+        if row is not None:
+            return (row[0], "location")
+    return (track_file_path, "track_path")
+
+
 def run_backfill(
     data_dir: Path, *, live: bool, limit: int | None = None
 ) -> BackfillReport:
@@ -128,14 +165,22 @@ def run_backfill(
 
         rows = _candidate_rows(conn, limit)
         report.total = len(rows)
+        machine_id = sync_stamp.local_machine_id(conn)
 
         for row in rows:
-            digest = _try_hash(row["file_path"], path_map)
+            raw_path, source = _resolve_hash_path(
+                conn, row["stable_id"], row["file_path"], machine_id
+            )
+            digest = _try_hash(raw_path, path_map)
             if digest is None:
                 report.unresolvable += 1
                 continue
             report.resolvable += 1
             report.hashed += 1
+            if source == "location":
+                report.resolved_via_location += 1
+            else:
+                report.resolved_via_track_path += 1
             if writer is not None:
                 writer.upsert_track(
                     stable_id=row["stable_id"],
@@ -163,6 +208,8 @@ def _print_summary(report: BackfillReport) -> None:
     print(f"  resolvable audio (denominator): {report.resolvable}")
     print(f"  hashed:                        {report.hashed}")
     print(f"  unresolvable:                  {report.unresolvable}")
+    print(f"  resolved via track_locations:  {report.resolved_via_location}")
+    print(f"  resolved via tracks.file_path: {report.resolved_via_track_path}")
     if not report.live and report.resolvable:
         print("  (dry-run: no writes; pass --live to persist these hashes)")
 
