@@ -210,7 +210,7 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import {
-		ensureAnlz,
+		ensureAnlzPrefetch,
 		getAnlzEntry,
 		isAnlzEntryUsable,
 		registerAnlzConsumer,
@@ -2553,7 +2553,7 @@
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
 		// result (including a later ambient retry) once it lands in the cache.
-		ensureAnlz(row.stable_id);
+		ensureAnlzPrefetch(row.stable_id);
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
 		ensureAudioPrefetch(row.stable_id);
