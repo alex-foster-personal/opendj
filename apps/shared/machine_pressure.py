@@ -9,7 +9,7 @@ runtime budget is documented as untested because it was taken at load average
 554 with roughly 71 MB free. The browser cannot see any of that. This is the
 one read-only door it gets.
 
-WHAT IT REUSES. ``scripts/diagnostics/probe_native_metrics.machine_metrics``,
+WHAT IT REUSES. ``apps.diagnostics.probe_native_metrics.machine_metrics``,
 which is already the project's machine sampler: the launchd probe writes it
 into its JSONL every 15 seconds, and it is where load average and free page
 count now live too. Writing a second sampler here would guarantee the two
@@ -179,7 +179,7 @@ class PressureSample:
 
 
 def _sample_machine_metrics() -> dict[str, Any]:
-    from scripts.diagnostics.probe_native_metrics import machine_metrics
+    from apps.diagnostics.probe_native_metrics import machine_metrics
 
     return machine_metrics()
 
