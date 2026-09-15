@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -37,6 +38,7 @@ DEFAULT_LAUNCH_PATH = ROOT / ".claude" / "launch.json"
 LAUNCH_VERSION = "0.0.1"
 Profile = Literal["default", "worktree"]
 PORT_KINDS = frozenset({"fixed", "worktree"})
+_ATTACH_URL_RE = re.compile(r"http://(localhost|127\.0\.0\.1):[0-9]{4,5}")
 WORKTREE_SERVICES = frozenset({"backend", "frontend"})
 
 
@@ -47,9 +49,10 @@ class DevServerRegistryError(ValueError):
 @dataclass(frozen=True)
 class ResolvedServer:
     name: str
-    runtime_executable: str
+    runtime_executable: str | None
     runtime_args: tuple[str, ...]
     port: int
+    url: str | None = None
 
 
 # ----- registry loading ---------------------------------------------------
@@ -164,6 +167,30 @@ def _resolve_port_declaration(
     return ports.backend if service == "backend" else ports.frontend
 
 
+def _validate_attach_record(record: Mapping[str, Any], *, source: str, server_name: str) -> None:
+    """An attach-only record names a server something else already runs (launchd,
+    a tunnel): a local ``url`` and no launcher. Both keys at once is a contradiction."""
+    url = record.get("url")
+    if not isinstance(url, str) or not _ATTACH_URL_RE.fullmatch(url):
+        raise DevServerRegistryError(
+            f"{source} server {server_name!r} url must look like http://localhost:<port>"
+        )
+    if "runtimeExecutable" in record or "runtimeArgs" in record:
+        raise DevServerRegistryError(
+            f"{source} server {server_name!r} is attach-only (url) and must not also "
+            "declare runtimeExecutable or runtimeArgs"
+        )
+    port_decl = record.get("port")
+    if not isinstance(port_decl, dict) or port_decl.get("kind") != "fixed":
+        raise DevServerRegistryError(
+            f"{source} server {server_name!r} attach-only entries need a fixed port"
+        )
+    if str(port_decl.get("value")) != url.rsplit(":", 1)[1]:
+        raise DevServerRegistryError(
+            f"{source} server {server_name!r} url port and fixed port disagree"
+        )
+
+
 def _validate_server_record(
     record: Any,
     *,
@@ -174,6 +201,10 @@ def _validate_server_record(
     name = record.get("name")
     if not isinstance(name, str) or not name.strip():
         raise DevServerRegistryError(f"{source} server name must be a non-empty string")
+    if "url" in record:
+        _validate_attach_record(record, source=source, server_name=name)
+        _validate_owner(record.get("owner"), source=source, server_name=name)
+        return record
     runtime_executable = record.get("runtimeExecutable")
     if not isinstance(runtime_executable, str) or not runtime_executable.strip():
         raise DevServerRegistryError(
@@ -227,9 +258,10 @@ def resolve_servers(
         resolved.append(
             ResolvedServer(
                 name=name,
-                runtime_executable=record["runtimeExecutable"],
-                runtime_args=tuple(record["runtimeArgs"]),
+                runtime_executable=record.get("runtimeExecutable"),
+                runtime_args=tuple(record.get("runtimeArgs", ())),
                 port=port,
+                url=record.get("url"),
             )
         )
     return resolved
@@ -238,18 +270,21 @@ def resolve_servers(
 # ----- launch generation --------------------------------------------------
 
 
+def _launch_entry(server: ResolvedServer) -> dict[str, Any]:
+    if server.url is not None:
+        return {"name": server.name, "url": server.url, "port": server.port}
+    return {
+        "name": server.name,
+        "runtimeExecutable": server.runtime_executable,
+        "runtimeArgs": list(server.runtime_args),
+        "port": server.port,
+    }
+
+
 def build_launch_document(servers: Sequence[ResolvedServer]) -> dict[str, Any]:
     return {
         "version": LAUNCH_VERSION,
-        "configurations": [
-            {
-                "name": server.name,
-                "runtimeExecutable": server.runtime_executable,
-                "runtimeArgs": list(server.runtime_args),
-                "port": server.port,
-            }
-            for server in servers
-        ],
+        "configurations": [_launch_entry(server) for server in servers],
     }
 
 
