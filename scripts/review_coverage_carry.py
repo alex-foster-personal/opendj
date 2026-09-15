@@ -1,9 +1,10 @@
-"""Debt-only carry for reviewer coverage (issue #2907, ADR-0049).
+"""Debt-only carry for reviewer coverage (issues #2907, #2871; ADR-0049).
 
 When the PR head advanced only via `.planning/debt/<pr>.md` commits, accept a
 reviewer artifact from an earlier ancestor head instead of forcing a paid
 re-review. Local `git diff --name-only` is the source of truth; the PR files
-API is never consulted.
+API is never consulted. When carry applies, ``review_coverage.triage()`` prints
+both SHAs and the diff path list (issue #2871).
 """
 
 from __future__ import annotations
@@ -77,6 +78,37 @@ def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     raise TriageError(
         f"git merge-base --is-ancestor {ancestor} {descendant} failed: {detail}"
     )
+
+
+def carry_proof_lines(
+    carried_sha: str,
+    head_sha: str,
+    paths: frozenset[str],
+) -> tuple[str, ...]:
+    """Lines printed when coverage is carried (issue #2871)."""
+    header = f"  debt-only carry: reviewed {carried_sha} -> head {head_sha}"
+    diff_cmd = f"  git diff --name-only {carried_sha}..{head_sha}:"
+    path_lines = tuple(f"    {p}" for p in sorted(paths))
+    return (header, diff_cmd, *path_lines)
+
+
+def print_carry_proofs(verdicts, head_sha: str, repo_root: Path) -> None:
+    """Print debt-only carry proof blocks once per unique (carried, head) pair."""
+    seen: set[tuple[str, str]] = set()
+    for verdict in verdicts:
+        if not verdict.carried_from:
+            continue
+        pair = (verdict.carried_from, head_sha)
+        if pair in seen:
+            continue
+        seen.add(pair)
+        paths = (
+            verdict.carried_paths
+            if verdict.carried_paths
+            else paths_between(repo_root, verdict.carried_from, head_sha)
+        )
+        for line in carry_proof_lines(verdict.carried_from, head_sha, paths):
+            print(line)
 
 
 def paths_between(root: Path, older: str, newer: str) -> frozenset[str]:
@@ -256,11 +288,13 @@ def try_carry_verdict(
             continue
         if not is_debt_only_since(repo_root, pr, carried_sha, head_sha):
             continue
+        paths = paths_between(repo_root, carried_sha, head_sha)
         short = carried_sha[:11]
         return ReviewerVerdict(
             name=name,
             reviewed=True,
             reason=f"carried from {short} (debt-only since)",
-            carried_from=short,
+            carried_from=carried_sha,
+            carried_paths=paths,
         )
     return None
