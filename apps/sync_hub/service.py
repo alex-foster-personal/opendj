@@ -561,27 +561,35 @@ def pull(
         _require_registered(conn, machine_id)
         _gate(request, conn, machine_id, "read")
         try:
-            batch = engine.hub_changes_since(conn, since_seq, limit=limit)
-            bundle_rows = engine.hub_track_bundles(conn, bundle_stable_ids)
-            rows = list(batch.rows)
-            seen = {(row.table, row.pk) for row in rows}
-            for row in bundle_rows:
-                key = (row.table, row.pk)
-                if key not in seen:
-                    seen.add(key)
-                    rows.append(row)
-            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
+            if bundle_stable_ids:
+                rows = engine.hub_track_bundles(conn, bundle_stable_ids)
+                seq = since_seq
+                has_more = False
+                skipped = 0
+                quarantined = 0
+            else:
+                batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+                rows = batch.rows
+                seq = batch.seq
+                has_more = batch.has_more
+                skipped = batch.skipped
+                quarantined = batch.quarantined
+                _refuse_unless_capable(
+                    capabilities_,
+                    "pull",
+                    service_shortfall.pull_shortfall(batch),
+                )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return PullResponse(
             rows=_row_models(rows),
-            seq=batch.seq,
+            seq=seq,
             machines=_machine_models(conn),
-            has_more=batch.has_more,
-            skipped=batch.skipped,
-            quarantined=batch.quarantined,
+            has_more=has_more,
+            skipped=skipped,
+            quarantined=quarantined,
         )
 
 

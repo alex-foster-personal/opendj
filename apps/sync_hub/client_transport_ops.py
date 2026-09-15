@@ -322,8 +322,6 @@ def _pull_repair_bundles(
         f"{API_PREFIX}/pull",
         {
             "machine_id": machine_id,
-            "since_seq": "0",
-            "limit": "1",
             "bundle_stable_ids": list(stable_ids),
             "capabilities": capabilities.QUARANTINE_V1,
         },

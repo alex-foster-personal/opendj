@@ -517,7 +517,7 @@ def _apply_one(
                     )
         record_identity_remap(conn, remap, stored_pk, change.pk[0])
         remap_track_children(conn, stored_pk, change.pk[0])
-        if hub_authoritative:
+        if hub_authoritative and change.table == "tracks":
             repairs.append(
                 IdentityRepairRequest(
                     hub_survivor_pk=str(change.pk[0]),
@@ -653,9 +653,9 @@ def _resolve_against_stored(
         if hub_authoritative:
             return _Resolution(loses=False)
         return _Resolution(loses=change.sort_key <= _sort_key_of(stored))
-        return _resolve_against_duplicates(
-            conn, spec, change, conflict_pks, hub_authoritative=hub_authoritative
-        )
+    return _resolve_against_duplicates(
+        conn, spec, change, conflict_pks, hub_authoritative=hub_authoritative
+    )
 
 
 def _resolve_against_duplicates(

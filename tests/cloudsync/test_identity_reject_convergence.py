@@ -19,7 +19,15 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import capabilities, client, engine, protocol, sync_set, wire_version
+from apps.sync_hub import (
+    capabilities,
+    client,
+    digest_diff,
+    engine,
+    protocol,
+    sync_set,
+    wire_version,
+)
 from apps.sync_hub.transport import API_PREFIX, HttpTransport
 from apps.sync_hub.engine_identity import _follow_remap
 from apps.sync_hub.engine_identity_map import (
@@ -390,15 +398,21 @@ class _RepairObservingTransport:
 
     inner: _TestClientTransport
     bundle_pulls: int = 0
+    bundle_row_pks: tuple[tuple[str, ...], ...] = ()
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self.inner.post(path, payload)
 
     def get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         bundle = params.get("bundle_stable_ids")
+        payload = self.inner.get(path, params)
         if bundle:
             self.bundle_pulls += 1
-        return self.inner.get(path, params)
+            self.bundle_row_pks += tuple(
+                tuple(str(part) for part in row["pk"])
+                for row in payload.get("rows", [])
+            )
+        return payload
 
 
 def test_apply_hub_identity_rejects_validates_pks(tmp_path: Path) -> None:
@@ -473,7 +487,7 @@ def test_spoke_apply_defers_drop_until_repair_offer(tmp_path: Path) -> None:
 
 
 def test_reversed_remap_row_deleted_on_hub_reject(tmp_path: Path) -> None:
-    """[if] spoke holds reversed remap [then] hub reject deletes it and remaps children, [else stop]."""
+    """[if] remap is reversed [then] hub reject remaps children, [else stop]."""
     conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
     try:
         for pk in (_PK_HUB, _PK_SPOKE):
@@ -566,7 +580,7 @@ def test_spoke_apply_prefers_hub_pk_over_local_stamp(tmp_path: Path) -> None:
 
 
 def test_hub_apply_keeps_local_identity_election(tmp_path: Path) -> None:
-    """[if] hub receives conflicting identity row [then] hub apply keeps local election, [else stop]."""
+    """[if] hub gets an identity conflict [then] local election stays, [else stop]."""
     conn = _open_hub(tmp_path)
     try:
         _insert_identified_track(
@@ -597,8 +611,95 @@ def test_hub_apply_keeps_local_identity_election(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_run_sync_repairs_identity_contradiction_from_pull(tmp_path: Path) -> None:
+    """[if] pull contradicts local identity [then] repair runs once, [else stop]."""
+    spoke = tmp_path / "spoke"
+    hub_dir = tmp_path / "hub"
+
+    with TestClient(_hub_app(hub_dir)) as http:
+        transport = _TestClientTransport(http)
+        initial = client.run_sync(
+            spoke,
+            "http://hub.invalid",
+            transport=transport,
+            name="spoke",
+        )
+
+        spoke_conn = state_db.open_rw(client.state_db_path(spoke))
+        try:
+            for pk in (_PK_HUB, _PK_SPOKE):
+                _insert_identified_track(
+                    spoke_conn,
+                    pk,
+                    title="mirror",
+                    content_hash=_HASH_A,
+                    updated_at=_STAMP,
+                    origin=_DEV_A,
+                )
+            record_identity_remap(spoke_conn, {}, _PK_HUB, _PK_SPOKE)
+            watermark = engine.read_watermark(spoke_conn, initial.hub_machine_id)
+            engine.write_watermark(
+                spoke_conn,
+                engine.Watermark(
+                    peer=watermark.peer,
+                    last_push_seq=engine.local_seq(spoke_conn),
+                    last_pull_seq=watermark.last_pull_seq,
+                    last_sync_at=watermark.last_sync_at,
+                    peer_generation=watermark.peer_generation,
+                ),
+            )
+            spoke_conn.commit()
+        finally:
+            spoke_conn.close()
+
+        hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
+        try:
+            unrelated = _incoming_track(
+                hub_conn,
+                _PK_C,
+                title="unrelated changelog row",
+                updated_at=_STAMP,
+                content_hash="c" * 64,
+            )
+            assert engine.hub_apply(hub_conn, [unrelated]).accepted == 1
+            _seed_hub_track(hub_conn, _PK_HUB)
+            _insert_identified_track(
+                hub_conn,
+                _PK_SPOKE,
+                title="mirror",
+                content_hash=_HASH_A,
+                updated_at=_STAMP,
+                origin=_DEV_A,
+            )
+            _seed_track_children(hub_conn, _PK_HUB, location_id="loc-mirror")
+            record_identity_remap(hub_conn, {}, _PK_SPOKE, _PK_HUB)
+            hub_conn.commit()
+        finally:
+            hub_conn.close()
+
+        observing = _RepairObservingTransport(transport)
+        result = client.run_sync(
+            spoke,
+            "http://hub.invalid",
+            transport=observing,
+            name="spoke",
+        )
+
+    assert result.pushed == 0
+    assert observing.bundle_pulls == 1
+    assert (_PK_HUB,) in observing.bundle_row_pks
+    assert (_PK_C,) not in observing.bundle_row_pks
+    spoke_after = state_db.open_rw(client.state_db_path(spoke))
+    try:
+        assert load_identity_remap(spoke_after) == {_PK_SPOKE: _PK_HUB}
+        assert _PK_SPOKE not in _track_ids(spoke_after)
+        assert {_PK_HUB, _PK_C} == _track_ids(spoke_after)
+    finally:
+        spoke_after.close()
+
+
 def test_reversed_remap_converges_in_one_sync(tmp_path: Path) -> None:
-    """[if] peers hold opposite remaps for one identity [then] one run_sync converges, [else stop]."""
+    """[if] remaps oppose [then] one sync converges and stays quiet, [else stop]."""
     spoke = tmp_path / "spoke"
     hub_dir = tmp_path / "hub"
     hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
@@ -623,14 +724,41 @@ def test_reversed_remap_converges_in_one_sync(tmp_path: Path) -> None:
             transport=observing,
             name="spoke",
         )
+        spoke_once = state_db.open_rw(client.state_db_path(spoke))
+        hub_once = state_db.open_rw(client.state_db_path(hub_dir))
+        try:
+            assert digest_diff.sample_divergence(
+                observing,
+                spoke_once,
+                result.machine_id,
+                ("tracks",),
+            ) == []
+            for table in (
+                "track_fields",
+                "track_locations",
+                "track_vendor_ids",
+                "playlist_memberships",
+            ):
+                spoke_owners = spoke_once.execute(
+                    f"SELECT stable_id FROM {table} ORDER BY stable_id"
+                ).fetchall()
+                hub_owners = hub_once.execute(
+                    f"SELECT stable_id FROM {table} ORDER BY stable_id"
+                ).fetchall()
+                assert spoke_owners == hub_owners == [(_PK_HUB,)]
+        finally:
+            spoke_once.close()
+            hub_once.close()
+        bundle_pulls_after_first = observing.bundle_pulls
         quiet = client.run_sync(
             spoke,
             "http://hub.invalid",
-            transport=_TestClientTransport(http),
+            transport=observing,
             name="spoke",
         )
 
     assert observing.bundle_pulls == 1
+    assert observing.bundle_pulls == bundle_pulls_after_first
     assert not result.digest_inconclusive
     assert not quiet.digest_inconclusive
 
