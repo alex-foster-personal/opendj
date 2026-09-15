@@ -482,7 +482,7 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 
 def _default_journal_path(data_dir: Path) -> Path:
-    """Same fixed path ``scripts/local_stems_to_r2.py`` journals to."""
+    """Same fixed path ``apps.stems.r2_migration`` journals to."""
     return Path(data_dir) / "state" / "stem-r2-migration.jsonl"
 
 

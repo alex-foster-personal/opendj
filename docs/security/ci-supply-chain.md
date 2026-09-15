@@ -29,10 +29,23 @@ Our exposure, measured Mon 14 Sep 2026:
    [autofixing.md](autofixing.md)).
 3. No `pull_request_target`, and no `${{ github.event.* }}` interpolated into `run:`
    (pass values through `env:`, as the repo already does).
-4. **Security scanners run on GitHub-hosted runners** with no repo secrets in scope. They
-   need no secrets, and a compromised scanner on a GitHub-hosted runner steals nothing
-   persistent. Prefer a checksum-verified release binary over a marketplace action.
-   Cost is small: osv-scanner, gitleaks and zizmor each run in about a minute.
+4. **Security scanners run on GitHub-hosted runners** (`ubuntu-latest`) with no repo
+   secrets in scope, never on the self-hosted pool. `security.yml` hardcodes the label,
+   and `scripts/security/scan_workflows.sh` fails if any of its jobs says otherwise.
+   - Why not self-hosted: those runners are persistent and shared with jobs that hold
+     write-scoped tokens, the nucbox runners sit on a machine we do not administer, and
+     on Tue 15 Sep 2026 `CI_RUNS_ON_UNPRIVILEGED_LINUX` matched zero online runners.
+     Scanners need no secrets, so a compromised scanner on an ephemeral hosted VM steals
+     nothing persistent.
+   - Install: checksum-verified release binaries (`scripts/security/install_scanners.sh`)
+     and hash-pinned wheels for Semgrep, not marketplace actions.
+   - Cost, estimated Tue 15 Sep 2026: the PR side is one consolidated job of about 1 to
+     2 billed minutes (areas skip when their files did not change). About 8,700 PR runs a
+     month gives 8,700 to 17,400 minutes, roughly $52 to $104 a month at $0.006 a minute,
+     since September hosted usage is already past the 2,000 free minutes. Scheduled scans
+     add under 300 minutes a month. Drafts are skipped and superseded runs are cancelled.
+     If the cost bites, path-filter the PR trigger before moving scanners off hosted
+     runners.
 5. Signing material (Apple Developer ID / notary profile, Tauri updater minisign key)
    never lives on self-hosted runners that also run PR jobs. Today signing is a local
    step (`scripts/sign_macos_developer_id.sh`). Keep it that way until a dedicated,

@@ -31,6 +31,11 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
+	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
 	import {
 		plannedTitle,
 		anyDeckPlaying,
@@ -43,10 +48,6 @@
 		libraryJobsStore,
 		LibraryJobsChrome,
 		type NextOnlyRef,
-		getIngestCoverage,
-		type IngestCoverage,
-		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot,
 		completeLibraryUsable,
 		recordOpenToLibraryRows,
 		formatReplaceStateUrl,
