@@ -126,6 +126,7 @@ def test_api_rejects_traversal(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """[if] the api path climbs out of /api/v1 [then] exit failed with no stdout, [else stop]."""
     assert (
         main(["api", "GET", "/api/v1/../../../etc/passwd"])
         == api_cli.EXIT_FAILED
@@ -138,6 +139,7 @@ def test_api_rejects_root_path(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """[if] the api path is bare / [then] exit failed with no stdout, [else stop]."""
     assert main(["api", "GET", "/"]) == api_cli.EXIT_FAILED
     assert capsys.readouterr().out == ""
 
@@ -146,6 +148,7 @@ def test_api_rejects_root_path(
 def test_api_invalid_path_emits_json_code(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """[if] --json and the path is invalid [then] stdout carries code invalid_path, [else stop]."""
     assert main(["--json", "api", "GET", "/"]) == api_cli.EXIT_FAILED
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -158,6 +161,7 @@ def test_api_rejects_html_success_body(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """[if] a 200 body is HTML not JSON [then] exit failed and stderr says not JSON, [else stop]."""
     base_url, _port = html_api_daemon
     _patch_backend(monkeypatch, base_url)
 
@@ -174,6 +178,7 @@ def test_api_health_still_accepts_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """[if] the health route answers JSON [then] exit ok and print the body, [else stop]."""
     base_url, _port = html_api_daemon
     _patch_backend(monkeypatch, base_url)
 
