@@ -16,12 +16,16 @@ import pytest
 
 from apps.shared import hashing
 from apps.shared.state import db as state_db
+from apps.shared.state import backfill_content_hash as backfill_module
 from apps.shared.state.backfill_content_hash import build_parser, run_backfill
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 
 GOOD_ID = "a" * 40
 DEAD_ID = "b" * 40
+FOREIGN_ID = "c" * 40
+REMOTE_ONLY_ID = "d" * 40
+_TS = "2026-09-15T00:00:00+00:00"
 
 
 def _write_silent_wav(path: Path, seconds: float = 0.1, framerate: int = 44100) -> None:
@@ -169,3 +173,161 @@ def test_cli_parses_live_with_data_dir_and_limit(tmp_path: Path) -> None:
     assert args.dry_run is False
     assert args.limit == 5
     assert args.data_dir == tmp_path
+
+
+def _seed_foreign_path_with_local_location(
+    data_dir: Path, good_wav: Path,
+) -> Path:
+    """Track row points at another machine's path; local location is playable."""
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
+    try:
+        writer.upsert_track(
+            stable_id=FOREIGN_ID, stable_id_tier="isrc", title="Synced Track",
+            artists=["Someone"], album="An Album", isrc="GBCEN0900134",
+            duration_ms=100, file_path=str(good_wav),
+        )
+        # Synced libraries keep ingest-time file_path from the other spoke while
+        # this machine's track_locations row was probed locally.
+        conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+            ("/Users/dev/Music/ghost.wav", FOREIGN_ID),
+        )
+    finally:
+        writer.close()
+        conn.close()
+    return db_path
+
+
+def test_hashes_via_this_machine_primary_location_when_track_path_is_foreign(
+    data_dir: Path, good_wav: Path,
+) -> None:
+    db_path = _seed_foreign_path_with_local_location(data_dir, good_wav)
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 1
+    assert dry.resolved_via_location == 1
+    assert dry.resolved_via_track_path == 0
+    assert dry.unresolvable == 0
+
+    live = run_backfill(data_dir, live=True)
+    assert live.resolvable == 1
+    assert live.resolved_via_location == 1
+
+    expected = hashing.sha256_file(good_wav)
+    assert _content_hashes(db_path)[FOREIGN_ID] == expected
+
+
+def test_falls_back_to_track_path_when_local_location_missing(
+    data_dir: Path, good_wav: Path,
+) -> None:
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
+    try:
+        writer.upsert_track(
+            stable_id=GOOD_ID, stable_id_tier="isrc", title="Local Path Track",
+            artists=["Someone"], album="An Album", isrc="GBCEN0900132",
+            duration_ms=100, file_path=str(good_wav),
+        )
+        conn.execute("DELETE FROM track_locations WHERE stable_id = ?", (GOOD_ID,))
+    finally:
+        writer.close()
+        conn.close()
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 1
+    assert dry.resolved_via_track_path == 1
+    assert dry.resolved_via_location == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[GOOD_ID] == hashing.sha256_file(good_wav)
+
+
+def _seed_remote_only_location(data_dir: Path, good_wav: Path) -> Path:
+    """Only another machine's location points at readable audio."""
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
+    try:
+        writer.upsert_track(
+            stable_id=REMOTE_ONLY_ID, stable_id_tier="isrc", title="Remote Only",
+            artists=["No One"], album=None, isrc="GBCEN0900135",
+            duration_ms=100, file_path=str(data_dir / "audio" / "missing.wav"),
+        )
+        conn.execute(
+            "INSERT INTO machines(machine_id, name, platform, is_hub, "
+            "first_seen, last_seen) VALUES ('m-remote', 'remote', 'macos', 0, ?, ?)",
+            (_TS, _TS),
+        )
+        conn.execute(
+            "INSERT INTO track_locations(location_id, stable_id, machine_id, "
+            "kind, role, file_path, created_at, updated_at, origin_device_id) "
+            "VALUES ('deadbeef000000000000000000000001', ?, 'm-remote', "
+            "'local', 'primary', ?, ?, ?, 'm-remote')",
+            (REMOTE_ONLY_ID, str(good_wav), _TS, _TS),
+        )
+    finally:
+        writer.close()
+        conn.close()
+    return db_path
+
+
+def test_never_uses_another_machines_location_even_when_file_exists(
+    data_dir: Path, good_wav: Path,
+) -> None:
+    db_path = _seed_remote_only_location(data_dir, good_wav)
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 0
+    assert dry.unresolvable == 1
+    assert dry.hashed == 0
+    assert dry.resolved_via_location == 0
+    assert dry.resolved_via_track_path == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[REMOTE_ONLY_ID] is None
+
+
+@pytest.mark.xfail(strict=True, reason="issue #2839: track_path-only regression")
+def test_mutation_track_path_only_breaks_location_resolution(
+    data_dir: Path, good_wav: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_foreign_path_with_local_location(data_dir, good_wav)
+    monkeypatch.setattr(
+        backfill_module,
+        "_resolve_hash_path",
+        lambda _conn, _sid, track_file_path, _mid: (track_file_path, "track_path"),
+    )
+    report = run_backfill(data_dir, live=False)
+    assert report.resolvable == 1
+
+
+def _resolve_without_machine_filter(
+    conn, stable_id: str, track_file_path: str | None, _machine_id: str,
+) -> tuple[str | None, str]:
+    row = conn.execute(
+        "SELECT file_path FROM track_locations "
+        "WHERE stable_id = ? AND deleted_at IS NULL "
+        "AND kind = 'local' AND file_path IS NOT NULL "
+        "ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+        "created_at, location_id "
+        "LIMIT 1",
+        (stable_id,),
+    ).fetchone()
+    if row is not None:
+        return (row[0], "location")
+    return (track_file_path, "track_path")
+
+
+@pytest.mark.xfail(strict=True, reason="issue #2839: missing machine_id filter")
+def test_mutation_no_machine_filter_hashes_foreign_location(
+    data_dir: Path, good_wav: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_remote_only_location(data_dir, good_wav)
+    monkeypatch.setattr(
+        backfill_module, "_resolve_hash_path", _resolve_without_machine_filter,
+    )
+    report = run_backfill(data_dir, live=False)
+    assert report.resolvable == 0
