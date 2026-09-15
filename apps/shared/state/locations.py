@@ -489,8 +489,8 @@ def _candidate_from_path(
     media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
         return None
-    working = fs_residency.is_materialised(path)
-    size = fs_residency.materialised_size(path) if working else None
+    working = fs_residency.exists_for_audio_open_probe(path)
+    size = fs_residency.materialised_size(path) if fs_residency.is_materialised(path) else None
     quality = audio_quality.classify(str(path), duration_ms, size)
     return _Candidate(
         kind=kind,

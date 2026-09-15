@@ -40,6 +40,7 @@ from apps.sync_hub.protocol import (
     RowChange,
     TableSpec,
 )
+from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 
 log = logging.getLogger("apps.sync_hub.engine")
 
@@ -102,31 +103,9 @@ class Offer:
         return len(self.rows)
 
 
-def _repair_for(reason: str) -> str:
-    """The operator next step for this hold, not always stamp repair."""
-    if sync_set.IDENTITY_HOLD_REASON in reason:
-        return (
-            "it carries identity (`python -m apps.shared.state."
-            "backfill_content_hash --live` or `/fix-links`)"
-        )
-    if sync_set.IDENTITY_DUP_REASON in reason:
-        return "the LWW survivor of this content identity is offered instead"
-    return (
-        "it is repaired with `python -m apps.shared.state."
-        "normalize_stamps --live`"
-    )
-
-
 def _quarantine(table: str, pk: object, reason: str) -> None:
-    """Log one row's exclusion, naming the cause. Never silent."""
-    log.error(
-        "%s row %s is NOT in the sync set: %s. It will not reach any peer "
-        "until %s; every other row still syncs.",
-        table,
-        pk,
-        reason,
-        _repair_for(reason),
-    )
+    """Record one row's exclusion for pass-scoped aggregation. Never silent."""
+    record_quarantine(table, pk, reason)
 
 
 def _members_for_playlist(
@@ -337,23 +316,26 @@ def spoke_push(
     push before a single other row was offered, on every sync, forever.
     Quarantine is transitive over the FK graph (see :data:`_PARENT_KEYS`).
     """
-    if watermark is None or watermark.needs_full_offer:
-        changes: list[RowChange] = []
-        held_rows: list[HeldRow] = []
-        held = sync_set.HeldKeys(conn)
-        for spec in SYNC_TABLES:
-            offer = _rows_for_table(conn, spec, held)
-            changes.extend(offer.rows)
-            held_rows.extend(offer.held)
-        return Offer(rows=changes, held=tuple(held_rows))
-    top = local_seq(conn) if ceiling is None else int(ceiling)
-    entries = conn.execute(
-        f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
-        f"WHERE seq > ? AND seq <= ? ORDER BY seq",
-        (watermark.last_push_seq, top),
-    ).fetchall()
-    offer, _skipped = _changelog_rows(conn, entries, changelog=LOCAL_CHANGELOG_TABLE)
-    return offer
+    with quarantine_pass("offer"):
+        if watermark is None or watermark.needs_full_offer:
+            changes: list[RowChange] = []
+            held_rows: list[HeldRow] = []
+            held = sync_set.HeldKeys(conn)
+            for spec in SYNC_TABLES:
+                offer = _rows_for_table(conn, spec, held)
+                changes.extend(offer.rows)
+                held_rows.extend(offer.held)
+            return Offer(rows=changes, held=tuple(held_rows))
+        top = local_seq(conn) if ceiling is None else int(ceiling)
+        entries = conn.execute(
+            f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
+            f"WHERE seq > ? AND seq <= ? ORDER BY seq",
+            (watermark.last_push_seq, top),
+        ).fetchall()
+        offer, _skipped = _changelog_rows(
+            conn, entries, changelog=LOCAL_CHANGELOG_TABLE
+        )
+        return offer
 
 
 def relog_held(

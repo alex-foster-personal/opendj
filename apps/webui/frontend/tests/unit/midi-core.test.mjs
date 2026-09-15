@@ -54,10 +54,16 @@ before(async () => {
 	uninstallPerformanceIpc = performanceIpc.installPerformanceBrowserIpc();
 });
 
+// A failed before() leaves later fields unset. The Vite server must still
+// close, or its open handles keep node --test alive and hang the whole unit
+// suite (Tue 15 Sep 2026: a module that failed to load did exactly that).
 after(async () => {
-	uninstallPerformanceIpc();
-	delete globalThis.window;
-	await vite.close();
+	try {
+		uninstallPerformanceIpc?.();
+		delete globalThis.window;
+	} finally {
+		await vite?.close();
+	}
 });
 
 // ------------------------------------------------------------ wire decode

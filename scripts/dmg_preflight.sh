@@ -47,6 +47,15 @@
 #   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_ID       Desktop-app client baked into payload
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET   non-confidential installed-app secret
+#   MDT_DOPPLER_BIN                     doppler executable to resolve the
+#                                        OAuth client from (default: "doppler",
+#                                        resolved via PATH as before). Lets a
+#                                        caller point at an explicit path
+#                                        instead of hiding doppler by editing
+#                                        PATH, which is host-layout-dependent:
+#                                        stripping doppler's PATH directory can
+#                                        also strip an unrelated tool that
+#                                        happens to share it.
 #
 # -Claude
 set -euo pipefail
@@ -650,6 +659,58 @@ print("OK", pub_id)
     esac
 }
 
+#----- J. Icon Composer compiled asset (actool or verified fallback) -------
+
+# The gap this closes: since #2567 `just dmg` compiles AppIcon.icon with
+# actool after cargo tauri build. actool ships only with full Xcode, not
+# Command Line Tools alone, so silver and the other build hosts used to pay
+# for the full release compile and then die here. This check runs the SAME
+# decision helper as the recipe, in read-only mode, so a host without actool
+# can still proceed when the committed Assets.car matches the source digest.
+check_icon_composer_asset() {
+    section "J. Icon Composer compiled asset (actool or verified fallback)"
+    local icon_source="$ROOT/apps/desktop/src-tauri/icons/AppIcon.icon"
+    if [ ! -d "$icon_source" ]; then
+        fail "Icon Composer asset" \
+             "no Icon Composer source at $icon_source" \
+             "Run the preflight against a full checkout."
+        return
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        fail "Icon Composer asset" \
+             "cannot run the Icon Composer readiness check: uv is not on PATH" \
+             "Install uv (see section E). The check is not being skipped, it could not be measured."
+        return
+    fi
+    local status=0
+    local result host
+    host="$(uname -n 2>/dev/null || hostname 2>/dev/null || echo unknown)"
+    result="$(cd "$SELF_ROOT" && uv run --no-project python -m scripts.icon_composer_asset \
+        --check \
+        --source "$icon_source" \
+        --committed-car "$icon_source/Assets.car" \
+        --sidecar "$icon_source/Assets.car.source.sha256" 2>&1)" || status=$?
+    if [ "$status" -ne 0 ]; then
+        fail "Icon Composer asset" \
+             "$result" \
+             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate apps/desktop/src-tauri/icons/AppIcon.icon/Assets.car and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
+        return
+    fi
+    case "$result" in
+        compile\ actool=*)
+            ok "Icon Composer: actool available on $host; compile required at build time ($result)"
+            ;;
+        reuse-committed\ path=*)
+            ok "Icon Composer: no actool on $host; verified committed fallback ($result)"
+            ;;
+        *)
+            fail "Icon Composer asset" \
+                 "Icon Composer readiness check returned an unrecognised result on $host: $result" \
+                 "Re-run: uv run --no-project python -m scripts.icon_composer_asset --check --source $icon_source"
+            ;;
+    esac
+}
+
 #----- I. Google OAuth client (packaged sign-in) --------------------------
 
 # The gap this closes: every packaged install since Google sign-in shipped
@@ -666,15 +727,19 @@ check_google_oauth_client() {
         ok "Google OAuth client id and secret are present in the environment (values not printed)"
         return
     fi
-    if command -v doppler >/dev/null 2>&1; then
+    # MDT_DOPPLER_BIN lets a caller (tests, an alternate install layout)
+    # point at an explicit doppler executable instead of relying on PATH.
+    # Defaults to the bare name, resolved via PATH exactly as before.
+    local doppler_bin="${MDT_DOPPLER_BIN:-doppler}"
+    if command -v "$doppler_bin" >/dev/null 2>&1; then
         local got_id="" got_secret=""
-        got_id="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+        got_id="$("$doppler_bin" secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
         if [ -z "$got_id" ]; then
-            got_id="$(doppler secrets get GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+            got_id="$("$doppler_bin" secrets get GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
         fi
-        got_secret="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+        got_secret="$("$doppler_bin" secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
         if [ -z "$got_secret" ]; then
-            got_secret="$(doppler secrets get GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+            got_secret="$("$doppler_bin" secrets get GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
         fi
         if [ -n "$got_id" ] && [ -n "$got_secret" ]; then
             ok "Google OAuth client id and secret are available from Doppler (values not printed)"
@@ -700,6 +765,7 @@ check_pnpm_pin
 check_spa_built
 check_updater_signing_key
 check_google_oauth_client
+check_icon_composer_asset
 
 section "summary"
 if [ "$FAILURES" -gt 0 ]; then

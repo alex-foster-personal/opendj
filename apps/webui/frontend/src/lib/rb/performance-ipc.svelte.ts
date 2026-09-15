@@ -125,8 +125,14 @@ import type {
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
+import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
+import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
+export {
+	installRescueRingWriterHooks,
+	uninstallRescueRingWriterHooks
+} from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 import {
 	hoveredEdgeList,
@@ -170,7 +176,13 @@ export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
-	| { type: 'play'; deck: DeckId; playing: boolean; quantize?: boolean }
+	| {
+			type: 'play';
+			deck: DeckId;
+			playing: boolean;
+			quantize?: boolean;
+			start_at_context_sec?: number;
+	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
@@ -253,11 +265,15 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
-	| { type: 'playlist_redo' };
+	| { type: 'playlist_redo' }
+	| { type: 'rescue_resume'; decks: Array<{ deck: DeckId; position_ms: number }> }
+	| { type: 'rescue_stop_all' };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
 	stable_id: string | null;
+	/** Resolved source path cached at load time (RESCUE-01). */
+	source_path: string | null;
 	/** Track.has_rb_mapping carried onto the deck (#736); a browser/CLI agent
 	 * driving hot_cue_save checks this before dispatching, the same signal
 	 * HotCueBank reads to go inert-with-tooltip. */
@@ -349,6 +365,12 @@ export interface PerformanceState {
 	browser: { active_playlist: string | null };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
+	rescue_restore: {
+		phase: typeof rescueRestoreStatus.phase;
+		playing_deck_ids: DeckId[];
+		per_deck: Record<DeckId, 'pending' | 'decoded' | 'failed'>;
+		started_at_ms: number;
+	};
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
@@ -777,6 +799,21 @@ export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	'headphone'
 ];
 
+export const PERFORMANCE_RESCUE_COMMAND_SCOPES: readonly CommandScope[] = PERFORMANCE_PRESET_COMMAND_SCOPES;
+
+let _rescueRestoredDecks: DeckId[] = [];
+
+export function rescueRestoreLocksControls(): boolean {
+	return (
+		rescueRestoreStatus.phase === 'restoring' ||
+		rescueRestoreStatus.phase === 'resuming'
+	);
+}
+
+export function setRescueRestorePhaseForTest(phase: typeof rescueRestoreStatus.phase): void {
+	rescueRestoreStatus.phase = phase;
+}
+
 declare global {
 	interface Window {
 		musicDjToolsPerformance?: PerformanceBrowserIpc;
@@ -984,9 +1021,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
-	if (type === 'playlist_undo' || type === 'playlist_redo') {
+	if (type === 'playlist_undo' || type === 'playlist_redo' || type === 'rescue_stop_all') {
 		_exactKeys(record, ['type']);
 		return { type };
+	}
+	if (type === 'rescue_resume') {
+		_exactKeys(record, ['type', 'decks']);
+		if (!Array.isArray(record.decks) || record.decks.length === 0) {
+			throw new RangeError('rescue_resume requires at least one deck');
+		}
+		const decks = record.decks.map((entry) => {
+			const row = _record(entry);
+			_exactKeys(row, ['deck', 'position_ms']);
+			const position_ms = _finite('position_ms', row.position_ms);
+			if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
+			return { deck: _deck(row.deck), position_ms };
+		});
+		return { type, decks };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -1044,13 +1095,24 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (record.lock === undefined) return { type, deck };
 		return { type, deck, lock: _boolean('lock', record.lock) };
 	} else if (type === 'play') {
-		_exactKeys(record, ['type', 'deck', 'playing', 'quantize']);
-		if (record.quantize === undefined) return { type, deck, playing: _boolean('playing', record.playing) };
+		_exactKeys(record, ['type', 'deck', 'playing', 'quantize', 'start_at_context_sec']);
+		const playing = _boolean('playing', record.playing);
+		const start_at_context_sec =
+			record.start_at_context_sec === undefined
+				? undefined
+				: _finite('start_at_context_sec', record.start_at_context_sec);
+		if (start_at_context_sec !== undefined && start_at_context_sec < 0) {
+			throw new RangeError('start_at_context_sec must be >= 0');
+		}
+		if (record.quantize === undefined && start_at_context_sec === undefined) {
+			return { type, deck, playing };
+		}
 		return {
 			type,
 			deck,
-			playing: _boolean('playing', record.playing),
-			quantize: _boolean('quantize', record.quantize)
+			playing,
+			...(record.quantize === undefined ? {} : { quantize: _boolean('quantize', record.quantize) }),
+			...(start_at_context_sec === undefined ? {} : { start_at_context_sec })
 		};
 	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
 		_exactKeys(record, ['type', 'deck']);
@@ -1320,6 +1382,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	return {
 		deck_id: deckId,
 		stable_id: deck.stable_id,
+		source_path: deck.source_path,
 		has_rb_mapping: deck.has_rb_mapping,
 		title: deck.title,
 		artist: deck.artist,
@@ -1444,6 +1507,12 @@ export function queryPerformanceState(): PerformanceState {
 		browser: { active_playlist: _activeBrowserPlaylist },
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
+		rescue_restore: {
+			phase: rescueRestoreStatus.phase,
+			playing_deck_ids: [...rescueRestoreStatus.playing_deck_ids],
+			per_deck: { ...rescueRestoreStatus.per_deck },
+			started_at_ms: rescueRestoreStatus.started_at_ms
+		},
 		last_error: performanceCommandStatus.last_error,
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
 		// Proxy wrapping the assigned object - and a Proxy, regardless of what
@@ -1507,6 +1576,11 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
 }
 
+function _completeCommand(command: PerformanceCommand): PerformanceState {
+	notifyRescueTransportEvent(command);
+	return queryPerformanceState();
+}
+
 function _persistenceScope(deck: DeckId): PersistenceScope {
 	return `persistence-${deck}`;
 }
@@ -1514,6 +1588,9 @@ function _persistenceScope(deck: DeckId): PersistenceScope {
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
+	if (command.type === 'rescue_resume' || command.type === 'rescue_stop_all') {
+		return PERFORMANCE_RESCUE_COMMAND_SCOPES;
+	}
 	if (
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
@@ -1670,7 +1747,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) {
-			if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+			if (command.start_at_context_sec !== undefined) {
+				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
+			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {
@@ -1934,6 +2013,19 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error('playlist_redo requires a mounted playlist history panel');
 		}
 		await _playlistHistoryAdapter.redo();
+	} else if (command.type === 'rescue_resume') {
+		const plans = command.decks.map((entry) => ({
+			deck: entry.deck,
+			positionSec: entry.position_ms / 1000
+		}));
+		await engine.rescueResumeTogether(plans);
+		_rescueRestoredDecks = command.decks.map((entry) => entry.deck);
+	} else if (command.type === 'rescue_stop_all') {
+		const decks = _rescueRestoredDecks.length > 0 ? _rescueRestoredDecks : DECK_IDS.filter(
+			(deckId) => getDeckState(deckId).playing
+		);
+		await engine.rescueStopAllTogether(decks);
+		_rescueRestoredDecks = [];
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -2379,11 +2471,24 @@ async function _dispatchUnknown(
 		_persistCommandError(deck, error);
 		throw error;
 	}
+	if (
+		rescueRestoreLocksControls() &&
+		(command.type === 'play' ||
+			command.type === 'load' ||
+			command.type === 'unload' ||
+			command.type === 'cue')
+	) {
+		const error = new Error(
+			`rescue restore owns controls at ${rescueRestoreStatus.phase}; command ${command.type} rejected`
+		);
+		_persistCommandError(deck, error);
+		throw error;
+	}
 	if (command.type === 'feedback_mark') {
 		try {
 			const mark = _feedbackMark(command.vote);
 			await recordPerformanceFeedback(mark);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			_persistCommandError(null, error);
 			throw error;
@@ -2421,7 +2526,7 @@ async function _dispatchUnknown(
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error, command);
 			throw error;
@@ -2436,7 +2541,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
@@ -2458,7 +2563,7 @@ async function _dispatchUnknown(
 			// exactly the gap press_to_schedule_ms exists to expose.
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;

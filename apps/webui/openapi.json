@@ -495,6 +495,52 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisApplyRequest": {
+        "properties": {
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          }
+        },
+        "title": "AnalysisApplyRequest",
+        "type": "object"
+      },
       "AnalysisOrderOut": {
         "properties": {
           "kind": {
@@ -887,6 +933,11 @@
           "cluster_key": {
             "title": "Cluster Key",
             "type": "string"
+          },
+          "confirm_cue_loss": {
+            "default": false,
+            "title": "Confirm Cue Loss",
+            "type": "boolean"
           },
           "survivor": {
             "title": "Survivor",
@@ -1412,6 +1463,136 @@
           }
         },
         "title": "AutolistSelectionIn",
+        "type": "object"
+      },
+      "AvailabilityProbeIn": {
+        "properties": {
+          "allow_mass_missing": {
+            "default": false,
+            "title": "Allow Mass Missing",
+            "type": "boolean"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "AvailabilityProbeIn",
+        "type": "object"
+      },
+      "AvailabilityProbeOut": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "title": "AvailabilityProbeOut",
+        "type": "object"
+      },
+      "AvailabilityStatusOut": {
+        "properties": {
+          "awaiting_volume": {
+            "description": "Rows under an unmounted /Volumes path to re-check",
+            "title": "Awaiting Volume",
+            "type": "integer"
+          },
+          "complete": {
+            "description": "True when no unknown/stale/awaiting_volume rows remain",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "pending": {
+            "description": "Tracks still needing a probe pass",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "present": {
+            "description": "Current present count in track_availability",
+            "title": "Present",
+            "type": "integer"
+          },
+          "processed_total": {
+            "description": "Rows classified across this worker lifetime",
+            "title": "Processed Total",
+            "type": "integer"
+          },
+          "stale": {
+            "description": "Rows whose tracks.updated_at is newer than checked_at",
+            "title": "Stale",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Live tracks with no availability row",
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "pending",
+          "unknown",
+          "stale",
+          "awaiting_volume",
+          "processed_total",
+          "present",
+          "complete"
+        ],
+        "title": "AvailabilityStatusOut",
         "type": "object"
       },
       "BackfillBatchIn": {
@@ -2367,6 +2548,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -3435,6 +3617,17 @@
               }
             ],
             "title": "Signed In As"
+          },
+          "update_required": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRequiredOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine."
           }
         },
         "required": [
@@ -3968,7 +4161,7 @@
           "status": {
             "anyOf": [
               {
-                "pattern": "^(open|issued|fixed|merged)$",
+                "pattern": "^(open|issued|blocked|fixed|merged)$",
                 "type": "string"
               },
               {
@@ -4401,6 +4594,84 @@
         "title": "CredentialsOut",
         "type": "object"
       },
+      "CuesApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "CuesApplyRequest",
+        "type": "object"
+      },
+      "CuesPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          }
+        },
+        "title": "CuesPlanRequest",
+        "type": "object"
+      },
       "DecideIn": {
         "properties": {
           "action": {
@@ -4827,6 +5098,17 @@
             "title": "Google Oauth Configured",
             "type": "boolean"
           },
+          "process_env_forbidden_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Forbidden Keys",
+            "type": "array"
+          },
+          "process_env_home_present": {
+            "title": "Process Env Home Present",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4860,6 +5142,8 @@
           "bind_host",
           "version",
           "google_oauth_configured",
+          "process_env_forbidden_keys",
+          "process_env_home_present",
           "contract_rev",
           "engine_version",
           "boot_id"
@@ -7167,6 +7451,20 @@
         "title": "HubStorageErrorResponse",
         "type": "object"
       },
+      "IdentityBacklogOut": {
+        "properties": {
+          "unsyncable_inferred": {
+            "description": "live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.",
+            "title": "Unsyncable Inferred",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unsyncable_inferred"
+        ],
+        "title": "IdentityBacklogOut",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -7777,7 +8075,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -8835,6 +9134,104 @@
         "title": "LyricsUnavailableOut",
         "type": "object"
       },
+      "LyricsVerdictBackfillIn": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill``.",
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose, same reasoning as the purge lever: the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "include_reserved": {
+            "default": false,
+            "description": "also process the 100 stable_ids reserved for in-app ordering QA (refused by default)",
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max tracks to compute this call (null = no cap)",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "title": "LyricsVerdictBackfillIn",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillOut": {
+        "description": ":class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.",
+        "properties": {
+          "candidates": {
+            "description": "stable_ids with a bundle directory in either root",
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "stable_id -> failure reason",
+            "title": "Failed",
+            "type": "object"
+          },
+          "processed": {
+            "description": "written (or, on a dry run, would be written)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Processed",
+            "type": "array"
+          },
+          "reused_cache": {
+            "description": "subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reused Cache",
+            "type": "array"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "reason -> stable_ids",
+            "title": "Skipped",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dry_run",
+          "data_dir",
+          "candidates",
+          "processed",
+          "reused_cache",
+          "skipped",
+          "failed"
+        ],
+        "title": "LyricsVerdictBackfillOut",
+        "type": "object"
+      },
       "MachineIdIn": {
         "properties": {
           "machine_id": {
@@ -9005,6 +9402,28 @@
           "unhydrated_pinned_count"
         ],
         "title": "MachineOverview",
+        "type": "object"
+      },
+      "MatchRequest": {
+        "properties": {
+          "out_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Dir"
+          },
+          "use_fingerprint": {
+            "default": false,
+            "title": "Use Fingerprint",
+            "type": "boolean"
+          }
+        },
+        "title": "MatchRequest",
         "type": "object"
       },
       "MeOut": {
@@ -9472,6 +9891,43 @@
         "title": "MembershipTransferOut",
         "type": "object"
       },
+      "MetadataPlanRequest": {
+        "properties": {
+          "include_cues": {
+            "default": false,
+            "title": "Include Cues",
+            "type": "boolean"
+          },
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          },
+          "prefer": {
+            "default": "newest",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "newest"
+            ],
+            "title": "Prefer",
+            "type": "string"
+          }
+        },
+        "title": "MetadataPlanRequest",
+        "type": "object"
+      },
       "MetadataShareRequest": {
         "description": "Explicit acknowledgement that the resulting web view excludes audio.",
         "properties": {
@@ -9621,6 +10077,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -11425,6 +11882,62 @@
         "title": "PlayItUnmetOut",
         "type": "object"
       },
+      "PlaylistApplyRequest": {
+        "properties": {
+          "allow_broken": {
+            "default": false,
+            "title": "Allow Broken",
+            "type": "boolean"
+          },
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "plan_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Path"
+          },
+          "playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlists"
+          }
+        },
+        "title": "PlaylistApplyRequest",
+        "type": "object"
+      },
       "PlaylistBrokenSummary": {
         "properties": {
           "broken_count": {
@@ -11699,6 +12212,42 @@
           "mode"
         ],
         "title": "PlaylistPinPut",
+        "type": "object"
+      },
+      "PlaylistPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "max_ops": {
+            "default": 10000,
+            "title": "Max Ops",
+            "type": "integer"
+          },
+          "only_playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Playlists"
+          }
+        },
+        "title": "PlaylistPlanRequest",
         "type": "object"
       },
       "PlaylistRenameIn": {
@@ -12242,7 +12791,7 @@
         "type": "object"
       },
       "PreflightCheckOut": {
-        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.\n\n``user_*`` fields carry plain-language copy for the boot gate (issue\n#2722). Admin/diagnostics views keep the technical ``label``/``detail``.",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -12275,6 +12824,39 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "user_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Detail"
+          },
+          "user_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Label"
+          },
+          "user_remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Remediation"
           }
         },
         "required": [
@@ -12745,6 +13327,62 @@
         "title": "RatingEntry",
         "type": "object"
       },
+      "RatingsApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "RatingsApplyRequest",
+        "type": "object"
+      },
       "RatingsFile": {
         "properties": {
           "bytes": {
@@ -13138,7 +13776,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -13733,6 +14372,177 @@
         "title": "RelocateCandidateOut",
         "type": "object"
       },
+      "RescueAppendOut": {
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slot",
+          "captured_at_ms",
+          "bytes"
+        ],
+        "title": "RescueAppendOut",
+        "type": "object"
+      },
+      "RescueDeckOutcomeOut": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "resumed",
+              "paused",
+              "missing"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "RescueDeckOutcomeOut",
+        "type": "object"
+      },
+      "RescueRestoreIn": {
+        "properties": {
+          "play": {
+            "default": false,
+            "title": "Play",
+            "type": "boolean"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "title": "RescueRestoreIn",
+        "type": "object"
+      },
+      "RescueRestoreOut": {
+        "properties": {
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "decks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RescueDeckOutcomeOut"
+            },
+            "title": "Decks",
+            "type": "object"
+          },
+          "mode": {
+            "enum": [
+              "layout",
+              "play"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "captured_at_ms",
+          "mode",
+          "payload",
+          "decks"
+        ],
+        "title": "RescueRestoreOut",
+        "type": "object"
+      },
+      "RescueSnapshotMeta": {
+        "properties": {
+          "age_ms": {
+            "title": "Age Ms",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "deck_count_loaded": {
+            "description": "Decks with a non-empty stable_id at capture",
+            "title": "Deck Count Loaded",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at_ms",
+          "age_ms",
+          "deck_count_loaded"
+        ],
+        "title": "RescueSnapshotMeta",
+        "type": "object"
+      },
+      "RescueSnapshotsOut": {
+        "properties": {
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/RescueSnapshotMeta"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots"
+        ],
+        "title": "RescueSnapshotsOut",
+        "type": "object"
+      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -13804,6 +14614,19 @@
           "values"
         ],
         "title": "RowModel",
+        "type": "object"
+      },
+      "SchedulerResumeOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "SchedulerResumeOut",
         "type": "object"
       },
       "SearchHit": {
@@ -14948,6 +15771,156 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemBulkHydrateIn": {
+        "description": "Agent-native parity body for ``python -m apps.stems bulk-hydrate``.",
+        "properties": {
+          "budget_bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "include_reserved": {
+            "default": false,
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "playlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist"
+          },
+          "refresh_index": {
+            "default": false,
+            "title": "Refresh Index",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "required": [
+          "budget_bytes"
+        ],
+        "title": "StemBulkHydrateIn",
+        "type": "object"
+      },
+      "StemBulkHydrateOut": {
+        "properties": {
+          "bytes_fetched": {
+            "title": "Bytes Fetched",
+            "type": "integer"
+          },
+          "fetched": {
+            "items": {
+              "$ref": "#/components/schemas/StemBulkHydrateOutcomeOut"
+            },
+            "title": "Fetched",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/StemBulkHydrateOutcomeOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fetched",
+          "skipped",
+          "bytes_fetched"
+        ],
+        "title": "StemBulkHydrateOut",
+        "type": "object"
+      },
+      "StemBulkHydrateOutcomeOut": {
+        "properties": {
+          "bytes_fetched": {
+            "default": 0,
+            "title": "Bytes Fetched",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status"
+        ],
+        "title": "StemBulkHydrateOutcomeOut",
+        "type": "object"
+      },
+      "StemBundlePresignResponse": {
+        "properties": {
+          "expires_in_seconds": {
+            "default": 900,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StemPresignFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "files"
+        ],
+        "title": "StemBundlePresignResponse",
+        "type": "object"
+      },
       "StemHydrateIn": {
         "properties": {
           "data_dir": {
@@ -14975,6 +15948,81 @@
           "manifest_path"
         ],
         "title": "StemHydrateIn",
+        "type": "object"
+      },
+      "StemIndexBuildIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "journal_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Path"
+          },
+          "publish": {
+            "default": false,
+            "title": "Publish",
+            "type": "boolean"
+          }
+        },
+        "title": "StemIndexBuildIn",
+        "type": "object"
+      },
+      "StemIndexBuildOut": {
+        "properties": {
+          "bundles": {
+            "title": "Bundles",
+            "type": "integer"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bundles",
+          "files",
+          "published"
+        ],
+        "title": "StemIndexBuildOut",
+        "type": "object"
+      },
+      "StemIndexResponse": {
+        "properties": {
+          "index": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Index",
+            "type": "object"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "StemIndexResponse",
         "type": "object"
       },
       "StemManifestOut": {
@@ -15048,6 +16096,34 @@
         "title": "StemPartOut",
         "type": "object"
       },
+      "StemPresignFileOut": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content_hash",
+          "size_bytes",
+          "url"
+        ],
+        "title": "StemPresignFileOut",
+        "type": "object"
+      },
       "StemPushMissingIn": {
         "properties": {
           "data_dir": {
@@ -15108,10 +16184,18 @@
         "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
         "properties": {
           "code": {
-            "const": "STEM_BUNDLE_NOT_FOUND",
             "default": "STEM_BUNDLE_NOT_FOUND",
+            "enum": [
+              "STEM_BUNDLE_NOT_FOUND",
+              "STEM_BUNDLE_HYDRATING"
+            ],
             "title": "Code",
             "type": "string"
+          },
+          "hydrating": {
+            "default": false,
+            "title": "Hydrating",
+            "type": "boolean"
           },
           "message": {
             "title": "Message",
@@ -15668,6 +16752,12 @@
       "SyncRunIn": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Bypass Gig posture and playing-deck gates for this round only.",
+            "title": "Force",
+            "type": "boolean"
+          },
           "hub_url": {
             "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
             "minLength": 1,
@@ -18076,6 +19166,35 @@
           "platform_key"
         ],
         "title": "UpdateCheckOut",
+        "type": "object"
+      },
+      "UpdateRequiredOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "code": {
+            "const": "SYNC_WIRE_VERSION",
+            "title": "Code",
+            "type": "string"
+          },
+          "local_wire_version": {
+            "title": "Local Wire Version",
+            "type": "integer"
+          },
+          "peer_wire_version": {
+            "title": "Peer Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "local_wire_version",
+          "peer_wire_version",
+          "action"
+        ],
+        "title": "UpdateRequiredOut",
         "type": "object"
       },
       "UploadFileResult": {
@@ -20914,6 +22033,75 @@
         ]
       }
     },
+    "/api/v1/availability/probe": {
+      "post": {
+        "operationId": "availability_probe_api_v1_availability_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AvailabilityProbeIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Availability Probe",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/availability/status": {
+      "get": {
+        "operationId": "availability_status_api_v1_availability_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Availability Status",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -21766,6 +22954,28 @@
         ]
       }
     },
+    "/api/v1/cloudsync/identity-backlog": {
+      "get": {
+        "description": "Cheap, read-only count of the identity-hold sync backlog (CLOUDSYNC-16:\nthe maintainer's admin panel could say 'inconclusive' forever with no way to tell a\nstructural backlog from a transient hiccup). One indexed-ish table scan,\nno file I/O, no digest walk.",
+        "operationId": "get_identity_backlog_api_v1_cloudsync_identity_backlog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityBacklogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Identity Backlog",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -22210,6 +23420,38 @@
         ]
       }
     },
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+      "post": {
+        "description": "Mark a deferred scheduler round owed and wake the in-process scheduler.",
+        "operationId": "resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Resume Scheduler Owed",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/status": {
       "get": {
         "operationId": "get_status_api_v1_cloudsync_status_get",
@@ -22277,7 +23519,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
           },
           "422": {
             "content": {
@@ -23068,7 +24310,7 @@
     },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
-        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
+        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. ``blocked`` is deliberately narrow: use it only when the maintainer\nmust supply credentials/auth, make a destructive-action decision, or choose\na genuine product fork. \"I could not work out what you meant\" is a question\nin the note, never blocked. A blocked pin's note starts with one sentence\nsaying exactly what the maintainer needs, before any supporting detail. Its first\nsentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or\n`product-fork: the maintainer must ...`. Every write is a partial update; unset fields\nare untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
         "operationId": "update_comment_api_v1_feedback_comments__comment_id__patch",
         "parameters": [
           {
@@ -25034,6 +26276,48 @@
         ]
       }
     },
+    "/api/v1/lyrics/verdicts/backfill": {
+      "post": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill\nor refresh the stem-coverage-only verdict for every loadable bundle,\nagent-native so the library-scale backfill is drivable without the CLI.\n\nA track whose row already carries word-level data (``words_content_hash``)\nis reported skipped, never overwritten - this endpoint only ever fills or\nrefreshes the coverage fields, same contract as the CLI.",
+        "operationId": "post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsVerdictBackfillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsVerdictBackfillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Verdicts Backfill",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/mytags": {
       "get": {
         "operationId": "list_mytags_api_v1_mytags_get",
@@ -26040,6 +27324,95 @@
         ]
       }
     },
+    "/api/v1/performance/rescue-snapshots": {
+      "post": {
+        "operationId": "post_rescue_snapshot_api_v1_performance_rescue_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueAppendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/index": {
+      "get": {
+        "operationId": "get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Rescue Snapshot Index Api V1 Performance Rescue Snapshots Index Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Rescue Snapshot Index",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/latest": {
+      "get": {
+        "operationId": "get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Latest Rescue Snapshot Api V1 Performance Rescue Snapshots Latest Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Latest Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
     "/api/v1/performance/telemetry/client-samples": {
       "get": {
         "description": "Return the last accepted sample for this process, or 404 when none.",
@@ -26838,6 +28211,51 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/rb-djay-diff": {
+      "get": {
+        "description": "Return saved playlist-plan diff buckets for one playlist when computed.",
+        "operationId": "get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Playlist Rb Djay Diff Api V1 Playlists  Playlist Id  Rb Djay Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Playlist Rb Djay Diff",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/sets": {
       "get": {
         "operationId": "list_playlist_sets",
@@ -27586,6 +29004,406 @@
         ]
       }
     },
+    "/api/v1/rb-djay-sync/analysis/apply": {
+      "post": {
+        "description": "SYNC-05: dry-run or live analysis-field apply from analysis-diff.csv.",
+        "operationId": "rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Analysis Apply Api V1 Rb Djay Sync Analysis Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Analysis Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/apply": {
+      "post": {
+        "description": "SYNC-04: dry-run or scaffold live cue apply.",
+        "operationId": "rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Apply Api V1 Rb Djay Sync Cues Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/plan": {
+      "post": {
+        "description": "SYNC-04: cue comparison CSV.",
+        "operationId": "rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Plan Api V1 Rb Djay Sync Cues Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/djay/playlists": {
+      "get": {
+        "description": "SYNC-01: enumerate djay playlists and track UUID memberships.",
+        "operationId": "rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Djay Playlists Api V1 Rb Djay Sync Djay Playlists Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Djay Playlists",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/match": {
+      "post": {
+        "description": "SYNC-02: build matches.csv from working-copy vendor DBs.",
+        "operationId": "rb_djay_sync_match_api_v1_rb_djay_sync_match_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Match Api V1 Rb Djay Sync Match Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Match",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/metadata/plan": {
+      "post": {
+        "description": "SYNC-05 + SYNC-06 (+ optional SYNC-04 cues) diff CSV generation.",
+        "operationId": "rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Metadata Plan Api V1 Rb Djay Sync Metadata Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Metadata Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/apply": {
+      "post": {
+        "description": "SYNC-03: dry-run or live apply of playlist-plan.json into djay.",
+        "operationId": "rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Apply Api V1 Rb Djay Sync Playlists Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/plan": {
+      "post": {
+        "description": "SYNC-03: compute playlist-plan.json and companion artefacts.",
+        "operationId": "rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Plan Api V1 Rb Djay Sync Playlists Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/ratings/apply": {
+      "post": {
+        "description": "SYNC-06: dry-run or live ratings apply from ratings-diff.csv.",
+        "operationId": "rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingsApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Ratings Apply Api V1 Rb Djay Sync Ratings Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Ratings Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/status": {
+      "get": {
+        "description": "SYNC-01..06 capability probe: DB paths, artefacts, fingerprint, writeback.",
+        "operationId": "rb_djay_sync_status_api_v1_rb_djay_sync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Status Api V1 Rb Djay Sync Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Status",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
     "/api/v1/reconcile/broken": {
       "get": {
         "operationId": "list_broken_tracks_api_v1_reconcile_broken_get",
@@ -27800,6 +29618,68 @@
         "summary": "Apply Relocate",
         "tags": [
           "relocate"
+        ]
+      }
+    },
+    "/api/v1/rescue/restore": {
+      "post": {
+        "operationId": "rescue_restore_api_v1_rescue_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RescueRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueRestoreOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rescue Restore",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/v1/rescue/snapshots": {
+      "get": {
+        "operationId": "rescue_snapshots_list_api_v1_rescue_snapshots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueSnapshotsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rescue Snapshots List",
+        "tags": [
+          "performance"
         ]
       }
     },
@@ -28289,6 +30169,121 @@
         "summary": "Share Session",
         "tags": [
           "share"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate": {
+      "post": {
+        "operationId": "post_shell_navigate_api_v1_shell_navigate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Shell Navigate Api V1 Shell Navigate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/ack": {
+      "post": {
+        "operationId": "ack_shell_navigate_api_v1_shell_navigate_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Ack Shell Navigate Api V1 Shell Navigate Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/pending": {
+      "get": {
+        "operationId": "get_shell_navigate_pending_api_v1_shell_navigate_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Shell Navigate Pending Api V1 Shell Navigate Pending Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Shell Navigate Pending",
+        "tags": [
+          "shell"
         ]
       }
     },
@@ -28822,6 +30817,54 @@
         ]
       }
     },
+    "/api/v1/stems/bulk-hydrate": {
+      "post": {
+        "description": "Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).\n\nHydrates as many bundles as fit ``budget_bytes``, skipping the\nreservation guard unless ``include_reserved`` is explicitly true.",
+        "operationId": "bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemBulkHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemBulkHydrateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT)"
+          }
+        },
+        "summary": "Bulk Hydrate Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/estimate": {
       "get": {
         "description": "Every tier costed for one track, so a UI needs one round trip not three.\n\nA tier with no benchmark returns ``measured: false`` and the reason rather\nthan a plausible-looking guess. Rendering a guess as a number is how an\nassumption becomes ground truth.",
@@ -29003,6 +31046,48 @@
         "summary": "Generate",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/index/build": {
+      "post": {
+        "description": "Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024).",
+        "operationId": "build_stem_index_api_v1_stems_index_build_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemIndexBuildIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemIndexBuildOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Stem Index",
+        "tags": [
+          "stems"
         ]
       }
     },
@@ -29727,6 +31812,130 @@
         ]
       }
     },
+    "/api/v1/sync/stems/bundle-presign": {
+      "get": {
+        "description": "Mint short-lived GET URLs for every file in one indexed bundle.",
+        "operationId": "get_bundle_presign_api_v1_sync_stems_bundle_presign_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "track stable_id",
+            "in": "query",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "description": "track stable_id",
+              "minLength": 1,
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemBundlePresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "404": {
+            "description": "STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed"
+          },
+          "503": {
+            "description": "stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Bundle Presign",
+        "tags": [
+          "sync",
+          "sync-stems"
+        ]
+      }
+    },
+    "/api/v1/sync/stems/index": {
+      "get": {
+        "description": "Return the published stem bundle index for an authenticated spoke.\n\n``request.app.state.stem_index_fetcher``, when set by the code that built\nthe app, replaces the real R2 index fetch with the callable's return\nvalue. Production never sets it; only test app-builders do. The\ncredential check always runs first regardless.",
+        "operationId": "get_stem_index_api_v1_sync_stems_index_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemIndexResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Stem Index",
+        "tags": [
+          "sync",
+          "sync-stems"
+        ]
+      }
+    },
     "/api/v1/telemetry/clients": {
       "get": {
         "description": "Every client seen since engine boot, plus the one-glance summary.",
@@ -30245,7 +32454,7 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).\n\nBefore streaming, a subprocess probe opens the resolved path under\n``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503\nwith ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -30271,6 +32480,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial)"
           }
         },
         "summary": "Get Track Audio",
@@ -30279,7 +32491,7 @@
         ]
       },
       "head": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).\n\nBefore streaming, a subprocess probe opens the resolved path under\n``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503\nwith ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -30305,6 +32517,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial)"
           }
         },
         "summary": "Get Track Audio",
@@ -30965,7 +33180,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.\n\nNever blocks on R2: if the bundle is missing locally but the R2 index\nhas it, this ENQUEUES a background hydration and returns immediately\nwith ``hydrating=True`` (D2). A prior hydration attempt that already\nfailed is reported LOUD as HTTP 502, never silently folded into the\nordinary \"no bundle\" empty state.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -31006,6 +33221,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31014,9 +33232,103 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/stems/deck-close": {
+      "post": {
+        "description": "Release one deck-open reference. See :func:`mark_stem_deck_open`.",
+        "operationId": "mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Mark Stem Deck Closed Api V1 Tracks  Stable Id  Stems Deck Close Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stem Deck Closed",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/deck-open": {
+      "post": {
+        "description": "A deck has this bundle open. Protects it from eviction until closed.\n\nAgent-native parity for the deck-load lifecycle: there is no other\nrequest boundary that tells the eviction path \"a deck is playing this\nright now, do not free its bundle regardless of recency\" (D3). Refcounted\n(:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open\nreferences (e.g. two decks on the same track) both need closing.",
+        "operationId": "mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Mark Stem Deck Open Api V1 Tracks  Stable Id  Stems Deck Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stem Deck Open",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/stems/{part}": {
       "get": {
-        "description": "Stream one validated WAV stem from its already-verified file handle.",
+        "description": "Stream one validated stem part using the bundle's container media type.\n\nUnlike the manifest route, this one DOES wait (bounded) for an in-flight\nhydration: a part request means the caller already decided it wants\nthese bytes. A prior failure is surfaced immediately as HTTP 502; a\nfresh attempt that does not finish within\n:data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can\nretry rather than hang forever on this one request.",
         "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
         "parameters": [
           {
@@ -31051,6 +33363,12 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+          },
+          "503": {
+            "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
           }
         },
         "summary": "Get Stem File",

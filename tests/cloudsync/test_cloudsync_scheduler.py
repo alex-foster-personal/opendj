@@ -33,7 +33,9 @@ from apps.sync_hub import client, maintenance, service
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import heartbeat as sync_heartbeat
 from apps.sync_hub import scheduler as sync_scheduler
+from apps.shared.sync_runtime_gates import DEFER_REASON_PRESSURE_SHED, refuse_sync_round
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.scheduler_owed import clear_scheduler_owed, scheduler_owed
 from tests.cloudsync.conftest import free_port
 from tests.waits import start_uvicorn_in_thread
 
@@ -298,6 +300,138 @@ def test_unconfigured_idles_then_picks_up_config_without_restart(
     assert (idle_rounds, idle_beat) == (0, False)
     assert not sync_heartbeat.heartbeat_path(spoke).exists()
     assert sync_status.read_results(spoke)[0].status == "ok"
+
+
+def test_scheduler_defers_when_gig_posture(tmp_path: Path, live_hub: str) -> None:
+    """[if] app_posture is gig [then] the scheduler skips the round and journals deferred."""
+    spoke = _spoke(tmp_path, "spoke-gig", live_hub)
+    prefs_dir = spoke / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(spoke, sync_fn=recording_sync)
+    outcome = scheduler.run_round(live_hub, "spoke-gig")
+
+    assert outcome == "deferred"
+    assert calls == []
+    assert scheduler.deferred_gig == 1
+    assert scheduler.deferred_deck_playing == 0
+    assert scheduler.consecutive_failures == 0
+    assert scheduler.rounds_started == 0
+    journal = sync_status.read_results(spoke)
+    assert journal and journal[0].status == "deferred"
+    assert "gig_posture" in journal[0].message
+
+
+def test_scheduler_defers_when_deck_playing(tmp_path: Path, live_hub: str) -> None:
+    """[if] a deck is playing [then] the scheduler skips and journals deck_playing."""
+    spoke = _spoke(tmp_path, "spoke-playing", live_hub)
+    playing_mirror = {"decks": {"1": {"playing": True}}}
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(
+        spoke,
+        sync_fn=recording_sync,
+        ui_mirror_provider=lambda: playing_mirror,
+        pressure_reader=lambda: {"available": True},
+    )
+    outcome = scheduler.run_round(live_hub, "spoke-playing")
+
+    assert outcome == "deferred"
+    assert calls == []
+    assert scheduler.deferred_deck_playing == 1
+    assert scheduler.deferred_gig == 0
+    assert scheduler.consecutive_failures == 0
+    assert scheduler.rounds_started == 0
+    journal = sync_status.read_results(spoke)
+    assert journal and journal[0].status == "deferred"
+    assert "deck_playing" in journal[0].message
+
+
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_scheduler_defers_when_pressure_elevated_and_playing(
+    tmp_path: Path, live_hub: str
+) -> None:
+    """[if] elevated pressure and a playing deck [then] defer with pressure_shed."""
+    spoke = _spoke(tmp_path, "spoke-pressure", live_hub)
+    playing_mirror = {"decks": {"1": {"playing": True}}}
+    elevated = {"available": True, "kernel_memory_pressure_level": 2}
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(
+        spoke,
+        sync_fn=recording_sync,
+        ui_mirror_provider=lambda: playing_mirror,
+        pressure_reader=lambda: elevated,
+    )
+    outcome = scheduler.run_round(live_hub, "spoke-pressure")
+
+    assert outcome == "deferred"
+    assert calls == []
+    assert scheduler.deferred_pressure_shed == 1
+    assert scheduler.deferred_deck_playing == 0
+    assert scheduler.consecutive_failures == 0
+    assert scheduler.rounds_started == 0
+    assert scheduler_owed(spoke)
+    journal = sync_status.read_results(spoke)
+    assert journal and journal[0].status == "deferred"
+    assert DEFER_REASON_PRESSURE_SHED in journal[0].message
+
+
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_scheduler_runs_owed_round_after_pressure_clears(tmp_path: Path, live_hub: str) -> None:
+    """[if] owed after pressure shed and gate clears [then] sync runs once."""
+    spoke = _spoke(tmp_path, "spoke-owed", live_hub)
+    mirror_state = {"mirror": {"decks": {"1": {"playing": True}}}}
+    elevated = {"available": True, "kernel_memory_pressure_level": 2}
+    fine = {"available": True}
+    pressure_state = {"payload": elevated}
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(
+        spoke,
+        sync_fn=recording_sync,
+        ui_mirror_provider=lambda: mirror_state["mirror"],
+        pressure_reader=lambda: pressure_state["payload"],
+    )
+    defer_outcome = scheduler.run_round(live_hub, "spoke-owed")
+    assert defer_outcome == "deferred"
+    assert scheduler_owed(spoke)
+
+    pressure_state["payload"] = fine
+    mirror_state["mirror"] = {"decks": {"1": {"playing": False}}}
+    scheduler._next_due = time.monotonic() - 1.0
+    run_outcome = scheduler.run_round(live_hub, "spoke-owed")
+
+    assert run_outcome == "ok"
+    assert calls == [live_hub]
+    assert not scheduler_owed(spoke)
+    clear_scheduler_owed(spoke)
+
+
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_force_bypasses_pressure_shed(tmp_path: Path) -> None:
+    """[if] force is true under elevated pressure [then] refuse_sync_round allows sync."""
+    mirror = {"decks": {"1": {"playing": True}}}
+    pressure = {"available": True, "kernel_memory_pressure_level": 2}
+    assert refuse_sync_round(tmp_path, mirror, force=True, pressure_payload=pressure) is None
 
 
 def test_lifespan_never_starts_on_the_hub_and_stops_cleanly(tmp_path: Path) -> None:

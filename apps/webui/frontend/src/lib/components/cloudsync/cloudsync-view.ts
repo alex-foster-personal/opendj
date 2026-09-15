@@ -14,10 +14,12 @@
  * (or any mode) from an absent row.
  */
 
+import { readApiErrorStatus } from '$lib/api/client';
 import {
 	SYNC_MODES,
 	type AssetKind,
 	type CloudSyncStatus,
+	type CloudSyncUpdateRequired,
 	type SyncMode,
 	type SyncPolicy,
 	type SyncPolicyPutBody
@@ -150,7 +152,7 @@ export function policyBudgetChange(
 
 // ----------------------------------------------------------- status chip
 
-export type ChipState = 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive';
+export type ChipState = 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive' | 'update_required';
 
 /**
  * How often the chip re-reads GET /cloudsync/status (skipped while the tab
@@ -170,6 +172,7 @@ export const STATUS_CHANGED_EVENT = 'cloudsync:status-changed';
  */
 export function chipState(status: CloudSyncStatus | null): ChipState {
 	if (status === null || !status.configured || !status.running) return 'off';
+	if (status.update_required !== null) return 'update_required';
 	if (status.last_result?.status === 'error') return 'error';
 	// Its own state, never folded into 'ok': the sync completed but its
 	// digest compare excluded rows, so agreement was not verified.
@@ -190,8 +193,24 @@ export function relativeTime(value: string | null, nowMs: number = Date.now()): 
 
 export const CHIP_HREF = '/cloudsync';
 
+export function updateRequiredSummary(updateRequired: CloudSyncUpdateRequired): string {
+	return (
+		`App update required to sync: this machine speaks v${updateRequired.local_wire_version}, ` +
+		`the hub speaks v${updateRequired.peer_wire_version}. ${updateRequired.action}.`
+	);
+}
+
+export function updateRequiredHeadline(updateRequired: CloudSyncUpdateRequired): string {
+	return (
+		`App update required to sync: this machine speaks v${updateRequired.local_wire_version}, ` +
+		`the hub speaks v${updateRequired.peer_wire_version}. Install the latest Open DJ on this ` +
+		'machine (or upgrade the other side if this install is already current).'
+	);
+}
+
 export function chipFullLabel(status: CloudSyncStatus | null): string {
 	const state = chipState(status);
+	if (state === 'update_required') return 'sync: update required';
 	if (state === 'ok') return `sync: ok ${relativeTime(status?.last_push_at ?? null)}`;
 	if (state === 'error') return 'sync: error';
 	if (state === 'inconclusive')
@@ -204,23 +223,133 @@ export function chipShortLabel(status: CloudSyncStatus | null): string {
 	if (state === 'off') return 'off';
 	if (state === 'syncing') return 'sync';
 	if (state === 'ok') return 'ok';
+	if (state === 'update_required') return 'upd';
 	if (state === 'error') return 'err';
 	return 'inc';
+}
+
+// ----------------------------------------------------------- error presentation
+
+export const CLOUDSYNC_LOCAL_LOCK_SUMMARY =
+	'CloudSync conflict: another sync is already running. Wait for it to finish, then refresh status or try again.';
+export const CLOUDSYNC_REMOTE_409_SUMMARY =
+	'CloudSync conflict: the hub rejected this sync. Check the other device or hub, then try again when it is ready.';
+export const CLOUDSYNC_GENERIC_ERROR_SUMMARY =
+	'CloudSync sync failed. See technical details and try again.';
+export const CLOUDSYNC_TECHNICAL_DETAILS_LABEL = 'Technical details';
+
+export function presentUpdateRequired(
+	updateRequired: CloudSyncUpdateRequired
+): CloudSyncErrorPresentation {
+	const summary = updateRequiredSummary(updateRequired);
+	return { summary, ariaLabel: summary, details: summary, isConflict409: true };
+}
+
+export interface CloudSyncErrorPresentation {
+	summary: string;
+	ariaLabel: string;
+	details: string;
+	isConflict409: boolean;
+}
+
+function readApiErrorCode(error: unknown): string | null {
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as { name?: string }).name === 'ApiError' &&
+		typeof (error as { code?: unknown }).code === 'string'
+	) {
+		return (error as { code: string }).code;
+	}
+	return null;
+}
+
+function errorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	return String(error);
+}
+
+function isLocalLockConflict(code: string | null, raw: string): boolean {
+	return code === 'CLOUDSYNC_SYNC_IN_PROGRESS' || raw.includes('CLOUDSYNC_SYNC_IN_PROGRESS');
+}
+
+function isTransport409Conflict(raw: string): boolean {
+	return raw.includes('HTTP 409');
+}
+
+function isDeclaredSyncRefusal(code: string | null, raw: string): boolean {
+	return code === 'CLOUDSYNC_SYNC_REFUSED' || raw.includes('SyncDigestMismatch');
+}
+
+function buildErrorPresentation(
+	raw: string,
+	httpStatus: number | null,
+	code: string | null
+): CloudSyncErrorPresentation {
+	const localLock = isLocalLockConflict(code, raw);
+	const transport409 = isTransport409Conflict(raw);
+	const declaredRefusal = isDeclaredSyncRefusal(code, raw);
+	const isConflict409 = localLock || transport409 || declaredRefusal || httpStatus === 409;
+
+	let summary: string;
+	if (localLock) {
+		summary = CLOUDSYNC_LOCAL_LOCK_SUMMARY;
+	} else if (transport409 || declaredRefusal || httpStatus === 409) {
+		summary = CLOUDSYNC_REMOTE_409_SUMMARY;
+	} else {
+		summary = CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+	}
+
+	return { summary, ariaLabel: summary, details: raw, isConflict409 };
+}
+
+/** Plain-word summary for a thrown sync error; raw text stays in details only. */
+export function presentCloudSyncError(error: unknown): CloudSyncErrorPresentation {
+	return buildErrorPresentation(errorMessage(error), readApiErrorStatus(error), readApiErrorCode(error));
+}
+
+/** Plain-word summary for a journaled sync result row or chip last_result. */
+export function presentCloudSyncResultError(
+	result: {
+		status: string;
+		message: string;
+	},
+	updateRequired: CloudSyncUpdateRequired | null = null
+): CloudSyncErrorPresentation {
+	if (updateRequired !== null) {
+		return presentUpdateRequired(updateRequired);
+	}
+	if (result.status !== 'error') {
+		return {
+			summary: result.message,
+			ariaLabel: result.message,
+			details: result.message,
+			isConflict409: false
+		};
+	}
+	return buildErrorPresentation(result.message, null, null);
 }
 
 export function chipTitle(status: CloudSyncStatus | null, loadError: string | null): string {
 	if (status === null) {
 		return loadError === null
 			? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
-			: `CloudSync status unavailable: ${loadError}. Click to retry details.`;
+			: 'CloudSync status unavailable. Click to retry details.';
 	}
 	const state = chipState(status);
 	const next = 'Click to open CloudSync.';
 	if (state === 'off') {
 		return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
 	}
+	if (state === 'update_required' && status.update_required !== null) {
+		return `${updateRequiredSummary(status.update_required)} ${next}`;
+	}
 	if (state === 'error') {
-		return `CloudSync error: ${status.last_result?.message ?? 'last sync failed'}. ${next}`;
+		const summary =
+			status.last_result !== null && status.last_result !== undefined
+				? presentCloudSyncResultError(status.last_result).summary
+				: CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+		return `${summary} ${next}`;
 	}
 	if (state === 'inconclusive') {
 		return `CloudSync last run was inconclusive - agreement was not verified. ${next}`;
@@ -231,12 +360,57 @@ export function chipTitle(status: CloudSyncStatus | null, loadError: string | nu
 	return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
 }
 
+export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string | null): string {
+	if (status === null) {
+		return loadError === null ? 'CloudSync status' : 'CloudSync status unavailable';
+	}
+	if (chipState(status) === 'update_required' && status.update_required !== null) {
+		return updateRequiredSummary(status.update_required);
+	}
+	if (chipState(status) === 'error') {
+		const summary =
+			status.last_result !== null && status.last_result !== undefined
+				? presentCloudSyncResultError(status.last_result).summary
+				: CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+		return summary;
+	}
+	return 'CloudSync status';
+}
+
 // ----------------------------------------------------------- sync now
+
+export const SYNC_DEFER_GIG = 'gig_posture';
+export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
+
+export type UiMirrorDecks = Record<string, { playing?: boolean } | unknown>;
+
+export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
+	if (uiMirror === null) return false;
+	const decks = uiMirror.decks;
+	if (decks === undefined || typeof decks !== 'object') return false;
+	for (const deck of Object.values(decks)) {
+		if (typeof deck === 'object' && deck !== null && deck.playing === true) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function syncRuntimeGateReason(
+	appPosture: 'prep' | 'gig',
+	uiMirror: { decks?: UiMirrorDecks } | null
+): typeof SYNC_DEFER_GIG | typeof SYNC_DEFER_DECK_PLAYING | null {
+	if (appPosture === 'gig') return SYNC_DEFER_GIG;
+	if (anyDeckPlaying(uiMirror)) return SYNC_DEFER_DECK_PLAYING;
+	return null;
+}
+
+export const FORCE_SYNC_LABEL =
+	"Force sync (oDJ won't sync during performance unless this is clicked)";
 
 export type SyncNowDecision = { kind: 'post'; body: SyncRunBody } | { kind: 'refuse'; reason: string };
 
-/** Sync now runs against the EFFECTIVE hub URL (env override included). */
-export function syncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecision {
+function syncHubUrlDecision(config: CloudSyncConfigOut | null): SyncNowDecision | { hubUrl: string } {
 	if (config === null) {
 		return { kind: 'refuse', reason: 'CloudSync config has not loaded yet.' };
 	}
@@ -244,7 +418,38 @@ export function syncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecisi
 	if (hubUrl === null) {
 		return { kind: 'refuse', reason: 'Set a hub URL in the config form first.' };
 	}
-	return { kind: 'post', body: { hub_url: hubUrl, name: config.effective.machine_name } };
+	return { hubUrl };
+}
+
+/** Sync now runs against the EFFECTIVE hub URL (env override included). */
+export function syncNowRequest(
+	config: CloudSyncConfigOut | null,
+	gate: { appPosture: 'prep' | 'gig'; uiMirror: { decks?: UiMirrorDecks } | null }
+): SyncNowDecision {
+	const hub = syncHubUrlDecision(config);
+	if ('kind' in hub) return hub;
+	const deferReason = syncRuntimeGateReason(gate.appPosture, gate.uiMirror);
+	if (deferReason !== null) {
+		const label = deferReason === SYNC_DEFER_GIG ? 'Gig posture' : 'a playing deck';
+		return {
+			kind: 'refuse',
+			reason: `CloudSync sync deferred (${deferReason}): ${label} is active. Use Force sync to bypass for one round.`
+		};
+	}
+	return {
+		kind: 'post',
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name }
+	};
+}
+
+/** Force sync bypasses Gig and playing-deck gates for one round only. */
+export function forceSyncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecision {
+	const hub = syncHubUrlDecision(config);
+	if ('kind' in hub) return hub;
+	return {
+		kind: 'post',
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name, force: true }
+	};
 }
 
 // ----------------------------------------------------------- config form
@@ -294,6 +499,122 @@ export function envOverrideNotes(config: CloudSyncConfigOut): string[] {
 		);
 	}
 	return notes;
+}
+
+// ----------------------------------------------------------- status headline
+
+export type HeadlineTone = 'off' | 'warn' | 'error' | 'ok';
+
+export interface StatusHeadline {
+	tone: HeadlineTone;
+	text: string;
+}
+
+/**
+ * Turns a raw sync-transport exception string into one plain clause a DJ can
+ * act on. The raw message is NEVER dropped (fail-fast: no masking) -- callers
+ * still show it verbatim behind a disclosure. This only prefixes it with a
+ * cause instead of leaving a bare "error".
+ */
+export function plainSyncFailureCause(rawMessage: string): string {
+	const msg = rawMessage.toLowerCase();
+	if (msg.includes('connection refused')) {
+		return 'could not reach the hub machine (connection refused)';
+	}
+	if (msg.includes('timed out') || msg.includes('timeout')) {
+		return 'the hub did not respond in time (timeout)';
+	}
+	if (
+		msg.includes('name or service not known') ||
+		msg.includes('nodename nor servname') ||
+		msg.includes('getaddrinfo')
+	) {
+		return 'the hub address could not be found (DNS lookup failed)';
+	}
+	if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('403') || msg.includes('forbidden')) {
+		return 'the hub rejected the sign-in';
+	}
+	return 'the last sync attempt failed';
+}
+
+/**
+ * One plain-language status line with a concrete next step -- the "is my
+ * library safe" headline the panel was missing (the maintainer, Mon 14 Sep 2026: "it
+ * says error" with no explanation). The raw status fields (configured,
+ * running, heartbeat, rows_pending) stay visible below for anyone who wants
+ * them; this never replaces them, only leads with a sentence a DJ can read.
+ */
+export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
+	if (status === null) {
+		return { tone: 'off', text: 'Loading CloudSync status...' };
+	}
+	// Current configuration wins over a historical journal verdict: the
+	// journal keeps the last result even after the user turns automatic sync
+	// off, so an old error must not outlive the config change that disabled
+	// it (Devin review, PR #2604). A saved endpoint with automatic sync off
+	// is also not "not set up" -- Sync now still works against it.
+	if (!status.configured) {
+		if (status.endpoint === null) {
+			return {
+				tone: 'off',
+				text: 'CloudSync is not set up on this machine. Enter a hub URL below and save to turn it on.'
+			};
+		}
+		return {
+			tone: 'off',
+			text: `Automatic sync is off, but a hub URL is saved (${status.endpoint}). Use Sync now below, or turn on automatic sync above.`
+		};
+	}
+	if (status.update_required !== null) {
+		return { tone: 'warn', text: updateRequiredHeadline(status.update_required) };
+	}
+	// A recorded result is checked BEFORE the heartbeat: what the last sync
+	// actually did is more informative than whether the scheduler is alive
+	// right now, and CSSTATUS-05 requires the "In sync" headline for every
+	// recorded ok result even with a stale heartbeat (Sol review, PR #2604).
+	if (status.last_result?.status === 'error') {
+		return {
+			tone: 'error',
+			text: `Not synced: ${plainSyncFailureCause(status.last_result.message)}. Check the hub URL below and that the hub machine is running, then try Sync now again.`
+		};
+	}
+	if (status.last_result?.status === 'ok') {
+		return { tone: 'ok', text: `In sync. Last synced ${relativeTime(status.last_push_at)}.` };
+	}
+	if (status.last_result?.status === 'inconclusive') {
+		return {
+			tone: 'warn',
+			text: 'Last sync finished but could not fully confirm both sides agree. Run Sync now again to reconfirm.'
+		};
+	}
+	if (!status.running) {
+		return {
+			tone: 'warn',
+			text: 'CloudSync is set up but not running automatically (no recent heartbeat). Use Sync now below, or start the background scheduler.'
+		};
+	}
+	return { tone: 'warn', text: 'Syncing...' };
+}
+
+/**
+ * Plain-language note for the identity-hold sync backlog (CLOUDSYNC-16,
+ * Mon 14 Sep 2026: an 'inconclusive' result's only advice was
+ * "run Sync now again", which does nothing when the true cause is rows that
+ * can never sync until fingerprinted -- retrying re-runs the same exclusion
+ * every time). Shown as a SEPARATE line from `statusHeadline`, never folded
+ * into it: the backlog and any given sync's outcome are correlated on a
+ * real library but not proven to be the same event on any one run, so this
+ * never claims causation, only reports the count honestly.
+ */
+export function identityBacklogNote(count: number | null): string | null {
+	if (count === null || count <= 0) return null;
+	const plural = count !== 1;
+	return (
+		`${count} track${plural ? 's' : ''} in this library cannot sync yet: ` +
+		`${plural ? 'they lack' : 'it lacks'} an audio fingerprint or ISRC to identify ` +
+		`${plural ? 'them' : 'it'} by. Run backfill_content_hash once the audio is reachable, ` +
+		`or add an ISRC tag -- retrying Sync now will not change this.`
+	);
 }
 
 export type CloudSyncTab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';

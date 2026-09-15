@@ -1963,6 +1963,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck);
 	_beatgridGuards.beforeClear(deck, stranded, 'reload');
 	st.stable_id = null;
+	st.source_path = null;
 	st.title = null;
 	st.artist = null;
 	st.rating = null;
@@ -3071,6 +3072,10 @@ class RbAudioEngine implements AudioEngine {
 			rt.nextScheduleRevision = 0;
 			rt.desiredActive = false;
 			st.stable_id = stable_id;
+			st.source_path =
+				typeof candidateTrack.file_path === 'string' && candidateTrack.file_path.length > 0
+					? candidateTrack.file_path
+					: null;
 			// TrackOut spells every nullable field optional (a pydantic default
 			// becomes a not-required property), so absent and null both land as
 			// the deck's "unknown" null.
@@ -3178,7 +3183,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
-	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {
+	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
 		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
@@ -3213,11 +3218,17 @@ class RbAudioEngine implements AudioEngine {
 			: resumeSec;
 		const syncClock = _syncClockMaster();
 		const owned = _ownedMaster();
-		const schedulePlainTransport = async (): Promise<void> => {
-			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+		const schedulePlainTransport = async (forcedWhen?: number): Promise<void> => {
+			const minimumWhen = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+			const when =
+				forcedWhen === undefined ? minimumWhen : Math.max(minimumWhen, forcedWhen);
 			await _schedulePress(deck, when, startSec, true, pressT0Ms);
 			st.sync_error = null;
 		};
+		if (startAtContextSec !== undefined) {
+			await schedulePlainTransport(startAtContextSec);
+			return;
+		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
 			if (syncClock !== null && syncActive) {
 				await _synchronizeFollowers(syncClock, [deck], {
@@ -4213,6 +4224,43 @@ class RbAudioEngine implements AudioEngine {
 		if (_masterGain !== null) {
 			_setParam(_masterGain.gain, mixerState.master * _ceilingGainMultiplier());
 		}
+	}
+
+	/** RESCUE-02: batch resume with one shared schedule instant for every deck. */
+	async rescueResumeTogether(
+		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>
+	): Promise<void> {
+		if (plans.length === 0) return;
+		const ctx = await _resumeContext();
+		let sharedWhen = ctx.currentTime;
+		for (const plan of plans) {
+			const minimum = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(plan.deck));
+			sharedWhen = Math.max(sharedWhen, minimum);
+		}
+		await Promise.all(
+			plans.map((plan) => _scheduleDeck(plan.deck, sharedWhen, plan.positionSec, true))
+		);
+	}
+
+	/** RESCUE-02 Undo: stop every rescued deck at one shared schedule instant. */
+	async rescueStopAllTogether(decks: readonly DeckId[]): Promise<void> {
+		if (decks.length === 0) return;
+		const ctx = await _resumeContext();
+		let sharedWhen = ctx.currentTime;
+		for (const deck of decks) {
+			const minimum = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+			sharedWhen = Math.max(sharedWhen, minimum);
+		}
+		await Promise.all(
+			decks.map((deck) =>
+				_scheduleDeck(
+					deck,
+					sharedWhen,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+					false
+				)
+			)
+		);
 	}
 }
 

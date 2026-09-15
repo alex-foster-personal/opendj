@@ -111,6 +111,13 @@ export interface CloudSyncRecentResult {
 /** Which source decided a CloudSync config field; an env override wins over the file. */
 export type CloudSyncConfigSource = 'env' | 'file' | 'default';
 
+export interface CloudSyncUpdateRequired {
+	code: 'SYNC_WIRE_VERSION';
+	local_wire_version: number;
+	peer_wire_version: number;
+	action: string;
+}
+
 export interface CloudSyncStatus {
 	/** configured AND running: true only while a scheduler heartbeat is fresh. */
 	enabled: boolean;
@@ -129,6 +136,18 @@ export interface CloudSyncStatus {
 	rows_pending: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
+	update_required: CloudSyncUpdateRequired | null;
+}
+
+/**
+ * The identity-hold sync backlog: live `tracks` rows excluded from every
+ * digest for lacking both a content hash and a normalizable ISRC. Not a
+ * sync bug -- each row needs `backfill_content_hash --live` once its audio
+ * is reachable, or an ISRC tag. See apps/sync_hub/sync_set.py::
+ * count_unsyncable_inferred and CLOUDSYNC-16.
+ */
+export interface CloudSyncIdentityBacklog {
+	unsyncable_inferred: number;
 }
 
 // ----------------------------------------------------------- local path table
@@ -162,6 +181,9 @@ type CloudSyncPaths = {
 	};
 	'/api/v1/cloudsync/status': {
 		get: { responses: { 200: { content: { 'application/json': CloudSyncStatus } } } };
+	};
+	'/api/v1/cloudsync/identity-backlog': {
+		get: { responses: { 200: { content: { 'application/json': CloudSyncIdentityBacklog } } } };
 	};
 };
 
@@ -221,4 +243,8 @@ export async function getOverview(): Promise<CloudSyncOverview> {
 
 export async function getStatus(): Promise<CloudSyncStatus> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/status', {}));
+}
+
+export async function getIdentityBacklog(): Promise<CloudSyncIdentityBacklog> {
+	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/identity-backlog', {}));
 }

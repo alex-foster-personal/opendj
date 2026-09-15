@@ -8,7 +8,7 @@ fixture required -- the full separation path (write_bundle) needs a
 GPU/torch/demucs stack this suite does not have. The manifest round-trip
 tests below DO touch the filesystem (real media + manifest.json under
 tmp_path) to exercise the real production reader
-(apps.webui.server.stem_artifacts.load_stem_bundle) against the schema v3
+(apps.stems.artifacts.load_stem_bundle) against the schema v3
 manifest shape this worker writes, since that reader is the actual contract
 this fix must satisfy and _load_v3_bundle never reads file headers (audio
 alignment comes from the manifest's own audio block, not the files).
@@ -100,7 +100,7 @@ import pytest
 
 import scripts.stem_bundle_worker as worker
 from apps.stems.stem_size_policy import UnknownSourceFormatError
-from apps.webui.server.stem_artifacts import load_stem_bundle
+from apps.stems.artifacts import load_stem_bundle
 
 pytestmark = pytest.mark.requirement("STEM-02")
 

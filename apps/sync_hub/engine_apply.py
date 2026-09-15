@@ -305,7 +305,30 @@ def _upsert(
 def _replace_members(
     conn: sqlite3.Connection, playlist_id: str, members: Sequence[dict[str, Any]]
 ) -> None:
-    """Whole-playlist replace (ADR 04 c5). Runs only when the playlist won."""
+    """Whole-playlist replace (ADR 04 c5). Runs only when the playlist won.
+
+    The existence probe below is an FK-safety check, not a display filter:
+    it exists only so a membership naming a track this machine has never
+    heard of does not raise a FOREIGN KEY error, and it is deliberately NOT
+    in ``test_soft_delete_read_guard.py``'s ``_ALLOWED_UNFILTERED_READS``
+    filtering sense -- it is the sync layer, which "must see tombstones"
+    per that guard's own carve-out (see the identical reasoning on
+    :mod:`apps.sync_hub.engine_identity`'s membership read).
+
+    A soft-deleted track's row still exists, so its membership is inserted
+    like any other (round 5 trunk-red fix, Mon 14 Sep 2026): ADR 04 c5 makes
+    the member list part of the winning playlist version's CONTENT, and the
+    LWW oracle (``tests/cloudsync/sim_oracle.py``) never filters it by the
+    member track's deleted_at either. A version that filtered here made the
+    stored bundle depend on THIS machine's own delivery-order history of the
+    track's tombstone rather than on the playlist's winning write, so two
+    machines holding the identical winning (name, updated_at, origin) could
+    still diverge on ``playlist_memberships`` -- exactly the persistent
+    digest mismatch ``test_fleet_converges_to_the_lww_oracle`` caught
+    (issue trunk-red-sim-property-digest). Only a track this machine has
+    NEVER heard of is skipped, for FK safety; see
+    ``tests/cloudsync/test_replace_members_soft_delete.py``.
+    """
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
     conn.execute(f"DELETE FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?", (playlist_id,))
     sql = (
@@ -328,18 +351,12 @@ def _replace_members(
             )
         track_id = str(member.get("stable_id") or "")
         track_row = conn.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ? LIMIT 1",
+            "SELECT 1 FROM tracks WHERE stable_id = ? LIMIT 1",
             (track_id,),
         ).fetchone()
         if track_row is None:
             log.warning(
                 "%s: playlist %s pos %r skipped; track %s is not here yet",
-                MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
-            )
-            continue
-        if track_row[0] is not None:
-            log.warning(
-                "%s: playlist %s pos %r skipped; track %s is soft-deleted here",
                 MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
             )
             continue

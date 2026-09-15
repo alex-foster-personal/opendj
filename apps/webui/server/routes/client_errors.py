@@ -145,8 +145,10 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     path = daily_log_path(log_dir, "webui-client-errors", time.gmtime())
     stored = append_json_record(path, record)
     summary = payload.message.replace("\n", " ")[:300]
+    # WARNING, not ERROR: capture_browser_error below already reports this
+    # error. At ERROR, warning_log's forward sent it to Sentry a second time.
     if stored:
-        log.error(
+        log.warning(
             "browser error %s %s: %s (details: %s)",
             event_id,
             payload.kind,
@@ -154,7 +156,7 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
             path,
         )
     else:
-        log.error(
+        log.warning(
             "browser error %s not stored: daily log cap reached at %s (%s)",
             event_id,
             path,

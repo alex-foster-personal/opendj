@@ -112,3 +112,21 @@ def test_error_path_is_reported() -> None:
 def test_missing_value_key_rejected() -> None:
     with pytest.raises(SmartlistRuleError):
         validate_rule({"field": "bpm", "op": "="})
+
+
+def test_number_field_rejects_bool_scalar_value() -> None:
+    # Round 5 hardening (type confusion): bool is a subclass of int in
+    # Python, so isinstance(True, (int, float)) is True. Before the fix,
+    # this scalar predicate on a "number"-typed field wrongly validated.
+    with pytest.raises(SmartlistRuleError):
+        validate_rule({"field": "rating", "op": "=", "value": True})
+
+
+def test_number_field_rejects_bool_in_between_list() -> None:
+    # Same type-confusion gap, reached via _validate_typed_list instead of
+    # _validate_scalar_operand: a bool anywhere in a "between" pair on a
+    # numeric field wrongly validated before the fix.
+    with pytest.raises(SmartlistRuleError):
+        validate_rule({"field": "bpm", "op": "between", "value": [True, 130]})
+    with pytest.raises(SmartlistRuleError):
+        validate_rule({"field": "bpm", "op": "between", "value": [120, False]})

@@ -64,8 +64,8 @@ def test_unknown_keys_are_ignored() -> None:
     assert po.name == "x"
 
 
-def test_serialisation_no_u2014_chars() -> None:
-    """Repo-wide convention: no U+2014 or U+2013 characters in emitted strings."""
+def test_serialisation_no_banned_dash_characters() -> None:
+    """Repo-wide convention: no U+2013/U+2014 characters in emitted strings."""
     raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
     po = play_order_from_opendj(raw)
     s = json.dumps(play_order_to_opendj(po), ensure_ascii=False)

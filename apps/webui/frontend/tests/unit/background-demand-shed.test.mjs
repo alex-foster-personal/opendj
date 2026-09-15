@@ -238,6 +238,55 @@ test('registering a P0 id in jobs throws', () => {
 	);
 });
 
+test('BACKGROUND_SHED_JOBS ends with cloudsync-scheduler and not in P0', () => {
+	const jobs = gateModule.BACKGROUND_SHED_JOBS;
+	assert.equal(jobs.at(-1), 'cloudsync-scheduler');
+	assert.equal(gateModule.P0_NEVER_SHED.includes('cloudsync-scheduler'), false);
+});
+
+test('elevated playing defers cloudsync-scheduler', () => {
+	const { shed, state } = makeShed({
+		playing: true,
+		pressureElevated: true,
+		jobs: [{ id: 'cloudsync-scheduler' }]
+	});
+	shed.request('cloudsync-scheduler');
+	assert.equal(state.runs.get('cloudsync-scheduler'), 0);
+	assert.equal(shed.pending, true);
+});
+
+test('pressure clear drains owed cloudsync job once', async () => {
+	const { shed, state } = makeShed({
+		playing: true,
+		pressureElevated: true,
+		jobs: [{ id: 'cloudsync-scheduler' }]
+	});
+	shed.request('cloudsync-scheduler');
+	state.pressureElevated = false;
+	shed.sync();
+	await flush();
+	assert.equal(state.runs.get('cloudsync-scheduler'), 1);
+	assert.equal(shed.pending, false);
+});
+
+test('two owed ids including cloudsync drain in list order', async () => {
+	const order = [];
+	const { shed, state } = makeShed({
+		playing: true,
+		pressureElevated: true,
+		jobs: [
+			{ id: 'library-poll-cadence', run: async () => order.push('library-poll-cadence') },
+			{ id: 'cloudsync-scheduler', run: async () => order.push('cloudsync-scheduler') }
+		]
+	});
+	shed.request('cloudsync-scheduler');
+	shed.request('library-poll-cadence');
+	state.pressureElevated = false;
+	shed.sync();
+	await flush();
+	assert.deepEqual(order, ['library-poll-cadence', 'cloudsync-scheduler']);
+});
+
 test('playing-gate shed source does not wire pushToast or P0 jobs', () => {
 	assert.doesNotMatch(GATE_SOURCE, /pushToast/);
 	assert.doesNotMatch(GATE_SOURCE, /channelCount\s*=/);

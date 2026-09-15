@@ -27,6 +27,10 @@ from apps.shared.telemetry.error_id import stable_error_id
 
 log = logging.getLogger(__name__)
 
+SINK_MAX_BYTES: int = 256 * 1024 * 1024
+SINK_MAX_ARCHIVES: int = 2
+SINK_EVENTS_PER_MINUTE: int = 120
+
 ERROR_SINK_ENV: str = "OPENDJ_ERROR_SINK_LOG"
 HOST_LABEL_ENV: str = "OPENDJ_HOST_LABEL"
 BUILD_SHA_ENV: str = "OPENDJ_BUILD_SHA"
@@ -115,15 +119,112 @@ def make_event(
     )
 
 
+def _utc_minute() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d%H%M")
+
+
+def _archive_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _sink_archives(dest: Path) -> list[Path]:
+    base = dest.name
+    parent = dest.parent
+    return sorted(
+        candidate
+        for candidate in parent.glob(f"{base}.*")
+        if candidate != dest
+    )
+
+
+def _prune_sink_archives(dest: Path) -> None:
+    archives = _sink_archives(dest)
+    while len(archives) > SINK_MAX_ARCHIVES:
+        oldest = archives.pop(0)
+        try:
+            oldest.unlink(missing_ok=True)
+        except OSError:
+            log.warning("error sink archive prune failed at %s", oldest, exc_info=True)
+
+
+def _rotate_sink_if_needed(dest: Path, next_bytes: int) -> None:
+    size = dest.stat().st_size if dest.exists() else 0
+    if size == 0 or size + next_bytes <= SINK_MAX_BYTES:
+        return
+    archive = dest.with_name(f"{dest.name}.{_archive_timestamp()}")
+    try:
+        dest.rename(archive)
+        _prune_sink_archives(dest)
+    except OSError:
+        log.warning("error sink rotation failed at %s", dest, exc_info=True)
+
+
+class _RateState:
+    minute: str = ""
+    events: int = 0
+    suppressed: int = 0
+
+
+_rate_state = _RateState()
+
+
+def reset_rate_state_for_tests() -> None:
+    """Clear per-minute counters between tests."""
+    _rate_state.minute = ""
+    _rate_state.events = 0
+    _rate_state.suppressed = 0
+
+
+def _minute_label(minute_key: str) -> str:
+    return (
+        f"{minute_key[:4]}-{minute_key[4:6]}-{minute_key[6:8]}"
+        f"T{minute_key[8:10]}:{minute_key[10:12]}Z"
+    )
+
+
+def _flush_suppression_summary(dest: Path, minute_key: str, count: int) -> None:
+    if count <= 0:
+        return
+    summary = make_event(
+        message=(
+            f"error sink: {count} events suppressed in minute "
+            f"{_minute_label(minute_key)}"
+        ),
+        source_site="telemetry:sink:rate-limit",
+        kind="engine",
+    )
+    _write_sink_record(summary, dest)
+    _rate_state.events += 1
+
+
+def _write_sink_record(event: ErrorEvent, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(event.as_dict(), ensure_ascii=False, sort_keys=True) + "\n"
+    encoded_bytes = len(encoded.encode("utf-8"))
+    _rotate_sink_if_needed(dest, encoded_bytes)
+    with dest.open("a", encoding="utf-8") as handle:
+        handle.write(encoded)
+
+
 def append_sink(event: ErrorEvent, path: Path | None = None) -> Path:
     """Append one JSON object. Never raises into the caller: logging an error
     must not become one."""
     dest = path or sink_path()
     try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(event.as_dict(), ensure_ascii=False, sort_keys=True) + "\n"
-        with dest.open("a", encoding="utf-8") as handle:
-            handle.write(encoded)
+        minute_key = _utc_minute()
+        if minute_key != _rate_state.minute:
+            previous = _rate_state.minute
+            suppressed = _rate_state.suppressed
+            _rate_state.minute = minute_key
+            _rate_state.events = 0
+            _rate_state.suppressed = 0
+            if previous and suppressed > 0:
+                _flush_suppression_summary(dest, previous, suppressed)
+        if _rate_state.events >= SINK_EVENTS_PER_MINUTE:
+            _rate_state.suppressed += 1
+            return dest
+        _write_sink_record(event, dest)
+        _rate_state.events += 1
     except OSError:
         log.warning("error sink write failed at %s", dest, exc_info=True)
     return dest
@@ -297,7 +398,7 @@ def _source_site_from_hint(hint: Mapping[str, Any] | None) -> str:
     return "engine:uncaught"
 
 
-def _existing_error_id(event: Mapping[str, Any]) -> str | None:
+def event_error_id(event: Mapping[str, Any]) -> str | None:
     tags = event.get("tags")
     if isinstance(tags, dict):
         value = tags.get("error_id")
@@ -317,7 +418,7 @@ def enrich_sentry_event(
     Called from before_send. If capture_browser_error already stamped error_id
     on the scope, this does not append a second JSONL row.
     """
-    if _existing_error_id(event):
+    if event_error_id(event):
         return
     record = capture_error_event(
         message=_message_from_sentry_event(event),

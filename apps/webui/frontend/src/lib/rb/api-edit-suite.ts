@@ -15,14 +15,39 @@ import type { components } from '../api-types';
 import { ApiError, api, unwrap } from '../api/client';
 import { RbApiError } from './api-rb-error';
 
+/** One conflicting row from a `BatchConflictError` (see `backend.py`). */
+export interface EditSuiteConflictRow {
+	stable_id: string;
+	current_etag: string;
+}
+
 /** Edit-suite routes put the machine code in `detail.error` (not
- * `detail.code`). Map from the parsed body so that contract stays intact. */
+ * `detail.code`). Map from the parsed body so that contract stays intact.
+ *
+ * STATE-07/08/09: a 409 body already names exactly which rows failed their
+ * ETag precondition (`detail.conflicts`, set by every one of bulk-edit,
+ * find-replace and mytag's shared `BatchConflictError` handler) - this used
+ * to discard that array before it reached `RbApiError`, so every caller saw
+ * only "conflict: Conflict" with no way to say which row blocked it. Kept
+ * on `.body` (RbApiError's existing raw-payload field) rather than adding a
+ * new constructor param, matching the pattern beatgrid-upgrade.ts already
+ * uses for a 404 detail field. */
 function _toEditSuiteError(error: unknown): never {
 	if (error instanceof ApiError) {
 		const detail = (error.body as { detail?: { error?: string; message?: string } } | null)?.detail;
-		throw new RbApiError(error.status, detail?.error ?? `HTTP_${error.status}`, error.message);
+		throw new RbApiError(error.status, detail?.error ?? `HTTP_${error.status}`, error.message, error.body);
 	}
 	throw error;
+}
+
+/** Read the row-level detail off a conflict thrown by this module, or null
+ * when the error is not a batch conflict (a different failure, or a
+ * non-RbApiError entirely). Centralized so all three edit-suite modals read
+ * the same shape the same way. */
+export function editSuiteConflictRows(error: unknown): EditSuiteConflictRow[] | null {
+	if (!(error instanceof RbApiError) || error.code !== 'conflict') return null;
+	const conflicts = (error.body as { detail?: { conflicts?: unknown } } | null)?.detail?.conflicts;
+	return Array.isArray(conflicts) ? (conflicts as EditSuiteConflictRow[]) : null;
 }
 
 // ----------------------------------------------------------- find-replace

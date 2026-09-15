@@ -19,6 +19,8 @@ import json
 import re
 import subprocess
 
+from scripts.gh_version_guard import require_gh_min_version
+
 #: A commit SHA GitHub renders in backtick-quoted code, e.g. the summary
 #: table's `` `7cbe749` `` Commit column or a review body's `` **Reviewed
 #: commit:** `7cbe7496d2` ``. GitHub abbreviates to 7+ hex chars, never fewer,
@@ -74,7 +76,15 @@ def _gh(args: list[str], payload: dict | None = None) -> str:
     `pulls/<n>/reviews` POST that `scripts/sol_review.py` submits, whose
     `comments` array is a list of objects. Kept here rather than shelling out
     separately so every `gh` call in the review tooling fails the same way.
+
+    `require_gh_min_version()` runs first so a too-old `gh` reports its own
+    version and the minimum needed, instead of the opaque `unknown flag:
+    --slurp` this module's `--paginate --slurp` calls would otherwise raise
+    (scripts/gh_version_guard.py; agentbox-15 job 103871571683, Fri 12 Sep
+    2026 onward). `scripts/ci_wait.py` imports this `_gh`, so one check here
+    covers both call sites.
     """
+    require_gh_min_version()
     proc = subprocess.run(
         ["gh", *args],
         input=json.dumps(payload) if payload is not None else None,

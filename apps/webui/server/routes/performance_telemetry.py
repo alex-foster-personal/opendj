@@ -13,13 +13,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
-from ..machine_pressure import (
+from apps.shared.machine_pressure import (
     live_process_family_state,
     opendj_process_name,
     read_machine_pressure,
     valid_kernel_pressure_level,
 )
+
+from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 
 router = APIRouter(prefix="/performance/telemetry", tags=["performance-telemetry"])
 log = logging.getLogger(__name__)

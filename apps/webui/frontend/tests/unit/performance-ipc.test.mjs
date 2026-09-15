@@ -1401,6 +1401,42 @@ test('LATENCY-02 play parse accepts omitted quantize and rejects unknown fields'
 	}
 });
 
+test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lock play during restore', async () => {
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({
+			type: 'rescue_resume',
+			decks: [{ deck: 1, position_ms: 5000 }, { deck: 3, position_ms: 12_000 }]
+		}),
+		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'rescue_stop_all' }),
+		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
+	);
+
+	ipc.setRescueRestorePhaseForTest('restoring');
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'load', deck: 1, stable_id: 'track-a' }),
+			/rescue restore owns controls/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'rescue_resume', decks: [] }),
+			/requires at least one deck/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'rescue_stop_all', extra: true }),
+			/unexpected fields/i
+		);
+	} finally {
+		ipc.setRescueRestorePhaseForTest('idle');
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('master command accepts optional lock and query exposes master_mode', async () => {
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'master', deck: 4, lock: true }),

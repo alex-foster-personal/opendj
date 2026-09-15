@@ -4,10 +4,11 @@
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
-	import { headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
+	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 
 	interface Props {
 		state: HeadphoneState;
@@ -43,6 +44,10 @@
 			: (state.outputs.find((output) => output.id === state.selected_master_output_device_id)?.label ?? null)
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: state.output_mode, selectedLabel }));
+	const livenessVerdict = $derived(
+		(state as HeadphoneState & { liveness_verdict?: LivenessVerdict }).liveness_verdict ?? 'idle'
+	);
+	const livenessAlert = $derived(headphoneLivenessAlertText(livenessVerdict));
 	const mixBullets = [
 		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
 		'In MAIN, MIX blends cue into the speakers. In two outputs, MIX feeds headphones only.'
@@ -216,13 +221,18 @@
 				<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
 			</ControlExplainer>
 		{/if}
+		{#if livenessAlert !== null}
+			<ControlExplainer title="Headphone output health" bullets={[livenessAlert]} showDelayMs={60}>
+				<span class="hp-liveness-alert" role="alert" data-headphone-liveness-alert>{livenessAlert}</span>
+			</ControlExplainer>
+		{/if}
 	{/if}
 	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
 
 {#snippet outputMenu()}
 	<div class="hp-menu">
-		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40}>
+		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>MASTER / MAIN</span>
 				<select
@@ -238,7 +248,7 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40}>
+		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>HEADPHONE CUE</span>
 				<select
@@ -254,7 +264,7 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40}>
+		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>AUDIO IN</span>
 				<select
@@ -379,5 +389,12 @@
 		color: var(--rb-warn, #e6a23c);
 		font-size: 7px;
 		max-width: 140px;
+	}
+	.hp-liveness-alert {
+		color: var(--rb-danger, #ff6b6b);
+		font-size: 7px;
+		font-weight: 600;
+		max-width: 140px;
+		line-height: 1.2;
 	}
 </style>

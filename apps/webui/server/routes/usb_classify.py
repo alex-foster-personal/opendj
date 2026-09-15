@@ -79,7 +79,7 @@ def hide_reason_for(
     protocol: str | None = None,
     name: str | None = None,
 ) -> str | None:
-    """Human reason tag for non-USB / non-music folds (no U+2014 or U+2013 characters)."""
+    """Human reason tag for non-USB / non-music folds (no U+2013/U+2014 characters)."""
     if role == "usb_stick":
         return None
     if role == "mounted_drive":

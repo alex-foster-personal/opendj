@@ -33,6 +33,7 @@ import pytest
 
 from apps.engine_core.__main__ import HUB_MACHINE_NAME_ENV
 from apps.shared.state import db as state_db
+from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, hub_deploy
@@ -41,6 +42,9 @@ from tests.waits import wait_for_external_state
 pytestmark = pytest.mark.requirement("CAT-04")
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+GOLDEN_FIXTURES: Path = Path(__file__).resolve().parent.parent / "fixtures" / "hub_deploy" / "default"
+GOLDEN_REPO: Path = Path("/golden/music-dj-tools")
+GOLDEN_UV: str = "/usr/local/bin/uv"
 BOOT_GUARD_S: float = 120.0
 #: Ambient env a developer shell may carry that would change what the hub is.
 AMBIENT_ENV_TO_DROP: tuple[str, ...] = (
@@ -80,15 +84,23 @@ def _hub_env(
     is_hub_override: str | None,
     *,
     machine_name_env: str | None = None,
+    allowed_hosts: str | None = None,
 ) -> dict[str, str]:
     """The launcher env: HUB_ENV alone decides MDT_IS_HUB unless a control overrides it."""
-    dropped = (*AMBIENT_ENV_TO_DROP, machine_identity.IS_HUB_ENV, HUB_MACHINE_NAME_ENV)
+    dropped = (
+        *AMBIENT_ENV_TO_DROP,
+        machine_identity.IS_HUB_ENV,
+        HUB_MACHINE_NAME_ENV,
+        ALLOWED_HOSTS_ENV,
+    )
     env = {k: v for k, v in os.environ.items() if k not in dropped}
     env.update(hub_deploy.HUB_ENV)
     if is_hub_override is not None:
         env[machine_identity.IS_HUB_ENV] = is_hub_override
     if machine_name_env is not None:
         env[HUB_MACHINE_NAME_ENV] = machine_name_env
+    if allowed_hosts is not None:
+        env[ALLOWED_HOSTS_ENV] = allowed_hosts
     return env
 
 
@@ -134,6 +146,7 @@ def _boot(
     *,
     machine_name: str | None = None,
     machine_name_env: str | None = None,
+    allowed_hosts: str | None = None,
 ) -> BootedHub:
     data_dir = root / name / hub_deploy.CFG.DATA_DIR_NAME
     data_dir.mkdir(parents=True)
@@ -147,7 +160,11 @@ def _boot(
         proc = subprocess.Popen(
             argv,
             cwd=REPO_ROOT,
-            env=_hub_env(is_hub_override, machine_name_env=machine_name_env),
+            env=_hub_env(
+                is_hub_override,
+                machine_name_env=machine_name_env,
+                allowed_hosts=allowed_hosts,
+            ),
             stdout=log,
             stderr=subprocess.STDOUT,
         )
@@ -332,7 +349,19 @@ def test_probe_without_an_answer_is_unknown_never_a_verdict(tmp_path: Path) -> N
 # ----- rendered units carry the booted argv ------------------------------------
 
 
-def _inputs(tmp_path: Path, *, upload_r2: bool = False) -> hub_deploy.RenderInputs:
+def _inputs(
+    tmp_path: Path,
+    *,
+    upload_r2: bool = False,
+    serve_r2: bool = False,
+    serve_doppler_config: str | None = None,
+    doppler: str | None = None,
+    allowed_hosts: str | None = None,
+) -> hub_deploy.RenderInputs:
+    if doppler is None:
+        doppler = "/usr/local/bin/doppler" if (upload_r2 or serve_r2) else None
+    if serve_r2 and serve_doppler_config is None:
+        serve_doppler_config = "hub_r2_readonly"
     return hub_deploy.RenderInputs(
         repo_root=REPO_ROOT,
         uv=_uv(),
@@ -341,7 +370,25 @@ def _inputs(tmp_path: Path, *, upload_r2: bool = False) -> hub_deploy.RenderInpu
         backup_dest=tmp_path / "opendj-hub-backups",
         keep=hub_deploy.CFG.BACKUP_KEEP,
         upload_r2=upload_r2,
-        doppler="/usr/local/bin/doppler" if upload_r2 else None,
+        doppler=doppler,
+        serve_r2=serve_r2,
+        serve_doppler_config=serve_doppler_config,
+        allowed_hosts=allowed_hosts,
+    )
+
+
+def _golden_inputs() -> hub_deploy.RenderInputs:
+    return hub_deploy.RenderInputs(
+        repo_root=GOLDEN_REPO,
+        uv=GOLDEN_UV,
+        data_dir=Path("/golden/opendj-hub"),
+        port=hub_deploy.CFG.HUB_PORT,
+        backup_dest=Path("/golden/opendj-hub-backups"),
+        keep=hub_deploy.CFG.BACKUP_KEEP,
+        upload_r2=False,
+        doppler=None,
+        serve_r2=False,
+        serve_doppler_config=None,
     )
 
 
@@ -550,6 +597,123 @@ def test_default_data_dir_is_accepted_as_dedicated(platform: str) -> None:
     hub_deploy.assert_dedicated_data_dir(data_dir)
 
 
+@pytest.mark.requirement("CLOUDSYNC-17")
+def test_default_render_matches_main_golden_systemd() -> None:
+    """if the default systemd serve unit drifts from pre-change output then broken"""
+    rendered = hub_deploy.render_units("systemd", _golden_inputs())["opendj-hub.service"]
+    golden = (GOLDEN_FIXTURES / "systemd-opendj-hub.service").read_text(encoding="utf-8")
+    assert rendered == golden
+
+
+@pytest.mark.requirement("CLOUDSYNC-17")
+def test_default_render_matches_main_golden_launchd() -> None:
+    """if the default launchd serve unit drifts from pre-change output then broken"""
+    rendered = hub_deploy.render_units("launchd", _golden_inputs())["com.opendj.hub.plist"]
+    golden = (GOLDEN_FIXTURES / "launchd-com.opendj.hub.plist").read_text(encoding="utf-8")
+    assert rendered == golden
+
+
+@pytest.mark.requirement("CLOUDSYNC-17")
+@pytest.mark.parametrize("kind", ["systemd", "launchd"])
+def test_serve_r2_wraps_serve_unit_argv(kind: str, tmp_path: Path) -> None:
+    """if opted-in serve units lack the doppler wrapper then broken"""
+    inputs = _inputs(tmp_path, serve_r2=True, serve_doppler_config="hub_r2_readonly")
+    units = hub_deploy.render_units(kind, inputs)
+    hub_name = "opendj-hub.service" if kind == "systemd" else "com.opendj.hub.plist"
+    expected = hub_deploy.hub_serve_argv(
+        uv=inputs.uv,
+        data_dir=inputs.data_dir,
+        port=inputs.port,
+        serve_r2=True,
+        doppler=inputs.doppler,
+        serve_doppler_config="hub_r2_readonly",
+    )
+    assert expected[:8] == [
+        "/usr/local/bin/doppler",
+        "run",
+        "-p",
+        "general",
+        "-c",
+        "hub_r2_readonly",
+        "--",
+        inputs.uv,
+    ]
+    if kind == "systemd":
+        (exec_start,) = _systemd_key(units[hub_name], "ExecStart")
+        assert _systemd_argv(exec_start) == expected
+        default_backup = hub_deploy.render_units("systemd", _inputs(tmp_path))[
+            "opendj-hub-backup.service"
+        ]
+        assert units["opendj-hub-backup.service"] == default_backup
+    else:
+        hub = plistlib.loads(units[hub_name].encode())
+        assert hub["ProgramArguments"] == expected
+        default_backup = hub_deploy.render_units("launchd", _inputs(tmp_path))[
+            "com.opendj.hub-backup.plist"
+        ]
+        assert units["com.opendj.hub-backup.plist"] == default_backup
+
+
+@pytest.mark.requirement("CLOUDSYNC-17")
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"serve_r2": True, "doppler": "/bin/doppler"}, "--serve-doppler-config"),
+        ({"serve_r2": True, "serve_doppler_config": "cfg"}, "--doppler"),
+    ],
+)
+def test_serve_r2_refuses_missing_flags(kwargs: dict[str, object], match: str) -> None:
+    """if --serve-r2 proceeds without explicit doppler config or CLI then broken"""
+    base = {
+        "uv": "/opt/uv",
+        "data_dir": Path("/golden/opendj-hub"),
+        "port": hub_deploy.CFG.HUB_PORT,
+    }
+    with pytest.raises(hub_deploy.HubDeployError, match=match):
+        hub_deploy.hub_serve_argv(**base, **kwargs)
+
+
+@pytest.mark.requirement("CLOUDSYNC-17")
+def test_render_cli_refuses_serve_r2_without_config(tmp_path: Path) -> None:
+    """if render --serve-r2 without --serve-doppler-config exits 0 then broken"""
+    result = subprocess.run(
+        [
+            _uv(),
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "apps.sync_hub.hub_deploy",
+            "render",
+            "--kind",
+            "systemd",
+            "--out-dir",
+            str(tmp_path),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--uv",
+            _uv(),
+            "--data-dir",
+            str(tmp_path / "opendj-hub"),
+            "--port",
+            str(hub_deploy.CFG.HUB_PORT),
+            "--backup-dest",
+            str(tmp_path / "backups"),
+            "--keep",
+            "14",
+            "--serve-r2",
+            "--doppler",
+            "/usr/local/bin/doppler",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "--serve-doppler-config" in result.stderr
+
+
 def test_render_refuses_an_unfilled_placeholder() -> None:
     """if a template renders with a __PLACEHOLDER__ left in it then broken"""
     with pytest.raises(hub_deploy.HubDeployError, match="__PORT__"):
@@ -562,3 +726,221 @@ def test_init_refuses_without_is_hub(tmp_path: Path, monkeypatch: pytest.MonkeyP
     with pytest.raises(hub_deploy.HubDeployError, match="MDT_IS_HUB=1"):
         hub_deploy.init_hub_data_dir(tmp_path / "opendj-hub")
     assert not (tmp_path / "opendj-hub").exists()
+
+
+# ----- allowed hosts (CLOUDSYNC-18) --------------------------------------------
+
+ALLOWED_HOST = "box.example-tailnet.ts.net"
+PROBE_HOST = "probe.example-tailnet.ts.net"
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+@pytest.mark.parametrize("kind", ["systemd", "launchd"])
+def test_rendered_serve_unit_sets_allowed_hosts_when_opted_in(
+    kind: str, tmp_path: Path
+) -> None:
+    """if opted-in render lacks MUSIC_DJ_ALLOWED_HOSTS on the serve unit then broken"""
+    inputs = _inputs(tmp_path, allowed_hosts=ALLOWED_HOST)
+    units = hub_deploy.render_units(kind, inputs)
+    hub_name = "opendj-hub.service" if kind == "systemd" else "com.opendj.hub.plist"
+    if kind == "systemd":
+        env = dict(
+            shlex.split(value)[0].split("=", 1)
+            for value in _systemd_key(units[hub_name], "Environment")
+        )
+        backup_text = units["opendj-hub-backup.service"]
+    else:
+        hub = plistlib.loads(units[hub_name].encode())
+        env = hub["EnvironmentVariables"]
+        backup = plistlib.loads(units["com.opendj.hub-backup.plist"].encode())
+        backup_text = backup.get("EnvironmentVariables", {})
+    assert env[ALLOWED_HOSTS_ENV] == ALLOWED_HOST
+    assert env[machine_identity.IS_HUB_ENV] == "1"
+    if kind == "systemd":
+        assert ALLOWED_HOSTS_ENV not in backup_text
+    else:
+        assert ALLOWED_HOSTS_ENV not in backup_text
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_rendered_serve_unit_normalizes_multi_host_allowed_hosts(tmp_path: Path) -> None:
+    """if multi-host --allowed-hosts is not normalized by parse_allowed_hosts then broken"""
+    raw = f" {ALLOWED_HOST} , other.example-tailnet.ts.net "
+    inputs = _inputs(tmp_path, allowed_hosts=raw)
+    service = hub_deploy.render_units("systemd", inputs)["opendj-hub.service"]
+    env = dict(
+        shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment")
+    )
+    assert env[ALLOWED_HOSTS_ENV] == f"{ALLOWED_HOST},other.example-tailnet.ts.net"
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+@pytest.mark.parametrize(
+    "bad,match",
+    [
+        ("https://box.example-tailnet.ts.net", "must list bare hostnames"),
+        ("box.example-tailnet.ts.net:443", "must list bare hostnames"),
+        (",", "named no hostname"),
+    ],
+)
+def test_invalid_allowed_hosts_fails_at_render(bad: str, match: str) -> None:
+    """if invalid --allowed-hosts reaches request time instead of render then broken"""
+    with pytest.raises(hub_deploy.HubDeployError, match=match):
+        hub_deploy.hub_service_env(allowed_hosts=bad)
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_render_cli_refuses_invalid_allowed_hosts(tmp_path: Path) -> None:
+    """if render --allowed-hosts with a scheme exits 0 then broken"""
+    result = subprocess.run(
+        [
+            _uv(),
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "apps.sync_hub.hub_deploy",
+            "render",
+            "--kind",
+            "systemd",
+            "--out-dir",
+            str(tmp_path),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--uv",
+            _uv(),
+            "--data-dir",
+            str(tmp_path / "opendj-hub"),
+            "--port",
+            str(hub_deploy.CFG.HUB_PORT),
+            "--backup-dest",
+            str(tmp_path / "backups"),
+            "--keep",
+            "14",
+            "--allowed-hosts",
+            "https://box.example-tailnet.ts.net",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "must list bare hostnames" in result.stderr
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_probe_allowed_host_critical_without_env(tmp_path: Path) -> None:
+    """if allowlist probe reads OK when the hub lacks MUSIC_DJ_ALLOWED_HOSTS then broken"""
+    hub = _boot(tmp_path, "allow-probe-miss", None)
+    try:
+        _wait_for_hub(hub)
+        probe = hub_deploy.probe_allowed_host(hub.url, PROBE_HOST)
+        assert probe.verdict == "CRITICAL"
+        assert probe.http_status == 403
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_probe_allowed_host_ok_with_matching_env(tmp_path: Path) -> None:
+    """if allowlist probe stays CRITICAL when the hub has the matching env then broken"""
+    hub = _boot(tmp_path, "allow-probe-hit", None, allowed_hosts=PROBE_HOST)
+    try:
+        _wait_for_hub(hub)
+        probe = hub_deploy.probe_allowed_host(hub.url, PROBE_HOST)
+        assert probe.verdict == "OK"
+        assert probe.http_status == 200
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_probe_allowed_host_unknown_on_closed_port() -> None:
+    """if allowlist probe reads OK against a closed port then broken"""
+    probe = hub_deploy.probe_allowed_host(
+        f"http://127.0.0.1:{_free_loopback_port()}", PROBE_HOST
+    )
+    assert probe.verdict == "UNKNOWN"
+    assert probe.verdict != "OK"
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_status_cli_allowed_host_probe_without_env(tmp_path: Path) -> None:
+    """if status --allowed-hosts exits 0 when the hub lacks the allowlist then broken"""
+    hub = _boot(tmp_path, "status-allow-miss", None)
+    try:
+        _wait_for_hub(hub)
+        result = subprocess.run(
+            [
+                _uv(),
+                "run",
+                "--no-sync",
+                "python",
+                "-m",
+                "apps.sync_hub.hub_deploy",
+                "status",
+                "--data-dir",
+                str(hub.data_dir),
+                "--url",
+                hub.url,
+                "--allowed-hosts",
+                PROBE_HOST,
+            ],
+            cwd=REPO_ROOT,
+            env=_hub_env("0"),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 2
+        assert "[CRITICAL] allowed-host:" in result.stdout
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_status_cli_allowed_host_probe_with_env(tmp_path: Path) -> None:
+    """if status --allowed-hosts exits non-zero when the hub has the allowlist then broken"""
+    hub = _boot(tmp_path, "status-allow-hit", None, allowed_hosts=PROBE_HOST)
+    try:
+        _wait_for_hub(hub)
+        result = subprocess.run(
+            [
+                _uv(),
+                "run",
+                "--no-sync",
+                "python",
+                "-m",
+                "apps.sync_hub.hub_deploy",
+                "status",
+                "--data-dir",
+                str(hub.data_dir),
+                "--url",
+                hub.url,
+                "--allowed-hosts",
+                PROBE_HOST,
+            ],
+            cwd=REPO_ROOT,
+            env=_hub_env("0"),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "[OK] allowed-host:" in result.stdout
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-18")
+def test_hub_service_env_matches_rendered_serve_unit(tmp_path: Path) -> None:
+    """if dropping MUSIC_DJ_ALLOWED_HOSTS from opted-in render would still pass then broken"""
+    inputs = _inputs(tmp_path, allowed_hosts=ALLOWED_HOST)
+    expected = hub_deploy.hub_service_env(allowed_hosts=ALLOWED_HOST)
+    service = hub_deploy.render_units("systemd", inputs)["opendj-hub.service"]
+    env = dict(
+        shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment")
+    )
+    assert env == expected
+    assert ALLOWED_HOSTS_ENV in env
