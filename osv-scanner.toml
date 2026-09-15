@@ -325,3 +325,14 @@ reason = "P3 unic-ucd-ident 0.9.0: unmaintained notice, transitive via Tauri; re
 id = "RUSTSEC-2025-0098"
 ignoreUntil = 2026-12-13
 reason = "P3 unic-ucd-version 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+# ----- P1: vitest, launcher dev server (30 days) -------------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-5xrq-8626-4rwp"
+ignoreUntil = 2026-10-14
+reason = "P1 vitest 2.1.9 (apps/launcher/pnpm-lock.yaml, devDependency): arbitrary file read and execute while the Vitest UI server listens. Dev-only, never shipped. Fix: bump vitest to 3.2.6 or later."
+
+[[IgnoredVulns]]
+id = "GHSA-82fw-gwwq-j7x9"
+ignoreUntil = 2026-10-14
+reason = "P1 vitest / @vitest/mocker 2.1.9 (apps/launcher/pnpm-lock.yaml, devDependency): path traversal via @vitest/mocker. Dev-only. Fix: bump vitest to 4.1.11 or later."
