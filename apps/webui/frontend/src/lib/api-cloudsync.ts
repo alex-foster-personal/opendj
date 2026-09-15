@@ -111,6 +111,13 @@ export interface CloudSyncRecentResult {
 /** Which source decided a CloudSync config field; an env override wins over the file. */
 export type CloudSyncConfigSource = 'env' | 'file' | 'default';
 
+export interface CloudSyncUpdateRequired {
+	code: 'SYNC_WIRE_VERSION';
+	local_wire_version: number;
+	peer_wire_version: number;
+	action: string;
+}
+
 export interface CloudSyncStatus {
 	/** configured AND running: true only while a scheduler heartbeat is fresh. */
 	enabled: boolean;
@@ -129,6 +136,7 @@ export interface CloudSyncStatus {
 	rows_pending: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
+	update_required: CloudSyncUpdateRequired | null;
 }
 
 /**

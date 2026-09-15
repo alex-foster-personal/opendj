@@ -92,8 +92,10 @@ const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run 
 const runSetupButton = (page: Page) => page.getByRole('button', { name: 'Run setup', exact: true });
 
 /** The route the overlay is drawn over. Spelled once here, and it must match
- * SETUP_HOST_ROUTE in $lib/setup/run-setup. */
-const HOST_ROUTE = /\/performance\/?$/;
+ * SETUP_HOST_ROUTE in $lib/setup/run-setup. The performance route writes its
+ * own deep-link query (`?playlist=all`, performance-deeplink.ts since commit d1d6dcaee)
+ * via replaceState once it boots, so the path is pinned and the query is not. */
+const HOST_ROUTE = /\/performance\/?(?:\?[^#]*)?$/;
 
 /** The three ways forward the detect step must ALWAYS offer. */
 const ESCAPE_LABELS = ['Look again', 'Choose a folder instead', 'Continue without importing'];

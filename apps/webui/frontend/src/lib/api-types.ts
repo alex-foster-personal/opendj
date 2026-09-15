@@ -3190,6 +3190,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/rb-djay-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Playlist Rb Djay Diff
+         * @description Return saved playlist-plan diff buckets for one playlist when computed.
+         */
+        get: operations["get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/sets": {
         parameters: {
             query?: never;
@@ -3404,6 +3424,206 @@ export interface paths {
         };
         /** Get Queue */
         get: operations["get_queue_api_v1_queues__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/analysis/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Analysis Apply
+         * @description SYNC-05: dry-run or live analysis-field apply from analysis-diff.csv.
+         */
+        post: operations["rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/cues/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Cues Apply
+         * @description SYNC-04: dry-run or scaffold live cue apply.
+         */
+        post: operations["rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/cues/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Cues Plan
+         * @description SYNC-04: cue comparison CSV.
+         */
+        post: operations["rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/djay/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rb Djay Sync Djay Playlists
+         * @description SYNC-01: enumerate djay playlists and track UUID memberships.
+         */
+        get: operations["rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Match
+         * @description SYNC-02: build matches.csv from working-copy vendor DBs.
+         */
+        post: operations["rb_djay_sync_match_api_v1_rb_djay_sync_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/metadata/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Metadata Plan
+         * @description SYNC-05 + SYNC-06 (+ optional SYNC-04 cues) diff CSV generation.
+         */
+        post: operations["rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/playlists/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Playlists Apply
+         * @description SYNC-03: dry-run or live apply of playlist-plan.json into djay.
+         */
+        post: operations["rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/playlists/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Playlists Plan
+         * @description SYNC-03: compute playlist-plan.json and companion artefacts.
+         */
+        post: operations["rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/ratings/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Ratings Apply
+         * @description SYNC-06: dry-run or live ratings apply from ratings-diff.csv.
+         */
+        post: operations["rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rb Djay Sync Status
+         * @description SYNC-01..06 capability probe: DB paths, artefacts, fingerprint, writeback.
+         */
+        get: operations["rb_djay_sync_status_api_v1_rb_djay_sync_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3800,6 +4020,57 @@ export interface paths {
          * @description Set the share cookie when the query token matches, then redirect.
          */
         get: operations["share_session_api_v1_share_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Shell Navigate */
+        post: operations["post_shell_navigate_api_v1_shell_navigate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ack Shell Navigate */
+        post: operations["ack_shell_navigate_api_v1_shell_navigate_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shell Navigate Pending */
+        get: operations["get_shell_navigate_pending_api_v1_shell_navigate_pending_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4252,6 +4523,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Asr Presign
+         * @description Mint a short-lived GET URL for one ASR transcript JSON object.
+         */
+        get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/pull": {
         parameters: {
             query?: never;
@@ -4362,6 +4653,11 @@ export interface paths {
         /**
          * Get Stem Index
          * @description Return the published stem bundle index for an authenticated spoke.
+         *
+         *     ``request.app.state.stem_index_fetcher``, when set by the code that built
+         *     the app, replaces the real R2 index fetch with the callable's return
+         *     value. Production never sets it; only test app-builders do. The
+         *     credential check always runs first regardless.
          */
         get: operations["get_stem_index_api_v1_sync_stems_index_get"];
         put?: never;
@@ -5313,6 +5609,28 @@ export interface components {
             /** Stable B */
             stable_b: string;
         };
+        /** AnalysisApplyRequest */
+        AnalysisApplyRequest: {
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Fields */
+            fields?: string[] | null;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+        };
         /** AnalysisOrderOut */
         AnalysisOrderOut: {
             /** Kind */
@@ -5446,6 +5764,11 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** AppModeOut */
+        AppModeOut: {
+            /** Last Gig At */
+            last_gig_at?: string | null;
+        };
         /** AppPostureOut */
         AppPostureOut: {
             /** Label */
@@ -5469,6 +5792,11 @@ export interface components {
         ApplyIn: {
             /** Cluster Key */
             cluster_key: string;
+            /**
+             * Confirm Cue Loss
+             * @default false
+             */
+            confirm_cue_loss: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -6543,6 +6871,8 @@ export interface components {
             running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
+            /** @description Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine. */
+            update_required?: components["schemas"]["UpdateRequiredOut"] | null;
         };
         /**
          * CloudTransferOut
@@ -6868,6 +7198,48 @@ export interface components {
              * @enum {string}
              */
             mode: "observe" | "enforce";
+        };
+        /** CuesApplyRequest */
+        CuesApplyRequest: {
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Cautious
+             * @default false
+             */
+            cautious: boolean;
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Tracks */
+            tracks?: string[] | null;
+        };
+        /** CuesPlanRequest */
+        CuesPlanRequest: {
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Min Confidence
+             * @default 0.7
+             */
+            min_confidence: number;
         };
         /** DecideIn */
         DecideIn: {
@@ -8485,6 +8857,22 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** LyricsAsrPresignResponse */
+        LyricsAsrPresignResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Stable Id */
+            stable_id: string;
+            /** Url */
+            url: string;
+        };
         /**
          * LyricsCachedIdsOut
          * @description Stable ids with a valid on-disk lyrics-cache entry.
@@ -8792,6 +9180,16 @@ export interface components {
             /** Unhydrated Pinned Count */
             unhydrated_pinned_count: number;
         };
+        /** MatchRequest */
+        MatchRequest: {
+            /** Out Dir */
+            out_dir?: string | null;
+            /**
+             * Use Fingerprint
+             * @default false
+             */
+            use_fingerprint: boolean;
+        };
         /** MeOut */
         MeOut: {
             /** Signed In */
@@ -8923,6 +9321,27 @@ export interface components {
         MembershipTransferOut: {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /** MetadataPlanRequest */
+        MetadataPlanRequest: {
+            /**
+             * Include Cues
+             * @default false
+             */
+            include_cues: boolean;
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Min Confidence
+             * @default 0.7
+             */
+            min_confidence: number;
+            /**
+             * Prefer
+             * @default newest
+             * @enum {string}
+             */
+            prefer: "rekordbox" | "djay" | "newest";
         };
         /**
          * MetadataShareRequest
@@ -9649,6 +10068,38 @@ export interface components {
             /** Position */
             position: number;
         };
+        /** PlaylistApplyRequest */
+        PlaylistApplyRequest: {
+            /**
+             * Allow Broken
+             * @default false
+             */
+            allow_broken: boolean;
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Plan Path */
+            plan_path?: string | null;
+            /** Playlists */
+            playlists?: string[] | null;
+        };
         /** PlaylistBrokenSummary */
         PlaylistBrokenSummary: {
             /** Broken Count */
@@ -9760,6 +10211,18 @@ export interface components {
             mode: "pinned" | "cached" | "stream" | "excluded";
             /** Playlist Id */
             playlist_id: string;
+        };
+        /** PlaylistPlanRequest */
+        PlaylistPlanRequest: {
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Max Ops
+             * @default 10000
+             */
+            max_ops: number;
+            /** Only Playlists */
+            only_playlists?: string[] | null;
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
@@ -9991,6 +10454,9 @@ export interface components {
          *     track anywhere in a small sample), which is an honest denominator, never
          *     a fabricated pass. ``remediation`` is null on a pass or a pending row and
          *     a real sentence on a fail.
+         *
+         *     ``user_*`` fields carry plain-language copy for the boot gate (issue
+         *     #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
          */
         PreflightCheckOut: {
             /** Detail */
@@ -10006,6 +10472,12 @@ export interface components {
              * @enum {string}
              */
             status: "pass" | "fail" | "pending";
+            /** User Detail */
+            user_detail?: string | null;
+            /** User Label */
+            user_label?: string | null;
+            /** User Remediation */
+            user_remediation?: string | null;
         };
         /**
          * PreflightOut
@@ -10199,6 +10671,38 @@ export interface components {
             params: string;
             /** Si Sdr */
             si_sdr?: number | null;
+        };
+        /** RatingsApplyRequest */
+        RatingsApplyRequest: {
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Cautious
+             * @default false
+             */
+            cautious: boolean;
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Tracks */
+            tracks?: string[] | null;
         };
         /** RatingsFile */
         RatingsFile: {
@@ -12154,13 +12658,34 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
              * @enum {string}
              */
             app_posture: "prep" | "gig";
+            /**
+             * Auto Play Enabled
+             * @default true
+             */
+            auto_play_enabled: boolean;
+            /**
+             * Auto Play Enforce Order
+             * @default false
+             */
+            auto_play_enforce_order: boolean;
+            /**
+             * Auto Play Maximize Reach
+             * @default true
+             */
+            auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
+            /**
+             * Beat Sync Max
+             * @default true
+             */
+            beat_sync_max: boolean;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -12232,9 +12757,18 @@ export interface components {
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
+            /** Auto Play Enabled */
+            auto_play_enabled?: boolean | null;
+            /** Auto Play Enforce Order */
+            auto_play_enforce_order?: boolean | null;
+            /** Auto Play Maximize Reach */
+            auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Beat Sync Max */
+            beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -12330,6 +12864,20 @@ export interface components {
              * @enum {string}
              */
             status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateRequiredOut */
+        UpdateRequiredOut: {
+            /** Action */
+            action: string;
+            /**
+             * Code
+             * @constant
+             */
+            code: "SYNC_WIRE_VERSION";
+            /** Local Wire Version */
+            local_wire_version: number;
+            /** Peer Wire Version */
+            peer_wire_version: number;
         };
         /** UploadFileResult */
         UploadFileResult: {
@@ -18457,6 +19005,39 @@ export interface operations {
             };
         };
     };
+    get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_playlist_sets: {
         parameters: {
             query?: never;
@@ -18915,6 +19496,330 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CuesApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CuesPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    rb_djay_sync_match_api_v1_rb_djay_sync_match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingsApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_status_api_v1_rb_djay_sync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -19488,6 +20393,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_shell_navigate_api_v1_shell_navigate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ack_shell_navigate_api_v1_shell_navigate_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shell_navigate_pending_api_v1_shell_navigate_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -20390,6 +21391,68 @@ export interface operations {
                 };
             };
             /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsAsrPresignResponse"];
+                };
+            };
+            /** @description lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -21481,7 +22544,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -21584,7 +22647,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;

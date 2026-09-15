@@ -32,6 +32,20 @@ _RW_PRAGMAS: tuple[tuple[str, object], ...] = (
     ("busy_timeout", 5000),
 )
 
+# Matches PRAGMA busy_timeout above; passed to sqlite3.connect as well.
+_RW_CONNECT_TIMEOUT_S: float = 5.0
+
+
+def is_sqlite_busy(exc: BaseException) -> bool:
+    """True for SQLITE_BUSY / ``database is locked`` :class:`OperationalError`."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code == sqlite3.SQLITE_BUSY:
+        return True
+    message = str(exc).lower()
+    return "database is locked" in message or "database is busy" in message
+
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,7 +95,9 @@ def open_rw(
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
     conn = sqlite3.connect(
-        str(target), isolation_level=None,
+        str(target),
+        timeout=_RW_CONNECT_TIMEOUT_S,
+        isolation_level=None,
         check_same_thread=check_same_thread,
     )
     try:
@@ -216,6 +232,7 @@ __all__ = [
     "connect_dry_run",
     "connect_ro",
     "connect_rw",
+    "is_sqlite_busy",
     "open_dry_run",
     "open_ro",
     "open_rw",

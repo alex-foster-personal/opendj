@@ -776,9 +776,11 @@
 
 	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
 	     reachable from performance mode too - the shell topbar is not
-	     rendered on this route. Sized down to fit --rb-topbar-h. -->
+	     rendered on this route. Sized down to fit --rb-topbar-h, and labelled
+	     because on this route it is the only sign-in affordance there is
+	     (issue #2357). -->
 	<CloudSyncStatusChip />
-	<UserBauble size={20} />
+	<UserBauble size={20} showLabel />
 </header>
 
 <CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
@@ -826,10 +828,10 @@
 		flex: none;
 		margin-inline: 2px;
 	}
-	@media (max-width: 1400px) {
-		.rb-topbar .free-badge,
-		.rb-topbar .topbar-slot-utility { display: none; }
-	}
+	/* NOTE (issue #2357): the `free-badge`/`topbar-slot-utility` tier that used
+	   to sit here at 1400px, and the `clock` tier at 1320px, are now folded
+	   into the 1530px tier further down this block. Their old thresholds were
+	   measured against an unlabelled 20px bauble. */
 	/* Pin T3 (packet 9h): between 1400px and 1180px nothing else yielded room,
 	   so at 1280px the row's total natural content width exceeded the
 	   viewport while every OTHER flex child still had its default
@@ -909,10 +911,6 @@
 	   already evicts pairing+vibe first. Configuration B is what ships, and it
 	   is strictly healthier than the C baseline: it also closes the 1410-1425
 	   hole. */
-	@media (max-width: 1530px) {
-		.rb-topbar .topbar-slot-pairing,
-		.rb-topbar .topbar-slot-vibe { display: none; }
-	}
 	@media (max-width: 1180px) {
 		.rb-topbar :global(.cmd-input) { width: 86px; }
 		.rb-topbar :global(.cmd-status) { display: none; }
@@ -932,17 +930,6 @@
 	   effect. This group is the right thing to drop first: every member is
 	   placeholder chrome - the eight view icons and LINK are `rb-inert` and
 	   `disabled`, PAD is a dim label - so nothing operable leaves the row. */
-	@media (max-width: 1210px) {
-		.rb-topbar .icon-cluster,
-		.rb-topbar .link-btn,
-		.rb-topbar .topbar-slot-pad { display: none; }
-	}
-	/* Issue #2361: STG beside LYR costs ~30px. Measured on WSL at 1280px width
-	   the command entry stops hit-testing unless the clock yields first; 1320px
-	   leaves the same 25px margin the 1530px pairing+vibe eviction uses. */
-	@media (max-width: 1320px) {
-		.rb-topbar .clock { display: none; }
-	}
 	@media (max-width: 1400px) {
 		.rb-topbar .topbar-slot-stage { font-size: 0; }
 		.rb-topbar .topbar-slot-stage::after { content: 'STG'; font-size: 9px; }
@@ -953,33 +940,82 @@
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
 	}
-	/* 820px -> 825px, re-measured Wed 9 Sep 2026 with SOURCE in the row (same
-	   harness and method as the two notes above, but swept at 1px rather than
-	   5px granularity because the band in question turned out to be 5px wide).
-	   This rule EVICTS the command entry outright, so every width it covers
-	   reads as "input not hittable" by design, and the sweep numbers have to
-	   be read against that:
-	     - pre-#1002 baseline (SOURCE hidden): the input is hittable at every
-	       width from 821px to 1920px, and not below, i.e. the eviction
-	       boundary and the crush floor coincide exactly at 820/821.
-	     - with SOURCE and this rule still at 820px: the input is CRUSHED
-	       (present, laid out, not hittable) across [821px, 825px], then
-	       hittable at every width from 826px to 1920px.
-	   So SOURCE costs this row exactly 5px of floor. Moving the boundary to
-	   825px is a DELIBERATE 5px WIDENING of an eviction window that already
-	   drops the command entry: it converts [821px, 825px] from a visible but
-	   unclickable control into the same honest "not shown at this width"
-	   state the four narrower pixels already had. A crushed control is the
-	   worse of the two failure modes, since it looks operable and is not.
-	   Below the 1024px this row is designed for either way. */
-	@media (max-width: 825px) {
-		.rb-topbar .topbar-slot-midi,
-		.rb-topbar .topbar-slot-utility,
+	/* Issue #2357, measured Tue 15 Sep 2026 on the built SPA (playwright,
+	   chromium, 800x600 fixture library, one page per configuration, overflow
+	   read as `scrollWidth - clientWidth` on `.rb-topbar` plus a real
+	   elementFromPoint hit test per child).
+
+	   The account bauble arrived with a VISIBLE LABEL, "Sign in with Google",
+	   because on this route it is the only sign-in affordance there is and a
+	   bare circle reads as decoration. That label is ~100px of new permanent
+	   row width - the row had NONE to give (its existing tiers were each
+	   measured to a ~25px margin against a 20px unlabelled circle), so every
+	   tier that RESTORES chrome now has to restore it ~100px later, and the
+	   two tiers that never yielded at all give up their read-only status
+	   surfaces. Swept at 5px granularity across [780px, 1920px]: before this
+	   change the shipped ladder overflows at 160 of 229 widths, worst 184px,
+	   in bands 780-1105 / 1215-1390 / 1405-1505 / 1535-1715; after it, at 0 of
+	   229. The bands above the old thresholds are exactly where the label did
+	   not fit, which is why the thresholds - not the selectors - are what
+	   moved.
+
+	   What pays, in the order it yields. Read-only STATUS yields before any
+	   control, which is the same ranking the 1530px note above states: the
+	   live perf readout, the Gig/Prep posture chip and the CloudSync status
+	   chip REPORT state and operate nothing, so the 1125px tier is where they
+	   go. Below that the inert/duplicated chrome goes, then the clock, then
+	   the free badge and the utility icons, then - only on a window too narrow
+	   for the row to be honest about it - pairing and the vibe meter.
+
+	   Deliberately NOT evicted, because each is the only door to something:
+	   the compact lyric chip (the one surface that says the word lane is
+	   hidden at this height, and tests/e2e/performance-topbar-responsive.spec.ts
+	   asserts it visible at 800x600), Stage, JOBS, the master fader, mute and
+	   the command entry above 1023px. */
+	@media (max-width: 1530px) {
+		/* Was 1400px (free badge + utility) and 1320px (clock), both measured
+		   against the unlabelled circle. At 1440px - a very common window - the
+		   label is worth 90px and these are worth 115px. */
 		.rb-topbar .free-badge,
-		.rb-topbar .clock,
-		.rb-topbar :global(.cmd-entry),
-		.rb-topbar :global([data-testid="refresh-analysis"]),
-		.rb-topbar :global(.bauble-root) { display: none; }
+		.rb-topbar .topbar-slot-utility,
+		.rb-topbar .clock { display: none; }
+	}
+	@media (max-width: 1415px) {
+		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
+		   placeholder chrome that operate nothing; the deficits above 1211px run
+		   to 138px, so 1415px is the last measured failing width plus the same
+		   25px margin the other tiers use. */
+		.rb-topbar .icon-cluster,
+		.rb-topbar .link-btn,
+		.rb-topbar .topbar-slot-pad { display: none; }
+	}
+	@media (max-width: 1125px) {
+		/* New tier. Status first (see the note above), and the chrome the 825px
+		   tier used to evict, which now has to go 300px earlier because the label
+		   is still in the row at those widths. */
+		.rb-topbar :global(.perf-meters-root),
+		.rb-topbar :global(.posture-chip),
+		.rb-topbar :global(.cloudsync-status),
+		.rb-topbar .topbar-slot-midi,
+		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
+	}
+	@media (max-width: 1023px) {
+		/* The command entry yields LAST of the narrow tier's set: it is the
+		   agent-facing door to the same typed dispatcher every control here uses,
+		   and tests/e2e/performance-topbar-responsive.spec.ts asserts it visible
+		   at 1024px. Below 1024px it either fits or it is crushed to zero width,
+		   and a crushed control is the worse of the two failure modes - it looks
+		   operable and is not (same reasoning as the 825px note this replaces). */
+		.rb-topbar :global(.cmd-entry) { display: none; }
+	}
+	/* >=825px and <=1023px, the above still leaves the sign-in pill as the
+	   widest thing in the row. It is the deliverable of this issue, so it keeps
+	   its label at every width; tests/e2e/performance-topbar-responsive.spec.ts
+	   asserts it visible, labelled and hittable at 800x600. */
+
+	@media (max-width: 1740px) {
+		.rb-topbar .topbar-slot-pairing,
+		.rb-topbar .topbar-slot-vibe { display: none; }
 	}
 
 	.ap-wrap {

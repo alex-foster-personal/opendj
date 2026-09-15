@@ -415,6 +415,37 @@ def test_push_then_delete_fails_loudly_on_a_missing_produced_file(
         )
 
 
+@pytest.mark.requirement("CLOUDSYNC-10")
+def test_run_hydrate_job_downloads_into_cache(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+) -> None:
+    stable_id = "c" * 40
+    machine_id = "m1"
+    body = b"believed-state-bytes"
+    digest = _sha(body)
+    _seed_track(conn, stable_id, content_hash=digest)
+    _seed_machine(conn, machine_id)
+    _seed_policy(conn, "m1", "stream")
+    key = asset_store.asset_object_key(digest)
+    fake_s3.store[(cfg.audio_bucket, key)] = (body, fake_s3._etag(body))
+    data_dir = tmp_path / "data"
+    hydration.run_hydrate_job(
+        conn,
+        cfg,
+        fake_s3,
+        stable_id=stable_id,
+        asset_kind="audio",
+        machine_id=machine_id,
+        data_dir=data_dir,
+    )
+    cached = data_dir / "state" / "audio-cache" / digest[:2] / digest
+    assert cached.is_file()
+    assert cached.read_bytes() == body
+
+
 def test_produced_asset_becomes_a_cache_hit_on_the_next_read(
     conn: sqlite3.Connection,
     cfg: CloudConfig,

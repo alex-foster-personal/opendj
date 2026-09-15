@@ -112,6 +112,20 @@ test('UserBauble signed-out button does not disable on auth.loading', () => {
 		join(FRONTEND_ROOT, 'src/lib/components/UserBauble.svelte'),
 		'utf8'
 	);
-	assert.match(source, /disabled=\{busy \|\| \(Boolean\(auth\.user\) && auth\.loading\)\}/);
+	// The button's own disabled attribute: the sign-out menu item carries its own
+	// `disabled={busy}` further down the file, so scope the match to the one that
+	// starts with `busy ||`.
+	const disabled = source.match(/disabled=\{busy \|\|([^}]*)\}/)?.[1] ?? '';
+	// auth.loading may only bite once a user is present: a signed-out visitor has
+	// to be able to click while the first /api/v1/auth/me is still in flight.
+	// Counting occurrences is what makes this bite - a third term re-introducing
+	// an unguarded `auth.loading` would be a second occurrence.
+	assert.equal(
+		(disabled.match(/auth\.loading/g) ?? []).length,
+		1,
+		'auth.loading is present and guarded once'
+	);
+	assert.match(disabled, /\(Boolean\(auth\.user\) && auth\.loading\)/);
+	assert.match(disabled, /signInUnavailable/);
 	assert.doesNotMatch(source, /disabled=\{busy \|\| auth\.loading\}/);
 });

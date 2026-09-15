@@ -109,6 +109,10 @@ class CapabilityStore {
 		engine_version: string;
 		boot_id: string;
 	} | null>(null);
+	/** `google_oauth_configured` as the daemon stated it. null is UNKNOWN (no
+	 * answer yet, or a daemon that predates the field); false is a daemon that
+	 * HAS answered and has no OAuth client. Both health flavors carry it. */
+	googleOAuthConfigured = $state<boolean | null>(null);
 
 	/** In flight or settled-successful probe. Cleared on failure so the next
 	 * caller retries instead of inheriting a verdict of "we never found out". */
@@ -144,6 +148,7 @@ class CapabilityStore {
 		try {
 			const body = await unwrap(api.GET('/api/v1/health'));
 			this.flavor = readDaemonFlavor(body);
+			this.googleOAuthConfigured = readGoogleOAuthConfigured(body);
 			this.error = null;
 			if (this.flavor === 'engine') {
 				const health = body as Record<string, unknown>;
@@ -161,6 +166,7 @@ class CapabilityStore {
 			this.#probe = null;
 			this.flavor = 'unknown';
 			this.handshake = null;
+			this.googleOAuthConfigured = null;
 			this.error = _message(exc);
 			console.error('[capabilities] probe failed; daemon-specific surfaces stay inert', exc);
 		}
@@ -175,7 +181,33 @@ class CapabilityStore {
 		this.error = null;
 		this.probedAt = null;
 		this.handshake = null;
+		this.googleOAuthConfigured = null;
 	}
+}
+
+/**
+ * Read the daemon's Google OAuth answer off a /api/v1/health body.
+ *
+ * THREE states, not two. `false` is the daemon saying it has no OAuth client,
+ * which is what makes a sign-in control read as unavailable rather than fail
+ * after the click. `true` is a configured client. `null` is UNKNOWN: nothing
+ * has answered yet, or the daemon predates the field. Collapsing unknown into
+ * false would disable sign-in on every boot frame and on every older daemon,
+ * which is a different (and worse) lie than the one this fixes.
+ *
+ * A present-but-non-boolean value is a contract break and throws, matching
+ * readDaemonFlavor above: a half-read field must not pass as an answer.
+ */
+export function readGoogleOAuthConfigured(body: object): boolean | null {
+	const raw = (body as Record<string, unknown>).google_oauth_configured;
+	if (raw === undefined) return null;
+	if (typeof raw !== 'boolean') {
+		throw new Error(
+			`capabilities: /api/v1/health answered google_oauth_configured as ` +
+				`${typeof raw}, expected a boolean`
+		);
+	}
+	return raw;
 }
 
 /** The one capability store. */
