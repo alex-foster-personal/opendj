@@ -17097,6 +17097,17 @@
             "title": "Canonical Hex",
             "type": "string"
           },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
           "origin_device_id": {
             "anyOf": [
               {

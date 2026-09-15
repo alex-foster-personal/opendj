@@ -14,7 +14,8 @@ lives in :mod:`apps.shared.state.migrations` (v1-v5) and
 :mod:`apps.shared.state.migrations_v11` (v11) and
 :mod:`apps.shared.state.migrations_v12` (v12) and
 :mod:`apps.shared.state.migrations_v13` (v13) and
-:mod:`apps.shared.state.migrations_v14` (v14) -- split across sibling modules
+:mod:`apps.shared.state.migrations_v14` (v14) and
+:mod:`apps.shared.state.migrations_v15` (v15) -- split across sibling modules
 (issue #1583) because the combined ladder alone exceeds the 600-line
 file-size gate. This module keeps the runner and the
 drift-tripwire table/view tuples below.
@@ -32,14 +33,29 @@ from .migrations_v11 import _V11
 from .migrations_v12 import _V12
 from .migrations_v13 import _V13
 from .migrations_v14 import _V14
+from .migrations_v15 import _V15
 
-SCHEMA_VERSION: int = 14
+SCHEMA_VERSION: int = 15
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
 MIGRATIONS: list[list[str]] = [
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14,
+    _V1,
+    _V2,
+    _V3,
+    _V4,
+    _V5,
+    _V6,
+    _V7,
+    _V8,
+    _V9,
+    _V10,
+    _V11,
+    _V12,
+    _V13,
+    _V14,
+    _V15,
 ]
 
 

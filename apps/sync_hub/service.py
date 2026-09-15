@@ -756,6 +756,7 @@ def rows(
                     canonical_hex=sample.canonical_hex,
                     updated_at=sample.updated_at,
                     origin_device_id=sample.origin_device_id,
+                    modified_at=sample.modified_at,
                 )
                 for sample in page
             ],

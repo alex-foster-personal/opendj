@@ -12239,6 +12239,8 @@ export interface components {
         SyncRowSampleModel: {
             /** Canonical Hex */
             canonical_hex: string;
+            /** Modified At */
+            modified_at?: string | null;
             /** Origin Device Id */
             origin_device_id?: string | null;
             /** Pk */
