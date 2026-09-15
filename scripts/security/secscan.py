@@ -6,13 +6,18 @@ Secret values are never read into output: gitleaks/trufflehog summaries print ru
 or detector ids, file paths, lines and short commit ids only.
 
 Exit codes: 0 = parsed (findings may be > 0), 2 = UNKNOWN (input could not be
-measured: missing file, malformed JSON, expected subject absent, control silent).
+measured: missing file, malformed JSON, expected subject absent, control silent),
+3 = SKIP (semgrep-summary --skip-if-nothing-scanned only: the scope held no file
+semgrep scans, so no rules loaded and nothing was measured).
 
 Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] osv JSON lacks one of the expected manifests [then] exit 2 (UNKNOWN).
 - [if] an IgnoredVulns entry lacks reason/ignoreUntil or expires > max days out [then] exit 2.
 - [if] a head finding shares (ecosystem, package, id) with base [then] it is not NEW.
 - [if] a semgrep control run lacks a required rule id [then] exit 2.
+- [if] a diff-aware semgrep run scanned 0 files and loaded 0 rules under
+  --skip-if-nothing-scanned [then] exit 3 (SKIP), not 2.
+- [if] semgrep scanned files but loaded 0 rules [then] exit 2, with or without that flag.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 UNKNOWN_EXIT = 2
+SKIP_EXIT = 3
 LOCKFILE_PATTERN = re.compile(
     r"(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pylock\.toml|[^/]*requirements[^/]*\.txt"
     r"|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock)$"
@@ -240,6 +246,11 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
     if rules is not None:
         scanned = len(doc.get("paths", {}).get("scanned", []))
         print(f"semgrep loaded {rules} rules, scanned {scanned} files")
+        # semgrep loads rules per language present, so an empty scope loads none.
+        # Only then is a zero rule count an answer rather than a failed download.
+        if args.skip_if_nothing_scanned and scanned == 0 and rules == 0:
+            _emit(args, args.title, ["no file in scope that semgrep scans"], 0)
+            return SKIP_EXIT
         if rules < args.min_rules:
             return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
         if scanned < args.min_files:
@@ -321,6 +332,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--min-rules", type=int, default=1)
     p.add_argument("--min-files", type=int, default=0, help="fewer scanned files is UNKNOWN")
     p.add_argument("--fail-on-error", action="store_true")
+    p.add_argument(
+        "--skip-if-nothing-scanned",
+        action="store_true",
+        help="exit 3 (SKIP) when 0 files were scanned and 0 rules loaded",
+    )
 
     p = add("zizmor-summary", cmd_zizmor_summary)
     p.add_argument("json")
