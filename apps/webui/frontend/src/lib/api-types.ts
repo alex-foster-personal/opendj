@@ -4523,6 +4523,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Asr Presign
+         * @description Mint a short-lived GET URL for one ASR transcript JSON object.
+         */
+        get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/pull": {
         parameters: {
             query?: never;
@@ -5743,6 +5763,17 @@ export interface components {
              * @enum {string}
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+        };
+        /** AppModeOut */
+        AppModeOut: {
+            /**
+             * App Mode
+             * @default performance
+             * @enum {string}
+             */
+            id?: "performance" | "library-management" | "library" | "music-player";
+            /** Last Gig At */
+            last_gig_at?: string | null;
         };
         /** AppPostureOut */
         AppPostureOut: {
@@ -8831,6 +8862,22 @@ export interface components {
             start_ms: number;
             /** Text */
             text: string;
+        };
+        /** LyricsAsrPresignResponse */
+        LyricsAsrPresignResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Stable Id */
+            stable_id: string;
+            /** Url */
+            url: string;
         };
         /**
          * LyricsCachedIdsOut
@@ -12617,12 +12664,7 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
-            /**
-             * App Mode
-             * @default performance
-             * @enum {string}
-             */
-            app_mode: "performance" | "library-management" | "library" | "music-player";
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
@@ -12721,8 +12763,7 @@ export interface components {
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
-            /** App Mode */
-            app_mode?: ("performance" | "library-management" | "library" | "music-player") | null;
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
             /** Auto Play Enabled */
@@ -21356,6 +21397,68 @@ export interface operations {
                 };
             };
             /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsAsrPresignResponse"];
+                };
+            };
+            /** @description lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;

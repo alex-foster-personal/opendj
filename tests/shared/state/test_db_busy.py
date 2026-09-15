@@ -1,4 +1,7 @@
-"""SQLite busy-lock classification helpers (issue #2790)."""
+"""SQLite busy-lock classification helpers (issue #2790).
+
+[if] SQLite raises locked or busy operational errors [then] is_sqlite_busy classifies them, [else stop].
+"""
 from __future__ import annotations
 
 import sqlite3

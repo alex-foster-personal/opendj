@@ -7,6 +7,7 @@ PUT  /api/v1/ui-prefs  - merge patch into data/state/ui-prefs.json
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,7 +27,7 @@ AppModePref = Literal["performance", "library-management", "library", "music-pla
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
 _DEFAULT_APP_POSTURE: AppPosturePref = "prep"
-_DEFAULT_APP_MODE: AppModePref = "performance"
+_DEFAULT_APP_MODE: dict[str, Any] = {"last_gig_at": None, "id": "performance"}
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -251,6 +252,77 @@ def _parse_topbar_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
     return out
 
 
+def _parse_last_gig_at(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "app_mode.last_gig_at must be a UTC ISO string or null",
+            },
+        )
+    try:
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            raise ValueError("naive timestamp")
+        if parsed.utcoffset() != timedelta(0):
+            raise ValueError("non-UTC offset")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": f"app_mode.last_gig_at is not a valid UTC ISO timestamp: {exc}",
+            },
+        ) from exc
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _parse_app_mode_id(value: Any) -> str:
+    if value is None:
+        return _DEFAULT_APP_MODE["id"]
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "app_mode.id must be a string",
+            },
+        )
+    if value not in ("performance", "library-management", "library", "music-player"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    "app_mode.id must be performance|library-management|library|music-player"
+                ),
+            },
+        )
+    return value
+
+
+def _parse_app_mode(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return dict(_DEFAULT_APP_MODE)
+    if isinstance(raw, str):
+        return {**dict(_DEFAULT_APP_MODE), "id": _parse_app_mode_id(raw)}
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "app_mode must be an object"},
+        )
+    out = dict(_DEFAULT_APP_MODE)
+    if "last_gig_at" in raw:
+        out["last_gig_at"] = _parse_last_gig_at(raw["last_gig_at"])
+    if "id" in raw:
+        out["id"] = _parse_app_mode_id(raw["id"])
+    return out
+
+
 def _parse_app_posture(raw: dict[str, Any]) -> str:
     if "app_posture" not in raw:
         return _DEFAULT_APP_POSTURE
@@ -261,23 +333,6 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
             detail={
                 "code": "UI_PREFS_INVALID",
                 "message": "app_posture must be prep|gig",
-            },
-        )
-    return value
-
-
-def _parse_app_mode(raw: dict[str, Any]) -> str:
-    if "app_mode" not in raw:
-        return _DEFAULT_APP_MODE
-    value = raw["app_mode"]
-    if value not in ("performance", "library-management", "library", "music-player"):
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "UI_PREFS_INVALID",
-                "message": (
-                    "app_mode must be performance|library-management|library|music-player"
-                ),
             },
         )
     return value
@@ -296,7 +351,7 @@ def _load(path: Path) -> dict[str, Any]:
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
-            "app_mode": _DEFAULT_APP_MODE,
+            "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
             **_lyrics_defaults(),
         }
@@ -365,7 +420,7 @@ def _load(path: Path) -> dict[str, Any]:
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
-        "app_mode": _parse_app_mode(raw),
+        "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
         **_parse_lyrics(raw),
     }
@@ -377,6 +432,13 @@ class AutoSyncOut(BaseModel):
     rekordbox: bool = False
     djay: bool = False
     open_dj: bool = False
+
+
+class AppModeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    last_gig_at: str | None = None
+    id: AppModePref = "performance"
 
 
 class LevelCalibrationOut(BaseModel):
@@ -414,7 +476,7 @@ class UiPrefsOut(BaseModel):
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
     perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
     app_posture: AppPosturePref = _DEFAULT_APP_POSTURE
-    app_mode: AppModePref = _DEFAULT_APP_MODE
+    app_mode: AppModeOut = Field(default_factory=AppModeOut)
     beat_sync_max: bool = _DEFAULT_BEAT_SYNC_MAX
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
@@ -440,7 +502,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_deck_line: bool | None = None
     perf_tier: PerfTierPref | None = None
     app_posture: AppPosturePref | None = None
-    app_mode: AppModePref | None = None
+    app_mode: AppModeOut | None = None
     beat_sync_max: bool | None = None
     auto_play_enabled: bool | None = None
     auto_play_enforce_order: bool | None = None
@@ -499,7 +561,9 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     if body.app_posture is not None:
         current["app_posture"] = body.app_posture
     if body.app_mode is not None:
-        current["app_mode"] = body.app_mode
+        current["app_mode"] = _parse_app_mode(
+            {**current["app_mode"], **body.app_mode.model_dump(exclude_unset=True)}
+        )
     _merge_topbar_bool_prefs(current, body)
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto

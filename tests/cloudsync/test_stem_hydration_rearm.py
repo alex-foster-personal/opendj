@@ -1,4 +1,7 @@
-"""Acceptance tests for STEM-32 transient stem hydration re-arm (#2815)."""
+"""Acceptance tests for STEM-32 transient stem hydration re-arm (#2815).
+
+[if] the hub becomes reachable after a transient unarmed state [then] hydration re-arms without restart, [else stop].
+"""
 from __future__ import annotations
 
 import time

@@ -43,6 +43,10 @@ from apps.shared.state import paths as state_paths
 
 # The same drop-in the rekordbox adapter uses. Imported rather than copied:
 # two silent buses that could drift is worse than one private import.
+from apps.shared.state.ingest.path_collisions import (
+    PathCollisionError,
+    assert_no_path_collisions,
+)
 from apps.shared.state.ingest.rekordbox import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 
@@ -141,6 +145,7 @@ def ingest_folder(
 
     conn = writer.raw_conn
     _guard_folder_scan(conn, root_list, files, allow_mass_missing)
+    assert_no_path_collisions(str(entry.path) for entry in files)
     if limit is not None:
         files = files[:limit]
     savepoint = "setup_ingest_folder"
@@ -352,6 +357,9 @@ def run_cli(args: argparse.Namespace) -> int:
         )
         _print_summary(report)
     except MassMissingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except PathCollisionError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finally:

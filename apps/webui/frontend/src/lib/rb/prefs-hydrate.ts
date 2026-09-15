@@ -16,7 +16,8 @@ import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
-import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
+import { writeBootStampMirror } from './gig-stamp-mirror';
+import type { AppModePrefs, AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
 
@@ -67,6 +68,7 @@ export type DiskPrefsPatch = {
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
 	auto_play_maximize_reach?: boolean;
+	app_mode?: AppModePrefs;
 };
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -80,6 +82,9 @@ async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 export function createDiskPrefsSync() {
 	return makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 }
+
+/** Shared ui-prefs PUT queue (issue #1578); one instance for prefs + Gig stamp. */
+export const syncDiskPrefs = createDiskPrefsSync();
 
 export interface PrefsHydrateTarget {
 	confirm: DiskPrefsPatch['confirm'] & Record<string, unknown>;
@@ -205,6 +210,10 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;
+			}
+			const lastGigAt = body.app_mode?.last_gig_at;
+			if (typeof lastGigAt === 'string') {
+				writeBootStampMirror(lastGigAt);
 			}
 			persist();
 		} catch {

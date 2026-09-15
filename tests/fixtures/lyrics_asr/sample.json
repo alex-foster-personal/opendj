@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "stable_id": "asr-sample-track",
+  "vocals_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "model": "large-v3",
+  "generated_at": "2026-09-15T12:00:00Z",
+  "language": "en",
+  "language_probability": 0.99,
+  "duration_s": 12.5,
+  "text": "hello world again",
+  "words": [
+    {"word": "hello", "start_s": 0.5, "end_s": 1.0, "prob": 0.95},
+    {"word": "world", "start_s": 1.1, "end_s": 1.6, "prob": 0.93},
+    {"word": "again", "start_s": 3.0, "end_s": 3.5, "prob": 0.91}
+  ]
+}

@@ -50,7 +50,7 @@ import {
 	mergePerfTierPrefsFromParsed,
 	type PerfTierPrefs
 } from './perf-tier-prefs';
-import { createDiskPrefsSync, makePrefsHydrator, setTopbarDiskPref } from './prefs-hydrate';
+import { makePrefsHydrator, setTopbarDiskPref, syncDiskPrefs } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
@@ -427,7 +427,7 @@ function _persist(): void {
 }
 
 /** One shared write queue (issue #1578) - see disk-write-chain.ts. */
-const _syncDiskPrefs = createDiskPrefsSync();
+const _syncDiskPrefs = syncDiskPrefs;
 
 // -------------------------------------------------------- public API
 

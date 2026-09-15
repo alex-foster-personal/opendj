@@ -167,6 +167,7 @@ def substitute_alternatives(
                 in_progress=verdict.in_progress,
                 outage=verdict.outage,
                 substituted_by=stand_in,
+                carried_from=verdict.carried_from,
             )
         )
     return out
