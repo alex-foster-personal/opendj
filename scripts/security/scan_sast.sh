@@ -73,20 +73,28 @@ if [[ "$MODE" == "pr" ]]; then
     --exclude "tests/fixtures/security" || _unknown_exit "diff-aware scan errored"
   title="semgrep: findings new vs ${base:0:9}"
   detail="diff-aware vs ${base:0:9}"
-  min_files=0
+  # A diff with no file semgrep scans (docs only, or ignored paths) loads no rules
+  # at all; secscan reports that as SKIP (exit 3) instead of a missing-rules UNKNOWN.
+  skip_args=(--skip-if-nothing-scanned)
 elif [[ "$MODE" == "full" ]]; then
   _semgrep "$SECURITY_REPO_ROOT" "$OUT/scan.json" --exclude "tests/fixtures/security" ||
     _unknown_exit "full scan errored"
   title="semgrep: whole tree"
   detail="whole tree (existing debt included)"
-  min_files=1
+  skip_args=()
 fi
 # The rule floor is proved by the control above; a diff-aware run loads only the
 # rules for the languages it scans (154 Python rules for a Python-only diff).
-sec_py semgrep-summary "$OUT/scan.json" --min-rules 1 --min-files "$min_files" \
+summary_rc=0
+sec_py semgrep-summary "$OUT/scan.json" --min-rules 1 --min-files 1 ${skip_args[@]+"${skip_args[@]}"} \
   --count-file "$OUT/scan.count" \
-  --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" ||
+  --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" || summary_rc=$?
+if [[ $summary_rc -eq 3 ]]; then
+  sec_row "$SCANNER" "$MODE" "fired($control_hits)" 0 SKIP "no scannable file changed vs ${base:0:9}"
+  exit 0
+elif [[ $summary_rc -ne 0 ]]; then
   _unknown_exit "scan output unparseable or rules missing"
+fi
 
 findings="$(cat "$OUT/scan.count")"
 if [[ "$findings" -eq 0 ]]; then
