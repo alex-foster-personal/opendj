@@ -127,3 +127,36 @@ def test_iter_analysis_fallback_scan(tmp_path: Path):
     assert by_uuid.get("uuid-a")
     a = by_uuid["uuid-a"]
     assert a.bpm == pytest.approx(120.0, abs=0.01)
+
+
+def test_iter_analysis_index_without_uuid_falls_back_to_blob_scan(tmp_path: Path):
+    """[if] the analysed-data index table has no uuid column [then] the TSAF blob
+    scan runs instead of a SELECT on a missing column, [else stop]. (#3036)"""
+    import struct
+
+    p = tmp_path / "media.db"
+    con = sqlite3.connect(str(p))
+    con.execute("CREATE TABLE database2 (collection TEXT, key TEXT, data BLOB)")
+    con.execute(
+        "CREATE TABLE secondaryIndex_mediaItemAnalyzedDataIndex ("
+        " bpm REAL, keySignatureIndex INTEGER)"
+    )
+    blob = (
+        b"TSAF" + b"\x00" * 12
+        + b"\x13\x00\x00\x00" + struct.pack("<f", 120.0) + b"\x08bpm\x00"
+        + b"\x08uuid-a\x00"
+    )
+    con.execute(
+        "INSERT INTO database2 VALUES ('mediaItemAnalyzedData', 'uuid-a', ?)",
+        (blob,),
+    )
+    con.execute(
+        "INSERT INTO database2 VALUES ('mediaItemUserData', 'uuid-a', ?)",
+        (b"TSAF" + b"\x00" * 12 + b"\x08uuid-a\x00",),
+    )
+    con.commit()
+    con.close()
+
+    out = list(djay_iter_analysis(p))
+    assert len(out) >= 1
+    assert out[0].uuid_or_id == "uuid-a"
