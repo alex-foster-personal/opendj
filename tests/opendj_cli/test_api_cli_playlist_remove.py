@@ -75,7 +75,9 @@ def test_api_delete_item_and_missing_second_call(
 ) -> None:
     base_url, _db = library_daemon
     monkeypatch.setattr(
-        api_cli, "resolve_backend_base_url", lambda environ=None: base_url,
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
     )
     import httpx
 

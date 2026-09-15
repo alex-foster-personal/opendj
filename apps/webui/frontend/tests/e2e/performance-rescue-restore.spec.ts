@@ -14,15 +14,6 @@ interface ManifestTrack {
 	title: string;
 }
 
-interface PerfEventRow {
-	kind: string;
-	deck?: number;
-	effectiveWhenSec?: number;
-	scheduled_offset_ms?: number;
-}
-
-type PerformanceQueryResult = Awaited<ReturnType<PerformanceBrowserIpc['query']>>;
-
 interface FixtureManifest {
 	tracks: ManifestTrack[];
 }
@@ -30,6 +21,15 @@ interface FixtureManifest {
 function readManifest(): FixtureManifest {
 	return JSON.parse(readFileSync(FIXTURE_MANIFEST_PATH, 'utf8')) as FixtureManifest;
 }
+
+interface PerfEventRow {
+	kind: string;
+	deck: number | null;
+	stages?: Record<string, number>;
+}
+
+/** Stage key for the post-clamp schedule time the LATENCY-03 ring stores. */
+const RESCUE_SCHEDULE_TIME_STAGE = 'scheduled_offset_ms' as const;
 
 async function dispatch(
 	page: import('@playwright/test').Page,
@@ -41,6 +41,8 @@ async function dispatch(
 		return ipc.dispatch(payload);
 	}, command);
 }
+
+type PerformanceQueryResult = Awaited<ReturnType<PerformanceBrowserIpc['query']>>;
 
 async function query(page: import('@playwright/test').Page): Promise<PerformanceQueryResult> {
 	return page.evaluate(async () => {
@@ -155,19 +157,30 @@ test.describe('RESCUE-02/03 playback restore', () => {
 
 		const perfRows = await page.evaluate(() => {
 			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
-			if (read === undefined) throw new Error('performance timing log is not installed');
+			if (read === undefined) {
+				throw new Error('__mdtPerfLog is not installed; the latency instrument is missing');
+			}
 			return read();
 		});
+
 		const scheduleRows = perfRows.filter(
-			(row) => row.kind === 'transport-schedule' && deckIds.includes(row.deck as 1 | 3 | 4)
+			(row) =>
+				row.kind === 'transport-schedule' &&
+				row.deck !== null &&
+				deckIds.includes(row.deck as (typeof deckIds)[number])
 		);
+
 		const times = scheduleRows
-			.map((row) => row.effectiveWhenSec)
+			.map((row) => row.stages?.[RESCUE_SCHEDULE_TIME_STAGE])
 			.filter((value): value is number => value !== undefined);
-		if (times.length >= 2) {
-			const skewMs = (Math.max(...times) - Math.min(...times)) * 1000;
-			expect(skewMs).toBeLessThan(5);
-		}
+
+		expect(
+			times.length,
+			'every restored deck must log one timed transport-schedule row; fewer means a deck was not scheduled on rescue resume'
+		).toBe(deckIds.length);
+
+		const skewMs = Math.max(...times) - Math.min(...times);
+		expect(skewMs).toBeLessThan(5);
 
 		const after = await query(page);
 		const elapsedWallMs = Date.now() - capturedAt;
@@ -189,9 +202,7 @@ test.describe('RESCUE-02/03 playback restore', () => {
 		await page.reload();
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 		const state = await query(page);
-		expect(([1, 2, 3, 4] as const).every((deckId) => state.decks[deckId].playing === false)).toBe(
-			true
-		);
+		expect(([1, 2, 3, 4] as const).every((deckId) => state.decks[deckId].playing === false)).toBe(true);
 	});
 });
 

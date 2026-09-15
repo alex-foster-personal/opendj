@@ -70,14 +70,14 @@ const HEALTHY_BACKEND_COMMAND = [
 // is the real CLI this repo already ships for exactly that -- same tool
 // deckload_fixture.py runs before it seeds tracks, just without the
 // ingest-folder step that would follow it there.
-function brokenBackendCommand(port: number): string {
+function brokenBackendCommand(port: number, dataDir: string): string {
 	return [
 		'uv run --no-sync python -m apps.shared.state.cli init',
 		'&&',
-		'uv run --no-sync python -m apps.webui.server',
+		'uv run --no-sync python -m apps.engine_core serve',
+		`--data-dir ${dataDir}`,
 		'--host 127.0.0.1',
-		`--port ${port}`,
-		'--prod'
+		`--port ${port}`
 	].join(' ');
 }
 
@@ -87,7 +87,7 @@ function viteCommand(): string {
 
 export default defineConfig({
 	testDir: '.',
-	testMatch: 'preflight-gate.spec.ts',
+	testMatch: /preflight-gate|fresh-install-onboarding/,
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
@@ -117,7 +117,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: brokenBackendCommand(PREFLIGHT_GATE_BROKEN_API_PORT),
+			command: brokenBackendCommand(PREFLIGHT_GATE_BROKEN_API_PORT, BROKEN_DATA_DIR),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${PREFLIGHT_GATE_BROKEN_API_PORT}/api/v1/health`,
 			reuseExistingServer: false,

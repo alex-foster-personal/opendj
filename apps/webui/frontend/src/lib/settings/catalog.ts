@@ -347,7 +347,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		keywords: ['rekordbox', 'djay', 'opendj', 'open-dj', 'ratings', 'writeback', 'vendor'],
 		title: 'Preferred destinations for rating/metadata writeback',
 		detail:
-			'Saves which vendors you want auto-sync to target. Vendor DB writeback is not automatic yet - use apps/sync/apply_ratings.py (CLI). Preference + plumbing only.',
+			'Saves which vendors you want auto-sync to target. Manual sync runs through POST /api/v1/rb-djay-sync/* or python -m apps.sync (dry-run by default). Preference + plumbing only.',
 		implemented: true,
 		control: {
 			kind: 'multi_bool',
@@ -375,11 +375,11 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Run ratings writeback now',
 		group: 'sync',
 		keywords: ['apply_ratings', 'writeback', 'sync', 'now', 'cli'],
-		title: TODO,
+		title: 'POST /api/v1/rb-djay-sync/ratings/apply (dry-run default)',
 		detail:
-			'Will call apply_ratings / OpenDJ writeback when wired. Today: preference destinations above + manual CLI only.',
-		implemented: false,
-		control: { kind: 'boolean' }
+			'Ratings sync is reachable at POST /api/v1/rb-djay-sync/ratings/apply and python -m apps.sync apply-ratings. Live writes still require explicit risk acknowledgement and the rekordbox writeback gate.',
+		implemented: true,
+		control: { kind: 'link', href: '/api/v1/rb-djay-sync/status' }
 	},
 	{
 		id: 'lyrics_global',

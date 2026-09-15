@@ -492,6 +492,12 @@ build() {
     }
     ok "opendj MCP launcher present"
 
+    [ -f "$payload/bin/opendj" ] || {
+        echo "[ERROR] the payload has no CLI launcher at bin/opendj; agents cannot drive the installed app." >&2
+        exit 1
+    }
+    ok "CLI launcher present (a shell script; same CodeResources seal as opendj-engine)"
+
     # The outer bundle LAST, and never with --deep.
     codesign --force --timestamp --options runtime \
         --sign "$MDT_MAS_APP_CERT" \

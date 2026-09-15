@@ -38,7 +38,7 @@ cfg = EngineConfig(data_dir=Path(__import__("os").environ["MDT_DATA_DIR"]))
 first = create_app(cfg)
 second = create_app(cfg)
 
-with TestClient(first) as client:
+with TestClient(first, base_url="http://127.0.0.1") as client:
     health = client.get(HEALTH_PATH)
     events_in_schema = HEALTH_PATH in client.get("/openapi.json").json()["paths"]
 
