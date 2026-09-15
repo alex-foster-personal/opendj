@@ -41,6 +41,7 @@ from apps.engine_core.update_channel import (
     UPDATE_CHECK_PATH,
     UPDATE_ENDPOINT,
     UpdateCheckError,
+    _apply_via_engine,
     add_update_check_route,
     compare_versions,
     parse_version,
@@ -344,3 +345,76 @@ def test_the_cli_exists_and_refuses_an_unreachable_channel() -> None:
     )
     payload = json.loads(result.stdout)
     assert payload["status"] in {"endpoint-unreachable", "identity-unavailable"}
+
+
+def _apply_http_handler(calls: dict[str, int] | None = None):
+    state = calls if calls is not None else {"build_info": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/build-info"):
+            state["build_info"] = state.get("build_info", 0) + 1
+            first = state["build_info"] == 1
+            sha = RUNNING_SHA_FULL if first else "deadbeef0000000000000000000000000000beef"
+            return httpx.Response(
+                200,
+                json={
+                    "source": "payload",
+                    "engine_version": "0.1.0",
+                    "git_sha": sha[:8],
+                    "git_sha_full": sha,
+                    "git_branch": "main",
+                    "git_dirty": False,
+                    "built_at_utc": "2026-08-31T12:00:00Z",
+                    "built_at_kind": "payload-build",
+                    "app_version": RUNNING_VERSION if first else "0.1.1",
+                },
+            )
+        if request.url.path.endswith("/update/check"):
+            status = state.get("check_status", "update-available")
+            return httpx.Response(200, json={"status": status, "available_version": "0.1.1"})
+        if request.url.path.endswith("/update/apply"):
+            return httpx.Response(
+                202,
+                json={
+                    "accepted": True,
+                    "available_version": "0.1.1",
+                    "command_id": "abc123",
+                },
+            )
+        raise AssertionError(f"unexpected URL {request.url}")
+
+    return handler
+
+
+def _mock_client_factory(module, transport: httpx.MockTransport):
+    original = module.httpx.Client
+
+    def client_factory(*args, **kwargs):
+        if not args and not kwargs:
+            return httpx.Client(transport=transport)
+        return original(*args, **kwargs)
+
+    return client_factory
+
+
+def test_apply_cli_refuses_when_check_is_not_update_available(monkeypatch) -> None:
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(
+        _apply_http_handler({"build_info": 0, "check_status": "up-to-date"})
+    )
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    assert _apply_via_engine("http://127.0.0.1:8685", 1.0) == 2
+
+
+def test_apply_cli_exits_zero_when_build_identity_changes(monkeypatch) -> None:
+    import apps.engine_core.update_channel as module
+
+    transport = httpx.MockTransport(_apply_http_handler())
+    monkeypatch.setattr(module.httpx, "Client", _mock_client_factory(module, transport))
+    monkeypatch.setattr(
+        module,
+        "resolve_origin",
+        lambda *a, **k: type("O", (), {"base_url": "http://127.0.0.1:8685"})(),
+    )
+    assert _apply_via_engine("http://127.0.0.1:8685", 5.0) == 0

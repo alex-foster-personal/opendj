@@ -1388,7 +1388,7 @@ export interface paths {
         };
         /**
          * Next Command
-         * @description Let the sole open performance page claim its next agent order.
+         * @description Let a consumer claim its next command.
          */
         get: operations["next_command_api_v1_commands_next_get"];
         put?: never;
@@ -1410,7 +1410,7 @@ export interface paths {
         put?: never;
         /**
          * Complete Command
-         * @description Resolve an order with page-produced per-step statuses and mirror delta.
+         * @description Resolve a performance order or a shell command result.
          */
         post: operations["complete_command_api_v1_commands__order_id__result_post"];
         delete?: never;
@@ -5275,6 +5275,23 @@ export interface paths {
         /** Put Ui Prefs */
         put: operations["put_ui_prefs_api_v1_ui_prefs_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Apply */
+        post: operations["update_apply_api_v1_update_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12821,6 +12838,28 @@ export interface components {
             /** Survivor */
             survivor: string;
         };
+        /** UpdateApplyAccepted */
+        UpdateApplyAccepted: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /** Available Version */
+            available_version: string;
+            /** Command Id */
+            command_id: string;
+        };
+        /** UpdateApplyRefused */
+        UpdateApplyRefused: {
+            /** Detail */
+            detail: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
         /**
          * UpdateCheckOut
          * @description What the UI and any agent read.
@@ -15938,7 +15977,10 @@ export interface operations {
     };
     next_command_api_v1_commands_next_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update */
+                consumer?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -15952,6 +15994,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -22803,6 +22854,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_apply_api_v1_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyAccepted"];
+                };
+            };
+            /** @description apply refused; no shell command enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyRefused"];
                 };
             };
         };
