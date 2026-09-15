@@ -14,6 +14,8 @@
 #   OPENDJ_HUB_BACKUP_DIR  default: <data dir>-backups
 #   OPENDJ_HUB_BACKUP_KEEP default: hub_deploy CFG.BACKUP_KEEP
 #   OPENDJ_HUB_BACKUP_R2   1 = upload each backup to R2 via doppler (general/dev_personal)
+#   OPENDJ_HUB_SERVE_R2    1 = wrap the serve unit in doppler for R2 stem presign creds
+#   OPENDJ_HUB_SERVE_DOPPLER_CONFIG  Doppler config name (required when serve R2 is on)
 #   OPENDJ_HUB_SERVICE_MANAGER  systemd | launchd; default: by uname (Linux | Darwin)
 #
 # Must run under bash 3.2 (stock macOS /bin/bash): under `set -u` it treats an
@@ -39,6 +41,8 @@ HUB_PORT="${OPENDJ_HUB_PORT:-$(cfg_value HUB_PORT)}"
 HUB_BACKUP_DIR="${OPENDJ_HUB_BACKUP_DIR:-${HUB_DATA_DIR}-backups}"
 HUB_BACKUP_KEEP="${OPENDJ_HUB_BACKUP_KEEP:-$(cfg_value BACKUP_KEEP)}"
 HUB_BACKUP_R2="${OPENDJ_HUB_BACKUP_R2:-0}"
+HUB_SERVE_R2="${OPENDJ_HUB_SERVE_R2:-0}"
+HUB_SERVE_DOPPLER_CONFIG="${OPENDJ_HUB_SERVE_DOPPLER_CONFIG:-}"
 HUB_URL="http://127.0.0.1:${HUB_PORT}"
 DOPPLER_PROJECT="general"
 DOPPLER_CONFIG="dev_personal"
@@ -61,6 +65,7 @@ esac
 print_config() {
   echo "[INFO] manager=${SERVICE_MANAGER} data_dir=${HUB_DATA_DIR} url=${HUB_URL}"
   echo "[INFO] backups=${HUB_BACKUP_DIR} keep=${HUB_BACKUP_KEEP} r2=${HUB_BACKUP_R2}"
+  echo "[INFO] serve_r2=${HUB_SERVE_R2} serve_doppler_config=${HUB_SERVE_DOPPLER_CONFIG}"
 }
 
 unit_dir() {
@@ -71,8 +76,25 @@ unit_dir() {
   fi
 }
 
+validate_serve_r2() {
+  if [[ "${HUB_SERVE_R2}" == "1" ]]; then
+    if [[ -z "${HUB_SERVE_DOPPLER_CONFIG}" ]]; then
+      echo "[ERROR] OPENDJ_HUB_SERVE_R2=1 needs OPENDJ_HUB_SERVE_DOPPLER_CONFIG" >&2
+      exit 1
+    fi
+    if ! command -v doppler > /dev/null 2>&1; then
+      echo "[ERROR] OPENDJ_HUB_SERVE_R2=1 needs the doppler CLI on PATH" >&2
+      exit 1
+    fi
+  elif [[ "${HUB_SERVE_R2}" != "0" ]]; then
+    echo "[ERROR] OPENDJ_HUB_SERVE_R2=${HUB_SERVE_R2} is not understood; use 1 or 0" >&2
+    exit 1
+  fi
+}
+
 render_units() {
-  local r2_args=()
+  validate_serve_r2
+  local r2_args=() serve_r2_args=()
   if [[ "${HUB_BACKUP_R2}" == "1" ]]; then
     local doppler_bin
     doppler_bin="$(command -v doppler || true)"
@@ -85,9 +107,13 @@ render_units() {
     echo "[ERROR] OPENDJ_HUB_BACKUP_R2=${HUB_BACKUP_R2} is not understood; use 1 or 0" >&2
     exit 1
   fi
+  if [[ "${HUB_SERVE_R2}" == "1" ]]; then
+    serve_r2_args=(--serve-r2 --doppler "$(command -v doppler)" --serve-doppler-config "${HUB_SERVE_DOPPLER_CONFIG}")
+  fi
   hub_py render --kind "${SERVICE_MANAGER}" --out-dir "$(unit_dir)" --repo-root "${REPO_ROOT}" \
     --uv "${UV_BIN}" --data-dir "${HUB_DATA_DIR}" --port "${HUB_PORT}" \
-    --backup-dest "${HUB_BACKUP_DIR}" --keep "${HUB_BACKUP_KEEP}" ${r2_args[@]+"${r2_args[@]}"}
+    --backup-dest "${HUB_BACKUP_DIR}" --keep "${HUB_BACKUP_KEEP}" \
+    ${r2_args[@]+"${r2_args[@]}"} ${serve_r2_args[@]+"${serve_r2_args[@]}"}
 }
 
 wait_for_hub() {
@@ -104,6 +130,7 @@ wait_for_hub() {
 
 cmd_start() {
   print_config
+  validate_serve_r2
   mkdir -p "${HUB_DATA_DIR}"
   MDT_IS_HUB=1 hub_py init --data-dir "${HUB_DATA_DIR}"
   render_units

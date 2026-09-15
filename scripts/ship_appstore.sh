@@ -486,6 +486,11 @@ build() {
         exit 1
     }
     ok "engine launcher present (a shell script; the interpreter it execs is signed above)"
+    [ -f "$payload/bin/opendj" ] || {
+        echo "[ERROR] the payload has no opendj launcher at bin/opendj; agents cannot drive an installed app." >&2
+        exit 1
+    }
+    ok "opendj MCP launcher present"
 
     # The outer bundle LAST, and never with --deep.
     codesign --force --timestamp --options runtime \

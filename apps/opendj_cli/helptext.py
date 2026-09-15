@@ -17,7 +17,11 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
   opendj api PUT /api/v1/smartlists/{id} -H 'If-Match: "<etag>"' --json '{"rule":{...}}'
   opendj api DELETE /api/v1/smartlists/{id}
   opendj api GET /api/v1/tracks/{stable_id}
-  opendj track key-segments <stable_id>"""
+  opendj track key-segments <stable_id>
+
+installed app MCP (AGENT-11, issue #2753):
+  opendj mcp
+  claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp"""
 
 LIBRARY_EPILOG = _LIBRARY_LINES
 

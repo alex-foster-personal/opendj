@@ -3497,6 +3497,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rescue/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rescue Restore */
+        post: operations["rescue_restore_api_v1_rescue_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rescue/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rescue Snapshots List */
+        get: operations["rescue_snapshots_list_api_v1_rescue_snapshots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -4523,6 +4557,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
@@ -4541,6 +4579,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
@@ -10515,6 +10557,67 @@ export interface components {
             captured_at_ms: number;
             /** Slot */
             slot: number;
+        };
+        /** RescueDeckOutcomeOut */
+        RescueDeckOutcomeOut: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "resumed" | "paused" | "missing";
+            /** Stable Id */
+            stable_id?: string | null;
+        };
+        /** RescueRestoreIn */
+        RescueRestoreIn: {
+            /**
+             * Play
+             * @default false
+             */
+            play: boolean;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+        };
+        /** RescueRestoreOut */
+        RescueRestoreOut: {
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /** Decks */
+            decks: {
+                [key: string]: components["schemas"]["RescueDeckOutcomeOut"];
+            };
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "layout" | "play";
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Snapshot Id */
+            snapshot_id: string;
+        };
+        /** RescueSnapshotMeta */
+        RescueSnapshotMeta: {
+            /** Age Ms */
+            age_ms: number;
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /**
+             * Deck Count Loaded
+             * @description Decks with a non-empty stable_id at capture
+             */
+            deck_count_loaded: number;
+            /** Id */
+            id: string;
+            /** Playlist Id */
+            playlist_id?: string | null;
+        };
+        /** RescueSnapshotsOut */
+        RescueSnapshotsOut: {
+            /** Snapshots */
+            snapshots: components["schemas"]["RescueSnapshotMeta"][];
         };
         /** RevokeOut */
         RevokeOut: {
@@ -18959,6 +19062,59 @@ export interface operations {
             };
         };
     };
+    rescue_restore_api_v1_rescue_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescueRestoreIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueRestoreOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rescue_snapshots_list_api_v1_rescue_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueSnapshotsOut"];
+                };
+            };
+        };
+    };
     search_collection_api_v1_search_get: {
         parameters: {
             query?: {
@@ -20832,6 +20988,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_track_audio_api_v1_tracks__stable_id__audio_get: {
@@ -20860,6 +21023,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -14013,6 +14013,154 @@
         "title": "RescueAppendOut",
         "type": "object"
       },
+      "RescueDeckOutcomeOut": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "resumed",
+              "paused",
+              "missing"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "RescueDeckOutcomeOut",
+        "type": "object"
+      },
+      "RescueRestoreIn": {
+        "properties": {
+          "play": {
+            "default": false,
+            "title": "Play",
+            "type": "boolean"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "title": "RescueRestoreIn",
+        "type": "object"
+      },
+      "RescueRestoreOut": {
+        "properties": {
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "decks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RescueDeckOutcomeOut"
+            },
+            "title": "Decks",
+            "type": "object"
+          },
+          "mode": {
+            "enum": [
+              "layout",
+              "play"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "captured_at_ms",
+          "mode",
+          "payload",
+          "decks"
+        ],
+        "title": "RescueRestoreOut",
+        "type": "object"
+      },
+      "RescueSnapshotMeta": {
+        "properties": {
+          "age_ms": {
+            "title": "Age Ms",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "deck_count_loaded": {
+            "description": "Decks with a non-empty stable_id at capture",
+            "title": "Deck Count Loaded",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at_ms",
+          "age_ms",
+          "deck_count_loaded"
+        ],
+        "title": "RescueSnapshotMeta",
+        "type": "object"
+      },
+      "RescueSnapshotsOut": {
+        "properties": {
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/RescueSnapshotMeta"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots"
+        ],
+        "title": "RescueSnapshotsOut",
+        "type": "object"
+      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -28617,6 +28765,68 @@
         ]
       }
     },
+    "/api/v1/rescue/restore": {
+      "post": {
+        "operationId": "rescue_restore_api_v1_rescue_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RescueRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueRestoreOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rescue Restore",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/v1/rescue/snapshots": {
+      "get": {
+        "operationId": "rescue_snapshots_list_api_v1_rescue_snapshots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueSnapshotsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rescue Snapshots List",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "search_collection_api_v1_search_get",
@@ -31273,7 +31483,7 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).\n\nBefore streaming, a subprocess probe opens the resolved path under\n``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503\nwith ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -31299,6 +31509,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial)"
           }
         },
         "summary": "Get Track Audio",
@@ -31307,7 +31520,7 @@
         ]
       },
       "head": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).\n\nBefore streaming, a subprocess probe opens the resolved path under\n``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503\nwith ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -31333,6 +31546,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial)"
           }
         },
         "summary": "Get Track Audio",

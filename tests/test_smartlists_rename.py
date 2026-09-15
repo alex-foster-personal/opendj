@@ -15,7 +15,7 @@ pytest_plugins = ["tests.test_smartlists_route"]
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_smartlist_with_if_match(client, state_db_path):
-    """[if] PUT includes name + If-Match [then] GET round-trips the new name."""
+    """[if] PUT includes name + If-Match [then] GET round-trips the new name, [else stop]."""
     sid = _create_smartlist(state_db_path, "before", _BPM_RULE)
     detail = client.get(f"/api/v1/smartlists/{sid}")
     assert detail.status_code == 200
@@ -37,7 +37,7 @@ def test_rename_smartlist_with_if_match(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_missing_if_match_428(client, state_db_path):
-    """[if] PUT omits If-Match [then] 428 and name unchanged."""
+    """[if] PUT omits If-Match [then] 428 and name unchanged, [else stop]."""
     sid = _create_smartlist(state_db_path, "locked-name", _BPM_RULE)
     r = client.put(
         f"/api/v1/smartlists/{sid}",
@@ -50,7 +50,7 @@ def test_rename_missing_if_match_428(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_stale_if_match_409(client, state_db_path):
-    """[if] If-Match is stale [then] 409 conflict and name unchanged."""
+    """[if] If-Match is stale [then] 409 conflict and name unchanged, [else stop]."""
     sid = _create_smartlist(state_db_path, "stale", _BPM_RULE)
     r = client.put(
         f"/api/v1/smartlists/{sid}",
@@ -64,7 +64,7 @@ def test_rename_stale_if_match_409(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_duplicate_live_name_409(client, state_db_path):
-    """[if] rename collides with another live name [then] 409 SMARTLIST_NAME_CONFLICT."""
+    """[if] rename collides with a live name [then] 409 SMARTLIST_NAME_CONFLICT, [else stop]."""
     _create_smartlist(state_db_path, "taken", _BPM_RULE)
     sid = _create_smartlist(state_db_path, "mine", _BPM_RULE)
     etag = client.get(f"/api/v1/smartlists/{sid}").headers["etag"]
@@ -79,7 +79,7 @@ def test_rename_duplicate_live_name_409(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_peer_lock_503(client, state_db_path):
-    """[if] peer lock held [then] PUT 503 and name unchanged."""
+    """[if] peer lock held [then] PUT 503 and name unchanged, [else stop]."""
     sid = _create_smartlist(state_db_path, "peer", _BPM_RULE)
     etag = client.get(f"/api/v1/smartlists/{sid}").headers["etag"]
     with _make_client(
@@ -98,7 +98,7 @@ def test_rename_peer_lock_503(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-01")
 def test_rename_openapi_includes_name(client):
-    """[if] OpenAPI is dumped [then] SmartlistUpdateIn has name."""
+    """[if] OpenAPI is dumped [then] SmartlistUpdateIn has name, [else stop]."""
     spec = client.get("/openapi.json").json()
     props = spec["components"]["schemas"]["SmartlistUpdateIn"]["properties"]
     assert "name" in props

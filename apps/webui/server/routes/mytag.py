@@ -22,6 +22,9 @@ from ..etag import compute_etag
 
 router = APIRouter(prefix="/mytags", tags=["mytags"])
 _SCAN_PAGE_LIMIT = 1000
+# Same cap as find_replace.py's _MAX_STABLE_IDS: an unbounded batch has no
+# input-layer rejection, so it is only ever stopped deep inside the backend.
+_MAX_STABLE_IDS = 100
 
 
 class MyTagSummary(BaseModel):
@@ -35,7 +38,7 @@ class MyTagListOut(BaseModel):
 
 
 class MyTagAssignIn(BaseModel):
-    stable_ids: list[str] = Field(min_length=1)
+    stable_ids: list[str] = Field(min_length=1, max_length=_MAX_STABLE_IDS)
     expected_etags: dict[str, str]
     add: list[str] = []
     remove: list[str] = []

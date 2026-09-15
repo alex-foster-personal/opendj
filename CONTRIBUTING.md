@@ -200,7 +200,7 @@ function's docstring: `[if] X [then] Y, [else stop]`. For example,
 Legacy modules in `tests/requirement_intent_allowlist.txt` are temporary and
 the list may only shrink.
 
-- **No U+2014 characters and no U+2013 characters** in any prose we author (code
+- **No U+2014 or U+2013 characters** in any prose we author (code
   comments, docs, commit messages, issue text). Use a period, a comma, a
   colon, or parentheses. The audit trail in `.planning/milestones/`
   tracks this convention across phases.

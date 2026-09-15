@@ -1,4 +1,7 @@
-"""LIBM-D2 / LIBM-03 / LIBM-04b: per-playlist forbid_duplicates policy."""
+"""LIBM-D2 / LIBM-03 / LIBM-04b: per-playlist forbid_duplicates policy.
+
+[if] forbid_duplicates is on, a dup is added/toggled/copied [then] API rejects it, [else stop].
+"""
 from __future__ import annotations
 
 import sqlite3

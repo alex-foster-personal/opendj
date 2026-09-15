@@ -5,9 +5,13 @@
 import type { DeckId } from '$lib/rb/deck-id';
 import { encodeBeatStamp, type RescueBeatStamp } from '$lib/rb/rescue-beat-stamp';
 import type { PerformanceState } from '$lib/rb/performance-ipc.svelte';
+import type { DeckLayoutMode } from '$lib/rb/deck-layout-prefs';
 import type { HeadphoneOutputMode } from '$lib/rb/mixer-types';
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
+
+export const RESCUE_PLAY_WINDOW_MS = 10 * 60 * 1000;
+export const RESCUE_LAYOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export type RescueSnapshotReason = 'periodic' | 'transport' | 'load';
 
@@ -58,6 +62,7 @@ export interface RescueSnapshot {
 	app_posture: 'gig';
 	master_deck: DeckId | null;
 	playlist_id: string | null;
+	deck_layout?: DeckLayoutMode;
 	decks: Record<DeckId, RescueDeckSnapshot>;
 	mixer: {
 		crossfader: number;
@@ -76,7 +81,8 @@ export function buildRescueSnapshot(
 	state: PerformanceState,
 	reason: RescueSnapshotReason,
 	captured_at_ms: number,
-	sourcePaths: Readonly<Record<DeckId, string | null>>
+	sourcePaths: Readonly<Record<DeckId, string | null>>,
+	deck_layout: DeckLayoutMode = 'more'
 ): RescueSnapshot {
 	const decks = {} as Record<DeckId, RescueDeckSnapshot>;
 	for (const deckId of DECK_IDS) {
@@ -130,6 +136,7 @@ export function buildRescueSnapshot(
 		app_posture: 'gig',
 		master_deck: state.master_deck,
 		playlist_id: state.browser.active_playlist,
+		deck_layout,
 		decks,
 		mixer: {
 			crossfader: state.mixer.crossfader,
@@ -150,13 +157,14 @@ export function serializeRescueSnapshot(snapshot: RescueSnapshot): string {
 	return JSON.stringify(snapshot);
 }
 
-export function parseRescueSnapshot(raw: string): RescueSnapshot | null {
+export function parseRescueSnapshot(raw: string | unknown): RescueSnapshot | null {
 	try {
-		const parsed = JSON.parse(raw) as RescueSnapshot;
-		if (parsed?.schema !== 1) return null;
-		if (typeof parsed.captured_at_ms !== 'number') return null;
-		if (parsed.app_posture !== 'gig') return null;
-		return parsed;
+		const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+		const snapshot = parsed as RescueSnapshot;
+		if (snapshot?.schema !== 1) return null;
+		if (typeof snapshot.captured_at_ms !== 'number') return null;
+		if (snapshot.app_posture !== 'gig') return null;
+		return snapshot;
 	} catch {
 		return null;
 	}

@@ -132,7 +132,10 @@ def _reset_hydration_module_state():
 
 @pytest.mark.requirement("STEM-15")
 def test_manifest_route_enqueues_and_returns_immediately(tmp_path: Path):
-    """D2: the manifest GET must never block on the part fetch."""
+    """D2: the manifest GET must never block on the part fetch.
+
+    [if] a bundle is remote-only [then] GET /stems enqueues hydration, returns at once, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -150,6 +153,7 @@ def test_manifest_route_enqueues_and_returns_immediately(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-15")
 def test_part_route_waits_then_serves_hydrated_bytes(tmp_path: Path):
+    """[if] a remote-only part is requested [then] the route waits then serves it, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -167,7 +171,10 @@ def test_part_route_waits_then_serves_hydrated_bytes(tmp_path: Path):
 @pytest.mark.requirement("STEM-15")
 def test_no_hydration_deps_falls_back_to_unchanged_behavior(tmp_path: Path):
     """A machine with no CloudConfig/S3 bound (local mode, no creds) behaves
-    exactly as it did before this feature."""
+    exactly as it did before this feature.
+
+    [if] no hydration deps are bound [then] routes fall back to old behavior, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     with _client(stems_dir, data_dir=data_dir) as client:
@@ -182,7 +189,10 @@ def test_no_hydration_deps_falls_back_to_unchanged_behavior(tmp_path: Path):
 @pytest.mark.requirement("STEM-31")
 def test_not_in_index_fails_loud_when_hydration_is_armed(tmp_path: Path):
     """When hydration is configured, a stable_id absent from the index must
-    answer HTTP 502, never the ordinary unavailable envelope."""
+    answer HTTP 502, never the ordinary unavailable envelope.
+
+    [if] hydration is armed and unindexed [then] the manifest route answers 502, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -210,6 +220,8 @@ def test_manifest_route_fails_loud_when_hydration_cannot_produce_the_bundle(tmp_
     call instead of consulting `_LAST_HYDRATE_ERROR`), this test goes red
     because the second poll would see hydrating=True forever instead of a
     502.
+
+    [if] hydration fails for an indexed bundle [then] the next GET surfaces 502, [else stop].
     """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
@@ -243,6 +255,7 @@ def test_manifest_route_fails_loud_when_hydration_cannot_produce_the_bundle(tmp_
 
 @pytest.mark.requirement("STEM-16")
 def test_part_route_fails_loud_on_hydration_error(tmp_path: Path):
+    """[if] hydration fails for a part [then] the route answers 502, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -264,6 +277,8 @@ def test_incomplete_index_entry_fails_loud_on_both_routes(tmp_path: Path):
 
     MUTATION TARGET: return "unavailable" for this case in hydrate_one and
     the manifest poll never leaves hydrating=True, the part route answers 404.
+
+    [if] an index entry has no manifest hash [then] both routes answer 502, [else stop].
     """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
@@ -284,6 +299,7 @@ def test_incomplete_index_entry_fails_loud_on_both_routes(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-17")
 def test_openapi_part_route_declares_hydration_timeout_503() -> None:
+    """[if] openapi.json is rebuilt for the part route [then] it declares 503/502, [else stop]."""
     openapi = json.loads(Path("apps/webui/openapi.json").read_text(encoding="utf-8"))
     part_route = openapi["paths"]["/api/v1/tracks/{stable_id}/stems/{part}"]["get"]
     assert "503" in part_route["responses"]
@@ -295,6 +311,7 @@ def test_openapi_part_route_declares_hydration_timeout_503() -> None:
 
 @pytest.mark.requirement("STEM-17")
 def test_openapi_stem_unavailable_includes_hydrating_field() -> None:
+    """[if] openapi.json is rebuilt for StemUnavailableOut [then] declares hydrating, [else stop]"""
     openapi = json.loads(Path("apps/webui/openapi.json").read_text(encoding="utf-8"))
     schema = openapi["components"]["schemas"]["StemUnavailableOut"]
     assert "hydrating" in schema["properties"]
@@ -326,7 +343,10 @@ def _assets_client(
 def test_bulk_hydrate_http_writes_under_request_data_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """POST /stems/bulk-hydrate must honor the request body's data_dir stems path."""
+    """POST /stems/bulk-hydrate must honor the request body's data_dir stems path.
+
+    [if] the request names a custom data_dir [then] bulk-hydrate writes there, [else stop].
+    """
     data_dir = tmp_path / "custom-data"
     default_stems_dir = tmp_path / "must-stay-empty"
     cfg = _cfg()
@@ -358,8 +378,7 @@ def test_bulk_hydrate_http_writes_under_request_data_dir(
 
 @pytest.mark.requirement("STEM-24")
 def test_manifest_route_corrupt_index_cache_returns_502(tmp_path: Path):
-    """[if] the local index cache is corrupt and no local bundle exists [then]
-    the manifest route answers HTTP 502 STEM_INDEX_CORRUPT."""
+    """[if] index cache is corrupt, no local bundle [then] manifest answers 502, [else stop]"""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -376,6 +395,7 @@ def test_manifest_route_corrupt_index_cache_returns_502(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-24")
 def test_part_route_corrupt_index_cache_returns_502(tmp_path: Path):
+    """[if] index cache is corrupt, no local bundle [then] part route answers 502, [else stop]"""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -394,6 +414,7 @@ def test_part_route_corrupt_index_cache_returns_502(tmp_path: Path):
 def test_bulk_hydrate_corrupt_index_cache_returns_502(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """[if] the local index cache is corrupt [then] bulk-hydrate answers 502, [else stop]"""
     data_dir = tmp_path / "data"
     cfg = _cfg()
     s3 = InMemoryAssetS3()
@@ -421,7 +442,7 @@ def test_bulk_hydrate_corrupt_index_cache_returns_502(
 
 @pytest.mark.requirement("STEM-24")
 def test_local_bundle_ignores_corrupt_index_cache(tmp_path: Path):
-    """[if] a valid local bundle exists [then] a corrupt index cache is never consulted."""
+    """[if] a valid local bundle exists [then] a corrupt index cache is never read, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     stable_id = "local-track"
@@ -445,6 +466,7 @@ def test_local_bundle_ignores_corrupt_index_cache(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-14")
 def test_deck_open_close_endpoints_update_the_registry(tmp_path: Path):
+    """[if] deck-open then deck-close are POSTed [then] OPEN_DECKS flips open/closed, [else stop]"""
     from apps.cloud.stem_hydration import OPEN_DECKS
 
     with _client(tmp_path / "stems", data_dir=tmp_path / "data") as client:
@@ -480,7 +502,10 @@ class _TrackingGetS3(InMemoryAssetS3):
 
 @pytest.mark.requirement("STEM-26")
 def test_manifest_route_refreshes_cold_cache_and_enqueues(tmp_path: Path):
-    """No local cache file: first manifest GET refreshes from R2 and enqueues."""
+    """No local cache file: first manifest GET refreshes from R2 and enqueues.
+
+    [if] no local index cache exists [then] the first GET refreshes from R2, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -499,6 +524,7 @@ def test_manifest_route_refreshes_cold_cache_and_enqueues(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-26")
 def test_manifest_route_surfaces_refresh_failure(tmp_path: Path):
+    """[if] the cold-cache refresh from R2 fails [then] manifest answers 502, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -513,7 +539,10 @@ def test_manifest_route_surfaces_refresh_failure(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-26")
 def test_manifest_route_warm_cache_does_not_refetch(tmp_path: Path):
-    """A warm local cache (even empty of this stable_id) must not refetch R2."""
+    """A warm local cache (even empty of this stable_id) must not refetch R2.
+
+    [if] a local index cache exists [then] repeated manifest GETs never refetch R2, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -536,6 +565,7 @@ def test_manifest_route_warm_cache_does_not_refetch(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-27")
 def test_part_route_returns_502_on_transport_failure(tmp_path: Path):
+    """[if] R2 transport fails fetching a part [then] the route answers 502 twice, [else stop]."""
     from tests.cloudsync.test_stem_hydration import _TransportFailingAssetS3
 
     stems_dir = tmp_path / "stems"
@@ -565,6 +595,7 @@ def test_part_route_returns_502_on_transport_failure(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-30")
 def test_manifest_route_marks_bundle_recently_served(tmp_path: Path):
+    """[if] manifest serves a local bundle [then] it marks it recently-served, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     stable_id = "served-track"
