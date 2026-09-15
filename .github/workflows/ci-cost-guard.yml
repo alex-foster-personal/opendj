@@ -17,6 +17,7 @@ on:
     #
     #   Release Check          30 Linux min      = $0.19  cannot, ever
     #   macOS Packaging        16 macOS min      = $1.05  CAN trip
+    #   macOS Desktop Compile   5 macOS min      = $0.37  CAN trip
     #   macOS Native Companion 20 macOS min      = $1.30  CAN trip
     #   E2E                    30 + 45 Linux min = $0.46  CAN trip (see below)
     #   CI                     20+15+20 Linux min = $0.35 CAN trip
@@ -44,6 +45,7 @@ on:
       [
         CI,
         E2E,
+        macOS Desktop Compile,
         macOS Native Companion,
         macOS Packaging,
         Periodic checks,

@@ -28,6 +28,7 @@ from scripts.ci_cost_guard import infer_standard_sku
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
 
