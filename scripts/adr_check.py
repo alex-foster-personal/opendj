@@ -1,13 +1,15 @@
-"""PR-body ADR gate (issue #1489, widened by issue #2678).
+"""PR-body ADR gate (issue #1489, widened by issue #2678, merge gate #3076).
 
 A PR that touches an architecturally significant path must carry either
-``ADR: NNNN`` naming a file under ``docs/decisions/``, or
-``ADR: none, because <reason>`` with a non-empty reason on the SAME line.
+``ADR: NNNN`` naming a file under ``docs/decisions/``, ``ADR: NEW`` when
+the PR adds ``ADR-NEW-<slug>.md``, or ``ADR: none, because <reason>`` with
+a non-empty reason on the SAME line.
 Independently of any gated path, ``docs/decisions/`` itself must never
 carry two ``ADR-NNNN-*.md`` files sharing a number (issue #2678).
 
     python -m scripts.adr_check --pr 1234 --base origin/main
     python -m scripts.adr_check --base origin/main
+    python -m scripts.adr_check --merge-base origin/main
 
 Locally, before a PR exists, commit messages on ``base..HEAD`` stand in
 for the body. Silence is the only thing that fails when a gated path
@@ -42,6 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPO = "maintainer/music-dj-tools"
 DEFAULT_ADR_DIR = REPO_ROOT / "docs" / "decisions"
 DEFAULT_BASE = "origin/main"
+DEEPEN_HINT = "git fetch --deepen=900 origin main"
 
 # Prefixes: any path under these trees is gated.
 GATED_PREFIXES: tuple[str, ...] = (
@@ -74,6 +77,16 @@ _NONE_RE = re.compile(
 )
 _ID_RE = re.compile(
     r"ADR:[ \t]*(?:ADR-)?(\d{4})\b",
+    re.IGNORECASE,
+)
+_NEW_RE = re.compile(
+    r"ADR:[ \t]*NEW\b",
+    re.IGNORECASE,
+)
+_ADR_NUMERIC_FILENAME_RE = re.compile(r"ADR-(\d{4})-")
+_ADR_NEW_FILENAME_RE = re.compile(r"ADR-NEW-(.+)\.md$")
+_RENUMBERED_TO_RE = re.compile(
+    r"superseded-number:.*?renumbered to ADR-(\d{4})",
     re.IGNORECASE,
 )
 
@@ -109,26 +122,68 @@ def existing_adr_ids(adr_dir: Path) -> set[str]:
     if not adr_dir.is_dir():
         return ids
     for path in adr_dir.glob("ADR-*.md"):
-        match = re.match(r"ADR-(\d{4})-", path.name)
+        match = _ADR_NUMERIC_FILENAME_RE.match(path.name)
         if match:
             ids.add(match.group(1))
     return ids
 
 
+def pending_new_adr_paths(changed: list[str]) -> list[str]:
+    return sorted(
+        posix_path(p)
+        for p in changed
+        if posix_path(p).startswith("docs/decisions/ADR-NEW-") and p.endswith(".md")
+    )
+
+
+def duplicate_adr_ids_from_entries(entries: dict[str, int]) -> dict[str, list[str]]:
+    """ADR id -> filenames for every numeric id claimed by 2+ files."""
+    claimed: dict[str, list[str]] = {}
+    for name, _size in sorted(entries.items()):
+        if name.startswith("ADR-NEW-"):
+            continue
+        match = _ADR_NUMERIC_FILENAME_RE.match(name)
+        if match:
+            claimed.setdefault(match.group(1), []).append(name)
+    return {adr_id: names for adr_id, names in claimed.items() if len(names) > 1}
+
+
+def duplicate_new_slugs(entries: dict[str, int]) -> dict[str, list[str]]:
+    claimed: dict[str, list[str]] = {}
+    for name in sorted(entries):
+        match = _ADR_NEW_FILENAME_RE.match(name)
+        if match:
+            claimed.setdefault(match.group(1), []).append(name)
+    return {slug: names for slug, names in claimed.items() if len(names) > 1}
+
+
 def duplicate_adr_ids(adr_dir: Path) -> dict[str, list[str]]:
     """ADR id -> filenames, for every id claimed by 2+ files. Empty when unique."""
-    claimed: dict[str, list[str]] = {}
-    if not adr_dir.is_dir():
-        return {}
-    for path in sorted(adr_dir.glob("ADR-*.md")):
-        if path.stat().st_size == 0:
-            # Renumbering leaves zero-byte tombstones until git rm; they must
-            # not keep a colliding id live for the gate.
+    entries = {
+        path.name: path.stat().st_size
+        for path in sorted(adr_dir.glob("ADR-*.md"))
+    }
+    return duplicate_adr_ids_from_entries(entries)
+
+
+def stale_renumber_violations(entries: dict[str, bytes]) -> list[str]:
+    """Flag ADR files that still use an old id after a renumber banner."""
+    violations: list[str] = []
+    for name, content in sorted(entries.items()):
+        match = _ADR_NUMERIC_FILENAME_RE.match(name)
+        if not match:
             continue
-        match = re.match(r"ADR-(\d{4})-", path.name)
-        if match:
-            claimed.setdefault(match.group(1), []).append(path.name)
-    return {adr_id: names for adr_id, names in claimed.items() if len(names) > 1}
+        current_id = match.group(1)
+        text = content.decode("utf-8", errors="replace")
+        renumbered = _RENUMBERED_TO_RE.search(text)
+        if not renumbered:
+            continue
+        target_id = renumbered.group(1)
+        if target_id != current_id:
+            violations.append(
+                f"{name} claims renumbered to ADR-{target_id} but still uses ADR-{current_id}"
+            )
+    return violations
 
 
 def ids_in_body(body: str) -> list[str]:
@@ -137,6 +192,10 @@ def ids_in_body(body: str) -> list[str]:
 
 def has_none_because(body: str) -> bool:
     return bool(_NONE_RE.search(body or ""))
+
+
+def has_adr_new(body: str) -> bool:
+    return bool(_NEW_RE.search(body or ""))
 
 
 def evaluate(
@@ -172,6 +231,14 @@ def evaluate(
         shown = ", ".join(f"ADR-{adr_id}" for adr_id in valid)
         return Verdict(0, f"[adr-check] OK -- {shown} (gated paths: {', '.join(hit)})")
 
+    new_paths = pending_new_adr_paths(changed)
+    if has_adr_new(body) and new_paths:
+        return Verdict(
+            0,
+            f"[adr-check] OK -- ADR: NEW ({', '.join(new_paths)}) "
+            f"(gated paths: {', '.join(hit)})",
+        )
+
     if has_none_because(body):
         return Verdict(
             0,
@@ -184,6 +251,106 @@ def evaluate(
         + ", ".join(hit)
         + " with no ADR: <id> and no ADR: none, because <reason> on one line",
     )
+
+
+def evaluate_tree_entries(entries: dict[str, bytes]) -> Verdict:
+    """Duplicate and stale checks over a virtual ADR directory."""
+    sizes = {name: len(content) for name, content in entries.items()}
+    dupes = duplicate_adr_ids_from_entries(sizes)
+    if dupes:
+        detail = "; ".join(
+            f"ADR-{adr_id}: {', '.join(names)}" for adr_id, names in sorted(dupes.items())
+        )
+        return Verdict(1, f"[adr-check] duplicate ADR id(s) -- {detail}")
+
+    new_dupes = duplicate_new_slugs(sizes)
+    if new_dupes:
+        detail = "; ".join(
+            f"ADR-NEW-{slug}: {', '.join(names)}" for slug, names in sorted(new_dupes.items())
+        )
+        return Verdict(1, f"[adr-check] duplicate ADR-NEW slug(s) -- {detail}")
+
+    stale = stale_renumber_violations(entries)
+    if stale:
+        return Verdict(1, "[adr-check] stale ADR renumber path(s) -- " + "; ".join(stale))
+
+    return Verdict(0, "[adr-check] OK -- merged tree ADR ids unique")
+
+
+def adr_paths_in_tree(repo_root: Path, tree_sha: str) -> dict[str, bytes]:
+    prefix = "docs/decisions/"
+    proc = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", tree_sha, "--", prefix],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"git ls-tree {tree_sha} failed rc={proc.returncode}: {proc.stderr.strip()}"
+        )
+    entries: dict[str, bytes] = {}
+    for line in proc.stdout.splitlines():
+        rel = line.strip()
+        if not rel or not rel.startswith(prefix):
+            continue
+        filename = Path(rel).name
+        if not filename.startswith("ADR-") or not filename.endswith(".md"):
+            continue
+        show = subprocess.run(
+            ["git", "show", f"{tree_sha}:{rel}"],
+            cwd=repo_root,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if show.returncode != 0:
+            raise RuntimeError(
+                f"git show {tree_sha}:{rel} failed rc={show.returncode}: {show.stderr.strip()}"
+            )
+        entries[filename] = show.stdout
+    return entries
+
+
+def merged_tree_sha(base_sha: str, head_sha: str, repo_root: Path) -> str:
+    for sha in (base_sha, head_sha):
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if probe.returncode != 0:
+            raise RuntimeError(
+                f"commit {sha[:12]} is not present locally. Run: {DEEPEN_HINT}"
+            )
+
+    proc = subprocess.run(
+        ["git", "merge-tree", "--write-tree", base_sha, head_sha],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode > 1:
+        raise RuntimeError(
+            f"git merge-tree --write-tree failed rc={proc.returncode}: {proc.stderr.strip()}"
+        )
+    tree = proc.stdout.splitlines()[0].strip() if proc.stdout else ""
+    if not tree:
+        raise RuntimeError("git merge-tree --write-tree printed no tree oid")
+    return tree
+
+
+def evaluate_merged_tree(base_sha: str, head_sha: str, repo_root: Path) -> Verdict:
+    tree = merged_tree_sha(base_sha, head_sha, repo_root)
+    entries = adr_paths_in_tree(repo_root, tree)
+    return evaluate_tree_entries(entries)
 
 
 def git_changed(base: str, repo_root: Path) -> list[str]:
@@ -216,6 +383,22 @@ def git_commit_body(base: str, repo_root: Path) -> str:
             f"git log {base}..HEAD failed rc={proc.returncode}: {proc.stderr.strip()}"
         )
     return proc.stdout
+
+
+def git_rev_parse(ref: str, repo_root: Path) -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", ref],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}"
+        )
+    return proc.stdout.strip()
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
@@ -286,6 +469,8 @@ def main(
     parser = argparse.ArgumentParser(prog="adr_check")
     parser.add_argument("--pr", type=int, default=None)
     parser.add_argument("--base", default=DEFAULT_BASE)
+    parser.add_argument("--merge-base", default=None)
+    parser.add_argument("--merge-head", default="HEAD")
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--body-file", default=None)
     parser.add_argument("--changed-file", action="append", default=None)
@@ -293,6 +478,18 @@ def main(
     args = parser.parse_args(argv)
 
     decisions = Path(args.adr_dir) if args.adr_dir else (adr_dir or DEFAULT_ADR_DIR)
+
+    if args.merge_base is not None:
+        try:
+            base_sha = git_rev_parse(args.merge_base, repo_root)
+            head_sha = git_rev_parse(args.merge_head, repo_root)
+            verdict = evaluate_merged_tree(base_sha, head_sha, repo_root)
+        except Exception as exc:
+            print(f"[adr-check] UNKNOWN: merge-tree evaluation failed ({exc})", file=sys.stderr)
+            return 2
+        stream = sys.stdout if verdict.code == 0 else sys.stderr
+        print(verdict.message, file=stream)
+        return verdict.code
 
     try:
         if changed is not None:
