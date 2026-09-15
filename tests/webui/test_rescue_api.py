@@ -1,4 +1,13 @@
-"""HTTP rescue snapshot ring list/restore windows (RESCUE-04)."""
+"""HTTP rescue snapshot ring list/restore windows (RESCUE-04).
+
+[if] the ring holds a snapshot [then] the list reports its id, age and loaded decks, [else stop].
+[if] a layout restore runs [then] no deck resumes, even one that was playing, [else stop].
+[if] a play restore is under 10 min old [then] the playing deck resumes, [else stop].
+[if] a play restore is older than 10 min [then] it is refused with 422, [else stop].
+[if] a layout restore is older than 24 h [then] it is refused with 422, [else stop].
+[if] a deck's track is soft-deleted in the library [then] restore reports it missing, [else stop].
+[if] a deck's track is live in the library [then] a play restore still resumes it, [else stop].
+"""
 
 from __future__ import annotations
 
@@ -12,6 +21,7 @@ from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig, apply_env_contract, prepare_layout
 from apps.engine_core.rescue.store import RescueStore
 from apps.engine_core.rescue_api import RESTORE_PATH, SNAPSHOTS_PATH
+from apps.shared.state import db as state_db
 
 pytestmark = pytest.mark.requirement("RESCUE-04")
 
@@ -170,3 +180,54 @@ def test_stale_snapshot_refused(client: TestClient, data_dir: Path) -> None:
     response = client.post(RESTORE_PATH, json={"play": False})
     assert response.status_code == 422
     assert "24 h" in response.json()["detail"]
+
+
+def _seed_library_track(data_dir: Path, stable_id: str, *, deleted: bool) -> None:
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, "
+            "created_at, updated_at, deleted_at) VALUES (?, 'inferred', ?, ?, "
+            "'2026-09-09T00:00:00Z', '2026-09-09T00:00:00Z', ?)",
+            (
+                stable_id,
+                stable_id,
+                str(data_dir / f"{stable_id}.wav"),
+                "2026-09-10T00:00:00Z" if deleted else None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _restore_with_library(data_dir: Path, *, deleted: bool) -> dict:
+    # Seed the library before the engine starts: its lifespan creates the state
+    # schema, and a writer racing that creation sees a half-built database. The
+    # extra live track keeps the library non-empty: the route treats an empty
+    # set of live ids as "unknown" and loads everything, which is a separate
+    # case from the deleted-row filter under test here.
+    _seed_library_track(data_dir, "b" * 40, deleted=False)
+    _seed_library_track(data_dir, "a" * 40, deleted=deleted)
+    _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
+    app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=8787))
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        response = client.post(RESTORE_PATH, json={"play": True})
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_restore_reports_a_soft_deleted_track_missing(data_dir: Path) -> None:
+    body = _restore_with_library(data_dir, deleted=True)
+    assert body["decks"]["1"]["outcome"] == "missing", (
+        "if a soft-deleted track restores as loadable, then rescue reloads a track "
+        "the user deleted"
+    )
+
+
+def test_play_restore_resumes_a_live_library_track(data_dir: Path) -> None:
+    body = _restore_with_library(data_dir, deleted=False)
+    assert body["decks"]["1"]["outcome"] == "resumed", (
+        "if a live library track restores as missing, then the deleted-row filter "
+        "hides tracks it should keep"
+    )

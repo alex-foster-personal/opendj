@@ -1,161 +1,6 @@
 {
   "components": {
     "schemas": {
-      "AccessProbeOut": {
-        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
-        "properties": {
-          "denied": {
-            "title": "Denied",
-            "type": "boolean"
-          },
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "readable": {
-            "title": "Readable",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "path",
-          "exists",
-          "readable",
-          "denied",
-          "detail"
-        ],
-        "title": "AccessProbeOut",
-        "type": "object"
-      },
-      "AccountDeleteOut": {
-        "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
-          "google_sub": {
-            "title": "Google Sub",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "deleted",
-          "google_sub",
-          "message"
-        ],
-        "title": "AccountDeleteOut",
-        "type": "object"
-      },
-      "AccountOut": {
-        "properties": {
-          "authorisation_enforced": {
-            "title": "Authorisation Enforced",
-            "type": "boolean"
-          },
-          "authorisation_note": {
-            "title": "Authorisation Note",
-            "type": "string"
-          },
-          "local_data": {
-            "items": {
-              "$ref": "#/components/schemas/LocalDataOut"
-            },
-            "title": "Local Data",
-            "type": "array"
-          },
-          "plan": {
-            "$ref": "#/components/schemas/PlanOut"
-          },
-          "privacy_policy_url": {
-            "title": "Privacy Policy Url",
-            "type": "string"
-          },
-          "signed_in": {
-            "title": "Signed In",
-            "type": "boolean"
-          },
-          "user": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AccountUserOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "signed_in",
-          "user",
-          "plan",
-          "authorisation_enforced",
-          "authorisation_note",
-          "local_data",
-          "privacy_policy_url"
-        ],
-        "title": "AccountOut",
-        "type": "object"
-      },
-      "AccountUserOut": {
-        "properties": {
-          "avatar_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avatar Url"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "google_sub": {
-            "title": "Google Sub",
-            "type": "string"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          }
-        },
-        "required": [
-          "google_sub",
-          "email",
-          "name",
-          "avatar_url",
-          "created_at"
-        ],
-        "title": "AccountUserOut",
-        "type": "object"
-      },
       "AdoptOut": {
         "properties": {
           "created": {
@@ -495,6 +340,52 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisApplyRequest": {
+        "properties": {
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          }
+        },
+        "title": "AnalysisApplyRequest",
+        "type": "object"
+      },
       "AnalysisOrderOut": {
         "properties": {
           "kind": {
@@ -819,66 +710,32 @@
         "title": "AnlzCueOut",
         "type": "object"
       },
-      "AppPostureOut": {
+      "AppModeOut": {
         "properties": {
-          "label": {
-            "title": "Label",
+          "id": {
+            "default": "performance",
+            "enum": [
+              "performance",
+              "library-management",
+              "library",
+              "music-player"
+            ],
+            "title": "Id",
             "type": "string"
           },
-          "posture": {
-            "title": "Posture",
-            "type": "string"
-          },
-          "scalers": {
-            "$ref": "#/components/schemas/AppPostureScalersOut"
-          }
-        },
-        "required": [
-          "posture",
-          "label",
-          "scalers"
-        ],
-        "title": "AppPostureOut",
-        "type": "object"
-      },
-      "AppPostureScalersOut": {
-        "properties": {
-          "library_poll_ms": {
-            "title": "Library Poll Ms",
-            "type": "integer"
-          },
-          "prefetch_bytes_floor": {
+          "last_gig_at": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Prefetch Bytes Floor"
-          },
-          "prefetch_tracks_floor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefetch Tracks Floor"
-          },
-          "worker_divisor": {
-            "title": "Worker Divisor",
-            "type": "integer"
+            "title": "Last Gig At"
           }
         },
-        "required": [
-          "library_poll_ms",
-          "worker_divisor"
-        ],
-        "title": "AppPostureScalersOut",
+        "title": "AppModeOut",
         "type": "object"
       },
       "ApplyIn": {
@@ -887,6 +744,11 @@
           "cluster_key": {
             "title": "Cluster Key",
             "type": "string"
+          },
+          "confirm_cue_loss": {
+            "default": false,
+            "title": "Confirm Cue Loss",
+            "type": "boolean"
           },
           "survivor": {
             "title": "Survivor",
@@ -1007,25 +869,6 @@
           "general_archived"
         ],
         "title": "ArchiveOut",
-        "type": "object"
-      },
-      "AssistantStatusOut": {
-        "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
-        "properties": {
-          "configured": {
-            "title": "Configured",
-            "type": "boolean"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "configured",
-          "model"
-        ],
-        "title": "AssistantStatusOut",
         "type": "object"
       },
       "AttachmentOut": {
@@ -1412,136 +1255,6 @@
           }
         },
         "title": "AutolistSelectionIn",
-        "type": "object"
-      },
-      "AvailabilityProbeIn": {
-        "properties": {
-          "allow_mass_missing": {
-            "default": false,
-            "title": "Allow Mass Missing",
-            "type": "boolean"
-          },
-          "full": {
-            "default": false,
-            "title": "Full",
-            "type": "boolean"
-          },
-          "stable_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stable Ids"
-          }
-        },
-        "title": "AvailabilityProbeIn",
-        "type": "object"
-      },
-      "AvailabilityProbeOut": {
-        "properties": {
-          "accepted": {
-            "default": true,
-            "title": "Accepted",
-            "type": "boolean"
-          },
-          "phase": {
-            "enum": [
-              "idle",
-              "queued",
-              "running",
-              "complete",
-              "refused",
-              "failed"
-            ],
-            "title": "Phase",
-            "type": "string"
-          }
-        },
-        "required": [
-          "phase"
-        ],
-        "title": "AvailabilityProbeOut",
-        "type": "object"
-      },
-      "AvailabilityStatusOut": {
-        "properties": {
-          "awaiting_volume": {
-            "description": "Rows under an unmounted /Volumes path to re-check",
-            "title": "Awaiting Volume",
-            "type": "integer"
-          },
-          "complete": {
-            "description": "True when no unknown/stale/awaiting_volume rows remain",
-            "title": "Complete",
-            "type": "boolean"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "pending": {
-            "description": "Tracks still needing a probe pass",
-            "title": "Pending",
-            "type": "integer"
-          },
-          "phase": {
-            "enum": [
-              "idle",
-              "queued",
-              "running",
-              "complete",
-              "refused",
-              "failed"
-            ],
-            "title": "Phase",
-            "type": "string"
-          },
-          "present": {
-            "description": "Current present count in track_availability",
-            "title": "Present",
-            "type": "integer"
-          },
-          "processed_total": {
-            "description": "Rows classified across this worker lifetime",
-            "title": "Processed Total",
-            "type": "integer"
-          },
-          "stale": {
-            "description": "Rows whose tracks.updated_at is newer than checked_at",
-            "title": "Stale",
-            "type": "integer"
-          },
-          "unknown": {
-            "description": "Live tracks with no availability row",
-            "title": "Unknown",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "phase",
-          "pending",
-          "unknown",
-          "stale",
-          "awaiting_volume",
-          "processed_total",
-          "present",
-          "complete"
-        ],
-        "title": "AvailabilityStatusOut",
         "type": "object"
       },
       "BackfillBatchIn": {
@@ -2277,10 +1990,11 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
-      "BuildInfoOut": {
-        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+      "BuildPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
         "properties": {
-          "app_version": {
+          "branch": {
             "anyOf": [
               {
                 "type": "string"
@@ -2289,21 +2003,9 @@
                 "type": "null"
               }
             ],
-            "title": "App Version"
+            "title": "Branch"
           },
-          "built_at_kind": {
-            "enum": [
-              "payload-build",
-              "head-commit"
-            ],
-            "title": "Built At Kind",
-            "type": "string"
-          },
-          "built_at_utc": {
-            "title": "Built At Utc",
-            "type": "string"
-          },
-          "bundle_identifier": {
+          "pr": {
             "anyOf": [
               {
                 "type": "string"
@@ -2312,29 +2014,9 @@
                 "type": "null"
               }
             ],
-            "title": "Bundle Identifier"
+            "title": "Pr"
           },
-          "engine_version": {
-            "title": "Engine Version",
-            "type": "string"
-          },
-          "git_branch": {
-            "title": "Git Branch",
-            "type": "string"
-          },
-          "git_dirty": {
-            "title": "Git Dirty",
-            "type": "boolean"
-          },
-          "git_sha": {
-            "title": "Git Sha",
-            "type": "string"
-          },
-          "git_sha_full": {
-            "title": "Git Sha Full",
-            "type": "string"
-          },
-          "lane_label": {
+          "stage": {
             "anyOf": [
               {
                 "type": "string"
@@ -2343,9 +2025,26 @@
                 "type": "null"
               }
             ],
-            "title": "Lane Label"
+            "title": "Stage"
           },
-          "manifest_path": {
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "idle",
+                  "blocked",
+                  "hanging"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "worktree": {
             "anyOf": [
               {
                 "type": "string"
@@ -2354,39 +2053,10 @@
                 "type": "null"
               }
             ],
-            "title": "Manifest Path"
-          },
-          "product_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Name"
-          },
-          "source": {
-            "enum": [
-              "payload",
-              "repo"
-            ],
-            "title": "Source",
-            "type": "string"
+            "title": "Worktree"
           }
         },
-        "required": [
-          "source",
-          "engine_version",
-          "git_sha",
-          "git_sha_full",
-          "git_branch",
-          "git_dirty",
-          "built_at_utc",
-          "built_at_kind"
-        ],
-        "title": "BuildInfoOut",
+        "title": "BuildPatchIn",
         "type": "object"
       },
       "BuildStampOut": {
@@ -2438,6 +2108,31 @@
           }
         },
         "title": "BuildStampOut",
+        "type": "object"
+      },
+      "BuildableIn": {
+        "additionalProperties": false,
+        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "cloud",
+              "hybrid",
+              "local"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "reason"
+        ],
+        "title": "BuildableIn",
         "type": "object"
       },
       "BulkEditIn": {
@@ -2497,6 +2192,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -2574,49 +2270,6 @@
           "etag"
         ],
         "title": "BulkEditRowOut",
-        "type": "object"
-      },
-      "ChatIn": {
-        "description": "A whole conversation, resent every turn -- the engine stores none of it.",
-        "properties": {
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/ChatMessage"
-            },
-            "minItems": 1,
-            "title": "Messages",
-            "type": "array"
-          }
-        },
-        "required": [
-          "messages"
-        ],
-        "title": "ChatIn",
-        "type": "object"
-      },
-      "ChatMessage": {
-        "description": "One turn. Same three roles OpenRouter accepts, no tool calls.",
-        "properties": {
-          "content": {
-            "minLength": 1,
-            "title": "Content",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "system",
-              "user",
-              "assistant"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role",
-          "content"
-        ],
-        "title": "ChatMessage",
         "type": "object"
       },
       "CheckedViolationOut": {
@@ -3477,6 +3130,18 @@
             "title": "Endpoint Source",
             "type": "string"
           },
+          "hash_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "live tracks offered as hash_pending on the hub (ADR-0047)",
+            "title": "Hash Pending"
+          },
           "heartbeat_at": {
             "anyOf": [
               {
@@ -3520,6 +3185,18 @@
                 "type": "null"
               }
             ]
+          },
+          "quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rows held out of the sync set for stamp or identity-dup reasons",
+            "title": "Quarantined"
           },
           "reason": {
             "anyOf": [
@@ -3565,6 +3242,17 @@
               }
             ],
             "title": "Signed In As"
+          },
+          "update_required": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRequiredOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine."
           }
         },
         "required": [
@@ -4116,6 +3804,25 @@
         "title": "CommentUpdateIn",
         "type": "object"
       },
+      "CommitIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "sha": {
+            "title": "Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha",
+          "note"
+        ],
+        "title": "CommitIn",
+        "type": "object"
+      },
       "ConfigIn": {
         "properties": {
           "enabled": {
@@ -4531,6 +4238,84 @@
         "title": "CredentialsOut",
         "type": "object"
       },
+      "CuesApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "CuesApplyRequest",
+        "type": "object"
+      },
+      "CuesPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          }
+        },
+        "title": "CuesPlanRequest",
+        "type": "object"
+      },
       "DecideIn": {
         "properties": {
           "action": {
@@ -4900,6 +4685,13 @@
       },
       "DigestResponse": {
         "properties": {
+          "hash_pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Hash Pending",
+            "type": "object"
+          },
           "overall": {
             "title": "Overall",
             "type": "string"
@@ -4929,85 +4721,6 @@
           "seq"
         ],
         "title": "DigestResponse",
-        "type": "object"
-      },
-      "EngineHealthOut": {
-        "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
-        "properties": {
-          "bind_host": {
-            "title": "Bind Host",
-            "type": "string"
-          },
-          "boot_id": {
-            "title": "Boot Id",
-            "type": "string"
-          },
-          "cloud": {
-            "$ref": "#/components/schemas/HealthCloud"
-          },
-          "contract_rev": {
-            "title": "Contract Rev",
-            "type": "string"
-          },
-          "engine_version": {
-            "title": "Engine Version",
-            "type": "string"
-          },
-          "google_oauth_configured": {
-            "title": "Google Oauth Configured",
-            "type": "boolean"
-          },
-          "process_env_forbidden_keys": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Process Env Forbidden Keys",
-            "type": "array"
-          },
-          "process_env_home_present": {
-            "title": "Process Env Home Present",
-            "type": "boolean"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/HealthStateDb"
-          },
-          "status": {
-            "default": "ok",
-            "title": "Status",
-            "type": "string"
-          },
-          "syncthing": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HealthSyncthing"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          },
-          "waveform_materialization": {
-            "$ref": "#/components/schemas/HealthWaveformMaterialization"
-          }
-        },
-        "required": [
-          "state_db",
-          "cloud",
-          "waveform_materialization",
-          "bind_host",
-          "version",
-          "google_oauth_configured",
-          "process_env_forbidden_keys",
-          "process_env_home_present",
-          "contract_rev",
-          "engine_version",
-          "boot_id"
-        ],
-        "title": "EngineHealthOut",
         "type": "object"
       },
       "EnrollCredentialModel": {
@@ -5153,42 +4866,6 @@
           "sync_credential"
         ],
         "title": "EnrollResponse",
-        "type": "object"
-      },
-      "EntitlementsOut": {
-        "properties": {
-          "features": {
-            "items": {
-              "$ref": "#/components/schemas/FeatureEntitlementOut"
-            },
-            "title": "Features",
-            "type": "array"
-          },
-          "plan": {
-            "$ref": "#/components/schemas/PlanOut"
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider"
-          },
-          "refusal": {
-            "$ref": "#/components/schemas/RefusalOut"
-          }
-        },
-        "required": [
-          "provider",
-          "plan",
-          "refusal",
-          "features"
-        ],
-        "title": "EntitlementsOut",
         "type": "object"
       },
       "ErrorBody": {
@@ -5495,51 +5172,6 @@
         "title": "FallbackBeatgridOut",
         "type": "object"
       },
-      "FeatureEntitlementOut": {
-        "properties": {
-          "entitled": {
-            "title": "Entitled",
-            "type": "boolean"
-          },
-          "feature_id": {
-            "title": "Feature Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "quota": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Quota"
-          },
-          "server_side": {
-            "title": "Server Side",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "feature_id",
-          "label",
-          "entitled",
-          "quota",
-          "server_side",
-          "note"
-        ],
-        "title": "FeatureEntitlementOut",
-        "type": "object"
-      },
       "FeedbackStoreSyncOut": {
         "properties": {
           "archived": {
@@ -5651,47 +5283,6 @@
           "pins"
         ],
         "title": "FeedbackSyncStatusOut",
-        "type": "object"
-      },
-      "FileProbeOut": {
-        "description": "One real path and whether it is actually there.",
-        "properties": {
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "modified_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modified At"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "size_bytes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size Bytes"
-          }
-        },
-        "required": [
-          "path",
-          "exists"
-        ],
-        "title": "FileProbeOut",
         "type": "object"
       },
       "FindReplaceApplyIn": {
@@ -5935,95 +5526,6 @@
         "title": "FindReplaceRowOut",
         "type": "object"
       },
-      "FlagOut": {
-        "properties": {
-          "default": {
-            "title": "Default",
-            "type": "boolean"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "flag_id": {
-            "title": "Flag Id",
-            "type": "string"
-          },
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "overridden": {
-            "title": "Overridden",
-            "type": "boolean"
-          },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
-          "refusal": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RefusalOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "retire_by": {
-            "title": "Retire By",
-            "type": "string"
-          }
-        },
-        "required": [
-          "flag_id",
-          "enabled",
-          "default",
-          "overridden",
-          "owner",
-          "note",
-          "retire_by"
-        ],
-        "title": "FlagOut",
-        "type": "object"
-      },
-      "FlagsOut": {
-        "properties": {
-          "build_profile": {
-            "title": "Build Profile",
-            "type": "string"
-          },
-          "file_present": {
-            "title": "File Present",
-            "type": "boolean"
-          },
-          "flags": {
-            "items": {
-              "$ref": "#/components/schemas/FlagOut"
-            },
-            "title": "Flags",
-            "type": "array"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "sandboxed": {
-            "title": "Sandboxed",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "path",
-          "file_present",
-          "build_profile",
-          "sandboxed",
-          "flags"
-        ],
-        "title": "FlagsOut",
-        "type": "object"
-      },
       "FleetErrorBody": {
         "properties": {
           "code": {
@@ -6179,173 +5681,6 @@
           "foreign"
         ],
         "title": "FleetOut",
-        "type": "object"
-      },
-      "FolderImportIn": {
-        "description": "Point at one or more folders of audio files. No rekordbox involved.",
-        "properties": {
-          "folders": {
-            "description": "absolute paths to walk; at least one",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Folders",
-            "type": "array"
-          },
-          "limit": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "import at most N files",
-            "title": "Limit"
-          }
-        },
-        "required": [
-          "folders"
-        ],
-        "title": "FolderImportIn",
-        "type": "object"
-      },
-      "FolderLastImportOut": {
-        "description": "What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.\n\nA different model rather than optional fields on the rekordbox one,\nbecause the two describe different work: there is no decrypt here, no\nplaylists, and -- the field that matters --\n``tracks_without_analysis``, which equals the tracks written.",
-        "properties": {
-          "analysis_available": {
-            "default": false,
-            "title": "Analysis Available",
-            "type": "boolean"
-          },
-          "analysis_detail": {
-            "title": "Analysis Detail",
-            "type": "string"
-          },
-          "files_dataless": {
-            "title": "Files Dataless",
-            "type": "integer"
-          },
-          "files_seen": {
-            "title": "Files Seen",
-            "type": "integer"
-          },
-          "files_without_tags": {
-            "title": "Files Without Tags",
-            "type": "integer"
-          },
-          "finished_at": {
-            "title": "Finished At",
-            "type": "string"
-          },
-          "kind": {
-            "const": "folder",
-            "default": "folder",
-            "title": "Kind",
-            "type": "string"
-          },
-          "roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Roots",
-            "type": "array"
-          },
-          "started_at": {
-            "title": "Started At",
-            "type": "string"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          },
-          "tracks_without_analysis": {
-            "title": "Tracks Without Analysis",
-            "type": "integer"
-          },
-          "tracks_written": {
-            "title": "Tracks Written",
-            "type": "integer"
-          },
-          "unreadable_roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "started_at",
-          "finished_at",
-          "files_seen",
-          "files_dataless",
-          "files_without_tags",
-          "tracks",
-          "tracks_written",
-          "tracks_without_analysis",
-          "analysis_detail"
-        ],
-        "title": "FolderLastImportOut",
-        "type": "object"
-      },
-      "FolderScanOut": {
-        "description": "What a candidate folder actually holds, before anything is imported.\n\n``audio_files`` counts what could be READ. When ``denied`` is true that\nnumber is not a count of the folder, it is a count of nothing, and\n``detail`` says so -- which is the difference between \"this folder is\nempty\" and \"macOS would not let me look\".",
-        "properties": {
-          "audio_files": {
-            "title": "Audio Files",
-            "type": "integer"
-          },
-          "denied": {
-            "title": "Denied",
-            "type": "boolean"
-          },
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "how_to_grant": {
-            "title": "How To Grant",
-            "type": "string"
-          },
-          "icloud_placeholders": {
-            "title": "Icloud Placeholders",
-            "type": "integer"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "readable": {
-            "title": "Readable",
-            "type": "boolean"
-          },
-          "sample": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Sample",
-            "type": "array"
-          }
-        },
-        "required": [
-          "path",
-          "exists",
-          "readable",
-          "denied",
-          "detail",
-          "audio_files",
-          "icloud_placeholders",
-          "how_to_grant"
-        ],
-        "title": "FolderScanOut",
         "type": "object"
       },
       "GateErrorBody": {
@@ -6524,6 +5859,48 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HashPendingResponse": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "total",
+          "schema_version",
+          "wire_version"
+        ],
+        "title": "HashPendingResponse",
+        "type": "object"
+      },
       "HeadphoneOutputDeviceOut": {
         "properties": {
           "id": {
@@ -6682,6 +6059,69 @@
           }
         },
         "title": "HealthCloud",
+        "type": "object"
+      },
+      "HealthOut": {
+        "properties": {
+          "bind_host": {
+            "title": "Bind Host",
+            "type": "string"
+          },
+          "cloud": {
+            "$ref": "#/components/schemas/HealthCloud"
+          },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
+          "process_env_forbidden_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Forbidden Keys",
+            "type": "array"
+          },
+          "process_env_home_present": {
+            "title": "Process Env Home Present",
+            "type": "boolean"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/HealthStateDb"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "syncthing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthSyncthing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
+          }
+        },
+        "required": [
+          "state_db",
+          "cloud",
+          "waveform_materialization",
+          "bind_host",
+          "version",
+          "google_oauth_configured",
+          "process_env_forbidden_keys",
+          "process_env_home_present"
+        ],
+        "title": "HealthOut",
         "type": "object"
       },
       "HealthStateDb": {
@@ -7083,62 +6523,6 @@
         "title": "HistoryGetOut",
         "type": "object"
       },
-      "HostInfoOut": {
-        "properties": {
-          "canary_elapsed_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Elapsed Ms"
-          },
-          "canary_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Error"
-          },
-          "canary_hashes_per_second": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Hashes Per Second"
-          },
-          "logical_cpus": {
-            "title": "Logical Cpus",
-            "type": "integer"
-          },
-          "ram_bytes": {
-            "title": "Ram Bytes",
-            "type": "integer"
-          },
-          "ram_gib": {
-            "title": "Ram Gib",
-            "type": "number"
-          }
-        },
-        "required": [
-          "logical_cpus",
-          "ram_bytes",
-          "ram_gib"
-        ],
-        "title": "HostInfoOut",
-        "type": "object"
-      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -7312,223 +6696,22 @@
       },
       "IdentityBacklogOut": {
         "properties": {
+          "hash_pending": {
+            "description": "live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.",
+            "title": "Hash Pending",
+            "type": "integer"
+          },
           "unsyncable_inferred": {
-            "description": "live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.",
+            "description": "live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.",
             "title": "Unsyncable Inferred",
             "type": "integer"
           }
         },
         "required": [
-          "unsyncable_inferred"
+          "unsyncable_inferred",
+          "hash_pending"
         ],
         "title": "IdentityBacklogOut",
-        "type": "object"
-      },
-      "JobIn": {
-        "properties": {
-          "external_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Ref"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "JobIn",
-        "type": "object"
-      },
-      "JobKindsOut": {
-        "properties": {
-          "kinds": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Kinds",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kinds"
-        ],
-        "title": "JobKindsOut",
-        "type": "object"
-      },
-      "JobOut": {
-        "properties": {
-          "attempt": {
-            "title": "Attempt",
-            "type": "integer"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "external_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Ref"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "owner_boot_id": {
-            "title": "Owner Boot Id",
-            "type": "string"
-          },
-          "owner_pid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Pid"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          },
-          "progress": {
-            "title": "Progress",
-            "type": "number"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "worker_argv": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Argv"
-          },
-          "worker_pgid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Pgid"
-          },
-          "worker_pid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Pid"
-          },
-          "worker_started_at": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Started At"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "payload",
-          "status",
-          "progress",
-          "attempt",
-          "created_at",
-          "owner_boot_id"
-        ],
-        "title": "JobOut",
         "type": "object"
       },
       "KaraokeLineOut": {
@@ -7840,88 +7023,6 @@
           "effective"
         ],
         "title": "LaneSourceOut",
-        "type": "object"
-      },
-      "LastImportOut": {
-        "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
-        "properties": {
-          "analyses_expected": {
-            "title": "Analyses Expected",
-            "type": "integer"
-          },
-          "analyses_linked": {
-            "title": "Analyses Linked",
-            "type": "integer"
-          },
-          "finished_at": {
-            "title": "Finished At",
-            "type": "string"
-          },
-          "ingested_from": {
-            "title": "Ingested From",
-            "type": "string"
-          },
-          "kind": {
-            "const": "rekordbox",
-            "default": "rekordbox",
-            "title": "Kind",
-            "type": "string"
-          },
-          "playlists": {
-            "title": "Playlists",
-            "type": "integer"
-          },
-          "rekordbox_tracks": {
-            "title": "Rekordbox Tracks",
-            "type": "integer"
-          },
-          "rekordbox_was_running": {
-            "title": "Rekordbox Was Running",
-            "type": "boolean"
-          },
-          "share_root": {
-            "title": "Share Root",
-            "type": "string"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "source_was_encrypted": {
-            "title": "Source Was Encrypted",
-            "type": "boolean"
-          },
-          "started_at": {
-            "title": "Started At",
-            "type": "string"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          },
-          "unreadable_music_roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Music Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "started_at",
-          "finished_at",
-          "source",
-          "source_was_encrypted",
-          "ingested_from",
-          "tracks",
-          "playlists",
-          "analyses_linked",
-          "analyses_expected",
-          "rekordbox_tracks",
-          "share_root",
-          "rekordbox_was_running"
-        ],
-        "title": "LastImportOut",
         "type": "object"
       },
       "LastResultOut": {
@@ -8427,33 +7528,79 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
-      "LocalDataOut": {
-        "description": "One store on this machine that holds something about the account.",
+      "LifecycleQuitIn": {
         "properties": {
-          "contents": {
-            "title": "Contents",
-            "type": "string"
-          },
-          "delete_with": {
-            "title": "Delete With",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "location": {
-            "title": "Location",
-            "type": "string"
+          "force": {
+            "description": "Must be true for agent and ship clean-quit paths.",
+            "title": "Force",
+            "type": "boolean"
           }
         },
         "required": [
-          "label",
-          "location",
-          "contents",
-          "delete_with"
+          "force"
         ],
-        "title": "LocalDataOut",
+        "title": "LifecycleQuitIn",
+        "type": "object"
+      },
+      "LifecycleQuitOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LifecycleQuitOut",
+        "type": "object"
+      },
+      "LinksPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
+        "properties": {
+          "issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issues"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
+          },
+          "specs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specs"
+          }
+        },
+        "title": "LinksPatchIn",
         "type": "object"
       },
       "LoginIn": {
@@ -8628,6 +7775,39 @@
           "text"
         ],
         "title": "LyricLineOut",
+        "type": "object"
+      },
+      "LyricsAsrPresignResponse": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "default": 900,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "url",
+          "content_hash",
+          "size_bytes"
+        ],
+        "title": "LyricsAsrPresignResponse",
         "type": "object"
       },
       "LyricsCachedIdsOut": {
@@ -9263,6 +8443,28 @@
         "title": "MachineOverview",
         "type": "object"
       },
+      "MatchRequest": {
+        "properties": {
+          "out_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Dir"
+          },
+          "use_fingerprint": {
+            "default": false,
+            "title": "Use Fingerprint",
+            "type": "boolean"
+          }
+        },
+        "title": "MatchRequest",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "signed_in": {
@@ -9728,6 +8930,43 @@
         "title": "MembershipTransferOut",
         "type": "object"
       },
+      "MetadataPlanRequest": {
+        "properties": {
+          "include_cues": {
+            "default": false,
+            "title": "Include Cues",
+            "type": "boolean"
+          },
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          },
+          "prefer": {
+            "default": "newest",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "newest"
+            ],
+            "title": "Prefer",
+            "type": "string"
+          }
+        },
+        "title": "MetadataPlanRequest",
+        "type": "object"
+      },
       "MetadataShareRequest": {
         "description": "Explicit acknowledgement that the resulting web view excludes audio.",
         "properties": {
@@ -9877,6 +9116,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -10124,6 +9364,134 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "NodePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buildable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildableIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commits_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CommitIn"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commits Append"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinksPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing",
+                  "spiked",
+                  "building",
+                  "partial",
+                  "built",
+                  "verified",
+                  "merged",
+                  "user-finalized",
+                  "working"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tests_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Append"
+          },
+          "verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifiedIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "NodePatch",
+        "type": "object"
+      },
+      "NodePatchOut": {
+        "properties": {
+          "meta_updated": {
+            "title": "Meta Updated",
+            "type": "string"
+          },
+          "node": {
+            "additionalProperties": true,
+            "title": "Node",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node",
+          "meta_updated"
+        ],
+        "title": "NodePatchOut",
         "type": "object"
       },
       "OpsErrorBody": {
@@ -10856,88 +10224,6 @@
         "title": "PerfSpanIn",
         "type": "object"
       },
-      "PerfTierHostOut": {
-        "properties": {
-          "logical_cpus": {
-            "title": "Logical Cpus",
-            "type": "integer"
-          },
-          "ram_bytes": {
-            "title": "Ram Bytes",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "logical_cpus",
-          "ram_bytes"
-        ],
-        "title": "PerfTierHostOut",
-        "type": "object"
-      },
-      "PerfTierOut": {
-        "properties": {
-          "auto_tier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Tier"
-          },
-          "host": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PerfTierHostOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "min_local_stems_tier": {
-            "title": "Min Local Stems Tier",
-            "type": "string"
-          },
-          "override": {
-            "title": "Override",
-            "type": "string"
-          },
-          "scalers": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ]
-            },
-            "title": "Scalers",
-            "type": "object"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "tier": {
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "source",
-          "override",
-          "min_local_stems_tier",
-          "scalers"
-        ],
-        "title": "PerfTierOut",
-        "type": "object"
-      },
       "PerformanceFeedbackMarkIn": {
         "properties": {
           "decks": {
@@ -10998,39 +10284,6 @@
           "last_mark"
         ],
         "title": "PerformanceFeedbackMarksOut",
-        "type": "object"
-      },
-      "PermissionsOut": {
-        "description": "The folder-access answer, and what to do about a refusal.",
-        "properties": {
-          "all_readable": {
-            "title": "All Readable",
-            "type": "boolean"
-          },
-          "denied": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Denied",
-            "type": "array"
-          },
-          "how_to_grant": {
-            "title": "How To Grant",
-            "type": "string"
-          },
-          "roots": {
-            "items": {
-              "$ref": "#/components/schemas/AccessProbeOut"
-            },
-            "title": "Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "all_readable",
-          "how_to_grant"
-        ],
-        "title": "PermissionsOut",
         "type": "object"
       },
       "PinCellIn": {
@@ -11322,41 +10575,6 @@
           "track_updates"
         ],
         "title": "PlanModel",
-        "type": "object"
-      },
-      "PlanOut": {
-        "properties": {
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "plan_id": {
-            "title": "Plan Id",
-            "type": "string"
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider"
-          }
-        },
-        "required": [
-          "plan_id",
-          "label",
-          "note",
-          "provider"
-        ],
-        "title": "PlanOut",
         "type": "object"
       },
       "PlanRequest": {
@@ -11681,6 +10899,62 @@
         "title": "PlayItUnmetOut",
         "type": "object"
       },
+      "PlaylistApplyRequest": {
+        "properties": {
+          "allow_broken": {
+            "default": false,
+            "title": "Allow Broken",
+            "type": "boolean"
+          },
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "plan_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Path"
+          },
+          "playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlists"
+          }
+        },
+        "title": "PlaylistApplyRequest",
+        "type": "object"
+      },
       "PlaylistBrokenSummary": {
         "properties": {
           "broken_count": {
@@ -11955,6 +11229,42 @@
           "mode"
         ],
         "title": "PlaylistPinPut",
+        "type": "object"
+      },
+      "PlaylistPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "max_ops": {
+            "default": 10000,
+            "title": "Max Ops",
+            "type": "integer"
+          },
+          "only_playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Playlists"
+          }
+        },
+        "title": "PlaylistPlanRequest",
         "type": "object"
       },
       "PlaylistRenameIn": {
@@ -12498,7 +11808,7 @@
         "type": "object"
       },
       "PreflightCheckOut": {
-        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.\n\n``user_*`` fields carry plain-language copy for the boot gate (issue\n#2722). Admin/diagnostics views keep the technical ``label``/``detail``.",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -12531,6 +11841,39 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "user_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Detail"
+          },
+          "user_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Label"
+          },
+          "user_remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Remediation"
           }
         },
         "required": [
@@ -12630,6 +11973,11 @@
             "title": "Has More",
             "type": "boolean"
           },
+          "hash_pending": {
+            "default": 0,
+            "title": "Hash Pending",
+            "type": "integer"
+          },
           "machines": {
             "items": {
               "$ref": "#/components/schemas/MachineModel"
@@ -12724,6 +12072,11 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "hash_pending": {
+            "default": 0,
+            "title": "Hash Pending",
             "type": "integer"
           },
           "quarantined": {
@@ -12999,6 +12352,62 @@
           "machine_score"
         ],
         "title": "RatingEntry",
+        "type": "object"
+      },
+      "RatingsApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "RatingsApplyRequest",
         "type": "object"
       },
       "RatingsFile": {
@@ -13707,104 +13116,6 @@
         "title": "RefreshStatusOut",
         "type": "object"
       },
-      "RefusalOut": {
-        "description": "The one refusal shape, so a control and its tooltip cannot disagree.",
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "ui_title": {
-            "title": "Ui Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message",
-          "ui_title"
-        ],
-        "title": "RefusalOut",
-        "type": "object"
-      },
-      "RekordboxDetectionOut": {
-        "description": "The 'detect rekordbox' step, reported without touching the install.",
-        "properties": {
-          "blockers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Blockers",
-            "type": "array"
-          },
-          "import_source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Import Source"
-          },
-          "import_source_encrypted": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Import Source Encrypted"
-          },
-          "installed": {
-            "title": "Installed",
-            "type": "boolean"
-          },
-          "key_available": {
-            "title": "Key Available",
-            "type": "boolean"
-          },
-          "key_detail": {
-            "title": "Key Detail",
-            "type": "string"
-          },
-          "live_db": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "plain_copy": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "rekordbox_running": {
-            "title": "Rekordbox Running",
-            "type": "boolean"
-          },
-          "share_dir": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "working_copy": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          }
-        },
-        "required": [
-          "installed",
-          "live_db",
-          "share_dir",
-          "working_copy",
-          "plain_copy",
-          "key_available",
-          "key_detail",
-          "rekordbox_running"
-        ],
-        "title": "RekordboxDetectionOut",
-        "type": "object"
-      },
       "RelocateApplyIn": {
         "properties": {
           "confirm": {
@@ -14013,154 +13324,6 @@
         "title": "RescueAppendOut",
         "type": "object"
       },
-      "RescueDeckOutcomeOut": {
-        "properties": {
-          "outcome": {
-            "enum": [
-              "resumed",
-              "paused",
-              "missing"
-            ],
-            "title": "Outcome",
-            "type": "string"
-          },
-          "stable_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stable Id"
-          }
-        },
-        "required": [
-          "outcome"
-        ],
-        "title": "RescueDeckOutcomeOut",
-        "type": "object"
-      },
-      "RescueRestoreIn": {
-        "properties": {
-          "play": {
-            "default": false,
-            "title": "Play",
-            "type": "boolean"
-          },
-          "snapshot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snapshot Id"
-          }
-        },
-        "title": "RescueRestoreIn",
-        "type": "object"
-      },
-      "RescueRestoreOut": {
-        "properties": {
-          "captured_at_ms": {
-            "title": "Captured At Ms",
-            "type": "integer"
-          },
-          "decks": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RescueDeckOutcomeOut"
-            },
-            "title": "Decks",
-            "type": "object"
-          },
-          "mode": {
-            "enum": [
-              "layout",
-              "play"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          },
-          "snapshot_id": {
-            "title": "Snapshot Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "snapshot_id",
-          "captured_at_ms",
-          "mode",
-          "payload",
-          "decks"
-        ],
-        "title": "RescueRestoreOut",
-        "type": "object"
-      },
-      "RescueSnapshotMeta": {
-        "properties": {
-          "age_ms": {
-            "title": "Age Ms",
-            "type": "integer"
-          },
-          "captured_at_ms": {
-            "title": "Captured At Ms",
-            "type": "integer"
-          },
-          "deck_count_loaded": {
-            "description": "Decks with a non-empty stable_id at capture",
-            "title": "Deck Count Loaded",
-            "type": "integer"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "playlist_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Playlist Id"
-          }
-        },
-        "required": [
-          "id",
-          "captured_at_ms",
-          "age_ms",
-          "deck_count_loaded"
-        ],
-        "title": "RescueSnapshotMeta",
-        "type": "object"
-      },
-      "RescueSnapshotsOut": {
-        "properties": {
-          "snapshots": {
-            "items": {
-              "$ref": "#/components/schemas/RescueSnapshotMeta"
-            },
-            "title": "Snapshots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "snapshots"
-        ],
-        "title": "RescueSnapshotsOut",
-        "type": "object"
-      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -14192,6 +13355,17 @@
       "RowModel": {
         "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
         "properties": {
+          "hash_pending": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash Pending"
+          },
           "members": {
             "anyOf": [
               {
@@ -14684,152 +13858,6 @@
           "groups"
         ],
         "title": "SettingsOut",
-        "type": "object"
-      },
-      "SetupDismissIn": {
-        "properties": {
-          "dismissed": {
-            "default": true,
-            "title": "Dismissed",
-            "type": "boolean"
-          }
-        },
-        "title": "SetupDismissIn",
-        "type": "object"
-      },
-      "SetupImportIn": {
-        "description": "Import options. Both are the same knobs the CLI exposes.",
-        "properties": {
-          "limit": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ingest at most N tracks (smoke-test aid)",
-            "title": "Limit"
-          },
-          "refresh_decrypt": {
-            "default": false,
-            "description": "re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt",
-            "title": "Refresh Decrypt",
-            "type": "boolean"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "explicit rekordbox database to read; omit to auto-detect",
-            "title": "Source"
-          }
-        },
-        "title": "SetupImportIn",
-        "type": "object"
-      },
-      "SetupStatusOut": {
-        "description": "Everything the wizard needs to decide whether to show itself.",
-        "properties": {
-          "data_dir": {
-            "title": "Data Dir",
-            "type": "string"
-          },
-          "dev_mode": {
-            "title": "Dev Mode",
-            "type": "boolean"
-          },
-          "dismissed": {
-            "title": "Dismissed",
-            "type": "boolean"
-          },
-          "folder_stages": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Folder Stages",
-            "type": "array"
-          },
-          "last_import": {
-            "anyOf": [
-              {
-                "discriminator": {
-                  "mapping": {
-                    "folder": "#/components/schemas/FolderLastImportOut",
-                    "rekordbox": "#/components/schemas/LastImportOut"
-                  },
-                  "propertyName": "kind"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/LastImportOut"
-                  },
-                  {
-                    "$ref": "#/components/schemas/FolderLastImportOut"
-                  }
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Import"
-          },
-          "library_empty": {
-            "title": "Library Empty",
-            "type": "boolean"
-          },
-          "permissions": {
-            "$ref": "#/components/schemas/PermissionsOut"
-          },
-          "playlists": {
-            "title": "Playlists",
-            "type": "integer"
-          },
-          "rekordbox": {
-            "$ref": "#/components/schemas/RekordboxDetectionOut"
-          },
-          "should_show_wizard": {
-            "title": "Should Show Wizard",
-            "type": "boolean"
-          },
-          "stages": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Stages",
-            "type": "array"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "library_empty",
-          "tracks",
-          "playlists",
-          "state_db",
-          "data_dir",
-          "dismissed",
-          "should_show_wizard",
-          "dev_mode",
-          "stages",
-          "folder_stages",
-          "rekordbox",
-          "permissions"
-        ],
-        "title": "SetupStatusOut",
         "type": "object"
       },
       "SmartlistConflictBody": {
@@ -15764,40 +14792,6 @@
         "title": "StemPushMissingIn",
         "type": "object"
       },
-      "StemTierOut": {
-        "description": "One real separation rung, straight out of apps.stems.tiers.",
-        "properties": {
-          "availability": {
-            "title": "Availability",
-            "type": "string"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "unavailable_because": {
-            "title": "Unavailable Because",
-            "type": "string"
-          },
-          "where": {
-            "title": "Where",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "name",
-          "where",
-          "availability",
-          "unavailable_because"
-        ],
-        "title": "StemTierOut",
-        "type": "object"
-      },
       "StemUnavailableOut": {
         "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
         "properties": {
@@ -15835,144 +14829,6 @@
           "message"
         ],
         "title": "StemUnavailableOut",
-        "type": "object"
-      },
-      "StemsPlanOut": {
-        "description": "What separating this library at this tier would take.",
-        "properties": {
-          "estimate_seconds": {
-            "description": "wall-clock floor for the pending batch, GPU side only",
-            "title": "Estimate Seconds",
-            "type": "number"
-          },
-          "estimate_usd": {
-            "description": "GPU cost of the pending batch",
-            "title": "Estimate Usd",
-            "type": "number"
-          },
-          "executor": {
-            "description": "modal farm or local on-device worker",
-            "title": "Executor",
-            "type": "string"
-          },
-          "local_refusal": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "why local stems are inert on this build; null when allowed",
-            "title": "Local Refusal"
-          },
-          "pending": {
-            "description": "audio on disk, no bundle yet: the work",
-            "title": "Pending",
-            "type": "integer"
-          },
-          "ready": {
-            "description": "already has a stem bundle on disk",
-            "title": "Ready",
-            "type": "integer"
-          },
-          "tier": {
-            "title": "Tier",
-            "type": "string"
-          },
-          "tier_name": {
-            "title": "Tier Name",
-            "type": "string"
-          },
-          "total": {
-            "description": "library rows carrying a file path",
-            "title": "Total",
-            "type": "integer"
-          },
-          "transport": {
-            "description": "how this build reaches a GPU: relay or direct",
-            "title": "Transport",
-            "type": "string"
-          },
-          "transport_refusal": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "why a run cannot start on this build; null when it can",
-            "title": "Transport Refusal"
-          },
-          "unavailable": {
-            "description": "library row exists, its file does not",
-            "title": "Unavailable",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "tier",
-          "tier_name",
-          "executor",
-          "total",
-          "pending",
-          "ready",
-          "unavailable",
-          "estimate_seconds",
-          "estimate_usd",
-          "transport"
-        ],
-        "title": "StemsPlanOut",
-        "type": "object"
-      },
-      "StemsSetupOut": {
-        "description": "Whether a library-wide separation pass can be started here.\n\nThe agent-facing half of the wizard's stems step. The browser mounts\naf--stems-modal's StemsPrompt component, which asks\n``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same\nverdict, and is told exactly which two calls drive the flow.\n\n``available`` is EVIDENCE, not a constant: it reports whether the\n``stems.separate`` job kind is actually registered in this engine. The\n``tiers`` list is real data either way, never a placeholder.",
-        "properties": {
-          "available": {
-            "title": "Available",
-            "type": "boolean"
-          },
-          "enqueue_endpoint": {
-            "title": "Enqueue Endpoint",
-            "type": "string"
-          },
-          "job_kind": {
-            "title": "Job Kind",
-            "type": "string"
-          },
-          "per_track_endpoint": {
-            "title": "Per Track Endpoint",
-            "type": "string"
-          },
-          "plan_endpoint": {
-            "title": "Plan Endpoint",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "tiers": {
-            "items": {
-              "$ref": "#/components/schemas/StemTierOut"
-            },
-            "title": "Tiers",
-            "type": "array"
-          }
-        },
-        "required": [
-          "available",
-          "reason",
-          "job_kind",
-          "plan_endpoint",
-          "enqueue_endpoint",
-          "per_track_endpoint",
-          "tiers"
-        ],
-        "title": "StemsSetupOut",
         "type": "object"
       },
       "SuggestNextIn": {
@@ -18314,6 +17170,9 @@
       },
       "UiPrefsOut": {
         "properties": {
+          "app_mode": {
+            "$ref": "#/components/schemas/AppModeOut"
+          },
           "app_posture": {
             "default": "prep",
             "enum": [
@@ -18323,13 +17182,38 @@
             "title": "App Posture",
             "type": "string"
           },
+          "auto_play_enabled": {
+            "default": true,
+            "title": "Auto Play Enabled",
+            "type": "boolean"
+          },
+          "auto_play_enforce_order": {
+            "default": false,
+            "title": "Auto Play Enforce Order",
+            "type": "boolean"
+          },
+          "auto_play_maximize_reach": {
+            "default": true,
+            "title": "Auto Play Maximize Reach",
+            "type": "boolean"
+          },
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
+          },
+          "beat_sync_max": {
+            "default": true,
+            "title": "Beat Sync Max",
+            "type": "boolean"
           },
           "confirm": {
             "additionalProperties": true,
             "title": "Confirm",
             "type": "object"
+          },
+          "hide_broken_links": {
+            "default": false,
+            "title": "Hide Broken Links",
+            "type": "boolean"
           },
           "hide_todo_settings": {
             "default": false,
@@ -18343,6 +17227,15 @@
           },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
+          },
+          "library_density": {
+            "default": "compact",
+            "enum": [
+              "compact",
+              "cosy"
+            ],
+            "title": "Library Density",
+            "type": "string"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -18379,6 +17272,21 @@
             "title": "Lyrics Waveform Overlay",
             "type": "boolean"
           },
+          "master_muted": {
+            "default": false,
+            "title": "Master Muted",
+            "type": "boolean"
+          },
+          "midi_enabled": {
+            "default": false,
+            "title": "Midi Enabled",
+            "type": "boolean"
+          },
+          "next_only_filter": {
+            "default": false,
+            "title": "Next Only Filter",
+            "type": "boolean"
+          },
           "perf_tier": {
             "default": "auto",
             "enum": [
@@ -18389,6 +17297,11 @@
             ],
             "title": "Perf Tier",
             "type": "string"
+          },
+          "remixes_filter": {
+            "default": false,
+            "title": "Remixes Filter",
+            "type": "boolean"
           },
           "show_agent_pins": {
             "default": true,
@@ -18408,6 +17321,14 @@
             ],
             "title": "Theme",
             "type": "string"
+          },
+          "vocals_filter": {
+            "default": false,
+            "title": "Vocals Filter",
+            "type": "boolean"
+          },
+          "wheel_sensitivity": {
+            "$ref": "#/components/schemas/WheelSensitivityOut"
           }
         },
         "title": "UiPrefsOut",
@@ -18415,6 +17336,16 @@
       },
       "UiPrefsPatch": {
         "properties": {
+          "app_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppModeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "app_posture": {
             "anyOf": [
               {
@@ -18430,6 +17361,39 @@
             ],
             "title": "App Posture"
           },
+          "auto_play_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enabled"
+          },
+          "auto_play_enforce_order": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Enforce Order"
+          },
+          "auto_play_maximize_reach": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Play Maximize Reach"
+          },
           "auto_sync": {
             "anyOf": [
               {
@@ -18439,6 +17403,17 @@
                 "type": "null"
               }
             ]
+          },
+          "beat_sync_max": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Sync Max"
           },
           "confirm": {
             "anyOf": [
@@ -18451,6 +17426,17 @@
               }
             ],
             "title": "Confirm"
+          },
+          "hide_broken_links": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Broken Links"
           },
           "hide_todo_settings": {
             "anyOf": [
@@ -18483,6 +17469,21 @@
                 "type": "null"
               }
             ]
+          },
+          "library_density": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compact",
+                  "cosy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Density"
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -18555,6 +17556,39 @@
             ],
             "title": "Lyrics Waveform Overlay"
           },
+          "master_muted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Muted"
+          },
+          "midi_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midi Enabled"
+          },
+          "next_only_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Only Filter"
+          },
           "perf_tier": {
             "anyOf": [
               {
@@ -18571,6 +17605,17 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "remixes_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixes Filter"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -18608,6 +17653,27 @@
               }
             ],
             "title": "Theme"
+          },
+          "vocals_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vocals Filter"
+          },
+          "wheel_sensitivity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WheelSensitivityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "UiPrefsPatch",
@@ -18663,6 +17729,135 @@
           "playlist_ids"
         ],
         "title": "UndoRecordOut",
+        "type": "object"
+      },
+      "UpdateApplyAccepted": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "available_version": {
+            "title": "Available Version",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available_version",
+          "command_id"
+        ],
+        "title": "UpdateApplyAccepted",
+        "type": "object"
+      },
+      "UpdateApplyRefused": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "update-available",
+              "up-to-date",
+              "ahead-of-channel",
+              "endpoint-unreachable",
+              "endpoint-refused",
+              "manifest-malformed",
+              "platform-unsupported",
+              "identity-unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "detail"
+        ],
+        "title": "UpdateApplyRefused",
+        "type": "object"
+      },
+      "UpdateApplyStatusOut": {
+        "properties": {
+          "claimed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At Utc"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "completed_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At Utc"
+          },
+          "enqueued_at_utc": {
+            "title": "Enqueued At Utc",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "installed",
+                  "no-update",
+                  "refused"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "claimed",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "state",
+          "enqueued_at_utc"
+        ],
+        "title": "UpdateApplyStatusOut",
         "type": "object"
       },
       "UpdateCheckOut": {
@@ -18784,6 +17979,35 @@
           "platform_key"
         ],
         "title": "UpdateCheckOut",
+        "type": "object"
+      },
+      "UpdateRequiredOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "code": {
+            "const": "SYNC_WIRE_VERSION",
+            "title": "Code",
+            "type": "string"
+          },
+          "local_wire_version": {
+            "title": "Local Wire Version",
+            "type": "integer"
+          },
+          "peer_wire_version": {
+            "title": "Peer Wire Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "local_wire_version",
+          "peer_wire_version",
+          "action"
+        ],
+        "title": "UpdateRequiredOut",
         "type": "object"
       },
       "UploadFileResult": {
@@ -19176,6 +18400,25 @@
         "title": "VendorCapabilityOut",
         "type": "object"
       },
+      "VerifiedIn": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "title": "By",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "by",
+          "method"
+        ],
+        "title": "VerifiedIn",
+        "type": "object"
+      },
       "VocalsAnalyzeIn": {
         "properties": {
           "mode": {
@@ -19406,6 +18649,22 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WheelSensitivityOut": {
+        "properties": {
+          "mouse": {
+            "default": 1.0,
+            "title": "Mouse",
+            "type": "number"
+          },
+          "trackpad": {
+            "default": 0.3333333333333333,
+            "title": "Trackpad",
+            "type": "number"
+          }
+        },
+        "title": "WheelSensitivityOut",
         "type": "object"
       },
       "WorktreePortsOut": {
@@ -20649,72 +19908,6 @@
         ]
       }
     },
-    "/api/v1/account": {
-      "delete": {
-        "description": "Erase the user row and, by FK cascade, every session it owns.\n\nThe deletion half of https://open-dj.com/privacy (ACCT-03). The session\ncookie is cleared on the way out, because leaving the browser holding a\ntoken for a row that no longer exists would leave the UI showing a signed\nin state that resolves to nobody.",
-        "operationId": "delete_account_api_v1_account_delete",
-        "parameters": [
-          {
-            "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
-            "in": "query",
-            "name": "confirm",
-            "required": false,
-            "schema": {
-              "default": "",
-              "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
-              "title": "Confirm",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountDeleteOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Account",
-        "tags": [
-          "account"
-        ]
-      },
-      "get": {
-        "description": "Identity, plan, and the full local-storage disclosure.\n\nAnswers signed OUT too, with ``user: null``: what is stored and what is\ngated are questions somebody is entitled to ask BEFORE handing over an\nidentity, and refusing to answer until they sign in would be a strange\nreading of a privacy disclosure.",
-        "operationId": "read_account_api_v1_account_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Read Account",
-        "tags": [
-          "account"
-        ]
-      }
-    },
     "/api/v1/admin/ports": {
       "get": {
         "operationId": "get_worktree_ports_api_v1_admin_ports_get",
@@ -21256,93 +20449,6 @@
         ]
       }
     },
-    "/api/v1/app-posture": {
-      "get": {
-        "operationId": "app_posture_api_v1_app_posture_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppPostureOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "App Posture",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/assistant/chat": {
-      "post": {
-        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
-        "operationId": "assistant_chat_api_v1_assistant_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {}
-            },
-            "description": "The completion, streamed as plain UTF-8 text."
-          },
-          "409": {
-            "description": "No OPENROUTER_API_KEY is configured."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "502": {
-            "description": "OpenRouter refused or could not be reached."
-          }
-        },
-        "summary": "Assistant Chat",
-        "tags": [
-          "assistant"
-        ]
-      }
-    },
-    "/api/v1/assistant/status": {
-      "get": {
-        "description": "Whether a chat can work at all, and which model would answer it.",
-        "operationId": "assistant_status_api_v1_assistant_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssistantStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Assistant Status",
-        "tags": [
-          "assistant"
-        ]
-      }
-    },
     "/api/v1/auth/callback": {
       "get": {
         "description": "Google's loopback redirect target. Plants the cookie, returns to the SPA.",
@@ -21622,75 +20728,6 @@
         ]
       }
     },
-    "/api/v1/availability/probe": {
-      "post": {
-        "operationId": "availability_probe_api_v1_availability_probe_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/AvailabilityProbeIn"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AvailabilityProbeOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Availability Probe",
-        "tags": [
-          "library"
-        ]
-      }
-    },
-    "/api/v1/availability/status": {
-      "get": {
-        "operationId": "availability_status_api_v1_availability_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AvailabilityStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Availability Status",
-        "tags": [
-          "library"
-        ]
-      }
-    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -21865,30 +20902,6 @@
         "summary": "Get Ratings File",
         "tags": [
           "bench"
-        ]
-      }
-    },
-    "/api/v1/build-info": {
-      "get": {
-        "operationId": "build_info_api_v1_build_info_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildInfoOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "this build cannot state its own identity"
-          }
-        },
-        "summary": "Build Info",
-        "tags": [
-          "health"
         ]
       }
     },
@@ -23184,8 +22197,22 @@
     },
     "/api/v1/commands/next": {
       "get": {
-        "description": "Let the sole open performance page claim its next agent order.",
+        "description": "Let a consumer claim its next command.",
         "operationId": "next_command_api_v1_commands_next_get",
+        "parameters": [
+          {
+            "description": "performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update",
+            "in": "query",
+            "name": "consumer",
+            "required": false,
+            "schema": {
+              "default": "performance",
+              "description": "performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update",
+              "title": "Consumer",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -23194,6 +22221,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Next Command",
@@ -23204,7 +22241,7 @@
     },
     "/api/v1/commands/{order_id}/result": {
       "post": {
-        "description": "Resolve an order with page-produced per-step statuses and mirror delta.",
+        "description": "Resolve a performance order or a shell command result.",
         "operationId": "complete_command_api_v1_commands__order_id__result_post",
         "parameters": [
           {
@@ -23644,71 +22681,6 @@
         "summary": "Post Dedup Undo",
         "tags": [
           "dedup-review"
-        ]
-      }
-    },
-    "/api/v1/entitlements": {
-      "get": {
-        "description": "The plan, the refusal shape, and every gateable feature.\n\n``features`` is empty while the catalog is, and that is the honest answer\nrather than a missing one: openDJ has no paid features, so there is\nnothing an account could fail to be entitled to.",
-        "operationId": "read_entitlements_api_v1_entitlements_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EntitlementsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Read Entitlements",
-        "tags": [
-          "entitlements"
-        ]
-      }
-    },
-    "/api/v1/entitlements/{feature_id}": {
-      "get": {
-        "description": "May this account use one feature?\n\nAn id the catalog does not know is answered, not 404'd: while no provider\nis configured everything is entitled (ENT-04), and a 404 here would let a\ncaller mistake \"we have never heard of that\" for \"you may not\".",
-        "operationId": "read_entitlement_api_v1_entitlements__feature_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "feature_id",
-            "required": true,
-            "schema": {
-              "title": "Feature Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FeatureEntitlementOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Read Entitlement",
-        "tags": [
-          "entitlements"
         ]
       }
     },
@@ -24543,68 +23515,22 @@
         ]
       }
     },
-    "/api/v1/flags": {
-      "get": {
-        "description": "The declared flags, as resolved once at engine boot.\n\nA separate surface from /entitlements on purpose (FLAG-01): these are\nengineering-owned code-path toggles, not anything an account is entitled\nto, and folding them into one response is the first step toward one store.",
-        "operationId": "read_flags_api_v1_flags_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FlagsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Read Flags",
-        "tags": [
-          "feature-flags"
-        ]
-      }
-    },
     "/api/v1/health": {
       "get": {
-        "operationId": "engine_health_api_v1_health_get",
+        "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EngineHealthOut"
+                  "$ref": "#/components/schemas/HealthOut"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Engine Health",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/host-info": {
-      "get": {
-        "operationId": "host_info_api_v1_host_info_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HostInfoOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "host facts could not be measured"
-          }
-        },
-        "summary": "Host Info",
+        "summary": "Health",
         "tags": [
           "health"
         ]
@@ -24895,242 +23821,6 @@
         "summary": "Decide Upload",
         "tags": [
           "ingest"
-        ]
-      }
-    },
-    "/api/v1/jobs": {
-      "get": {
-        "operationId": "list_jobs_api_v1_jobs_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 200,
-              "maximum": 1000,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/JobOut"
-                  },
-                  "title": "Response List Jobs Api V1 Jobs Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Jobs",
-        "tags": [
-          "jobs"
-        ]
-      },
-      "post": {
-        "operationId": "enqueue_job_api_v1_jobs_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/JobIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Enqueue Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/kinds": {
-      "get": {
-        "description": "The registered worker kinds. Empty until a kind registers one.",
-        "operationId": "list_kinds_api_v1_jobs_kinds_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobKindsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Kinds",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}": {
-      "get": {
-        "operationId": "get_job_api_v1_jobs__job_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}/cancel": {
-      "post": {
-        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}/reenqueue": {
-      "post": {
-        "operationId": "reenqueue_job_api_v1_jobs__job_id__reenqueue_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reenqueue Job",
-        "tags": [
-          "jobs"
         ]
       }
     },
@@ -25514,6 +24204,57 @@
         ]
       }
     },
+    "/api/v1/lifecycle/quit": {
+      "post": {
+        "operationId": "request_shell_quit_api_v1_lifecycle_quit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleQuitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleQuitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Shell Quit",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
     "/api/v1/lyrics": {
       "get": {
         "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
@@ -25537,6 +24278,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -26471,30 +25213,6 @@
         "summary": "Delete Pairing",
         "tags": [
           "pairings"
-        ]
-      }
-    },
-    "/api/v1/perf-tier": {
-      "get": {
-        "operationId": "perf_tier_api_v1_perf_tier_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PerfTierOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "auto tier cannot resolve without host facts"
-          }
-        },
-        "summary": "Perf Tier",
-        "tags": [
-          "health"
         ]
       }
     },
@@ -27800,6 +26518,51 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/rb-djay-diff": {
+      "get": {
+        "description": "Return saved playlist-plan diff buckets for one playlist when computed.",
+        "operationId": "get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Playlist Rb Djay Diff Api V1 Playlists  Playlist Id  Rb Djay Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Playlist Rb Djay Diff",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/sets": {
       "get": {
         "operationId": "list_playlist_sets",
@@ -28506,6 +27269,156 @@
         ]
       }
     },
+    "/api/v1/progress": {
+      "get": {
+        "description": "Full parsed tree + ledger-file git provenance + per-area rollups.",
+        "operationId": "get_progress_api_v1_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Api V1 Progress Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Progress",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/nodes/{node_id}": {
+      "patch": {
+        "description": "Guarded partial update of one node; atomic YAML rewrite, no git commit.",
+        "operationId": "patch_progress_node_api_v1_progress_nodes__node_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodePatchOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "If-Match is stale; refresh the ledger before retrying",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match header is required for every progress write"
+          },
+          "503": {
+            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
+          }
+        },
+        "summary": "Patch Progress Node",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/schema": {
+      "get": {
+        "description": "Agent-discoverable node schema, allowed statuses, and PATCH rules.",
+        "operationId": "get_progress_schema_api_v1_progress_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Schema Api V1 Progress Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Progress Schema",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
     "/api/v1/queues/{kind}": {
       "get": {
         "operationId": "get_queue_api_v1_queues__kind__get",
@@ -28545,6 +27458,406 @@
         "summary": "Get Queue",
         "tags": [
           "queues"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/analysis/apply": {
+      "post": {
+        "description": "SYNC-05: dry-run or live analysis-field apply from analysis-diff.csv.",
+        "operationId": "rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Analysis Apply Api V1 Rb Djay Sync Analysis Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Analysis Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/apply": {
+      "post": {
+        "description": "SYNC-04: dry-run or scaffold live cue apply.",
+        "operationId": "rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Apply Api V1 Rb Djay Sync Cues Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/plan": {
+      "post": {
+        "description": "SYNC-04: cue comparison CSV.",
+        "operationId": "rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Plan Api V1 Rb Djay Sync Cues Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/djay/playlists": {
+      "get": {
+        "description": "SYNC-01: enumerate djay playlists and track UUID memberships.",
+        "operationId": "rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Djay Playlists Api V1 Rb Djay Sync Djay Playlists Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Djay Playlists",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/match": {
+      "post": {
+        "description": "SYNC-02: build matches.csv from working-copy vendor DBs.",
+        "operationId": "rb_djay_sync_match_api_v1_rb_djay_sync_match_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Match Api V1 Rb Djay Sync Match Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Match",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/metadata/plan": {
+      "post": {
+        "description": "SYNC-05 + SYNC-06 (+ optional SYNC-04 cues) diff CSV generation.",
+        "operationId": "rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Metadata Plan Api V1 Rb Djay Sync Metadata Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Metadata Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/apply": {
+      "post": {
+        "description": "SYNC-03: dry-run or live apply of playlist-plan.json into djay.",
+        "operationId": "rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Apply Api V1 Rb Djay Sync Playlists Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/plan": {
+      "post": {
+        "description": "SYNC-03: compute playlist-plan.json and companion artefacts.",
+        "operationId": "rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Plan Api V1 Rb Djay Sync Playlists Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/ratings/apply": {
+      "post": {
+        "description": "SYNC-06: dry-run or live ratings apply from ratings-diff.csv.",
+        "operationId": "rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingsApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Ratings Apply Api V1 Rb Djay Sync Ratings Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Ratings Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/status": {
+      "get": {
+        "description": "SYNC-01..06 capability probe: DB paths, artefacts, fingerprint, writeback.",
+        "operationId": "rb_djay_sync_status_api_v1_rb_djay_sync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Status Api V1 Rb Djay Sync Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Status",
+        "tags": [
+          "rb-djay-sync"
         ]
       }
     },
@@ -28765,68 +28078,6 @@
         ]
       }
     },
-    "/api/v1/rescue/restore": {
-      "post": {
-        "operationId": "rescue_restore_api_v1_rescue_restore_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RescueRestoreIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RescueRestoreOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Rescue Restore",
-        "tags": [
-          "performance"
-        ]
-      }
-    },
-    "/api/v1/rescue/snapshots": {
-      "get": {
-        "operationId": "rescue_snapshots_list_api_v1_rescue_snapshots_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RescueSnapshotsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Rescue Snapshots List",
-        "tags": [
-          "performance"
-        ]
-      }
-    },
     "/api/v1/search": {
       "get": {
         "operationId": "search_collection_api_v1_search_get",
@@ -28998,272 +28249,6 @@
         ]
       }
     },
-    "/api/v1/setup/detect/folder": {
-      "get": {
-        "description": "Look inside a candidate folder WITHOUT importing it.\n\nThis is the no-rekordbox branch's version of the detect step. The count\nit returns is only meaningful when ``denied`` is false: macOS answers a\nblocked listing with an empty one, so \"0 audio files\" from a denied\nfolder would be a fabrication.",
-        "operationId": "detect_folder_api_v1_setup_detect_folder_get",
-        "parameters": [
-          {
-            "description": "absolute folder path to inspect",
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "description": "absolute folder path to inspect",
-              "minLength": 1,
-              "title": "Path",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FolderScanOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Detect Folder",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/detect/rekordbox": {
-      "get": {
-        "description": "Report the rekordbox install WITHOUT opening or copying anything.",
-        "operationId": "detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RekordboxDetectionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Detect Rekordbox Endpoint",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/dismiss": {
-      "post": {
-        "description": "Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.",
-        "operationId": "dismiss_api_v1_setup_dismiss_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetupDismissIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetupStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "503": {
-            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
-          }
-        },
-        "summary": "Dismiss",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/import": {
-      "post": {
-        "description": "Queue the import as a job, so progress streams over the events bus.\n\nRefuses BEFORE enqueueing on anything detection can already see: a job\nthat is certain to fail is worse than a 409, because it turns a clear\nrefusal into a failed row somebody has to go and read.",
-        "operationId": "start_import_api_v1_setup_import_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetupImportIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Import",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/import/folder": {
-      "post": {
-        "description": "Queue a folder import: tags only, no analysis, and it says so.\n\nIts own endpoint rather than a mode flag on /import, because its\nrefusals are different ones: a folder can be absent, unreadable, or\ngenuinely empty, and none of those is a rekordbox problem.",
-        "operationId": "start_folder_import_api_v1_setup_import_folder_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FolderImportIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Folder Import",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/permissions": {
-      "get": {
-        "description": "Can this process read the folders the music lives in?\n\nReported, never refused on. macOS answers a blocked listing with an\nEMPTY one rather than an error, which is how a library with 40,000\ntracks in it becomes a library with none and nobody is told. Every\ncount this API reports afterwards has to be read against the ``denied``\nlist here: zero files in a folder we were not allowed to open is not\nzero files.",
-        "operationId": "permissions_api_v1_setup_permissions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Permissions",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/status": {
-      "get": {
-        "description": "Is this a first run? Counts come from state.db, not from memory.",
-        "operationId": "setup_status_api_v1_setup_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetupStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
-          }
-        },
-        "summary": "Setup Status",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/stems": {
-      "get": {
-        "description": "Can a library-wide stems pass be started from setup?\n\nANSWERED FROM EVIDENCE, never from a constant. The verdict is whether\nthis engine actually has a worker registered for ``stems.separate``: a\nlegacy boot, or a chassis whose composition root never wired the kind,\ngenuinely cannot run one and says so in the tester's own words.\n\nThe tier ladder is real either way. An unavailable rung carries the\nreason it is unavailable, so the wizard renders true choices rather\nthan a placeholder list.",
-        "operationId": "stems_availability_api_v1_setup_stems_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StemsSetupOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stems Availability",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
     "/api/v1/share/session": {
       "get": {
         "description": "Set the share cookie when the query token matches, then redirect.",
@@ -29313,6 +28298,121 @@
         "summary": "Share Session",
         "tags": [
           "share"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate": {
+      "post": {
+        "operationId": "post_shell_navigate_api_v1_shell_navigate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Shell Navigate Api V1 Shell Navigate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/ack": {
+      "post": {
+        "operationId": "ack_shell_navigate_api_v1_shell_navigate_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Ack Shell Navigate Api V1 Shell Navigate Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Shell Navigate",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/shell/navigate/pending": {
+      "get": {
+        "operationId": "get_shell_navigate_pending_api_v1_shell_navigate_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Shell Navigate Pending Api V1 Shell Navigate Pending Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Shell Navigate Pending",
+        "tags": [
+          "shell"
         ]
       }
     },
@@ -29874,6 +28974,9 @@
           "400": {
             "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
           },
+          "404": {
+            "description": "Unknown playlist name (detail + known sibling keys)"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -29885,7 +28988,10 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT)"
+            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT) or other hub index/presign failure"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
           }
         },
         "summary": "Bulk Hydrate Stems",
@@ -30165,113 +29271,6 @@
         ]
       }
     },
-    "/api/v1/stems/live-capability": {
-      "get": {
-        "description": "Read install-time capability and, when requested, its deck plan.",
-        "operationId": "get_live_stems_capability_api_v1_stems_live_capability_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "deck_count",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Deck Count"
-            }
-          },
-          {
-            "in": "query",
-            "name": "bpm",
-            "required": false,
-            "schema": {
-              "default": 120.0,
-              "title": "Bpm",
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Live Stems Capability Api V1 Stems Live Capability Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Live Stems Capability",
-        "tags": [
-          "stems"
-        ]
-      }
-    },
-    "/api/v1/stems/plan": {
-      "get": {
-        "operationId": "get_stems_plan_api_v1_stems_plan_get",
-        "parameters": [
-          {
-            "description": "Modal rung S/M/L, or LOCAL when local-only",
-            "in": "query",
-            "name": "tier",
-            "required": false,
-            "schema": {
-              "default": "M",
-              "description": "Modal rung S/M/L, or LOCAL when local-only",
-              "title": "Tier",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StemsPlanOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Stems Plan",
-        "tags": [
-          "stems"
-        ]
-      }
-    },
     "/api/v1/stems/push-missing": {
       "post": {
         "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
@@ -30300,6 +29299,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS entry does not exist"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -30309,6 +29311,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS not configured"
           }
         },
         "summary": "Push Missing Stems",
@@ -30380,6 +29385,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
           },
           "422": {
             "content": {
@@ -30536,6 +29544,100 @@
         ]
       }
     },
+    "/api/v1/sync/hash-pending": {
+      "get": {
+        "description": "List ``stable_id`` values on this hub still awaiting ``content_hash``.",
+        "operationId": "hash_pending_list_api_v1_sync_hash_pending_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HashPendingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "hash-pending refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "hash-pending refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Hash Pending List",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
     "/api/v1/sync/hello": {
       "post": {
         "description": "Register a spoke in ``machines`` and report the hub's id and seq.",
@@ -30591,6 +29693,74 @@
         "summary": "Hello",
         "tags": [
           "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+      "get": {
+        "description": "Mint a short-lived GET URL for one ASR transcript JSON object.",
+        "operationId": "get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsAsrPresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "404": {
+            "description": "LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed"
+          },
+          "503": {
+            "description": "lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Lyrics Asr Presign",
+        "tags": [
+          "sync",
+          "sync-lyrics-asr"
         ]
       }
     },
@@ -30914,7 +30084,7 @@
     },
     "/api/v1/sync/stems/index": {
       "get": {
-        "description": "Return the published stem bundle index for an authenticated spoke.",
+        "description": "Return the published stem bundle index for an authenticated spoke.\n\n``request.app.state.stem_index_fetcher``, when set by the code that built\nthe app, replaces the real R2 index fetch with the callable's return\nvalue. Production never sets it; only test app-builders do. The\ncredential check always runs first regardless.",
         "operationId": "get_stem_index_api_v1_sync_stems_index_get",
         "parameters": [
           {
@@ -32252,7 +31422,10 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
           }
         },
         "summary": "Get Stem Manifest",
@@ -32394,7 +31567,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
           },
           "503": {
             "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
@@ -32585,6 +31758,79 @@
         "summary": "Put Ui Prefs",
         "tags": [
           "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/update/apply": {
+      "post": {
+        "operationId": "update_apply_api_v1_update_apply_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyRefused"
+                }
+              }
+            },
+            "description": "apply refused; no shell command enqueued"
+          }
+        },
+        "summary": "Update Apply",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/update/apply/{command_id}": {
+      "get": {
+        "operationId": "update_apply_status_api_v1_update_apply__command_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "command_id",
+            "required": true,
+            "schema": {
+              "title": "Command Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Apply Status",
+        "tags": [
+          "health"
         ]
       }
     },

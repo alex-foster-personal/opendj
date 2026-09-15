@@ -78,21 +78,25 @@ import os
 import platform
 import re
 import sys
+import time
 from dataclasses import dataclass
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from apps.engine_core.build_info import (
     BUILD_IDENTITY_STATE_ATTR,
+    BUILD_INFO_PATH,
     BuildIdentity,
     BuildInfoUnavailable,
     resolve_build_info,
 )
+from apps.opendj_cli.origin import EngineNotRunning, resolve_origin
 from apps.shared import platform_paths
+from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
 
 #: THE update endpoint. One string, read by this module and compiled into the
 #: desktop shell via ``plugins.updater.endpoints`` in tauri.conf.json; a test
@@ -109,6 +113,15 @@ UPDATE_ENDPOINT: str = (
 )
 
 UPDATE_CHECK_PATH: str = "/api/v1/update/check"
+UPDATE_APPLY_PATH: str = "/api/v1/update/apply"
+UPDATE_APPLY_STATUS_PATH: str = "/api/v1/update/apply/{command_id}"
+
+#: How often the apply CLI polls command status before checking build-info.
+APPLY_STATUS_POLL_INTERVAL_S: float = 1.0
+
+#: After the shell claims apply and the old engine dies, poll the relaunched
+#: engine's build-info for this long before giving up.
+RELAUNCH_BUILD_INFO_TIMEOUT_S: float = 120.0
 
 #: The error code a caller branches on when the channel could not answer.
 CODE_UPDATE_CHECK_FAILED: str = "update_check_failed"
@@ -158,6 +171,27 @@ class UpdateCheckError(RuntimeError):
         super().__init__(message)
         self.status: UpdateStatus = status_
         self.message: str = message
+
+
+class UpdateApplyAccepted(BaseModel):
+    accepted: bool = True
+    available_version: str
+    command_id: str
+
+
+class UpdateApplyRefused(BaseModel):
+    status: UpdateStatus
+    detail: str
+
+
+class UpdateApplyStatusOut(BaseModel):
+    command_id: str
+    state: Literal["pending", "claimed", "succeeded", "failed"]
+    outcome: Literal["installed", "no-update", "refused"] | None = None
+    error: str | None = None
+    enqueued_at_utc: str
+    claimed_at_utc: str | None = None
+    completed_at_utc: str | None = None
 
 
 class UpdateCheckOut(BaseModel):
@@ -497,6 +531,84 @@ def add_update_check_route(
         return _update_check_http_response(identity, result)
 
 
+def add_update_apply_route(
+    app: FastAPI, *, endpoint: str = UPDATE_ENDPOINT
+) -> None:
+    """Mount apply: enqueue shell work when the channel reports update-available."""
+
+    @app.post(
+        UPDATE_APPLY_PATH,
+        response_model=UpdateApplyAccepted,
+        tags=["health"],
+        name="update_apply",
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            status.HTTP_409_CONFLICT: {
+                "description": "apply refused; no shell command enqueued",
+                "model": UpdateApplyRefused,
+            }
+        },
+    )
+    def update_apply(request: Request) -> UpdateApplyAccepted | JSONResponse:
+        identity: BuildIdentity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
+        info = identity.info
+        if info is None or info.source != "payload":
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(
+                    status="identity-unavailable",
+                    detail="not a packaged build; only installed payloads may apply updates",
+                ).model_dump(),
+            )
+        with httpx.Client() as client:
+            result = resolve_update_check(identity, client=client, endpoint=endpoint)
+        if result.status != "update-available":
+            detail = result.detail or f"update check reported {result.status}"
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(
+                    status=result.status,
+                    detail=detail,
+                ).model_dump(),
+            )
+        available_version = result.available_version
+        if available_version is None or available_version.strip() == "":
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(
+                    status=result.status,
+                    detail="update-available without available_version",
+                ).model_dump(),
+            )
+        broker = shell_broker(request)
+        try:
+            command_id = broker.enqueue_apply(available_version)
+        except ShellCommandConflictError as error:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(
+                    status="update-available",
+                    detail=f"apply-update already pending or claimed (command_id={error.command_id})",
+                ).model_dump(),
+            )
+        return UpdateApplyAccepted(
+            available_version=available_version,
+            command_id=command_id,
+        )
+
+    @app.get(
+        UPDATE_APPLY_STATUS_PATH,
+        response_model=UpdateApplyStatusOut,
+        tags=["health"],
+        name="update_apply_status",
+    )
+    def update_apply_status(request: Request, command_id: str) -> UpdateApplyStatusOut:
+        status_payload = shell_broker(request).get_status(command_id)
+        if status_payload is None:
+            raise HTTPException(status_code=404, detail="unknown apply command")
+        return UpdateApplyStatusOut(**status_payload)
+
+
 # ----- CLI ----------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     """``python -m apps.engine_core.update_channel check``.
@@ -525,11 +637,30 @@ def main(argv: list[str] | None = None) -> int:
             "packaged app is actually running."
         ),
     )
+    apply = sub.add_parser(
+        "apply",
+        help="request install-and-restart on a running packaged engine",
+    )
+    apply.add_argument(
+        "--engine",
+        required=True,
+        help="origin of the RUNNING engine, e.g. http://127.0.0.1:8685",
+    )
+    apply.add_argument(
+        "--timeout-s",
+        type=float,
+        default=600.0,
+        help="seconds to wait for build identity to change after apply (default: 600)",
+    )
     args = parser.parse_args(argv)
 
-    if args.engine is not None:
-        return _check_via_engine(args.engine)
-    return _check_locally(args.endpoint)
+    if args.command == "check":
+        if args.engine is not None:
+            return _check_via_engine(args.engine)
+        return _check_locally(args.endpoint)
+    if args.command == "apply":
+        return _apply_via_engine(args.engine, args.timeout_s)
+    raise AssertionError(f"unknown command: {args.command}")
 
 
 def _check_locally(endpoint: str) -> int:
@@ -572,6 +703,173 @@ def _emit(result: UpdateCheckOut) -> int:
             file=sys.stderr,
         )
     return 0
+
+
+def _build_identity_slice(body: dict[str, object]) -> dict[str, str | None]:
+    app_version = body.get("app_version")
+    git_sha_full = body.get("git_sha_full")
+    return {
+        "app_version": app_version if isinstance(app_version, str) else None,
+        "git_sha_full": git_sha_full if isinstance(git_sha_full, str) else None,
+    }
+
+
+def _version_higher(
+    before: dict[str, str | None], after: dict[str, str | None]
+) -> bool:
+    """True when after.app_version parses and is strictly greater than before."""
+    before_ver = before.get("app_version")
+    after_ver = after.get("app_version")
+    if not isinstance(before_ver, str) or not isinstance(after_ver, str):
+        return False
+    try:
+        here = parse_version(before_ver, "pre-apply app_version")
+        there = parse_version(after_ver, "post-apply app_version")
+    except UpdateCheckError:
+        return False
+    return there > here
+
+
+def _wait_for_higher_build_info(
+    client: httpx.Client,
+    before: dict[str, str | None],
+    deadline: float,
+) -> dict[str, str | None]:
+    """Poll resolve_origin() + GET /build-info until higher version or deadline."""
+    backoff = 1.0
+    after = before
+    while time.monotonic() < deadline:
+        poll_base = ""
+        try:
+            poll_base = resolve_origin().base_url.rstrip("/")
+        except EngineNotRunning:
+            pass
+        if poll_base:
+            try:
+                after_resp = client.get(
+                    f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
+                )
+            except httpx.HTTPError:
+                time.sleep(backoff)
+                backoff = min(backoff * 1.5, 10.0)
+                continue
+            if after_resp.status_code == 200:
+                after = _build_identity_slice(after_resp.json())
+                if _version_higher(before, after):
+                    break
+        time.sleep(backoff)
+        backoff = min(backoff * 1.5, 10.0)
+    return after
+
+
+def _apply_via_engine(origin: str, timeout_s: float) -> int:
+    base = origin.rstrip("/")
+    with httpx.Client() as client:
+        try:
+            before_resp = client.get(
+                f"{base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
+            )
+        except httpx.HTTPError as exc:
+            print(json.dumps({"error": f"{base}{BUILD_INFO_PATH}: {exc}"}, indent=2))
+            return 2
+        if before_resp.status_code != 200:
+            print(before_resp.text)
+            return 2
+        before = _build_identity_slice(before_resp.json())
+
+        try:
+            check_resp = client.get(
+                f"{base}{UPDATE_CHECK_PATH}", timeout=REQUEST_TIMEOUT_S
+            )
+        except httpx.HTTPError as exc:
+            print(json.dumps({"error": f"{base}{UPDATE_CHECK_PATH}: {exc}"}, indent=2))
+            return 2
+        check_body = check_resp.json()
+        print(json.dumps(check_body, indent=2))
+        if check_body.get("status") != "update-available":
+            return 2
+
+        try:
+            apply_resp = client.post(
+                f"{base}{UPDATE_APPLY_PATH}", timeout=REQUEST_TIMEOUT_S
+            )
+        except httpx.HTTPError as exc:
+            print(json.dumps({"error": f"{base}{UPDATE_APPLY_PATH}: {exc}"}, indent=2))
+            return 2
+        if apply_resp.status_code == 409:
+            print(json.dumps(apply_resp.json(), indent=2))
+            return 2
+        if apply_resp.status_code != 202:
+            print(apply_resp.text)
+            return 2
+        accepted = apply_resp.json()
+        command_id = accepted.get("command_id")
+        if not isinstance(command_id, str) or command_id == "":
+            print(json.dumps({"error": "apply response missing command_id"}, indent=2))
+            return 2
+        print(
+            f"[APPLY] enqueued {accepted.get('available_version')} "
+            f"(command_id={command_id})",
+            file=sys.stderr,
+        )
+
+        seen_claimed = False
+        state: object = None
+        while True:
+            try:
+                status_resp = client.get(
+                    f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}",
+                    timeout=REQUEST_TIMEOUT_S,
+                )
+            except httpx.HTTPError as exc:
+                if seen_claimed:
+                    break
+                print(
+                    json.dumps(
+                        {
+                            "error": (
+                                f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}: "
+                                f"{exc}"
+                            )
+                        },
+                        indent=2,
+                    )
+                )
+                return 2
+            if status_resp.status_code == 404:
+                if seen_claimed:
+                    break
+                print(status_resp.text)
+                return 2
+            if status_resp.status_code != 200:
+                print(status_resp.text)
+                return 2
+            status_body = status_resp.json()
+            state = status_body.get("state")
+            if state in ("claimed", "succeeded"):
+                seen_claimed = True
+            if state == "failed":
+                print(json.dumps(status_body, indent=2))
+                return 3
+            if state == "succeeded":
+                break
+            time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
+
+        if seen_claimed and state != "succeeded":
+            print(
+                "[APPLY] engine relaunch detected; polling build-info via lock file",
+                file=sys.stderr,
+            )
+            deadline = time.monotonic() + RELAUNCH_BUILD_INFO_TIMEOUT_S
+        else:
+            deadline = time.monotonic() + timeout_s
+
+        after = _wait_for_higher_build_info(client, before, deadline)
+
+    higher = _version_higher(before, after)
+    summary = {"before": before, "after": after, "changed": higher}
+    print(json.dumps(summary, indent=2))
+    return 0 if higher else 3
 
 
 if __name__ == "__main__":

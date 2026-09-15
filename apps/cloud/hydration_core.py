@@ -7,6 +7,13 @@ in ``hydration.py``, which imports :func:`resolve_policy` and
 :func:`cache_path` back from here -- a one-way dependency, never the other
 way round.
 
+Believed-state unions four inputs on every read:
+
+1. durable ``track_locations`` (including ``available`` probe stamps);
+2. ephemeral in-process ``transfer_status`` (progress only, never presence);
+3. on-disk cache bytes under the kind's ``local_cache_path`` root; and
+4. ``apps.cloud.policy.CFG`` cache budgets (used by eviction after writes).
+
 READ PATH (:func:`resolve_playback_source`), in ADR order:
 
 1. a pinned local file -- ``track_locations`` ``kind='local'``,
@@ -29,11 +36,14 @@ resolves to the strongest (see :data:`MODE_STRENGTH`) -- a pin exists to
 guarantee availability, so the strongest claim wins, and the tiebreak is
 ``playlist_id`` order so the answer never depends on row order.
 
-Nothing here invents a default. A machine with no ``sync_policies`` row for
-the asset kind raises :class:`~apps.cloud.eviction.HydrationError` rather
-than silently reading as ``stream``; that is the difference between an
-unconfigured fleet you can see and one that quietly streams a gig over
-venue wifi.
+:func:`resolve_policy` invents no default: a machine with no
+``sync_policies`` row for the asset kind raises
+:class:`~apps.cloud.eviction.HydrationError` rather than silently reading
+as ``stream``. :func:`resolve_playback_source` is the one exception: when
+there is no policy row but a pinned local file still exists on disk, local
+bytes are returned (implicit local-only installs never configure CloudSync).
+Missing row with no on-disk local copy still refuses loudly; a configured
+``excluded`` policy still wins over local bytes.
 """
 from __future__ import annotations
 
@@ -227,32 +237,58 @@ class PlaybackSource:
     reason: str | None = None
 
 
-def _local_file(conn: sqlite3.Connection, stable_id: str) -> Path | None:
-    """First on-disk local copy, primary role first, else ``None``.
+def _unavailable_marked_local(
+    conn: sqlite3.Connection, stable_id: str, machine_id: str
+) -> PlaybackSource | None:
+    """Return unavailable when a local row is explicitly marked gone.
 
-    ``available`` is a probe stamp, not a live fact: it stays 1 after an
-    eviction or an unmounted volume. Trusting it alone would hand the player
-    a path that 404s, so the row is re-checked against the filesystem.
+    ``available=0`` is a deliberate probe stamp: the operator or eviction
+    path declared the path not playable on this machine. Do not fall through
+    to presigned R2 for that case.
     """
     rows = conn.execute(
         """
-        SELECT file_path
+        SELECT location_id, file_path
         FROM track_locations
         WHERE stable_id = ?
+          AND machine_id = ?
           AND kind = 'local'
-          AND available = 1
+          AND available = 0
           AND deleted_at IS NULL
           AND file_path IS NOT NULL
           AND file_path != ''
         ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, rowid
         """,
-        (stable_id,),
+        (stable_id, machine_id),
     ).fetchall()
-    for (file_path,) in rows:
+    for location_id, file_path in rows:
         candidate = Path(str(file_path))
         if candidate.is_file():
-            return candidate
+            continue
+        return PlaybackSource(
+            origin="unavailable",
+            mode="pinned",
+            policy_source="sync_policies",
+            reason=(
+                f"track_locations row {location_id!r} marked unavailable "
+                f"(available=0) at {file_path!r}"
+            ),
+        )
     return None
+
+
+def _local_file(
+    conn: sqlite3.Connection, stable_id: str, machine_id: str
+) -> Path | None:
+    """First materialised on-disk local copy for ``machine_id``, else ``None``.
+
+    Delegates to :func:`apps.shared.state.locations.local_audio_path`, which
+    prefers ``track_locations`` then falls back to ``tracks.file_path`` so
+    local-only imports without CloudSync rows still resolve.
+    """
+    from apps.shared.state import locations as state_locations
+
+    return state_locations.local_audio_path(conn, stable_id, machine_id=machine_id)
 
 
 def _content_hash(conn: sqlite3.Connection, stable_id: str) -> str | None:
@@ -301,7 +337,21 @@ def resolve_playback_source(
     step without one, that is a misconfiguration and raises rather than
     returning a source the player cannot use.
     """
-    policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
+    local = _local_file(conn, stable_id, machine_id)
+    try:
+        policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
+    except HydrationError:
+        if local is not None:
+            content_hash = _content_hash(conn, stable_id)
+            return PlaybackSource(
+                origin="local",
+                mode="pinned",
+                policy_source="sync_policies",
+                path=local,
+                content_hash=content_hash,
+            )
+        raise
+
     content_hash = _content_hash(conn, stable_id)
 
     if policy.mode == "excluded":
@@ -321,7 +371,6 @@ def resolve_playback_source(
             ),
         )
 
-    local = _local_file(conn, stable_id)
     if local is not None:
         return PlaybackSource(
             origin="local",
@@ -329,6 +378,16 @@ def resolve_playback_source(
             policy_source=policy.source,
             path=local,
             content_hash=content_hash,
+        )
+
+    marked_unavailable = _unavailable_marked_local(conn, stable_id, machine_id)
+    if marked_unavailable is not None:
+        return PlaybackSource(
+            origin="unavailable",
+            mode=policy.mode,
+            policy_source=policy.source,
+            content_hash=content_hash,
+            reason=marked_unavailable.reason,
         )
 
     unhydrated_pin = policy.mode == "pinned"

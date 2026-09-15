@@ -34,6 +34,10 @@ from apps.shared import rekordbox_db
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
+from apps.shared.state.ingest.path_collisions import (
+    PathCollisionError,
+    assert_no_path_collisions,
+)
 from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 _log = logging.getLogger(__name__)
@@ -233,145 +237,154 @@ def ingest_rb(
     if dry_run:
         writer.bus = _DryRunSilentBus()
 
-    conn.execute(f"SAVEPOINT {savepoint}")
     try:
-        rb_to_stable: dict[str, str] = {}
-        # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
-        # multiple RB rows share a stable_id. Honour the first and skip
-        # subsequent collisions so reruns are truly idempotent.
-        seen_sids: set[str] = set()
+        all_rows = list(_rb_rows(rb_db))
+        local_paths = [
+            track["folder_path"]
+            for track in all_rows
+            if track["folder_path"] and not track["is_streaming"]
+        ]
+        assert_no_path_collisions(local_paths)
 
-        for i, track in enumerate(_rb_rows(rb_db)):
-            if limit is not None and i >= limit:
-                break
-            # Always feed the raw folder_path into the tier-3 hash so
-            # streaming rows (spotify:/tidal:/http[s]:) collide only
-            # when their URIs are identical. The previous behaviour
-            # (empty path for streaming) meant every ISRC-less
-            # streaming track hashed to sha1("|0.0"), so the
-            # seen_sids guard below silently dropped all but the first.
-            # See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md (2/3).
-            path_str = track["folder_path"]
-            mtime = 0.0
-            # Only hit the filesystem for real local paths; skip
-            # streaming URIs so we do not spuriously call
-            # os.path.exists / os.path.getmtime on schemes that will
-            # never resolve on disk.
-            if (
-                path_str
-                and not track["is_streaming"]
-                and os.path.exists(path_str)
-            ):
+        conn.execute(f"SAVEPOINT {savepoint}")
+        try:
+            rb_to_stable: dict[str, str] = {}
+            # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
+            # multiple RB rows share a stable_id. Honour the first and skip
+            # subsequent collisions so reruns are truly idempotent.
+            seen_sids: set[str] = set()
+
+            for i, track in enumerate(all_rows):
+                if limit is not None and i >= limit:
+                    break
+                # Always feed the raw folder_path into the tier-3 hash so
+                # streaming rows (spotify:/tidal:/http[s]:) collide only
+                # when their URIs are identical. The previous behaviour
+                # (empty path for streaming) meant every ISRC-less
+                # streaming track hashed to sha1("|0.0"), so the
+                # seen_sids guard below silently dropped all but the first.
+                # See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md (2/3).
+                path_str = track["folder_path"]
+                mtime = 0.0
+                # Only hit the filesystem for real local paths; skip
+                # streaming URIs so we do not spuriously call
+                # os.path.exists / os.path.getmtime on schemes that will
+                # never resolve on disk.
+                if (
+                    path_str
+                    and not track["is_streaming"]
+                    and os.path.exists(path_str)
+                ):
+                    try:
+                        mtime = os.path.getmtime(path_str)
+                    except OSError:
+                        mtime = 0.0
                 try:
-                    mtime = os.path.getmtime(path_str)
-                except OSError:
-                    mtime = 0.0
-            try:
-                sid, tier = state_ids.stable_id(
+                    sid, tier = state_ids.stable_id(
+                        isrc=track["isrc"],
+                        fingerprint=None,
+                        duration_ms=track["duration_ms"],
+                        size_bytes=track["file_size"],
+                        abs_path=path_str,
+                        mtime=mtime,
+                    )
+                except ValueError:
+                    report.tracks_skipped += 1
+                    continue
+
+                rb_to_stable[track["id"]] = sid
+                if sid in seen_sids:
+                    report.tracks_skipped += 1
+                    continue
+                seen_sids.add(sid)
+
+                content_hash = _content_hash_for(path_str, track["is_streaming"])
+                if (
+                    content_hash is None
+                    and path_str
+                    and not track["is_streaming"]
+                ):
+                    report.content_hash_missing += 1
+
+                changed = writer.upsert_track(
+                    stable_id=sid,
+                    stable_id_tier=tier,
+                    title=track["title"] or None,
+                    artists=[track["artist"]] if track["artist"] else [],
+                    album=track["album"] or None,
                     isrc=track["isrc"],
-                    fingerprint=None,
                     duration_ms=track["duration_ms"],
-                    size_bytes=track["file_size"],
-                    abs_path=path_str,
-                    mtime=mtime,
+                    file_path=path_str or None,
+                    content_hash=content_hash,
                 )
-            except ValueError:
-                report.tracks_skipped += 1
-                continue
-
-            rb_to_stable[track["id"]] = sid
-            if sid in seen_sids:
-                report.tracks_skipped += 1
-                continue
-            seen_sids.add(sid)
-
-            content_hash = _content_hash_for(path_str, track["is_streaming"])
-            if (
-                content_hash is None
-                and path_str
-                and not track["is_streaming"]
-            ):
-                report.content_hash_missing += 1
-
-            changed = writer.upsert_track(
-                stable_id=sid,
-                stable_id_tier=tier,
-                title=track["title"] or None,
-                artists=[track["artist"]] if track["artist"] else [],
-                album=track["album"] or None,
-                isrc=track["isrc"],
-                duration_ms=track["duration_ms"],
-                file_path=path_str or None,
-                content_hash=content_hash,
-            )
-            if changed:
-                existing_vendor = conn.execute(
-                    "SELECT 1 FROM track_vendor_ids "
-                    "WHERE stable_id = ? AND vendor = 'rekordbox'",
-                    (sid,),
-                ).fetchone()
-                if existing_vendor is None:
-                    report.tracks_inserted += 1
+                if changed:
+                    existing_vendor = conn.execute(
+                        "SELECT 1 FROM track_vendor_ids "
+                        "WHERE stable_id = ? AND vendor = 'rekordbox'",
+                        (sid,),
+                    ).fetchone()
+                    if existing_vendor is None:
+                        report.tracks_inserted += 1
+                    else:
+                        report.tracks_updated += 1
                 else:
-                    report.tracks_updated += 1
-            else:
-                report.tracks_unchanged += 1
-            report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
+                    report.tracks_unchanged += 1
+                report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
 
-            writer.set_vendor_id(sid, "rekordbox", track["id"])
+                writer.set_vendor_id(sid, "rekordbox", track["id"])
 
-            modified_at = _rb_modified_at(track["updated_at"])
-            if track["bpm"] is not None:
-                if writer.set_field(
-                    sid, "bpm", track["bpm"],
-                    source="rekordbox", modified_at=modified_at,
-                ):
-                    report.fields_written += 1
-            if track["key_name"]:
-                if writer.set_field(
-                    sid, "key", track["key_name"],
-                    source="rekordbox", modified_at=modified_at,
-                ):
-                    report.fields_written += 1
-            if track["rating"] is not None:
-                if writer.set_field(
-                    sid, "rating", track["rating"],
-                    source="rekordbox", modified_at=modified_at,
-                ):
-                    report.fields_written += 1
+                modified_at = _rb_modified_at(track["updated_at"])
+                if track["bpm"] is not None:
+                    if writer.set_field(
+                        sid, "bpm", track["bpm"],
+                        source="rekordbox", modified_at=modified_at,
+                    ):
+                        report.fields_written += 1
+                if track["key_name"]:
+                    if writer.set_field(
+                        sid, "key", track["key_name"],
+                        source="rekordbox", modified_at=modified_at,
+                    ):
+                        report.fields_written += 1
+                if track["rating"] is not None:
+                    if writer.set_field(
+                        sid, "rating", track["rating"],
+                        source="rekordbox", modified_at=modified_at,
+                    ):
+                        report.fields_written += 1
 
-        for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
-            pl_id = compute_playlist_id("rekordbox", rb_pl_id)
-            inserted = writer.insert_playlist(
-                playlist_id=pl_id, name=pl_name,
-                vendor="rekordbox", vendor_pl_id=rb_pl_id,
+            for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
+                pl_id = compute_playlist_id("rekordbox", rb_pl_id)
+                inserted = writer.insert_playlist(
+                    playlist_id=pl_id, name=pl_name,
+                    vendor="rekordbox", vendor_pl_id=rb_pl_id,
+                )
+                if inserted:
+                    report.playlists_inserted += 1
+                member_sids = [
+                    rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable
+                ]
+                writer.set_playlist_memberships(pl_id, member_sids)
+
+            writer.register_adapter(
+                "rekordbox",
+                last_run_at=now_fn().isoformat(),
+                last_ok=True,
+                notes=(
+                    f"tracks={report.tracks_inserted + report.tracks_updated + report.tracks_unchanged} "
+                    f"dry_run={dry_run}"
+                ),
             )
-            if inserted:
-                report.playlists_inserted += 1
-            member_sids = [
-                rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable
-            ]
-            writer.set_playlist_memberships(pl_id, member_sids)
 
-        writer.register_adapter(
-            "rekordbox",
-            last_run_at=now_fn().isoformat(),
-            last_ok=True,
-            notes=(
-                f"tracks={report.tracks_inserted + report.tracks_updated + report.tracks_unchanged} "
-                f"dry_run={dry_run}"
-            ),
-        )
-
-        if dry_run:
+            if dry_run:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except Exception:
             conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        else:
-            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-    except Exception:
-        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
+            raise
     finally:
         # Always restore the real bus, even if the ingest raised.
         writer.bus = original_bus
@@ -514,6 +527,9 @@ def run_cli(args: argparse.Namespace) -> int:
                 conn, shared_paths.STATE_DIR, report
             )
             print(f"  csv:              {csv_path}")
+    except PathCollisionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except Exception as exc:  # pragma: no cover - full-traceback path
         import traceback
 

@@ -6,7 +6,7 @@ receive only short-lived GET URLs and content digests, never bucket keys.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -20,6 +20,8 @@ from apps.cloud.stem_source import STEM_BUNDLE_NOT_INDEXED, STEM_BUNDLE_PRESIGN_
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.shared.state import db as state_db
 from apps.sync_hub import service_credentials
+
+StemIndexFetcher = Callable[[], stem_index.StemAssetIndex]
 
 router = APIRouter(prefix="/stems", tags=["sync-stems"])
 _auth = service_credentials.credential_responses
@@ -177,12 +179,22 @@ def get_stem_index(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
 ) -> StemIndexResponse:
-    """Return the published stem bundle index for an authenticated spoke."""
+    """Return the published stem bundle index for an authenticated spoke.
+
+    ``request.app.state.stem_index_fetcher``, when set by the code that built
+    the app, replaces the real R2 index fetch with the callable's return
+    value. Production never sets it; only test app-builders do. The
+    credential check always runs first regardless.
+    """
     with _hub_conn(request) as conn:
         _require_credential(request, conn, machine_id, "stems/index")
+    fetcher: StemIndexFetcher | None = getattr(request.app.state, "stem_index_fetcher", None)
     try:
-        cfg, s3 = _hub_r2_clients()
-        index = stem_index.fetch_index(cfg, s3)
+        if fetcher is not None:
+            index = fetcher()
+        else:
+            cfg, s3 = _hub_r2_clients()
+            index = stem_index.fetch_index(cfg, s3)
     except HTTPException:
         raise
     except stem_index.StemIndexError as exc:

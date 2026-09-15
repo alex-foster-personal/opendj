@@ -67,6 +67,8 @@ from .lyrics_words_models import (
 
 router = APIRouter(tags=["lyrics"])
 
+_SQLITE_MAX_SIGNED_INT = 9223372036854775807  # 2**63 - 1
+
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 #: Module-level so a test can point it at a tmp ledger.
 LYRICS_KPI_LEDGER_FILE: Path = REPO_ROOT / "scripts" / "bench" / "lyrics_kpi_ledger.json"
@@ -294,7 +296,7 @@ def get_lyrics_summary(
 @router.get("/lyrics", response_model=list[CoverageVerdictOut])
 def list_lyric_verdicts(
     limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=_SQLITE_MAX_SIGNED_INT),
     verdict: str | None = Query(default=None, description="filter by effective verdict"),
     order: str = Query(default="suspect", description="suspect|coverage|recent"),
     conn: sqlite3.Connection = Depends(get_lyrics_read_conn),  # noqa: B008

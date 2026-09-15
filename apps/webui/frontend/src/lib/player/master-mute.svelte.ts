@@ -1,3 +1,6 @@
+import { api } from '../api/client';
+import { makeDiskWriteChain } from '../rb/disk-write-chain';
+
 /**
  * Opt-in startup master mute: a silence belt for headless multi-browser UI
  * test agents, on top of Chromium's `--mute-audio`.
@@ -145,6 +148,28 @@ export function setMasterMuted(muted: boolean): void {
 	_muted = muted;
 	_applyMasterMute();
 	writeStoredMasterMuted(_browserStorage(), muted);
+	void persistMasterMutedToDisk(muted);
+}
+
+type MasterMuteDiskPatch = { master_muted: boolean };
+
+async function _putMasterMutedToDisk(patch: MasterMuteDiskPatch): Promise<void> {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if daemon is down */
+	}
+}
+
+const _syncMasterMutedToDisk = makeDiskWriteChain<MasterMuteDiskPatch>(_putMasterMutedToDisk);
+
+let _lastDiskSynced: boolean | null = null;
+
+/** Dual-write master mute to ui-prefs.json (PARITY-11, issue #2918). */
+export function persistMasterMutedToDisk(muted: boolean): Promise<void> {
+	if (_lastDiskSynced === muted) return Promise.resolve();
+	_lastDiskSynced = muted;
+	return _syncMasterMutedToDisk({ master_muted: muted });
 }
 
 function _applyMasterMute(): void {

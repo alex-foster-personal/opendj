@@ -125,6 +125,23 @@ def test_a_runner_switch_is_priced_at_the_hosted_fallback_it_can_select() -> Non
     assert sku.rate_usd_per_minute > 0
 
 
+def test_a_chained_runner_switch_is_priced_at_the_final_hosted_fallback() -> None:
+    """The CI test job chains pytest/e2e/linux vars before ubuntu-latest."""
+    switch = (
+        "${{ fromJSON(vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E "
+        "|| vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+    )
+
+    assert runner_labels("test", switch) == ["ubuntu-latest"]
+
+
+def test_a_chained_runner_switch_with_an_unreadable_tail_is_refused() -> None:
+    """Fail-closed: only vars.* disjuncts before the JSON literal are priced."""
+    unreadable = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || inputs.runner || '\"ubuntu-latest\"') }}"
+    with pytest.raises(AssertionError, match="cannot"):
+        runner_labels("test", unreadable)
+
+
 def test_a_runner_switch_falling_back_to_a_label_list_keeps_every_label() -> None:
     """The fallback is JSON, and GitHub accepts a list there as well as a string."""
     switch = '${{ fromJSON(vars.CI_RUNS_ON_E2E || \'["macos-latest","large"]\') }}'

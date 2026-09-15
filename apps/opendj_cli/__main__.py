@@ -7,6 +7,7 @@
     opendj api GET /api/v1/smartlists
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
+    opendj install-cli [--target ~/.local/bin/opendj]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -77,9 +78,11 @@ from apps.opendj_cli.verbs import (
 _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 
 _STATE_COMMAND = "state"
+_OPEN_COMMAND = "open"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
+_INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 
 
@@ -222,12 +225,38 @@ def _run_state(args: argparse.Namespace, origin: EngineOrigin) -> int:
     client = EngineClient(origin=origin, timeout_s=args.timeout)
     try:
         mirror = client.mirror()
+        prefs = client.ui_prefs()
+    except _REFUSALS as error:
+        return _refusal(args, error)
+    payload = {
+        **mirror,
+        "persisted": {"master_muted": prefs["master_muted"]},
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(_state_text(mirror, prefs))
+    return EXIT_CONFIRMED
+
+
+def _run_open(args: argparse.Namespace, origin: EngineOrigin, rest: Sequence[str]) -> int:
+    from apps.opendj_cli.shell_navigate import open_performance
+
+    if len(rest) != 1:
+        raise InvocationError("usage: opendj open performance")
+    target = rest[0]
+    if target not in ("performance", "/performance"):
+        raise InvocationError(
+            f"unknown route {target!r}; only performance (/performance) is supported"
+        )
+    try:
+        result = open_performance(origin)
     except _REFUSALS as error:
         return _refusal(args, error)
     if args.json:
-        print(json.dumps(mirror, indent=2, sort_keys=True))
+        print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        print(_state_text(mirror))
+        print(f"opened {result['route']} (client_open={result['client_open']})")
     return EXIT_CONFIRMED
 
 
@@ -531,7 +560,7 @@ def _dispatch_text(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _state_text(mirror: dict[str, Any]) -> str:
+def _state_text(mirror: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
     lines = [
         f"context: {mirror.get('context_state', 'absent')}",
         f"open: {mirror.get('client_open', 'absent')}",
@@ -542,6 +571,8 @@ def _state_text(mirror: dict[str, Any]) -> str:
             f"master: muted={master.get('muted', 'absent')} "
             f"level={master.get('level', 'absent')} rms={master.get('rms', 'absent')}"
         )
+    if prefs is not None:
+        lines.append(f"persisted: master_muted={prefs.get('master_muted', 'absent')}")
     mixer = mirror.get("mixer")
     if isinstance(mixer, dict):
         lines.append(f"crossfader: {mixer.get('crossfader', 'absent')}")
@@ -592,6 +623,8 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     head, *rest = tokens
     if head == _STATE_COMMAND and rest:
         raise InvocationError(f"state takes no arguments, got {rest[0]!r}")
+    if head == _OPEN_COMMAND and not rest:
+        raise InvocationError("usage: opendj open performance")
     return head, rest
 
 
@@ -640,15 +673,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_CONFIRMED
         from apps.opendj_cli import api_cli
 
-        return api_cli.run(api_tokens, as_json=args.json)
+        return api_cli.run(api_tokens, as_json=args.json, lock=args.lock)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         print_verbs(args.json)
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)
+        if head == _INSTALL_COMMAND:
+            from apps.opendj_cli import install_cli
+
+            return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_origin(args.lock))
+        if head == _OPEN_COMMAND:
+            return _run_open(args, resolve_origin(args.lock), rest)
         if head == _TRACK_COMMAND:
             from apps.opendj_cli import track_cli
 

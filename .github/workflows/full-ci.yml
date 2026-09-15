@@ -62,6 +62,9 @@ env:
   # for a root-run interpreter.
   PYTHONDONTWRITEBYTECODE: "1"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: full pytest + coverage
@@ -177,6 +180,7 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           # A caller's pinned SHA when there is one; empty falls back to the
           # workflow event's own ref, which is the dispatch behavior.
           ref: ${{ inputs.ref }}
@@ -204,7 +208,9 @@ jobs:
         # see the fuller note in ci.yml.
         run: |
           scripts/ci_venv.sh 3.11
-          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal
+          # + the pyproject `observability` extra, verbatim: the Sentry e2e tests import
+          # sentry_sdk, and requirements.txt (the shipped payload) deliberately omits it.
+          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal 'sentry-sdk>=2.0,<3'
 
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.

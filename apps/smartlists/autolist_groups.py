@@ -20,6 +20,16 @@ BPM_LT60_ID = "lt60"
 BPM_GE200_ID = "ge200"
 
 
+class AutolistSelectionError(ValueError):
+    """Invalid autolist bucket id in a selection group."""
+
+    def __init__(self, group: str, child_id: str, reason: str) -> None:
+        self.group = group
+        self.child_id = child_id
+        self.field = f"selection.{group}"
+        super().__init__(f"invalid {self.field} value {child_id!r}: {reason}")
+
+
 @dataclass(frozen=True)
 class Bucket:
     id: str
@@ -85,6 +95,10 @@ def static_bpm_buckets() -> list[Bucket]:
     return out
 
 
+_VALID_RATING_IDS = frozenset(b.id for b in static_rating_buckets())
+_VALID_BPM_IDS = frozenset(b.id for b in static_bpm_buckets())
+
+
 def genre_buckets(conn: sqlite3.Connection) -> list[Bucket]:
     col = _genre_col_sql()
     rows = conn.execute(
@@ -116,6 +130,10 @@ def _rating_rule(child_id: str) -> dict[str, Any]:
                 {"field": "rating", "op": "missing", "value": None},
             ],
         }
+    if child_id not in _VALID_RATING_IDS:
+        raise AutolistSelectionError(
+            "rating", child_id, "not a known rating bucket id",
+        )
     return {"field": "rating", "op": "=", "value": int(child_id)}
 
 
@@ -127,8 +145,17 @@ def _bpm_rule(child_id: str) -> dict[str, Any]:
     if child_id == BPM_GE200_ID:
         return {"field": "bpm", "op": ">=", "value": 200}
     if "-" in child_id:
+        if child_id not in _VALID_BPM_IDS:
+            raise AutolistSelectionError(
+                "bpm", child_id, "not a known bpm bucket id",
+            )
         lo_s, hi_s = child_id.split("-", 1)
-        lo, hi = int(lo_s), int(hi_s)
+        try:
+            lo, hi = int(lo_s), int(hi_s)
+        except ValueError as exc:
+            raise AutolistSelectionError(
+                "bpm", child_id, "not a known bpm bucket id",
+            ) from exc
         return {
             "op": "and",
             "children": [
@@ -136,7 +163,9 @@ def _bpm_rule(child_id: str) -> dict[str, Any]:
                 {"field": "bpm", "op": "<", "value": hi + 1},
             ],
         }
-    raise ValueError(f"unknown bpm bucket id {child_id!r}")
+    raise AutolistSelectionError(
+        "bpm", child_id, "not a known bpm bucket id",
+    )
 
 
 def _genre_rule(child_id: str) -> dict[str, Any]:
@@ -225,6 +254,7 @@ def compact_index_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 __all__ = [
+    "AutolistSelectionError",
     "GROUP_IDS",
     "Bucket",
     "bpm_bucket_key",

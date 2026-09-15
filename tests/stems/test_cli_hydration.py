@@ -18,7 +18,7 @@ from apps.cloud.asset_store import AssetHead, asset_object_key
 from apps.cloud.config import CloudConfig
 from apps.cloud.stem_index import INDEX_OBJECT_KEY, fetch_index, load_cached_index, publish_index
 from apps.cloud.stem_source import DirectR2Source
-from apps.stems.cli import _default_journal_path, build_parser
+from apps.stems.cli import _default_journal_path, build_parser, main
 
 
 def _wav_bytes(*, frames: int = 8, sample_rate: int = 44_100, channels: int = 2) -> bytes:
@@ -364,3 +364,25 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
     )
     assert rc == 0
     assert (cfg.audio_bucket, INDEX_OBJECT_KEY) not in s3.get_calls
+
+
+@pytest.mark.requirement("STEM-34")
+def test_bulk_hydrate_unknown_playlist_exits_2(tmp_path: Path) -> None:
+    """[if] bulk-hydrate names an unknown playlist [then] exit 2 names it, [else stop]."""
+    from tests.webui.test_stems_route_survival import _seed_playlist_data_dir
+
+    data_dir = _seed_playlist_data_dir(tmp_path)
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "bulk-hydrate",
+                "--data-dir",
+                str(data_dir),
+                "--playlist",
+                "all",
+                "--budget-bytes",
+                "1000",
+            ]
+        )
+    assert exc_info.value.args[0] == 2
+    assert "unknown playlist" in str(exc_info.value)

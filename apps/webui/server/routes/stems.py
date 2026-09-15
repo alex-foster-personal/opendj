@@ -25,12 +25,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.cloud import stem_hydration, stem_index
+from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
+    STEM_HUB_INDEX_FAILED,
+    STEM_HUB_UNREACHABLE,
     DirectR2Source,
     StemHydrationSource,
     StemSourceError,
+    hub_transport_failure_kind,
 )
+from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
 
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
@@ -73,12 +78,21 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
             "the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when "
             "the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when "
             "this engine is configured for hydration but could not arm it at boot "
-            "(for example boto3 is absent or the hub was unreachable), "
-            "STEM_HUB_UNREACHABLE when the configured hub cannot be reached, "
-            "STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or "
-            "STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "(for example boto3 is absent or the hub was unreachable). "
+            "Transient boot failures such as HTTP 403/5xx may self-recover on the "
+            "next throttled stems miss; structural failures such as missing boto3, "
+            "unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay "
+            "terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub "
+            "rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub "
+            "index or presign path fails with a non-unreachable error"
         )
-    }
+    },
+    503: {
+        "description": (
+            "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint "
+            "and underlying error)"
+        )
+    },
 }
 
 STEM_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -181,10 +195,25 @@ def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavai
 def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None:
     unarmed_reason = getattr(request.app.state, "stem_hydration_unarmed_reason", None)
     if unarmed_reason is not None:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
-        )
+        unarmed_kind = getattr(request.app.state, "stem_hydration_unarmed_kind", None)
+        if unarmed_kind == "transient":
+            from apps.webui.server.stem_hydration_rearm import maybe_rearm_stem_hydration
+
+            if maybe_rearm_stem_hydration(request.app):
+                unarmed_reason = None
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "STEM_HYDRATION_NOT_ARMED",
+                        "message": unarmed_reason,
+                    },
+                )
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
+            )
     source = getattr(request.app.state, "stem_hydration_source", None)
     data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
     if source is None and getattr(request.app.state, "stem_hydration_cfg", None) is not None:
@@ -197,7 +226,35 @@ def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None
     return source, Path(data_dir)
 
 
+def _hub_endpoint_from_message(message: str) -> str:
+    if "bundle presign" in message or "presign" in message.casefold():
+        return STEM_BUNDLE_PRESIGN_PATH
+    return STEM_INDEX_PATH
+
+
+def _stem_source_error_from_hub_reason(reason: str) -> StemSourceError:
+    for code in (STEM_HUB_UNREACHABLE, STEM_HUB_INDEX_FAILED):
+        exc = StemSourceError(code, reason)
+        if hub_transport_failure_kind(exc) is not None:
+            return exc
+    return StemSourceError(STEM_HUB_INDEX_FAILED, reason)
+
+
+def _raise_hydrate_error(error: _HydrateError) -> None:
+    exc = StemSourceError(error.code, error.message)
+    if hub_transport_failure_kind(exc) == "unreachable":
+        raise_sync_hub_unreachable(_hub_endpoint_from_message(error.message), exc)
+    if hub_transport_failure_kind(exc) is not None:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": error.code, "message": error.message},
+        ) from exc
+    _raise_hydration_failed(error)
+
+
 def _raise_source_error(exc: StemSourceError) -> None:
+    if hub_transport_failure_kind(exc) == "unreachable":
+        raise_sync_hub_unreachable(_hub_endpoint_from_message(exc.message), exc)
     raise HTTPException(
         status_code=502,
         detail={"code": exc.code, "message": exc.message},
@@ -241,6 +298,14 @@ def _run_hydration(
             _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
                 "STEM_BUNDLE_HYDRATION_FAILED",
                 outcome.reason or "hydration failed",
+            )
+        elif outcome.status == "hub_error":
+            hub_exc = _stem_source_error_from_hub_reason(
+                outcome.reason or "hub transport failure"
+            )
+            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
+                hub_exc.code,
+                hub_exc.message,
             )
         else:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
@@ -427,7 +492,7 @@ def get_stem_manifest(
     except StemBundleNotFoundError as exc:
         recorded_error = _recorded_hydration_error(stable_id)
         if recorded_error is not None:
-            _raise_hydration_failed(recorded_error)
+            _raise_hydrate_error(recorded_error)
         future = _enqueue_hydration(stable_id, request)
         if future is not None:
             return StemUnavailableOut(
@@ -468,7 +533,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             raise
         recorded_error = _recorded_hydration_error(stable_id)
         if recorded_error is not None:
-            _raise_hydration_failed(recorded_error)
+            _raise_hydrate_error(recorded_error)
         future = _enqueue_hydration(stable_id, request)
         if future is None:
             raise
@@ -487,6 +552,11 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             if recorded is not None:
                 _raise_hydration_failed(recorded)
             _raise_hydration_failed(str(exc))
+        if outcome.status == "hub_error":
+            hub_exc = _stem_source_error_from_hub_reason(
+                outcome.reason or "hub transport failure"
+            )
+            _raise_hydrate_error(_HydrateError(hub_exc.code, hub_exc.message))
         if outcome.status == "error":
             recorded = _recorded_hydration_error(stable_id)
             if recorded is not None:

@@ -28,6 +28,14 @@ Regression lines:
   - if an out-of-window merge stamp counts toward the self-merge rate then
     broken (4 stamps, 3 in window -> 2 self + 1 merge-lane = 67%)
   - if an unstamped window renders as a 0% self-merge rate then broken
+  - if a partly-stamped window (fewer stamps than the window's real merge
+    count) prints a clean percent instead of naming both numbers as
+    partly-measured then broken (OPS-24: 1 stamp of 10 merges must not read
+    as a measured 100%, and 1 merge-lane stamp of 10 merges must not read as
+    a measured 0%)
+  - if the merged-PR count itself is unmeasurable and the self-merge rate
+    still prints a clean percent then broken (a rate cannot be checked for
+    completeness against a denominator that was never read)
   - if a MERGED PR carrying duplicate/superseded markers counts as a
     duplicate-fix incident then broken (only closed-unmerged ones count)
   - if an unreadable closed-PR fixture reports 0 duplicates then broken
@@ -61,6 +69,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 import os
 
 from tests.scripts.test_ops_fleet_kpi import (
@@ -179,6 +188,69 @@ def test_no_merge_stamps_is_unmeasurable_not_a_zero_percent_self_merge_rate(tmp_
     out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
     assert "self-merge rate=unmeasurable own_lane=0 merge_lane=0" in out
     assert "rate=0%" not in out
+
+
+def _merged(numbers: list[int]) -> str:
+    return json.dumps([{"number": n} for n in numbers])
+
+
+def test_a_partly_stamped_window_is_unmeasurable_not_a_clean_hundred_percent(tmp_path):
+    """If 1 stamp of 10 merges in the window renders as a measured 100% then
+    broken (OPS-24, #1605 evidence). The fixture's own_lane stamp (pr=1131,
+    kind=self, in-window) is the only stamped merge; the other 9 numbers on
+    the merged-PR line never got a lane stamp at all, so the rate must name
+    both counts and refuse a clean percent."""
+    fixture = _copy_fixture(tmp_path)
+    log = fixture / "jobs" / "logs" / "merge-events.log"
+    log.write_text("2026-09-04T17:45:00Z MERGE lane=backend pr=1131 kind=self\n")
+    (fixture / "gh" / "merged.json").write_text(_merged([1131, *range(2000, 2009)]))
+
+    out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
+    assert "merges n=10 " in out
+    assert (
+        "self-merge rate=unmeasurable own_lane=1 merge_lane=0 (1 of 10 merges "
+        "in the 1h window are stamped; partly-measured, not a clean rate)" in out
+    )
+    assert "rate=100%" not in out
+
+
+def test_a_partly_stamped_window_never_reads_as_a_clean_zero_percent_either(tmp_path):
+    """The overshoot control for the test above: own_lane=0 over an equally
+    partial denominator must not print as a measured 0% self-merge rate
+    either (OPS-24 acceptance: 'never as a 0% self-merge rate'). Only the
+    lane stamp is present; the other 9 merges have no stamp at all."""
+    fixture = _copy_fixture(tmp_path)
+    log = fixture / "jobs" / "logs" / "merge-events.log"
+    log.write_text("2026-09-04T18:10:00Z MERGE lane=merge-odd pr=1133 kind=merge-lane\n")
+    (fixture / "gh" / "merged.json").write_text(_merged([1133, *range(2000, 2009)]))
+
+    out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
+    assert "merges n=10 " in out
+    assert (
+        "self-merge rate=unmeasurable own_lane=0 merge_lane=1 (1 of 10 merges "
+        "in the 1h window are stamped; partly-measured, not a clean rate)" in out
+    )
+    assert "rate=0%" not in out
+
+
+def test_self_merge_rate_is_unmeasurable_when_the_merged_pr_count_itself_is_unmeasurable(
+    tmp_path,
+):
+    """If the GitHub merged-PR read fails and the self-merge rate still prints a
+    clean percent then broken: the rate cannot be checked for completeness
+    against a denominator the script never read (OPS-24)."""
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "gh" / "merged.json").unlink()
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+    assert "merges n=unmeasurable" in out
+    assert (
+        "self-merge rate=unmeasurable own_lane=2 merge_lane=1 (3 merge(s) "
+        "stamped in the 1h window, but the window's merged-PR count is "
+        "unmeasurable" in out
+    )
+    assert "rate=67%" not in out
 
 
 def test_an_unclassified_kind_shrinks_the_denominator_not_silently(tmp_path):

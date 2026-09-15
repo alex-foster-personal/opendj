@@ -302,34 +302,35 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     """
     import sqlite3
 
+    from apps.shared.platform_paths import load_path_map
+    from apps.shared.state import locations as state_locations
+
     db = Path(data_dir) / "state" / "state.db"
+    path_map = load_path_map(Path(data_dir))
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
             "SELECT file_path FROM tracks "
             "WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
-    if row is None:
-        raise FileNotFoundError(f"no track {stable_id!r} in {db}")
-    if not row[0]:
-        raise FileNotFoundError(f"track {stable_id!r} has no file_path in {db}")
-    from apps.shared.platform_paths import load_path_map, resolve_asset_path
-
-    mapped = resolve_asset_path(
-        str(row[0]), path_map=load_path_map(Path(data_dir))
-    )
-    path = mapped.resolved
-    if path is None or not path.is_file():
-        from apps.shared.crate_index import resolve_crate_audio
-
-        path = resolve_crate_audio(stable_id)
-    if path is None or not path.is_file():
-        raise FileNotFoundError(
-            f"track {stable_id!r} points at {row[0]}, which resolves as "
-            f"{path} ({mapped.reason}) and is not a materialised file. "
-            "Relocate it before asking for stems."
+        if row is None:
+            raise FileNotFoundError(f"no track {stable_id!r} in {db}")
+        canonical_path = row[0]
+        path = state_locations.local_audio_path(
+            conn, stable_id, path_map=path_map,
         )
-    return path
+    if path is not None and path.is_file():
+        return path
+    from apps.shared.crate_index import resolve_crate_audio
+
+    path = resolve_crate_audio(stable_id)
+    if path is not None and path.is_file():
+        return path
+    raise FileNotFoundError(
+        f"track {stable_id!r} points at {canonical_path!r}, which is not a "
+        "materialised file on this machine (no local track_locations row "
+        "either). Relocate it before asking for stems."
+    )
 
 
 def _duration_from_state(data_dir: Path, stable_id: str) -> float:
@@ -481,7 +482,7 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 
 def _default_journal_path(data_dir: Path) -> Path:
-    """Same fixed path ``scripts/local_stems_to_r2.py`` journals to."""
+    """Same fixed path ``apps.stems.r2_migration`` journals to."""
     return Path(data_dir) / "state" / "stem-r2-migration.jsonl"
 
 
@@ -533,27 +534,39 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
         raise SystemExit(
             "error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub"
         )
+    from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
+
     index = stem_index.load_cached_index(args.data_dir)
     if args.refresh_index or not index:
-        source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        try:
+            source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        except StemSourceError as exc:
+            if hub_transport_failure_kind(exc) == "unreachable":
+                raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+            raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
         index = stem_index.load_cached_index(args.data_dir)
     if not index:
         raise SystemExit(
             "error: no stem bundle index published in R2 "
             "(run build-index --publish after the push rail has journaled bundles)"
         )
-    report = stem_hydration.bulk_hydrate(
-        stable_ids,
-        data_dir=args.data_dir,
-        source=source,
-        index=index,
-        byte_budget=args.budget_bytes,
-        include_reserved=args.include_reserved,
-        # Without this, hydrate_one falls back to the fixed DEFAULT_STEMS_DIR
-        # regardless of --data-dir, which would write into the production
-        # stems path from a run against a throwaway data dir.
-        stems_dir=stems_dir(args.data_dir),
-    )
+    try:
+        report = stem_hydration.bulk_hydrate(
+            stable_ids,
+            data_dir=args.data_dir,
+            source=source,
+            index=index,
+            byte_budget=args.budget_bytes,
+            include_reserved=args.include_reserved,
+            # Without this, hydrate_one falls back to the fixed DEFAULT_STEMS_DIR
+            # regardless of --data-dir, which would write into the production
+            # stems path from a run against a throwaway data dir.
+            stems_dir=stems_dir(args.data_dir),
+        )
+    except StemSourceError as exc:
+        if hub_transport_failure_kind(exc) == "unreachable":
+            raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+        raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
     if args.json:
         print(
             json.dumps(
@@ -684,8 +697,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    return int(args.func(args))
+    from apps.vocals.errors import UnknownPlaylistError
+
+    try:
+        args = build_parser().parse_args(argv)
+        return int(args.func(args))
+    except UnknownPlaylistError as exc:
+        raise SystemExit(
+            2,
+            f"error: unknown playlist {exc.name!r}. "
+            f"Known: {', '.join(exc.known) or '(none)'}",
+        )
 
 
 if __name__ == "__main__":

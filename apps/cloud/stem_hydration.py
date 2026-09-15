@@ -42,7 +42,13 @@ from typing import Literal
 
 from apps.cloud import asset_store, policy, stem_index
 from apps.cloud.eviction import BYTES_PER_MB, HydrationError
-from apps.cloud.stem_source import StemHydrationSource, StemSourceError
+from apps.cloud.stem_source import (
+    STEM_HUB_INDEX_FAILED,
+    STEM_HUB_UNREACHABLE,
+    StemHydrationSource,
+    StemSourceError,
+    hub_transport_failure_kind,
+)
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -54,7 +60,7 @@ RESERVATION_FILENAME: str = "stem-order-reserved-100.json"
 STEM_ASSET_KIND: str = "stem_bundle"
 
 HydrationStatus = Literal[
-    "already_local", "hydrated", "unavailable", "reserved_skip", "error"
+    "already_local", "hydrated", "unavailable", "reserved_skip", "error", "hub_error"
 ]
 
 
@@ -289,12 +295,22 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             tmp_dir.rename(bundle_dir)
             renamed = True
             load_stem_bundle(stable_id, stems_dir=root)  # strict re-verify, never mocked
+        except StemSourceError as exc:
+            if renamed:
+                shutil.rmtree(bundle_dir, ignore_errors=True)
+            else:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            status = (
+                "hub_error"
+                if hub_transport_failure_kind(exc) is not None
+                else "error"
+            )
+            return HydrationOutcome(stable_id, status, reason=exc.message)
         except (
             HydrationError,
             asset_store.AssetStoreError,
             StemArtifactError,
             StemBundleNotFoundError,
-            StemSourceError,
             OSError,
         ) as exc:
             if renamed:
@@ -313,6 +329,28 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
 
 
 # --- bulk hydration --------------------------------------------------------------
+
+
+def _stem_source_error_from_hub_outcome(outcome: HydrationOutcome) -> StemSourceError:
+    reason = outcome.reason or "hub transport failure"
+    code = (
+        STEM_HUB_INDEX_FAILED
+        if "HTTP 5" in reason
+        else STEM_HUB_UNREACHABLE
+    )
+    return StemSourceError(code, reason)
+
+
+def _append_hub_error_remainder(
+    stable_id: str,
+    remaining: Sequence[str],
+    reason: str,
+    *,
+    skipped: list[HydrationOutcome],
+) -> None:
+    skipped.append(HydrationOutcome(stable_id, "hub_error", reason=reason))
+    for sid in remaining:
+        skipped.append(HydrationOutcome(sid, "hub_error", reason=reason))
 
 
 def bulk_hydrate(
@@ -338,7 +376,7 @@ def bulk_hydrate(
     skipped: list[HydrationOutcome] = []
     bytes_used = 0
     root = stems_dir or DEFAULT_STEMS_DIR
-    for stable_id in stable_ids:
+    for idx, stable_id in enumerate(stable_ids):
         if bytes_used >= byte_budget:
             skipped.append(
                 HydrationOutcome(stable_id, "unavailable", reason="byte_budget exhausted")
@@ -347,9 +385,22 @@ def bulk_hydrate(
         if not _is_local(stable_id, root):
             file_hashes = index.get(stable_id)
             if file_hashes and stem_index.MANIFEST_FILENAME in file_hashes:
-                bundle_size = source.bundle_remote_size(
-                    file_hashes, stable_id=stable_id
-                )
+                try:
+                    bundle_size = source.bundle_remote_size(
+                        file_hashes, stable_id=stable_id
+                    )
+                except StemSourceError as exc:
+                    if hub_transport_failure_kind(exc) is None:
+                        raise
+                    if bytes_used == 0 and not fetched:
+                        raise
+                    _append_hub_error_remainder(
+                        stable_id,
+                        stable_ids[idx + 1 :],
+                        exc.message,
+                        skipped=skipped,
+                    )
+                    break
                 if bundle_size is not None and bytes_used + bundle_size > byte_budget:
                     remaining = byte_budget - bytes_used
                     skipped.append(
@@ -372,6 +423,16 @@ def bulk_hydrate(
             skip_reserved=not include_reserved,
             reserved_ids=reserved,
         )
+        if outcome.status == "hub_error":
+            if bytes_used == 0 and not fetched:
+                raise _stem_source_error_from_hub_outcome(outcome)
+            _append_hub_error_remainder(
+                stable_id,
+                stable_ids[idx + 1 :],
+                outcome.reason or "hub transport failure",
+                skipped=skipped,
+            )
+            break
         if outcome.status in ("hydrated", "already_local"):
             bytes_used += outcome.bytes_fetched
             fetched.append(outcome)

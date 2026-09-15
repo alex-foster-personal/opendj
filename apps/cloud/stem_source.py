@@ -8,6 +8,7 @@ A credentialed workstation keeps the direct-R2 path unchanged.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -30,6 +31,7 @@ STEM_BUNDLE_PRESIGN_FAILED = "STEM_BUNDLE_PRESIGN_FAILED"
 STEM_HYDRATION_NOT_ARMED = "STEM_HYDRATION_NOT_ARMED"
 
 SourceMode = Literal["direct_r2", "hub_presigned"]
+UnarmedKind = Literal["transient", "structural"]
 
 
 class StemSourceError(RuntimeError):
@@ -70,6 +72,49 @@ class StemHydrationArmResult:
 
     source: StemHydrationSource | None
     unarmed_reason: str | None
+    unarmed_kind: UnarmedKind | None = None
+
+
+_HTTP_STATUS_RE = re.compile(r"HTTP (\d+)")
+
+
+def hub_transport_failure_kind(
+    exc: StemSourceError,
+) -> Literal["unreachable", "hub_5xx"] | None:
+    """Classify hub transport failures for bulk partial-result and HTTP mapping."""
+    if exc.code == STEM_HUB_UNREACHABLE:
+        return "unreachable"
+    if exc.code == STEM_HUB_INDEX_FAILED:
+        match = _HTTP_STATUS_RE.search(exc.message)
+        if match is not None and int(match.group(1)) >= 500:
+            return "hub_5xx"
+    return None
+
+
+def classify_stem_hydration_unarmed(code: str | None, message: str) -> UnarmedKind:
+    """Classify why hydration stayed unarmed: retry on miss or terminal."""
+    if code == STEM_HUB_AUTH_REFUSED:
+        return "structural"
+    lowered = message.casefold()
+    if "boto3 is required" in lowered:
+        return "structural"
+    if "sync credential" in lowered and "re-enroll" in lowered:
+        return "structural"
+    if "credential unusable" in lowered or "credential file" in lowered:
+        return "structural"
+    if code == STEM_HUB_UNREACHABLE:
+        return "transient"
+    if code == STEM_HUB_INDEX_FAILED:
+        return "transient"
+    return "transient"
+
+
+def _unarmed_result(reason: str, *, code: str | None = None) -> StemHydrationArmResult:
+    return StemHydrationArmResult(
+        None,
+        reason,
+        classify_stem_hydration_unarmed(code, reason),
+    )
 
 
 @dataclass(frozen=True)
@@ -274,24 +319,24 @@ def _arm_direct_r2_source() -> StemHydrationArmResult | None:
             "stem-hydration: R2 credentials resolve but hydration is NOT armed: %s",
             exc,
         )
-        return StemHydrationArmResult(None, str(exc))
-    return StemHydrationArmResult(DirectR2Source(cfg=cfg, s3=s3), None)
+        return _unarmed_result(str(exc))
+    return StemHydrationArmResult(DirectR2Source(cfg=cfg, s3=s3), None, None)
 
 
 def _arm_hub_presigned_source(data_dir: Path) -> StemHydrationArmResult:
     """Arm hub-presigned hydration or record why it stayed unarmed."""
     if not _cloudsync_configured(data_dir):
-        return StemHydrationArmResult(None, None)
+        return StemHydrationArmResult(None, None, None)
     effective = sync_config.resolve_config(data_dir)
     hub_url = effective.hub_url
     if hub_url is None:
-        return StemHydrationArmResult(None, None)
+        return StemHydrationArmResult(None, None, None)
     machine_id = get_or_create_machine_id(data_dir)
     try:
         bearer = spoke_credential.read_credential(data_dir)
     except spoke_credential.SpokeCredentialError as exc:
         log.warning("stem-hydration: CloudSync configured but credential unusable: %s", exc)
-        return StemHydrationArmResult(None, str(exc))
+        return StemHydrationArmResult(None, str(exc), "structural")
     from apps.sync_hub import machine_credentials
 
     if bearer is None and machine_credentials.configured_mode() == "enforce":
@@ -300,7 +345,7 @@ def _arm_hub_presigned_source(data_dir: Path) -> StemHydrationArmResult:
             "re-enroll with the hub before stem hydration can arm"
         )
         log.warning("stem-hydration: %s", reason)
-        return StemHydrationArmResult(None, reason)
+        return StemHydrationArmResult(None, reason, "structural")
     source = HubPresignedSource(
         data_dir=data_dir,
         hub_url=hub_url,
@@ -314,15 +359,15 @@ def _arm_hub_presigned_source(data_dir: Path) -> StemHydrationArmResult:
             "stem-hydration: CloudSync configured but hub index refresh failed: %s",
             exc.message,
         )
-        return StemHydrationArmResult(None, exc.message)
+        return _unarmed_result(exc.message, code=exc.code)
     # Boot arming must survive unexpected refresh failures without crashing.
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "stem-hydration: CloudSync configured but hub index refresh failed: %s",
             exc,
         )
-        return StemHydrationArmResult(None, str(exc))
-    return StemHydrationArmResult(source, None)
+        return _unarmed_result(str(exc))
+    return StemHydrationArmResult(source, None, None)
 
 
 def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
@@ -338,7 +383,7 @@ def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
 
     data_dir = Path(data_dir)
     if policy.CFG.mode != "cloud":
-        return StemHydrationArmResult(None, None)
+        return StemHydrationArmResult(None, None, None)
     direct = _arm_direct_r2_source()
     if direct is not None:
         return direct
@@ -405,6 +450,9 @@ __all__ = [
     "StemHydrationArmResult",
     "StemHydrationSource",
     "StemSourceError",
+    "UnarmedKind",
     "arm_stem_hydration_source",
+    "classify_stem_hydration_unarmed",
+    "hub_transport_failure_kind",
     "resolve_stem_hydration_source",
 ]

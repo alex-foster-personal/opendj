@@ -7,8 +7,10 @@ Three-tier identifier:
    ISRC collide by design; that is the archival property.
 2. **Fingerprint** -- ``sha1(fp[:64] + '|' + duration_ms + '|' + size_bytes)``,
    tagged ``'fingerprint'``.
-3. **Inferred** -- ``sha1(abs_path + '|' + mtime)``, tagged ``'inferred'``.
-   Last resort. Phase 7 dedup re-keys these when better signals exist.
+3. **Inferred** -- ``sha1(canonical_path + '|' + mtime)`` where
+   ``canonical_path`` is NFC-normalized and case-folded (same key as ingest
+   path-collision grouping), tagged ``'inferred'``. Last resort. Phase 7 dedup
+   re-keys these when better signals exist.
 
 The output is always a 40-char lowercase hex SHA-1 string.
 """
@@ -16,12 +18,18 @@ from __future__ import annotations
 
 import hashlib
 import re
-import unicodedata
 from typing import Literal
+
+from apps.shared.state.ingest.path_collisions import path_collision_key
 
 ISRC_PATTERN: re.Pattern[str] = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$")
 
 Tier = Literal["isrc", "fingerprint", "inferred"]
+
+
+def _inferred_path_material(raw_path: str) -> str:
+    """Canonical path bytes for tier-3 hashing (NFC + casefold)."""
+    return path_collision_key(raw_path)
 
 
 def normalise_isrc(raw: str | None) -> str | None:
@@ -78,9 +86,8 @@ def stable_id(
             "or an abs_path+mtime pair; none were provided."
         )
     raw_path = abs_path if abs_path is not None else ""
-    path_str = unicodedata.normalize("NFC", raw_path).casefold()
     mtime_val = mtime if mtime is not None else 0.0
-    material = f"{path_str}|{mtime_val}"
+    material = f"{_inferred_path_material(raw_path)}|{mtime_val}"
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()
     return digest, "inferred"
 
