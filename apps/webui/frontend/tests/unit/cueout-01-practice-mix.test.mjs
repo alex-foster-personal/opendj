@@ -1,6 +1,6 @@
 // requirement: CUEOUT-01
-// [if] no monitor device is selected and a channel's CUE is on [then] turning MIX toward cue makes that channel audible pre-fader in the main output, with master attenuated by the equal-power law
-// [if] no monitor device is selected and no channel has CUE on [then] MIX at full cue produces silence in the main output rather than passing master through
+// [if] no monitor device is selected and a channel's CUE is on [then] turning MIX toward cue blends that channel pre-fader into the main output ON TOP of master, which stays at unity
+// [if] no monitor device is selected and MIX is at full cue (the reload default) [then] master still reaches the main output at unity, never silence
 // [if] a monitor device is selected [then] the main output is master-only again and MIX affects only the monitor, no cue bleed into the room
 // [if] output_mode is set outside the enum via IPC [then] the command throws and state is unchanged
 // [if] Bluetooth headphones are the sole output in practice mode [then] cue and master stay sample-aligned (same path); the mode never routes cue to a second device
@@ -16,13 +16,33 @@ before(async () => {
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 });
 
-test('practice mix reuses equal-power law and silences master at full cue', () => {
-	assert.deepEqual(headphones.practiceMainGains('practice', null, 0), { cue: 1, master: 0 });
+test('practice mode keeps master at unity for every MIX value; MIX only blends cue on top', () => {
+	for (const mix of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
+		const gains = headphones.practiceMainGains('practice', null, mix);
+		assert.equal(gains.master, 1, `practice master must be 1 at mix ${mix}, got ${gains.master}`);
+		assert.equal(gains.cue, headphones.headphoneMixGains(mix).cue, `practice cue leg at mix ${mix}`);
+	}
+	assert.deepEqual(headphones.practiceMainGains('practice', null, 0), { cue: 1, master: 1 });
 	assert.deepEqual(headphones.practiceMainGains('practice', null, 1), { cue: 0, master: 1 });
 	const center = headphones.practiceMainGains('practice', null, 0.5);
 	assert.ok(Math.abs(center.cue - Math.SQRT1_2) < 1e-12);
-	assert.ok(Math.abs(center.master - Math.SQRT1_2) < 1e-12);
-	assert.deepEqual(center, headphones.headphoneMixGains(0.5));
+});
+
+test('if practice mode with mix 0 zeroes master then the room is silent while meters show signal', () => {
+	// Default state on every reload: output_mode practice, no monitor, mix 0
+	// (session-only). The master meter taps _masterGain upstream of this gain,
+	// so a 0 here is invisible on every meter and silent at the speakers.
+	const defaults = headphones.practiceMainGains('practice', null, 0);
+	assert.notEqual(
+		defaults.master,
+		0,
+		'practice mode with mix 0 zeroes master: the room is silent while meters show signal'
+	);
+});
+
+test('the headphone monitor mix law itself is unchanged', () => {
+	assert.deepEqual(headphones.headphoneMixGains(0), { cue: 1, master: 0 });
+	assert.deepEqual(headphones.headphoneMixGains(1), { cue: 0, master: 1 });
 });
 
 test('two_outputs and a selected monitor restore master-only main, including MIX at full cue', () => {

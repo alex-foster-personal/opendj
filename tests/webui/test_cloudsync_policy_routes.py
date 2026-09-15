@@ -234,6 +234,18 @@ def test_rewriting_a_broken_cell_with_another_invalid_value_is_409(spoke_dir: Pa
     assert count(spoke_dir, "SELECT COUNT(*) FROM local_changelog") == logged
 
 
+def test_validate_sweep_surfaces_pre_existing_negative_cache_budget(spoke_dir: Path) -> None:
+    """if a pre-gate negative cache_budget row is not named by validate then broken"""
+    me = local_id(spoke_dir)
+    _store_pre_gate_cell(spoke_dir, me, "cached", -42)
+    with http_client(spoke_dir) as http:
+        outcome = http.post("/api/v1/cloudsync/policies/validate", json={}).json()
+    cache = [v for v in outcome["violations"] if v["rule_id"] == "cache_budget"]
+    assert cache, outcome["violations"]
+    assert cache[0]["subject"] == f"{me}/audio"
+    assert not cache[0]["blocking"]
+
+
 def test_rewriting_a_broken_cell_to_a_valid_value_is_accepted(spoke_dir: Path) -> None:
     """if a PUT that repairs an already broken cell is refused then broken"""
     me = local_id(spoke_dir)

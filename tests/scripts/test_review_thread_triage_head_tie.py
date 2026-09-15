@@ -39,6 +39,11 @@ def _run(monkeypatch: pytest.MonkeyPatch, sampled: str, fetched: str) -> int:
     monkeypatch.setattr(
         review_thread_triage, "fetch_pull_request", lambda n, owner, repo: _pr(fetched)
     )
+    monkeypatch.setattr(
+        review_thread_triage,
+        "check_pr_head_debt_file",
+        lambda number, head_sha, owner="", repo="": (None, []),
+    )
     monkeypatch.setattr("sys.argv", ["review_thread_triage", "1053"])
     return review_thread_triage.main()
 

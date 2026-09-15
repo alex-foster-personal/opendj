@@ -68,7 +68,12 @@ from apps.opendj_cli.orders import (
     slowed_since,
 )
 from apps.opendj_cli.helptext import LIBRARY_EPILOG, print_verbs
-from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
+from apps.opendj_cli.origin import (
+    EngineIdentityMismatch,
+    EngineNotRunning,
+    EngineOrigin,
+    resolve_verified_origin,
+)
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
@@ -698,21 +703,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
-            return _run_state(args, resolve_origin(args.lock))
+            return _run_state(args, resolve_verified_origin(args.lock))
         if head == _STATUS_COMMAND:
             from apps.opendj_cli import status_cli
 
             return status_cli.run(rest, as_json=args.json, lock=args.lock)
         if head == _OPEN_COMMAND:
-            return _run_open(args, resolve_origin(args.lock), rest)
+            return _run_open(args, resolve_verified_origin(args.lock), rest)
         if head == _TRACK_COMMAND:
             from apps.opendj_cli import track_cli
 
             return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
         orders, over = _plan(args, head, rest)
-        return _dispatch(args, resolve_origin(args.lock), orders, over)
+        return _dispatch(args, resolve_verified_origin(args.lock), orders, over)
     except InvocationError as error:
         return _fail(args, "usage", str(error), EXIT_FAILED)
+    except EngineIdentityMismatch as error:
+        return _fail(args, "engine_identity_mismatch", str(error), EXIT_NO_ENGINE)
     except EngineNotRunning as error:
         return _fail(args, "engine_not_running", str(error), EXIT_NO_ENGINE)
 

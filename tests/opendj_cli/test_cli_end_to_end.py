@@ -120,7 +120,16 @@ def test_exits_2_when_the_lock_names_a_port_nothing_answers_on(
         dead_port = int(probe.getsockname()[1])
     lock = tmp_path / ".engine.lock"
     lock.write_text(
-        json.dumps({"pid": 1, "host": "127.0.0.1", "port": dead_port}), encoding="utf-8"
+        json.dumps(
+            {
+                "pid": 1,
+                "role": "opendj-engine",
+                "host": "127.0.0.1",
+                "port": dead_port,
+                "boot_id": "dead-boot",
+            }
+        ),
+        encoding="utf-8",
     )
 
     dead = Engine(base_url="", port=dead_port, lock_path=lock)

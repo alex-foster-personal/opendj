@@ -124,8 +124,10 @@ export function externallyRoutedDecks(search: string): ReadonlySet<DeckId> {
  * (`audio-engine.svelte.ts`). EQ is excluded on purpose, see above.
  *
  * `?extroute=` splits the graph in two, and the second half is easy to get
- * backwards. Read `_ensureGraph`: `_masterGain.connect(_masterMuteGain)` runs
- * ONLY in the `routing === null` branch. When any deck is externally routed,
+ * backwards. Read `_ensureGraph`: master reaches `_masterMuteGain` ONLY in the
+ * `routing === null` branch, through `wirePracticeBlendIntoMasterPath` (master
+ * at unity in practice mode, `player/headphones.ts` `practiceMainGains`) and
+ * `wireSplitCableIntoMasterPath`. When any deck is externally routed,
  * the destination is fed by `_externalMerger` alone, and `_masterGain`'s only
  * remaining consumer is `ensureHeadphoneGraph`'s monitor tap. So in that mode
  * an UNMAPPED deck plays into the DJ's headphones and reaches no speaker, which
