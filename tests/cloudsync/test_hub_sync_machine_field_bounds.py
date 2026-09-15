@@ -1,4 +1,7 @@
-"""Issue #3081: sync hub machine.name and machine_id wire bounds."""
+"""Issue #3081: sync hub machine.name and machine_id wire bounds.
+
+[if] a hello exceeds the machine name or id wire limit [then] the hub rejects it, [else stop].
+"""
 from __future__ import annotations
 
 import json
