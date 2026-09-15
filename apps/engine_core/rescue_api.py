@@ -42,11 +42,8 @@ def _present_stable_ids(data_dir: Path) -> set[str] | None:
     try:
         conn = state_db.open_ro(db_path)
         try:
-<<<<<<< HEAD
-=======
             # A soft-deleted track is gone from the user's library, so a restore
             # must report it missing rather than reload it.
->>>>>>> origin/main
             rows = conn.execute(
                 "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
             ).fetchall()

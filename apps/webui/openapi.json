@@ -28988,7 +28988,10 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT)"
+            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT) or other hub index/presign failure"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
           }
         },
         "summary": "Bulk Hydrate Stems",
@@ -31419,7 +31422,10 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31561,7 +31567,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
           },
           "503": {
             "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"

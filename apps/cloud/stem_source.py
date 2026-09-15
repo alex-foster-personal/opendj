@@ -8,6 +8,7 @@ A credentialed workstation keeps the direct-R2 path unchanged.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -72,6 +73,22 @@ class StemHydrationArmResult:
     source: StemHydrationSource | None
     unarmed_reason: str | None
     unarmed_kind: UnarmedKind | None = None
+
+
+_HTTP_STATUS_RE = re.compile(r"HTTP (\d+)")
+
+
+def hub_transport_failure_kind(
+    exc: StemSourceError,
+) -> Literal["unreachable", "hub_5xx"] | None:
+    """Classify hub transport failures for bulk partial-result and HTTP mapping."""
+    if exc.code == STEM_HUB_UNREACHABLE:
+        return "unreachable"
+    if exc.code == STEM_HUB_INDEX_FAILED:
+        match = _HTTP_STATUS_RE.search(exc.message)
+        if match is not None and int(match.group(1)) >= 500:
+            return "hub_5xx"
+    return None
 
 
 def classify_stem_hydration_unarmed(code: str | None, message: str) -> UnarmedKind:
@@ -436,5 +453,6 @@ __all__ = [
     "UnarmedKind",
     "arm_stem_hydration_source",
     "classify_stem_hydration_unarmed",
+    "hub_transport_failure_kind",
     "resolve_stem_hydration_source",
 ]

@@ -51,7 +51,13 @@ STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {
         "description": (
             "Local stem bundle index cache is present but unreadable "
-            "(STEM_INDEX_CORRUPT)"
+            "(STEM_INDEX_CORRUPT) or other hub index/presign failure"
+        )
+    },
+    503: {
+        "description": (
+            "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint "
+            "and underlying error)"
         )
     },
 }
@@ -138,6 +144,20 @@ def _raise_hydrate_error(exc: BaseException) -> NoReturn:
     if isinstance(exc, AssetStoreError):
         raise _structured_error(400, "STEM_HYDRATE_FETCH_FAILED", str(exc)) from exc
     raise exc
+
+
+def _raise_stem_source_error(exc: BaseException, *, endpoint: str) -> NoReturn:
+    from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
+    from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
+
+    if not isinstance(exc, StemSourceError):
+        raise exc
+    if hub_transport_failure_kind(exc) == "unreachable":
+        raise_sync_hub_unreachable(endpoint, exc)
+    raise HTTPException(
+        status_code=502,
+        detail={"code": exc.code, "message": exc.message},
+    ) from exc
 
 
 def _raise_push_missing_error(exc: BaseException) -> NoReturn:
@@ -240,7 +260,8 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut | JSONResp
 def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     from apps.cloud import stem_hydration, stem_index
     from apps.cloud.eviction import HydrationError
-    from apps.cloud.stem_source import resolve_stem_hydration_source
+    from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
+    from apps.cloud.stem_source import StemSourceError, resolve_stem_hydration_source
     from apps.shared.paths import DATA_DIR
     from apps.stems.cli import stems_dir as _stems_dir_for
 
@@ -267,7 +288,10 @@ def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     # Parity with CLI ``bulk-hydrate``: refresh from R2 when the local cache
     # is empty or the caller passes ``refresh_index=True`` explicitly.
     if body.refresh_index or not index:
-        source.refresh_index(data_dir, force=True)
+        try:
+            source.refresh_index(data_dir, force=True)
+        except StemSourceError as exc:
+            _raise_stem_source_error(exc, endpoint=STEM_INDEX_PATH)
         index = stem_index.load_cached_index(data_dir)
     if not index:
         raise HTTPException(
@@ -287,6 +311,8 @@ def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
             include_reserved=body.include_reserved,
             stems_dir=_stems_dir_for(data_dir),
         )
+    except StemSourceError as exc:
+        _raise_stem_source_error(exc, endpoint=STEM_BUNDLE_PRESIGN_PATH)
     except HydrationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StemBulkHydrateOut(

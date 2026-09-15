@@ -106,7 +106,7 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
         "reads SHARE_ROOT, writes the replica crate only -- and _assert_within_crate "
         "now ENFORCES that on the local-copy lane, not just the ssh-pull lane"
     ),
-    "apps/webui/server/rb_djay_sync_service.py": (
+    "apps/sync/djay_sync_service.py": (
         "names REKORDBOX_LIVE_DB only in plan/diff JSON and audit reports; "
         "open_db() reads the working copy for diffs; live writes go through "
         "mapped http.rb_djay_sync.* WriteSurfaces guarded in routes/rb_djay_sync.py"
@@ -164,16 +164,10 @@ READ_ONLY_DB_HANDLES: dict[str, str] = {
     "apps/sync/playlist_diff.py": "rb_open_db(path) for a read-only diff",
     "apps/sync/usb/state.py": "open_db() no-arg working copy",
     "apps/tags/collect.py": "open_db() no-arg working copy, collects tags",
-<<<<<<< HEAD
-    "apps/webui/server/rb_djay_sync_service.py": (
+    "apps/sync/djay_sync_service.py": (
         "open_db() no-arg working copy in run_metadata_plan/run_cues_plan for audit "
         "diffs/plans; compare/plan only, writes CSVs under data/sync; live rekordbox "
-        "writes are HTTP-guarded elsewhere on this module's apply routes"
-=======
-    "apps/sync/djay_sync_service.py": (
-        "open_db() no-arg working copy in run_metadata_plan/run_cues_plan; "
-        "compare/plan only, writes CSVs under data/sync"
->>>>>>> origin/main
+        "writes are HTTP-guarded in routes/rb_djay_sync.py and guard_site on this module"
     ),
 }
 
