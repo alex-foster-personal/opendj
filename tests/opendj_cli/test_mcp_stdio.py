@@ -435,7 +435,11 @@ def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) 
     body = payload["body"]
     assert isinstance(body, dict), "body must be an embedded object, not a re-encoded string"
     assert isinstance(body["items"], list)
-    assert len(body["items"]) > 0
+    assert len(body["items"]) >= 20, (
+        f"bounded page returned only {len(body['items'])} items; a page this thin "
+        "(near the auto-shrink floor) technically satisfies '> 0' but is not a "
+        "usably-sized page for an agent reading the library"
+    )
     assert body["next_cursor"], "a bounded page short of an 8500-track library must still page"
     assert "cursor" in payload.get("mcp_note", ""), "must say how to get the rest"
 
