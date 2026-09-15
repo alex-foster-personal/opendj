@@ -24,15 +24,20 @@ from typing import Any
 
 import pytest
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import selection
 from apps.analysis.backends.own_key import record_from_estimate
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import open_conn, upsert_record
-from apps.webui.server.rb_vendor_pkg.own_key_overlay import OWN_KEY_MISSING_REASON
 from apps.analysis_key import canon, flags, profiles, segments
 from apps.analysis_key.lane_payload import depends_on_identity
-from apps.webui.server.rb_vendor_pkg.own_key_overlay import apply_own_key_segments
+from apps.opendj_cli import track_cli
+from apps.shared import platform_paths
+from apps.webui.server.rb_vendor_pkg.own_key_overlay import (
+    OWN_KEY_MISSING_REASON,
+    apply_own_key_segments,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 C_MAJOR = canon.Key(0, False)
@@ -267,3 +272,102 @@ def test_top_level_state_db_reaches_the_track_parser(state_db: Path) -> None:
     assert done.returncode == 0
     assert printed["status"] == "ok"
     assert len(printed["segments"]) == 2
+
+
+# ----- issue #3037: wrong default DB, missing DB reported as missing track -----
+
+
+def test_explicit_state_db_that_does_not_exist_is_distinct_from_not_found(
+    tmp_path: Path,
+) -> None:
+    """[if] --state-db names a file that is not there [then] error.code is
+    state_db_not_found, naming that path, never not_found, [else stop]."""
+    missing = tmp_path / "nonexistent" / "state.db"
+    done = _run_track_cli(
+        ["--state-db", str(missing), "track", "key-segments", "sid-x", "--json"],
+        data_dir=tmp_path,
+    )
+    printed = json.loads(done.stdout)
+
+    assert done.returncode != 0
+    assert printed["error"]["code"] == "state_db_not_found"
+    assert str(missing) in printed["error"]["message"]
+    assert printed["error"]["code"] != "not_found"
+
+
+def test_default_state_db_that_does_not_exist_is_also_distinct_from_not_found(
+    tmp_path: Path,
+) -> None:
+    """The same distinction applies when the DB path is CLI-resolved, not
+    user-named: MDT_DATA_DIR points at a real dir with no state/ subtree."""
+    empty_data_dir = tmp_path / "data-dir-with-no-state-db"
+    empty_data_dir.mkdir()
+    done = _run_track_cli(
+        ["track", "key-segments", "sid-x", "--json"], data_dir=empty_data_dir
+    )
+    printed = json.loads(done.stdout)
+
+    assert done.returncode != 0
+    assert printed["error"]["code"] == "state_db_not_found"
+    assert str(empty_data_dir / "state" / "state.db") in printed["error"]["message"]
+
+
+def test_resolve_state_db_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--state-db beats MDT_DATA_DIR beats the installed-app default."""
+    monkeypatch.delenv("MDT_DATA_DIR", raising=False)
+    monkeypatch.setenv(
+        "OPENDJ_LIVE_LOCK_PATH", str(tmp_path / "app-default" / ".engine.lock")
+    )
+
+    # Neither override set: falls back to the app-default lock's directory.
+    assert track_cli._resolve_state_db(None) == (
+        tmp_path / "app-default" / "state" / "state.db"
+    )
+
+    # MDT_DATA_DIR set, no --state-db: MDT_DATA_DIR wins over the app default.
+    monkeypatch.setenv("MDT_DATA_DIR", str(tmp_path / "mdt-data-dir"))
+    assert track_cli._resolve_state_db(None) == (
+        tmp_path / "mdt-data-dir" / "state" / "state.db"
+    )
+
+    # --state-db set: wins over both.
+    explicit = tmp_path / "explicit" / "state.db"
+    assert track_cli._resolve_state_db(explicit) == explicit
+
+
+def test_default_state_db_never_resolves_inside_the_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Payload-layout regression test for issue #3037.
+
+    Simulates the installed bundle's ``PROJECT_ROOT`` (``.../payload/app``)
+    and proves the CLI's resolved default state DB is the app's OWN data
+    dir -- read from the engine lock file's location, honoring
+    OPENDJ_LIVE_LOCK_PATH exactly like every other opendj_cli command -- and
+    never a path under that bundle-relative payload/app tree, without
+    needing an actual macOS install to prove it.
+    """
+    monkeypatch.delenv("MDT_DATA_DIR", raising=False)
+
+    fake_bundle_root = (
+        tmp_path / "Open DJ.app" / "Contents" / "Resources" / "payload" / "app"
+    )
+    fake_bundle_root.mkdir(parents=True)
+    fake_bundle_data_dir = fake_bundle_root / "data"
+    monkeypatch.setattr(platform_paths, "PROJECT_ROOT", fake_bundle_root)
+    monkeypatch.setattr(platform_paths, "DATA_DIR", fake_bundle_data_dir)
+    monkeypatch.setattr(rb_config, "DATA_DIR", fake_bundle_data_dir)
+    monkeypatch.setattr(
+        rb_config, "STATE_DB", fake_bundle_data_dir / "state" / "state.db"
+    )
+
+    app_data_dir = tmp_path / "Application Support" / "com.opendj.desktop"
+    monkeypatch.setenv("OPENDJ_LIVE_LOCK_PATH", str(app_data_dir / ".engine.lock"))
+
+    resolved = track_cli._resolve_state_db(None)
+
+    assert "payload" not in resolved.parts
+    assert resolved != fake_bundle_data_dir / "state" / "state.db"
+    assert resolved == app_data_dir / "state" / "state.db"
