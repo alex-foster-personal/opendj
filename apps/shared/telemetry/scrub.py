@@ -241,6 +241,25 @@ def _scrub_message(event: MutableMapping[str, Any]) -> None:
         message["formatted"] = scrub_string(message["formatted"])
 
 
+def _scrub_logentry(event: MutableMapping[str, Any]) -> None:
+    """A logged message travels as template + params + formatted, not `message`.
+
+    Until Mon 14 Sep 2026 this block was never scrubbed, and the top issue in
+    the live org carried a raw /Users/... path in its title this way.
+    """
+    logentry = event.get("logentry")
+    if not isinstance(logentry, dict):
+        return
+    for key in ("message", "formatted"):
+        if isinstance(logentry.get(key), str):
+            logentry[key] = scrub_string(logentry[key])
+    params = logentry.get("params")
+    if isinstance(params, list):
+        logentry["params"] = [
+            scrub_string(value) if isinstance(value, str) else value for value in params
+        ]
+
+
 def _scrub_request(event: MutableMapping[str, Any]) -> None:
     request = event.get("request")
     if not isinstance(request, dict):
@@ -281,6 +300,7 @@ def scrub_event(
         _scrub_sections(event)
         _scrub_exception(event)
         _scrub_message(event)
+        _scrub_logentry(event)
         _scrub_request(event)
         _scrub_breadcrumbs(event)
         # send_default_pii=False already suppresses these; belt and braces
