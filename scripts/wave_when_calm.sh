@@ -17,8 +17,8 @@ for i in $(seq 1 "$MAX"); do
   # data, not an error: tolerate it explicitly rather than letting -e end the
   # poll on the first busy sample. The launch decision is the `if` below, which
   # reads the gate's own status un-piped.
-  OUT=$(uv run scripts/mem_gate.py check 2>&1 | tail -1) || true
-  if uv run scripts/mem_gate.py check >/dev/null 2>&1; then
+  OUT=$(uv run --no-sync scripts/mem_gate.py check 2>&1 | tail -1) || true
+  if uv run --no-sync scripts/mem_gate.py check >/dev/null 2>&1; then
     echo "[$(date +%H:%M:%S)] poll $i: $OUT -> LAUNCHING"
     exec uv run --no-sync --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2
   fi
