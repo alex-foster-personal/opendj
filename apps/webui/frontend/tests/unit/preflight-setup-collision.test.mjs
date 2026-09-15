@@ -48,12 +48,6 @@ test('shouldBlockOnPreflight: setup open and preflight fail does not block', () 
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('unknown', true), false);
 });
 
-test('shouldBlockOnPreflight: any yielded overlay and preflight fail does not block', () => {
-	for (const yieldBootGate of [true]) {
-		assert.equal(preflightHelpers.shouldBlockOnPreflight('fail', yieldBootGate), false);
-	}
-});
-
 test('shouldBlockOnPreflight: a pass never blocks', () => {
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('pass', false), false);
 	assert.equal(preflightHelpers.shouldBlockOnPreflight('pass', true), false);

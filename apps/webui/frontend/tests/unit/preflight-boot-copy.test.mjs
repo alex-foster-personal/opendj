@@ -1,5 +1,5 @@
 /**
- * Boot-mode plain language for PREFLIGHT-01 (issue #2722 P1-1).
+ * Boot-mode plain language and heading escalation for PREFLIGHT-01 (issue #2722).
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -7,9 +7,13 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let bootCopy;
+let bootHeading;
 
 before(async () => {
 	bootCopy = await loadTypeScriptModule('src/lib/preflight/preflight-boot-copy.ts');
+	bootHeading = await loadTypeScriptModule('src/lib/preflight/boot-copy.ts', {
+		viteApiBase: 'https://preflight-boot-copy.example.test'
+	});
 });
 
 function check(overrides = {}) {
@@ -57,4 +61,23 @@ test('scrubBootDetail removes schema_meta version strings', () => {
 		bootCopy.scrubBootDetail('schema_meta reports version 3, expected 14'),
 		/schema_meta/i
 	);
+});
+
+test('bootGateHeading reflects blocked library state and escalates after repeated fails', () => {
+	const { bootGateHeading, BOOT_BLOCKED_HEADING, BOOT_ESCALATED_HEADING, BOOT_STARTING_HEADING } =
+		bootHeading;
+
+	const emptyLibrary = [
+		check(),
+		check({ id: 'library-attached', label: 'Library attached', status: 'fail', detail: '0 tracks' })
+	];
+
+	assert.equal(bootGateHeading(true, emptyLibrary, 0), BOOT_BLOCKED_HEADING);
+	assert.equal(bootGateHeading(true, emptyLibrary, 2), BOOT_BLOCKED_HEADING);
+	assert.equal(bootGateHeading(true, emptyLibrary, 3), BOOT_ESCALATED_HEADING);
+	assert.equal(
+		bootGateHeading(true, [check({ id: 'state-db', status: 'fail' })], 0),
+		BOOT_STARTING_HEADING
+	);
+	assert.equal(bootGateHeading(false, emptyLibrary, 5), 'Startup checks');
 });

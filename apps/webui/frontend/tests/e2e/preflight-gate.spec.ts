@@ -28,29 +28,34 @@ test.describe('preflight boot gate', () => {
 		await expect(page.getByRole('link', { name: 'Library' })).toBeVisible();
 	});
 
-	test('a library with nothing imported holds the gate on library-attached', async ({
+	test('a library with nothing imported auto-opens setup instead of trapping the user', async ({
 		page
 	}) => {
 		await page.goto(`${PREFLIGHT_GATE_BROKEN_ORIGIN}/`);
 
-		const gate = page.locator('[data-preflight-mode="boot"]');
-		await expect(gate).toBeVisible();
+		// P0-1 (#2722): the setup wizard owns the empty-library ask; the boot
+		// gate must not be the only interactive surface.
+		const setupDialog = page.getByRole('dialog', { name: 'First-run setup' });
+		await expect(setupDialog).toBeVisible({ timeout: 10_000 });
+		await expect(page.locator('[data-preflight-blocking="true"]')).toHaveCount(0);
 
-		// No skip/continue-anyway control exists at all -- there is nothing to
-		// query for, so the negative is that the app shell never appears.
-		await expect(page.getByRole('link', { name: 'Library' })).toHaveCount(0);
-
-		const libraryRow = gate.locator('[data-check-id="library-attached"]');
-		await expect(libraryRow).toHaveAttribute('data-check-status', 'fail');
-		await expect(libraryRow).toContainText('0 tracks');
-
-		// Import path must be offered on the boot gate (issue #2722).
-		await expect(gate.getByTestId('preflight-import-music')).toBeVisible();
-		await expect(gate.getByTestId('preflight-run-setup')).toBeVisible();
+		// Preflight still reports the honest fail -- never a fabricated pass.
+		const preflight = await page.request.get(
+			`${PREFLIGHT_GATE_BROKEN_ORIGIN}/api/v1/preflight`
+		);
+		expect(preflight.ok()).toBeTruthy();
+		const body = await preflight.json();
+		const libraryRow = body.checks.find(
+			(check: { id: string }) => check.id === 'library-attached'
+		);
+		expect(libraryRow?.status).toBe('fail');
+		expect(libraryRow?.user_detail).toContain('No music imported yet');
 
 		// A fresh install has nothing recorded to sample, which is an honest
 		// `pending`, never a fabricated pass (this issue's own denominator rule).
-		const audioRow = gate.locator('[data-check-id="audio-access"]');
-		await expect(audioRow).toHaveAttribute('data-check-status', 'pending');
+		const audioRow = body.checks.find(
+			(check: { id: string }) => check.id === 'audio-access'
+		);
+		expect(audioRow?.status).toBe('pending');
 	});
 });

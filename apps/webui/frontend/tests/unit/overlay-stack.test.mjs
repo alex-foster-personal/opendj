@@ -7,11 +7,24 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let stack;
+let stackLegacy;
 let preflightHelpers;
 
 before(async () => {
 	stack = await loadTypeScriptModule('src/lib/overlays/overlay-stack.ts');
+	stackLegacy = await loadTypeScriptModule('src/lib/overlays/stack.ts', {
+		viteApiBase: 'https://overlay-stack.example.test'
+	});
 	preflightHelpers = await loadTypeScriptModule('src/lib/preflight/preflight.svelte.ts');
+});
+
+test('overlay stack ordering keeps interactive surfaces above the boot gate', () => {
+	const { OVERLAY_Z } = stackLegacy;
+
+	assert.ok(OVERLAY_Z.setupPanel > OVERLAY_Z.preflightBoot);
+	assert.ok(OVERLAY_Z.settings > OVERLAY_Z.preflightBoot);
+	assert.ok(OVERLAY_Z.brandLaunch > OVERLAY_Z.setupPanel);
+	assert.ok(OVERLAY_Z.brandLaunch > OVERLAY_Z.settings);
 });
 
 test('bootGateYielded: any modal overlay lowers the blocking gate', () => {
