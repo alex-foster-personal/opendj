@@ -82,6 +82,15 @@ def test_build_fts_query_strips_embedded_quotes() -> None:
     assert search_index.build_fts_query('"dua"') == '"dua"*'
 
 
+def test_build_fts_query_nul_only_returns_none() -> None:
+    assert search_index.build_fts_query("\x00") is None
+
+
+def test_build_fts_query_strips_nul_without_sqlite_error(fixture_db: Path) -> None:
+    assert search_index.build_fts_query("a\x00b") is not None
+    search_index.search(fixture_db, "a\x00b", limit=10)
+
+
 def test_search_matches_title_prefix(fixture_db: Path) -> None:
     hits, total = search_index.search(fixture_db, "levi", limit=10)
     assert total == 1
