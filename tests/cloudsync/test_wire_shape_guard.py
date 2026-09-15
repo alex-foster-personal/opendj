@@ -104,6 +104,28 @@ def test_the_fingerprint_history_has_one_entry_per_wire_version(
     assert any("same fingerprint" in p for p in wire_version.fingerprint_history_problems())
 
 
+def test_wire_v5_pins_the_legacy_track_fields_semantic_contract(
+    fresh: sqlite3.Connection,
+) -> None:
+    """If wire v5 omits the track_fields modified_at fallback contract then broken."""
+    shape = wire_version.measure_wire_shape(fresh)
+    assert shape.get("semantic_contract") == (
+        wire_version.WIRE_SEMANTIC_CONTRACTS[wire_version.WIRE_VERSION]
+    )
+    assert wire_version.WIRE_FINGERPRINTS[wire_version.WIRE_VERSION] == (
+        wire_version.wire_fingerprint(shape)
+    )
+
+
+def test_a_v4_peer_fingerprint_differs_from_wire_v5() -> None:
+    """If wire v5 reuses v4's fingerprint then broken: semantic contract changed."""
+    assert wire_version.WIRE_FINGERPRINTS[4] != wire_version.WIRE_FINGERPRINTS[5]
+    assert wire_version.WIRE_SEMANTIC_CONTRACTS.get(4) is None
+    assert wire_version.WIRE_SEMANTIC_CONTRACTS[5] == (
+        "track_fields_modified_at_lww_fallback"
+    )
+
+
 def test_a_missing_synced_table_is_unknown_not_a_verdict() -> None:
     """If an empty DB yields a fingerprint instead of an error then broken."""
     conn = sqlite3.connect(":memory:")

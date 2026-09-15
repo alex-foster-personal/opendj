@@ -125,3 +125,14 @@ test('confirmQuit flushes before exit', async () => {
 	});
 	assert.deepEqual(order, ['flush', 'exit']);
 });
+
+test('confirmQuit does not reject when exitShell rejects (issue #3058)', async () => {
+	await assert.doesNotReject(
+		confirmQuit({
+			flushSnapshot: () => {},
+			exitShell: async () => {
+				throw new Error('process:allow-exit not granted');
+			}
+		})
+	);
+});

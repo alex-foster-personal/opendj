@@ -12239,6 +12239,8 @@ export interface components {
         SyncRowSampleModel: {
             /** Canonical Hex */
             canonical_hex: string;
+            /** Modified At */
+            modified_at?: string | null;
             /** Origin Device Id */
             origin_device_id?: string | null;
             /** Pk */
@@ -21967,6 +21969,8 @@ export interface operations {
                 since_seq?: number;
                 /** @description max changelog entries to consume in this chunk */
                 limit?: number;
+                /** @description optional track stable_id values whose live bundles are appended for identity repair without advancing the changelog cursor */
+                bundle_stable_ids?: string[];
                 /** @description protocol features the caller understands */
                 capabilities?: string[];
             };

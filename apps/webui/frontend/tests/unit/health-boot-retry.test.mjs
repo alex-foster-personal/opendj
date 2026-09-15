@@ -237,10 +237,23 @@ test('_init calls the real boot health/playlist read and reconciles each field t
 		/const bootHealthEpoch = _healthWriteEpoch;\s*const bootPlaylistsEpoch = _playlistsWriteEpoch;/,
 		'_init must snapshot BOTH write epochs, independently, before starting the boot read'
 	);
+	// PERF-UI-03 (2942a081e) replaced the Promise.all with two eagerly started
+	// promises so hydration begins during the launch animation. Both reads must
+	// still start together, before the try block, and each must be awaited.
 	assert.match(
 		source,
-		/const \[healthRes, lists\] = await Promise\.all\(\[\s*getHealthAtBoot\(getHealth\),\s*listPlaylistsHydrated\(\)\s*\]\);/,
+		/const healthPromise = getHealthAtBoot\(getHealth\);\s*const playlistsPromise = listPlaylistsHydrated\(\);\s*try \{/,
 		'the boot read must still call the real getHealthAtBoot, not a stand-in'
+	);
+	assert.match(
+		source,
+		/const healthRes = await healthPromise;/,
+		'the boot health promise must be awaited so a rejection reaches _init\'s catch'
+	);
+	assert.match(
+		source,
+		/const lists = await playlistsPromise;/,
+		'the boot playlists promise must be awaited so a rejection reaches _init\'s catch'
 	);
 	assert.match(
 		source,
