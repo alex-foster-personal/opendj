@@ -221,7 +221,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'head_delay_ms'; value: number }
-	| { type: 'master_mute'; muted: boolean }
+	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
@@ -932,8 +932,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, value: _unit('value', record.value) };
 	}
 	if (type === 'master_mute') {
-		_exactKeys(record, ['type', 'muted']);
-		return { type, muted: _boolean('muted', record.muted) };
+		if (record.persist === undefined) {
+			_exactKeys(record, ['type', 'muted']);
+			return { type, muted: _boolean('muted', record.muted) };
+		}
+		_exactKeys(record, ['type', 'muted', 'persist']);
+		return { type, muted: _boolean('muted', record.muted), persist: _boolean('persist', record.persist) };
 	}
 	if (type === 'browser_select_playlist') {
 		_exactKeys(record, ['type', 'playlist_id']);
@@ -1835,7 +1839,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
 	} else if (command.type === 'master_mute') {
-		setMasterMuted(command.muted);
+		// persist:false is the MCP safety rail's mute: silence this page now,
+		// but never store it where another browser would start muted.
+		setMasterMuted(command.muted, { persist: command.persist !== false });
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
 		await _browserAdapter.selectPlaylist(command.playlist_id);

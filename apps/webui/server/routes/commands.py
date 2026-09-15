@@ -114,17 +114,30 @@ def _order(body: dict[str, Any]) -> dict[str, Any]:
     return {"kind": kind, "payload": payload}
 
 
+def _persistable_master_mute(command: Any) -> bool | None:
+    """The muted value of a master_mute that may reach disk, else None."""
+    if not isinstance(command, dict) or command.get("type") != "master_mute":
+        return None
+    muted, persist = command.get("muted"), command.get("persist", True)
+    if not isinstance(persist, bool):
+        raise TypeError("master_mute persist must be boolean")
+    return muted if persist and isinstance(muted, bool) else None
+
+
 def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
-    """Last master_mute muted value in the order, or None if absent."""
+    """Last persistable master_mute value in the order, or None if absent.
+
+    A command carrying `persist: false` (the MCP safety rail's prepended mute)
+    is skipped: it must never reach the shared ui-prefs.json.
+    """
     last: bool | None = None
 
     def walk(commands: list[Any]) -> None:
         nonlocal last
         for command in commands:
-            if not isinstance(command, dict):
-                continue
-            if command.get("type") == "master_mute" and isinstance(command.get("muted"), bool):
-                last = command["muted"]
+            muted = _persistable_master_mute(command)
+            if muted is not None:
+                last = muted
 
     if "single" in body:
         payload = body["single"]
@@ -144,12 +157,6 @@ def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
     return last
 
 
-def _persist_master_mute_from_order(request: Request, body: dict[str, Any]) -> None:
-    muted = _master_mute_from_order(body)
-    if muted is not None:
-        persist_master_muted(request, muted)
-
-
 @router.post("", response_model=None)
 async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     """Submit one declared order and wait for the real browser result."""
@@ -157,9 +164,11 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
         return JSONResponse(status_code=409, content={"client_open": False})
     try:
         order = _order(body)
-    except ValueError as error:
+        muted_to_persist = _master_mute_from_order(body)
+    except (ValueError, TypeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    _persist_master_mute_from_order(request, body)
+    if muted_to_persist is not None:
+        persist_master_muted(request, muted_to_persist)
     broker = _broker(request)
     order_id, result = broker.submit(order)
     try:

@@ -6,13 +6,13 @@ import pytest
 
 from apps.opendj_cli.mcp_safety import (
     _DESTRUCTIVE_PATH_PATTERNS,
+    SafetyRefusal,
     guard_library_request,
     guard_order,
     order_starts_audible_play,
     prepend_master_mute,
     validate_api_path,
 )
-from apps.opendj_cli.mcp_safety import SafetyRefusal
 
 
 def test_destructive_patterns_cover_delete_and_ingest() -> None:
@@ -27,13 +27,16 @@ def test_guard_order_prepends_mute_for_play() -> None:
     rewritten, safety = guard_order(order)
     assert safety == {"prepended_master_mute": True}
     assert "sequence" in rewritten
+    assert rewritten["sequence"][0] == {"type": "master_mute", "muted": True, "persist": False}, (
+        "if the safety mute is persistable then an agent run mutes every browser on its next load"
+    )
 
 
 def test_prepend_master_mute_wraps_single() -> None:
     order = {"single": {"type": "play", "deck": 1, "playing": True}}
     rewritten, prepended = prepend_master_mute(order)
     assert prepended is True
-    assert rewritten["sequence"][0] == {"type": "master_mute", "muted": True}
+    assert rewritten["sequence"][0] == {"type": "master_mute", "muted": True, "persist": False}
 
 
 def test_validate_api_path_rejects_traversal() -> None:
