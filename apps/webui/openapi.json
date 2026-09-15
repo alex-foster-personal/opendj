@@ -867,6 +867,17 @@
       },
       "AppModeOut": {
         "properties": {
+          "id": {
+            "default": "performance",
+            "enum": [
+              "performance",
+              "library-management",
+              "library",
+              "music-player"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
           "last_gig_at": {
             "anyOf": [
               {
@@ -31683,6 +31694,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS entry does not exist"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -31692,6 +31706,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "MDT_EXTERNAL_STEM_ROOTS not configured"
           }
         },
         "summary": "Push Missing Stems",
@@ -31763,6 +31780,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
           },
           "422": {
             "content": {
