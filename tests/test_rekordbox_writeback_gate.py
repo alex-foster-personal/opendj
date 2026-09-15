@@ -239,6 +239,21 @@ def _http_probe(surface_id: str, client: TestClient, playlist_id: str, tmp: Path
         return client.post(
             "/api/v1/usb-export/apply", json={"plan": usb_plan, "confirmation": "p-1"}
         )
+    live_apply = {
+        "dry_run": False,
+        "live": True,
+        "i_understand_the_risks": True,
+        "diff_csv": str(tmp / "diff.csv"),
+    }
+    if surface_id == "http.rb_djay_sync.analysis.apply":
+        return client.post("/api/v1/rb-djay-sync/analysis/apply", json=live_apply)
+    if surface_id == "http.rb_djay_sync.ratings.apply":
+        return client.post("/api/v1/rb-djay-sync/ratings/apply", json=live_apply)
+    if surface_id == "http.rb_djay_sync.cues.apply":
+        return client.post(
+            "/api/v1/rb-djay-sync/cues/apply",
+            json={**live_apply, "cautious": True},
+        )
     raise AssertionError(f"no HTTP probe wired for {surface_id}")
 
 

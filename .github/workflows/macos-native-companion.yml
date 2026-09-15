@@ -101,7 +101,9 @@ jobs:
           uv pip install --python .venv/bin/python -r requirements.txt pytest
 
       - name: Build, inspect, install, and prove real ANLZ parity
-        run: make waveform-native-release-check
+        run: |
+          make waveform-native-release-check \
+            PYTEST_BASETEMP="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-native-wheel"
 
       - name: Prove the macOS ABI3 wheel imports on Python 3.14
         # --refresh-package (not --no-cache): see ci.yml's matching step

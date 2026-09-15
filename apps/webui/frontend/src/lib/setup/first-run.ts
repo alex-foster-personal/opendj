@@ -28,7 +28,23 @@
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { type SetupStatus, getSetupStatus, setupRefusal } from './setup-api';
+import { type SetupStatus, finalSetupRefusal, getSetupStatus } from './setup-api';
+
+/** How long to keep probing health before the boot gate shows a visible error. */
+export const FIRST_RUN_TIMEOUT_MS = 15_000;
+/** Delay between health probe retries while the daemon is still starting. */
+export const FIRST_RUN_PROBE_INTERVAL_MS = 500;
+
+export class FirstRunTimeoutError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'FirstRunTimeoutError';
+	}
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * The decision, given what is already known. Pure: no fetch, no navigation.
@@ -51,14 +67,35 @@ export function shouldShowFirstRun(
  * every failure mode here means "show the library", and a caller that had to
  * handle an exception would only translate it back into that same answer.
  */
-export async function resolveFirstRun(): Promise<boolean> {
-	await capabilities.probe();
-	const refusal = setupRefusal();
-	if (refusal !== null) return false;
-	try {
-		return shouldShowFirstRun(refusal, await getSetupStatus());
-	} catch (exc) {
-		console.error('[library] first-run check failed', exc);
-		return false;
+/**
+ * Probe until the daemon flavor is known, then ask the engine whether to show
+ * the wizard. Retries after a failed health GET (cold start) instead of
+ * treating "daemon not identified yet" as a final refusal -- that was the
+ * race that skipped GET /api/v1/setup/status entirely on fresh installs.
+ */
+export async function resolveFirstRun(
+	options: { timeoutMs?: number } = {}
+): Promise<boolean> {
+	const timeoutMs = options.timeoutMs ?? FIRST_RUN_TIMEOUT_MS;
+	const deadline = Date.now() + timeoutMs;
+
+	while (true) {
+		await capabilities.probe();
+		const refusal = finalSetupRefusal();
+		if (refusal !== null) return false;
+		if (capabilities.flavor === 'engine') {
+			try {
+				return shouldShowFirstRun(null, await getSetupStatus());
+			} catch (exc) {
+				console.error('[library] first-run check failed', exc);
+				return false;
+			}
+		}
+		if (Date.now() >= deadline) {
+			throw new FirstRunTimeoutError(
+				'The app could not reach the engine to offer setup. Check that it is running, then retry.'
+			);
+		}
+		await sleep(FIRST_RUN_PROBE_INTERVAL_MS);
 	}
 }

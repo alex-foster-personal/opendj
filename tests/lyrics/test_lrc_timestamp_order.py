@@ -6,6 +6,8 @@ although LRCLIB (id 35886253) served valid LRC for it. The file repeats a
 backing line at one stamp, twice. The fixture below keeps that response's
 real timestamps and line structure; the text is replaced with placeholders
 because the original is copyrighted lyrics and this repository is public.
+
+[if] LRC timestamps repeat or never decrease [then] parsing succeeds, [else stop].
 """
 
 from __future__ import annotations

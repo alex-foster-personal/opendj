@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated bundle Info.plist by tauri-bundler (any keys
+  here are added to the ones tauri.conf.json already produces).
+
+  Without NSMicrophoneUsageDescription, WKWebView does not expose
+  `navigator.mediaDevices` to the page at all on this build's WebKit
+  (it is `undefined`, not merely permission-denied). That takes out
+  headphone cue output enumeration/selection (CUEOUT-09), the audio
+  input picker (CUEOUT-10) and the first-select cue latency calibration
+  (CUEOUT-11) together, since all three start from
+  `navigator.mediaDevices`. Confirmed live on silver Mon 14 Sep 2026:
+  every attempt logged
+  "headphone output unsupported: navigator.mediaDevices is unavailable"
+  in webui-client-errors-2026-09-14.log, and `codesign -d --entitlements`
+  on the installed app returned nothing at all.
+
+  The mic is never actually recorded to disk or sent anywhere; it is
+  read locally in-process for two things: enumerating output devices
+  (enumerateDevices requires a granted input permission before device
+  labels are populated) and the short calibration click-train capture.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Open DJ enumerates audio devices and briefly listens on the microphone to auto-calibrate headphone cue latency. Audio is processed locally and never recorded or sent anywhere.</string>
+</dict>
+</plist>

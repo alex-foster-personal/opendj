@@ -9,6 +9,8 @@ Regression lines:
   - if a build-failure event is not tagged kind=build, then broken
   - if a packaged (payload) build with a DSN present still defaults ON, then
     broken
+
+[if] the sink captures an event, or a build has a DSN [then] ids carry, telemetry off, [else stop].
 """
 
 from __future__ import annotations

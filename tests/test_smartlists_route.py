@@ -113,7 +113,9 @@ def _make_client(
     # app.py is a hotspot owned by the wave integrator; tests wire the
     # router exactly the way the integrator will.
     app.include_router(smartlists_routes.router, prefix="/api/v1")
-    return TestClient(app)
+    # request_guard's host allowlist (issue #2689) rejects TestClient's
+    # default Host ("testserver"); "test-host" is the hostname= passed above.
+    return TestClient(app, base_url="http://test-host")
 
 
 @pytest.fixture
@@ -547,15 +549,7 @@ def test_tracks_404_unknown_id(client):
 
 def test_missing_state_db_503(tmp_path):
     ghost = tmp_path / "missing" / "state.db"
-    app = create_app(
-        backend=SqliteBackend(ghost),
-        bind_host="127.0.0.1",
-        hostname="test-host",
-        state_db_path=str(ghost),
-        mount_frontend=False,
-    )
-    app.include_router(smartlists_routes.router, prefix="/api/v1")
-    with TestClient(app) as c:
+    with _make_client(ghost) as c:
         r = c.get("/api/v1/smartlists")
     assert r.status_code == 503
     assert r.json()["detail"]["code"] == "SMARTLISTS_DB_UNAVAILABLE"
@@ -578,15 +572,7 @@ def test_live_state_db_smoke():
 
     if not Path(STATE_DB).is_file():
         pytest.skip(f"no live state.db at {STATE_DB}")
-    app = create_app(
-        backend=SqliteBackend(STATE_DB),
-        bind_host="127.0.0.1",
-        hostname="test-host",
-        state_db_path=str(STATE_DB),
-        mount_frontend=False,
-    )
-    app.include_router(smartlists_routes.router, prefix="/api/v1")
-    with TestClient(app) as c:
+    with _make_client(Path(STATE_DB)) as c:
         r = c.get("/api/v1/smartlists")
     assert r.status_code == 200
     assert isinstance(r.json(), list)

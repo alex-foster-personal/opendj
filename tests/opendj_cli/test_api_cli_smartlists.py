@@ -61,7 +61,9 @@ def _patch_backend(
     monkeypatch: pytest.MonkeyPatch, base_url: str,
 ) -> None:
     monkeypatch.setattr(
-        api_cli, "resolve_backend_base_url", lambda environ=None: base_url,
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
     )
 
 

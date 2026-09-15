@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore';
+	import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 
 	const active = $derived(
 		rescueRestoreStatus.phase === 'restoring' || rescueRestoreStatus.phase === 'resuming'

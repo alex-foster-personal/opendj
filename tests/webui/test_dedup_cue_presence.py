@@ -462,10 +462,17 @@ def test_apply_still_rewrites_playlists_only(
         assert clusters.status_code == 200
         etag = clusters.headers["etag"]
         cluster = clusters.json()["clusters"][0]
+        # cue_fixture gives ALIAS hot cues CANON lacks; confirm_cue_loss opts
+        # into discarding them so this test can stay focused on playlist
+        # rewrite behaviour (see test_hardening_round2.py for the gate itself).
         response = client.post(
             f"/api/v1/dedup/clusters/{cluster['cluster_id']}/apply",
             headers={"If-Match": etag},
-            json={"cluster_key": cluster["cluster_key"], "survivor": CANON},
+            json={
+                "cluster_key": cluster["cluster_key"],
+                "survivor": CANON,
+                "confirm_cue_loss": True,
+            },
         )
         assert response.status_code == 200
 

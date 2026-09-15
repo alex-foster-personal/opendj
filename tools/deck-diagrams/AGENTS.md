@@ -38,7 +38,7 @@ open tools/deck-diagrams/devices/ddj-flx10/deck.html
 - Diagrams **consume** MIDI expected maps; they do not invent note numbers.
 - SHIFT is a first-class layer. Pad modes are additional layers when present.
 - HID-only surfaces (jog screens, VU bitmaps) stay out of scope - list them in `footnotes.md`.
-- No U+2014 or U+2013 characters in files (repo hook).
+- No U+2013 or U+2014 characters in files.
 
 ## Scale gate
 

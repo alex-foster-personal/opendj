@@ -85,4 +85,6 @@ and what they obviously missed.
 
 - Iterating on UI/logic: use tier 0 (vite dev in a browser) -- it is faster.
 - Gesture-level coverage (hover, dblclick): tier 1 Playwright webkit owns it.
-- Anything against a release build: impossible by design, and should stay so.
+- Anything against a release build: use the shipped stdio MCP instead (see
+  `apps/opendj_cli/README.md` and `opendj mcp`). WebDriver stays debug-only
+  (AGENT-07); installed agents get lock-file HTTP plus `ui_url` for browser MCP.

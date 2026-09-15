@@ -1,4 +1,7 @@
-"""Hub presigned stem asset endpoints and spoke hydration (STEM-31, #2630)."""
+"""Hub presigned stem asset endpoints and spoke hydration (STEM-31, #2630).
+
+[if] a presigned download fails its sha256 check [then] no partial bundle is written, [else stop].
+"""
 from __future__ import annotations
 
 import hashlib
