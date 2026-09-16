@@ -156,6 +156,7 @@ import {
 	performanceFeedbackSummary,
 	recordPerformanceFeedback
 } from '$lib/rb/vibe.svelte';
+import { previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -172,7 +173,11 @@ export type HeadphoneCommand =
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
 	| { type: 'master_delay_ms'; value: number }
 	| { type: 'headphone_calibrate'; interactive?: boolean }
-	| { type: 'headphone_calibrate_abort' };
+	| { type: 'headphone_calibrate_abort' }
+	// CUEOUT-15: the library preview is a cue-bus voice, so it mirrors here
+	// with the rest of the cue controls rather than beside the deck transport.
+	| { type: 'preview_cue'; stable_id: string; ratio: number }
+	| { type: 'preview_stop' };
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -236,6 +241,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	| { type: 'headphone_master_select'; device_id: string }
 	| { type: 'headphone_input_select'; device_id: string }
+	| { type: 'preview_cue'; stable_id: string; ratio: number }
+	| { type: 'preview_stop' }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
 	| { type: 'master_delay_ms'; value: number }
@@ -407,6 +414,17 @@ export interface PerformanceState {
 	 * default. */
 	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
+	/** CUEOUT-15: the library preview voice. An agent that can START a preview
+	 * (`preview_cue`) has to be able to read whether one is running and where
+	 * it is, or the only way to find out is to look at the screen. `stable_id`
+	 * null means nothing is previewing; it is never a deck. */
+	preview: {
+		stable_id: string | null;
+		playing: boolean;
+		position_ms: number;
+		duration_ms: number | null;
+		route: 'cue' | 'main_practice' | 'split_right' | null;
+	};
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -981,6 +999,21 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		_exactKeys(record, ['type', 'muted', 'persist']);
 		return { type, muted: _boolean('muted', record.muted), persist: _boolean('persist', record.persist) };
+	}
+	if (type === 'preview_cue') {
+		// CUEOUT-15. `ratio` is validated here rather than clamped, because a
+		// caller that sent 1.6 meant something this cannot guess; the pointer
+		// path clamps because a pixel outside the strip DOES have an obvious
+		// intent.
+		_exactKeys(record, ['type', 'stable_id', 'ratio']);
+		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
+			throw new TypeError('stable_id must be a non-empty string');
+		}
+		return { type, stable_id: record.stable_id, ratio: _unit('ratio', record.ratio) };
+	}
+	if (type === 'preview_stop') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'browser_select_playlist') {
 		_exactKeys(record, ['type', 'playlist_id']);
@@ -1584,6 +1617,13 @@ export function queryPerformanceState(): PerformanceState {
 			per_deck: { ...rescueRestoreStatus.per_deck },
 			started_at_ms: rescueRestoreStatus.started_at_ms
 		},
+		preview: {
+			stable_id: previewCue.stable_id,
+			playing: previewCue.playing,
+			position_ms: previewCue.position_ms,
+			duration_ms: previewCue.duration_ms,
+			route: previewCue.route
+		},
 		last_error: performanceCommandStatus.last_error,
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
 		// Proxy wrapping the assigned object - and a Proxy, regardless of what
@@ -1699,6 +1739,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
+		// CUEOUT-15: the preview owns no deck, so serializing it behind one
+		// would make a library click wait on a transport it cannot touch.
+		command.type === 'preview_cue' ||
+		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
@@ -1919,6 +1963,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
 		await _browserAdapter.selectPlaylist(command.playlist_id);
 		_activeBrowserPlaylist = command.playlist_id;
+	} else if (command.type === 'preview_cue') {
+		// The UI path gets the refusal as a toast. An agent gets it as a failed
+		// step, so `POST /performance/headphones/preview` answers 400 with the
+		// reason instead of 200 over a preview that never started.
+		const outcome = await previewCueSeek(command.stable_id, command.ratio);
+		if (!outcome.ok) throw new Error(outcome.reason);
+	} else if (command.type === 'preview_stop') {
+		stopPreviewCue();
 	} else if (command.type === 'headphone_mix') {
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
