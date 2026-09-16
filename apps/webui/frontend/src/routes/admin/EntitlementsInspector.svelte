@@ -67,7 +67,12 @@
 	{/if}
 
 	<h4 class="block-title">Resolved flags</h4>
-	<div class="rows">
+	<!-- A refused row is listed BOTH here and under Active refusals below, by
+	     design: this block is the full resolved set, that one is the subset
+	     currently refusing. The two testids let a caller name which of the two
+	     it means, because the label and the refusal sentence are the same text
+	     in both. -->
+	<div class="rows" data-testid="inspector-resolved-flags">
 		{#each snapshot.rows as row (row.id)}
 			<div class="row" title={rowTitle(row)}>
 				<span class="label">{row.label}</span>
@@ -83,7 +88,7 @@
 	{#if snapshot.activeRefusals.length === 0}
 		<p class="note">No session-level refusals right now.</p>
 	{:else}
-		<div class="rows">
+		<div class="rows" data-testid="inspector-active-refusals">
 			{#each snapshot.activeRefusals as row (row.id)}
 				<div class="row active" title={rowTitle(row)}>
 					<span class="label">{row.label}</span>
