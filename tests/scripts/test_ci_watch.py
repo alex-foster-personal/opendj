@@ -137,7 +137,7 @@ def test_a_crash_exits_unknown_not_genuine(monkeypatch):
 def test_a_zero_identity_failure_prints_the_log_error_lines():
     lines: list[str] = []
     log = (
-        "2026-09-16T09:44:38Z \x1b[36;1mecho \"[ERROR] echoed-command-not-a-result\"\x1b[0m\n"
+        '2026-09-16T09:44:38Z \x1b[36;1mecho "[ERROR] echoed-command-not-a-result"\x1b[0m\n'
         '2026-09-16T09:44:38Z [ERROR] budget "other-lazy" exceeded: 199450 bytes gzip\n'
         "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
     )
