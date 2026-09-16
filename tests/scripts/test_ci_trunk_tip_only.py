@@ -8,6 +8,7 @@ Regression lines:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -263,6 +264,16 @@ def _pr_run(
     )
 
 
+def _recording_gh_api_json(asked: list[str], result: list[object]) -> Callable[[str], list[object]]:
+    """A `_gh_api_json` fake that records every path it was asked and returns `result`."""
+
+    def fake_api(path: str) -> list[object]:
+        asked.append(path)
+        return result
+
+    return fake_api
+
+
 def test_a_run_for_a_branch_with_no_open_pr_is_cancelled() -> None:
     runs = [
         _pr_run(50, "af--merged"),
@@ -390,7 +401,7 @@ def test_the_recheck_asks_under_the_forks_owner_not_this_repositorys(
     repository's owner returns nothing, reads as "no open pull request", and cancels a live
     run. That is the single contract the recheck exists to hold."""
     asked: list[str] = []
-    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [{"number": 9}])
+    monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, [{"number": 9}]))
     run = _pr_run(60, "patch-1", head_repo_owner="a-contributor")
     cancelled = mod.execute_closed_pr_sweep((run,), dry_run=False)
     assert asked == [
@@ -404,7 +415,7 @@ def test_a_run_from_this_repository_is_still_asked_under_this_owner(
 ) -> None:
     """The control: the ordinary case is the overwhelming majority and must not move."""
     asked: list[str] = []
-    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, []))
     monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.CANCELLED)
     run = _pr_run(61, "af--merged")
     assert mod.execute_closed_pr_sweep((run,), dry_run=False) == 1
@@ -453,7 +464,7 @@ def test_a_branch_name_carrying_a_query_delimiter_is_encoded(
     nothing, and the sweep cancels a live run. `+` is as bad and quieter: it decodes to a
     space."""
     asked: list[str] = []
-    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, []))
     mod._open_pr_count("maintainer", "af--a&state=closed+b")
     assert asked == [
         f"repos/{mod.REPO}/pulls"
@@ -465,7 +476,7 @@ def test_an_ordinary_branch_name_is_left_readable(monkeypatch: pytest.MonkeyPatc
     """The control: `:` and `-` carry the head filter's own syntax and must not be escaped,
     or every ordinary branch stops matching and the sweep cancels everything."""
     asked: list[str] = []
-    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, []))
     mod._open_pr_count("maintainer", "af--ci-watch")
     assert asked == [
         f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--ci-watch&per_page=1"
