@@ -25,6 +25,7 @@ from scripts.ci_main_red import (
     unmeasured_baseline_names,
     verdict_runs,
 )
+from scripts.review_gh import TriageError
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -204,3 +205,30 @@ def test_names_from_both_sources_are_unioned():
     assert unmeasured_baseline_names(
         frozenset({"unreadable job"}), frozenset({"failed check run"}), frozenset()
     ) == frozenset({"unreadable job", "failed check run"})
+
+
+def test_a_refused_log_read_leaves_that_job_unmeasured_not_the_whole_baseline():
+    """Hit live Wed 16 Sep 2026. GitHub expires job logs, so an older job in the baseline
+    window answers 404. Propagated, one expired log killed the ENTIRE main-red measurement
+    and the watcher had no baseline at all; the point of LogUnreadable is that exactly one
+    job goes unmeasured."""
+    def refuse(_job_id: int) -> str:
+        raise TriageError("gh: HTTP 404")
+
+    with pytest.raises(LogUnreadable):
+        read_job_log(1, refuse, lambda _s: None)
+
+
+def test_a_read_that_succeeds_after_a_refusal_is_still_returned():
+    """The control: the retry must not be turned into a swallow. A transient refusal
+    followed by a good read is a MEASURED job, and treating it as unreadable would push
+    every flaky read into UNKNOWN and stop the watcher ever reporting a clean baseline."""
+    calls: list[int] = []
+
+    def flaky(job_id: int) -> str:
+        calls.append(job_id)
+        if len(calls) == 1:
+            raise TriageError("gh: HTTP 502")
+        return "FAILED tests/test_a.py::test_b"
+
+    assert read_job_log(1, flaky, lambda _s: None) == "FAILED tests/test_a.py::test_b"

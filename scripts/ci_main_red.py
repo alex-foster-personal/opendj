@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.ci_failure_ids import failed_identities
-from scripts.review_gh import _gh
+from scripts.review_gh import TriageError, _gh
 
 REPO = "maintainer/music-dj-tools"
 MAIN_WINDOW = 3
@@ -177,7 +177,14 @@ def read_job_log(
     is how an unmeasured job earns a verdict it did not deserve.
     """
     for attempt in range(LOG_READ_TRIES):
-        log = fetch(job_id)
+        try:
+            log = fetch(job_id)
+        except TriageError:
+            # gh REFUSING the read is the same outcome as an empty one: nothing was
+            # measured. GitHub expires job logs, so an older job in the baseline window
+            # answers 404, and raising here killed the WHOLE baseline over one expired
+            # log rather than leaving that one job unmeasured. Hit live Wed 16 Sep 2026.
+            log = ""
         if log:
             return log
         if attempt + 1 < LOG_READ_TRIES:
