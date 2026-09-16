@@ -10,6 +10,7 @@
 	// under the pointer above the strip.
 	import ScrubLyricStrip from '$lib/components/lyrics/ScrubLyricStrip.svelte';
 	import { cancelHoverLoad, hoverLoadLyrics, lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
+	import { previewCancelWarm, previewWarmOnHover } from '$lib/player/preview-cue.svelte';
 	import {
 		indexLyricWords,
 		nearSecondsForScale,
@@ -223,6 +224,8 @@
 		if (scrubOn && stable_id !== null && uiPrefs.lyrics_load_strategy === 'hover') {
 			hoverLoadLyrics(stable_id);
 		}
+		// CUEOUT-15: a dwell here turns the click's cold fetch into a warm one.
+		if (stable_id !== null) previewWarmOnHover(stable_id);
 		pointer = _resolveAtRatio(ratio);
 	}
 
@@ -235,7 +238,10 @@
 	function onLeave(): void {
 		hoverX = null;
 		pointer = null;
-		if (stable_id !== null) cancelHoverLoad(stable_id);
+		if (stable_id !== null) {
+			cancelHoverLoad(stable_id);
+			previewCancelWarm(stable_id);
+		}
 	}
 
 	function onClick(event: MouseEvent): void {
