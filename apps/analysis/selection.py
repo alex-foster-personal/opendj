@@ -183,10 +183,15 @@ _TOGGLE_LOCK = threading.Lock()
 # restored would be able to reapply an override a promotion superseded,
 # which is the exact failure PARITY-02's launch state exists to prevent.
 _TOGGLE: dict[str, ToggleState] = {lane: "unset" for lane in LANES}
-# Bumped by every write `write_toggle` makes, launch state 0. A VALUE can
-# repeat (own -> rbx -> own reads as "own" again); a revision never does, so
-# it is what tells "nothing changed since my write" apart from "the value
-# happens to match again" (discussion_r3974993963 P1 BLOCKING).
+# Monotonic counter of successful toggle mutations, launch state 0. A "write"
+# is a `write_toggle` call that enters the locked mutation and assigns the
+# toggle (a compare-and-set refusal is not a write; an open-time durable
+# failure before `write_toggle` runs is not a write; assigning the same value
+# again still is). Compensation routed through `write_toggle` counts as
+# another write. A VALUE can repeat (own -> rbx -> own reads as "own"
+# again); a revision never does, so it is what tells "nothing changed since
+# my write" apart from "the value happens to match again"
+# (discussion_r3974993963 P1 BLOCKING, issue #3189).
 _TOGGLE_REVISION: dict[str, int] = {lane: 0 for lane in LANES}
 
 

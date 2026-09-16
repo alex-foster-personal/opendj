@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from scripts import ci_trunk_tip_only as mod
+from scripts.ci_health_core import PreconditionError
 
 TRUNK_TIP = "a" * 40
 OTHER_SHA = "b" * 40
@@ -115,12 +116,15 @@ def test_execute_sweep_posts_cancel_when_not_dry_run(monkeypatch: pytest.MonkeyP
     )
     posts: list[int] = []
 
-    def _fake_cancel(run_id: int) -> None:
+    def _fake_cancel(run_id: int) -> mod.CancelOutcome:
         posts.append(run_id)
+        return mod.CancelOutcome.CANCELLED
 
     monkeypatch.setattr(mod, "_cancel_run", _fake_cancel)
-    mod.execute_sweep(plan, dry_run=False)
+    report = mod.execute_sweep(plan, dry_run=False)
     assert posts == [31]
+    assert report.bookkeeping_cancelled == 1
+    assert report.bookkeeping_cancel_skipped_not_yet_queued == 0
 
 
 def test_cancel_log_line_includes_superseded_by() -> None:
@@ -130,3 +134,101 @@ def test_cancel_log_line_includes_superseded_by() -> None:
     assert "superseded_by=" + TRUNK_TIP in line
     assert "workflow=CI Cost Guard" in line
     assert f"run_id={run.run_id}" in line
+
+
+def test_cancel_run_tolerates_not_yet_queued_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If cancel POST returns HTTP 409 not-yet-queued then the sweep skips instead of failing."""
+    def _raise_409(_args: list[str]) -> str:
+        raise PreconditionError(
+            "gh api --method POST repos/example/actions/runs/1/cancel failed with exit 1: "
+            "gh: Cannot cancel a workflow run that has not been queued yet. (HTTP 409)"
+        )
+
+    monkeypatch.setattr(mod, "_run_gh", _raise_409)
+    assert mod._cancel_run(1) is mod.CancelOutcome.SKIPPED_NOT_YET_QUEUED
+
+
+def test_cancel_run_propagates_non_409_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If cancel POST returns 404 then the precondition error still aborts the sweep."""
+    def _raise_404(_args: list[str]) -> str:
+        raise PreconditionError(
+            "gh api --method POST repos/example/actions/runs/1/cancel failed with exit 1: "
+            "gh: Not Found (HTTP 404)"
+        )
+
+    monkeypatch.setattr(mod, "_run_gh", _raise_404)
+    with pytest.raises(PreconditionError):
+        mod._cancel_run(1)
+
+
+def test_cancel_run_propagates_409_without_not_yet_queued_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If cancel POST returns HTTP 409 without the not-yet-queued reason then it stays loud."""
+    def _raise_other_409(_args: list[str]) -> str:
+        raise PreconditionError(
+            "gh api --method POST repos/example/actions/runs/1/cancel failed with exit 1: "
+            "gh: Conflict (HTTP 409)"
+        )
+
+    monkeypatch.setattr(mod, "_run_gh", _raise_other_409)
+    with pytest.raises(PreconditionError):
+        mod._cancel_run(1)
+
+
+def test_execute_sweep_continues_after_bookkeeping_not_yet_queued_409(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """If one bookkeeping cancel is not yet queued then later targets still cancel."""
+    run_skipped = _run(40, name="CI Cost Guard", head_sha=OTHER_SHA)
+    run_cancelled = _run(41, name="Stable evidence", head_sha=OTHER_SHA)
+    plan = mod.SweepPlan(
+        trunk_tip=TRUNK_TIP,
+        retained_head_shas=frozenset({TRUNK_TIP}),
+        retained_ci_run_ids=frozenset(),
+        ci_to_cancel=(),
+        bookkeeping_to_cancel=(run_skipped, run_cancelled),
+        bookkeeping_kept=0,
+    )
+    posts: list[int] = []
+
+    def _fake_cancel(run_id: int) -> mod.CancelOutcome:
+        posts.append(run_id)
+        if run_id == 40:
+            return mod.CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        return mod.CancelOutcome.CANCELLED
+
+    monkeypatch.setattr(mod, "_cancel_run", _fake_cancel)
+    report = mod.execute_sweep(plan, dry_run=False)
+    assert posts == [40, 41]
+    assert report.bookkeeping_cancelled == 1
+    assert report.bookkeeping_cancel_skipped_not_yet_queued == 1
+    captured = capsys.readouterr().out
+    assert "bookkeeping-cancel-skipped workflow=CI Cost Guard run_id=40" in captured
+    assert f"head_sha={OTHER_SHA}" in captured
+    assert f"superseded_by={TRUNK_TIP}" in captured
+    assert "reason=not-yet-queued" in captured
+    assert "::notice::bookkeeping-cancel-skipped" in captured
+
+
+def test_execute_sweep_propagates_bookkeeping_cancel_precondition_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a bookkeeping cancel fails for a real precondition then the sweep aborts."""
+    run = _run(42, name="Error sink", head_sha=OTHER_SHA)
+    plan = mod.SweepPlan(
+        trunk_tip=TRUNK_TIP,
+        retained_head_shas=frozenset({TRUNK_TIP}),
+        retained_ci_run_ids=frozenset(),
+        ci_to_cancel=(),
+        bookkeeping_to_cancel=(run,),
+        bookkeeping_kept=0,
+    )
+
+    def _raise_precondition(_run_id: int) -> mod.CancelOutcome:
+        raise PreconditionError("gh api cancel failed with exit 1: gh: Not Found (HTTP 404)")
+
+    monkeypatch.setattr(mod, "_cancel_run", _raise_precondition)
+    with pytest.raises(PreconditionError):
+        mod.execute_sweep(plan, dry_run=False)

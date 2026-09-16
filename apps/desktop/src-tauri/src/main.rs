@@ -506,7 +506,8 @@ fn main() {
         // for why the check is duplicated rather than shared.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init());
 
     // DEBUG BUILDS ONLY. The dependency itself is gated on cfg(debug_assertions)
     // in Cargo.toml, so a release build cannot compile this line in at all.

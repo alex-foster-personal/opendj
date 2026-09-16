@@ -18,6 +18,12 @@ export class TreePlaylistRename {
 	inputEl: HTMLInputElement | null = $state(null);
 	/** Set after '+'; rename starts once the new node appears in `nodesOf()`. */
 	pendingId: string | null = $state(null);
+	/** playlist_id of the most recent create-then-rename, kept past the rename
+	 * commit (unlike editingId) so a "what next" hint can survive the rename
+	 * itself. Cleared implicitly by the host reading it alongside
+	 * node.track_count === 0 - once the playlist gets its first track, or a
+	 * newer create supersedes it, the hint stops rendering on its own. */
+	createdId: string | null = $state(null);
 
 	constructor(
 		private readonly nodesOf: () => PlaylistNode[],
@@ -79,6 +85,7 @@ export class TreePlaylistRename {
 		const node = this.nodesOf().find((n) => n.playlist_id === id);
 		if (node === undefined) return;
 		this.pendingId = null;
+		this.createdId = id;
 		void this.begin(node);
 	}
 }
