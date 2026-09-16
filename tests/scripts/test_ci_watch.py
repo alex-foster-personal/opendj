@@ -10,6 +10,8 @@ Regression lines:
   - if zero check runs ever end the poll as a success then broken
   - if an uncaught crash exits 1 (GENUINE) instead of 3 then broken
   - if a zero-identity failure prints no reason then broken
+
+[if] the watcher calls a run decided without reading its checks [then] fail, [else stop].
 """
 
 from __future__ import annotations

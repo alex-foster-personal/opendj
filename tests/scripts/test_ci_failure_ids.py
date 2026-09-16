@@ -12,6 +12,8 @@ Regression lines:
   - if a failure also on main reads GENUINE then broken
   - if a failed job with zero identities reads anything but loud (GENUINE) outside the
     infra, ratchet and main-red-job rules then broken
+
+[if] a failure is poisoned by a stale baseline it never leaned on [then] fail, [else stop].
 """
 
 from __future__ import annotations
@@ -561,3 +563,36 @@ def test_a_match_against_a_baseline_at_mains_head_is_still_known_red():
         baseline_stale=False,
     )
     assert got.verdict is JobVerdict.KNOWN_RED
+
+
+def test_an_all_flake_failure_is_not_poisoned_by_a_stale_baseline():
+    """Sol's P2 on #3293. Staleness was applied whenever `residual` came out empty, but a
+    failure made entirely of configured flakes empties it without main's red set contributing
+    anything. A baseline nobody consulted cannot be too old to consult, and treating it as
+    stale turned the documented mergeable flake path into UNKNOWN."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset({"FAILED tests/x.py::prefs-golden-blob.test.mjs"}),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+        baseline_stale=True,
+    )
+    assert got.verdict is JobVerdict.KNOWN_RED, "the flake path does not lean on main"
+
+
+def test_a_failure_that_leans_on_main_is_still_poisoned_by_a_stale_baseline():
+    """The control in the opposite direction, so the fix above cannot be read as switching
+    staleness off. A flake identity present ALONGSIDE one that only main's red set explains
+    still depends on that baseline, so a stale one must still refuse the verdict."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset(
+            {"FAILED tests/x.py::prefs-golden-blob.test.mjs", "FAILED tests/t.py::a"}
+        ),
+        frozenset({"FAILED tests/t.py::a"}),
+        frozenset(),
+        beyond_tests=False,
+        baseline_stale=True,
+    )
+    assert got.verdict is JobVerdict.BASELINE_STALE

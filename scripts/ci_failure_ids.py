@@ -268,6 +268,41 @@ def residual_identities(identities: frozenset[str], main_red: frozenset[str]) ->
     return frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
 
 
+def _fully_explained_verdict(
+    *, baseline_stale: bool, leaned_on_main: bool, beyond_tests: bool
+) -> JobVerdict:
+    """The verdict when every identity was accounted for, so nothing NEW failed here."""
+    if baseline_stale and leaned_on_main:
+        # Sol's P1 on #3293. Identities were subtracted using a baseline measured at a commit
+        # that is NOT main's head, and main's red set is volatile: across its newest completed
+        # runs it read 61, 111, 21, 21, 10 and 0 identities. A set that moves like that is a
+        # poor claim about a commit it was not measured at, and a failure main fixed in
+        # between is exactly what gets excused.
+        return JobVerdict.BASELINE_STALE
+    if beyond_tests:
+        # The identities are real but they are not the whole failure. Calling this KNOWN_RED
+        # lets a job that ALSO hit a cap kill, a timeout or a build error merge on the
+        # strength of tests that were already red, the other failure never read.
+        return JobVerdict.UNEXPLAINED
+    return JobVerdict.KNOWN_RED
+
+
+def _ratchet_verdict(*, ratchet_breach_seen: bool, beyond_tests: bool) -> JobVerdict:
+    """The verdict for a ratchet job that produced no residual identity."""
+    if not ratchet_breach_seen:
+        # Sol's P1 on #3293. The debt path needs the ratchet to have SAID it breached.
+        # Defaulting to False is deliberate: a caller that cannot answer gets the unmeasured
+        # verdict, never the mergeable one.
+        return JobVerdict.UNEXPLAINED
+    if beyond_tests:
+        # Sol's P1 on #3293. A ratchet breach SHIPS as debt, which makes this the only
+        # mergeable zero-identity verdict, and the branch was granting it without reading the
+        # evidence that the job ALSO timed out, was killed or ran out of disk. A ratchet that
+        # did not finish measured no ratchet.
+        return JobVerdict.UNEXPLAINED
+    return JobVerdict.RATCHET_DEBT
+
+
 def classify_job(
     job_name: str,
     identities: frozenset[str],
@@ -285,40 +320,34 @@ def classify_job(
     alone, a genuine regression landing in a ratchet job reads RATCHET_DEBT, the watcher ends
     KNOWN_RED_ONLY, and the agent merges past a real failure.
     """
+    non_flake = frozenset(i for i in identities if not KNOWN_FLAKES.search(i))
     residual = residual_identities(identities, main_red)
+    # Whether the verdict actually LEANS on main's red set. Sol's P2 on #3293: staleness was
+    # applied whenever `residual` came out empty, but a failure made entirely of configured
+    # flakes empties it without main contributing anything, so a stale baseline turned the
+    # documented mergeable flake path into UNKNOWN. A baseline nobody consulted cannot be
+    # too old to consult.
+    leaned_on_main = bool(non_flake & main_red)
 
     def verdict(kind: JobVerdict) -> JobClassification:
         return JobClassification(kind, identities, residual)
 
     if identities and not residual:
-        if baseline_stale:
-            # Sol's P1 on #3293. Every identity here was subtracted using a baseline measured
-            # at a commit that is NOT main's head, and main's red set is volatile: across its
-            # newest completed runs it read 61, 111, 21, 21, 10 and 0 identities. A set that
-            # moves like that is a poor claim about a commit it was not measured at, and a
-            # failure main fixed in between is exactly what gets excused.
-            return verdict(JobVerdict.BASELINE_STALE)
-        if beyond_tests:
-            # The identities are real but they are not the whole failure. Calling this
-            # KNOWN_RED lets a job that ALSO hit a cap kill, a timeout or a build error merge
-            # on the strength of tests that were already red, the other failure never read.
-            return verdict(JobVerdict.UNEXPLAINED)
-        return verdict(JobVerdict.KNOWN_RED)
+        return verdict(
+            _fully_explained_verdict(
+                baseline_stale=baseline_stale,
+                leaned_on_main=leaned_on_main,
+                beyond_tests=beyond_tests,
+            )
+        )
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)
     if RATCHET_JOBS.search(job_name) and not residual:
-        if not ratchet_breach_seen:
-            # Sol's P1 on #3293. The debt path needs the ratchet to have SAID it breached.
-            # Defaulting to False is deliberate: a caller that cannot answer gets the
-            # unmeasured verdict, never the mergeable one.
-            return verdict(JobVerdict.UNEXPLAINED)
-        if beyond_tests:
-            # Sol's P1 on #3293. A ratchet breach SHIPS as debt, which makes this the only
-            # mergeable zero-identity verdict, and the branch was granting it without
-            # reading the evidence that the job ALSO timed out, was killed or ran out of
-            # disk. A ratchet that did not finish measured no ratchet.
-            return verdict(JobVerdict.UNEXPLAINED)
-        return verdict(JobVerdict.RATCHET_DEBT)
+        return verdict(
+            _ratchet_verdict(
+                ratchet_breach_seen=ratchet_breach_seen, beyond_tests=beyond_tests
+            )
+        )
     if not identities and job_name in main_red_job_names:
         # Sol's P1 on #3293. A name is not a cause. Every name in `main_red_job_names` is one
         # whose main log was READ and named failing TESTS, and this job named none, so main's

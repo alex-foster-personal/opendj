@@ -115,6 +115,41 @@ class WalkResult:
     identities_by_sha: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
+def _named_failures(
+    job: Job, identities_of: Callable[[int], frozenset[str]]
+) -> frozenset[str] | None:
+    """What a FAILED job's log says failed, or None when the walk cannot use it.
+
+    None covers two cases that are different facts about the log and the same fact about
+    this walk, which is why they share a branch at the call site.
+
+    The log could not be READ: UNMEASURED, and TERMINAL for this name. The name is not
+    retained as a failure, because retained, a pull request job with the same name and no
+    identity reads BASELINE_MISMATCH off a baseline nobody measured. Nor does an older run
+    get to answer in its place: an older run's identities are exactly what
+    newest-measured-wins refuses to subtract, and an older run's SUCCESS cannot refute a
+    newer red whose cause could not be read.
+
+    The log was READ and named nothing: the name alone then says main is red here and NOT
+    what failed, so a pull request job with the same name and no identity would be compared
+    off a comparison nobody made. A bundle budget check is the worked case, main 79 KB over
+    and the pull request 300 KB over sharing one name.
+    """
+    try:
+        ids = identities_of(job.job_id)
+    except LogUnreadable:
+        return None
+    return ids or None
+
+
+def _newest_measured(contributing: list[str]) -> str:
+    """The newest commit that contributed a measurement, or empty when none did. Verdicts are
+    walked newest first, so the first non-empty entry is the newest. Kept out of the walk
+    itself, which sits on the complexity ceiling.
+    """
+    return next((sha for sha in contributing if sha), "")
+
+
 def main_red_identities(
     verdicts: list[Verdict],
     jobs_of: Callable[[int, int], list[Job]],
@@ -139,9 +174,21 @@ def main_red_identities(
     # keep, filling in jobs the newest run never measured (queued, skipped, cancelled,
     # unreadable log); it just no longer speaks for a job a newer run already answered.
     decided: set[str] = set()
-    measured_sha = ""
     identities_by_sha: dict[str, set[str]] = {}
+    # EVERY verdict the RESULT depends on, newest first. Recording only the newest was Sol's
+    # second P1 on #3293 and the same defect as the first, one level in: the window fills
+    # names the newest verdict never measured from OLDER verdicts at other commits, so a
+    # baseline whose newest verdict sits on the pinned head could carry an obsolete identity
+    # from an older one and still be stamped fresh.
+    #
+    # Keyed on what a verdict DECIDED, not on what it measured. A verdict that only
+    # re-measures a name an earlier one already decided adds nothing to the result, and
+    # counting it would report staleness for a baseline that has none. That direction is not
+    # free: every stale baseline degrades a verdict to UNKNOWN, so over-reporting staleness
+    # would quietly retire the tool rather than fail loudly.
+    contributing: list[str] = []
     for verdict in verdicts:
+        decided_before = len(decided)
         measured: set[str] = set()
         # NEWEST attempt first, for the same reason verdicts are walked newest first: a
         # rerun that SUCCEEDS supersedes the attempt it reran. Oldest first, attempt 1's
@@ -166,25 +213,8 @@ def main_red_identities(
                     measured.add(job.name)
                     decided.add(job.name)
                 elif job.conclusion == "failure":
-                    try:
-                        ids = identities_of(job.job_id)
-                    except LogUnreadable:
-                        # UNMEASURED, and TERMINAL for this name. The name is not retained
-                        # as a failure: retained, a pull request job with the same name and
-                        # no identity reads BASELINE_MISMATCH off a baseline nobody measured.
-                        # Nor does an older run get to answer in its place -- an older run's
-                        # identities are exactly what newest-measured-wins refuses to
-                        # subtract, and an older run's SUCCESS cannot refute a newer red
-                        # whose cause could not be read.
-                        unreadable.add(job.name)
-                        decided.add(job.name)
-                        continue
-                    if not ids:
-                        # The log was READ and named no failing test. The name alone then
-                        # says main is red here and NOT what failed, so a pull request job
-                        # with the same name and no identity would be compared off a
-                        # comparison nobody made. A bundle budget check is the worked case:
-                        # main 79 KB over and the pull request 300 KB over share one name.
+                    ids = _named_failures(job, identities_of)
+                    if ids is None:
                         unreadable.add(job.name)
                         decided.add(job.name)
                         continue
@@ -195,8 +225,8 @@ def main_red_identities(
                     identities_by_sha.setdefault(verdict.head_sha, set()).update(ids)
                     measured.add(job.name)
                     decided.add(job.name)
-        if measured and not measured_sha:
-            measured_sha = verdict.head_sha
+        if len(decided) != decided_before:
+            contributing.append(verdict.head_sha)
         pending -= measured
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
@@ -205,10 +235,8 @@ def main_red_identities(
         frozenset(found),
         frozenset(failed_names),
         frozenset(unreadable - failed_names),
-        measured_sha,
-        # Set difference rather than a conditional: this function is at the complexity
-        # ceiling and a ternary here pushed it over.
-        frozenset({measured_sha}) - {""},
+        _newest_measured(contributing),
+        frozenset(contributing) - {""},
         {sha: frozenset(ids) for sha, ids in identities_by_sha.items()},
     )
 
