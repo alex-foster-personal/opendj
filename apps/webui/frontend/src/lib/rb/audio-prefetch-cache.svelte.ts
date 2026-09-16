@@ -221,6 +221,86 @@ export function copyPrefetchedAudio(stable_id: string): ArrayBuffer | null {
 	return e.bytes.slice(0);
 }
 
+/**
+ * Decoded audio another player already holds, so a deck load can skip both
+ * the fetch and the decode (decode is 54-72% of a cold load, see the CUEOUT-15
+ * register row). The library preview provides it; audio-engine cannot import
+ * preview-cue.svelte.ts directly without a cycle, so it meets it here, beside
+ * the byte cache it already reads.
+ *
+ * Sharing is safe because nothing writes into a decoded buffer: the stretch
+ * loader copies channels out with copyFromChannel, and the preview's cache
+ * dropping its reference later cannot free a buffer the deck still holds.
+ */
+let _decodedAudioSource: ((stable_id: string) => AudioBuffer | null) | null = null;
+
+export function provideDecodedAudio(source: (stable_id: string) => AudioBuffer | null): void {
+	_decodedAudioSource = source;
+}
+
+/** A shared decoded buffer at `sampleRate`, or null. A rate mismatch is a miss. */
+export function sharedDecodedAudio(stable_id: string, sampleRate: number): AudioBuffer | null {
+	const buffer = _decodedAudioSource?.(stable_id) ?? null;
+	return buffer !== null && buffer.sampleRate === sampleRate ? buffer : null;
+}
+
+/** Where a deck load's audio comes from, cheapest first. */
+export interface DeckLoadAudio {
+	shared: AudioBuffer | null;
+	bytes: Promise<ArrayBuffer | null>;
+	fetchStage: 'decodedShareHit' | 'fetchAudioCacheHit' | 'fetchAudio';
+	decodeStage: 'decodeMixShared' | 'decodeMix';
+	fetch: (stable_id: string) => Promise<ArrayBuffer>;
+	stats: (bytes: ArrayBuffer | null) => Record<string, number>;
+}
+
+/**
+ * Pick a deck load's audio source: the preview's decode (skips fetch and
+ * decode), else prefetched bytes (skips fetch), else the network. Lives here
+ * rather than in audio-engine, which is at its file-size allowance.
+ * `sampleRate` is null while no AudioContext exists, which is always a miss.
+ */
+export function deckLoadAudio(
+	stable_id: string,
+	sampleRate: number | null,
+	fetch: (stable_id: string) => Promise<ArrayBuffer>
+): DeckLoadAudio {
+	const shared = sampleRate === null ? null : sharedDecodedAudio(stable_id, sampleRate);
+	// Prefetch hit: copyPrefetchedAudio (slice) so decode cannot detach cache.
+	const prefetched = shared === null ? copyPrefetchedAudio(stable_id) : null;
+	const fetchStage =
+		shared !== null ? 'decodedShareHit' : prefetched !== null ? 'fetchAudioCacheHit' : 'fetchAudio';
+	return {
+		shared,
+		bytes:
+			shared !== null
+				? Promise.resolve(null)
+				: prefetched !== null
+					? Promise.resolve(prefetched)
+					: fetch(stable_id),
+		fetchStage,
+		decodeStage: shared !== null ? 'decodeMixShared' : 'decodeMix',
+		fetch,
+		stats: (bytes) => ({
+			audioBytes: bytes?.byteLength ?? 0,
+			audioPrefetchHit: prefetched !== null ? 1 : 0,
+			decodedShareHit: shared !== null ? 1 : 0
+		})
+	};
+}
+
+/** Decode for a deck load, reusing the shared buffer when the context matches.
+ * A context rebuilt at another rate since `deckLoadAudio` falls back to a fetch. */
+export async function decodeDeckLoadAudio(
+	ctx: BaseAudioContext,
+	stable_id: string,
+	audio: DeckLoadAudio,
+	bytes: ArrayBuffer | null
+): Promise<AudioBuffer> {
+	if (audio.shared !== null && audio.shared.sampleRate === ctx.sampleRate) return audio.shared;
+	return ctx.decodeAudioData(bytes ?? (await audio.fetch(stable_id)));
+}
+
 /** Ready track count for TopBar (hover explains caps). */
 export function audioPrefetchReadyCount(): number {
 	return _readyCount();
