@@ -37,12 +37,15 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -428,3 +431,77 @@ def test_a_valid_month_input_is_still_honored(tmp_path: Path) -> None:
     """A well-formed YYYY-MM dispatch input is real operator intent, not noise -- keep it."""
     title = _run_alert_script_for_title(tmp_path, "2026-07")
     assert "2026-07" in title, f"a valid month input should be honored; got {title!r}"
+
+
+# ----- functional: the streak's jq reduce, run for real against a fixed history --
+#
+# The reduce lives entirely inside a --jq expression, invisible to the title/month
+# tests above (they always start from an issue with no history, so `existing` is
+# empty and the reduce never runs). This exercises it directly against a comment
+# history that mixes a WARN comment in among BLIND ones, which is the case the
+# reduce exists to get right: a human or a measured month breaks the streak, an
+# unbroken run of BLIND markers does not.
+
+_GH_STUB_WITH_HISTORY = """#!/usr/bin/env bash
+set -euo pipefail
+case "$1 $2" in
+  "issue list")
+    printf '%s' "$EXISTING_ISSUE"
+    ;;
+  "issue view")
+    # args end with: ... --json comments --jq '<expr>' -- take the last one.
+    jq "${!#}" "$COMMENTS_JSON"
+    ;;
+  "issue comment")
+    cp "$5" "$COMMENT_OUT"
+    ;;
+  *)
+    echo "unhandled mock gh invocation: $*" >&2
+    exit 1
+    ;;
+esac
+"""
+
+
+@pytest.mark.skipif(
+    shutil.which("jq") is None,
+    reason="exercises the alert step's own jq reduce expression against real jq",
+)
+def test_the_streak_count_breaks_on_a_non_blind_comment(tmp_path: Path) -> None:
+    """A WARN comment sitting between BLIND comments must stop the count there,
+    so the oldest BLIND comment (behind the WARN one) is never reached."""
+    comments = [
+        {"body": "<!-- ci-budget-watch:blind -->oldest blind report, unreachable"},
+        {"body": "CI budget WARN: 2026-07 at 72% of included minutes"},
+        {"body": "<!-- ci-budget-watch:blind -->second blind report"},
+        {"body": "<!-- ci-budget-watch:blind -->third blind report, newest"},
+    ]
+    comments_json = tmp_path / "comments.json"
+    comments_json.write_text(json.dumps({"comments": comments}))
+    comment_out = tmp_path / "comment.md"
+
+    script = _step(_workflow(), ALERT_STEP)["run"]
+    gh_stub = tmp_path / "gh"
+    gh_stub.write_text(_GH_STUB_WITH_HISTORY)
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "EXISTING_ISSUE": "692",
+        "COMMENTS_JSON": str(comments_json),
+        "COMMENT_OUT": str(comment_out),
+        "GH_TOKEN": "x",
+        "LEDGER_OUTCOME": "failure",
+        "STATE": "",
+        "PCT": "",
+        "USED": "",
+        "LIMIT": "",
+        "MONTH": "2026-07",
+        "MONTH_INPUT": "",
+    }
+    subprocess.run(["bash", "-c", script], check=True, cwd=tmp_path, env=env, timeout=30)
+
+    body = comment_out.read_text()
+    # Newest-first: third (blind, count=1), second (blind, count=2), WARN (stop).
+    # The oldest blind comment sits behind the WARN one and must not be counted.
+    assert "3 consecutive blind report(s)" in body, body
