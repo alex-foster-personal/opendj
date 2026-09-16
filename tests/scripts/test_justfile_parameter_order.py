@@ -40,10 +40,15 @@ def header_params(line: str) -> str | None:
     if match is None:
         return None
     quote: str | None = None
+    escaped = False
     for index in range(match.end(), len(line)):
         char = line[index]
         if quote:
-            if char == quote:
+            if escaped:  # `\"` inside a double-quoted default is a character, not the close
+                escaped = False
+            elif char == "\\" and quote == '"':
+                escaped = True
+            elif char == quote:
                 quote = None
         elif char in ('"', "'"):
             quote = char
@@ -55,11 +60,15 @@ def header_params(line: str) -> str | None:
 
 
 def _params(raw: str) -> list[str]:
-    """Split a header's parameters like just does: a quoted default is one token."""
+    """Split a header's parameters like just does: a quoted default is one token.
+
+    Fails closed: a header shlex cannot tokenize is a header this guard cannot vouch for, and
+    splitting it plainly instead let a truncated default pass as one token (Sol, PR #3371).
+    """
     try:
         return shlex.split(raw)
-    except ValueError:  # an apostrophe inside a default, e.g. `note="it's"`: split plainly
-        return raw.split()
+    except ValueError as error:
+        raise ValueError(f"cannot tokenize recipe parameters {raw!r}: {error}") from error
 
 
 def recipe_headers(text: str) -> list[tuple[str, list[str]]]:
@@ -116,6 +125,27 @@ def test_a_colon_inside_a_quoted_default_does_not_end_the_header() -> None:
     assert defaulted_before_required(_params(header_params(line) or ""))
     assert header_params("pytest_scope := \"tests/webui tests/x\"") is None, "an assignment"
     assert header_params("    indented body: not a header") is None
+
+
+def test_an_escaped_quote_inside_a_default_neither_ends_it_nor_hides_what_follows() -> None:
+    """control: an escaped quote in a default is consumed, and the required tail is still refused"""
+    for line in (
+        'recipe note="say\\"hi:there\\"" REQUIRED:',
+        'recipe note="say\\"hi:there" REQUIRED:',
+    ):
+        params = _params(header_params(line) or "")
+        assert params[-1] == "REQUIRED", (line, params)
+        assert defaulted_before_required(params), (line, params)
+    assert _params(header_params('recipe note="it\'s" *rest="":') or "") == ["note=it's", "*rest="]
+    with pytest.raises(ValueError, match="cannot tokenize"):
+        _params('note="unterminated')
+
+
+def test_a_defaulted_variadic_after_a_defaulted_parameter_is_the_shape_that_ships() -> None:
+    """control: TIER="fast" *ARGS="" parses on just 1.21 (probed on agentbox) and is accepted"""
+    params = _params(header_params('fast-tier TIER="fast" *ARGS="":') or "")
+    assert params == ["TIER=fast", "*ARGS="]
+    assert not defaulted_before_required(params)
 
 
 def test_the_header_scanner_sees_real_recipes() -> None:
