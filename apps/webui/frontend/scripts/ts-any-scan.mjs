@@ -90,13 +90,19 @@ function _ruleFromSingleLineComment(comment) {
   return m ? m[1] : null;
 }
 
+// Returns the rule AND how many lines below the comment's opening the
+// directive sits, because only the block's FINAL line is matched: tsc applies
+// a `/* ... @ts-ignore */` to the line the directive is written on, not to the
+// line the `/*` opened on. Reporting the opening line made every multi-line
+// block score twice, once here and once from tsc's own `commentDirectives`.
 function _ruleFromBlockComment(comment) {
-  const finalLine = comment.split(/\r?\n/).pop() ?? '';
-  const trimmed = finalLine.trimStart();
+  const lines = comment.split(/\r?\n/);
+  const lineOffset = lines.length - 1;
+  const trimmed = (lines[lineOffset] ?? '').trimStart();
   const prefixed = trimmed.match(_ML_DIRECTIVE_RE);
-  if (prefixed) return prefixed[1];
+  if (prefixed) return { rule: prefixed[1], lineOffset };
   const bare = trimmed.match(/^@(ts-expect-error|ts-ignore)/);
-  return bare ? bare[1] : null;
+  return bare ? { rule: bare[1], lineOffset } : null;
 }
 
 function _forEachRealComment(sourceFile, text, cb) {
@@ -155,13 +161,13 @@ function _directiveHits(text, lineOffset) {
 
   _forEachRealComment(sourceFile, text, (range, commentText) => {
     const line = sourceFile.getLineAndCharacterOfPosition(range.pos).line + 1 + lineOffset;
-    let rule = null;
     if (commentText.startsWith('//')) {
-      rule = _ruleFromSingleLineComment(commentText);
+      const rule = _ruleFromSingleLineComment(commentText);
+      if (rule) add(line, rule);
     } else if (commentText.startsWith('/*')) {
-      rule = _ruleFromBlockComment(commentText);
+      const found = _ruleFromBlockComment(commentText);
+      if (found) add(line + found.lineOffset, found.rule);
     }
-    if (rule) add(line, rule);
   });
 
   const nocheckEntries = sourceFile.pragmas?.get?.('ts-nocheck');
