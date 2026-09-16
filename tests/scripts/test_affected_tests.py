@@ -21,11 +21,21 @@ Regression lines:
 
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
-from scripts.affected_tests import affected_tests, build_graph
+from scripts.affected_tests import (
+    REPO,
+    UnresolvedPaths,
+    _changed_against,
+    affected_tests,
+    build_graph,
+    main,
+)
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -115,3 +125,76 @@ def test_from_import_records_the_module_edge_not_only_the_attribute(tmp_path):
     importers, module_of = build_graph(tmp_path)
     assert "apps.engine" in module_of
     assert "tests.test_engine" in importers["apps.engine"]
+
+
+# ----- fail loud: a path the graph cannot resolve is UNKNOWN, never zero -----
+#
+# Measured Wed 16 Sep 2026: the canary selected zero modules on 15 of 28 runs, and the
+# selector returned zero with exit 0 for a path that does not exist, so "this change reaches
+# no test" and "this selector could not read the change" printed the same thing.
+#
+#   - [if] a changed .py path missing from the graph yields [] and exit 0 [then] fail,
+#     [else stop].
+#   - [if] a leaf module no test reaches raises instead of yielding [] [then] fail, [else stop].
+#     This is the overshoot control: UNKNOWN is for unresolvable paths, not empty selections.
+#   - [if] a rename lists only its new path, hiding the deleted module [then] fail, [else stop].
+#   - [if] the canary step reads the selector through process substitution, which discards
+#     its exit status [then] fail, [else stop].
+
+
+def test_a_changed_path_missing_from_the_graph_is_unknown_and_named(tmp_path):
+    _tree(tmp_path, {"apps/engine.py": "VALUE = 1\n", "apps/__init__.py": ""})
+    with pytest.raises(UnresolvedPaths) as raised:
+        affected_tests(["apps/engine.py", "apps/gone.py"], root=tmp_path)
+    assert raised.value.paths == ["apps/gone.py"]
+
+
+def test_a_leaf_no_test_reaches_is_an_empty_selection_not_unknown(tmp_path):
+    _tree(
+        tmp_path,
+        {
+            "apps/leaf.py": "VALUE = 1\n",
+            "tests/test_other.py": "def test_x():\n    assert True\n",
+            "apps/__init__.py": "",
+        },
+    )
+    assert affected_tests(["apps/leaf.py"], root=tmp_path) == []
+
+
+def test_main_exits_3_and_names_an_unresolvable_path(capsys):
+    missing = "apps/this_module_does_not_exist_anywhere.py"
+    assert main(["--files", missing]) == 3
+    assert missing in capsys.readouterr().err
+
+
+def test_main_exits_0_for_a_resolvable_path(capsys):
+    """Positive control for the exit-3 test: the same entry point on a real path."""
+    assert main(["--files", "scripts/affected_tests.py"]) == 0
+    assert "tests/scripts/test_affected_tests.py" in capsys.readouterr().out
+
+
+def test_a_rename_lists_the_deleted_old_path(tmp_path):
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "ci@example.com")
+    git("config", "user.name", "ci")
+    _tree(tmp_path, {"apps/old_name.py": "VALUE = 1\n" * 20})
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("mv", "apps/old_name.py", "apps/new_name.py")
+    git("commit", "-q", "-m", "rename")
+    changed = _changed_against("HEAD~1", root=tmp_path)
+    assert "apps/old_name.py" in changed
+    assert "apps/new_name.py" in changed
+
+
+def test_the_canary_step_does_not_discard_the_selector_exit_status():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["affected-canary"]["steps"]
+    script = next(step["run"] for step in steps if "scripts.affected_tests" in step.get("run", ""))
+    selector_lines = [line for line in script.splitlines() if "scripts.affected_tests" in line]
+    assert selector_lines, "the canary no longer calls the selector"
+    assert not any("<(" in line for line in selector_lines), selector_lines
+    assert re.search(r"^\s*3\)", script, re.MULTILINE), "the canary does not handle exit 3"
