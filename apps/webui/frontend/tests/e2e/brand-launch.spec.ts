@@ -27,16 +27,31 @@ async function openWithFreshLaunch(
 	url: string,
 	opts?: { clock?: boolean; keepPaused?: boolean }
 ): Promise<import('@playwright/test').Locator> {
-	// The id travels as an ARGUMENT: an init script is serialized and evaluated
-	// in the page, where this module's constants do not exist, so a closure
-	// reference to one throws before the style is ever appended.
+	// Two reasons this hold never landed before, both silent. The id travels as
+	// an ARGUMENT because an init script is serialized and evaluated in the page,
+	// where this module's constants do not exist. And the append waits for a root
+	// because an init script runs before <html> is parsed, so head and
+	// documentElement are BOTH null at the moment it first runs.
 	await page.addInitScript((pauseStyleId: string) => {
 		localStorage.removeItem('odj.brand-launch.v1');
-		const pause = document.createElement('style');
-		pause.id = pauseStyleId;
-		pause.textContent =
-			'.brand-launch, .brand-half-dark, .brand-half-light { animation-play-state: paused !important; }';
-		(document.head ?? document.documentElement).appendChild(pause);
+		const install = (): boolean => {
+			const root = document.head ?? document.documentElement;
+			if (root === null) return false;
+			if (document.getElementById(pauseStyleId) !== null) return true;
+			const pause = document.createElement('style');
+			pause.id = pauseStyleId;
+			pause.textContent =
+				'.brand-launch, .brand-half-dark, .brand-half-light { animation-play-state: paused !important; }';
+			root.appendChild(pause);
+			return true;
+		};
+		if (install()) return;
+		// A MutationObserver is the earliest hook that survives `page.clock`:
+		// its callback is a microtask, where setTimeout and rAF are both frozen.
+		const observer = new MutationObserver(() => {
+			if (install()) observer.disconnect();
+		});
+		observer.observe(document, { childList: true, subtree: true });
 	}, BRAND_LAUNCH_PAUSE_STYLE_ID);
 	if (opts?.clock) {
 		await page.clock.install({ time: 0 });
