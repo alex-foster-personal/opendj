@@ -21,8 +21,6 @@ import subprocess
 
 from scripts.gh_version_guard import require_gh_min_version
 
-REPO = "maintainer/music-dj-tools"
-
 #: A commit SHA GitHub renders in backtick-quoted code, e.g. the summary
 #: table's `` `7cbe749` `` Commit column or a review body's `` **Reviewed
 #: commit:** `7cbe7496d2` ``. GitHub abbreviates to 7+ hex chars, never fewer,
@@ -137,17 +135,3 @@ def _paginated_json_list(endpoint: str) -> list[dict]:
     1, silently dropping evidence that scrolled past it on a long-lived PR.
     """
     return _flatten_pages(json.loads(_gh(["api", endpoint, "--paginate", "--slurp"])))
-
-
-def _require_head_unchanged(sampled: str, current: str) -> None:
-    """Evidence gathered against `sampled` is void if the PR moved to
-    `current` while the network calls ran (issue #1016 P1 BLOCKING,
-    thread r3927877681): `head_sha` was sampled once, before those
-    round-trips, with no re-check after. Raising here keeps this a failed
-    measurement, never a rendered verdict, for a race no retry can undo.
-    """
-    if sampled != current:
-        raise TriageError(
-            f"PR head moved from {sampled} to {current} while collecting "
-            "review evidence; re-run against the new head"
-        )
