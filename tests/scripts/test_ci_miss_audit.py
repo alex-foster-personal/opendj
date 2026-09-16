@@ -6,6 +6,8 @@ Single-line intents:
   - if a test the ledger recorded over the ceiling reads as fast tier then broken
   - if a test main also broke in the window is counted against the plan then broken
   - if zero runs measured yields a recall number instead of UNKNOWN then broken
+
+[if] a PR broke a test [then] the audit says whether the plan and fast tier ran it, [else stop].
 """
 
 from __future__ import annotations
