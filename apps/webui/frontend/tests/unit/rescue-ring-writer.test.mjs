@@ -66,11 +66,11 @@ test('transport event during in-flight POST schedules a follow-up snapshot', asy
 		return new Response('{}', { status: 202 });
 	};
 
-	writer.notifyRescueTransportEvent({ type: 'play', deck: 1 });
+	writer.notifyRescueTransportEvent({ type: 'play', deck: 1, playing: true });
 	await new Promise((resolve) => setTimeout(resolve, writer.RESCUE_TRANSPORT_DEBOUNCE_MS + 20));
 	assert.equal(postCount, 1, 'debounced transport should start one POST');
 
-	writer.notifyRescueTransportEvent({ type: 'pause', deck: 1 });
+	writer.notifyRescueTransportEvent({ type: 'play', deck: 1, playing: false });
 	resolveFirst();
 	for (let attempt = 0; attempt < 20 && postCount < 2; attempt += 1) {
 		await new Promise((resolve) => setImmediate(resolve));

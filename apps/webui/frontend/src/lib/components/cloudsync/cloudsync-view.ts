@@ -385,16 +385,16 @@ export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string 
 export const SYNC_DEFER_GIG = 'gig_posture';
 export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
 
-export type UiMirrorDecks = Record<string, { playing?: boolean } | unknown>;
+export type UiMirrorDeck = { playing?: boolean };
+export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
 
 export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
 	if (uiMirror === null) return false;
 	const decks = uiMirror.decks;
 	if (decks === undefined || typeof decks !== 'object') return false;
 	for (const deck of Object.values(decks)) {
-		if (typeof deck === 'object' && deck !== null && deck.playing === true) {
-			return true;
-		}
+		if (typeof deck !== 'object' || deck === null) continue;
+		if ((deck as UiMirrorDeck).playing === true) return true;
 	}
 	return false;
 }
@@ -441,7 +441,7 @@ export function syncNowRequest(
 	}
 	return {
 		kind: 'post',
-		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name }
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name, force: false }
 	};
 }
 

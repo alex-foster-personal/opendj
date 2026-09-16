@@ -46,14 +46,15 @@ import {
 	pioneerPadChannel
 } from './pioneer-deck-bindings';
 
-const DECKS: readonly DeckId[] = [1, 2];
+const DECKS = [1, 2] as const;
 const HOT_CUE_SLOTS: readonly HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export const FLX4_BEAT_LOOP_PAD_BEATS: readonly number[] = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 export const FLX4_PAD_ON = 0x7f;
 export const FLX4_PAD_OFF = 0x00;
 
-const CFX_CC: Record<DeckId, number> = { 1: 0x17, 2: 0x18 };
+// This map only ever binds DECKS (1 and 2, the FLX4's two physical channels).
+const CFX_CC: Record<(typeof DECKS)[number], number> = { 1: 0x17, 2: 0x18 };
 
 function _deckBindings(deck: DeckId): MidiBinding[] {
 	const ch = pioneerDeckChannel(deck);
@@ -71,7 +72,7 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 	];
 }
 
-function _mixerBindings(deck: DeckId): MidiBinding[] {
+function _mixerBindings(deck: (typeof DECKS)[number]): MidiBinding[] {
 	const ch = pioneerDeckChannel(deck);
 	return [
 		// [PDF] 3-3 TRIM: CC 4 MSB.

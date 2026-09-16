@@ -1979,7 +1979,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (cue === null) throw new Error(`hot cue ${command.slot}: nothing to trigger`);
 		const deckAnlz = getDeckState(command.deck).anlz;
 		const trustAnlz =
-			deckAnlz ?? { beatgrid: { source: 'rekordbox', beats, status: 'ok' } };
+			deckAnlz ?? {
+				beatgrid: {
+					source: 'rekordbox',
+					beats: [...beats],
+					beat_count: beats.length,
+					status: 'ok'
+				}
+			};
 		const plan = planHotCueTrigger(
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
 			playing,
