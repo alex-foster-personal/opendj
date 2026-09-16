@@ -2391,7 +2391,7 @@
 	 * `previewCueSeek` owns every refusal, because only it can tell a missing
 	 * engine from a dead sink from a MIX knob at the master end.
 	 */
-	function previewSeek(row: LoadableRow, ratio: number): void {
+	function previewSeek(row: LoadableRow & { bpm?: number | null }, ratio: number): void {
 		// Same refusal the deck load gives (FR-1), and for the same reason: a
 		// broken link has no audio to preview, and finding that out as an
 		// opaque decoder error several hundred milliseconds later teaches the
@@ -2404,7 +2404,11 @@
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
 		}
-		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio))).then((outcome) => {
+		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
+		// R6) costs no request on the click path.
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)), {
+			trackBpm: row.bpm ?? null
+		}).then((outcome) => {
 			if (!outcome.ok) {
 				if (outcome.reason !== PREVIEW_SUPERSEDED) pushToast(outcome.reason, 'error');
 			} else if (outcome.warning !== null) {

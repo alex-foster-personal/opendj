@@ -181,7 +181,7 @@ export type HeadphoneCommand =
 	| { type: 'headphone_calibrate_abort' }
 	// CUEOUT-15: the library preview is a cue-bus voice, so it mirrors here
 	// with the rest of the cue controls rather than beside the deck transport.
-	| { type: 'preview_cue'; stable_id: string; ratio: number }
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
 	| { type: 'preview_stop' };
 
 export type PerformanceCommand =
@@ -246,7 +246,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	| { type: 'headphone_master_select'; device_id: string }
 	| { type: 'headphone_input_select'; device_id: string }
-	| { type: 'preview_cue'; stable_id: string; ratio: number }
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
 	| { type: 'preview_stop' }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
@@ -429,6 +429,8 @@ export interface PerformanceState {
 		position_ms: number;
 		duration_ms: number | null;
 		route: 'cue' | 'main_practice' | 'split_right' | null;
+		/** CUEOUT-15 R6: 1, or the tempo-match rate against the master deck. */
+		rate: number;
 		/** Decoded preview audio held right now, and the cap it is held under.
 		 * Readable here because "how much memory is the preview holding" is a
 		 * question an agent has to be able to answer without a profiler. */
@@ -1016,11 +1018,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		// caller that sent 1.6 meant something this cannot guess; the pointer
 		// path clamps because a pixel outside the strip DOES have an obvious
 		// intent.
-		_exactKeys(record, ['type', 'stable_id', 'ratio']);
+		_exactKeys(record, ['type', 'stable_id', 'ratio', 'bpm']);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
 		}
-		return { type, stable_id: record.stable_id, ratio: _unit('ratio', record.ratio) };
+		// `bpm` is the caller's own copy of the track BPM, for the CUEOUT-15 R6
+		// tempo match. Optional: the pointer path always has it from the row,
+		// and an agent that does not send one gets a preview at its own tempo
+		// rather than a metadata request it did not ask for.
+		if (record.bpm !== undefined && (typeof record.bpm !== 'number' || !(record.bpm > 0))) {
+			throw new TypeError('bpm must be a positive number when given');
+		}
+		return {
+			type,
+			stable_id: record.stable_id,
+			ratio: _unit('ratio', record.ratio),
+			...(record.bpm === undefined ? {} : { bpm: record.bpm })
+		};
 	}
 	if (type === 'preview_stop') {
 		_exactKeys(record, ['type']);
@@ -1635,6 +1649,7 @@ export function queryPerformanceState(): PerformanceState {
 			position_ms: previewCue.position_ms,
 			duration_ms: previewCue.duration_ms,
 			route: previewCue.route,
+			rate: previewCue.rate,
 			cache_tracks: previewStats.tracks,
 			cache_bytes: previewStats.bytes,
 			cache_budget_bytes: previewStats.budget_bytes
@@ -1982,7 +1997,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// The UI path gets the refusal as a toast. An agent gets it as a failed
 		// step, so `POST /performance/headphones/preview` answers 400 with the
 		// reason instead of 200 over a preview that never started.
-		const outcome = await previewCueSeek(command.stable_id, command.ratio);
+		const outcome = await previewCueSeek(command.stable_id, command.ratio, {
+			trackBpm: command.bpm ?? null
+		});
 		if (!outcome.ok) throw new Error(outcome.reason);
 		if (outcome.warning !== null) pushToast(outcome.warning, 'warn');
 	} else if (command.type === 'preview_stop') {

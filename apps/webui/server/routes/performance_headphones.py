@@ -127,6 +127,20 @@ def _validate_unit(value: object) -> float:
     return float(value)
 
 
+def _validate_optional_bpm(value: object) -> float | None:
+    """Caller's own copy of the previewed track's BPM, for the R6 tempo match.
+
+    Absent means "do not tempo-match", which is a different statement from a
+    bad number, so a present-but-unusable value is a 400 rather than a silent
+    drop back to the track's own tempo.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise HTTPException(status_code=400, detail="bpm must be a positive finite number")
+    return float(value)
+
+
 def _validate_deck(deck: object) -> int:
     if deck not in (1, 2, 3, 4):
         raise HTTPException(
@@ -454,13 +468,19 @@ async def post_preview_cue(
     A preview that could not be heard is a 400 carrying the reason the page
     would have shown the operator (no audio graph, a dead cue sink, MIX at
     the master end, GAIN at zero), never a 200 over silence.
+
+    Optional `bpm` is the track's own tempo; with the preview tempo-match
+    setting on and a master deck playing, the preview matches that tempo
+    (CUEOUT-15 R6). Omit it and the preview plays at the track's own tempo.
     """
     _require_page(request)
     stable_id = _validate_stable_id(body.get("stable_id"))
     ratio = _validate_unit(body.get("ratio"))
-    return await _submit_headphone_command(
-        request, {"type": "preview_cue", "stable_id": stable_id, "ratio": ratio}
-    )
+    bpm = _validate_optional_bpm(body.get("bpm"))
+    command: dict[str, Any] = {"type": "preview_cue", "stable_id": stable_id, "ratio": ratio}
+    if bpm is not None:
+        command["bpm"] = bpm
+    return await _submit_headphone_command(request, command)
 
 
 @router.post(
