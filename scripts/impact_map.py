@@ -118,8 +118,15 @@ def load_map(records: dict) -> ImpactMap:
 
 
 def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
-    """Test modules the observed traces say a change to `changed` can reach."""
-    selected: set[str] = set()
+    """Test modules the observed traces say a change to `changed` can reach.
+
+    A changed test module the map has never seen is selected too. The map can only speak
+    about what it observed, so a test added since it was built is UNKNOWN, and a pull
+    request that adds a test must run it.
+    """
+    selected: set[str] = {
+        path for path in changed if _is_test_module(path) and path not in impact.modules
+    }
     fixtures_hit = {
         name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
     }
@@ -138,6 +145,12 @@ def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
         ):
             selected.add(module)
     return frozenset(selected)
+
+
+def _is_test_module(path: str) -> bool:
+    """pytest's own default: a `.py` file whose name starts with `test_` or ends `_test`."""
+    name = PurePosixPath(path).name
+    return path.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
 
 
 def _is_under(module: str, directory: str) -> bool:
