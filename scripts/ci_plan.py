@@ -406,14 +406,20 @@ def observed_dependents(
         relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
         owner = owner_of(relative)
         if owner is None:
-            # TWO reasons a file can have no owning scope, and they are not the same reason.
-            # An `always` path runs in EVERY scoped plan, so it needs no edge to be reached
-            # and skipping it is correct. A path that is neither owned NOR always-run is a
-            # dependency this derivation cannot place, and skipping THAT loses the edge
-            # silently: a global helper importing scope A, consumed by suites in scope B,
-            # would leave B unrun when A changes. Sol's P1 on #3339. The two cases coincide
-            # today (measured: zero files in the second class), which is exactly why one
-            # `continue` could serve both and nothing would say when that stopped being true.
+            # THREE cases here, and an earlier version conflated the first two on an
+            # argument that is wrong for helpers. An always-matched TEST MODULE really does
+            # run in every scoped plan, so it needs no edge. An always-matched HELPER does
+            # NOT run: it is imported by suites that may be scope-owned and not always run,
+            # so its imports are THEIR dependency. `tests/conftest.py` is the worked case,
+            # auto-loaded for the whole tree and importing `apps.analysis`. A full trigger on
+            # the helper covers editing the helper, never a change to what it imports. Sol's
+            # P1 on #3339, raised after I rebutted the same point once and was wrong.
+            #
+            # That dependency is NOT represented as an edge. A global helper's consumers are
+            # the whole tree, so the honest statement is "changing this scope runs
+            # everything", and `full_triggers` says exactly that in one line per scope
+            # instead of roughly 1600 dependent entries. `helper_carried_scopes` derives the
+            # set and a guard holds the config to it.
             if matches(relative, config.always):
                 continue
             if imported_packages(_read_source(file, relative), relative):
@@ -436,6 +442,34 @@ def observed_dependents(
                     if upstream != owner:
                         found[upstream].add(owner)
     return {name: tuple(sorted(names)) for name, names in found.items() if names}
+
+
+def helper_carried_scopes(config: Config, root: Path = REPO) -> frozenset[str]:
+    """Scopes whose change must run EVERYTHING, because a GLOBAL pytest helper imports them.
+
+    A helper matched by `always` is not a test and does not run; it is imported by suites
+    across the tree, including scope-owned suites that are not always run. Its imports are
+    therefore a dependency of those suites, and its consumers cannot be resolved from its own
+    text, so the attribution is the widest honest one.
+
+    Closed over the source graph for the same reason `observed_dependents` is: a helper that
+    imports scope A also depends on everything A imports.
+    """
+    reaches = _source_reachability(config, root)
+    owner_of = _test_owner_index(config)
+    carried: set[str] = set()
+    for file in pytest_inputs(root / "tests"):
+        relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
+        if owner_of(relative) is not None or not matches(relative, config.always):
+            continue
+        if is_test_module(relative):
+            continue
+        for module in imported_packages(_read_source(file, relative), relative):
+            as_path = module.replace(".", "/") + "/"
+            for scope in config.scopes:
+                if matches(as_path, scope.sources):
+                    carried |= reaches[scope.name]
+    return frozenset(carried)
 
 
 def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozenset[str]]:

@@ -24,6 +24,51 @@ full_triggers:
   - "tests/fixtures/**"
   - "tests/helpers/**"
   - "apps/shared/**"
+  # Derived, not hand-written: a GLOBAL pytest helper (a conftest or a module matched by
+  # `always`) imports these scopes, and such a helper is loaded by suites across the whole
+  # tree, so a change here has to run everything. `helper_carried_scopes` in
+  # scripts/ci_plan.py derives the set and a test holds this list to it. Stated as full
+  # triggers rather than as dependent edges because that is one line per scope instead of
+  # roughly 1600, and it says the same thing more plainly.
+  - "apps/adapters/"
+  - "apps/agentbox/"
+  - "apps/analysis/"
+  - "apps/analysis_beatgrid/"
+  - "apps/analysis_bench/"
+  - "apps/analysis_key/"
+  - "apps/analysis_waveform/"
+  - "apps/audit/"
+  - "apps/cloud/"
+  - "apps/database/"
+  - "apps/dedup/"
+  - "apps/dj_copilot/"
+  - "apps/engine_core/"
+  - "apps/entitlements/"
+  - "apps/launcher/"
+  - "apps/loudness/"
+  - "apps/lyrics/"
+  - "apps/mik/"
+  - "apps/open_dj/"
+  - "apps/play_analytics/"
+  - "apps/reconcile/"
+  - "apps/sets/"
+  - "apps/shared/"
+  - "apps/smartlists/"
+  - "apps/spotify/"
+  - "apps/stems/"
+  - "apps/sync/"
+  - "apps/sync_hub/"
+  - "apps/vocals/"
+  - "apps/voice/"
+  - "apps/webui/"
+  - "ops/beatbench/"
+  - "ops/perf/"
+  - "ops/quality/"
+  - "scripts/"
+  - "scripts/beatbench/"
+  - "scripts/lyrics_alignment/"
+  - "scripts/perf/"
+  - "scripts/quality/"
   # CI INPUTS that are not source. `ci.yml`'s own path filter RE-INCLUDES
   # `.planning/REQUIREMENTS.md` after excluding `.planning/**`, which is that workflow
   # saying the path is an input rather than documentation: `reqs.json` is generated from it
