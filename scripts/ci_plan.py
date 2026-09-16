@@ -114,22 +114,21 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # source, matched no scope, and planned SKIP_PYTEST. Sol's P1 on #3339. A whitelist of what is
 # source has to be completed before a new language is safe; a whitelist of what is HARMLESS has
 # to be completed before a new language is SKIPPED, and the unlisted case fails closed.
-_HARMLESS_SUFFIXES = (".md", ".rst", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico")
-
-# Harmlessness is decided by SUFFIX ALONE, deliberately. A harmless-LOCATION list was the
-# obvious companion to it and is wrong here: every candidate root (`docs/`, `specs/`,
-# `.planning/`, `.claude/`, `.agents/`) is read by tests in this repository -- SEC-02 has
-# `tests/test_security_status_doc.py` gating on `docs/security/security.md` -- and the list
-# would have made 83 tracked files harmless that this one does not, among them real Python
-# such as `.agents/skills/usb-import-export/scripts/decode_gate.py`. Measured, not assumed.
-def _is_source(path: str) -> bool:
-    """Source unless something says otherwise, in BOTH directions.
-
-    A suffix whitelist decided the unknown FILE TYPE unsafely, and a source-root whitelist
-    decided the unknown LOCATION the same way: `tools/build.py` and every future top-level
-    package read as harmless. Neither whitelist survives. A new file type in a new directory
-    answers FULL until its SUFFIX says it is prose or an image."""
-    return not path.endswith(_HARMLESS_SUFFIXES)
+# NO HARMLESS CLASS SURVIVES. A suffix whitelist decided the unknown file type unsafely; a
+# source-root whitelist decided the unknown location the same way; a harmless-suffix and a
+# harmless-location BLACKLIST both turned out to be claims this repository refutes. Measured
+# rather than reasoned: 24 prose files are named by a literal path inside a test module
+# (`docs/architecture.md`, `.planning/REQUIREMENTS.md`, `AGENTS.md`), six more test modules
+# GLOB for prose, and `tests/scripts/test_oss_tip_audit_source.py` audits the PATHNAME of
+# every tracked file in the index, so adding or renaming any file at all is an input to it.
+# A derived list of test-read documentation cannot be complete either, because a literal-path
+# scan cannot see a glob or an index walk, and an incomplete list under-selects. Sol's P1 on
+# #3339.
+#
+# The cost is stated plainly rather than hidden: SKIP_PYTEST is now unreachable, so the
+# planner narrows nothing at all on this repository. That is the honest form of round 5's
+# result, not a new one -- selection here was already 0% SCOPED -- and a planner that runs
+# everything is merely useless, where one that skips a suite it should have run is wrong.
 
 
 def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
@@ -184,7 +183,7 @@ def plan(
             hit.update(owners)
         elif matches(path, config.always):
             hit.add(_ALWAYS)
-        elif _is_source(path):
+        else:
             unclaimed_source.append(path)
     if unclaimed_source:
         return Plan(
@@ -194,7 +193,16 @@ def plan(
             f"a source path no scope claims: {unclaimed_source[0]}",
         )
     if not hit:
-        return Plan(Verdict.SKIP_PYTEST, (), (), "no changed path touches a scope")
+        # UNREACHABLE by construction, and deliberately loud rather than deleted. Every path
+        # now either hits a scope, matches `always`, or is unclaimed source that returned FULL
+        # above, so there is no longer any way to earn SKIP_PYTEST: nothing in this repository
+        # can be shown harmless (see the classifier note above). The member stays on `Verdict`
+        # because round 6b imports it, and reaching here would mean the classification above
+        # let a path through unclassified, which must fail rather than report a skip.
+        raise PlanError(
+            "no changed path was classified, which should be impossible; "
+            f"refusing to report SKIP_PYTEST for {paths[:3]}"
+        )
 
     # THE CLOSURE. Selecting only the scope that OWNS a changed path leaves every suite that
     # imports it unrun while the plan claims they were out of selection, and under-selection
@@ -300,8 +308,22 @@ def is_test_module(path: str) -> bool:
 
 
 def test_modules(root: Path) -> list[Path]:
-    """Every test module under `root`, by the one predicate above."""
+    """Every module pytest will COLLECT under `root`, by the one predicate above.
+
+    Collection is the question the completeness invariant asks. It is NOT the question the
+    dependency derivation asks; see `pytest_inputs`."""
     return sorted(p for p in root.rglob("*.py") if is_test_module(p.as_posix()))
+
+
+def pytest_inputs(root: Path) -> list[Path]:
+    """Every Python file under `root`, collected or not.
+
+    `conftest.py` runs automatically and fixture and helper modules are imported by the tests
+    that use them, so their imports are the suite's dependencies just as much as a test
+    module's. Feeding only collected modules to the derivation loses an edge whenever a helper
+    reaches a scope its own tests never name: 24 support modules in this repository import a
+    scope other than the one that owns them. Sol's P1 on #3339."""
+    return sorted(root.rglob("*.py"))
 
 
 def _relative_base(where: str, level: int) -> str:
