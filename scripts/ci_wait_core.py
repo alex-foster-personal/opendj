@@ -304,6 +304,29 @@ def _merge_check_run_pages(pages: list[dict]) -> list[dict]:
 # ----- pure: the bounded poll loop ------------------------------------------
 
 
+def _timeout_message(
+    elapsed: float, expected: frozenset[str], missing: frozenset[str], latest: dict[str, dict]
+) -> str:
+    """Why the wait ran out, named precisely. A timeout is a NON-verdict, so the one thing it
+    owes the reader is which of the three ways it happened: an expected check never appeared,
+    a check never finished, or the set of names never stopped growing."""
+    if missing:
+        return (
+            f"timed out after {elapsed:.0f}s: {len(missing)} of {len(expected)} "
+            f"expected check(s) never appeared: {sorted(missing)}"
+        )
+    pending = sorted(name for name, run in latest.items() if run["status"] != "completed")
+    if pending:
+        return (
+            f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not "
+            f"terminal: {pending}"
+        )
+    return (
+        f"timed out after {elapsed:.0f}s: all {len(expected)} expected check(s) were "
+        "terminal but a new check name appeared on the final poll and never stabilized"
+    )
+
+
 def poll_until_terminal(
     expected: frozenset[str],
     fetch_check_runs: Callable[[], list[dict]],
@@ -361,6 +384,16 @@ def poll_until_terminal(
         # `latest and`: zero check-runs is never a verdict. With a non-empty `expected` it is
         # already `missing`; the fail-fast watcher polls a first push with no baseline.
         if latest and not missing and _all_terminal(latest) and stable:
+            if _all_passing(latest) and not expected:
+                # An UNKNOWN lower bound, not an empty one. Without a prior push there is
+                # nothing that says which checks this head owes, so "the observed set
+                # stopped growing" is not evidence that they all registered: one early
+                # passing check, stable for two polls, would end the watch before the
+                # shards exist. Failure still stops immediately, below.
+                previous_names = observed_names
+                if clock() - start < timeout_s:
+                    sleep(poll_interval_s)
+                    continue
             if _all_passing(latest):
                 return (
                     WaitStatus.SUCCESS,
@@ -381,26 +414,5 @@ def poll_until_terminal(
         previous_names = observed_names
         elapsed = clock() - start
         if elapsed >= timeout_s:
-            if missing:
-                message = (
-                    f"timed out after {elapsed:.0f}s: {len(missing)} of "
-                    f"{len(expected)} expected check(s) never appeared: "
-                    f"{sorted(missing)}"
-                )
-            else:
-                pending = sorted(
-                    name for name, run in latest.items() if run["status"] != "completed"
-                )
-                if pending:
-                    message = (
-                        f"timed out after {elapsed:.0f}s: {len(pending)} check(s) "
-                        f"still not terminal: {pending}"
-                    )
-                else:
-                    message = (
-                        f"timed out after {elapsed:.0f}s: all {len(expected)} expected "
-                        "check(s) were terminal but a new check name appeared on the "
-                        "final poll and never stabilized"
-                    )
-            return WaitStatus.TIMEOUT, latest, message
+            return WaitStatus.TIMEOUT, latest, _timeout_message(elapsed, expected, missing, latest)
         sleep(poll_interval_s)
