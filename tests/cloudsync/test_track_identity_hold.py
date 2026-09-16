@@ -616,3 +616,33 @@ def test_prepare_spoke_identity_names_the_lock_holder_when_retries_exhaust(
         holder.join(timeout=5)
         assert not holder_errors, f"holder thread failed: {holder_errors}"
         conn.close()
+
+
+def test_prepare_spoke_identity_does_not_report_a_nested_transaction_as_a_busy_lock(
+    tmp_path: Path,
+) -> None:
+    """[Criterion 3, negative] Only real lock contention may read STATE_DB_BUSY.
+
+    Called inside a caller-owned transaction, ``BEGIN IMMEDIATE`` fails with
+    ``cannot start a transaction within a transaction``. That is a call-site bug
+    (it is exactly the blanket ``_transaction`` wrapper #3251 removed), not a lock
+    holder, so it must surface as itself. Labelling it ``STATE_DB_BUSY ...
+    self-contention`` sends whoever reads the status chasing a writer that does
+    not exist.
+    """
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        _seed_one_remap_pair(conn)
+        conn.execute("BEGIN")
+        with pytest.raises(sqlite3.OperationalError) as excinfo:
+            prepare_spoke_identity(conn)
+        assert not isinstance(excinfo.value, state_db.StateStoreBusyError)
+        assert "within a transaction" in str(excinfo.value)
+        assert "STATE_DB_BUSY" not in str(excinfo.value)
+        conn.rollback()
+
+        # POSITIVE CONTROL: the same connection and fixture remap fine outside a
+        # caller transaction, so the raise above is about nesting, not the seed.
+        assert prepare_spoke_identity(conn) == 1
+    finally:
+        conn.close()

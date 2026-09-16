@@ -221,7 +221,11 @@ def _commit_remap_batch(
         try:
             conn.execute("BEGIN IMMEDIATE")
         except sqlite3.OperationalError as exc:
-            if not state_db.is_sqlite_busy(exc) or attempt == attempts:
+            if not state_db.is_sqlite_busy(exc):
+                # Not contention (e.g. a caller-owned transaction): surface it as
+                # itself rather than as a lock holder that does not exist.
+                raise
+            if attempt == attempts:
                 raise state_db.StateStoreBusyError(
                     "STATE_DB_BUSY: prepare_spoke_identity could not acquire "
                     f"the state DB write lock for remap batch {batch_index}/"
