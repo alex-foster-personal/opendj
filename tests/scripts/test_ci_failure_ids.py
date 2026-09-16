@@ -29,6 +29,7 @@ pytestmark = pytest.mark.requirement("OPS-16")
 
 TS = "2026-09-16T09:12:01.1234567Z "
 SEP = "\u203a"  # Playwright's list reporter separator
+_EXIT = "Process completed with exit code 1."
 
 
 def test_pytest_failed_and_error_lines_with_runner_timestamps():
@@ -164,10 +165,14 @@ def test_a_ratchet_job_failing_only_what_main_fails_is_still_debt():
     assert got.verdict is JobVerdict.KNOWN_RED
 
 
-def test_a_zero_identity_job_also_red_on_main_is_main_red_job():
+def test_a_zero_identity_job_also_red_on_main_is_unmeasured_not_known_red():
+    """Sol's P1 on #3293, and this test asserted the opposite before it. Every name in
+    `main_red_job_names` is one whose main log was READ and named failing TESTS; this job
+    named none, so the two failures are established to be DIFFERENT causes that happen to
+    share a job name. Read as main's red, a build or budget regression merges."""
     name = "reqs-check + native wheel + contract drift"
     got = classify_job(name, frozenset(), frozenset(), frozenset({name}), beyond_tests=False)
-    assert got.verdict is JobVerdict.MAIN_RED_JOB
+    assert got.verdict is JobVerdict.BASELINE_MISMATCH
 
 
 def test_a_zero_identity_job_not_red_on_main_is_loud():
@@ -180,7 +185,7 @@ def test_a_zero_identity_job_not_red_on_main_is_loud():
 
 def test_a_job_whose_baseline_log_was_unreadable_is_not_main_red():
     """The exploit path: main failed this job too, but its log was never read, so nothing
-    establishes the two failures are the same. Classified MAIN_RED_JOB it exits mergeable
+    establishes the two failures are the same. Classified as main's own red it exits mergeable
     off a baseline that was never measured."""
     name = "frontend unit + check + build"
     got = classify_job(
@@ -189,18 +194,19 @@ def test_a_job_whose_baseline_log_was_unreadable_is_not_main_red():
     assert got.verdict is JobVerdict.BASELINE_UNREADABLE
 
 
-def test_a_measured_main_red_job_name_still_wins():
-    """The control: a name main was actually READ to fail must stay MAIN_RED_JOB."""
+def test_a_measured_main_red_job_name_is_still_distinguished_from_an_unreadable_one():
+    """The control against the overshoot: collapsing both into one verdict would lose WHY a
+    job is unmeasured, which is the difference between main's log saying something else
+    failed and main's log not being readable at all. Both are unmeasured; neither merges."""
     name = "frontend unit + check + build"
-    got = classify_job(
-        name,
-        frozenset(),
-        frozenset(),
-        frozenset({name}),
-        frozenset(),
-        beyond_tests=False,
+    measured = classify_job(
+        name, frozenset(), frozenset(), frozenset({name}), frozenset(), beyond_tests=False
     )
-    assert got.verdict is JobVerdict.MAIN_RED_JOB
+    unreadable = classify_job(
+        name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False
+    )
+    assert measured.verdict is JobVerdict.BASELINE_MISMATCH
+    assert unreadable.verdict is JobVerdict.BASELINE_UNREADABLE
 
 
 # ----- a job that also failed for something no test explains -----
@@ -289,3 +295,44 @@ def test_a_new_failure_plus_a_cap_kill_is_still_genuine():
         beyond_tests=True,
     )
     assert got.verdict is JobVerdict.GENUINE
+
+
+def _step(command: str, *output: str) -> str:
+    echo = [f"{TS}##[group]Run {command}", f"{TS}##[endgroup]"]
+    return "\n".join([*echo, *(TS + line for line in output)])
+
+
+def test_a_combined_job_whose_exit_came_from_a_non_test_step_is_beyond_the_tests():
+    """Sol's P1 on #3293. Exit code 1 is the one code a test failure CAN explain, so it is
+    deliberately not matched as beyond-the-tests -- which let a job that ran tests in one step
+    and a build, typecheck or ratchet in another be explained by identities from the first
+    while the SECOND is what failed. The runner opens each step with its own command echo, so
+    which step owns the terminating error is readable rather than guessed."""
+    log = "\n".join(
+        [
+            _step("pnpm vitest run", "FAILED tests/test_a.py::test_b - AssertionError"),
+            _step("pnpm build", "error TS2345: argument not assignable", f"##[error]{_EXIT}"),
+        ]
+    )
+    beyond = failure_beyond_tests(log)
+    assert beyond == ["exit code 1 in a step that named no failing test: pnpm build"]
+
+
+def test_a_shard_whose_exit_came_from_the_test_step_is_not_beyond_the_tests():
+    """The control against the overshoot, and the case this tool spends its life on: an
+    ordinary red pytest shard exits 1 from the step that printed the failures. Flagging that
+    would make every known-red shard unmeasured and nothing would ever merge."""
+    log = _step(
+        "uv run pytest tests -x",
+        "FAILED tests/test_a.py::test_b - AssertionError",
+        "=========== 1 failed, 2118 passed in 277.98s ============",
+        f"##[error]{_EXIT}",
+    )
+    assert failure_beyond_tests(log) == []
+
+
+def test_a_log_with_no_step_echoes_reports_nothing_rather_than_guessing():
+    """A log that cannot be partitioned into steps cannot say which step owns the exit. Empty
+    is UNKNOWN here, not proof the tests owned it, which is what the caller's docstring says."""
+    log = f"{TS}FAILED tests/test_a.py::test_b\n{TS}##[error]{_EXIT}\n"
+    assert failure_beyond_tests(log) == []

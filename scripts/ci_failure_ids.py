@@ -18,7 +18,9 @@ Job verdicts (`classify_job`):
                    identities that is neither pytest infra nor red on main: loud, never passed.
     KNOWN_RED      every identity is on main or a known flake.
     INFRA          a pytest or canary job with no identity at all (cap kill, runner reclaim).
-    MAIN_RED_JOB   a failed job with no identity whose NAME is also red on main's head.
+    BASELINE_MISMATCH  a failed job with no identity whose NAME also failed on main, where
+                   main's failure DID name failing tests. The two failures share a name and
+                   nothing else, so the comparison was never made. Unmeasured.
     RATCHET_DEBT   quality ratchet breach, which ships and is debt-logged under SHIP mode.
     UNEXPLAINED    identities were found, all known, and the job ALSO failed for a reason no
                    test accounts for (cancel, timeout, kill, a non-1 exit). Unmeasured.
@@ -54,7 +56,7 @@ class JobVerdict(StrEnum):
     GENUINE = "GENUINE"
     KNOWN_RED = "KNOWN_RED"
     INFRA = "INFRA"
-    MAIN_RED_JOB = "MAIN_RED_JOB"
+    BASELINE_MISMATCH = "BASELINE_MISMATCH"
     RATCHET_DEBT = "RATCHET_DEBT"
     BASELINE_UNREADABLE = "BASELINE_UNREADABLE"
     UNEXPLAINED = "UNEXPLAINED"
@@ -149,6 +151,41 @@ _BEYOND_TESTS = re.compile(
 )
 
 
+_STEP_ECHO = "##[group]Run "
+_EXIT_ONE = "Process completed with exit code 1"
+
+
+def unowned_exit_steps(log: str) -> list[str]:
+    """Steps that ended with exit code 1 while naming no failing test.
+
+    Exit code 1 is the ONE code a test failure can explain, so `_BEYOND_TESTS` deliberately
+    leaves it alone -- and that is what lets a job which runs tests in one step and a build,
+    typecheck or ratchet in another carry known-red identities from the first while the
+    SECOND is what failed. The runner opens every step with `##[group]Run <command>`, so the
+    step that owns a terminating error is the one whose slice holds it, and the tests own
+    that exit only when a failing-test identity appears in the SAME slice.
+
+    A log with no step echoes cannot be partitioned, so it returns empty: that is UNKNOWN,
+    not proof, exactly as `failure_beyond_tests` documents for its own empty result.
+    """
+    lines = [_strip_prefixes(raw) for raw in log.split("\n")]
+    starts = [i for i, line in enumerate(lines) if _STEP_ECHO in line]
+    if not starts:
+        return []
+    found: list[str] = []
+    for start, end in zip(starts, [*starts[1:], len(lines)], strict=True):
+        step = lines[start:end]
+        if not any(_EXIT_ONE in _ANSI.sub("", line) for line in step):
+            continue
+        if failed_identities("\n".join(step)):
+            continue
+        command = _ANSI.sub("", lines[start].split(_STEP_ECHO, 1)[1]).strip()
+        found.append(f"exit code 1 in a step that named no failing test: {command}"[:200])
+        if len(found) == EXCERPT_LINES:
+            break
+    return found
+
+
 def failure_beyond_tests(log: str) -> list[str]:
     """Runner lines saying the job failed for something no test failure accounts for.
 
@@ -164,6 +201,8 @@ def failure_beyond_tests(log: str) -> list[str]:
             found.append(line[:200])
             if len(found) == EXCERPT_LINES:
                 break
+    if len(found) < EXCERPT_LINES:
+        found.extend(unowned_exit_steps(log)[: EXCERPT_LINES - len(found)])
     return found
 
 
@@ -199,7 +238,12 @@ def classify_job(
     if RATCHET_JOBS.search(job_name) and not residual:
         return verdict(JobVerdict.RATCHET_DEBT)
     if not identities and job_name in main_red_job_names:
-        return verdict(JobVerdict.MAIN_RED_JOB)
+        # Sol's P1 on #3293. A name is not a cause. Every name in `main_red_job_names` is one
+        # whose main log was READ and named failing TESTS, and this job named none, so main's
+        # failure and this one are established to be DIFFERENT. Trusting the shared name
+        # merges a build, typecheck or budget regression on the strength of main's unrelated
+        # test failures.
+        return verdict(JobVerdict.BASELINE_MISMATCH)
     if not identities and job_name in baseline_unreadable_job_names:
         # Main failed this job too, but its log could not be read, so nothing establishes
         # that the two failures are the same. Unmeasured, never mergeable.

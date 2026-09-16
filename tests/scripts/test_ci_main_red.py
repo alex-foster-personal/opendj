@@ -44,12 +44,42 @@ def _walk(runs: dict[int, list[Job]], ids: dict[int, frozenset[str]], order: lis
 
 
 def test_the_window_is_a_union_over_three_verdicts():
+    """The union is for a trunk that FLAPS: the same job red on two of the last three runs,
+    with a different test named each time, is main's red and not the pull request's."""
+    runs = {
+        1: [Job(11, "shard 1", "failure")],
+        2: [Job(21, "shard 1", "failure")],
+        3: [Job(31, "shard 1", "success")],
+    }
+    ids = {11: frozenset({"FAILED tests/t.py::a"}), 21: frozenset({"FAILED tests/t.py::b"})}
+    red, _ = _walk(runs, ids, [1, 2, 3])
+    assert red.identities == {"FAILED tests/t.py::a", "FAILED tests/t.py::b"}
+
+
+def test_a_failure_a_newer_verdict_ran_green_is_dropped_from_the_union():
+    """Sol's P1 on #3293. This test previously asserted the opposite and so pinned the
+    defect: the union retained an identity from two runs back although main's NEWEST run
+    passed that same job, which is main's PAST, not main's present. A pull request
+    reintroducing a test trunk repair had already fixed read KNOWN_RED and merged."""
     runs = {
         1: [Job(11, "shard 1", "success")],
         2: [Job(21, "shard 1", "failure")],
         3: [Job(31, "shard 1", "success")],
     }
     red, _ = _walk(runs, {21: frozenset({"FAILED tests/t.py::a"})}, [1, 2, 3])
+    assert red.identities == frozenset()
+    assert red.failed_job_names == frozenset()
+
+
+def test_a_job_the_newer_verdicts_never_measured_still_reads_from_an_older_one():
+    """The control for the overshoot. Dropping every older failure outright, rather than
+    only the ones a newer verdict measured green, would delete the flap tolerance the
+    window exists for and call main's standing red a GENUINE pull request failure."""
+    runs = {
+        1: [Job(11, "shard 1", "cancelled")],
+        2: [Job(21, "shard 1", "failure")],
+    }
+    red, _ = _walk(runs, {21: frozenset({"FAILED tests/t.py::a"})}, [1, 2])
     assert red.identities == {"FAILED tests/t.py::a"}
 
 

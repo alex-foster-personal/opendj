@@ -230,7 +230,12 @@ def exit_for(status: WaitStatus, watch: FailureWatch, *, has_baseline: bool) -> 
         for v in verdicts
         if v is None
         or v.verdict
-        in (JobVerdict.INFRA, JobVerdict.BASELINE_UNREADABLE, JobVerdict.UNEXPLAINED)
+        in (
+            JobVerdict.INFRA,
+            JobVerdict.BASELINE_UNREADABLE,
+            JobVerdict.BASELINE_MISMATCH,
+            JobVerdict.UNEXPLAINED,
+        )
     ]
     if unmeasured:
         return Exit.UNKNOWN, f"{len(unmeasured)} check(s) finished without a measurement"

@@ -394,6 +394,17 @@ def poll_until_terminal(
                 if clock() - start < timeout_s:
                     sleep(poll_interval_s)
                     continue
+                # The deadline does not convert the missing baseline into one. Falling
+                # through to the all-passing branch would report SUCCESS for a head whose
+                # owed checks were never established, which is the one thing this branch
+                # exists to refuse.
+                return (
+                    WaitStatus.NO_BASELINE,
+                    latest,
+                    f"{len(latest)} check(s) passed and the set stopped growing, but no "
+                    "previous push established which checks this head owes, so nothing "
+                    f"says they all registered; deadline reached after {clock() - start:.0f}s",
+                )
             if _all_passing(latest):
                 return (
                     WaitStatus.SUCCESS,

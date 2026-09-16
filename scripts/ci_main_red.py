@@ -102,8 +102,10 @@ def main_red_identities(
     found: set[str] = set()
     pending: set[str] = set()
     remaining_window = window
+    green: set[str] = set()
     for verdict in verdicts:
         measured: set[str] = set()
+        verdict_green: set[str] = set()
         for attempt in range(1, verdict.attempts + 1):
             for job in jobs_of(verdict.run_id, attempt):
                 if remaining_window > 0:
@@ -112,19 +114,28 @@ def main_red_identities(
                     continue
                 if job.conclusion == "success":
                     measured.add(job.name)
+                    verdict_green.add(job.name)
                 elif job.conclusion == "failure":
+                    if job.name in green:
+                        # A NEWER verdict ran this job to success, so every identity it
+                        # names is main's PAST. Retained, the union keeps subtracting a
+                        # failure main already fixed, and a pull request that reintroduces
+                        # it reads KNOWN_RED and merges. Flap tolerance is for a job the
+                        # newer verdicts left UNMEASURED, not for one they measured green.
+                        measured.add(job.name)
+                        continue
                     try:
                         ids = identities_of(job.job_id)
                     except LogUnreadable:
                         # The name is NOT retained. Retained, a pull request job with the
-                        # same name and no identity reads MAIN_RED_JOB and merges off a
+                        # same name and no identity reads BASELINE_MISMATCH and the read is
                         # baseline that was never measured.
                         unreadable.add(job.name)
                         continue
                     if not ids:
                         # The log was READ and named no failing test. The name alone then
                         # says main is red here and NOT what failed, so a pull request job
-                        # with the same name and no identity would read MAIN_RED_JOB off a
+                        # with the same name and no identity would be compared off a
                         # comparison nobody made. A bundle budget check is the worked case:
                         # main 79 KB over and the pull request 300 KB over share one name.
                         unreadable.add(job.name)
@@ -133,6 +144,7 @@ def main_red_identities(
                     found |= ids
                     measured.add(job.name)
         pending -= measured
+        green |= verdict_green
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
             break
@@ -218,7 +230,7 @@ def unmeasured_baseline_names(
     A failed check run at main's head carries a conclusion and nothing else: this tool never
     parsed a log for it, so it establishes that main is red under that name and not that a
     pull request failing under the same name failed the same way. Counted red, such a name
-    reads MAIN_RED_JOB against a zero-identity pull request failure and the agent merges off
+    is compared against a zero-identity pull request failure and the agent merges off
     a baseline nobody measured. The bundle budget check is the case that makes it concrete,
     where main can be 79 KB over and the pull request 300 KB over under one name.
 
