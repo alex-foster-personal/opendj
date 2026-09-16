@@ -118,7 +118,13 @@ export function buildUiMirror(): Record<string, unknown> {
 				phrases: deck.phrases
 			}])
 		),
-		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: _visibleRowsCount() },
+		browser: {
+			playlist: state.browser.active_playlist,
+			search: state.browser.search,
+			sort: state.browser.sort,
+			selected_row: state.browser.selected_row,
+			visible_rows_count: _visibleRowsCount()
+		},
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
