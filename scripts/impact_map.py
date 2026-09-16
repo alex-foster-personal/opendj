@@ -28,6 +28,7 @@ import json
 import sys
 import tomllib
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -141,15 +142,26 @@ def load_map(records: dict) -> ImpactMap:
 # ----- select -----
 
 
-def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
+def select_modules(
+    impact: ImpactMap,
+    changed: list[str],
+    exists: Callable[[str], bool] = lambda path: (REPO / path).exists(),
+) -> frozenset[str]:
     """Test modules the observed traces say a change to `changed` can reach.
 
     A changed test module the map has never seen is selected too. The map can only speak
     about what it observed, so a test added since it was built is UNKNOWN, and a pull
     request that adds a test must run it.
+
+    A DELETED one is not. `changed` comes from a diff, which lists a removed file exactly
+    like an added one, and pytest handed a path that no longer exists errors out instead of
+    running anything: a pull request whose only change is deleting a test would fail CI on
+    the file it deleted. `exists` is a seam so the rule can be tested without a filesystem.
     """
     selected: set[str] = {
-        path for path in changed if _is_test_module(path) and path not in impact.modules
+        path
+        for path in changed
+        if _is_test_module(path) and path not in impact.modules and exists(path)
     }
     fixtures_hit = {
         name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
