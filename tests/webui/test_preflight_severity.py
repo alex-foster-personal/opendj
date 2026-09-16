@@ -16,6 +16,8 @@ would pass while the real behavior was wrong either way.
   painted as a normal state -> broken, and worse than the bug being fixed.
 - if a row carries no explainer then hovering it teaches the user nothing ->
   broken.
+
+[if] a preflight row fails [then] its severity follows the outcome and it is explained, [else stop].
 """
 
 from __future__ import annotations
