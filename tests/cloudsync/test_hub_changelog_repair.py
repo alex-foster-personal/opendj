@@ -13,28 +13,49 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
-from apps.shared.state import schema_markers
-from apps.shared.state import sync_stamp
+from apps.shared.state import schema_markers, sync_stamp
 from apps.shared.state.migrations_v17 import REPAIR_MARKER
-from apps.sync_hub import client, digest_diff, engine_apply, protocol
+from apps.sync_hub import client, digest_diff, engine_apply, protocol, service
 from apps.sync_hub.engine_common import HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE
 from apps.sync_hub.protocol_common import EPOCH
+from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _T0,
-    _TestClientTransport,
     _insert_track,
     _open,
     _sync,
-    hub,
-    hub_dir,
-    spoke_a,
 )
 
+_TestClientTransport = TestClientTransport
+
 pytestmark = pytest.mark.requirement("CLOUDSYNC-03")
+
+
+@pytest.fixture
+def hub_dir(tmp_path: Path) -> Path:
+    return tmp_path / "hub"
+
+
+@pytest.fixture
+def spoke_a(tmp_path: Path) -> Path:
+    return tmp_path / "spoke-a"
+
+
+@pytest.fixture
+def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
+    app = FastAPI()
+    app.state.state_db_path = str(client.state_db_path(hub_dir))
+    app.state.sync_hub_data_dir = str(hub_dir)
+    app.state.sync_hub_machine_name = "hub"
+    app.include_router(service.router, prefix="/api/v1")
+    with TestClient(app) as http:
+        yield _TestClientTransport(http)
 
 _T_HUB = "2026-08-05T20:12:14.347000+00:00"
 _T_SPOKE_OLD = "2024-04-17T21:53:19.274000+00:00"
@@ -77,8 +98,20 @@ def _seed_hub_with_epoch_changelog(
 ) -> int:
     db_path = client.state_db_path(hub_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    state_schema.apply_migrations(conn)
+    # Stop the ladder at v16. The repair is a v17 hook, so a store seeded at
+    # the top of the ladder has already been through it and marked itself
+    # done; the sentinel rows inserted afterwards would never be looked at.
+    # Stopping at v16 reproduces the live hub: bad rows present, upgrade
+    # pending.
+    conn = sqlite3.connect(str(db_path), isolation_level=None)
+    state_schema._ensure_meta(conn)
+    for step_idx in range(16):
+        for stmt in state_schema.MIGRATIONS[step_idx]:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
+            (step_idx + 1, "2026-09-01T00:00:00+00:00"),
+        )
     _insert_track(conn, _STABLE_ID, title="repair", updated_at=_T0, origin=_DEV_A)
     conn.execute(
         """
@@ -223,7 +256,8 @@ def _seed_spoke_at_max_seq(
 def test_hub_repair_lets_spoke_past_max_seq_converge(
     hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] spoke cursor is at hub max seq [then] repair plus sync converges, [else stop]."""
+    """[if] spoke cursor is at hub max seq [then] repair plus sync converges,
+    [else stop]."""
     monkeypatch.setenv("MDT_IS_HUB", "1")
     max_seq = _seed_hub_with_epoch_changelog(hub_dir)
     _seed_spoke_at_max_seq(spoke_a, max_seq=max_seq)
@@ -233,7 +267,8 @@ def test_hub_repair_lets_spoke_past_max_seq_converge(
     hub_conn = _open(hub_dir)
     try:
         rows = hub_conn.execute(
-            "SELECT seq, updated_at FROM hub_changelog WHERE table_name = 'track_fields' ORDER BY seq"
+            "SELECT seq, updated_at FROM hub_changelog "
+            "WHERE table_name = 'track_fields' ORDER BY seq"
         ).fetchall()
         assert len(rows) == 2
         assert rows[-1][0] > max_seq
@@ -318,7 +353,8 @@ def test_hub_repair_lets_spoke_past_max_seq_converge(
 def test_spoke_newer_than_repaired_hub_row_keeps_local_value(
     hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] spoke edited after consuming sentinel [then] LWW keeps newer spoke value, [else stop]."""
+    """[if] spoke edited after consuming sentinel [then] LWW keeps the newer
+    spoke value, [else stop]."""
     monkeypatch.setenv("MDT_IS_HUB", "1")
     max_seq = _seed_hub_with_epoch_changelog(hub_dir, field_value="128.0")
     _seed_spoke_at_max_seq(spoke_a, max_seq=max_seq, field_value="120.0")

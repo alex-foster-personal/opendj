@@ -1,10 +1,11 @@
 """Migration 16 -> 17: hub changelog stamp repair (#3171).
 
-v16 (#3165) already created ``schema_meta_markers`` and the
-``hub_changelog(table_name, row_pk)`` index. v17 adds the covering
-``(table_name, row_pk, seq)`` index that the latest-row-per-key join needs,
-and a one-shot hub-side repair that re-offers rows whose latest changelog
-stamp disagrees with the live domain row.
+v17 carries no SQL. Its only job is to version the one-shot hub-side repair
+that re-offers rows whose latest ``hub_changelog`` stamp disagrees with the
+live domain row, so ``schema_meta`` records which databases have been through
+it. v16 (#3165) already supplies both things the repair needs: the
+``schema_meta_markers`` table and the ``hub_changelog(table_name, row_pk)``
+index.
 
 The repair exists because a legacy hub-side backfill logged 23,416
 ``track_fields`` changelog rows (and 7,917 ``track_vendor_ids`` rows) carrying
@@ -16,27 +17,23 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from apps.sync_hub.engine_common import _pk_predicate
 from apps.sync_hub.protocol import SPEC_BY_TABLE, SYNC_TABLES, decode_row_pk
 from apps.sync_hub.protocol_common import NO_ORIGIN
 
-from . import machine_identity
-from . import schema_markers
-from . import sync_stamp
+from . import machine_identity, schema_markers, sync_stamp
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 REPAIR_MARKER: str = "cloudsync_hub_changelog_stamp_repair_v1"
 
-_V17: list[str] = [
-    # ``schema_meta_markers`` and ``idx_hub_changelog_table`` arrive in v16
-    # (#3165). This covering index is what turns the latest-row-per-key join
-    # below into an index-only scan instead of the unindexed per-row probe
-    # that locked the hub for nine minutes an open (#3165).
-    "CREATE INDEX IF NOT EXISTS idx_hub_changelog_table_row_pk_seq "
-    "ON hub_changelog(table_name, row_pk, seq)",
-]
+# No standalone SQL, for the same reason v15 has none: the Python repair owns
+# the work. A `(table_name, row_pk, seq)` index was measured here and removed
+# -- at live-hub scale (31,333 sentinel rows) the run took 0.08 s to scan and
+# 0.34 s under `BEGIN IMMEDIATE` with it, and 0.08 s / 0.27 s with it dropped,
+# so v16's `(table_name, row_pk)` index already serves both queries and a
+# second overlapping index would only cost write time.
+_V17: list[str] = []
 
 
 def _live_rows_union_sql() -> str:
@@ -136,7 +133,11 @@ def _append_repair_changelog_rows(
         changelog_stamp = _latest_changelog_stamp(conn, table_name, row_pk)
         if changelog_stamp is not None and str(changelog_stamp) == str(live_updated_at):
             continue
-        stamp_value = str(live_updated_at) if live_updated_at is not None else sync_stamp.FLOOR_STAMP
+        stamp_value = (
+            str(live_updated_at)
+            if live_updated_at is not None
+            else sync_stamp.FLOOR_STAMP
+        )
         if live_origin is None or str(live_origin) == NO_ORIGIN:
             if machine_id is None:
                 machine_id = sync_stamp.ensure_local_machine(conn)
@@ -159,11 +160,28 @@ def repair_hub_changelog_stamps(
     env: Mapping[str, str] | None = None,
 ) -> int:
     """Re-offer hub changelog rows whose latest stamp disagrees with live rows."""
-    if not machine_identity.is_hub_from_env(env):
-        return 0
+    # Marker first, role second, matching the v15 backfill. Reading the role
+    # first would let a malformed MDT_IS_HUB raise out of apply_migrations and
+    # abort every open, where the contract is that an unreadable hub flag
+    # surfaces as a declared 500 from the route that needs it
+    # (tests/cloudsync/test_cloudsync_ops_routes.py).
     if not schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
         return 0
     if schema_markers.has_marker(conn, REPAIR_MARKER):
+        return 0
+    try:
+        is_hub = machine_identity.is_hub_from_env(env)
+    except machine_identity.MachineIdentityError:
+        # An unreadable MDT_IS_HUB is a real error, and it is not this
+        # function's to raise. Every open_rw runs this hook, so raising here
+        # would take down ordinary database opens on a machine whose flag is
+        # typo'd, while the contract is that an illegible flag surfaces as a
+        # declared 500 from the route that needs the role
+        # (CLOUDSYNC_HUB_FLAG_INVALID). Nothing is swallowed: the value is
+        # still rejected loudly there, no marker is written here, and the
+        # repair runs on the next open once the flag is legible.
+        return 0
+    if not is_hub:
         return 0
 
     candidates = _scan_stamp_mismatch_candidates(conn)
