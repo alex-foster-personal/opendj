@@ -193,6 +193,24 @@ exist on main for the measurement to work. Hard-zero rules are never offered
 the downgrade: a broken architecture contract has no allowance to be "over"
 on main.
 
+## Main push/schedule: absolute counts are a trend report, not a gate
+
+On a push or schedule CI run, HEAD is main's own tip, so there is no merge-base
+to inherit from (issue #3246). Those runs pass `--main-report-only` to
+`scripts/quality_gate.py`; pull_request runs do not.
+
+A plain-ratchet metric above its `baseline.json` allowance still prints
+`REGRESSION` and is written to the GitHub Actions job summary as a non-blocking
+trend report, but the step exits 0. The enforced gate remains the per-PR delta
+vs merge-base described above: a PR that makes an already-over metric worse
+still fails, and a PR that adds nothing to trunk debt still passes via
+`INHERITED`.
+
+`HARD_ZERO` gates (`sync_drift`, shell constructs, architecture contracts) are
+unchanged everywhere, including on main: they still fail hard. See
+[ADR-NEW-quality-ratchet-new-code-gate.md](../../docs/decisions/ADR-NEW-quality-ratchet-new-code-gate.md)
+and issue #3246.
+
 ## The mypy ratchet, and its pinned install set
 
 Type debt was completely unmeasured until Tue 1 Sep 2026. The repo had no
