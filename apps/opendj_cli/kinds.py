@@ -80,6 +80,19 @@ def head_delay_ms_value(key: str, raw: str) -> float:
     return parsed
 
 
+MASTER_DELAY_MAX_MS = 1500  # keep in sync with apps/webui/frontend/src/lib/player/constants.ts
+
+
+def master_delay_ms_value(key: str, raw: str) -> float:
+    parsed = number_value(key, raw)
+    if parsed < 0.0 or parsed > MASTER_DELAY_MAX_MS:
+        raise ValueError(
+            f"{key} must be within 0..{MASTER_DELAY_MAX_MS} (room delay milliseconds), "
+            f"got {raw!r}"
+        )
+    return parsed
+
+
 def text_value(key: str, raw: str) -> str:
     if raw == "":
         raise ValueError(f"{key} must not be empty")

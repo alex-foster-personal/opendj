@@ -1,9 +1,6 @@
 // requirement: CUEOUT-11
-// [if] a Bluetooth-looking HEADPHONE CUE device is selected for the first time this session [then] shouldCalibrateCueLatency is true
-// [if] the cue label is WH-1000XM5 with no word Bluetooth [then] shouldCalibrateCueLatency is true
-// [if] the same cue device is selected again after a successful cal [then] shouldCalibrateCueLatency is false
-// [if] the same cue device is selected again after a failed cal [then] shouldCalibrateCueLatency is true
-// [if] the cue label is External Headphones or speakers [then] shouldCalibrateCueLatency is false
+// (CUEOUT-14 replaced the first-select auto-chirp with the CALIBRATE modal; the
+// shouldCalibrateCueLatency / label-skip lines moved to cueout-14-alignment-modes.)
 // [if] a delayed chirp is captured at N ms with a strong peak [then] measureCueLatencyMs returns N
 // [if] the peak is weaker than CUE_LATENCY_PEAK_MIN [then] resolveCalibratedHeadDelayMs throws and HEAD DELAY is not written
 // [if] measured lag is outside 0-500 ms [then] resolveCalibratedHeadDelayMs throws
@@ -26,83 +23,6 @@ let headphones;
 before(async () => {
 	cueLatency = await loadTypeScriptModule('src/lib/player/cue-latency.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
-});
-
-test('shouldCalibrateCueLatency is first CUE select of BT/unnamed BT, retry after fail, never speakers or the Mac jack', () => {
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: null,
-			nextCueId: 'bt-1',
-			label: 'WH-1000XM5 (Bluetooth)',
-			alreadyCalibrated: false
-		}),
-		true
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: null,
-			nextCueId: 'sony',
-			label: 'WH-1000XM5',
-			alreadyCalibrated: false
-		}),
-		true,
-		'Chrome often omits the word Bluetooth from the device label'
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: 'bt-1',
-			nextCueId: 'bt-1',
-			label: 'AirPods Pro',
-			alreadyCalibrated: false
-		}),
-		true,
-		'failed first cal must retry on the same live sink without a second setSinkId'
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: 'bt-1',
-			nextCueId: 'bt-1',
-			label: 'AirPods Pro',
-			alreadyCalibrated: true
-		}),
-		false
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: null,
-			nextCueId: 'wired',
-			label: 'External Headphones',
-			alreadyCalibrated: false
-		}),
-		false
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: null,
-			nextCueId: 'speakers',
-			label: 'MacBook Pro Speakers',
-			alreadyCalibrated: false
-		}),
-		false
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: null,
-			nextCueId: 'blank',
-			label: '',
-			alreadyCalibrated: false
-		}),
-		false
-	);
-	assert.equal(
-		headphones.shouldCalibrateCueLatency({
-			previousCueId: 'wired',
-			nextCueId: 'bt-2',
-			label: 'AirPods G2',
-			alreadyCalibrated: false
-		}),
-		true
-	);
 });
 
 test('measureCueLatencyMs recovers 0, 40, 180, 500 ms of injected lag', async () => {
@@ -189,14 +109,13 @@ test('calibration capture never constrains getUserMedia to a handsfree mic', () 
 	assert.equal(headphones.preferredAudioInputDeviceId(devices), 'builtin-mic');
 });
 
-test('selectHeadphoneOutput wires first-select cal through the cue destination, not the delay line', () => {
+test('the calibration chirp reaches the cue destination, not the delay line, and select no longer auto-chirps', () => {
 	const source = readFileSync(`${FRONTEND}/src/lib/player/headphones.ts`, 'utf8');
-	assert.match(source, /shouldCalibrateCueLatency/);
-	assert.match(source, /measureCueLatencyMs/);
+	assert.match(source, /cueAlignAudioEffects/);
 	assert.match(source, /unlockAudioInputConstraints/);
-	assert.match(source, /src\.connect\(nodes\.destination\)/);
-	assert.match(source, /_calibratedCueIds/);
-	assert.match(source, /_calibratingCueId/);
+	assert.match(source, /bus === 'master' \? ctx\.destination : nodes\.destination/);
+	assert.doesNotMatch(source, /shouldCalibrateCueLatency|_calibratedCueIds|_calibratingCueId|measureCueLatencyMs/,
+		'CUEOUT-14: the first-select auto-chirp is gone; CALIBRATE is the only chirp path');
 	assert.match(source, /sinkSelectIsNoop/);
 	assert.match(source, /cueOutputChangePlan/);
 	assert.match(source, /Promise\.all/);

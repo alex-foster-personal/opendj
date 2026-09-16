@@ -23,7 +23,16 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_output_select": ("POST", "/api/v1/performance/headphones/outputs/select"),
     "headphone_master_select": ("POST", "/api/v1/performance/headphones/outputs/master"),
     "headphone_input_select": ("POST", "/api/v1/performance/headphones/inputs/select"),
+    # CUEOUT-14: cue/master alignment.
+    "headphone_alignment_mode": ("POST", "/api/v1/performance/headphones/alignment-mode"),
+    "master_delay_ms": ("POST", "/api/v1/performance/headphones/master-delay"),
+    "headphone_calibrate": ("POST", "/api/v1/performance/headphones/calibrate"),
+    "headphone_calibrate_abort": ("POST", "/api/v1/performance/headphones/calibrate/abort"),
 }
+
+HEADPHONE_ALIGNMENT_MODES = ("headphones_only", "delay_all", "hybrid")
+# keep in sync with apps/webui/frontend/src/lib/player/constants.ts
+MASTER_DELAY_MAX_MS = 1500
 
 _PAGE_REQUIRED = "performance page is not attached"
 
@@ -33,10 +42,23 @@ class HeadphoneOutputDeviceOut(BaseModel):
     label: str
 
 
+class HeadphoneCalibrationOut(BaseModel):
+    """CUEOUT-14 calibration progress; `step` is the modal's state machine."""
+
+    step: str
+    cue_latency_ms: float | None
+    master_latency_ms: float | None
+    offset_ms: float | None
+    error: str | None
+
+
 class HeadphoneStateOut(BaseModel):
     mix: float
     level: float
     head_delay_ms: float
+    alignment_mode: str
+    master_delay_ms: float
+    calibration: HeadphoneCalibrationOut
     selected_output_device_id: str | None
     selected_master_output_device_id: str | None
     selected_input_device_id: str | None
@@ -138,6 +160,36 @@ def _validate_head_delay_ms(value: object) -> float:
         raise HTTPException(
             status_code=400,
             detail=f"head delay must be a finite number within 0..500, got {value}",
+        )
+    return float(value)
+
+
+def _validate_alignment_mode(value: object) -> str:
+    if value not in HEADPHONE_ALIGNMENT_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "headphone alignment_mode must be headphones_only, delay_all, or hybrid; "
+                f"got {value}"
+            ),
+        )
+    return value
+
+
+def _validate_master_delay_ms(value: object) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+        or value > MASTER_DELAY_MAX_MS
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"master delay must be a finite number within 0..{MASTER_DELAY_MAX_MS}, "
+                f"got {value}"
+            ),
         )
     return float(value)
 
@@ -250,6 +302,65 @@ async def post_head_delay_ms(
     return await _submit_headphone_command(
         request, {"type": "head_delay_ms", "value": value}
     )
+
+
+@router.post(
+    "/alignment-mode",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after switching how the cue/master offset is split",
+)
+async def post_headphone_alignment_mode(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneAlignmentModeBody")],
+) -> HeadphoneStateOut:
+    """CUEOUT-14: headphones_only, delay_all, or hybrid. Re-applies the last
+    calibration without re-measuring."""
+    _require_page(request)
+    value = _validate_alignment_mode(body.get("value"))
+    return await _submit_headphone_command(
+        request, {"type": "headphone_alignment_mode", "value": value}
+    )
+
+
+@router.post(
+    "/master-delay",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after setting the room (MASTER) delay",
+)
+async def post_master_delay_ms(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneMasterDelayBody")],
+) -> HeadphoneStateOut:
+    """CUEOUT-14: room delay line, 0..1500 ms, the last node before the output."""
+    _require_page(request)
+    value = _validate_master_delay_ms(body.get("value"))
+    return await _submit_headphone_command(
+        request, {"type": "master_delay_ms", "value": value}
+    )
+
+
+@router.post(
+    "/calibrate",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after a headless cue alignment calibration",
+)
+async def post_headphone_calibrate(request: Request) -> HeadphoneStateOut:
+    """CUEOUT-14: run the mic calibration headlessly (no ear-cup pause). The
+    call holds until the run reaches applied (200) or failed (400 with the
+    page's error); an abort resolves with the state at idle."""
+    _require_page(request)
+    return await _submit_headphone_command(request, {"type": "headphone_calibrate"})
+
+
+@router.post(
+    "/calibrate/abort",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after aborting an in-flight calibration",
+)
+async def post_headphone_calibrate_abort(request: Request) -> HeadphoneStateOut:
+    """CUEOUT-14: stop a running calibration; decks resume, nothing is applied."""
+    _require_page(request)
+    return await _submit_headphone_command(request, {"type": "headphone_calibrate_abort"})
 
 
 @router.post(

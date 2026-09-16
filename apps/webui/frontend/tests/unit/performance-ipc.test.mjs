@@ -992,6 +992,15 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			selected_input_device_id: null,
 			output_mode: 'practice',
 			head_delay_ms: 0,
+			alignment_mode: 'hybrid',
+			master_delay_ms: 0,
+			calibration: {
+				step: 'idle',
+				cue_latency_ms: null,
+				master_latency_ms: null,
+				offset_ms: null,
+				error: null
+			},
 			outputs: [],
 			inputs: [],
 			supported: false,

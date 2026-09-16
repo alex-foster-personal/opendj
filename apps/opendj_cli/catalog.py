@@ -30,6 +30,7 @@ from apps.opendj_cli.kinds import (
     enum_value,
     head_delay_ms_value,
     int_enum_value,
+    master_delay_ms_value,
     int_value,
     loop_value,
     number_value,
@@ -48,6 +49,7 @@ PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
+HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
@@ -223,6 +225,17 @@ _VERBS: tuple[Verb, ...] = (
     Verb("head_delay_ms", "head_delay_ms", (
         arg("value", "number", head_delay_ms_value, "0..500"),
     ), note="CUEOUT-03: cue-monitor delay in milliseconds."),
+    Verb("headphone_alignment_mode", "headphone_alignment_mode", (
+        arg("value", "enum", enum_value(HEADPHONE_ALIGNMENT_MODE_VALUES),
+            "headphones_only|delay_all|hybrid"),
+    ), note="CUEOUT-14: how a measured cue/master offset is split; re-applies the last calibration."),
+    Verb("master_delay_ms", "master_delay_ms", (
+        arg("value", "number", master_delay_ms_value, "0..1500"),
+    ), note="CUEOUT-14: room (MASTER) delay in milliseconds, the last node before the output."),
+    Verb("headphone_calibrate", "headphone_calibrate", (),
+         note="CUEOUT-14: headless mic calibration; holds until applied or failed."),
+    Verb("headphone_calibrate_abort", "headphone_calibrate_abort", (),
+         note="CUEOUT-14: stop an in-flight calibration; decks resume, nothing is applied."),
     # ----- browser, library and headphone outputs -----------------------
     Verb("browser_select_playlist", "browser_select_playlist",
          (arg("playlist_id", "text", text_value),)),

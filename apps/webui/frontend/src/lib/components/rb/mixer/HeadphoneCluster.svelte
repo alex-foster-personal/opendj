@@ -5,6 +5,7 @@
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
+	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
@@ -21,9 +22,20 @@
 		onmaster: (deviceId: string) => void;
 		oninput: (deviceId: string) => void;
 		onmode: (mode: HeadphoneOutputMode) => void;
+		/** CUEOUT-14: open the mic calibration modal. */
+		oncalibrate: () => void;
 	}
 
-	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode }: Props = $props();
+	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate }: Props =
+		$props();
+
+	/** CUEOUT-14: live only in two outputs with a selected cue sink; the label is not consulted. */
+	const calibrateEnabled = $derived(
+		calibrateButtonEnabled({
+			output_mode: state.output_mode,
+			selected_output_device_id: state.selected_output_device_id
+		})
+	);
 
 	const modeLabel = $derived(
 		state.output_mode === 'practice'
@@ -68,14 +80,22 @@
 		'MASTER/MAIN is the room mix (the four channels). Pin it to speakers so plugging headphones in cannot steal it.',
 		'HEADPHONE CUE is the cue mix. Pick wired or Bluetooth headphones here.',
 		'I/O briefly uses the built-in mic so device names appear. It does not flip Bluetooth to HFP.',
-		'First CUE select of Bluetooth (including names like WH-1000XM5) plays a chirp into the headphones. The built-in mic times it and fills HEAD DELAY (0-500 ms). A failed timing can be retried by selecting the same device again.',
+		'CALIBRATE opens the cue alignment modal: chirps to the speakers and the headphones, timed by the built-in mic, set HEAD DELAY and ROOM so both arrive together.',
 		'AUDIO IN defaults to the Mac microphone. A headphone/handsfree mic can collapse Bluetooth to HFP and drop quality.',
 		'HEAD DELAY is the Mixxx millisecond field on the cue path. Two devices still drift; Bluetooth is for auditioning, not beatmatching.'
 	];
 	const delayBullets = [
 		'Mixxx Head Delay, 0-500 ms, on the cue path only. It does not delay the room.',
-		'First CUE select of Bluetooth fills this from a chirp the built-in mic hears. A successful timing is not repeated; a failed one can be retried by selecting the same device again.',
+		'CALIBRATE fills it from the measured offset when the phones are ahead of the room; type a value to override.',
 		'Two independently clocked devices still drift. Bluetooth is for auditioning, not beatmatching.'
+	];
+	const calibrateBullets = [
+		'Measures how far the headphones lag the room with the built-in mic and splits the difference between HEAD DELAY and ROOM per the alignment mode.',
+		'Live only in two outputs with a HEADPHONE CUE sink selected. Playing decks pause for the chirps and resume after.'
+	];
+	const roomBullets = [
+		'ROOM is the room (MASTER) delay, 0-1500 ms, the last node before the speakers. The phones never pay it.',
+		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
 	];
 	const rescanBullets = [
 		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
@@ -94,10 +114,10 @@
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. CUE unplug or reconnect never moves this sink.'
 	];
 	const cuePickBullets = [
-		'Headphone CUE sink. First select of Bluetooth (including names like WH-1000XM5) chirps into the phones; the built-in mic times HEAD DELAY. Live Bluetooth pairing is CUEOUT-12, not this control.'
+		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.'
 	];
 	const inputPickBullets = [
-		'Used to unlock output names and to time CUE delay. Never pick a headphone/HFP mic.'
+		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
 
 	function toggleSplit(): void {
@@ -216,6 +236,21 @@
 				<span class="hp-delay-unit">ms</span>
 			</label>
 		</ControlExplainer>
+		<ControlExplainer title="CALIBRATE" bullets={calibrateBullets} showDelayMs={60}>
+			<button
+				type="button"
+				class="hp-btn"
+				aria-label="CALIBRATE CUE ALIGNMENT"
+				data-performance-control="cue-calibrate"
+				disabled={!calibrateEnabled}
+				onclick={oncalibrate}>CALIBRATE</button
+			>
+		</ControlExplainer>
+		{#if state.master_delay_ms > 0}
+			<ControlExplainer title="ROOM" bullets={roomBullets} showDelayMs={60}>
+				<span class="hp-room" data-performance-control="room-delay">ROOM +{state.master_delay_ms} ms</span>
+			</ControlExplainer>
+		{/if}
 		{#if warningText !== null}
 			<ControlExplainer title="Two outputs warning" bullets={[warningText]} showDelayMs={60}>
 				<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
@@ -386,6 +421,16 @@
 	}
 	.hp-delay-unit {
 		letter-spacing: 0.04em;
+	}
+	.hp-btn:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.hp-room {
+		font-size: 7px;
+		letter-spacing: 0.04em;
+		color: var(--rb-accent, #4fb3ff);
+		white-space: nowrap;
 	}
 	.hp-warn {
 		color: var(--rb-warn, #e6a23c);

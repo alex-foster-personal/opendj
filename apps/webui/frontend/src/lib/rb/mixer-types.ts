@@ -6,6 +6,7 @@
  */
 
 import type { DeckId } from './deck-slots';
+import type { HeadphoneAlignmentMode } from '$lib/player/constants';
 
 /** EQ band selector for AudioEngine.setEq. */
 export type EqBand = 'low' | 'mid' | 'high';
@@ -50,6 +51,33 @@ export interface HeadphoneOutputDevice {
 /** Headphone output routing. Unknown modes fail fast. */
 export type HeadphoneOutputMode = 'practice' | 'two_outputs' | 'split_cable';
 
+/** CUEOUT-14: how a measured cue/master offset is split between HEAD DELAY
+ * and the room delay. One source of truth: `HEADPHONE_ALIGNMENT_MODES` in
+ * player/constants.ts (a leaf), re-exported here beside the state it types. */
+export type { HeadphoneAlignmentMode };
+
+/** CUEOUT-14 calibration modal step. `idle` before a run and after an abort. */
+export type CueAlignStep =
+	| 'idle'
+	| 'mic_access'
+	| 'mic_check_master'
+	| 'mic_check_cue'
+	| 'measuring'
+	| 'applied'
+	| 'failed';
+
+/** Live calibration progress, mirrored as `GET /headphones.calibration`.
+ * Seeded from the persisted last calibration on load so the offset survives a
+ * reload; the latencies are null until a run has measured them. */
+export interface HeadphoneCalibrationState {
+	step: CueAlignStep;
+	cue_latency_ms: number | null;
+	master_latency_ms: number | null;
+	/** `cue_latency_ms - master_latency_ms`: positive means the phones are behind the room. */
+	offset_ms: number | null;
+	error: string | null;
+}
+
 /** Serializable headphone cue-bus read model. `active` means the monitor
  * stream is attached to the element and the selected sink accepted playback. */
 export interface HeadphoneState {
@@ -62,6 +90,14 @@ export interface HeadphoneState {
 	output_mode: HeadphoneOutputMode;
 	/** Mixxx Head Delay, milliseconds, 0..500. Applied as a DelayNode after level on the monitor path. */
 	head_delay_ms: number;
+	/** CUEOUT-14: which side of the cue/master offset gets delayed. Persisted. */
+	alignment_mode: HeadphoneAlignmentMode;
+	/** CUEOUT-14: room (MASTER) delay, milliseconds, 0..1500, the LAST node
+	 * before the destination. The monitor tap is upstream, so the phones never
+	 * pay it. Persisted; shown as `ROOM +N ms`. */
+	master_delay_ms: number;
+	/** CUEOUT-14: live calibration progress and the last measured offset. */
+	calibration: HeadphoneCalibrationState;
 	outputs: HeadphoneOutputDevice[];
 	inputs: HeadphoneOutputDevice[];
 	/** Room / MASTER sink (`AudioContext.setSinkId`). Null follows the OS default. */
