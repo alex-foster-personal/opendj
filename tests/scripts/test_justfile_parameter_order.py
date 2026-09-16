@@ -67,12 +67,13 @@ def recipe_headers(text: str) -> list[tuple[str, list[str]]]:
     for line in text.splitlines():
         if line.startswith((" ", "\t", "#", "set ", "import ", "mod ", "export ", "alias ")):
             continue
+        name = NAME.match(line)
         params = header_params(line)
-        if params is not None:
+        if name is not None and params is not None:
             # shlex, not str.split: `*args="python-engine 5"` is ONE parameter whose
             # default holds a space, and splitting on whitespace read its tail as a
             # second, defaultless parameter (a false offender on the first run).
-            headers.append((NAME.match(line).group("name"), _params(params)))
+            headers.append((name.group("name"), _params(params)))
     return headers
 
 
