@@ -29,9 +29,9 @@ def _ts_numeric_constants(text: str) -> dict[str, int]:
 
 @pytest.mark.requirement("PERFMODE-03")
 def test_ts_posture_constants_match_python() -> None:
-    """[if] TS and Python posture constants differ, or exist on one side only
-    [then] parity test fails, [else stop].
+    """[if] TS and Python posture constants diverge [then] parity fails, [else stop].
 
+    Diverge covers a value that differs and a name that exists on one side only.
     Every exported TS constant is compared rather than a hardcoded list: the
     earlier four-name version would have let a new Gig cap exist on one side only.
     """
