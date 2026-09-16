@@ -45,8 +45,6 @@ LOCKFILE_PATTERN = re.compile(
     r"|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock)$"
 )
 CONTROL_PREFIX = "tests/fixtures/security/"
-# A path holding one of these cannot be named as a literal --include pattern.
-GLOB_META = re.compile(r"[*?\[\]]")
 
 
 @dataclass(frozen=True)
@@ -95,6 +93,15 @@ def _emit(args: argparse.Namespace, title: str, lines: list[str], count: int) ->
 
 def _relative(path: str, root: str) -> str:
     return path[len(root) :].lstrip("/") if root and path.startswith(root) else path
+
+
+def _scan_path_relative(path: str, root: Path) -> str:
+    if path.startswith("./"):
+        path = path[2:]
+    root_text = str(root.resolve())
+    if path.startswith(root_text):
+        return path[len(root_text) :].lstrip("/")
+    return path
 
 
 def _osv_findings(doc: dict, root: str) -> tuple[list[OsvFinding], dict[str, int]]:
@@ -262,6 +269,7 @@ def _git_file_at_ref(root: Path, ref: str, rel_path: str) -> bool:
 def _semgrep_scannable_count(
     *,
     root: Path,
+    base: str,
     semgrep: str,
     configs: list[str],
     excludes: list[str],
@@ -269,20 +277,14 @@ def _semgrep_scannable_count(
 ) -> int:
     """Count the changed files the diff-aware scan will actually see.
 
-    The real scan runs from the repo root, where semgrep applies its default
-    ignore list (tests/ among others). Naming the changed files as explicit
-    targets instead FORCES them past that list, so a tests/-only diff counted 1
-    here and scanned 0 there, and the mismatch read as UNKNOWN (job 104882711482
-    on PR #3362). Asking with --include from the same root reproduces the real
-    scan's view. --include matches a bare basename anywhere in the tree, so the
-    answer is intersected with the candidates rather than counted; a path holding
-    a glob metacharacter cannot be asked for at all and counts as scannable, so
-    the scan runs and reports rather than silently skipping.
+    The real PR scan runs from the repo root with --baseline-commit and applies
+    semgrep's default ignore list (tests/ among others). Naming changed files as
+    explicit targets or --include patterns instead forces them past that list, so
+    a tests/-only diff counted 1 here and scanned 0 there, and the mismatch
+    read as UNKNOWN (job 104882711482 on PR #3362). Run the same root +
+    --baseline-commit invocation and intersect paths.scanned with the git diff
+    candidates.
     """
-    askable = [rel for rel in candidates if not GLOB_META.search(rel)]
-    unaskable = len(candidates) - len(askable)
-    if not askable:
-        return unaskable
     cmd = [
         semgrep,
         "scan",
@@ -291,11 +293,11 @@ def _semgrep_scannable_count(
         "--time",
         "--metrics=off",
         "--disable-version-check",
+        "--baseline-commit",
+        base,
     ]
     for prefix in excludes:
         cmd.extend(["--exclude", prefix])
-    for rel in askable:
-        cmd.extend(["--include", rel])
     cmd.append(".")
     proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
     if proc.returncode not in (0, 1):
@@ -307,11 +309,8 @@ def _semgrep_scannable_count(
     doc = json.loads(proc.stdout)
     if not isinstance(doc, dict):
         raise RuntimeError("semgrep JSON root is not an object")
-    scanned = {
-        path[2:] if path.startswith("./") else path
-        for path in doc.get("paths", {}).get("scanned", [])
-    }
-    return unaskable + len(scanned & set(askable))
+    scanned = {_scan_path_relative(path, root) for path in doc.get("paths", {}).get("scanned", [])}
+    return len(scanned & set(candidates))
 
 
 def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
@@ -335,6 +334,7 @@ def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
     try:
         count = _semgrep_scannable_count(
             root=root,
+            base=args.base,
             semgrep=args.semgrep,
             configs=configs,
             excludes=args.exclude,
