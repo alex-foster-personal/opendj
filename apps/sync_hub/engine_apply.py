@@ -706,6 +706,17 @@ def _resolve_against_duplicates(
 def _log_hub_change(conn: sqlite3.Connection, change: RowChange, stamp: str) -> None:
     """One ``hub_changelog`` append for an accepted row. Split out of
     :func:`_apply` for the same reason as :func:`_resolve_against_stored`."""
+    spec = SPEC_BY_TABLE[change.table]
+    stored = _stored_stamps(conn, spec, change.pk)
+    if stored is not None:
+        columns = _stamp_columns_for(spec.name)
+        values = {column: stored[index] for index, column in enumerate(columns)}
+        updated_at, origin_device_id = protocol.lww_key(values, table=change.table)
+    else:
+        updated_at = change.updated_at
+        origin_device_id = change.origin_device_id
+    if not origin_device_id:
+        origin_device_id = sync_stamp.ensure_local_machine(conn)
     conn.execute(
         """
         INSERT INTO hub_changelog(
@@ -713,7 +724,7 @@ def _log_hub_change(conn: sqlite3.Connection, change: RowChange, stamp: str) -> 
         )
         VALUES (?, ?, ?, ?, ?)
         """,
-        (change.table, change.row_pk, change.updated_at, change.origin_device_id, stamp),
+        (change.table, change.row_pk, updated_at, origin_device_id, stamp),
     )
 
 
