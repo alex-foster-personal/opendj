@@ -14,6 +14,12 @@ version: 1
 full_triggers:
   - "pyproject.toml"
   - "uv.lock"
+  # The pytest jobs `uv pip install -r requirements.txt` before collecting, so a dependency
+  # added, removed or moved there can change every shard. It matched neither this list nor
+  # a scope, so a requirements-only change planned SKIP_PYTEST.
+  # `test_every_file_the_pytest_jobs_install_from_is_a_full_trigger` reads ci.yml for the
+  # install inputs rather than trusting this list to stay complete.
+  - "requirements.txt"
   - "justfile"
   - "conftest.py"
   - "**/conftest.py"
@@ -52,63 +58,79 @@ scopes:
   - name: adapters
     sources: ["apps/adapters/"]
     tests: ["tests/adapters/"]
+    dependents: ["analysis_beatgrid", "analysis_waveform", "cloudsync", "engine_core", "lyrics", "open_dj", "opendj_cli", "shared", "webui"]
   - name: agentbox
     sources: ["apps/agentbox/"]
     tests: ["tests/agentbox/"]
   - name: analysis
     sources: ["apps/analysis/"]
     tests: ["tests/analysis/"]
+    dependents: ["analysis_beatgrid", "analysis_key", "analysis_loudness", "analysis_waveform", "engine_core", "lyrics", "opendj_cli", "shared", "smartlists", "sync", "webui"]
   - name: analysis_beatgrid
     sources: ["apps/analysis_beatgrid/"]
     tests: ["tests/analysis_beatgrid/"]
+    dependents: ["webui"]
   - name: analysis_bench
     sources: ["apps/analysis_bench/"]
     tests: ["tests/analysis_bench/"]
+    dependents: ["analysis_beatgrid", "beatbench"]
   - name: analysis_key
     sources: ["apps/analysis_key/"]
     tests: ["tests/analysis_key/"]
+    dependents: ["analysis", "analysis_bench", "opendj_cli", "webui"]
   - name: analysis_loudness
     sources: ["apps/analysis_loudness/"]
     tests: ["tests/analysis_loudness/"]
   - name: analysis_waveform
     sources: ["apps/analysis_waveform/"]
     tests: ["tests/analysis_waveform/"]
+    dependents: ["analysis_bench", "shared", "webui"]
   - name: audit
     sources: ["apps/audit/"]
     tests: ["tests/audit/"]
+    dependents: ["sync", "webui"]
   - name: cloud
     sources: ["apps/cloud/"]
     tests: ["tests/cloud/"]
+    dependents: ["cloudsync", "engine_core", "lyrics", "scripts", "shared", "stems", "webui"]
   - name: database
     sources: ["apps/database/"]
     tests: ["tests/database/"]
+    dependents: ["cloudsync", "quality", "shared"]
   - name: dedup
     sources: ["apps/dedup/"]
     tests: ["tests/dedup/"]
+    dependents: ["engine_core", "webui"]
   - name: dj_copilot
     sources: ["apps/dj_copilot/"]
     tests: ["tests/dj_copilot/"]
   - name: engine_core
     sources: ["apps/engine_core/"]
     tests: ["tests/engine_core/"]
+    dependents: ["cloudsync", "database", "entitlements", "opendj_cli", "quality", "scripts", "shared", "stems", "sync_hub", "webui"]
   - name: entitlements
     sources: ["apps/entitlements/"]
     tests: ["tests/entitlements/"]
+    dependents: ["cloudsync", "engine_core"]
   - name: launcher
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
+    dependents: ["engine_core"]
   - name: loudness
     sources: ["apps/loudness/"]
     tests: ["tests/loudness/"]
   - name: lyrics
     sources: ["apps/lyrics/"]
     tests: ["tests/lyrics/"]
+    dependents: ["shared", "webui"]
   - name: mik
     sources: ["apps/mik/"]
     tests: ["tests/mik/"]
+    dependents: ["engine_core", "shared"]
   - name: open_dj
     sources: ["apps/open_dj/"]
     tests: ["tests/open_dj/"]
+    dependents: ["adapters"]
   - name: opendj_cli
     sources: ["apps/opendj_cli/"]
     tests: ["tests/opendj_cli/"]
@@ -127,48 +149,60 @@ scopes:
   - name: reconcile
     sources: ["apps/reconcile/"]
     tests: ["tests/reconcile/"]
+    dependents: ["cloudsync", "entitlements", "shared"]
   - name: sets
     sources: ["apps/sets/"]
     tests: ["tests/sets/"]
+    dependents: ["engine_core"]
   - name: shared
     sources: ["apps/shared/"]
     tests: ["tests/shared/"]
+    dependents: ["agentbox", "analysis", "analysis_waveform", "audit", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "playlist_sets", "quality", "reconcile", "scripts", "sets", "smartlists", "spotify", "stems", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
   - name: smartlists
     sources: ["apps/smartlists/"]
     tests: ["tests/smartlists/"]
+    dependents: ["cloudsync", "webui"]
   - name: spotify
     sources: ["apps/spotify/"]
     tests: ["tests/spotify/"]
+    dependents: ["cloudsync", "engine_core", "scripts", "shared", "streaming_transfer", "webui"]
   - name: stems
     sources: ["apps/stems/"]
     tests: ["tests/stems/"]
+    dependents: ["cloudsync", "engine_core", "lyrics", "scripts", "vocals", "webui"]
   - name: streaming_transfer
     sources: ["apps/streaming_transfer/"]
     tests: ["tests/streaming_transfer/"]
   - name: sync
     sources: ["apps/sync/"]
     tests: ["tests/sync/"]
+    dependents: ["sets", "shared", "smartlists", "webui"]
   - name: sync_hub
     sources: ["apps/sync_hub/"]
     tests: ["tests/sync_hub/"]
+    dependents: ["cloudsync", "lyrics", "perf", "quality", "shared", "webui"]
   - name: tags
     sources: ["apps/tags/"]
     tests: ["tests/tags/"]
   - name: vocals
     sources: ["apps/vocals/"]
     tests: ["tests/vocals/"]
+    dependents: ["cloudsync", "lyrics", "parity", "stems", "webui"]
   - name: voice
     sources: ["apps/voice/"]
     tests: ["tests/voice/"]
+    dependents: ["engine_core", "webui"]
   - name: webui
     sources: ["apps/webui/"]
     tests: ["tests/webui/"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_waveform", "cloud", "cloudsync", "engine_core", "entitlements", "lyrics", "opendj_cli", "perf", "play_analytics", "scripts", "sets", "shared", "spotify", "stems"]
   - name: agentic_testing
     sources: ["ops/agentic_testing/"]
     tests: ["tests/agentic_testing/"]
   - name: beatbench
     sources: ["ops/beatbench/", "scripts/beatbench/"]
     tests: ["tests/beatbench/"]
+    dependents: ["analysis_beatgrid"]
   - name: cloudsync
     sources: ["ops/cloudsync/"]
     tests: ["tests/cloudsync/"]
@@ -187,3 +221,4 @@ scopes:
   - name: scripts
     sources: ["scripts/"]
     tests: ["tests/scripts/"]
+    dependents: ["analysis_beatgrid", "analysis_bench", "analysis_key", "beatbench", "lyrics", "lyrics_alignment", "parity", "perf", "quality", "shared", "stems", "vocals", "webui"]

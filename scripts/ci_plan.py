@@ -28,6 +28,7 @@ import argparse
 import re
 import subprocess
 import sys
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -62,6 +63,11 @@ class Scope:
     name: str
     sources: tuple[str, ...]
     tests: tuple[str, ...]
+    # Scopes whose TESTS import this scope's sources, so a change here can break them.
+    # DERIVED, never hand-written: `observed_dependents` recomputes it from the imports and
+    # `tests/scripts/test_ci_plan.py` fails when the two disagree, so a new import across a
+    # scope boundary forces this file to move rather than silently narrowing the selection.
+    dependents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,19 @@ def _is_source(path: str) -> bool:
     return path.startswith(_SOURCE_ROOTS) and path.endswith(_SOURCE_SUFFIXES)
 
 
+def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
+    """`hit` plus every scope reachable from it through `dependents`, transitively."""
+    out = set(hit)
+    queue = [name for name in hit if name in by_name]
+    while queue:
+        for dependent in by_name[queue.pop()].dependents:
+            if dependent not in out:
+                out.add(dependent)
+                if dependent in by_name:
+                    queue.append(dependent)
+    return out
+
+
 def plan(
     changes: tuple[Change, ...], config: Config, cap_fraction: float = CAP_FRACTION
 ) -> Plan:
@@ -135,6 +154,7 @@ def plan(
     if triggered:
         return Plan(Verdict.FULL, (), (), f"full trigger: {triggered[0]}")
 
+    by_name = {s.name: s for s in config.scopes}
     hit: set[str] = set()
     unclaimed_source: list[str] = []
     for path in paths:
@@ -155,6 +175,11 @@ def plan(
     if not hit:
         return Plan(Verdict.SKIP_PYTEST, (), (), "no changed path touches a scope")
 
+    # THE CLOSURE. Selecting only the scope that OWNS a changed path leaves every suite that
+    # imports it unrun while the plan claims they were out of selection, and under-selection
+    # is the direction this planner is not allowed to be wrong in. Applied BEFORE the cap, so
+    # a change that pulls in most of the tree answers FULL rather than a wide SCOPED.
+    hit = _with_dependents(hit, by_name)
     named = tuple(sorted(hit - {_ALWAYS}))
     if len(named) > max(1, int(len(config.scopes) * cap_fraction)):
         return Plan(
@@ -192,10 +217,68 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
         tuple(raw.get("full_triggers") or ()),
         tuple(raw.get("always") or ()),
         tuple(
-            Scope(entry["name"], tuple(entry["sources"]), tuple(entry["tests"]))
+            Scope(
+                entry["name"],
+                tuple(entry["sources"]),
+                tuple(entry["tests"]),
+                tuple(entry.get("dependents") or ()),
+            )
             for entry in scopes
         ),
     )
+
+
+_IMPORT = re.compile(r"^[^\S\n]*(?:from|import)[^\S\n]+((?:apps|scripts|ops)\.[A-Za-z0-9_]+)", re.M)
+
+
+def observed_dependents(
+    config: Config, test_files: Iterable[Path], root: Path = REPO
+) -> dict[str, tuple[str, ...]]:
+    """For each scope, the OTHER scopes whose test modules import its source packages.
+
+    The DERIVATION behind `Scope.dependents`. A hand-kept list of who depends on whom is a
+    value, and values rot between maintenances while the selection they narrow stays quiet
+    about it; this reads the imports that are actually there, so the guard that compares the
+    two turns a new cross-scope import into a failing test rather than an unrun suite.
+
+    A test no scope owns is skipped rather than recorded: the committed config is required
+    to claim every tracked test module or match it under `always`, and an `always` path runs
+    in EVERY scoped plan already, so it needs no edge to be reached.
+
+    Import text, not resolved modules: a test that imports a scope's package is the thing
+    being asked about, and a scope that reads another's data through a file or a fixture is
+    NOT covered here. That is a known floor on this instrument, not a claim of completeness,
+    and it is why the miss audit stays the gate on promoting selection to a gate.
+    """
+    owner_of = _test_owner_index(config)
+    found: dict[str, set[str]] = {scope.name: set() for scope in config.scopes}
+    for file in test_files:
+        relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
+        owner = owner_of(relative)
+        try:
+            text = file.read_text(encoding="utf-8", errors="ignore")
+        except OSError as exc:
+            raise PlanError(f"cannot read {file}: {exc}") from None
+        for module in set(_IMPORT.findall(text)):
+            as_path = module.replace(".", "/") + "/"
+            for scope in config.scopes:
+                if owner is not None and scope.name != owner and matches(as_path, scope.sources):
+                    found[scope.name].add(owner)
+    return {name: tuple(sorted(names)) for name, names in found.items() if names}
+
+
+def _test_owner_index(config: Config) -> Callable[[str], str | None]:
+    """The scope owning a test path, longest declared prefix winning."""
+
+    def owner(path: str) -> str | None:
+        best: tuple[int, str] | None = None
+        for scope in config.scopes:
+            for pattern in scope.tests:
+                if matches(path, (pattern,)) and (best is None or len(pattern) > best[0]):
+                    best = (len(pattern), scope.name)
+        return best[1] if best else None
+
+    return owner
 
 
 def read_changes(base: str, head: str) -> tuple[Change, ...]:
