@@ -21,6 +21,13 @@ MINI-PRD
     R3 Preconditions .............................................. done + regression
        [if] gh is missing or the API payload is malformed
             [then] exit 10 with a precondition error [else stop]
+    R4 Closed-PR sweep ............................................ done + regression
+       [if] a queued or running pull_request run's branch has no open PR
+            [then] cancel it and log reason=no-open-pr [else stop]
+       [if] the open-PR list is empty while PR runs exist
+            [then] refuse with a precondition error, never cancel them all [else stop]
+       Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
+       merged or closed at the SHA under test, holding the 13-slot pytest pool.
 
 USAGE
     uv run --no-sync python -m scripts.ci_trunk_tip_only --dry-run
@@ -147,7 +154,10 @@ def _parse_queued_run(raw: object) -> QueuedRun:
 
 
 def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
-    path = f"repos/{REPO}/actions/runs?branch={branch}&status=queued"
+    return _paginated_runs(f"repos/{REPO}/actions/runs?branch={branch}&status=queued")
+
+
+def _paginated_runs(path: str) -> list[QueuedRun]:
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
@@ -216,6 +226,73 @@ def build_sweep_plan(trunk_tip: str, queued_runs: list[QueuedRun]) -> SweepPlan:
         ci_to_cancel=ci_to_cancel,
         bookkeeping_to_cancel=tuple(bookkeeping_to_cancel),
         bookkeeping_kept=bookkeeping_kept,
+    )
+
+
+def closed_pr_runs_to_cancel(
+    runs: list[QueuedRun], open_pr_branches: frozenset[str]
+) -> tuple[QueuedRun, ...]:
+    """Pull request runs whose branch has no open pull request.
+
+    An empty open-PR list is refused, not trusted: a failed or truncated read would
+    otherwise cancel every pull request's CI.
+    """
+    pr_runs = [run for run in runs if run.event == "pull_request"]
+    if pr_runs and not open_pr_branches:
+        raise PreconditionError(
+            f"open pull request list is empty while {len(pr_runs)} PR runs are unfinished; "
+            "refusing to treat every PR as closed"
+        )
+    return tuple(run for run in pr_runs if run.head_branch not in open_pr_branches)
+
+
+def _open_pr_branches() -> frozenset[str]:
+    branches: set[str] = set()
+    page = 1
+    while True:
+        payload = _gh_api_json(
+            f"repos/{REPO}/pulls?state=open&per_page={PAGE_SIZE}&page={page}"
+        )
+        if not isinstance(payload, list):
+            raise PreconditionError(f"open pulls page {page} was not a list: {payload!r}")
+        for pull in payload:
+            head = pull.get("head") if isinstance(pull, dict) else None
+            ref = head.get("ref") if isinstance(head, dict) else None
+            if not isinstance(ref, str) or not ref:
+                raise PreconditionError(f"open pull has no head.ref: {pull!r}")
+            branches.add(ref)
+        if len(payload) < PAGE_SIZE:
+            return frozenset(branches)
+        page += 1
+
+
+def execute_closed_pr_sweep(runs: tuple[QueuedRun, ...], *, dry_run: bool) -> int:
+    """Cancel each selected run, logging one line per run. Returns the cancelled count."""
+    cancelled = 0
+    for run in runs:
+        line = (
+            f"closed-pr-cancel workflow={run.name} run_id={run.run_id} "
+            f"head_branch={run.head_branch} head_sha={run.head_sha} reason=no-open-pr"
+        )
+        print(f"::notice::{line}")
+        print(line)
+        if dry_run or _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+            cancelled += 1
+    return cancelled
+
+
+def sweep_closed_pr_runs(*, dry_run: bool) -> int:
+    """Cancel unfinished pull_request runs for branches with no open pull request.
+
+    Runs are read BEFORE the open-PR list, so any PR that owns a run seen here was
+    already open when the list was read.
+    """
+    runs = [
+        *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=queued"),
+        *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=in_progress"),
+    ]
+    return execute_closed_pr_sweep(
+        closed_pr_runs_to_cancel(runs, _open_pr_branches()), dry_run=dry_run
     )
 
 
@@ -331,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report = sweep(dry_run=args.dry_run)
+        closed_pr_cancelled = sweep_closed_pr_runs(dry_run=args.dry_run)
     except PreconditionError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
@@ -343,7 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         f"bookkeeping_cancelled={report.bookkeeping_cancelled} "
         f"bookkeeping_cancel_skipped_not_yet_queued="
         f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
-        f"bookkeeping_kept={report.bookkeeping_kept}"
+        f"bookkeeping_kept={report.bookkeeping_kept} "
+        f"closed_pr_cancelled={closed_pr_cancelled}"
     )
     return EXIT_OK
 

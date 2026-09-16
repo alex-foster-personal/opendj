@@ -232,3 +232,65 @@ def test_execute_sweep_propagates_bookkeeping_cancel_precondition_error(
     monkeypatch.setattr(mod, "_cancel_run", _raise_precondition)
     with pytest.raises(PreconditionError):
         mod.execute_sweep(plan, dry_run=False)
+
+
+# ----- R4: CI for a pull request that is no longer open -----
+#
+# Measured Wed 16 Sep 2026 09:30Z: 13 of 28 queued or running runs belonged to PRs already
+# MERGED or CLOSED at the SHA under test (merges land before CI finishes), and they held the
+# 13-slot pytest pool while 67 jobs queued behind them.
+#
+#   - if a queued PR run whose branch has no open PR is not cancelled then broken
+#   - if a PR run whose branch has an open PR is cancelled then broken
+#   - if an empty open-PR list cancels every PR run instead of refusing then broken
+#   - if a push run is selected by the closed-PR sweep then broken
+
+
+def _pr_run(run_id: int, branch: str, *, name: str = "CI") -> mod.QueuedRun:
+    return mod.QueuedRun(
+        run_id=run_id,
+        name=name,
+        event="pull_request",
+        head_branch=branch,
+        head_sha=OTHER_SHA,
+        created_at=BASE_TIME,
+    )
+
+
+def test_a_run_for_a_branch_with_no_open_pr_is_cancelled() -> None:
+    runs = [
+        _pr_run(50, "af--merged"),
+        _pr_run(51, "af--open"),
+        _pr_run(52, "af--merged", name="E2E"),
+    ]
+    assert mod.closed_pr_runs_to_cancel(runs, frozenset({"af--open", "af--other"})) == (
+        runs[0],
+        runs[2],
+    )
+
+
+def test_a_run_for_a_branch_with_an_open_pr_is_kept() -> None:
+    runs = [_pr_run(53, "af--open")]
+    assert mod.closed_pr_runs_to_cancel(runs, frozenset({"af--open"})) == ()
+
+
+def test_an_empty_open_pr_list_refuses_instead_of_cancelling_everything() -> None:
+    with pytest.raises(PreconditionError):
+        mod.closed_pr_runs_to_cancel([_pr_run(54, "af--open")], frozenset())
+
+
+def test_push_runs_are_never_selected_by_the_closed_pr_sweep() -> None:
+    push_run = _run(55, name="CI", event="push")
+    assert mod.closed_pr_runs_to_cancel([push_run], frozenset({"af--open"})) == ()
+
+
+def test_closed_pr_sweep_dry_run_posts_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    posts: list[int] = []
+    monkeypatch.setattr(mod, "_cancel_run", posts.append)
+    cancelled = mod.execute_closed_pr_sweep((_pr_run(56, "af--merged"),), dry_run=True)
+    assert cancelled == 1
+    assert posts == []
+    out = capsys.readouterr().out
+    assert "closed-pr-cancel workflow=CI run_id=56 head_branch=af--merged" in out
