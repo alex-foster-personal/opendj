@@ -14,6 +14,10 @@ Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] a head finding shares (ecosystem, package, id) with base [then] it is not NEW.
 - [if] a semgrep control run lacks a required rule id [then] exit 2.
 - [if] semgrep-diff-scope cannot run git or semgrep on changed paths [then] exit 2.
+- [if] every changed path is on semgrep's default ignore list (tests/) [then] semgrep-diff-scope
+  counts 0, so scan_sast.sh writes SKIP instead of running a scan that sees nothing.
+- [if] a changed path is outside the default ignore list [then] semgrep-diff-scope counts it,
+  even when an ignored path changed in the same diff.
 - [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules [then] exit 2 (UNKNOWN).
 - [if] semgrep-summary has --expected-scannable > 0, rules loaded, scanned 0 files, no errors,
   and no results [then] exit 0 (baseline excluded unchanged files; no new findings).
@@ -41,6 +45,8 @@ LOCKFILE_PATTERN = re.compile(
     r"|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock)$"
 )
 CONTROL_PREFIX = "tests/fixtures/security/"
+# A path holding one of these cannot be named as a literal --include pattern.
+GLOB_META = re.compile(r"[*?\[\]]")
 
 
 @dataclass(frozen=True)
@@ -261,6 +267,22 @@ def _semgrep_scannable_count(
     excludes: list[str],
     candidates: list[str],
 ) -> int:
+    """Count the changed files the diff-aware scan will actually see.
+
+    The real scan runs from the repo root, where semgrep applies its default
+    ignore list (tests/ among others). Naming the changed files as explicit
+    targets instead FORCES them past that list, so a tests/-only diff counted 1
+    here and scanned 0 there, and the mismatch read as UNKNOWN (job 104882711482
+    on PR #3362). Asking with --include from the same root reproduces the real
+    scan's view. --include matches a bare basename anywhere in the tree, so the
+    answer is intersected with the candidates rather than counted; a path holding
+    a glob metacharacter cannot be asked for at all and counts as scannable, so
+    the scan runs and reports rather than silently skipping.
+    """
+    askable = [rel for rel in candidates if not GLOB_META.search(rel)]
+    unaskable = len(candidates) - len(askable)
+    if not askable:
+        return unaskable
     cmd = [
         semgrep,
         "scan",
@@ -272,7 +294,9 @@ def _semgrep_scannable_count(
     ]
     for prefix in excludes:
         cmd.extend(["--exclude", prefix])
-    cmd.extend(candidates)
+    for rel in askable:
+        cmd.extend(["--include", rel])
+    cmd.append(".")
     proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
     if proc.returncode not in (0, 1):
         raise RuntimeError(
@@ -283,7 +307,11 @@ def _semgrep_scannable_count(
     doc = json.loads(proc.stdout)
     if not isinstance(doc, dict):
         raise RuntimeError("semgrep JSON root is not an object")
-    return len(doc.get("paths", {}).get("scanned", []))
+    scanned = {
+        path[2:] if path.startswith("./") else path
+        for path in doc.get("paths", {}).get("scanned", [])
+    }
+    return unaskable + len(scanned & set(askable))
 
 
 def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
@@ -340,8 +368,17 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
         expected = args.expected_scannable
         if expected is not None and expected > 0:
             if rules == 0:
+                # semgrep reports per-rule timings only for files it scanned, so
+                # 0 rules with 0 scanned is an ignored-out diff, not a rule-load
+                # failure. Both stay UNKNOWN; only the reason differs.
+                detail = (
+                    "and scanned 0: the changed paths may all be on semgrep's default "
+                    "ignore list; rerun with --verbose for paths.skipped"
+                    if scanned == 0
+                    else f"while scanning {scanned} file(s): the rule set failed to load"
+                )
                 return _unknown(
-                    f"semgrep expected {expected} scannable file(s) but loaded 0 rules"
+                    f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
                 )
             if scanned == 0:
                 if not errors and not results:
