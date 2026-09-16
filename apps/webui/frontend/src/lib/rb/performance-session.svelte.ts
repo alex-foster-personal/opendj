@@ -300,11 +300,13 @@ export function installPerformanceSessionRestore(
 	}
 
 	const storage = opts.storage ?? window.localStorage;
-	const replaceState =
-		opts.replaceState ??
-		((url: string) => {
-			window.history.replaceState(null, '', url);
-		});
+	// The router owns history entries, so the caller injects its helper. This
+	// module is loaded by node unit tests, where the framework's virtual module
+	// does not resolve, so it cannot import that helper itself.
+	const replaceState = opts.replaceState;
+	if (replaceState === undefined) {
+		throw new TypeError('installPerformanceSessionRestore needs a replaceState from the router');
+	}
 	const dispatch = opts.dispatch ?? dispatchPerformanceCommand;
 	const query = opts.query ?? queryPerformanceState;
 	const documentRef = opts.document ?? document;

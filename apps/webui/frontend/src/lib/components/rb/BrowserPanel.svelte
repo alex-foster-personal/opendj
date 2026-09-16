@@ -8,6 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
+	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
@@ -1208,7 +1209,7 @@
 	function _replaceQueryParams(params: URLSearchParams): void {
 		const url = new URL(window.location.href);
 		url.search = params.toString();
-		window.history.replaceState(null, '', formatReplaceStateUrl(url));
+		replaceState(formatReplaceStateUrl(url), {});
 	}
 
 	function _writeSpotifyQuery(playlistId: string | null): void {
