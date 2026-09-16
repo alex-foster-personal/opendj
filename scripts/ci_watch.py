@@ -150,9 +150,13 @@ class FailureWatch:
         red = self.main_red()
         if not self.announced_baseline:
             self.announced_baseline = True
-            self.emit(
-                f"  main red baseline: {len(red.identities)} identity(ies) at {red.main_sha[:9]}"
+            measured = red.measured_sha or red.main_sha
+            at = (
+                f"{red.main_sha[:9]}"
+                if measured == red.main_sha
+                else f"{measured[:9]}, main head {red.main_sha[:9]}"
             )
+            self.emit(f"  main red baseline: {len(red.identities)} identity(ies) at {at}")
         try:
             log = self.log_of(job_id)
         except LogUnreadable as unreadable:

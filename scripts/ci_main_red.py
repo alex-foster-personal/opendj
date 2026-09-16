@@ -51,6 +51,9 @@ class LogUnreadable(Exception):
 class Verdict:
     run_id: int
     attempts: int
+    # The COMMIT this run measured. The baseline is a claim about what it read, and without
+    # this it had no way to say which commit that was.
+    head_sha: str = ""
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,10 @@ class MainRed:
     failed_job_names: frozenset[str]
     main_sha: str
     unreadable_job_names: frozenset[str] = frozenset()
+    # The newest commit the walk actually measured, which is NOT main's head whenever the
+    # head's own run has not finished. `main_sha` says when this baseline was taken;
+    # `measured_sha` says what it is about, and they are only the same commit sometimes.
+    measured_sha: str = ""
 
 
 # ----- pure: the window walk -----
@@ -74,7 +81,7 @@ class MainRed:
 def verdict_runs(runs: Iterable[dict]) -> list[Verdict]:
     """Main's newest verdicts: a success or failure, or a rerun still in progress."""
     kept = [
-        Verdict(run["id"], run["run_attempt"])
+        Verdict(run["id"], run["run_attempt"], run.get("head_sha", ""))
         for run in runs
         if run.get("conclusion") in ("success", "failure")
         or (run.get("status") != "completed" and run.get("run_attempt", 1) > 1)
@@ -87,6 +94,10 @@ class WalkResult:
     identities: frozenset[str]
     failed_job_names: frozenset[str]
     unreadable_job_names: frozenset[str] = frozenset()
+    # The NEWEST commit any of this walk's measurements came from. Sol's P1 on #3293: the
+    # result used to be stamped with main's head whatever it had actually read, and main's
+    # head usually has no completed run, so the stamp named a commit the walk never saw.
+    measured_sha: str = ""
 
 
 def main_red_identities(
@@ -113,6 +124,7 @@ def main_red_identities(
     # keep, filling in jobs the newest run never measured (queued, skipped, cancelled,
     # unreadable log); it just no longer speaks for a job a newer run already answered.
     decided: set[str] = set()
+    measured_sha = ""
     for verdict in verdicts:
         measured: set[str] = set()
         # NEWEST attempt first, for the same reason verdicts are walked newest first: a
@@ -164,12 +176,17 @@ def main_red_identities(
                     found |= ids
                     measured.add(job.name)
                     decided.add(job.name)
+        if measured and not measured_sha:
+            measured_sha = verdict.head_sha
         pending -= measured
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
             break
     return WalkResult(
-        frozenset(found), frozenset(failed_names), frozenset(unreadable - failed_names)
+        frozenset(found),
+        frozenset(failed_names),
+        frozenset(unreadable - failed_names),
+        measured_sha,
     )
 
 
@@ -267,6 +284,7 @@ def _walk_every_workflow(
     identities: set[str] = set()
     failed_names: set[str] = set()
     unreadable: set[str] = set()
+    measured: list[str] = []
     for workflow in WORKFLOW_FILES:
         runs = _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")
         walk = main_red_identities(
@@ -275,7 +293,13 @@ def _walk_every_workflow(
         identities |= walk.identities
         failed_names |= walk.failed_job_names
         unreadable |= walk.unreadable_job_names
-    return WalkResult(frozenset(identities), frozenset(failed_names), frozenset(unreadable))
+        measured.append(walk.measured_sha)
+    return WalkResult(
+        frozenset(identities),
+        frozenset(failed_names),
+        frozenset(unreadable),
+        next((sha for sha in measured if sha), ""),
+    )
 
 
 def unattributable_baseline(sha: str, failed_check_runs: frozenset[str]) -> MainRed:
@@ -287,7 +311,7 @@ def unattributable_baseline(sha: str, failed_check_runs: frozenset[str]) -> Main
     regression reads as main's known red. Empty, every pull request failure reads GENUINE and
     a person looks: loud, and the direction this tool is allowed to be wrong in.
     """
-    return MainRed(frozenset(), frozenset(), sha, failed_check_runs)
+    return MainRed(frozenset(), frozenset(), sha, failed_check_runs, "")
 
 
 def fetch_main_red(
@@ -317,6 +341,17 @@ def fetch_main_red(
                 file=sys.stderr,
             )
         measured = frozenset(result.failed_job_names)
+        if result.measured_sha and result.measured_sha != pinned:
+            # Sol's P1 on #3293. Main's head usually has NO completed run -- 8 of its newest
+            # 60 ci.yml runs are a completed verdict, 49 were cancelled by the tip-only
+            # sweeper -- so the walk normally reads older commits. Said out loud rather than
+            # stamped over, because a baseline that names the head it did not read is the
+            # thing that let a failure trunk repair had just fixed read as main's red.
+            print(
+                f"[ci-main-red] baseline measured at {result.measured_sha[:9]}, "
+                f"main head is {pinned[:9]}",
+                file=sys.stderr,
+            )
         return MainRed(
             result.identities,
             measured,
@@ -324,6 +359,7 @@ def fetch_main_red(
             unmeasured_baseline_names(
                 result.unreadable_job_names, failed_check_runs(pinned), measured
             ),
+            result.measured_sha,
         )
     head = main_sha()
     print(
@@ -353,12 +389,21 @@ def cached_main_red(
             current = main_sha()
         except TriageError:
             current = ""
-        if "unreadable_job_names" in cached and current and cached["main_sha"] == current:
+        # `measured_sha` in the payload is a VERSION gate: a cache written before the walk
+        # recorded which commit it read cannot say what it is about, and a baseline that
+        # cannot say that is re-walked rather than reused.
+        if (
+            "unreadable_job_names" in cached
+            and "measured_sha" in cached
+            and current
+            and cached["main_sha"] == current
+        ):
             return MainRed(
                 frozenset(cached["identities"]),
                 frozenset(cached["failed_job_names"]),
                 cached["main_sha"],
                 frozenset(cached["unreadable_job_names"]),
+                cached["measured_sha"],
             )
     fresh = fetch()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,6 +415,7 @@ def cached_main_red(
                 "failed_job_names": sorted(fresh.failed_job_names),
                 "main_sha": fresh.main_sha,
                 "unreadable_job_names": sorted(fresh.unreadable_job_names),
+                "measured_sha": fresh.measured_sha,
             }
         ),
         encoding="utf-8",

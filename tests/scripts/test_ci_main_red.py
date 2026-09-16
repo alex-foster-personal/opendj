@@ -404,6 +404,7 @@ def _write_cache(path, sha: str, identities: list[str]) -> None:
                 "failed_job_names": [],
                 "main_sha": sha,
                 "unreadable_job_names": [],
+                "measured_sha": sha,
             }
         ),
         encoding="utf-8",
@@ -486,3 +487,65 @@ def test_an_unattributable_baseline_still_reports_mains_failing_names_as_unmeasu
     red = unattributable_baseline("zzz", frozenset({"frontend bundle budget"}))
     assert red.unreadable_job_names == frozenset({"frontend bundle budget"})
     assert red.identities == frozenset()
+
+
+def test_a_cache_that_cannot_say_which_commit_it_measured_is_re_walked(tmp_path):
+    """Sol's P1 on #3293, the upgrade half. A baseline written before the walk recorded its
+    commit looks exactly like a current one, and reusing it serves identities under a head
+    nothing checked them against. The missing key is the version gate."""
+    cache = tmp_path / "main-red.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "identities": ["FAILED tests/t.py::old"],
+                "failed_job_names": [],
+                "main_sha": "a" * 40,
+                "unreadable_job_names": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(_Walked):
+        cached_main_red(
+            cache,
+            now=lambda: cache.stat().st_mtime,
+            main_sha=lambda: "a" * 40,
+            fetch=_raise_walked,
+        )
+
+
+# ----- a baseline says which commit it is about -----
+
+
+def test_the_walk_reports_the_commit_its_measurements_came_from():
+    """The baseline is a claim about what it READ. Main's head usually has no completed run
+    -- 8 of its newest 60 ci.yml runs were a completed verdict, 49 cancelled by the tip-only
+    sweeper -- so the walk normally measures an older commit, and stamping the head over it
+    is how a failure trunk repair had already fixed read as main's current red."""
+    jobs = {
+        1: [Job(11, "shard 1", "success")],
+        2: [Job(21, "shard 1", "failure")],
+    }
+    walk = main_red_identities(
+        [Verdict(1, 1, "n" * 40), Verdict(2, 1, "o" * 40)],
+        lambda run_id, _attempt: jobs[run_id],
+        lambda _job_id: frozenset({"FAILED tests/t.py::a"}),
+    )
+    assert walk.measured_sha == "n" * 40, "the newest verdict that measured anything"
+
+
+def test_a_verdict_that_measured_nothing_does_not_claim_the_baselines_commit():
+    """The control: the stamp names the commit that produced a MEASUREMENT, not whichever
+    run happened to be newest. A verdict whose jobs were all skipped measured nothing, and
+    naming it would put the baseline at a commit no identity in it came from."""
+    jobs = {
+        1: [Job(11, "shard 1", "skipped")],
+        2: [Job(21, "shard 1", "failure")],
+    }
+    walk = main_red_identities(
+        [Verdict(1, 1, "n" * 40), Verdict(2, 1, "o" * 40)],
+        lambda run_id, _attempt: jobs[run_id],
+        lambda _job_id: frozenset({"FAILED tests/t.py::a"}),
+    )
+    assert walk.measured_sha == "o" * 40
+    assert walk.identities == {"FAILED tests/t.py::a"}
