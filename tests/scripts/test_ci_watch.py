@@ -235,3 +235,38 @@ def test_a_known_red_job_that_finished_normally_is_still_known_red():
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED
+
+
+def test_a_timed_out_job_is_unmeasured_even_when_its_log_reads_known_red():
+    """A timed-out job's log stops wherever the clock did, so the runner's own terminal line
+    may never have been written. Matching on log text alone reads a truncated log full of
+    known-red identities as KNOWN_RED and exits mergeable despite the timeout. The
+    CONCLUSION is evidence; it does not need the log's permission."""
+    lines: list[str] = []
+    log = f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(
+        _snapshot(_check(7, "pytest fast lane (shard 1 of 5)", conclusion="timed_out"))
+    )
+    assert watch.verdicts[7].verdict is JobVerdict.UNEXPLAINED
+    assert "timed_out" in "\n".join(lines)
+
+
+def test_a_plain_failure_with_the_same_log_is_still_known_red():
+    """The control: without it the fix reads every conclusion as unexplained and the watcher
+    can never report a pull request clean again."""
+    lines: list[str] = []
+    log = f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED

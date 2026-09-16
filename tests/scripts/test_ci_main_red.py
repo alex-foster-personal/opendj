@@ -109,9 +109,14 @@ def test_an_always_empty_log_gives_up_after_three_reads_and_raises():
     assert len(reads) == 3
 
 
-def test_a_job_failing_without_identities_on_main_is_a_red_job_name():
-    """Issue #3276: the frontend bundle budget failed on main's measured runs with no test
-    identity while main's newest run was still queued."""
+def test_a_job_failing_without_identities_on_main_is_unmeasured_not_a_red_job_name():
+    """This test previously asserted the opposite, and the opposite was the bug.
+
+    Issue #3276 is the frontend bundle budget failing on main with no test identity. Its log
+    was READ and named nothing, so the job NAME is all that survives, and a name says main is
+    red here, not what failed. Counted red, a pull request failing the same check reads
+    MAIN_RED_JOB and merges: main 79 KB over budget and the pull request 300 KB over share
+    one name and are not the same failure. Counted unmeasured, the watch exits UNKNOWN."""
     frontend = "frontend unit + check + build"
     runs = {
         1: [Job(11, frontend, "failure"), Job(12, "contracts", "success")],
@@ -119,7 +124,20 @@ def test_a_job_failing_without_identities_on_main_is_a_red_job_name():
         3: [Job(31, frontend, "failure"), Job(32, "contracts", "success")],
     }
     red, _ = _walk(runs, {}, [1, 2, 3])
-    assert red.failed_job_names == {frontend}
+    assert red.failed_job_names == frozenset()
+    assert red.unreadable_job_names == {frontend}
+
+
+def test_a_job_whose_log_named_a_failing_test_is_still_measured():
+    """The control, in the direction the fix could overshoot: a job main was measured on must
+    stay measured, or the baseline empties out and every failure reads as a new one."""
+    shard = "pytest fast lane (shard 1 of 5)"
+    identity = "FAILED tests/a/test_main.py::test_red_on_main"
+    runs = {1: [Job(11, shard, "failure")]}
+    red, _ = _walk(runs, {11: frozenset({identity})}, [1])
+    assert red.failed_job_names == {shard}
+    assert red.unreadable_job_names == frozenset()
+    assert identity in red.identities
 
 
 def test_a_log_that_stays_empty_after_every_retry_raises_rather_than_returning_empty():

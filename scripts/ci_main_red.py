@@ -121,10 +121,17 @@ def main_red_identities(
                         # baseline that was never measured.
                         unreadable.add(job.name)
                         continue
+                    if not ids:
+                        # The log was READ and named no failing test. The name alone then
+                        # says main is red here and NOT what failed, so a pull request job
+                        # with the same name and no identity would read MAIN_RED_JOB off a
+                        # comparison nobody made. A bundle budget check is the worked case:
+                        # main 79 KB over and the pull request 300 KB over share one name.
+                        unreadable.add(job.name)
+                        continue
                     failed_names.add(job.name)
-                    if ids:
-                        found |= ids
-                        measured.add(job.name)
+                    found |= ids
+                    measured.add(job.name)
         pending -= measured
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:

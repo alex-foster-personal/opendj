@@ -158,7 +158,15 @@ class FailureWatch:
             self.emit(f"  (log unreadable) {unreadable}")
             return None
         identities = failed_identities(log)
-        beyond = failure_beyond_tests(log)
+        # The CONCLUSION is evidence in its own right. A timed-out job's log is truncated
+        # wherever the clock stopped, so the runner's own terminal line may never have been
+        # written; matching on log text alone would read a truncated log full of known-red
+        # identities as KNOWN_RED and exit mergeable despite the timeout.
+        beyond = failure_beyond_tests(log) or (
+            [f"the job conclusion is {run['conclusion']}"]
+            if run["conclusion"] != "failure"
+            else []
+        )
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)
         elif beyond:

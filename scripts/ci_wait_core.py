@@ -25,6 +25,11 @@ from enum import StrEnum
 from scripts.review_gh import TriageError
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
+# Apps whose check-runs carry no GitHub Actions run to read an event from. Named one by one
+# rather than matched as "anything that is not Actions": the wide form removes a check from
+# the observed and expected sets together, and a check nobody is waiting for cannot fail.
+DROPPED_APP_SLUGS = frozenset({"mergify"})
+
 
 class WaitStatus(StrEnum):
     SUCCESS = "SUCCESS"
@@ -194,12 +199,20 @@ def _pull_request_triggered_runs(
     seen: dict[str, str] = {}
     kept: list[dict] = []
     for run in check_runs:
-        # A check-run another app posts (Mergify's "Mergify Merge Queue") has no Actions run
-        # to ask for an event. Recorded fixtures omit `app`, so only a named non-Actions app
-        # is dropped; anything else still has to yield a run id or raise.
+        # Mergify's queue marker has no Actions run to ask for an event, so it is dropped
+        # by NAME rather than by "not GitHub Actions". Dropping every external app removes
+        # a required security, coverage or CI check from the observed AND expected sets at
+        # once, which is invisible: the waiter then reports success for a check it stopped
+        # looking at. An unrecognized app raises instead, so a person decides.
         app_slug = (run.get("app") or {}).get("slug")
-        if app_slug is not None and app_slug != "github-actions":
+        if app_slug in DROPPED_APP_SLUGS:
             continue
+        if app_slug is not None and app_slug != "github-actions":
+            raise TriageError(
+                f"check-run {run.get('name')!r} comes from unrecognized app {app_slug!r}: "
+                "add it to DROPPED_APP_SLUGS if it carries no Actions run, or teach this "
+                "function to wait for it. Dropping it silently would hide a required check."
+            )
         run_id = _run_id(run)
         event = seen.get(run_id)
         if event is None:
