@@ -29,7 +29,7 @@ so the two cannot drift the way two independently maintained lists could.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from scripts.ci_wait_workflows import (
     WorkflowCatalog,
@@ -67,7 +67,29 @@ def _ci_pull_request_paths() -> tuple[str, ...]:
     return paths
 
 
-def is_docs_only(changed_files: Sequence[str]) -> bool:
+def _changed_paths(changed_files: Sequence[str | Mapping[str, str]]) -> list[str]:
+    """Normalize GitHub ``/pulls/{n}/files`` rows or plain path strings."""
+    paths: list[str] = []
+    for entry in changed_files:
+        if isinstance(entry, str):
+            paths.append(entry)
+            continue
+        if isinstance(entry, Mapping):
+            filename = entry.get("filename")
+            if not isinstance(filename, str) or not filename:
+                raise TypeError(
+                    "is_docs_only expects path strings or file objects with "
+                    f"a non-empty filename, got {entry!r}"
+                )
+            paths.append(filename)
+            continue
+        raise TypeError(
+            f"is_docs_only expects path strings or file objects, got {type(entry).__name__}"
+        )
+    return paths
+
+
+def is_docs_only(changed_files: Sequence[str | Mapping[str, str]]) -> bool:
     """True only when EVERY changed path is one ci.yml's own filter treats as
     documentation.
 
@@ -78,9 +100,10 @@ def is_docs_only(changed_files: Sequence[str]) -> bool:
     `workflow_would_run_for_files` returns `False` (CI would not run) for an
     empty list too, which is the right answer to a different question.
     """
-    if not changed_files:
+    paths = _changed_paths(changed_files)
+    if not paths:
         return False
-    return not workflow_would_run_for_files(changed_files, paths=_ci_pull_request_paths())
+    return not workflow_would_run_for_files(paths, paths=_ci_pull_request_paths())
 
 
 def render_docs_only_pass(
