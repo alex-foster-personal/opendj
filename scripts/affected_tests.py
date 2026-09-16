@@ -1,6 +1,8 @@
 """Print the pytest modules a change reaches, via a static import graph.
 
-Read-only. Used by the affected-test canary in `ci.yml`, which runs these tests FIRST as a
+Read-only. Was used by the affected-test canary in `ci.yml` (SMARTEST-CI rounds 1 and 2,
+replaced by the fast tier in round 6a); kept as the static lower bound for the round 5
+planner. The canary ran these tests FIRST as a
 fast non-blocking signal while the full sharded lane runs everything anyway.
 
 WHAT THIS IS NOT. This is a LOWER bound on what a change can affect. It sees static
