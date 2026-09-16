@@ -7,6 +7,7 @@ Regression lines:
   - if an older verdict's jobs the window DID measure leak into the baseline then broken
   - if a rerun still in progress is not counted as a verdict then broken
   - if an empty log read is taken for "this job failed no test" then broken
+  - if a job failing without identities on main's measured runs is not a red job name then broken
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ def test_the_window_is_a_union_over_three_verdicts():
         3: [Job(31, "shard 1", "success")],
     }
     red, _ = _walk(runs, {21: frozenset({"FAILED tests/t.py::a"})}, [1, 2, 3])
-    assert red == {"FAILED tests/t.py::a"}
+    assert red.identities == {"FAILED tests/t.py::a"}
 
 
 def test_an_unmeasured_job_is_read_from_the_next_older_verdict_and_no_deeper():
@@ -55,7 +56,7 @@ def test_an_unmeasured_job_is_read_from_the_next_older_verdict_and_no_deeper():
         51: frozenset({"FAILED tests/s1.py::too_deep"}),
     }
     red, reads = _walk(runs, ids, [1, 2, 3, 4, 5])
-    assert red == {"FAILED tests/s1.py::old"}
+    assert red.identities == {"FAILED tests/s1.py::old"}
     assert 5 not in reads
 
 
@@ -92,3 +93,16 @@ def test_an_always_empty_log_gives_up_after_three_reads():
 
     assert job_log_identities(7, empty, lambda _s: None) == frozenset()
     assert len(reads) == 3
+
+
+def test_a_job_failing_without_identities_on_main_is_a_red_job_name():
+    """Issue #3276: the frontend bundle budget failed on main's measured runs with no test
+    identity while main's newest run was still queued."""
+    frontend = "frontend unit + check + build"
+    runs = {
+        1: [Job(11, frontend, "failure"), Job(12, "contracts", "success")],
+        2: [Job(21, frontend, "failure"), Job(22, "contracts", "success")],
+        3: [Job(31, frontend, "failure"), Job(32, "contracts", "success")],
+    }
+    red, _ = _walk(runs, {}, [1, 2, 3])
+    assert red.failed_job_names == {frontend}

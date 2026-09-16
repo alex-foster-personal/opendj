@@ -113,6 +113,27 @@ def failed_identities(log: str) -> frozenset[str]:
     return frozenset(found)
 
 
+_ERROR_LINE = re.compile(r"\[ERROR\]|##\[error\]|^Error: |^error: ", re.IGNORECASE)
+_COMMAND_ECHO = "\x1b[36;1m"
+EXCERPT_LINES = 3
+
+
+def error_excerpt(log: str) -> list[str]:
+    """The first error lines of a log with no test identity, so a zero-identity failure says
+    what failed, as the merge gate's excerpt does. The runner's echo of the step script is
+    skipped: it quotes commands, not results."""
+    found: list[str] = []
+    for raw in log.split("\n"):
+        if _COMMAND_ECHO in raw:
+            continue
+        line = _ANSI.sub("", _strip_prefixes(raw)).strip()
+        if _ERROR_LINE.search(line) and "Process completed with exit code" not in line:
+            found.append(line[:200])
+            if len(found) == EXCERPT_LINES:
+                break
+    return found
+
+
 def classify_job(
     job_name: str,
     identities: frozenset[str],

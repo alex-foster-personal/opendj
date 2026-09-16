@@ -9,6 +9,7 @@ Regression lines:
   - if a head move, timeout or missing baseline reads anything but UNKNOWN then broken
   - if zero check runs ever end the poll as a success then broken
   - if an uncaught crash exits 1 (GENUINE) instead of 3 then broken
+  - if a zero-identity failure prints no reason then broken
 """
 
 from __future__ import annotations
@@ -38,8 +39,11 @@ def _check(check_id: int, name: str, status: str = "completed", conclusion: str 
 
 
 def _watch(identities: dict[int, frozenset[str]], lines: list[str]) -> FailureWatch:
+    def log_of(job_id: int) -> str:
+        return "".join(f"2026-09-16T09:00:00Z {i}\n" for i in sorted(identities.get(job_id, ())))
+
     return FailureWatch(
-        identities_of=lambda job_id: identities.get(job_id, frozenset()),
+        log_of=log_of,
         main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
         emit=lines.append,
         clock=lambda: 0.0,
@@ -128,3 +132,23 @@ def test_a_crash_exits_unknown_not_genuine(monkeypatch):
 
     monkeypatch.setattr(ci_watch, "watch_pr", boom)
     assert ci_watch.main(["3288"]) == Exit.UNKNOWN
+
+
+def test_a_zero_identity_failure_prints_the_log_error_lines():
+    lines: list[str] = []
+    log = (
+        "2026-09-16T09:44:38Z \x1b[36;1mecho \"[ERROR] echoed-command-not-a-result\"\x1b[0m\n"
+        '2026-09-16T09:44:38Z [ERROR] budget "other-lazy" exceeded: 199450 bytes gzip\n'
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset(), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    outcome = watch.inspect(_snapshot(_check(7, "frontend unit + check + build")))
+    assert outcome is not None and outcome.status is WaitStatus.GENUINE_FAILURE
+    blob = "\n".join(lines)
+    assert 'budget "other-lazy" exceeded' in blob
+    assert "echoed-command-not-a-result" not in blob

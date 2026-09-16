@@ -51,8 +51,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum
 
-from scripts.ci_failure_ids import JobClassification, JobVerdict, classify_job
-from scripts.ci_main_red import MainRed, cached_main_red, job_log_identities
+from scripts.ci_failure_ids import (
+    JobClassification,
+    JobVerdict,
+    classify_job,
+    error_excerpt,
+    failed_identities,
+)
+from scripts.ci_main_red import MainRed, cached_main_red, read_job_log
 from scripts.ci_wait import (
     _check_runs_at_sha,
     _head_sha,
@@ -91,11 +97,12 @@ class Exit(IntEnum):
 class FailureWatch:
     """Classifies each newly finished non-passing check once, and says when to stop."""
 
-    identities_of: Callable[[int], frozenset[str]]
+    log_of: Callable[[int], str]
     main_red: Callable[[], MainRed]
     emit: Callable[[str], None]
     clock: Callable[[], float] = time.monotonic
     verdicts: dict[int, JobClassification | None] = field(default_factory=dict)
+    excerpts: dict[int, list[str]] = field(default_factory=dict)
     started: float | None = None
     announced_baseline: bool = False
     last_heartbeat: float = 0.0
@@ -116,7 +123,7 @@ class FailureWatch:
         for run in fresh:
             classification = self._classify(run)
             self.verdicts[run["id"]] = classification
-            self.emit(_blob_line(run, classification))
+            self.emit(_blob_line(run, classification, self.excerpts.get(run["id"], [])))
             if classification is not None and classification.verdict is JobVerdict.GENUINE:
                 genuine.append(run["name"])
         if genuine:
@@ -144,9 +151,11 @@ class FailureWatch:
             self.emit(
                 f"  main red baseline: {len(red.identities)} identity(ies) at {red.main_sha[:9]}"
             )
-        return classify_job(
-            run["name"], self.identities_of(job_id), red.identities, red.failed_job_names
-        )
+        log = self.log_of(job_id)
+        identities = failed_identities(log)
+        if not identities:
+            self.excerpts[run["id"]] = error_excerpt(log)
+        return classify_job(run["name"], identities, red.identities, red.failed_job_names)
 
 
 def _job_id(run: dict) -> int | None:
@@ -158,12 +167,16 @@ def _utc() -> str:
     return datetime.now(UTC).strftime("%H:%M:%SZ")
 
 
-def _blob_line(run: dict, classification: JobClassification | None) -> str:
+def _blob_line(run: dict, classification: JobClassification | None, excerpt: list[str]) -> str:
     if classification is None:
         return f"  UNMEASURED {run['name']} ({run['conclusion']}) {run.get('html_url', '')}"
     decisive = classification.residual or classification.identities
     shown = sorted(decisive)[:IDENTITIES_SHOWN]
     more = f" (+{len(decisive) - len(shown)} more)" if len(decisive) > len(shown) else ""
+    if not decisive:
+        shown = [f"(no test identity) {line}" for line in excerpt] or [
+            "(no test identity and no error line found: read the log)"
+        ]
     body = "".join(f"\n    {identity}" for identity in shown)
     return f"  {classification.verdict} {run['name']} ({run['conclusion']}){more}{body}"
 
@@ -203,7 +216,7 @@ def watch_pr(pr: str, *, timeout_s: float, poll_interval_s: float) -> Exit:
     print(f"[ci-watch {_utc()}] PR #{pr} pinned head {head}; polling every {poll_interval_s:.0f}s")
     if expected is None:
         print("  no baseline from an earlier push: failures are watched, GREEN cannot be proven")
-    watch = FailureWatch(job_log_identities, cached_main_red, print)
+    watch = FailureWatch(read_job_log, cached_main_red, print)
     run_event = _memoized_run_event(REPO)
 
     def lifecycle() -> LifecycleOutcome | None:

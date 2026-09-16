@@ -70,12 +70,24 @@ def verdict_runs(runs: Iterable[dict]) -> list[Verdict]:
     return kept[:VERDICT_DEPTH]
 
 
+@dataclass(frozen=True)
+class WalkResult:
+    identities: frozenset[str]
+    failed_job_names: frozenset[str]
+
+
 def main_red_identities(
     verdicts: list[Verdict],
     jobs_of: Callable[[int, int], list[Job]],
     identities_of: Callable[[int], frozenset[str]],
     window: int = MAIN_WINDOW,
-) -> frozenset[str]:
+) -> WalkResult:
+    """Walk main's verdicts. Failed job NAMES come from the same reads as identities: main's
+    head alone misses a job red on every measured run while main's newest run is still
+    queued (Wed 16 Sep 2026: the frontend bundle budget, issue #3276, red on main's last 4
+    measured runs, read as GENUINE on a Python-only pull request).
+    """
+    failed_names: set[str] = set()
     found: set[str] = set()
     pending: set[str] = set()
     remaining_window = window
@@ -90,6 +102,7 @@ def main_red_identities(
                 if job.conclusion == "success":
                     measured.add(job.name)
                 elif job.conclusion == "failure":
+                    failed_names.add(job.name)
                     ids = identities_of(job.job_id)
                     if ids:
                         found |= ids
@@ -98,7 +111,7 @@ def main_red_identities(
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
             break
-    return frozenset(found)
+    return WalkResult(frozenset(found), frozenset(failed_names))
 
 
 # ----- I/O: gh -----
@@ -128,16 +141,26 @@ def job_log_identities(
     read 39 identities where the reference implementation read 118, twelve minutes apart on
     the same main SHA, because empty reads dropped whole jobs silently.
     """
+    return failed_identities(read_job_log(job_id, fetch, sleep))
+
+
+def read_job_log(
+    job_id: int,
+    fetch: Callable[[int], str] = _fetch_job_log,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    """A job's full log, retried while the read comes back empty. Still empty after every
+    try is returned empty and said on stderr, never silently taken for a clean log."""
     for attempt in range(LOG_READ_TRIES):
         log = fetch(job_id)
         if log:
-            return failed_identities(log)
+            return log
         if attempt + 1 < LOG_READ_TRIES:
             sleep(LOG_READ_BACKOFF_S)
     print(
         f"[ci-main-red] job {job_id}: log still empty after {LOG_READ_TRIES} reads", file=sys.stderr
     )
-    return frozenset()
+    return ""
 
 
 def _main_sha() -> str:
@@ -153,13 +176,18 @@ def _failed_check_run_names(sha: str) -> frozenset[str]:
 
 def fetch_main_red() -> MainRed:
     identities: set[str] = set()
+    failed_names: set[str] = set()
     for workflow in WORKFLOW_FILES:
         runs = _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")
-        identities |= main_red_identities(
+        walk = main_red_identities(
             verdict_runs(runs["workflow_runs"]), _jobs_of, job_log_identities
         )
+        identities |= walk.identities
+        failed_names |= walk.failed_job_names
     sha = _main_sha()
-    return MainRed(frozenset(identities), _failed_check_run_names(sha), sha)
+    return MainRed(
+        frozenset(identities), frozenset(failed_names) | _failed_check_run_names(sha), sha
+    )
 
 
 def cached_main_red(cache_path: Path = CACHE_PATH, now: Callable[[], float] = time.time) -> MainRed:
