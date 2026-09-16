@@ -147,7 +147,7 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
-	import { previewCueSeek } from '$lib/player/preview-cue.svelte';
+	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
@@ -2404,7 +2404,13 @@
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
 		}
-		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)));
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio))).then((outcome) => {
+			if (!outcome.ok) {
+				if (outcome.reason !== PREVIEW_SUPERSEDED) pushToast(outcome.reason, 'error');
+			} else if (outcome.warning !== null) {
+				pushToast(outcome.warning, 'warn');
+			}
+		});
 	}
 
 	async function _loadOntoDeck(

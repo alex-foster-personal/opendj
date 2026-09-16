@@ -25,8 +25,8 @@ import {
 	resumeCloudsyncSchedulerOwedJob
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
-import { applyPreviewCaps } from '$lib/player/preview-cue.svelte';
-import { applyPrefetchCaps, resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
+import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
+import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
 import { resumeEagerStemDecodeOwedJob, setEagerStemDecodeShed } from './stem-decode-shed';
 import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/components/rb/wave/anlz-cache.svelte';
@@ -136,13 +136,9 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		isPlaying: anyDeckPlaying,
 		pressureElevated: () => pressureIsElevated(readMachinePressure()),
 		readXruns: () => readXrunSessionCounter().xruns,
-		// CUEOUT-15: the preview's decoded-audio budget rides the same closed
-		// loop, so a pressure step evicts previewed PCM at the same moment it
-		// shrinks the prefetch caps.
-		applyCaps: () => {
-			applyPrefetchCaps();
-			applyPreviewCaps();
-		},
+		// Every registered cache re-evicts on each pressure step, so a cache
+		// added later cannot miss the closed loop.
+		applyCaps: applyAllCaps,
 		subscribe: subscribeMachinePressure
 	});
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;

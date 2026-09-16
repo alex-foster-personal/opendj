@@ -1984,6 +1984,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// reason instead of 200 over a preview that never started.
 		const outcome = await previewCueSeek(command.stable_id, command.ratio);
 		if (!outcome.ok) throw new Error(outcome.reason);
+		if (outcome.warning !== null) pushToast(outcome.warning, 'warn');
 	} else if (command.type === 'preview_stop') {
 		stopPreviewCue();
 	} else if (command.type === 'headphone_mix') {

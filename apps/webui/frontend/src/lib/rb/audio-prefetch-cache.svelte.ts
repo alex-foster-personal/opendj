@@ -21,6 +21,7 @@
  * stretch create, or stem paths. Deferred alternatives (viewport lazy queue,
  * decoded-buffer LRU, HTTP audio cache) are documented on the perf issue.
  */
+import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { audioUrl } from '$lib/rb/api-rb';
 import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
 import { prefetchByteCapForPosture, prefetchTrackCapForPosture, setResolvedPosture } from '$lib/rb/app-posture';
@@ -234,6 +235,7 @@ export function audioPrefetchReadyBytes(): number {
 export function applyPrefetchCaps(): void {
 	_evictLruUntilFit(0);
 }
+registerCapsConsumer('audio-prefetch', applyPrefetchCaps);
 
 /**
  * Clear every prefetch entry and abort any in-flight fetch.

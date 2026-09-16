@@ -12,8 +12,7 @@ import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
-import { applyPreviewCaps } from '$lib/player/preview-cue.svelte';
-import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
+import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
@@ -235,8 +234,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			) {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
-				applyPrefetchCaps();
-				applyPreviewCaps();
+				applyAllCaps();
 			}
 			if (
 				body.app_mode !== undefined &&
