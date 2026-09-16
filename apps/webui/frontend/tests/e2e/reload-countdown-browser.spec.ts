@@ -20,24 +20,30 @@ test.describe('reload countdown, wired to the real page', () => {
 		});
 
 		// A real production call: the one exposed for agent-native parity.
+		// Four seconds, not two: the deadline is what bounds the window for
+		// observing a tick, and a 1 s interval starved past 1.5 s on a loaded CI
+		// host left nothing observable before the reload cleared the overlay.
 		await page.evaluate(() => {
 			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
 				'e2e test',
-				2
+				4
 			);
 		});
 
 		const overlay = page.locator('#mdt-reload-countdown');
 		await expect(overlay).toBeVisible();
-		await expect(overlay).toContainText('2');
+		await expect(overlay).toContainText('4');
 		await expect(overlay).toContainText('reloading: e2e test');
 
-		// Real setInterval ticking in a real document - not a fake clock.
-		await expect(overlay.locator('div').first()).toHaveText('1', { timeout: 1500 });
+		// Real setInterval ticking in a real document - not a fake clock. Any
+		// decremented value proves the tick: pinning one exact number instead
+		// asserts which tick we caught, which is the scheduler's business and
+		// not this test's.
+		await expect(overlay.locator('div').first()).toHaveText(/^[0-3]$/, { timeout: 3500 });
 
 		// The real location.reload() firing IS the assertion the fake-effects
 		// harness could never make: navigation actually happens.
-		await page.waitForEvent('load', { timeout: 3000 });
+		await page.waitForEvent('load', { timeout: 6000 });
 		expect(page.url()).toContain('/');
 	});
 
