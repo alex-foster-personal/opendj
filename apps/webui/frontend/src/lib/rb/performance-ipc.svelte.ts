@@ -156,7 +156,12 @@ import {
 	performanceFeedbackSummary,
 	recordPerformanceFeedback
 } from '$lib/rb/vibe.svelte';
-import { previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
+import {
+	previewCacheStats,
+	previewCue,
+	previewCueSeek,
+	stopPreviewCue
+} from '$lib/player/preview-cue.svelte';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -424,6 +429,12 @@ export interface PerformanceState {
 		position_ms: number;
 		duration_ms: number | null;
 		route: 'cue' | 'main_practice' | 'split_right' | null;
+		/** Decoded preview audio held right now, and the cap it is held under.
+		 * Readable here because "how much memory is the preview holding" is a
+		 * question an agent has to be able to answer without a profiler. */
+		cache_tracks: number;
+		cache_bytes: number;
+		cache_budget_bytes: number;
 	};
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -1572,6 +1583,7 @@ export function queryPerformanceState(): PerformanceState {
 	if (masterDecks.length > 1) {
 		throw new Error(`engine contract violation: ${masterDecks.length} master decks selected`);
 	}
+	const previewStats = previewCacheStats();
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
@@ -1622,7 +1634,10 @@ export function queryPerformanceState(): PerformanceState {
 			playing: previewCue.playing,
 			position_ms: previewCue.position_ms,
 			duration_ms: previewCue.duration_ms,
-			route: previewCue.route
+			route: previewCue.route,
+			cache_tracks: previewStats.tracks,
+			cache_bytes: previewStats.bytes,
+			cache_budget_bytes: previewStats.budget_bytes
 		},
 		last_error: performanceCommandStatus.last_error,
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
