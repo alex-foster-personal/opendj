@@ -13,6 +13,8 @@ import pytest
 from apps.engine_core import log_disk, warning_log
 from apps.engine_core.warning_log import _WarningJsonHandler, configure_warning_log
 
+pytestmark = pytest.mark.usefixtures("hermetic_rotation_gate")
+
 
 def test_warning_log_writes_warning_with_boot_id(tmp_path: Path) -> None:
     handler = configure_warning_log(tmp_path / "engine-warn.log", "boot-test")
