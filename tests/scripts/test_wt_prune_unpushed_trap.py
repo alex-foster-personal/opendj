@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-WT_PRUNE_SH = Path("/Users/dev/code/afmac/ci-lane/wt-prune.sh")
+WT_PRUNE_SH = Path.home() / "code/afmac/ci-lane/wt-prune.sh"
 
 pytestmark = pytest.mark.skipif(
     not WT_PRUNE_SH.is_file(), reason=f"{WT_PRUNE_SH} not present on this machine"
