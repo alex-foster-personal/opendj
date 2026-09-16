@@ -8,11 +8,14 @@
 	let {
 		deck,
 		pending,
+		testIdScope = 'deck',
 		onMute,
 		onSolo
 	}: {
 		deck: DeckState;
 		pending: boolean;
+		/** Namespace for chip testids: `deck` keeps `stem-*-deck-N`; mixer uses `channel`. */
+		testIdScope?: 'deck' | 'channel';
 		onMute: (stem: StemControl) => Promise<void>;
 		onSolo: (stem: StemControl) => Promise<void>;
 	} = $props();
@@ -69,7 +72,7 @@
 			aria-busy={pending}
 			title={chipTip(stem.id, stem.label)}
 			aria-label={`${stem.label} stem mute deck ${deck.deck_id}; Shift+click solo`}
-			data-testid={`stem-${stem.id}-deck-${deck.deck_id}`}
+			data-testid={`stem-${stem.id}-${testIdScope}-${deck.deck_id}`}
 			data-unavailable={unavailable(stem.id)}
 			aria-pressed={deck.stems.controls[stem.id].muted}
 			data-performance-control={`stem-${stem.id}`}
