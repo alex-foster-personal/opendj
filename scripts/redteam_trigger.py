@@ -15,7 +15,6 @@ completed attack.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import shlex
 import subprocess
 from collections.abc import Callable, Sequence
@@ -29,15 +28,8 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.redteam_trigger") from None
     raise
 from scripts import ci_health_trunk as health_trunk
+from scripts.review_docs_only import is_docs_only
 
-DEFAULT_IGNORED_PATHS = (
-    "**.md",
-    "docs/**",
-    "handoffs/**",
-    ".planning/**",
-    "specs/**",
-    "blog/**",
-)
 DEFAULT_MARKER_PATH = Path.home() / "jobs/state/redteam-last-sha"
 DEFAULT_ATTACK_COMMAND = Path.home() / "jobs/redteam/run.sh"
 DEFAULT_REMOTE = "origin"
@@ -103,10 +95,6 @@ def _changed_paths(repo_path: Path, previous_sha: str | None, current_sha: str) 
     return sorted({*root_paths.splitlines(), *later_paths.splitlines()} - {""})
 
 
-def _is_ignored_path(path: str, ignored_paths: Sequence[str]) -> bool:
-    return any(fnmatch.fnmatch(path, pattern) for pattern in ignored_paths)
-
-
 def _candidate_shas(repo_path: Path, previous_sha: str | None, current_sha: str) -> list[str]:
     revision = current_sha if previous_sha is None else f"{previous_sha}..{current_sha}"
     output = _run_git(repo_path, "rev-list", revision)
@@ -141,11 +129,15 @@ def newest_trunk_verified_sha(
     return None
 
 
+def _advance_marker_for_docs_only(marker_path: Path, current_sha: str) -> TriggerResult:
+    _write_marker(marker_path, current_sha)
+    return TriggerResult.DOCS_ONLY
+
+
 def run_trigger(
     *,
     remote: str,
     marker_path: Path,
-    ignored_paths: Sequence[str],
     attack: Callable[[str], None],
     verified_sha: Callable[[Sequence[str], str], str | None],
     repo_path: Path | None = None,
@@ -160,9 +152,10 @@ def run_trigger(
 
     _fetch_main(repository, remote, branch)
     changed_paths = _changed_paths(repository, previous_sha, current_sha)
-    if not changed_paths or all(_is_ignored_path(path, ignored_paths) for path in changed_paths):
-        _write_marker(marker_path, current_sha)
-        return TriggerResult.DOCS_ONLY
+    if not changed_paths:
+        return _advance_marker_for_docs_only(marker_path, current_sha)
+    if is_docs_only(changed_paths):
+        return _advance_marker_for_docs_only(marker_path, current_sha)
 
     candidates = _candidate_shas(repository, previous_sha, current_sha)
     target_sha = verified_sha(candidates, branch)
@@ -192,7 +185,6 @@ def main() -> int:
     result = run_trigger(
         remote=arguments.remote,
         marker_path=arguments.marker,
-        ignored_paths=DEFAULT_IGNORED_PATHS,
         attack=lambda sha: _run_attack(arguments.attack_command, sha),
         verified_sha=newest_trunk_verified_sha,
         branch=arguments.branch,
