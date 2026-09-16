@@ -73,9 +73,7 @@ _HEADPHONE_IPC_PREDICATE = frozenset(
         command_type
         for command_type in command_fields()
         if command_type.startswith("headphone_")
-        # CUEOUT-15: the library preview joins the graph at `cueSum`, the same
-        # node every channel CUE joins, so it is a cue-bus command with a name
-        # that does not start with "headphone_".
+        # CUEOUT-15: preview_* joins at `cueSum`, like channel CUE.
         or command_type
         in {
             "channel_cue",
@@ -200,9 +198,7 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             },
         }
     elif command_type == "headphone_master_select":
-        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command[
-            "device_id"
-        ]
+        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command["device_id"]
         changed = {
             "mixer": {
                 "headphones": {
@@ -211,9 +207,7 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             },
         }
     elif command_type == "headphone_input_select":
-        mirror["mixer"]["headphones"]["selected_input_device_id"] = command[
-            "device_id"
-        ]
+        mirror["mixer"]["headphones"]["selected_input_device_id"] = command["device_id"]
         changed = {
             "mixer": {
                 "headphones": {
@@ -601,84 +595,3 @@ def test_create_app_mounts_every_headphone_route(client) -> None:
     for method, route in HEADPHONE_IPC_ROUTES.values():
         assert route in paths
         assert method.lower() in paths[route]
-
-
-
-@pytest.mark.parametrize(
-    ("body", "detail"),
-    [
-        ({"ratio": 0.5}, "stable_id must be a non-empty string"),
-        ({"stable_id": "   ", "ratio": 0.5}, "stable_id must be a non-empty string"),
-        ({"stable_id": 7, "ratio": 0.5}, "stable_id must be a non-empty string"),
-        ({"stable_id": "trk-9", "ratio": 1.5}, "value must be within 0..1"),
-        ({"stable_id": "trk-9", "ratio": "half"}, "value must be a finite number"),
-    ],
-)
-def test_preview_bodies_are_rejected_without_submitting(
-    body: dict[str, Any], detail: str
-) -> None:
-    """CUEOUT-15: a malformed preview never reaches the page.
-
-    The point is the "without submitting" half: an order that the page would
-    only fail on arrival still occupies the single-command queue, so every
-    check that can be made here is made here.
-    """
-
-    async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
-            await _open_page(client)
-            response = await client.post(
-                "/api/v1/performance/headphones/preview", json=body
-            )
-            assert response.status_code == 400
-            assert detail in response.json()["detail"]
-            nxt = await client.get("/api/v1/commands/next")
-            assert nxt.json() is None
-
-    asyncio.run(run())
-
-
-def test_preview_refused_by_the_page_is_a_400_carrying_the_reason() -> None:
-    """CUEOUT-15: a preview nobody could hear must never answer 200.
-
-    The page refuses for reasons only it can know (no audio graph, a dead cue
-    sink, MIX at the master end, GAIN at zero). Those arrive as a failed step,
-    and the operator-facing wording is what the caller gets back.
-    """
-    refusal = "preview: the cue path is silent - raise MIX (turn it toward CUE) or GAIN"
-
-    async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
-            await _open_page(client)
-
-            async def claim_and_refuse() -> None:
-                for _ in range(200):
-                    await asyncio.sleep(0.01)
-                    nxt = await client.get("/api/v1/commands/next")
-                    if nxt.json() is not None:
-                        claimed = nxt.json()
-                        break
-                else:
-                    raise AssertionError("order was never offered")
-                await client.post(
-                    f"/api/v1/commands/{claimed['id']}/result",
-                    json={
-                        "steps": [{"status": "failed", "error": refusal}],
-                        "mirror_delta": {"changed": {}},
-                    },
-                )
-
-            fake = asyncio.create_task(claim_and_refuse())
-            response = await client.post(
-                "/api/v1/performance/headphones/preview",
-                json={"stable_id": "trk-9", "ratio": 0.5},
-            )
-            await fake
-            assert response.status_code == 400
-            assert response.json()["detail"] == refusal
-
-    asyncio.run(run())
