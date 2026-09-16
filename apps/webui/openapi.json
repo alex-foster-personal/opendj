@@ -6470,6 +6470,20 @@
         "title": "FleetOut",
         "type": "object"
       },
+      "FolderCandidatesOut": {
+        "description": "Existing folders under the user's home worth offering as one-click\nsetup suggestions, instead of making them type a path blind.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "title": "FolderCandidatesOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -30972,6 +30986,28 @@
           }
         },
         "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/music-folders": {
+      "get": {
+        "description": "Existing folders under HOME worth suggesting, before typing a path.\n\nNever a guess: only paths that exist on this machine are returned, and\na candidate macOS refuses to list is still reported, marked denied,\nrather than silently omitted.",
+        "operationId": "music_folder_candidates_api_v1_setup_detect_music_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderCandidatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Music Folder Candidates",
         "tags": [
           "setup"
         ]

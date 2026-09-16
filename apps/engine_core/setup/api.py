@@ -46,6 +46,7 @@ from apps.engine_core.setup.jobs import (
 from apps.engine_core.setup.schemas import (
     AccessProbeOut,
     FileProbeOut,
+    FolderCandidatesOut,
     FolderImportIn,
     FolderLastImportOut,
     FolderScanOut,
@@ -327,6 +328,22 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
     return store.enqueue(SETUP_IMPORT_KIND, payload)
 
 
+@router.get("/detect/music-folders", response_model=FolderCandidatesOut)
+def music_folder_candidates() -> FolderCandidatesOut:
+    """Existing folders under HOME worth suggesting, before typing a path.
+
+    Never a guess: only paths that exist on this machine are returned, and
+    a candidate macOS refuses to list is still reported, marked denied,
+    rather than silently omitted.
+    """
+    return FolderCandidatesOut(
+        candidates=[
+            AccessProbeOut(**probe.to_dict())
+            for probe in detect.music_folder_candidates()
+        ]
+    )
+
+
 @router.get("/detect/folder", response_model=FolderScanOut)
 def detect_folder(
     path: Annotated[
@@ -515,6 +532,7 @@ __all__ = [
     "STEMS_UNAVAILABLE_MESSAGE",
     "AccessProbeOut",
     "FileProbeOut",
+    "FolderCandidatesOut",
     "FolderImportIn",
     "FolderLastImportOut",
     "FolderScanOut",

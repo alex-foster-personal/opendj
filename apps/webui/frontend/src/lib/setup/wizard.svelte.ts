@@ -32,6 +32,7 @@ import {
 	detectRekordbox,
 	finalSetupRefusal,
 	folderIsImportable,
+	getFolderCandidates,
 	getSetupStatus,
 	isFatalBlocker,
 	scanFolder,
@@ -39,6 +40,7 @@ import {
 	setupRefusal,
 	startFolderImport,
 	startImport,
+	type FolderCandidates,
 	type FolderScan,
 	type RekordboxDetection,
 	type SetupStatus,
@@ -86,6 +88,67 @@ export function nextStep(step: WizardStep): WizardStep {
 export function previousStep(step: WizardStep): WizardStep {
 	const index = stepIndex(step);
 	return WIZARD_STEPS[Math.max(index - 1, 0)];
+}
+
+/**
+ * The steps THIS branch will actually visit.
+ *
+ * 'confirm' confirms a rekordbox collection, so the folder branch never goes
+ * near it: beginFolderImport() jumps straight from 'detect' to 'progress'.
+ * That asymmetry was invisible while nothing could move backwards. The moment
+ * Back exists, walking back from 'progress' on a folder import would land on a
+ * rekordbox confirmation screen for a library the user is not importing, so
+ * the route has to know which branch it is on.
+ */
+export function visibleSteps(source: ImportSource): WizardStep[] {
+	if (source === 'folder') return WIZARD_STEPS.filter((step) => step !== 'confirm');
+	return [...WIZARD_STEPS];
+}
+
+/** 1-based position of `step` in this branch's route, for "step 2 of 5". */
+export function stepPosition(step: WizardStep, source: ImportSource): number {
+	return visibleSteps(source).indexOf(step) + 1;
+}
+
+/** How many steps this branch has in total. */
+export function stepCount(source: ImportSource): number {
+	return visibleSteps(source).length;
+}
+
+export function nextStepFor(step: WizardStep, source: ImportSource): WizardStep {
+	const route = visibleSteps(source);
+	const index = route.indexOf(step);
+	if (index === -1) return step;
+	return route[Math.min(index + 1, route.length - 1)];
+}
+
+export function previousStepFor(step: WizardStep, source: ImportSource): WizardStep {
+	const route = visibleSteps(source);
+	const index = route.indexOf(step);
+	if (index === -1) return step;
+	return route[Math.max(index - 1, 0)];
+}
+
+/**
+ * Why Back is refused on this step, or null when it is allowed.
+ *
+ * Deliberately symmetric with advanceRefusal: one function both gates the
+ * button and supplies its tooltip, so a disabled Back cannot disagree with
+ * the reason shown for it.
+ *
+ * Only two things refuse. The first step has nothing behind it. And a LIVE
+ * import cannot be walked away from: the job keeps running whatever the
+ * wizard shows, so a user who stepped back to 'confirm' and pressed Start
+ * again would be queueing a second import on top of the first. Once the job
+ * reaches a terminal state that stops being true and Back opens up again,
+ * which is what makes a failed import re-runnable instead of a dead end.
+ */
+export function backRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	if (step === 'welcome') return 'this is the first step';
+	if (step === 'progress' && ctx.job !== null && !TERMINAL.includes(ctx.job.status)) {
+		return `the import is running (${ctx.job.status}); it cannot be un-started by going back`;
+	}
+	return null;
 }
 
 /** Fatal blockers only. A missing share dir is reported, never a stopper. */
@@ -180,6 +243,8 @@ class SetupWizard {
 	 * this field exists to make impossible.
 	 */
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
+	folderCandidates = $state<FolderCandidates['candidates']>([]);
+	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -187,11 +252,33 @@ class SetupWizard {
 	}
 
 	next(): void {
-		this.goTo(nextStep(this.step));
+		this.goTo(nextStepFor(this.step, this.source));
 	}
 
-	back(): void {
-		this.goTo(previousStep(this.step));
+	/** Step backwards along THIS branch's route, or refuse and say why.
+	 *
+	 * The live job row is PASSED IN rather than read off this store, because
+	 * the row lives in jobsStore and keeping a second copy here would give the
+	 * UI two truths about one import. Callers that have no job pass nothing,
+	 * which is exactly the "nothing is running" case.
+	 *
+	 * The refusal is recorded on `error` rather than swallowed: a Back that
+	 * silently does nothing is the same dead control the wizard already had.
+	 */
+	back(job: Job | null = null): void {
+		const why = backRefusal(this.step, {
+			source: this.source,
+			detection: this.detection,
+			folderScan: this.folderScan,
+			job
+		});
+		if (why !== null) {
+			// 'this is the first step' is a statement of fact about a control
+			// that should have been disabled, not an error to shout about.
+			if (this.step !== 'welcome') this.error = why;
+			return;
+		}
+		this.goTo(previousStepFor(this.step, this.source));
 	}
 
 	/**
@@ -286,6 +373,34 @@ class SetupWizard {
 		this.source = source;
 		this.error = null;
 		if (source === 'rekordbox') this.folderScan = null;
+		if (source === 'folder') void this.loadFolderCandidates();
+	}
+
+	/** Load existing music folders worth suggesting. Fires once per wizard-open. */
+	async loadFolderCandidates(): Promise<void> {
+		if (
+			this.folderCandidatesState === 'loading' ||
+			this.folderCandidatesState === 'answered'
+		) {
+			return;
+		}
+		await capabilities.probe();
+		const refusal = setupRefusal();
+		if (refusal !== null) {
+			this.error = refusal;
+			this.folderCandidatesState = 'failed';
+			return;
+		}
+		this.folderCandidatesState = 'loading';
+		try {
+			const result = await getFolderCandidates();
+			this.folderCandidates = result.candidates ?? [];
+			this.error = null;
+			this.folderCandidatesState = 'answered';
+		} catch (exc) {
+			this.error = _message(exc);
+			this.folderCandidatesState = 'failed';
+		}
 	}
 
 	/** Look inside the typed folder. Never imports anything. */
@@ -419,6 +534,8 @@ class SetupWizard {
 		this.busy = false;
 		this.error = null;
 		this.detectState = 'idle';
+		this.folderCandidates = [];
+		this.folderCandidatesState = 'idle';
 	}
 }
 

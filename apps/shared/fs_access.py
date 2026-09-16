@@ -111,6 +111,29 @@ def probe_readable(path: Path) -> AccessProbe:
     )
 
 
+#: Folders under HOME worth offering as one-click setup suggestions, in
+#: priority order. Not every entry exists on every machine - the caller
+#: filters to what actually does.
+CANDIDATE_MUSIC_FOLDERS: list[Path] = [
+    HOME / "Music",
+    HOME / "Music" / "rekordbox",
+    HOME / "Music" / "Music" / "Media.localized",
+]
+
+
+def music_folder_candidates() -> list[AccessProbe]:
+    """Existing folders under HOME worth offering as setup suggestions.
+
+    Filtered to ``probe.exists`` only - a path that is not on this machine
+    is not a candidate, never a guess rendered as one. A candidate that
+    DOES exist but cannot be read (macOS TCC denial) is still returned,
+    with ``readable=False`` / ``denied=True`` / ``detail`` set, so the caller
+    can show it as refused rather than silently drop it.
+    """
+    probes = probe_all(CANDIDATE_MUSIC_FOLDERS)
+    return [probe for probe in probes if probe.exists]
+
+
 def music_root_access() -> list[AccessProbe]:
     """Probe every folder a library is expected to live under.
 
@@ -143,9 +166,11 @@ def denied_roots(probes: list[AccessProbe]) -> list[str]:
 
 
 __all__ = [
+    "CANDIDATE_MUSIC_FOLDERS",
     "GRANT_INSTRUCTIONS",
     "AccessProbe",
     "denied_roots",
+    "music_folder_candidates",
     "music_root_access",
     "probe_all",
     "probe_readable",

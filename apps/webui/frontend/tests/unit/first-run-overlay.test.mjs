@@ -287,9 +287,12 @@ test('the overlay is a labelled dialog hosting the wizard steps', () => {
 	assert.match(overlay, /role="dialog"/);
 	assert.match(overlay, /aria-modal="true"/);
 	assert.match(overlay, /aria-label="First-run setup"/);
-	// The steps are REUSED, not rewritten: same store, same step names.
+	// The steps are REUSED, not rewritten: same store, same step names. The
+	// overlay walks visibleSteps(source) rather than the raw list, because the
+	// folder branch skips the rekordbox confirm step; both come from the one
+	// wizard module, so there is still no second copy of the step names here.
 	assert.match(overlay, /from '\$lib\/setup\/wizard\.svelte'/);
-	assert.match(overlay, /WIZARD_STEPS/);
+	assert.match(overlay, /visibleSteps\(source\)/);
 	assert.match(overlay, /setupWizard\.beginImport/);
 	assert.match(overlay, /setupWizard\.beginFolderImport/);
 });

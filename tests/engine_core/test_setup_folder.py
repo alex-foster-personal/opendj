@@ -491,6 +491,78 @@ def test_permissions_reports_every_probed_root(client: TestClient) -> None:
         }
 
 
+# ----- music folder candidates --------------------------------------------
+
+
+def test_music_folder_candidates_returns_only_existing_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    music = tmp_path / "Music"
+    music.mkdir()
+    missing = tmp_path / "Music" / "Music" / "Media.localized"
+    candidates_list = [
+        tmp_path / "Music",
+        tmp_path / "Music" / "rekordbox",
+        tmp_path / "Music" / "Music" / "Media.localized",
+    ]
+    monkeypatch.setattr(fs_access, "HOME", tmp_path)
+    monkeypatch.setattr(fs_access, "CANDIDATE_MUSIC_FOLDERS", candidates_list)
+
+    candidates = fs_access.music_folder_candidates()
+    paths = [probe.path for probe in candidates]
+
+    assert str(music) in paths
+    assert str(missing) not in paths
+    music_probe = next(probe for probe in candidates if probe.path == str(music))
+    assert music_probe.readable is True
+    assert music_probe.denied is False
+
+
+@pytest.mark.skipif(
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
+)
+def test_music_folder_candidates_keeps_denied_paths_visible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unreadable: Path
+) -> None:
+    blocked_home = unreadable.parent
+    monkeypatch.setattr(fs_access, "HOME", blocked_home)
+    monkeypatch.setattr(
+        fs_access,
+        "CANDIDATE_MUSIC_FOLDERS",
+        [blocked_home / "blocked"],
+    )
+
+    candidates = fs_access.music_folder_candidates()
+    paths = [probe.path for probe in candidates]
+    assert str(unreadable) in paths
+    denied_probe = next(probe for probe in candidates if probe.path == str(unreadable))
+    assert denied_probe.readable is False
+    assert denied_probe.denied is True
+    assert denied_probe.detail
+
+
+def test_music_folders_endpoint_never_fabricates_a_missing_path(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    music = tmp_path / "Music"
+    music.mkdir()
+    missing = tmp_path / "Music" / "rekordbox"
+    candidates_list = [
+        tmp_path / "Music",
+        tmp_path / "Music" / "rekordbox",
+        tmp_path / "Music" / "Music" / "Media.localized",
+    ]
+    monkeypatch.setattr(fs_access, "HOME", tmp_path)
+    monkeypatch.setattr(fs_access, "CANDIDATE_MUSIC_FOLDERS", candidates_list)
+
+    body = client.get(f"{API}/detect/music-folders").json()
+    paths = [candidate["path"] for candidate in body["candidates"]]
+
+    assert str(music) in paths
+    assert str(missing) not in paths
+
+
 # ----- argv ---------------------------------------------------------------
 def test_folder_mode_argv_carries_every_root() -> None:
     argv = build_argv(

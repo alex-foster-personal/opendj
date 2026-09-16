@@ -3944,6 +3944,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup/detect/music-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Music Folder Candidates
+         * @description Existing folders under HOME worth suggesting, before typing a path.
+         *
+         *     Never a guess: only paths that exist on this machine are returned, and
+         *     a candidate macOS refuses to list is still reported, marked denied,
+         *     rather than silently omitted.
+         */
+        get: operations["music_folder_candidates_api_v1_setup_detect_music_folders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/setup/detect/rekordbox": {
         parameters: {
             query?: never;
@@ -8105,6 +8129,15 @@ export interface components {
             owned: number;
             /** Unowned */
             unowned: number;
+        };
+        /**
+         * FolderCandidatesOut
+         * @description Existing folders under the user's home worth offering as one-click
+         *     setup suggestions, instead of making them type a path blind.
+         */
+        FolderCandidatesOut: {
+            /** Candidates */
+            candidates?: components["schemas"]["AccessProbeOut"][];
         };
         /**
          * FolderImportIn
@@ -20746,6 +20779,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    music_folder_candidates_api_v1_setup_detect_music_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderCandidatesOut"];
                 };
             };
         };

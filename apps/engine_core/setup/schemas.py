@@ -76,6 +76,13 @@ class PermissionsOut(BaseModel):
     how_to_grant: str
 
 
+class FolderCandidatesOut(BaseModel):
+    """Existing folders under the user's home worth offering as one-click
+    setup suggestions, instead of making them type a path blind."""
+
+    candidates: list[AccessProbeOut] = Field(default_factory=list)
+
+
 class LastImportOut(BaseModel):
     """What the previous rekordbox import did. Mirrors ``ImportOutcome``.
 
@@ -271,6 +278,7 @@ class StemsSetupOut(BaseModel):
 __all__ = [
     "AccessProbeOut",
     "FileProbeOut",
+    "FolderCandidatesOut",
     "FolderImportIn",
     "FolderLastImportOut",
     "FolderScanOut",
