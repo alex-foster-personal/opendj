@@ -7,9 +7,14 @@ import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
 import { applyAnlzCaps } from '$lib/components/rb/wave/anlz-cache-caps';
 import {
 	mapPrefToTier,
+	SCALERS,
 	setResolvedTier,
 	type PerfTierName
 } from '$lib/rb/perf-tier';
+
+function _isPerfTierName(value: unknown): value is PerfTierName {
+	return typeof value === 'string' && Object.hasOwn(SCALERS, value);
+}
 
 function _applyTierCaps(): void {
 	applyPrefetchCaps();
@@ -50,6 +55,12 @@ export async function fetchPerfTier(): Promise<void> {
 		return;
 	}
 	const body = (await response.json()) as PerfTierResponse;
+	if (!_isPerfTierName(body?.tier)) {
+		throw new Error(
+			`perf-tier: 200 from ${PERF_TIER_PATH} carried no valid tier ` +
+				`(expected one of ${Object.keys(SCALERS).join(', ')}); body: ${JSON.stringify(body)}`
+		);
+	}
 	setResolvedTier(
 		body.tier,
 		body.source,

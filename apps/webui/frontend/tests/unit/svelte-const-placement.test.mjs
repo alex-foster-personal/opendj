@@ -27,8 +27,12 @@ test('no Svelte file places {@const} directly under <td>', () => {
 	assert.deepEqual(hits, [], `const_tag_invalid_placement in: ${hits.join(', ')}`);
 });
 
-test('TrackTable cloud cell wraps {@const} in {#if row}', () => {
+// #2425 (f82275752) hoisted cloudView out of the cell to the first child of
+// the row {#each}, which is a legal {@const} placement, so the cell no longer
+// needs its own {#if row} wrapper.
+test('TrackTable cloudView {@const} sits directly under the row {#each}, never under <td>', () => {
 	const text = readFileSync(join(SRC, 'lib/components/rb/browser/TrackTable.svelte'), 'utf8');
-	assert.match(text, /<td class="c-cloud">\s*\{#if row\}\s*\{@const cloudView/);
+	assert.match(text, /\{#each visibleRows as row, i \([^\n]*\)\}\s*\{@const cloudView = trackCloudView\(/);
 	assert.doesNotMatch(text, /<td class="c-cloud">\s*\{@const cloudView/);
+	assert.match(text, /<td class="c-cloud">\s*\{#if cloudView\.showIcon\}/, 'the cloud cell must read the hoisted cloudView');
 });

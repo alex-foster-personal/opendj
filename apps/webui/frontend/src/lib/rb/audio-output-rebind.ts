@@ -67,8 +67,20 @@ export const REBIND_COOLDOWN_MS = 10_000;
 
 export interface RebindableAudioContext {
 	readonly state: string;
+	/** `AudioContext.sinkId`: '' (or absent) follows the system default; a device id is pinned. */
+	readonly sinkId?: unknown;
 	suspend(): Promise<void>;
 	resume(): Promise<void>;
+}
+
+/**
+ * A context pinned with `setSinkId` keeps its device when the macOS default
+ * output changes, so a `devicechange` is not a reason to cycle it. Tue 15 Sep
+ * 2026: switching the Mac output to check Spotify suspended a context pinned to
+ * LG ULTRAWIDE and raised a wall of stall/suspend toasts. Stalls still cycle.
+ */
+function contextFollowsSystemDefault(ctx: RebindableAudioContext): boolean {
+	return ctx.sinkId === undefined || ctx.sinkId === '';
 }
 
 export interface RebindEffects {
@@ -237,6 +249,14 @@ export function installOutputRebind(
 	}
 
 	const onDeviceChange = (): void => {
+		if (!contextFollowsSystemDefault(ctx)) {
+			effects.recordPerfEvent(
+				'audio-output-rebind-skipped',
+				'output device changed while the context is pinned to a device; not cycled',
+				'info'
+			);
+			return;
+		}
 		void request('output device changed');
 	};
 	const onStall: StallListener = (deck) => {

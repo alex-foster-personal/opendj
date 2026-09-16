@@ -44,9 +44,15 @@ from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, T
 #: existing test contract that predates the module split.
 log = logging.getLogger("apps.sync_hub.engine")
 
-#: The two columns the merge orders a stored row by. Read together so one
-#: SELECT serves both the sort key and the fault check.
+#: Columns the merge orders a stored row by. Read together so one SELECT
+#: serves both the sort key and the fault check.
 _STAMP_COLUMNS: tuple[str, str] = (protocol.UPDATED_AT, protocol.ORIGIN_DEVICE_ID)
+
+
+def _stamp_columns_for(table: str) -> tuple[str, ...]:
+    if table == protocol.TRACK_FIELDS_TABLE:
+        return _STAMP_COLUMNS + (protocol.MODIFIED_AT,)
+    return _STAMP_COLUMNS
 
 
 def _as_text(value: object) -> str | None:
@@ -115,28 +121,28 @@ class _Resolution:
 
 def _stored_stamps(
     conn: sqlite3.Connection, spec: TableSpec, pk: Sequence[str]
-) -> tuple[Any, Any] | None:
-    """The ``(updated_at, origin_device_id)`` stored at ``pk``, or None.
+) -> tuple[Any, ...] | None:
+    """Stamp columns stored at ``pk``, or None.
 
     One read serving both :func:`_sort_key_of` and :func:`_faults_of`, so
     quarantining costs no extra query on the apply path.
     """
+    columns = _stamp_columns_for(spec.name)
     return conn.execute(
-        f"SELECT {protocol.UPDATED_AT}, {protocol.ORIGIN_DEVICE_ID} "
-        f"FROM {spec.name} WHERE {_pk_predicate(spec)}",
+        f"SELECT {', '.join(columns)} FROM {spec.name} WHERE {_pk_predicate(spec)}",
         tuple(pk),
     ).fetchone()
 
 
-def _sort_key_of(stored: Sequence[Any]) -> tuple[str, str]:
+def _sort_key_of(table: str, stored: Sequence[Any]) -> tuple[str, str]:
     """Pure key. Only valid once :func:`_faults_of` came back empty."""
-    return protocol.lww_key(
-        {protocol.UPDATED_AT: stored[0], protocol.ORIGIN_DEVICE_ID: stored[1]}
-    )
+    columns = _stamp_columns_for(table)
+    values = {column: stored[index] for index, column in enumerate(columns)}
+    return protocol.lww_key(values, table=table)
 
 
 def _faults_of(table: str, stored: Sequence[Any]) -> tuple[protocol.StampFault, ...]:
-    return protocol.stored_stamp_faults(table, _STAMP_COLUMNS, stored)
+    return protocol.stored_stamp_faults(table, _stamp_columns_for(table), stored)
 
 
 def _membership_faults(
@@ -648,11 +654,11 @@ def _resolve_against_stored(
                     incoming_hash,
                     stored_hash,
                     change.sort_key,
-                    _sort_key_of(stored),
+                    _sort_key_of(spec.name, stored),
                 )
         if hub_authoritative:
             return _Resolution(loses=False)
-        return _Resolution(loses=change.sort_key <= _sort_key_of(stored))
+        return _Resolution(loses=change.sort_key <= _sort_key_of(spec.name, stored))
     return _resolve_against_duplicates(
         conn, spec, change, conflict_pks, hub_authoritative=hub_authoritative
     )
@@ -683,7 +689,7 @@ def _resolve_against_duplicates(
         if row_faults:
             faults.extend(row_faults)
             continue
-        keys.append((tuple(pk), _sort_key_of(stored)))
+        keys.append((tuple(pk), _sort_key_of(spec.name, stored)))
     if faults:
         return _Resolution(loses=False, faults=tuple(faults))
     if hub_authoritative:

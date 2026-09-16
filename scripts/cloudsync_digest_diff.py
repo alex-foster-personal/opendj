@@ -11,8 +11,9 @@ import sys
 from pathlib import Path
 
 from apps.shared.state import db as state_db
+from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
-from apps.sync_hub import digest_diff, protocol
+from apps.sync_hub import digest_diff, protocol, wire_version
 from apps.sync_hub.client_transport_ops import _local_machine_row, state_db_path
 from apps.sync_hub.transport import HttpTransport
 
@@ -46,8 +47,8 @@ def main() -> int:
         "/api/v1/sync/hello",
         {
             "machine": local_machine.to_wire(),
-            "schema_version": 14,
-            "wire_version": 4,
+            "schema_version": state_schema.SCHEMA_VERSION,
+            "wire_version": wire_version.WIRE_VERSION,
             "capabilities": [],
             "machines": [],
         },

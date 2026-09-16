@@ -120,7 +120,7 @@ test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps 
 	assert.match(source, /pinOnClick/);
 	assert.match(source, /resetValue=\{0\}/);
 	assert.match(source, /headphoneMixAccent/);
-	assert.match(source, /First select of Bluetooth/);
+	assert.match(source, /Press CALIBRATE afterwards/, 'CUEOUT-14: the cue pick explains the modal, not the removed first-select chirp');
 	assert.match(source, /cannot be interrupted/);
 	assert.match(source, /CUEOUT-12/);
 	assert.doesNotMatch(source, />\+ OUT</);

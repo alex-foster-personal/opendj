@@ -14,6 +14,15 @@
   --warning: #e8a13a;
   --border: #1c222c;
   --surface: #121720;
+  /* PerformanceAppNav (issue #3097): fixed bottom-left, `<nav>` outside
+     `.perf-root`'s own scope (a sibling in +layout.svelte, so theme.css's
+     .perf-root-scoped vars can't reach it) - defined here instead so both
+     the nav and BrowserPanel's `.bottom-bar` share one width. Measured
+     rendered width is ~214px (5 links + gaps + padding); rounded up with a
+     buffer so a future label edit doesn't silently reopen the overlap -
+     tests/e2e/performance-app-nav-overlap.spec.ts is the real regression
+     guard, not this number. */
+  --rb-perf-nav-w: 232px;
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text",
     "Segoe UI", Roboto, sans-serif;

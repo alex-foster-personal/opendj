@@ -21,6 +21,12 @@
 		align-items: center;
 		gap: 8px;
 		height: 18px;
+		/* Rendered width (~214px) must stay under --rb-perf-nav-w (app.css) -
+		   BrowserPanel's .bottom-bar reserves that width so its own content
+		   (issue #3097's "open dj" wordmark) never renders underneath this
+		   fixed overlay. Keep this nav short and single-line; if it grows,
+		   grow --rb-perf-nav-w to match and let the overlap e2e prove it. */
+		max-width: var(--rb-perf-nav-w);
 		padding: 0 8px;
 		white-space: nowrap;
 		pointer-events: auto;

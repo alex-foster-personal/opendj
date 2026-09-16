@@ -150,6 +150,7 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
     (
         (MACOS_DESKTOP_COMPILE, "desktop-compile"),
         (MACOS_PACKAGING, "packaging"),
+        (MACOS_PACKAGING, "launcher-packaging"),
         (MACOS_NATIVE_COMPANION, "macos-native-companion"),
     ),
 )

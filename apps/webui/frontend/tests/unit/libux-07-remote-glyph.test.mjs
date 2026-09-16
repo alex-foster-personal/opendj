@@ -31,8 +31,17 @@ const cloudCell = template.slice(
 	template.indexOf('td class="c-order"')
 );
 
+// 00a092243 hoisted `{@const cloudView = trackCloudView(...)}` out of the
+// <td> (Svelte only allows {@const} as a direct child of a block) to the top of
+// the row's {#each}; the cell renders from that per-row view.
+const rowCloudView = template.slice(
+	template.indexOf('{@const cloudView = trackCloudView({'),
+	template.indexOf('<tr', template.indexOf('{@const cloudView = trackCloudView({'))
+);
+
 test('the cloud-presence glyph lives in the existing LHS status cell, not a new column', () => {
-	assert.match(cloudCell, /row\.has_remote_copy/);
+	assert.match(rowCloudView, /row\.has_remote_copy/);
+	assert.match(cloudCell, /cloudView\./);
 	assert.match(cloudCell, /class="cloud-copy"/);
 	assert.doesNotMatch(template, /class="c-remote"/);
 });

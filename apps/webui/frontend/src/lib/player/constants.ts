@@ -195,3 +195,48 @@ export function headDelaySeconds(ms: number): number {
 	assertHeadDelayMs(ms);
 	return ms / 1000;
 }
+
+/** Room (MASTER) delay contract (CUEOUT-14). Inclusive. Bluetooth phones run
+ * 500-1000 ms behind the room; 1500 leaves headroom without letting a typo
+ * park the room seconds late. The DelayNode itself is a 2 s line. */
+export const MASTER_DELAY_MAX_MS = 1500;
+
+export function assertMasterDelayMs(value: unknown): asserts value is number {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > MASTER_DELAY_MAX_MS) {
+		throw new RangeError(`master delay must be a finite number within 0..${MASTER_DELAY_MAX_MS}, got ${String(value)}`);
+	}
+}
+
+export function masterDelaySeconds(ms: number): number {
+	assertMasterDelayMs(ms);
+	return ms / 1000;
+}
+
+/** Legal `HeadphoneState.output_mode` values. Lives in this leaf (not
+ * headphones.ts) so the alignment policy module can validate a mode without
+ * importing the monitor graph it is itself imported by. */
+export const HEADPHONE_OUTPUT_MODES = ['practice', 'two_outputs', 'split_cable'] as const;
+export type HeadphoneOutputMode = (typeof HEADPHONE_OUTPUT_MODES)[number];
+
+export function assertHeadphoneOutputMode(mode: unknown): asserts mode is HeadphoneOutputMode {
+	if (!HEADPHONE_OUTPUT_MODES.includes(mode as HeadphoneOutputMode)) {
+		throw new TypeError(
+			`headphone output_mode must be practice, two_outputs, or split_cable; got ${String(mode)}`
+		);
+	}
+}
+
+/** How a measured cue/master offset is split between HEAD DELAY and the room
+ * delay (CUEOUT-14). `headphones_only` is the Mixxx / Serato / rekordbox
+ * behaviour; `delay_all` also delays the room; `hybrid` (default) delays the
+ * phones when they are ahead and the room when they are behind. */
+export const HEADPHONE_ALIGNMENT_MODES = ['headphones_only', 'delay_all', 'hybrid'] as const;
+export type HeadphoneAlignmentMode = (typeof HEADPHONE_ALIGNMENT_MODES)[number];
+
+export function assertHeadphoneAlignmentMode(mode: unknown): asserts mode is HeadphoneAlignmentMode {
+	if (!HEADPHONE_ALIGNMENT_MODES.includes(mode as HeadphoneAlignmentMode)) {
+		throw new TypeError(
+			`headphone alignment_mode must be headphones_only, delay_all, or hybrid; got ${String(mode)}`
+		);
+	}
+}

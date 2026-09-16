@@ -18,13 +18,15 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from '$lib/rb/mixer-types';
+	import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from '$lib/rb/mixer-types';
+	import { cueAlignModal, openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
+	import CueAlignModal from './mixer/CueAlignModal.svelte';
 
 	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
 	 * 4 entries, MORE or LESS - pin 862cd3's LESS mode collapses strips 3/4
@@ -117,6 +119,11 @@
 
 	function handleHeadDelay(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'head_delay_ms', value });
+	}
+
+	/** CUEOUT-14: the modal's mode radios; same command as POST /headphones/alignment-mode. */
+	function handleAlignmentMode(value: HeadphoneAlignmentMode): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_alignment_mode', value });
 	}
 
 	function refreshHeadphoneOutputs(): void {
@@ -223,6 +230,7 @@
 				onmaster={selectMasterOutput}
 				oninput={selectAudioInput}
 				onmode={handleHeadphoneOutputMode}
+				oncalibrate={openCueAlignModal}
 			/>
 		</div>
 		<div class="xfade-row">
@@ -233,6 +241,10 @@
 	</div>
 </section>
 
+{#if cueAlignModal.open}
+	<CueAlignModal headphones={mixerState.headphones} onmode={handleAlignmentMode} />
+{/if}
+
 <style>
 	.rb-mixer {
 		grid-area: mixer;
@@ -240,7 +252,9 @@
 		flex-direction: column;
 		min-height: 0;
 		padding: 6px 6px 4px;
-		overflow: hidden;
+		/* clip, not hidden: a hidden box is still programmatically scrollable, and
+		 * focusing a wide two-outputs headphone row scrolled it ~82px sideways. */
+		overflow: clip;
 	}
 	/* Pin 246b0f5: "MORE/LESS toggle is too big ... pushing EQs down" -
 	 * shrunk from padding-bottom 4px + 10px/2px-10px buttons (~22px tall)
@@ -312,6 +326,7 @@
 	.hp-row {
 		display: flex;
 		justify-content: flex-start;
+		min-width: 0;
 	}
 	.xfade-row {
 		display: flex;

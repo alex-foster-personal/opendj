@@ -66,6 +66,14 @@ export interface PresentedTransportTimeline {
 	desired_revision: number;
 	presented_revision: number;
 	last_presentation_context_time_s: number | null;
+	/**
+	 * CUEOUT-14: the instant the last accepted frame was PRESENTED at, which is
+	 * `last_presentation_context_time_s` minus the room delay (or the render
+	 * clock when a raised lag degraded the frame). Schedule pruning keys off
+	 * this, never off the raw clock, so a schedule the room has not heard yet
+	 * survives until it has.
+	 */
+	last_presented_instant_s: number | null;
 	last_presentation_performance_time_ms: number | null;
 	/**
 	 * When the output timestamp was first seen to stop advancing, on the
@@ -209,6 +217,7 @@ export function createPresentedTransportTimeline(
 		desired_revision: 0,
 		presented_revision: 0,
 		last_presentation_context_time_s: null,
+		last_presented_instant_s: null,
 		last_presentation_performance_time_ms: null,
 		output_frozen_since_ms: null,
 		schedules: []
@@ -276,7 +285,7 @@ export function acknowledgePresentedTransportSchedule(
 		keyShiftSemitones,
 		supersededByRevision
 	});
-	_prunePresentedTransportSchedules(timeline);
+	_prunePresentedTransportSchedules(timeline, timeline.last_presented_instant_s);
 }
 
 function _laterPresentedSchedule(
@@ -310,8 +319,13 @@ export function _effectivePresentedScheduleAt(
 	return selected;
 }
 
-function _prunePresentedTransportSchedules(timeline: PresentedTransportTimeline): void {
-	const presentedAt = timeline.last_presentation_context_time_s;
+/** `presentedAt` is the instant the frame was PRESENTED at (the lagged one,
+ * CUEOUT-14), never the raw output clock: pruning at the raw clock would drop
+ * a schedule the room has not heard yet and paint the paused cursor next frame. */
+function _prunePresentedTransportSchedules(
+	timeline: PresentedTransportTimeline,
+	presentedAt: number | null
+): void {
 	const effective =
 		presentedAt === null ? null : _effectivePresentedScheduleAt(timeline, presentedAt);
 	timeline.schedules = timeline.schedules.filter(
@@ -319,6 +333,30 @@ function _prunePresentedTransportSchedules(timeline: PresentedTransportTimeline)
 			schedule.supersededByRevision === null &&
 			(presentedAt === null || schedule === effective || schedule.startContextTime > presentedAt)
 	);
+}
+
+/**
+ * CUEOUT-14: the instant the ROOM is hearing when the render clock reads
+ * `clockTime`. Normally `clockTime - presentationLagSec`. A lag RAISED mid-play
+ * can point that instant before every surviving schedule (the older ones were
+ * pruned while the lag was smaller): rather than blip to the paused cursor, or
+ * regress the presented revision, such a frame degrades to the render clock,
+ * which is exactly what every frame did before the lag existed. A schedule
+ * that has crossed the render clock but was never presented stays pending -
+ * that is the lag doing its job, not a degradation.
+ */
+function _presentationInstant(
+	timeline: PresentedTransportTimeline,
+	clockTime: number,
+	presentationLagSec: number
+): number {
+	if (presentationLagSec === 0) return clockTime;
+	const lagged = clockTime - presentationLagSec;
+	const atLag = _effectivePresentedScheduleAt(timeline, lagged);
+	if (atLag !== null && atLag.revision >= timeline.presented_revision) return lagged;
+	const atClock = _effectivePresentedScheduleAt(timeline, clockTime);
+	if (atClock === null || atClock.revision > timeline.presented_revision) return lagged;
+	return clockTime;
 }
 
 function _presentedObservation(
@@ -396,10 +434,18 @@ export function observePresentedTransportTimeline(
 	timeline: PresentedTransportTimeline,
 	outputTimestamp: { contextTime: number; performanceTime: number },
 	durationSec: number,
-	sampleClockTimeS?: number
+	sampleClockTimeS?: number,
+	presentationLagSec = 0
 ): PresentedTransportObservation {
 	if (!Number.isFinite(durationSec) || durationSec <= 0) {
 		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
+	}
+	// CUEOUT-14: the room delay line sits after every clock this function reads,
+	// so what the room hears is this many seconds behind the render clock.
+	if (!Number.isFinite(presentationLagSec) || presentationLagSec < 0) {
+		throw new RangeError(
+			`presentation lag must be finite and non-negative seconds, got ${presentationLagSec}`
+		);
 	}
 	const { contextTime, performanceTime } = outputTimestamp;
 	// contextTime IS transport authority, so it keeps failing fast: a playhead
@@ -462,15 +508,21 @@ export function observePresentedTransportTimeline(
 	// timestamp is still "usable" arithmetic, but using it is precisely what
 	// paints the identical frame forever.
 	if (fallbackTime === null && outputUsable) {
-		_applyPresentedAt(timeline, contextTime, durationSec);
+		const presentedAt = _presentationInstant(timeline, contextTime, presentationLagSec);
+		_applyPresentedAt(timeline, presentedAt, durationSec);
 		timeline.last_presentation_context_time_s = contextTime;
+		timeline.last_presented_instant_s = presentedAt;
 		if (clockMs !== null) timeline.last_presentation_performance_time_ms = clockMs;
-		_prunePresentedTransportSchedules(timeline);
+		_prunePresentedTransportSchedules(timeline, presentedAt);
 		return _presentedObservation(timeline, true, true, clockStalled, 'output');
 	}
 
 	if (fallbackTime !== null) {
-		_applyPresentedAt(timeline, fallbackTime, durationSec);
+		_applyPresentedAt(
+			timeline,
+			_presentationInstant(timeline, fallbackTime, presentationLagSec),
+			durationSec
+		);
 		if (clockMs !== null) timeline.last_presentation_performance_time_ms = clockMs;
 		// last_presentation_context_time_s is deliberately NOT advanced: it is the
 		// last value the output clock was TRUSTED at, and it is what recovery is

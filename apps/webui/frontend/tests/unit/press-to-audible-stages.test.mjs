@@ -249,8 +249,9 @@ test('an implausible press delta is recorded loudly and dropped, never logged', 
 });
 
 test('the three press paths forward their stamp into the schedule', () => {
+	// e9493db18 (#2704) added startAtContextSec to play(); the anchor follows the signature.
 	for (const anchor of [
-		'async play(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+		'async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {',
 		'async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {'
 	]) {

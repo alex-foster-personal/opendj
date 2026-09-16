@@ -6855,6 +6855,68 @@
         "title": "HashPendingResponse",
         "type": "object"
       },
+      "HeadphoneCalibrationOut": {
+        "description": "CUEOUT-14 calibration progress; `step` is the modal's state machine.",
+        "properties": {
+          "cue_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cue Latency Ms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "master_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Latency Ms"
+          },
+          "offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Ms"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "cue_latency_ms",
+          "master_latency_ms",
+          "offset_ms",
+          "error"
+        ],
+        "title": "HeadphoneCalibrationOut",
+        "type": "object"
+      },
       "HeadphoneOutputDeviceOut": {
         "properties": {
           "id": {
@@ -6878,6 +6940,13 @@
           "active": {
             "title": "Active",
             "type": "boolean"
+          },
+          "alignment_mode": {
+            "title": "Alignment Mode",
+            "type": "string"
+          },
+          "calibration": {
+            "$ref": "#/components/schemas/HeadphoneCalibrationOut"
           },
           "error": {
             "anyOf": [
@@ -6903,6 +6972,10 @@
           },
           "level": {
             "title": "Level",
+            "type": "number"
+          },
+          "master_delay_ms": {
+            "title": "Master Delay Ms",
             "type": "number"
           },
           "mix": {
@@ -6962,6 +7035,9 @@
           "mix",
           "level",
           "head_delay_ms",
+          "alignment_mode",
+          "master_delay_ms",
+          "calibration",
           "selected_output_device_id",
           "selected_master_output_device_id",
           "selected_input_device_id",
@@ -17096,6 +17172,17 @@
             "minLength": 64,
             "title": "Canonical Hex",
             "type": "string"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
           },
           "origin_device_id": {
             "anyOf": [
@@ -27761,6 +27848,94 @@
         ]
       }
     },
+    "/api/v1/performance/headphones/alignment-mode": {
+      "post": {
+        "description": "CUEOUT-14: headphones_only, delay_all, or hybrid. Re-applies the last\ncalibration without re-measuring.",
+        "operationId": "post_headphone_alignment_mode_api_v1_performance_headphones_alignment_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneAlignmentModeBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after switching how the cue/master offset is split"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Alignment Mode",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/calibrate": {
+      "post": {
+        "description": "CUEOUT-14: run the mic calibration headlessly (no ear-cup pause). The\ncall holds until the run reaches applied (200) or failed (400 with the\npage's error); an abort resolves with the state at idle.",
+        "operationId": "post_headphone_calibrate_api_v1_performance_headphones_calibrate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after a headless cue alignment calibration"
+          }
+        },
+        "summary": "Post Headphone Calibrate",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/calibrate/abort": {
+      "post": {
+        "description": "CUEOUT-14: stop a running calibration; decks resume, nothing is applied.",
+        "operationId": "post_headphone_calibrate_abort_api_v1_performance_headphones_calibrate_abort_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after aborting an in-flight calibration"
+          }
+        },
+        "summary": "Post Headphone Calibrate Abort",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
     "/api/v1/performance/headphones/channel-cue": {
       "post": {
         "operationId": "post_channel_cue_api_v1_performance_headphones_channel_cue_post",
@@ -27928,6 +28103,50 @@
           }
         },
         "summary": "Post Headphone Level",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/master-delay": {
+      "post": {
+        "description": "CUEOUT-14: room delay line, 0..1500 ms, the last node before the output.",
+        "operationId": "post_master_delay_ms_api_v1_performance_headphones_master_delay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneMasterDelayBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after setting the room (MASTER) delay"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Master Delay Ms",
         "tags": [
           "performance-headphones"
         ]

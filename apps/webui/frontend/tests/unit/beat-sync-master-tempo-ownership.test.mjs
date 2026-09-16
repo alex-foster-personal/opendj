@@ -202,8 +202,14 @@ test('the sync command re-reads follower ownership after its awaits, before plan
 });
 
 test('pressing MASTER moves the role before the re-anchor, and puts it back if the lock is refused', () => {
-	const body = engineBlockAfter('async setDeckMaster(deck: DeckId): Promise<void> {');
-	const assignAt = body.lastIndexOf('_assignMaster(deck);');
+	// Re-pointed after 0a8631e82 "fix: unlock and resume locked paused Beat Sync MASTER
+	// (DECKUX-17, #320)": setDeckMaster gained `options?: { lock?: boolean }` and
+	// _assignMaster a 'manual' reason. The paused path assigns earlier and returns, so
+	// lastIndexOf still lands on the audible path's assignment ahead of the re-anchor.
+	const body = engineBlockAfter(
+		'async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {'
+	);
+	const assignAt = body.lastIndexOf("_assignMaster(deck, 'manual');");
 	const syncAt = body.indexOf('await _synchronizeFollowers(deck, followers');
 	assert.notEqual(assignAt, -1);
 	assert.notEqual(syncAt, -1);
