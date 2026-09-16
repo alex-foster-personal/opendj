@@ -443,3 +443,30 @@ def test_a_run_payload_carrying_its_head_repository_is_parsed() -> None:
         }
     )
     assert run.head_repo_owner == "a-contributor"
+
+
+def test_a_branch_name_carrying_a_query_delimiter_is_encoded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sol's second P1 on #3289. `&` legally appears in a git branch name; interpolated raw
+    it starts a new query parameter, so the filter asks about a different branch, finds
+    nothing, and the sweep cancels a live run. `+` is as bad and quieter: it decodes to a
+    space."""
+    asked: list[str] = []
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    mod._open_pr_count("maintainer", "af--a&state=closed+b")
+    assert asked == [
+        f"repos/{mod.REPO}/pulls"
+        "?state=open&head=maintainer:af--a%26state%3Dclosed%2Bb&per_page=1"
+    ]
+
+
+def test_an_ordinary_branch_name_is_left_readable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The control: `:` and `-` carry the head filter's own syntax and must not be escaped,
+    or every ordinary branch stops matching and the sweep cancels everything."""
+    asked: list[str] = []
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    mod._open_pr_count("maintainer", "af--ci-watch")
+    assert asked == [
+        f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--ci-watch&per_page=1"
+    ]

@@ -44,6 +44,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from urllib.parse import quote
 
 try:
     from scripts.ci_health_core import (
@@ -320,9 +321,12 @@ def _open_pr_count(head_repo_owner: str, branch: str) -> int:
     returns nothing, reads as "no open pull request", and cancels a live run: the one
     thing the reopened-pull-request contract exists to prevent.
     """
-    payload = _gh_api_json(
-        f"repos/{REPO}/pulls?state=open&head={head_repo_owner}:{branch}&per_page=1"
-    )
+    # A branch name may legally contain `&`, `+` or `#`. Interpolated raw, `&` starts a new
+    # query parameter and `+` decodes to a space, so the filter asks about a DIFFERENT branch,
+    # finds nothing, and the sweep cancels a live run. `:` is left literal because the head
+    # filter's own syntax is `owner:branch`.
+    head = f"{quote(head_repo_owner, safe='')}:{quote(branch, safe='')}"
+    payload = _gh_api_json(f"repos/{REPO}/pulls?state=open&head={head}&per_page=1")
     if not isinstance(payload, list):
         raise PreconditionError(f"open pulls for {branch} was not a list: {payload!r}")
     return len(payload)
