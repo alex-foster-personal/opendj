@@ -1,5 +1,7 @@
 """Worker branch provenance and PR scope guard tests.
 
+[if] a worker branch inherits unpublished primary commits [then] fail before review, [else stop].
+
 Acceptance:
   - [if] the primary checkout is ahead of its origin base [then] preflight fails loudly.
   - [if] a worker worktree is created [then] it starts exactly at the requested base ref.
