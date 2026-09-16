@@ -49,13 +49,22 @@
 #        Accepted [then] an un-notarized dmg ships as notarized -> broken
 #   [if] `notarize` leaves the dmg unstapled [then] a tester offline at first
 #        launch is refused by Gatekeeper -> broken
+#   [if] `payload` signs the interpreter without
+#        apps/desktop/src-tauri/Entitlements.engine.plist [then] every numba
+#        JIT, so all of Open DJ's own analysis, is SIGKILLed -> broken
+#   [if] `payload` reports success while a numba JIT under the SIGNED
+#        interpreter does not run [then] broken
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
+ENGINE_JIT_ENTITLEMENT="com.apple.security.cs.allow-unsigned-executable-memory"
 
 # macho_files / macho_count. Shared with scripts/ship_appstore.sh so the two
 # signing paths cannot disagree about which files are Mach-O.
 # shellcheck source=scripts/lib/macho.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/macho.sh"
+. "$SCRIPT_DIR/lib/macho.sh"
 
 #----- helpers ------------------------------------------------------------
 
@@ -114,8 +123,49 @@ cmd_payload() {
         codesign --force --timestamp --options runtime \
         --sign "$MDT_MACOS_SIGNING_IDENTITY" ||
         die "codesign failed inside the payload; the outer bundle would have been sealed around an unsigned Mach-O"
+    _sign_engine_executables "$payload"
+    _prove_signed_engine_can_jit "$payload"
     elapsed=$(($(date +%s) - started))
     ok "payload signed, $count files in ${elapsed}s"
+}
+
+# Re-sign the payload's Mach-O EXECUTABLES with the engine entitlements. The
+# pass above signs every Mach-O without entitlements, which is right for the
+# libraries; an executable is the one place macOS reads them from.
+_sign_engine_executables() {
+    local payload="$1" exe exes=0
+    [ -f "$ENGINE_ENTITLEMENTS" ] || die "no engine entitlements at $ENGINE_ENTITLEMENTS"
+    while IFS= read -r -d '' exe; do
+        case "$(file -b "$exe")" in
+        *executable*)
+            codesign --force --timestamp --options runtime \
+                --entitlements "$ENGINE_ENTITLEMENTS" \
+                --sign "$MDT_MACOS_SIGNING_IDENTITY" "$exe" ||
+                die "codesign failed applying the engine entitlements to $exe"
+            codesign -d --entitlements - --xml "$exe" 2>/dev/null | grep -q "$ENGINE_JIT_ENTITLEMENT" ||
+                die "$exe was signed but does not carry $ENGINE_JIT_ENTITLEMENT"
+            exes=$((exes + 1))
+            ;;
+        esac
+    done < <(macho_files "$payload")
+    [ "$exes" -gt 0 ] || die "found no Mach-O executable in $payload; the bundled interpreter is missing, so the engine entitlements went nowhere"
+    ok "engine entitlements on $exes executable(s)"
+}
+
+# Run a numba JIT under the SIGNED interpreter, with the same PYTHONPATH the
+# engine launcher sets. The payload builder's own verify runs BEFORE signing,
+# so it cannot see a hardened-runtime kill; this is the check that can.
+_prove_signed_engine_can_jit() {
+    local payload="$1" cache out rc=0
+    cache=$(mktemp -d /tmp/opendj-jit-smoke.XXXXXX)
+    out=$(env -i HOME="$HOME" NUMBA_CACHE_DIR="$cache" PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONPATH="$payload/app:$payload/pylib" \
+        "$payload/runtime/bin/python3" -c \
+        'import numba; f = numba.njit(lambda n: n + 1); assert f(41) == 42; print("JIT_OK", numba.__version__)' 2>&1) || rc=$?
+    rm -rf "$cache"
+    printf '%s\n' "$out" | grep -q '^JIT_OK ' || die \
+        "a numba JIT under the signed payload interpreter did not run (exit $rc). Exit 137 is the hardened runtime killing it: $ENGINE_JIT_ENTITLEMENT is missing from the interpreter's signature, and Open DJ's own analysis would die the same way on every Mac. Output: $(printf '%s' "$out" | tail -3)"
+    ok "signed engine runs a numba JIT ($(printf '%s\n' "$out" | grep '^JIT_OK ' | cut -d' ' -f2))"
 }
 
 #----- verify-dmg-app -----------------------------------------------------
