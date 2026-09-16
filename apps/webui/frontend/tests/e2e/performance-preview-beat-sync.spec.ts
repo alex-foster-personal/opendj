@@ -10,6 +10,13 @@
  * hardcoded, so the test says what it means ("5 percent away matches, 3x does
  * not") on whatever fixture library it is pointed at.
  *
+ * It is a `performance-*` spec, so it runs under
+ * `tests/e2e/playwright.performance.config.ts`. That is the only config whose
+ * fixture seeds beat grids (`--seed-rescue-playback`), and a master deck with
+ * no grid reports no effective BPM, which is the one input this test cannot
+ * do without. Its siblings `preview-cue-library` and `preview-space-stop` need
+ * no tempo and stay on the root config.
+ *
  * Regression lines:
  * - if a preview does not take the master tempo then the operator auditions against a clashing pulse - broken
  * - if a tempo three times off is matched then a preview plays at a tempo the track cannot hold - broken
