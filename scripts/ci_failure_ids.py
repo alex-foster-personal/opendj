@@ -211,6 +211,21 @@ def unowned_exit_steps(log: str) -> list[str]:
     return found
 
 
+def unpartitionable_exit(log: str) -> bool:
+    """True when the log ends in exit code 1 and nothing says WHICH step spent it.
+
+    `unowned_exit_steps` returns an empty list for two OPPOSITE reasons: no step spent an
+    exit no test accounts for, and the log could not be partitioned into steps at all. Its
+    own docstring calls the second one UNKNOWN, and then every caller read empty as "the
+    tests own this exit" and got a mergeable KNOWN_RED out of a measurement that never
+    happened. Sol's P1 on #3293. Asked separately, the caller can tell the two apart.
+    """
+    lines = [_strip_prefixes(raw) for raw in log.split("\n")]
+    if not any(_EXIT_ONE in _ANSI.sub("", line) for line in lines):
+        return False
+    return not any(_STEP_ECHO in line for line in lines)
+
+
 def failure_beyond_tests(log: str) -> list[str]:
     """Runner lines saying the job failed for something no test failure accounts for.
 

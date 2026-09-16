@@ -58,6 +58,7 @@ from scripts.ci_failure_ids import (
     error_excerpt,
     failed_identities,
     failure_beyond_tests,
+    unpartitionable_exit,
 )
 from scripts.ci_main_red import LogUnreadable, MainRed, cached_main_red, read_job_log
 from scripts.ci_wait import (
@@ -162,10 +163,18 @@ class FailureWatch:
         # wherever the clock stopped, so the runner's own terminal line may never have been
         # written; matching on log text alone would read a truncated log full of known-red
         # identities as KNOWN_RED and exit mergeable despite the timeout.
-        beyond = failure_beyond_tests(log) or (
-            [f"the job conclusion is {run['conclusion']}"]
-            if run["conclusion"] != "failure"
-            else []
+        beyond = (
+            failure_beyond_tests(log)
+            or (
+                ["exit code 1 in a log that could not be partitioned into steps"]
+                if unpartitionable_exit(log)
+                else []
+            )
+            or (
+                [f"the job conclusion is {run['conclusion']}"]
+                if run["conclusion"] != "failure"
+                else []
+            )
         )
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)

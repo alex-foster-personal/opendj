@@ -232,9 +232,15 @@ def test_a_known_red_job_that_was_also_killed_is_unmeasured_not_known_red():
 
 def test_a_known_red_job_that_finished_normally_is_still_known_red():
     """The control in the other direction: without it the fix could make every known-red
-    job unmeasured, and the watcher could never report a pull request as clean again."""
+    job unmeasured, and the watcher could never report a pull request as clean again.
+
+    The step echo is not decoration. A real runner log opens every step with it -- counted
+    on job 104829711771, 12 steps, the exit-1 falling inside the one that ran pytest -- and
+    this fixture predates the step partitioner, so without it the log models a shape GitHub
+    does not emit and the control would fail for a reason the control is not about."""
     lines: list[str] = []
     log = (
+        "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
         f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
         "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
     )
@@ -297,3 +303,24 @@ def test_a_zero_identity_job_matching_a_main_red_job_name_ends_unknown_not_known
     watch.inspect(_snapshot(_check(7, name)))
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_MISMATCH
     assert exit_for(WaitStatus.FAILURE, watch, has_baseline=True)[0] is Exit.UNKNOWN
+
+
+def test_an_exit_the_log_cannot_attribute_is_unmeasured_not_known_red():
+    """Sol's P1 on #3293, and the WIRING rather than the rule: the tri-state exists in
+    `ci_failure_ids`, and the watcher has to actually ask for it. A log carrying known-red
+    identities and an exit 1 with no step echoes cannot say the tests spent that exit, and
+    reading the unknown as "they did" merged a job on a measurement nobody made."""
+    lines: list[str] = []
+    log = (
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.UNEXPLAINED
+    assert "could not be partitioned" in "\n".join(lines)

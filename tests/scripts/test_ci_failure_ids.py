@@ -25,6 +25,7 @@ from scripts.ci_failure_ids import (
     failed_identities,
     failure_beyond_tests,
     unowned_exit_steps,
+    unpartitionable_exit,
 )
 
 pytestmark = pytest.mark.requirement("OPS-16")
@@ -444,3 +445,38 @@ def test_a_ratchet_step_that_died_without_stating_a_breach_is_still_unowned():
         "##[error]Process completed with exit code 1\n"
     )
     assert unowned_exit_steps(killed) != []
+
+
+# ----- an exit nobody could attribute is unmeasured, not owned -----
+
+
+_UNPARTITIONABLE = (
+    "FAILED tests/a/test_x.py::test_one - AssertionError\n"
+    "##[error]Process completed with exit code 1\n"
+)
+
+
+def test_an_exit_in_a_log_with_no_steps_is_reported_unpartitionable():
+    """Sol's P1 on #3293. `unowned_exit_steps` returns empty for two opposite reasons -- no
+    unowned exit, and no way to tell -- and the caller read both as "the tests own it", so a
+    log full of known-red identities plus an unattributable exit merged."""
+    assert unowned_exit_steps(_UNPARTITIONABLE) == []
+    assert unpartitionable_exit(_UNPARTITIONABLE) is True
+
+
+def test_a_log_that_partitions_is_not_reported_unpartitionable():
+    """The control: the tri-state must distinguish, not just report UNKNOWN everywhere. A log
+    whose exit sits in a step that named the failing test is MEASURED, and still merges."""
+    owned = (
+        "##[group]Run pytest\n"
+        "FAILED tests/a/test_x.py::test_one - AssertionError\n"
+        "##[error]Process completed with exit code 1\n"
+    )
+    assert unpartitionable_exit(owned) is False
+    assert unowned_exit_steps(owned) == []
+
+
+def test_a_log_with_no_exit_at_all_is_not_reported_unpartitionable():
+    """The other control: absence of steps is only a problem when there is an exit to
+    attribute. A job that failed its conclusion without an exit-1 line is not this case."""
+    assert unpartitionable_exit("FAILED tests/a/test_x.py::test_one\n") is False
