@@ -36,6 +36,7 @@ from apps.opendj_cli.kinds import (
     number_value,
     rescue_decks_value,
     positive_int_value,
+    positive_number_value,
     text_value,
     unit_value,
 )
@@ -240,6 +241,18 @@ _VERBS: tuple[Verb, ...] = (
     Verb("browser_select_playlist", "browser_select_playlist",
          (arg("playlist_id", "text", text_value),)),
     Verb("headphone_outputs_refresh", "headphone_outputs_refresh", ()),
+    # CUEOUT-15: the mini-waveform click, without a pointer. It loads no deck
+    # and moves no transport, so it is issuable while all four decks are busy
+    # and while one of them is on air. `bpm` is the previewed track's own
+    # tempo; supply it and the preview tempo-matches a playing master deck
+    # when the setting is on and the match fits the preview pitch range.
+    Verb("preview_cue", "preview_cue", (
+        arg("stable_id", "text", text_value),
+        arg("ratio", "unit", unit_value, "0..1"),
+        arg("bpm", "number", positive_number_value, "track BPM", optional=True),
+    ), note="CUEOUT-15: play a library track on the cue bus from a point in it."),
+    Verb("preview_stop", "preview_stop", (),
+         note="CUEOUT-15: stop the preview and release the decoded track; idempotent."),
     Verb("headphone_output_acquire", "headphone_output_acquire", ()),
     Verb("headphone_output_select", "headphone_output_select",
          (arg("device_id", "text", text_value),)),
