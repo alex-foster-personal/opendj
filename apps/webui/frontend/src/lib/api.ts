@@ -646,24 +646,107 @@ export interface RbDjayPlaylistDiffResult {
 	summary?: Record<string, unknown>;
 }
 
+function _requireRecord(raw: unknown, label: string): Record<string, unknown> {
+	if (typeof raw !== 'object' || raw === null) {
+		throw new Error(`${label}: expected an object response`);
+	}
+	return raw as Record<string, unknown>;
+}
+
+function _requireString(raw: unknown, label: string): string {
+	if (typeof raw !== 'string') {
+		throw new Error(`${label}: expected a string field`);
+	}
+	return raw;
+}
+
+function _requireNumber(raw: unknown, label: string): number {
+	if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+		throw new Error(`${label}: expected a finite number field`);
+	}
+	return raw;
+}
+
+function _parseRbDjayPlanSummary(raw: unknown): RbDjayPlaylistPlanResult['summary'] {
+	const summary = _requireRecord(raw, 'rb-djay playlist plan summary');
+	return {
+		create: _requireNumber(summary.create, 'rb-djay playlist plan summary.create'),
+		update: _requireNumber(summary.update, 'rb-djay playlist plan summary.update'),
+		noop: _requireNumber(summary.noop, 'rb-djay playlist plan summary.noop'),
+		djay_only_playlists: _requireNumber(
+			summary.djay_only_playlists,
+			'rb-djay playlist plan summary.djay_only_playlists'
+		),
+		membership_adds: _requireNumber(
+			summary.membership_adds,
+			'rb-djay playlist plan summary.membership_adds'
+		),
+		membership_removes: _requireNumber(
+			summary.membership_removes,
+			'rb-djay playlist plan summary.membership_removes'
+		)
+	};
+}
+
+function _parseRbDjayPlaylistPlanResult(raw: unknown): RbDjayPlaylistPlanResult {
+	const body = _requireRecord(raw, 'rb-djay playlist plan');
+	return {
+		plan_path: _requireString(body.plan_path, 'rb-djay playlist plan.plan_path'),
+		patch_csv: _requireString(body.patch_csv, 'rb-djay playlist plan.patch_csv'),
+		diff_md: _requireString(body.diff_md, 'rb-djay playlist plan.diff_md'),
+		op_total: _requireNumber(body.op_total, 'rb-djay playlist plan.op_total'),
+		summary: _parseRbDjayPlanSummary(body.summary)
+	};
+}
+
+function _parseRbDjayPlaylistDiffResult(raw: unknown): RbDjayPlaylistDiffResult {
+	const body = _requireRecord(raw, 'rb-djay playlist diff');
+	const computed = body.computed;
+	if (typeof computed !== 'boolean') {
+		throw new Error('rb-djay playlist diff.computed: expected a boolean field');
+	}
+	const diff = body.diff;
+	if (typeof diff !== 'object' || diff === null) {
+		throw new Error('rb-djay playlist diff.diff: expected an object field');
+	}
+	const result: RbDjayPlaylistDiffResult = {
+		computed,
+		diff: diff as PlaylistDetail['diff']
+	};
+	if (typeof body.reason === 'string') {
+		result.reason = body.reason;
+	}
+	if (typeof body.summary === 'object' && body.summary !== null) {
+		result.summary = body.summary as Record<string, unknown>;
+	}
+	return result;
+}
+
 /** SYNC-03 dry-run planner: POST /api/v1/rb-djay-sync/playlists/plan */
 export async function planRbDjayPlaylistSync(body: {
 	matches_path?: string;
 	only_playlists?: string[];
 	max_ops?: number;
 }): Promise<RbDjayPlaylistPlanResult> {
-	return requireBody(
-		await api.POST('/api/v1/rb-djay-sync/playlists/plan', { body })
-	).data as RbDjayPlaylistPlanResult;
+	const requestBody: components['schemas']['PlaylistPlanRequest'] = {
+		max_ops: body.max_ops ?? 10_000,
+		...(body.matches_path !== undefined ? { matches_path: body.matches_path } : {}),
+		...(body.only_playlists !== undefined ? { only_playlists: body.only_playlists } : {})
+	};
+	return _parseRbDjayPlaylistPlanResult(
+		requireBody(await api.POST('/api/v1/rb-djay-sync/playlists/plan', { body: requestBody })).data
+	);
 }
 
 /** Saved playlist-plan buckets for one playlist detail page. */
 export async function getPlaylistRbDjayDiff(
 	playlistId: string
 ): Promise<RbDjayPlaylistDiffResult> {
-	return requireBody(
-		await api.GET('/api/v1/playlists/{playlist_id}/rb-djay-diff', {
-			params: { path: { playlist_id: playlistId } }
-		})
-	).data as RbDjayPlaylistDiffResult;
+	return _parseRbDjayPlaylistDiffResult(
+		requireBody(
+			await api.GET('/api/v1/playlists/{playlist_id}/rb-djay-diff', {
+				params: { path: { playlist_id: playlistId } }
+			})
+		).data
+	);
 }

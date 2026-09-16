@@ -27,15 +27,17 @@ _AUDIO_BLOCKED_RESPONSES: dict[int | str, dict[str, object]] = {
 }
 
 
-@router.api_route(
+@router.get(
     "/{stable_id}/audio",
-    methods=["GET", "HEAD"],
     response_class=FileResponse,
     responses=_AUDIO_BLOCKED_RESPONSES,
-    # Pinned: FastAPI derives the default id from route.methods, a SET, so a
-    # two-method route flips between _get and _head per hash seed and reds the
-    # openapi.json contract-drift gate on the runner while matching locally.
     operation_id="get_track_audio_api_v1_tracks__stable_id__audio_get",
+)
+@router.head(
+    "/{stable_id}/audio",
+    response_class=FileResponse,
+    responses=_AUDIO_BLOCKED_RESPONSES,
+    operation_id="head_track_audio_api_v1_tracks__stable_id__audio_head",
 )
 def get_track_audio(
     stable_id: str,

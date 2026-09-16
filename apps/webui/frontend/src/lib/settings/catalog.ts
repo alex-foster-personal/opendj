@@ -4,12 +4,6 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
-import type {
-	SettingControl,
-	SettingDef,
-	SettingGroup,
-	SettingGroupId
-} from './types';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
@@ -18,7 +12,8 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type { SettingDef, SettingGroup, SettingGroupId };
+export type { SettingDef, SettingGroupId } from './catalog-types';
+import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },

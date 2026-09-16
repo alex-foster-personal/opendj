@@ -91,12 +91,23 @@ async function cancelQueued(page: Page, stableId: string): Promise<void> {
 async function cancelActiveLane(page: Page, lane: 'stems' | 'lyrics'): Promise<void> {
 	const listing = await listLane(page, lane, true);
 	for (const item of listing.items) {
-		if (item.state === 'pending' || item.state === 'running') {
-			const response = await page.request.post(
-				`${API}/api/v1/library-jobs/${lane}/${item.stable_id}/cancel`
-			);
-			expect(response.ok()).toBeTruthy();
-		}
+		if (item.state !== 'pending' && item.state !== 'running') continue;
+		const response = await page.request.post(
+			`${API}/api/v1/library-jobs/${lane}/${item.stable_id}/cancel`
+		);
+		if (response.ok()) continue;
+		// The dry runner can settle a job between the listing above and this
+		// POST, and the daemon refuses to cancel one that is no longer active.
+		// A job that finished on its own is off the lane, which is the whole
+		// point of this teardown. A job still pending or running after a
+		// refused cancel is not, and that is a real failure.
+		const now = (await listLane(page, lane, true)).items.find(
+			(row) => row.stable_id === item.stable_id
+		);
+		expect(
+			now !== undefined && now.state !== 'pending' && now.state !== 'running',
+			`cancel ${lane}/${item.stable_id} returned ${response.status()} while it was still active`
+		).toBeTruthy();
 	}
 }
 
@@ -208,9 +219,19 @@ test('cancel queued row leaves the panel', async ({ page }) => {
 			.locator('[data-stable-id="' + queuedId + '"]')
 	).toHaveCount(0);
 
-	const after = await listLane(page, 'stems');
-	expect(after.items.some((item) => item.stable_id === queuedId)).toBeFalsy();
-	expect(after.items.length).toBeGreaterThan(0);
+	const active = await listLane(page, 'stems');
+	expect(active.items.some((item) => item.stable_id === queuedId)).toBeFalsy();
+
+	// Read the SETTLED listing for what the cancel did. Whether the sibling is
+	// still ACTIVE by the time the panel round-trip finishes is a stopwatch
+	// question about the dry hold, not an acceptance one; what the cancel must
+	// have done is exact, and stays exact however long the interaction took.
+	const after = await listLane(page, 'stems', true);
+	const cancelledRow = after.items.find((item) => item.stable_id === queuedId);
+	expect(cancelledRow?.state).toBe('cancelled');
+	const sibling = after.items.find((item) => item.stable_id !== queuedId);
+	expect(sibling, 'the other selected job must still be on the lane').toBeDefined();
+	expect(sibling?.state).not.toBe('cancelled');
 
 	await cancelActiveLane(page, 'stems');
 });

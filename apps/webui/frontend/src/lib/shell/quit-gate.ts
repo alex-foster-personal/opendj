@@ -97,7 +97,7 @@ export function handleQuitRequest(
 	};
 
 	const action = planQuitRequest({
-		force: options.force,
+		...(options.force !== undefined ? { force: options.force } : {}),
 		dialogOpen: isQuitConfirmOpen(),
 		needsConfirmation: needsQuitConfirmation(resolved.query())
 	});

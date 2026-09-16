@@ -1,7 +1,6 @@
 /**
- * Shape of one settings row, shared by the catalog and by the settings that
- * live in their own modules. Separate from `catalog.ts` so a single-setting
- * module can be typed without importing the catalog that imports it back.
+ * Shape of a settings catalog entry. Kept apart from catalog.ts so a setting
+ * module the catalog imports can type itself without importing the catalog back.
  */
 
 export type SettingGroupId =

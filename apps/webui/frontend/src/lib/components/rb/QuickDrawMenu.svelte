@@ -284,7 +284,7 @@
 	}
 
 	function _menuUnionRect(): DOMRect | null {
-		if (menuEl === null) return null;
+		if (menuEl == null) return null;
 		const selectors = ['.qd', '.qd-quick', '.qd-mid', '.qd-leaf', '.qd-ctx'];
 		let minX = Infinity;
 		let minY = Infinity;

@@ -90,6 +90,12 @@ export default defineConfig({
 		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
+		// Same owner as the line above, and for the same reason: it imports
+		// that config's PREFLIGHT_GATE_BROKEN_ORIGIN and drives the second
+		// (empty-library) backend on port 5323, which this config does not
+		// start. Collected here it could only ever report ERR_CONNECTION
+		// REFUSED. Added with the spec in 1f97fe0dd (#2722), missed then.
+		'**/fresh-install-onboarding.spec.ts', // playwright.preflight-gate.config.ts (empty-library backend)
 		'**/cloudsync-ui.spec.ts', // playwright.cloudsync-ui.config.ts (real hub + spoke engines)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)

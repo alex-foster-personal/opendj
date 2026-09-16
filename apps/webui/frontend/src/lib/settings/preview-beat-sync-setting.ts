@@ -1,4 +1,4 @@
-import type { SettingDef } from './types';
+import type { SettingDef } from './catalog-types';
 
 export const PREVIEW_BEAT_SYNC_SETTING: SettingDef = {
 	id: 'preview_beat_sync',

@@ -428,12 +428,15 @@ def resolve_playable_audio(
     share: bool = False,
     jobs_store: JobStore | None = None,
 ) -> track_locations.PickedAudio:
-    """Pick the single file the frontend may play via believed-state resolution."""
-    if share:
-        # Share venue caps are enforced on the legacy pick path; believed-state
-        # audio wiring is local-machine only in CLOUDSYNC-10.
-        track_locations.policy_from_env(share=share)
-    else:
+    """Pick the single file the frontend may play via believed-state resolution.
+
+    Believed state answers WHETHER this machine may serve audio at all (its own
+    copy, a hydrated cache entry, or not yet). For a share host it does not
+    answer WHICH copy: a remote audience is capped at the share venue ceiling,
+    so when several local copies exist the cap picks among them.
+    """
+    share_policy = track_locations.policy_from_env(share=True) if share else None
+    if not share:
         from apps.shared.library_mode import library_mode
 
         library_mode()
@@ -465,6 +468,14 @@ def resolve_playable_audio(
                 "CLOUD_POLICY_UNCONFIGURED",
                 str(exc),
             ) from exc
+        # A cache entry is the one hydrated object, so there is nothing for the
+        # cap to choose between; only a machine serving its own copies can hold
+        # a master and a lossy alternate of the same track.
+        share_pick = (
+            track_locations.pick_playable(state, stable_id, policy=share_policy)
+            if share_policy is not None and source.origin == "local"
+            else None
+        )
     finally:
         state.close()
 
@@ -474,6 +485,13 @@ def resolve_playable_audio(
                 "AUDIO_FILE_MISSING",
                 f"believed-state origin {source.origin!r} has no path for {stable_id}",
             )
+        if share_pick is not None:
+            # The capped pick reads the same two layers believed state does
+            # (track_locations, then tracks.file_path), so None here is not a
+            # missing file: it is the picker's stricter open probe rejecting a
+            # path the believed-state residency gate admits, a FIFO the audio
+            # route probes itself (#766, #2749). That path then stands as-is.
+            return share_pick
         return _picked_from_path(
             source.path,
             source="believed-state-local"

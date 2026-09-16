@@ -2051,7 +2051,16 @@
 	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		const startedAt = performance.now();
 		const detail = await getSmartlistTracks(id);
-		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		const rows = detail.tracks.map((wire, i) =>
+			_rowFromPlaylistWire(
+				{
+					...wire,
+					has_remote_copy: wire.has_remote_copy ?? false,
+					cloud_transfer: wire.cloud_transfer ?? null
+				},
+				i + 1
+			)
+		);
 		recordLibraryLoadTiming('playlist', {
 			fetchMs: performance.now() - startedAt,
 			rows: rows.length
