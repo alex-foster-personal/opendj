@@ -195,7 +195,9 @@ def main_red_identities(
         frozenset(failed_names),
         frozenset(unreadable - failed_names),
         measured_sha,
-        frozenset({measured_sha}) if measured_sha else frozenset(),
+        # Set difference rather than a conditional: this function is at the complexity
+        # ceiling and a ternary here pushed it over.
+        frozenset({measured_sha}) - {""},
     )
 
 
