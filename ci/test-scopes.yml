@@ -23,6 +23,18 @@ full_triggers:
   - "tests/fixtures/**"
   - "tests/helpers/**"
   - "apps/shared/**"
+  # CI INPUTS that are not source. `ci.yml`'s own path filter RE-INCLUDES
+  # `.planning/REQUIREMENTS.md` after excluding `.planning/**`, which is that workflow
+  # saying the path is an input rather than documentation: `reqs.json` is generated from it
+  # and gated against it, and three commits that drifted the ledger skipped the PR gate and
+  # surfaced on main. `reqs.json` and `.mergify.yml` are read by tests the same way.
+  # Without these the planner said SKIP_PYTEST for 6 of the last 60 merges that `ci.yml`
+  # RAN, and `tests/scripts/test_ci_plan.py` now reads the re-inclusion list from the
+  # workflow so a new one cannot be missed here.
+  - ".planning/REQUIREMENTS.md"
+  - "reqs.json"
+  - ".mergify.yml"
+  - "ci/**"
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
 always:
