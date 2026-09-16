@@ -7,7 +7,8 @@ checks" case in ``.claude/rules/verification.md``. This plugin turns both
 into failures, for the runs that opt in (``just cloudsync-fast`` and
 ``just cloudsync-slow``).
 
-Load it explicitly, ``python -m pytest -p scripts.pytest_tier_floor ...``.
+Registered by the root ``conftest.py`` (``pytest_plugins``); ``-p scripts.pytest_tier_floor``
+under ``python -m pytest`` also works and dedupes against that registration.
 It is inert unless one of its options is given.
 
 "Executed" means the test body ran: a call-phase report that is not a skip.
