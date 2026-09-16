@@ -21,6 +21,7 @@ from apps.diagnostics.probe_types import (
     round_mb,
     run_text,
 )
+from apps.shared.macos_tools import SYSCTL
 
 
 class RUsageInfoV4(ctypes.Structure):
@@ -233,7 +234,7 @@ def vmmap_summary(pid: int) -> dict[str, Any]:
 
 def _sysctl(name: str) -> str | None:
     try:
-        return run_text(["sysctl", "-n", name], timeout=2.0).strip()
+        return run_text([SYSCTL, "-n", name], timeout=2.0).strip()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
 

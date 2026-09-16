@@ -34,6 +34,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from apps.shared.macos_tools import SYSCTL
+
 CAPABILITY_FILE_NAME: Final[str] = "live_stems_capability.json"
 CAPABILITY_SCHEMA: Final[int] = 1
 LIVE_STEMS_CAPABILITY_PATH: Final[str] = "/api/v1/stems/live-capability"
@@ -183,7 +185,7 @@ def detect_installed_machine_name() -> str:
     if system != "Darwin":
         return f"{system} {platform.machine()}"
     result = subprocess.run(
-        ["sysctl", "-n", "machdep.cpu.brand_string"],
+        [SYSCTL, "-n", "machdep.cpu.brand_string"],
         check=False,
         capture_output=True,
         text=True,

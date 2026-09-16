@@ -226,7 +226,9 @@ def resolve_accelerator(device: str) -> str | None:
         # MPS exposes no device name, so the chip is the accelerator identity.
         # An M2 and an M3 Max are as different as an L4 and an H100.
         brand = subprocess.run(
-            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            # Absolute: /usr/sbin is not on every launcher's PATH, and this
+            # PEP 723 script cannot import apps.shared.macos_tools.
+            ["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"],
             capture_output=True, text=True, check=False,
         ).stdout.strip()
         if not brand:
