@@ -1,6 +1,33 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * Mirrors BOOT_LANDING_SESSION_KEY in src/lib/rb/boot-landing.ts. Spelled here
+ * rather than imported because this suite runs against the dev server, not the
+ * app bundle.
+ */
+const BOOT_LANDING_SESSION_KEY = 'mdt.boot-landing.applied.v1';
+
 test.describe('CAT-05a library page', () => {
+	/**
+	 * PERFMODE-11 (67f19c2ee) made a COLD open of `/` land in Gig: the root
+	 * layout redirects to /performance once per browser session, while
+	 * LIBRARY_MODE_SHIPPED is false. Every Playwright test gets a fresh
+	 * context, so every `page.goto('/')` here is a cold open and races that
+	 * redirect - two of these four tests happened to win the race on CI and
+	 * lose it locally, which is the worst of both answers.
+	 *
+	 * The redirect is deliberately one-shot and session-gated precisely so
+	 * that navigating to the library AFTER first open is untouched. Spending
+	 * the session flag up front is exactly that state, so these tests exercise
+	 * the library page rather than the landing rule (which
+	 * tests/unit/boot-landing.test.mjs owns).
+	 */
+	test.beforeEach(async ({ page }) => {
+		await page.addInitScript((key) => {
+			window.sessionStorage.setItem(key, '1');
+		}, BOOT_LANDING_SESSION_KEY);
+	});
+
 	test('lists tracks and navigates to detail', async ({ page }) => {
 		await page.goto('/');
 		await expect(page.locator('table.library')).toBeVisible();
