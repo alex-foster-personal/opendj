@@ -38,6 +38,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO / "ci" / "test-scopes.yml"
+SUPPORTED_CONFIG_VERSIONS = frozenset({1})
 CAP_FRACTION = 0.6
 
 
@@ -114,11 +115,21 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # source has to be completed before a new language is safe; a whitelist of what is HARMLESS has
 # to be completed before a new language is SKIPPED, and the unlisted case fails closed.
 _HARMLESS_SUFFIXES = (".md", ".rst", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico")
-_SOURCE_ROOTS = ("apps/", "scripts/", "ops/", "tests/")
 
-
+# Harmlessness is decided by SUFFIX ALONE, deliberately. A harmless-LOCATION list was the
+# obvious companion to it and is wrong here: every candidate root (`docs/`, `specs/`,
+# `.planning/`, `.claude/`, `.agents/`) is read by tests in this repository -- SEC-02 has
+# `tests/test_security_status_doc.py` gating on `docs/security/security.md` -- and the list
+# would have made 83 tracked files harmless that this one does not, among them real Python
+# such as `.agents/skills/usb-import-export/scripts/decode_gate.py`. Measured, not assumed.
 def _is_source(path: str) -> bool:
-    return path.startswith(_SOURCE_ROOTS) and not path.endswith(_HARMLESS_SUFFIXES)
+    """Source unless something says otherwise, in BOTH directions.
+
+    A suffix whitelist decided the unknown FILE TYPE unsafely, and a source-root whitelist
+    decided the unknown LOCATION the same way: `tools/build.py` and every future top-level
+    package read as harmless. Neither whitelist survives. A new file type in a new directory
+    answers FULL until its SUFFIX says it is prose or an image."""
+    return not path.endswith(_HARMLESS_SUFFIXES)
 
 
 def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
@@ -220,12 +231,37 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
         raise PlanError(f"cannot read {path}: {exc}") from None
     if not isinstance(raw, dict):
         raise PlanError(f"{path} is not a mapping: {raw!r}")
-    scopes = raw.get("scopes")
-    if not isinstance(scopes, list) or not scopes:
+    # Every key REQUIRED and typed. `raw.get(key) or ()` turned a misspelled `full_triggers`
+    # into no full triggers at all, which is a safety rule deleted by a typo and a narrower
+    # plan reported as a correct one. An unknown schema version is refused for the same
+    # reason: a newer config may mean something this planner would silently misread.
+    # Sol's P1 on #3339.
+    unknown = sorted(set(raw) - {"version", "full_triggers", "always", "scopes"})
+    if unknown:
+        raise PlanError(f"{path} has unknown key(s): {', '.join(unknown)}")
+    if raw.get("version") not in SUPPORTED_CONFIG_VERSIONS:
+        raise PlanError(
+            f"{path} declares version {raw.get('version')!r}; "
+            f"this planner reads {sorted(SUPPORTED_CONFIG_VERSIONS)}"
+        )
+    for key in ("full_triggers", "always", "scopes"):
+        if not isinstance(raw.get(key), list):
+            raise PlanError(f"{path} is missing a list `{key}`, or it is not a list")
+    scopes = raw["scopes"]
+    if not scopes:
         raise PlanError(f"{path} declares no scopes")
+    for entry in scopes:
+        if not isinstance(entry, dict):
+            raise PlanError(f"{path} has a scope that is not a mapping: {entry!r}")
+        missing = [k for k in ("name", "sources", "tests") if k not in entry]
+        if missing:
+            raise PlanError(f"{path}: scope {entry.get('name', entry)!r} lacks {missing}")
+        extra = sorted(set(entry) - {"name", "sources", "tests", "dependents"})
+        if extra:
+            raise PlanError(f"{path}: scope {entry['name']!r} has unknown key(s): {extra}")
     return Config(
-        tuple(raw.get("full_triggers") or ()),
-        tuple(raw.get("always") or ()),
+        tuple(raw["full_triggers"]),
+        tuple(raw["always"]),
         tuple(
             Scope(
                 entry["name"],
@@ -241,6 +277,19 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
 _TOP_PACKAGES = ("apps", "scripts", "ops")
 
 
+def _read_source(path: Path, where: str) -> str:
+    """Decode strictly. A lenient decode deletes the bytes it cannot read and hands back a
+    SHORTER file, so an import can vanish and the derivation gets quietly smaller while both
+    it and the guard checking it agree on the same corrupted text. Same class as the parse
+    failure below, and it was left behind when that one was fixed. Sol's P1 on #3339."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise PlanError(f"cannot decode {where} as utf-8: {exc}") from None
+    except OSError as exc:
+        raise PlanError(f"cannot read {where}: {exc}") from None
+
+
 def is_test_module(path: str) -> bool:
     """pytest's own two shapes. Discovery and the completeness invariant have to agree on
     this: they used different predicates, so a `foo_test.py` could satisfy the ownership
@@ -253,6 +302,24 @@ def is_test_module(path: str) -> bool:
 def test_modules(root: Path) -> list[Path]:
     """Every test module under `root`, by the one predicate above."""
     return sorted(p for p in root.rglob("*.py") if is_test_module(p.as_posix()))
+
+
+def _relative_base(where: str, level: int) -> str:
+    """The absolute package a `from ..x import y` in `where` refers to.
+
+    Discarding relative imports outright is under-selection with extra steps: `from ..
+    engine_core import X` in an `apps/open_dj/` module is a cross-scope edge, and dropping it
+    leaves that suite out of a SCOPED plan when engine_core changes. Sol's P1 on #3339.
+
+    A level that climbs past the repository root cannot be resolved, and unresolvable is not
+    the same as absent, so it RAISES. Today's tree never goes deeper than level 2 and no
+    relative import crosses a scope, which is why this was invisible rather than harmless.
+    """
+    parts = where.removesuffix(".py").split("/")[:-1]
+    if level - 1 > len(parts):
+        raise PlanError(f"relative import in {where} climbs past the repository root")
+    kept = parts[: len(parts) - (level - 1)]
+    return ".".join(kept)
 
 
 def imported_packages(text: str, where: str) -> set[str]:
@@ -276,10 +343,14 @@ def imported_packages(text: str, where: str) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 found.add(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+        elif isinstance(node, ast.ImportFrom):
+            base = _relative_base(where, node.level) if node.level else ""
+            module = f"{base}.{node.module}" if base and node.module else (base or node.module)
+            if not module:
+                continue
             # `from apps import engine_core` names the package in the ALIAS, not the module.
-            found.update(f"{node.module}.{alias.name}" for alias in node.names)
-            found.add(node.module)
+            found.update(f"{module}.{alias.name}" for alias in node.names)
+            found.add(module)
     return {
         ".".join(part.split(".")[:2])
         for part in found
@@ -314,11 +385,7 @@ def observed_dependents(
         owner = owner_of(relative)
         if owner is None:
             continue
-        try:
-            text = file.read_text(encoding="utf-8", errors="ignore")
-        except OSError as exc:
-            raise PlanError(f"cannot read {file}: {exc}") from None
-        for module in imported_packages(text, relative):
+        for module in imported_packages(_read_source(file, relative), relative):
             as_path = module.replace(".", "/") + "/"
             for scope in config.scopes:
                 if not matches(as_path, scope.sources):
@@ -348,8 +415,8 @@ def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozens
             if not base.is_dir():
                 continue
             for file in base.rglob("*.py"):
-                text = file.read_text(encoding="utf-8", errors="ignore")
-                for module in imported_packages(text, file.as_posix()):
+                where = file.relative_to(root).as_posix() if file.is_absolute() else file.as_posix()
+                for module in imported_packages(_read_source(file, where), where):
                     as_path = module.replace(".", "/") + "/"
                     for other in config.scopes:
                         if other.name != scope.name and matches(as_path, other.sources):
