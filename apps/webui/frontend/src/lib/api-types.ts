@@ -3944,6 +3944,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup/detect/music-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Music Folder Candidates
+         * @description Existing folders under HOME worth suggesting, before typing a path.
+         *
+         *     Never a guess: only paths that exist on this machine are returned, and
+         *     a candidate macOS refuses to list is still reported, marked denied,
+         *     rather than silently omitted.
+         */
+        get: operations["music_folder_candidates_api_v1_setup_detect_music_folders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/setup/detect/rekordbox": {
         parameters: {
             query?: never;
@@ -8107,6 +8131,15 @@ export interface components {
             unowned: number;
         };
         /**
+         * FolderCandidatesOut
+         * @description Existing folders under the user's home worth offering as one-click
+         *     setup suggestions, instead of making them type a path blind.
+         */
+        FolderCandidatesOut: {
+            /** Candidates */
+            candidates?: components["schemas"]["AccessProbeOut"][];
+        };
+        /**
          * FolderImportIn
          * @description Point at one or more folders of audio files. No rekordbox involved.
          */
@@ -10757,12 +10790,20 @@ export interface components {
         PreflightCheckOut: {
             /** Detail */
             detail: string;
+            /** Explainer */
+            explainer?: string | null;
             /** Id */
             id: string;
             /** Label */
             label: string;
             /** Remediation */
             remediation?: string | null;
+            /**
+             * Severity
+             * @default blocking
+             * @enum {string}
+             */
+            severity: "blocking" | "advisory";
             /**
              * Status
              * @enum {string}
@@ -10778,11 +10819,21 @@ export interface components {
         /**
          * PreflightOut
          * @description ``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-         *     gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
-         *     check never blocks it, because a check that could not be exercised is
-         *     not a defect on its own.
+         *     gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
+         *     is ``fail``; a ``pending`` check never blocks it, because a check that
+         *     could not be exercised is not a defect on its own, and an ``advisory``
+         *     check never blocks it either, because the app runs without it.
+         *
+         *     ``advisories`` counts the non-blocking rows the user should still see,
+         *     so a caller can distinguish "everything is fine" from "running, with
+         *     things worth telling you" without recomputing severity for itself.
          */
         PreflightOut: {
+            /**
+             * Advisories
+             * @default 0
+             */
+            advisories: number;
             /** Checks */
             checks: components["schemas"]["PreflightCheckOut"][];
             /**
@@ -20728,6 +20779,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    music_folder_candidates_api_v1_setup_detect_music_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderCandidatesOut"];
                 };
             };
         };

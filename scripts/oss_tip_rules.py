@@ -179,41 +179,57 @@ ALLOWED_MAILBOXES = frozenset(
 # the suffix is numeric" still exempted `123.com`, which is registrable and can
 # carry a real mailbox (Codex P1, #1440, twice). There is no shape that separates
 # a version spec from a numeric domain, because there is no such difference --
-# only the intent behind the string. So they are enumerated, and the list is two
-# lines rather than a rule nobody can get right.
+# only the intent behind the string. So they are enumerated rather than shaped.
+# The one shape that IS safe here is the retina-asset domain below, and it is
+# safe for a reason none of those attempts had: it is anchored on a suffix no
+# mailbox can sit behind. Read its comment before adding a second shape.
 ALLOWED_NON_ADDRESSES = frozenset(
     {
-        "128x128@2x.png",  # tauri icon name, apps/desktop/src-tauri/tauri.conf.json
         "signalsmith-stretch@1.3.2.patch",  # pnpm patch spec, package.json
-        # The macOS iconset names in scripts/desktop_icons.py's own
-        # `_iconutil_round_trip` expected-slot set. There the name sits inside a
-        # quoted Python string literal rather than after a `/`, so `icon_` is a
-        # word character joined onto the local part and the match differs from
-        # the tauri.conf.json entry above -- five entries, one per Apple iconset
-        # slot that carries an `@2x` scale suffix (#1808). Do NOT rename the
-        # icon files to dodge this: iconutil's iconset slot names are a fixed
-        # Apple contract, not something this repo controls.
-        "icon_16x16@2x.png",
-        "icon_32x32@2x.png",
-        "icon_128x128@2x.png",
-        "icon_256x256@2x.png",
-        "icon_512x512@2x.png",
-        # tests/scripts/test_oss_tip_audit_mailbox.py's own f-string TEMPLATE
-        # for generating the five entries above, scanned as source text before
-        # Python ever substitutes `{size}`: the audit sees the literal
-        # characters `icon_{size}@2x.png` in the .py file itself, which is
-        # the same iconset shape as the entries above, not a mailbox.
-        "icon_{size}@2x.png",
     }
 )
-# The files whose whole function is holding the addresses attached to this
-# repository's own commit history, plus the prose that documents the convention
-# they enforce. Scrubbing them would not remove those addresses from anywhere --
-# `git log` still shows them in 2000+ commits -- it would only stop them being
-# mapped to one author, and the how-to would instruct agents to set an identity
-# that does not match the log. Every other file is scanned, and these matches are
-# still counted and printed as `exempt=` so the exemption cannot hide a new
-# address.
+
+# The retina-asset naming convention: a name, an at-sign, a pixel multiplier,
+# and an image extension. Apple iconsets, the Tauri icon manifest and every web
+# asset pipeline write it, and it parses as a local part at a two-label domain.
+#
+# This one IS a shape, against the rule stated above, and the reason it is safe
+# is the reason the numeric-domain shapes were not: the trailing label is an
+# image extension, and none of the extensions below is a delegated top-level
+# domain, so no mailbox can exist at one. That is a property of the DNS root
+# rather than of this repository, so it cannot rot the way a value does.
+#
+# The extensions are ENUMERATED rather than matched as "any short suffix",
+# because several plausible asset words ARE delegated and do carry real mail --
+# the photo-related ones are the obvious trap. An unlisted extension is reported
+# rather than assumed harmless, which is the same direction to err in as
+# everything else in this module.
+#
+# Enumerating the FILENAMES instead is what this replaces, and it cost a red
+# build every time an asset was added: #2528 enumerated the six names then in
+# the tree, and the same commit had to add five more when the iconset slot set
+# in scripts/desktop_icons.py was scanned. Do NOT rename asset files to dodge
+# the gate: iconutil's iconset slot names are a fixed Apple contract, not
+# something this repo controls.
+_RETINA_ASSET_EXTENSIONS = (
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "svg",
+    "avif",
+    "ico",
+    "icns",
+    "bmp",
+    "tif",
+    "tiff",
+    "pdf",
+)
+_RETINA_ASSET_DOMAIN = re.compile(
+    r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE
+)
+
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
@@ -538,26 +554,33 @@ def _is_reserved_mail_domain(domain: str) -> bool:
     )
 
 
+def _is_reportable_mailbox(address: str) -> bool:
+    local, _, domain = address.rpartition("@")
+    if _is_reserved_mail_domain(domain):
+        return False
+    # A TEMPLATE is not an address, the same judgement `_is_placeholder_home`
+    # already makes for a path segment. Widening the local part to RFC atext
+    # brought `$`, `{` and `}` in with it, so a shell interpolation like a
+    # token substituted into a clone URL parsed as a mailbox.
+    if local.upper() in _BARE_ENV_VARS or _TEMPLATE_SEGMENT.match(local):
+        return False
+    # A retina asset is a filename, not a mailbox. Checked on the DOMAIN so the
+    # whole family is covered, rather than on the full string, which needed a
+    # new entry for every asset added to the tree.
+    if _RETINA_ASSET_DOMAIN.match(domain):
+        return False
+    if address.lower() in ALLOWED_NON_ADDRESSES:
+        return False
+    return address.lower() not in ALLOWED_MAILBOXES
+
+
 def _rule_accepts(rule: str, match: re.Match[str], preceding: str = "") -> bool:
     if rule in {"home-path", "windows-home-path", "linux-home-path"}:
         if _URL_AUTHORITY_BEFORE.search(preceding):
             return False
         return not _is_placeholder_home(match.group(1))
     if rule == "consumer-mailbox":
-        address = match.group(0)
-        domain = address.rsplit("@", 1)[1]
-        if _is_reserved_mail_domain(domain):
-            return False
-        # A TEMPLATE is not an address, the same judgement `_is_placeholder_home`
-        # already makes for a path segment. Widening the local part to RFC atext
-        # brought `$`, `{` and `}` in with it, so a shell interpolation like a
-        # token substituted into a clone URL parsed as a mailbox.
-        local = address.rsplit("@", 1)[0]
-        if local.upper() in _BARE_ENV_VARS or _TEMPLATE_SEGMENT.match(local):
-            return False
-        if address.lower() in ALLOWED_NON_ADDRESSES:
-            return False
-        return address.lower() not in ALLOWED_MAILBOXES
+        return _is_reportable_mailbox(match.group(0))
     if rule == "tailnet-name":
         # DNS is case-insensitive; so is the allowlist it is compared against.
         return match.group(1).lower() not in _ALLOWED_TAILNETS

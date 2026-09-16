@@ -6470,6 +6470,20 @@
         "title": "FleetOut",
         "type": "object"
       },
+      "FolderCandidatesOut": {
+        "description": "Existing folders under the user's home worth offering as one-click\nsetup suggestions, instead of making them type a path blind.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "title": "FolderCandidatesOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -13156,6 +13170,17 @@
             "title": "Detail",
             "type": "string"
           },
+          "explainer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainer"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -13174,6 +13199,15 @@
               }
             ],
             "title": "Remediation"
+          },
+          "severity": {
+            "default": "blocking",
+            "enum": [
+              "blocking",
+              "advisory"
+            ],
+            "title": "Severity",
+            "type": "string"
           },
           "status": {
             "enum": [
@@ -13228,8 +13262,13 @@
         "type": "object"
       },
       "PreflightOut": {
-        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``\ncheck never blocks it, because a check that could not be exercised is\nnot a defect on its own.",
+        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff a check that is ``severity: blocking``\nis ``fail``; a ``pending`` check never blocks it, because a check that\ncould not be exercised is not a defect on its own, and an ``advisory``\ncheck never blocks it either, because the app runs without it.\n\n``advisories`` counts the non-blocking rows the user should still see,\nso a caller can distinguish \"everything is fine\" from \"running, with\nthings worth telling you\" without recomputing severity for itself.",
         "properties": {
+          "advisories": {
+            "default": 0,
+            "title": "Advisories",
+            "type": "integer"
+          },
           "checks": {
             "items": {
               "$ref": "#/components/schemas/PreflightCheckOut"
@@ -30947,6 +30986,28 @@
           }
         },
         "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/music-folders": {
+      "get": {
+        "description": "Existing folders under HOME worth suggesting, before typing a path.\n\nNever a guess: only paths that exist on this machine are returned, and\na candidate macOS refuses to list is still reported, marked denied,\nrather than silently omitted.",
+        "operationId": "music_folder_candidates_api_v1_setup_detect_music_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderCandidatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Music Folder Candidates",
         "tags": [
           "setup"
         ]

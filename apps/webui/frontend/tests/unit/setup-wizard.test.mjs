@@ -303,6 +303,66 @@ test('redetect re-asks the detect endpoint specifically', async () => {
 	assert.equal(wizard.detection.installed, false);
 });
 
+test('loadFolderCandidates fills folderCandidates from the endpoint', async () => {
+	routeFetch({
+		'/api/v1/setup/detect/music-folders': {
+			candidates: [
+				{
+					path: '/Users/dj/Music',
+					exists: true,
+					readable: true,
+					denied: false,
+					detail: 'readable'
+				}
+			]
+		}
+	});
+
+	await wizard.loadFolderCandidates();
+
+	assert.equal(requests[0].url, `${API_BASE}/api/v1/setup/detect/music-folders`);
+	assert.equal(wizard.folderCandidatesState, 'answered');
+	assert.equal(wizard.folderCandidates.length, 1);
+	assert.equal(wizard.folderCandidates[0].path, '/Users/dj/Music');
+});
+
+test('a failed folder-candidates load sets failed and keeps prior candidates', async () => {
+	wizard.folderCandidates = [
+		{
+			path: '/Users/dj/Music',
+			exists: true,
+			readable: true,
+			denied: false,
+			detail: 'readable'
+		}
+	];
+	wizard.folderCandidatesState = 'idle';
+
+	routeFetch({
+		'/api/v1/setup/detect/music-folders': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'engine offline' } }, 500)
+	});
+	await wizard.loadFolderCandidates();
+
+	assert.equal(wizard.folderCandidatesState, 'failed');
+	assert.equal(wizard.folderCandidates.length, 1, 'previous candidates must survive a failure');
+});
+
+test('useSource folder triggers loadFolderCandidates once', async () => {
+	routeFetch({
+		'/api/v1/setup/detect/music-folders': { candidates: [] }
+	});
+
+	wizard.useSource('folder');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(wizard.folderCandidatesState, 'answered');
+
+	const before = requests.length;
+	wizard.useSource('folder');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(requests.length, before, 'candidates load only once per wizard-open');
+});
+
 // ------------------------------------------------------------------- imports
 
 test('beginImport advances to progress and records the job id', async () => {

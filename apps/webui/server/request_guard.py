@@ -26,7 +26,16 @@ HOSTNAME_RE = re.compile(
 _LOOPBACK_HOSTNAMES: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 _MUTATING_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _BENCH_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1):87\d\d$"
-_E2E_FRONTEND_PORTS: tuple[int, ...] = (5273, 5275)
+# Fixed vite dev-server ports that a Playwright e2e suite serves the SPA
+# from. The daemon derives its own trusted frontend origin from
+# port_config (the .env pair), which those suites bypass by binding a
+# compile-time port, so each one must be named here or every browser POST
+# it makes is refused ORIGIN_NOT_ALLOWED. Provenance, one per entry:
+#   5273  tests/e2e/vite.performance.config.ts
+#   5275  tests/e2e/playwright.webkit-deckload.config.ts
+#   5277  tests/e2e/vite.library-jobs.config.ts
+#           (LIBRARY_JOBS_E2E_FRONTEND_PORT)
+_E2E_FRONTEND_PORTS: tuple[int, ...] = (5273, 5275, 5277)
 
 
 class RequestGuardBindRefused(RuntimeError):

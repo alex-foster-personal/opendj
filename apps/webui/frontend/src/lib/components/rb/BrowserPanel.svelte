@@ -794,7 +794,19 @@
 			})
 		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
-			selectPlaylist: _selectPlaylistFromCommand
+			selectPlaylist: _selectPlaylistFromCommand,
+			readSnapshot: () => {
+				const p = panes[activePane];
+				const trimmedSearch = p.search.trim();
+				return {
+					search: trimmedSearch === '' ? null : p.search,
+					sort:
+						p.sort_key === null
+							? null
+							: { key: p.sort_key, direction: p.sort_dir === 1 ? 'asc' : 'desc' },
+					selected_row: p.selected_id
+				};
+			}
 		});
 		const url = new URL(window.location.href);
 		const lv1 = parseLv1(url.searchParams);

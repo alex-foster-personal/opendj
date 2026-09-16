@@ -127,6 +127,7 @@ import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/constants';
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
+import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -373,7 +374,12 @@ export interface PerformanceState {
 		headphones: HeadphoneState;
 	};
 	master: { muted: boolean };
-	browser: { active_playlist: string | null };
+	browser: {
+		active_playlist: string | null;
+		search: string | null;
+		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
+		selected_row: string | null;
+	};
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -425,11 +431,18 @@ export interface PairingSnapshot {
 	}>;
 }
 
+export interface PerformanceBrowserPaneSnapshot {
+	search: string | null;
+	sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
+	selected_row: string | null;
+}
+
 /** BrowserPanel owns playlist loading, while this module owns the public
  * command protocol. Registering the narrow adapter keeps both boundaries
  * explicit and makes a missing mounted browser fail loudly for an agent. */
 export interface PerformanceBrowserAdapter {
 	selectPlaylist(playlistId: string): Promise<void>;
+	readSnapshot(): PerformanceBrowserPaneSnapshot;
 }
 
 /** Pin fc60002b81a8: same decoupling shape as PerformanceBrowserAdapter above
@@ -492,6 +505,25 @@ export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAda
 	return () => {
 		if (_browserAdapter !== adapter) throw new Error('performance browser adapter ownership changed');
 		_browserAdapter = null;
+	};
+}
+
+const _EMPTY_BROWSER_PANE_SNAPSHOT: PerformanceBrowserPaneSnapshot = {
+	search: null,
+	sort: null,
+	selected_row: null
+};
+
+function _readBrowserPaneSnapshot(): PerformanceBrowserPaneSnapshot {
+	if (_browserAdapter === null) return _EMPTY_BROWSER_PANE_SNAPSHOT;
+	const snapshot = _browserAdapter.readSnapshot();
+	return {
+		search: snapshot.search,
+		sort:
+			snapshot.sort === null
+				? null
+				: { key: snapshot.sort.key, direction: snapshot.sort.direction },
+		selected_row: snapshot.selected_row
 	};
 }
 
@@ -1543,7 +1575,7 @@ export function queryPerformanceState(): PerformanceState {
 			}
 		},
 		master: { muted: isMasterMuted() },
-		browser: { active_playlist: _activeBrowserPlaylist },
+		browser: { active_playlist: _activeBrowserPlaylist, ..._readBrowserPaneSnapshot() },
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		rescue_restore: {

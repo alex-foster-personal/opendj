@@ -242,9 +242,14 @@
 	   already made for --kpi-ok). */
 	:global(:root) {
 		--preflight-ok: #4ecb8c;
+		/* Orange is the "worth saying, not worth stopping for" colour. It is
+		   defined next to the green for the same reason that one was scoped
+		   here: app.css has no severity tokens yet. */
+		--preflight-warn: #e8a33d;
 	}
 	:global(html[data-theme='light']) {
 		--preflight-ok: #2e9e63;
+		--preflight-warn: #b3701a;
 	}
 
 	.preflight {
