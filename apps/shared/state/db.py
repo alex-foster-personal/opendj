@@ -85,7 +85,14 @@ def open_rw(
     When the schema is at least v15,
     :func:`apps.shared.state.migrations_v15.backfill_track_fields_stamps`
     stamps legacy ``track_fields`` rows and appends the active-role changelog
-    entry (issue #3136). Idempotent on repeat opens.
+    entry (issue #3136). A durable marker makes repeat opens constant-time.
+
+    When the schema is at least v16,
+    :func:`apps.shared.state.migrations_v16.repair_hub_changelog_stamps`
+    scans for latest ``hub_changelog`` rows whose stamp disagrees with the
+    live domain row, appends corrected entries at fresh sequences, and records
+    completion in ``schema_meta_markers`` (issue #3171). The candidate scan
+    runs before ``BEGIN IMMEDIATE``.
 
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
@@ -118,6 +125,10 @@ def open_rw(
                 from .migrations_v15 import backfill_track_fields_stamps
 
                 backfill_track_fields_stamps(conn)
+            if version >= 16:
+                from .migrations_v16 import repair_hub_changelog_stamps
+
+                repair_hub_changelog_stamps(conn)
             from apps.database import regenerate_agents_md_if_writable
             regenerate_agents_md_if_writable(
                 conn,

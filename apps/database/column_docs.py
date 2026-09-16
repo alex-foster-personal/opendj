@@ -480,6 +480,13 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "version": "Primary key. Schema version this row records as applied.",
         "applied_at": "RFC 3339 UTC timestamp this version was applied.",
     },
+    "schema_meta_markers": {
+        "marker": (
+            "Primary key. Name of a durable one-shot repair or backfill that "
+            "has completed on this database."
+        ),
+        "applied_at": "RFC 3339 UTC timestamp the marker was recorded.",
+    },
     "pairings": {
         "from_stable_id": (
             "The track being mixed from. Not FK-enforced from this module "

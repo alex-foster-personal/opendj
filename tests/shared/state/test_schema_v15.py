@@ -60,11 +60,11 @@ def _seed_v14_track_fields(conn: sqlite3.Connection) -> None:
 
 
 def test_fresh_ladder_reaches_v15() -> None:
-    """[if] a fresh schema is applied [then] schema_meta records v15, [else stop]."""
+    """[if] a fresh schema is applied [then] schema_meta records current version, [else stop]."""
     conn = sqlite3.connect(":memory:")
     state_schema.apply_migrations(conn)
     version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-    assert version == 15
+    assert version == state_schema.SCHEMA_VERSION
     conn.close()
 
 

@@ -18,10 +18,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from . import machine_identity
+from . import schema_markers
 from . import sync_stamp
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 _TRACK_FIELDS: str = "track_fields"
+V15_BACKFILL_MARKER: str = "track_fields_stamp_backfill_v1"
 
 # v15 has no standalone SQL: the Python backfill owns row updates and changelog
 # appends atomically (issue #3136).
@@ -43,22 +45,6 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
         (name,),
     ).fetchone()
     return row is not None
-
-
-def _changelog_has_row(
-    conn: sqlite3.Connection,
-    changelog_table: str,
-    table: str,
-    encoded_pk: str,
-) -> bool:
-    return (
-        conn.execute(
-            f"SELECT 1 FROM {changelog_table} "
-            "WHERE table_name = ? AND row_pk = ? LIMIT 1",
-            (table, encoded_pk),
-        ).fetchone()
-        is not None
-    )
 
 
 def log_stamp_backfill_rows(
@@ -84,9 +70,20 @@ def log_stamp_backfill_rows(
     machine_id: str | None = None
     received_at = sync_stamp.canonical_now()
     logged = 0
+    encoded_pks = {pk: sync_stamp.encode_row_pk(pk) for pk in row_pks}
+    existing = {
+        str(row[0])
+        for row in conn.execute(
+            f"SELECT row_pk FROM {changelog_table} "
+            "WHERE table_name = ? AND row_pk IN ({})".format(
+                ", ".join("?" for _ in row_pks)
+            ),
+            (table, *encoded_pks.values()),
+        ).fetchall()
+    }
     for pk in row_pks:
-        encoded_pk = sync_stamp.encode_row_pk(pk)
-        if _changelog_has_row(conn, changelog_table, table, encoded_pk):
+        encoded_pk = encoded_pks[pk]
+        if encoded_pk in existing:
             continue
         stamp = stamp_by_pk[pk]
         origin = origin_by_pk.get(pk)
@@ -106,21 +103,46 @@ def log_stamp_backfill_rows(
     return logged
 
 
+def _scan_track_fields_backfill_candidates(
+    conn: sqlite3.Connection,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> list[tuple[Any, ...]]:
+    changelog_table = active_changelog_table(env)
+    if not _table_exists(conn, changelog_table):
+        return []
+    rows = conn.execute(
+        f"""
+        SELECT stable_id, field_name
+        FROM {_TRACK_FIELDS}
+        WHERE modified_at IS NOT NULL
+          AND (
+            updated_at IS NULL
+            OR (
+              updated_at = modified_at
+              AND NOT EXISTS (
+                SELECT 1 FROM {changelog_table} c
+                WHERE c.table_name = ?
+                  AND c.row_pk = json_array(stable_id, field_name)
+              )
+            )
+          )
+        """,
+        (_TRACK_FIELDS,),
+    ).fetchall()
+    return [(stable_id, field_name) for stable_id, field_name in rows]
+
+
 def _apply_track_fields_stamp_backfill(
     conn: sqlite3.Connection,
     *,
     env: Mapping[str, str] | None = None,
+    candidates: Sequence[tuple[Any, ...]] | None = None,
 ) -> int:
     """Stamp legacy ``track_fields`` rows and log them to the active changelog."""
-    changelog_table = active_changelog_table(env)
-    if not _table_exists(conn, changelog_table):
-        return 0
-
-    rows = conn.execute(
-        "SELECT stable_id, field_name, modified_at, updated_at, origin_device_id "
-        f"FROM {_TRACK_FIELDS} WHERE modified_at IS NOT NULL"
-    ).fetchall()
-    if not rows:
+    if candidates is None:
+        candidates = _scan_track_fields_backfill_candidates(conn, env=env)
+    if not candidates:
         return 0
 
     touched = 0
@@ -128,9 +150,16 @@ def _apply_track_fields_stamp_backfill(
     stamp_by_pk: dict[tuple[Any, ...], str] = {}
     origin_by_pk: dict[tuple[Any, ...], str | None] = {}
 
-    for stable_id, field_name, modified_at, updated_at, origin in rows:
+    for stable_id, field_name in candidates:
+        row = conn.execute(
+            "SELECT modified_at, updated_at, origin_device_id "
+            f"FROM {_TRACK_FIELDS} WHERE stable_id = ? AND field_name = ?",
+            (stable_id, field_name),
+        ).fetchone()
+        if row is None:
+            continue
+        modified_at, updated_at, origin = row
         pk = (stable_id, field_name)
-        encoded_pk = sync_stamp.encode_row_pk(pk)
         if updated_at is None:
             conn.execute(
                 f"UPDATE {_TRACK_FIELDS} SET updated_at = modified_at "
@@ -139,15 +168,9 @@ def _apply_track_fields_stamp_backfill(
             )
             stamp = str(modified_at)
             touched += 1
-        elif (
-            str(updated_at) == str(modified_at)
-            and not _changelog_has_row(conn, changelog_table, _TRACK_FIELDS, encoded_pk)
-        ):
+        elif str(updated_at) == str(modified_at):
             stamp = str(updated_at)
         else:
-            continue
-
-        if _changelog_has_row(conn, changelog_table, _TRACK_FIELDS, encoded_pk):
             continue
         to_log.append(pk)
         stamp_by_pk[pk] = stamp
@@ -176,14 +199,33 @@ def backfill_track_fields_stamps(
     transaction (``apply_migrations`` for step 15). Otherwise the whole pass
     is wrapped in :func:`sync_stamp.stamped_transaction`.
     """
+    if schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
+        if schema_markers.has_marker(conn, V15_BACKFILL_MARKER):
+            return 0
+
+    candidates = _scan_track_fields_backfill_candidates(conn, env=env)
+
+    def _run() -> int:
+        if schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
+            if schema_markers.has_marker(conn, V15_BACKFILL_MARKER):
+                return 0
+        touched = _apply_track_fields_stamp_backfill(
+            conn, env=env, candidates=candidates
+        )
+        if schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
+            schema_markers.insert_marker(conn, V15_BACKFILL_MARKER)
+        return touched
+
     if transactional:
         with sync_stamp.stamped_transaction(conn):
-            return _apply_track_fields_stamp_backfill(conn, env=env)
-    return _apply_track_fields_stamp_backfill(conn, env=env)
+            return _run()
+    return _run()
 
 
 __all__ = [
     "_V15",
+    "HUB_CHANGELOG_TABLE",
+    "V15_BACKFILL_MARKER",
     "active_changelog_table",
     "backfill_track_fields_stamps",
     "log_stamp_backfill_rows",

@@ -15,7 +15,8 @@ lives in :mod:`apps.shared.state.migrations` (v1-v5) and
 :mod:`apps.shared.state.migrations_v12` (v12) and
 :mod:`apps.shared.state.migrations_v13` (v13) and
 :mod:`apps.shared.state.migrations_v14` (v14) and
-:mod:`apps.shared.state.migrations_v15` (v15) -- split across sibling modules
+:mod:`apps.shared.state.migrations_v15` (v15) and
+:mod:`apps.shared.state.migrations_v16` (v16) -- split across sibling modules
 (issue #1583) because the combined ladder alone exceeds the 600-line
 file-size gate. This module keeps the runner and the
 drift-tripwire table/view tuples below.
@@ -34,8 +35,9 @@ from .migrations_v12 import _V12
 from .migrations_v13 import _V13
 from .migrations_v14 import _V14
 from .migrations_v15 import _V15, backfill_track_fields_stamps
+from .migrations_v16 import _V16
 
-SCHEMA_VERSION: int = 15
+SCHEMA_VERSION: int = 16
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -56,6 +58,7 @@ MIGRATIONS: list[list[str]] = [
     _V13,
     _V14,
     _V15,
+    _V16,
 ]
 
 
@@ -251,7 +254,7 @@ D2 folds these into :data:`MIGRATIONS` in a later round; until then this
 tuple is the honest inventory, not an aspiration."""
 
 
-INFRASTRUCTURE_TABLES: tuple[str, ...] = ("schema_meta",)
+INFRASTRUCTURE_TABLES: tuple[str, ...] = ("schema_meta", "schema_meta_markers")
 """Migration bookkeeping owned by this module."""
 
 
