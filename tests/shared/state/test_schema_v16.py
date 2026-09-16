@@ -193,10 +193,14 @@ def test_second_open_rw_is_constant_time_on_large_database(
     state_db.open_rw(path).close()
     elapsed = time.monotonic() - started
 
-    marker = sqlite3.connect(str(path)).execute(
+    marker = real_connect(str(path)).execute(
         f"SELECT 1 FROM {MARKER_TABLE} WHERE marker = ?",
         (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
     ).fetchone()
     assert marker is not None
+    # Two one-shot markers are consulted on every open (v15 track_fields
+    # stamp backfill, v17 hub changelog stamp repair), each as one
+    # sqlite_master existence probe plus one PK lookup. Constant in the
+    # number of ladder steps, never in the number of rows.
     assert len(backfill_queries) <= 4
     assert elapsed < 1.0

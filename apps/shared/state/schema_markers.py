@@ -15,14 +15,19 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
-def has_marker(conn: sqlite3.Connection, marker: str) -> bool:
-    if not table_exists(conn, MARKER_TABLE):
-        return False
+def marker_row_present(conn: sqlite3.Connection, marker: str) -> bool:
+    """Raw marker lookup; the caller has already proven the table exists."""
     row = conn.execute(
         f"SELECT 1 FROM {MARKER_TABLE} WHERE marker = ?",
         (marker,),
     ).fetchone()
     return row is not None
+
+
+def has_marker(conn: sqlite3.Connection, marker: str) -> bool:
+    if not table_exists(conn, MARKER_TABLE):
+        return False
+    return marker_row_present(conn, marker)
 
 
 def insert_marker(conn: sqlite3.Connection, marker: str) -> None:
@@ -36,5 +41,6 @@ __all__ = [
     "MARKER_TABLE",
     "has_marker",
     "insert_marker",
+    "marker_row_present",
     "table_exists",
 ]
