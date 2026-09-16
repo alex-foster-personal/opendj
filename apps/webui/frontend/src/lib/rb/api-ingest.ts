@@ -2,10 +2,12 @@
  * Typed client for /api/v1/ingest (config, coverage, refresh job, upload) and
  * the analyze-on-import queue at GET /api/v1/analysis-queue.
  *
- * There is no client for POST /analysis-queue/run on purpose. The drain is
- * started by the daemon's own reconcile loop, and the TopBar's existing
- * "Refresh analysis" button already covers the manual case; the run endpoint
- * stays mounted for agents driving the daemon over HTTP, which need no TS.
+ * POST /analysis-queue/run has a client because first-run setup needs it. The
+ * daemon's reconcile loop does start the drain on its own, but on a timer: a
+ * folder import is the one path with no rekordbox analysis to fall back on, so
+ * the wizard's last screen asks for the drain NOW rather than showing a user a
+ * library with no BPM, key or beatgrid for up to a full interval. Everywhere
+ * else still leaves it to the loop or to the TopBar's "Refresh analysis".
  *
  * Kept separate from api-rb.ts (fan-out hotspot). Same conventions: relative
  * API_BASE, fail-fast RbApiError on !ok, no invented data.
@@ -186,6 +188,18 @@ export async function getAnalysisQueue(limit?: number): Promise<AnalysisQueue> {
 	const r = await fetch(`${API_BASE}/api/v1/analysis-queue${query}`);
 	if (!r.ok) await _err(r);
 	return (await r.json()) as AnalysisQueue;
+}
+
+/**
+ * Start the unmapped-scope drain now. 409 when a refresh job already holds the
+ * one slot, which is not an error the caller has to handle as a failure: it
+ * means the work this call wanted is already happening.
+ */
+export async function startAnalysisQueueDrain(): Promise<RefreshStatus | null> {
+	const r = await fetch(`${API_BASE}/api/v1/analysis-queue/run`, { method: 'POST' });
+	if (r.status === 409) return null;
+	if (!r.ok) await _err(r);
+	return (await r.json()) as RefreshStatus;
 }
 
 export async function getTrackAnalysisOrders(stableId: string): Promise<AnalysisOrder[]> {
