@@ -147,6 +147,38 @@ export function calibrateButtonEnabled(args: {
 	return args.output_mode === 'two_outputs' && args.selected_output_device_id !== null;
 }
 
+/** Every reason calibration cannot start right now, in the operator's words.
+ * The modal, the error the engine raises and the agent-facing commands all
+ * read from this one list, so a missing audio graph can never be reported as
+ * a missing device. An empty list means calibration is ready to run. */
+export function calibrationBlockers(args: {
+	audio_graph_ready: unknown;
+	output_mode: unknown;
+	selected_output_device_id: string | null;
+}): string[] {
+	if (typeof args.audio_graph_ready !== 'boolean') {
+		throw new TypeError('audio_graph_ready must be a boolean');
+	}
+	const blockers: string[] = [];
+	if (!args.audio_graph_ready) {
+		blockers.push('the audio graph is not built yet, so load a deck and start playback once');
+	}
+	if (
+		!calibrateButtonEnabled({
+			output_mode: args.output_mode,
+			selected_output_device_id: args.selected_output_device_id
+		})
+	) {
+		if (args.output_mode !== 'two_outputs') {
+			blockers.push(`CUE OUT is ${String(args.output_mode)}, and calibration needs two_outputs`);
+		}
+		if (args.selected_output_device_id === null) {
+			blockers.push('no headphone output device is selected in the I/O pane');
+		}
+	}
+	return blockers;
+}
+
 /** Roughly how long a full run takes, for the intro copy. */
 export function estimatedCalibrationSeconds(): number {
 	const perMeasurementMs = CUE_LATENCY_PREROLL_MS + cueLatencyCaptureMs(CUE_ALIGN_MAX_LAG_MS);

@@ -323,12 +323,15 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 		try {
 			await assert.rejects(
 				ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate' }),
-				/two_outputs with a selected headphone output/,
+				/the audio graph is not built yet/,
 				'if a headless calibrate with no monitor graph resolves then the HTTP caller reads 200 for a run that never happened - broken'
 			);
 			const calibration = ipc.queryPerformanceState().mixer.headphones.calibration;
 			assert.equal(calibration.step, 'failed');
-			assert.match(calibration.error, /two_outputs with a selected headphone output/);
+			// The graph is the cause here, so the message has to lead with it. Blaming
+			// the output mode sent a reader to the I/O pane to fix something that was
+			// not broken.
+			assert.match(calibration.error, /the audio graph is not built yet/);
 		} finally {
 			uninstall();
 		}
