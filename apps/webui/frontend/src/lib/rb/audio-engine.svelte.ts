@@ -221,6 +221,7 @@ import {
 	CONTEXT_WAIT_STALL_TIMEOUT_MS,
 	DECK_IDS,
 	eqDbFromKnob,
+	masterDelaySeconds,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -243,14 +244,17 @@ import { attachMasterMuteNode, isMasterMuted, setMasterMuted } from '$lib/player
 import {
 	acquireHeadphoneOutput as acquireMonitorOutput,
 	applyHeadphoneMix,
+	createMasterDelayNode,
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
 	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
 	selectMasterOutput as selectMonitorMasterOutput,
+	setAlignmentMode as setMonitorAlignmentMode,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
+	setMasterDelayMs as setMonitorMasterDelay,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
@@ -548,8 +552,13 @@ function _emptyRuntime(): _DeckRuntime {
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
 let _masterAnalyser: AnalyserNode | null = null;
-/** Opt-in startup mute, last node before the destination. Never bypassed. */
+/** Opt-in startup mute, after every tap and before the room delay. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
+/** CUEOUT-14 room delay line: THE last node before the destination, after the
+ * mute, so the monitor tap, the meters and the silence belt all sit upstream
+ * of it and the phones never pay it. Created by player/headphones.ts, which
+ * owns its delayTime; the engine only wires it. */
+let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
@@ -622,6 +631,13 @@ export function peekMasterMeterReading(): MeterReading {
 	return masterMeterReading(meterClockMs());
 }
 
+/** CUEOUT-14: the live room delay line, null until the graph exists. Read by
+ * loopback checks that want to prove the LAST node before the destination is
+ * the delay; nothing else may write its delayTime (player/headphones.ts owns it). */
+export function masterDelayNode(): DelayNode | null {
+	return _masterDelay;
+}
+
 /** Re-exported so a meter component can tell a genuinely broken meter
  * (worklet failed to arm) apart from a genuinely silent bus. See
  * meter-tap.ts's metersUnavailable/UNAVAILABLE_METER_READING. */
@@ -687,6 +703,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			releaseMasterMeterTap();
 			attachMasterMuteNode(null);
 			_masterMuteGain = null;
+			_masterDelay = null;
 			_externalMerger = _externalRouteAnalyser = null;
 			_ctx = null;
 			resetMasterSilenceWatch();
@@ -768,9 +785,13 @@ function _ensureGraph(): AudioContext {
 	// identically. See player/master-mute.svelte.ts.
 	_masterMuteGain = _ctx.createGain();
 	attachMasterMuteNode(_masterMuteGain);
+	// CUEOUT-14: the room delay is the ONLY node after the mute. Everything the
+	// operator hears in the phones was tapped upstream at _masterGain.
+	_masterDelay = createMasterDelayNode(_ctx);
 	const routing = parseExternalRouting();
 	if (routing === null) {
-		_masterMuteGain.connect(_ctx.destination);
+		_masterMuteGain.connect(_masterDelay);
+		_masterDelay.connect(_ctx.destination);
 	} else {
 		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
 		const dest = _ctx.destination;
@@ -788,7 +809,11 @@ function _ensureGraph(): AudioContext {
 		_masterMuteGain.channelCount = dest.channelCount;
 		_masterMuteGain.channelCountMode = 'explicit';
 		_masterMuteGain.channelInterpretation = 'discrete';
-		_masterMuteGain.connect(dest);
+		_masterDelay.channelCount = dest.channelCount;
+		_masterDelay.channelCountMode = 'explicit';
+		_masterDelay.channelInterpretation = 'discrete';
+		_masterMuteGain.connect(_masterDelay);
+		_masterDelay.connect(dest);
 		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
@@ -1410,6 +1435,7 @@ async function _scheduleDeckSerial(
 		processorLatencySec: rt.latencySec,
 		baseLatencySec: _ctx.baseLatency,
 		outputLatencySec: _ctx.outputLatency,
+		masterDelayMs: mixerState.headphones.master_delay_ms,
 		active,
 		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
 	});
@@ -1835,11 +1861,14 @@ function _publishPresentedTransport(
 	// The sample clock is handed over so a stalled HAL output position falls back
 	// to it rather than freezing the waveform. See
 	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
+	// CUEOUT-14: the room hears everything master_delay_ms later than the
+	// render clock, so the playhead and PLAY light lag by exactly that.
 	const observation = observePresentedTransportTimeline(
 		rt.presentation,
 		outputTimestamp,
 		rt.durationSec,
-		_ctx === null ? undefined : _ctx.currentTime
+		_ctx === null ? undefined : _ctx.currentTime,
+		masterDelaySeconds(mixerState.headphones.master_delay_ms)
 	);
 	notePresentationClock(deck, observation.clock_stalled);
 	if (!observation.accepted) return observation;
@@ -2864,6 +2893,7 @@ class RbAudioEngine implements AudioEngine {
 		disposeHeadphoneMonitor();
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
+		if (_masterDelay !== null) nodes.push(_masterDelay);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -2879,6 +2909,7 @@ class RbAudioEngine implements AudioEngine {
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
 		_masterMuteGain = null;
+		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
 		_ctx = null;
 		_masterDeck = null;
@@ -4198,6 +4229,9 @@ class RbAudioEngine implements AudioEngine {
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
 	setHeadDelayMs = setMonitorHeadDelay;
+	/** CUEOUT-14: the room delay line and how a measured offset is split. */
+	setMasterDelayMs = setMonitorMasterDelay;
+	setHeadphoneAlignmentMode = setMonitorAlignmentMode;
 	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
 	/** Must be called from a visible user gesture. May briefly open the
 	 * microphone to label output devices when selectAudioOutput is missing. */

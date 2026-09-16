@@ -26,16 +26,27 @@
  * transport.
  */
 
-import { HEAD_DELAY_MAX_MS, HEADPHONE_OPERATION_TIMEOUT_MS, PARAM_SMOOTH_S, assertHeadDelayMs, headDelaySeconds } from '$lib/player/constants';
 import {
-	CUE_LATENCY_CLICK_COUNT,
-	CUE_LATENCY_CLICK_MS,
-	CUE_LATENCY_PERIOD_MS,
-	CUE_LATENCY_PREROLL_MS,
-	cueLatencyCaptureMs,
-	measureCueLatencyMs
-} from '$lib/player/cue-latency';
-import { persistMixerConfig } from '$lib/player/mixer-config';
+	HEAD_DELAY_MAX_MS,
+	HEADPHONE_OPERATION_TIMEOUT_MS,
+	HEADPHONE_OUTPUT_MODES,
+	PARAM_SMOOTH_S,
+	assertHeadDelayMs,
+	assertHeadphoneAlignmentMode,
+	assertHeadphoneOutputMode,
+	assertMasterDelayMs,
+	headDelaySeconds,
+	masterDelaySeconds,
+	type HeadphoneOutputMode
+} from '$lib/player/constants';
+import {
+	deriveAlignment,
+	type AppliedAlignment,
+	type CueAlignBus,
+	type CueAlignEffects,
+	type MicHandle
+} from '$lib/player/cue-align.svelte';
+import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import {
 	installHeadphoneOutputLiveness,
@@ -60,17 +71,11 @@ export type HeadphoneOutput = (typeof mixerState)['headphones']['outputs'][numbe
  */
 export type MonitorSource = () => { context: AudioContext; masterGain: GainNode };
 
-/** Legal `HeadphoneState.output_mode` values. */
-export const HEADPHONE_OUTPUT_MODES = ['practice', 'two_outputs', 'split_cable'] as const;
-export type HeadphoneOutputMode = (typeof HEADPHONE_OUTPUT_MODES)[number];
-
-export function assertHeadphoneOutputMode(mode: unknown): asserts mode is HeadphoneOutputMode {
-	if (!HEADPHONE_OUTPUT_MODES.includes(mode as HeadphoneOutputMode)) {
-		throw new TypeError(
-			`headphone output_mode must be practice, two_outputs, or split_cable; got ${String(mode)}`
-		);
-	}
-}
+/** Legal `HeadphoneState.output_mode` values. Defined in player/constants.ts
+ * (a leaf) since CUEOUT-14 so the alignment policy can validate a mode
+ * without importing this graph; re-exported here for every existing importer. */
+export { HEADPHONE_OUTPUT_MODES, assertHeadphoneOutputMode };
+export type { HeadphoneOutputMode };
 
 /** Main-output cue/master gains. Practice with no monitor selected keeps master
  * at unity (the room must never be silenced by MIX) and blends the cue bus on
@@ -347,6 +352,51 @@ export function setHeadDelayMs(value: unknown): void {
 	applyHeadphoneMix();
 }
 
+/** CUEOUT-14: the room delay line. ONE DelayNode, created here (so the
+ * engine keeps no `createDelay` of its own) and inserted by `_ensureGraph`
+ * as the LAST node before `ctx.destination`, after `_masterMuteGain`. The
+ * monitor tap (`masterGain -> masterMonitor`) is upstream, so the phones
+ * never pay it. Seeded from the persisted value so a reload plays the room
+ * where it was left. */
+const MASTER_DELAY_LINE_S = 2;
+let _masterDelayNode: DelayNode | null = null;
+
+function _applyMasterDelay(): void {
+	const node = _masterDelayNode;
+	if (node === null) return;
+	node.delayTime.setValueAtTime(
+		masterDelaySeconds(mixerState.headphones.master_delay_ms),
+		node.context.currentTime
+	);
+}
+
+export function createMasterDelayNode(context: AudioContext): DelayNode {
+	const node = context.createDelay(MASTER_DELAY_LINE_S);
+	node.delayTime.value = masterDelaySeconds(mixerState.headphones.master_delay_ms);
+	_masterDelayNode = node;
+	return node;
+}
+
+export function setMasterDelayMs(value: unknown): void {
+	assertMasterDelayMs(value);
+	mixerState.headphones.master_delay_ms = value;
+	persistMixerConfig({ master_delay_ms: value });
+	_applyMasterDelay();
+}
+
+/** Switch how the last measured offset is split, and re-apply it from the
+ * persisted `last_calibration` so no re-measurement is needed. */
+export function setAlignmentMode(mode: unknown): void {
+	assertHeadphoneAlignmentMode(mode);
+	mixerState.headphones.alignment_mode = mode;
+	persistMixerConfig({ alignment_mode: mode });
+	const last = loadMixerConfig().last_calibration;
+	if (last === null) return;
+	const plan = deriveAlignment(mode, last.cue_latency_ms - last.master_latency_ms);
+	setHeadDelayMs(plan.head_delay_ms);
+	setMasterDelayMs(plan.master_delay_ms);
+}
+
 type HeadphonesStateWithLiveness = (typeof mixerState)['headphones'] & {
 	liveness_verdict: LivenessVerdict;
 	liveness_snapshot: HeadphoneOutputSnapshot | null;
@@ -401,16 +451,20 @@ export function twoOutputsWarning(args: {
 	return parts.join(' ');
 }
 
-/** Sample-accurate monitor lag for a static DelayNode delayTime (loopback acceptance helper). */
+/** Sample-accurate lag for a static DelayNode delayTime (loopback acceptance
+ * helper). `bus` picks the contract the delay is checked against: the cue
+ * monitor line (0..500) or the CUEOUT-14 room line (0..1500). */
 export function clickTrainLagMs(opts: {
 	delayMs: number;
 	sampleRate: number;
 	bufferSize: number;
 	clickPeriodMs: number;
 	clickCount: number;
+	bus?: CueAlignBus;
 }): number {
 	const { delayMs, sampleRate, clickPeriodMs, clickCount } = opts;
-	const delaySamples = Math.round(headDelaySeconds(delayMs) * sampleRate);
+	const delaySeconds = (opts.bus ?? 'cue') === 'master' ? masterDelaySeconds(delayMs) : headDelaySeconds(delayMs);
+	const delaySamples = Math.round(delaySeconds * sampleRate);
 	const periodSamples = Math.round((clickPeriodMs / 1000) * sampleRate);
 	const totalSamples = delaySamples + periodSamples * (clickCount - 1) + 1;
 	const undelayed = new Float32Array(totalSamples);
@@ -431,28 +485,6 @@ export function clickTrainLagMs(opts: {
 		throw new Error('click train did not produce detectable peaks');
 	}
 	return ((delayedPeak - undelayedPeak) / sampleRate) * 1000;
-}
-
-/** First-select CUE latency: Bluetooth, unnamed BT (WH-1000XM5), not speakers or the Mac jack. */
-export function shouldCalibrateCueLatency(args: {
-	previousCueId: string | null;
-	nextCueId: string;
-	label: string;
-	alreadyCalibrated: boolean;
-}): boolean {
-	if (typeof args.nextCueId !== 'string' || args.nextCueId.trim() === '') {
-		throw new TypeError('cue id for latency calibration must be a non-empty string');
-	}
-	if (typeof args.label !== 'string') throw new TypeError('cue label must be a string');
-	if (args.previousCueId !== null && typeof args.previousCueId !== 'string') {
-		throw new TypeError('previous cue id must be a string or null');
-	}
-	if (args.alreadyCalibrated) return false;
-	const label = args.label.trim();
-	if (label === '') return false;
-	if (outputLooksLikeSpeakers(label)) return false;
-	if (/external headphones/i.test(label)) return false;
-	return true;
 }
 
 /** Skip the setSinkId dance when the live sink is selected again (OUT-change lag). */
@@ -865,10 +897,6 @@ function _startHeadphoneLiveness(element: HTMLAudioElement): void {
 		_selectedHeadphoneDeviceStillPresent
 	);
 }
-/** Cue device ids that already filled HEAD DELAY this session. */
-const _calibratedCueIds = new Set<string>();
-/** One in-flight chirp at a time; a failed cal is not remembered so re-select retries. */
-let _calibratingCueId: string | null = null;
 /** Last CUE id while two_outputs was live, so a vanished sink can restore. */
 let _rememberedCueId: string | null = null;
 /** MAIN / practice click, not a device vanishing. Blocks auto-restore. */
@@ -1079,6 +1107,7 @@ export function disposeHeadphoneMonitor(): void {
 	_lastMonitorSource = undefined;
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
+	_masterDelayNode = null;
 	_unwatchHeadphoneDeviceChanges();
 	_disposeHeadphoneGraph();
 }
@@ -1199,38 +1228,68 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 	}
 }
 
-async function _playCueLatencyTrain(
-	nodes: HeadphoneNodes,
+/** CUEOUT-14: one chirp train to ONE node, cancellable. The master check
+ * targets `ctx.destination` directly so the room delay line is bypassed and
+ * the measurement is the raw output-path latency; the cue check targets the
+ * headphone MediaStreamAudioDestinationNode only. */
+async function _playChirpTrain(
+	ctx: AudioContext,
+	target: AudioNode,
 	samples: Float32Array,
-	sampleRate: number
+	sampleRate: number,
+	signal: AbortSignal
 ): Promise<void> {
-	const ctx = nodes.level.context;
+	signal.throwIfAborted();
 	const buffer = ctx.createBuffer(1, samples.length, sampleRate);
 	buffer.copyToChannel(samples, 0);
 	const src = ctx.createBufferSource();
 	src.buffer = buffer;
-	src.connect(nodes.destination);
-	await new Promise<void>((resolve, reject) => {
-		src.onended = () => resolve();
-		src.onerror = () => reject(new Error('cue latency chirp failed to play'));
-		try {
-			src.start();
-		} catch (error) {
-			reject(error instanceof Error ? error : new Error(String(error)));
-		}
-	});
-	src.disconnect();
+	src.connect(target);
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const onAbort = () => {
+				src.onended = null;
+				try {
+					src.stop();
+				} catch {
+					// already ended
+				}
+				reject(signal.reason instanceof Error ? signal.reason : new Error('cue alignment chirp aborted'));
+			};
+			signal.addEventListener('abort', onAbort, { once: true });
+			src.onended = () => {
+				signal.removeEventListener('abort', onAbort);
+				resolve();
+			};
+			src.onerror = () => {
+				signal.removeEventListener('abort', onAbort);
+				reject(new Error('cue alignment chirp failed to play'));
+			};
+			try {
+				src.start();
+			} catch (error) {
+				signal.removeEventListener('abort', onAbort);
+				reject(error instanceof Error ? error : new Error(String(error)));
+			}
+		});
+	} finally {
+		src.disconnect();
+	}
 }
 
 function _sleepMs(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function _recordCueLatencyCapture(
+/** Capture `durationMs` of the mic into a Float32Array at `sampleRate`,
+ * rejecting (and closing the capture context) the moment `signal` aborts. */
+async function _recordChirpCapture(
 	stream: MediaStream,
 	durationMs: number,
-	sampleRate: number
+	sampleRate: number,
+	signal: AbortSignal
 ): Promise<Float32Array> {
+	signal.throwIfAborted();
 	const ctx = new AudioContext({ sampleRate });
 	try {
 		await ctx.resume();
@@ -1246,9 +1305,15 @@ async function _recordCueLatencyCapture(
 		silent.connect(ctx.destination);
 		await new Promise<void>((resolve, reject) => {
 			const timeoutId = setTimeout(
-				() => reject(new Error(`cue latency record timed out after ${durationMs}ms`)),
+				() => reject(new Error(`cue alignment record timed out after ${durationMs}ms`)),
 				durationMs + 1500
 			);
+			const onAbort = () => {
+				clearTimeout(timeoutId);
+				processor.onaudioprocess = null;
+				reject(signal.reason instanceof Error ? signal.reason : new Error('cue alignment record aborted'));
+			};
+			signal.addEventListener('abort', onAbort, { once: true });
 			processor.onaudioprocess = (event: AudioProcessingEvent) => {
 				const input = event.inputBuffer.getChannelData(0);
 				const n = Math.min(input.length, frames - offset);
@@ -1256,6 +1321,7 @@ async function _recordCueLatencyCapture(
 				offset += n;
 				if (offset >= frames) {
 					clearTimeout(timeoutId);
+					signal.removeEventListener('abort', onAbort);
 					processor.onaudioprocess = null;
 					resolve();
 				}
@@ -1270,72 +1336,63 @@ async function _recordCueLatencyCapture(
 	}
 }
 
-async function _calibrateFirstSelectCueLatency(
-	deviceId: string,
-	nodes: HeadphoneNodes
-): Promise<void> {
-	const mediaDevices = _requireHeadphoneDeviceApi();
-	const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
-	const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);
-	const stream = await withHeadphoneOperationTimeout(
-		'getUserMedia',
-		mediaDevices.getUserMedia({ audio, video: false })
-	);
-	try {
-		const sampleRate = nodes.level.context.sampleRate;
-		const captureMs = cueLatencyCaptureMs();
-		const measured = await measureCueLatencyMs({
-			sampleRate,
-			clickMs: CUE_LATENCY_CLICK_MS,
-			periodMs: CUE_LATENCY_PERIOD_MS,
-			clickCount: CUE_LATENCY_CLICK_COUNT,
-			playAndRecord: async (reference) => {
-				const recording = _recordCueLatencyCapture(stream, captureMs, sampleRate);
-				await _sleepMs(CUE_LATENCY_PREROLL_MS);
-				await _playCueLatencyTrain(nodes, reference, sampleRate);
-				return recording;
-			}
-		});
-		if (mixerState.headphones.selected_output_device_id !== deviceId) {
-			return;
-		}
-		setHeadDelayMs(measured);
-		_calibratedCueIds.add(deviceId);
-	} finally {
-		for (const track of stream.getTracks()) track.stop();
-	}
+interface _MicStreamHandle extends MicHandle {
+	stream: MediaStream;
 }
 
-function _maybeCalibrateCueLatency(deviceId: string, previousCueId: string | null, nodes: HeadphoneNodes): void {
-	const label =
-		mixerState.headphones.outputs.find((output) => output.id === deviceId)?.label ?? '';
-	if (
-		!shouldCalibrateCueLatency({
-			previousCueId,
-			nextCueId: deviceId,
-			label,
-			alreadyCalibrated: _calibratedCueIds.has(deviceId)
-		})
-	) {
-		return;
+/**
+ * CUEOUT-14: the audio half of the calibration effects, bound to the LIVE
+ * headphone graph. Throws (rather than measuring the wrong sinks) unless the
+ * monitor is in two_outputs with a selected cue output.
+ */
+export function cueAlignAudioEffects(): Pick<
+	CueAlignEffects,
+	'sampleRate' | 'getUserMedia' | 'playTrain' | 'record' | 'sleep' | 'now' | 'persist' | 'alignmentMode' | 'deviceIds'
+> {
+	const ctx = _outputContext;
+	const nodes = _headphoneNodes;
+	const cueId = mixerState.headphones.selected_output_device_id;
+	if (ctx === null || nodes === null || mixerState.headphones.output_mode !== 'two_outputs' || cueId === null) {
+		throw new Error('cue alignment calibration needs two_outputs with a selected headphone output');
 	}
-	if (_calibratingCueId === deviceId) return;
-	if (_calibratingCueId !== null) return;
-	_calibratingCueId = deviceId;
-	void _calibrateFirstSelectCueLatency(deviceId, nodes)
-		.catch((error: unknown) => {
-			if (mixerState.headphones.selected_output_device_id !== deviceId) return;
-			mixerState.headphones.error =
-				error instanceof Error ? error.message : String(error);
-		})
-		.finally(() => {
-			if (_calibratingCueId === deviceId) _calibratingCueId = null;
-			const liveId = mixerState.headphones.selected_output_device_id;
-			const liveNodes = _headphoneNodes;
-			if (liveId !== null && liveId !== deviceId && liveNodes !== null) {
-				_maybeCalibrateCueLatency(liveId, deviceId, liveNodes);
+	return {
+		sampleRate: () => ctx.sampleRate,
+		async getUserMedia(): Promise<_MicStreamHandle> {
+			const mediaDevices = _requireHeadphoneDeviceApi();
+			const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
+			const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);
+			const stream = await withHeadphoneOperationTimeout(
+				'getUserMedia',
+				mediaDevices.getUserMedia({ audio, video: false })
+			);
+			return {
+				stream,
+				stop: () => {
+					for (const track of stream.getTracks()) track.stop();
+				}
+			};
+		},
+		playTrain(bus, reference, sampleRate, signal) {
+			const target = bus === 'master' ? ctx.destination : nodes.destination;
+			return _playChirpTrain(ctx, target, reference, sampleRate, signal);
+		},
+		record(mic, durationMs, sampleRate, signal) {
+			const stream = (mic as _MicStreamHandle).stream;
+			if (!(stream instanceof MediaStream)) {
+				throw new TypeError('cue alignment record needs the MicHandle returned by getUserMedia');
 			}
-		});
+			return _recordChirpCapture(stream, durationMs, sampleRate, signal);
+		},
+		sleep: _sleepMs,
+		now: () => Date.now(),
+		persist(result: AppliedAlignment) {
+			setHeadDelayMs(result.head_delay_ms);
+			setMasterDelayMs(result.master_delay_ms);
+			persistMixerConfig({ last_calibration: result.record });
+		},
+		alignmentMode: () => mixerState.headphones.alignment_mode,
+		deviceIds: () => ({ cue: cueId, master: mixerState.headphones.selected_master_output_device_id })
+	};
 }
 
 export async function selectHeadphoneOutput(
@@ -1358,10 +1415,7 @@ export async function selectHeadphoneOutput(
 		});
 		if (plan.skip) {
 			const live = _headphoneNodes;
-			if (live !== null) {
-				if (mixerState.headphones.active) _startHeadphoneLiveness(live.element);
-				_maybeCalibrateCueLatency(deviceId, previousId, live);
-			}
+			if (live !== null && mixerState.headphones.active) _startHeadphoneLiveness(live.element);
 			return;
 		}
 		mixerState.headphones.selected_output_device_id = deviceId;
@@ -1415,7 +1469,6 @@ export async function selectHeadphoneOutput(
 		candidate = null;
 		_lastMonitorSource = monitorSource;
 		_startHeadphoneLiveness(nodes.element);
-		_maybeCalibrateCueLatency(deviceId, previousId, nodes);
 	} catch (error) {
 		if (candidate !== null) _detachHeadphoneElement(candidate);
 		mixerState.headphones.selected_output_device_id = previousId;
