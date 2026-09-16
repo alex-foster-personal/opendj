@@ -241,25 +241,40 @@ def build_sweep_plan(trunk_tip: str, queued_runs: list[QueuedRun]) -> SweepPlan:
     )
 
 
-def closed_pr_runs_to_cancel(
-    runs: list[QueuedRun], open_pr_branches: frozenset[str]
-) -> tuple[QueuedRun, ...]:
-    """Pull request runs whose branch has no open pull request.
+@dataclass(frozen=True)
+class OpenPullRequests:
+    """Every open pull request's `(head owner, head ref)`, from a read that COMPLETED.
 
-    An empty open-PR list is refused, not trusted: a failed or truncated read would
-    otherwise cancel every pull request's CI.
+    Holding one is the claim that the read finished. `_open_pr_heads` raises on a failed or
+    malformed page rather than returning a short snapshot, so an EMPTY instance means zero
+    open pull requests were MEASURED, not that nothing was measured. A bare frozenset cannot
+    carry that difference, which is why the selector used to refuse every empty set: a
+    repository whose pull requests are all closed is exactly the state this sweep exists for,
+    and the refusal stopped it working there. Zero is a value here as well as an error
+    signature, and the type is what tells the two apart.
+
+    The owner is part of the key because forks reuse branch names. Collapsed to the ref
+    alone, one open `patch-1` retains every other fork's closed `patch-1` runs, and the queue
+    stall this sweep targets persists.
     """
-    pr_runs = [run for run in runs if run.event == "pull_request"]
-    if pr_runs and not open_pr_branches:
-        raise PreconditionError(
-            f"open pull request list is empty while {len(pr_runs)} PR runs are unfinished; "
-            "refusing to treat every PR as closed"
-        )
-    return tuple(run for run in pr_runs if run.head_branch not in open_pr_branches)
+
+    heads: frozenset[tuple[str, str]]
 
 
-def _open_pr_branches() -> frozenset[str]:
-    branches: set[str] = set()
+def closed_pr_runs_to_cancel(
+    runs: list[QueuedRun], open_prs: OpenPullRequests
+) -> tuple[QueuedRun, ...]:
+    """Pull request runs whose `(owner, branch)` has no open pull request."""
+    return tuple(
+        run
+        for run in runs
+        if run.event == "pull_request"
+        and (run.head_repo_owner, run.head_branch) not in open_prs.heads
+    )
+
+
+def _open_pr_heads() -> OpenPullRequests:
+    heads: set[tuple[str, str]] = set()
     page = 1
     while True:
         payload = _gh_api_json(
@@ -270,12 +285,33 @@ def _open_pr_branches() -> frozenset[str]:
         for pull in payload:
             head = pull.get("head") if isinstance(pull, dict) else None
             ref = head.get("ref") if isinstance(head, dict) else None
+            repo = head.get("repo") if isinstance(head, dict) else None
+            owner = repo.get("owner", {}).get("login") if isinstance(repo, dict) else None
             if not isinstance(ref, str) or not ref:
                 raise PreconditionError(f"open pull has no head.ref: {pull!r}")
-            branches.add(ref)
+            if not isinstance(owner, str) or not owner:
+                # Refused, not defaulted to this repository's owner: a fork pull request
+                # defaulted that way reads as a DIFFERENT pull request, so its live run
+                # looks closed and is cancelled.
+                raise PreconditionError(f"open pull has no head.repo.owner.login: {pull!r}")
+            heads.add((owner, ref))
         if len(payload) < PAGE_SIZE:
-            return frozenset(branches)
+            return OpenPullRequests(frozenset(heads))
         page += 1
+
+
+@dataclass(frozen=True)
+class SweepCounts:
+    """What the sweep PLANNED to cancel and what it actually cancelled.
+
+    A dry run plans everything and cancels nothing, so one number cannot report both. Read
+    from a single `cancelled` count that a dry run incremented, `closed_pr_cancelled=N`
+    named something other than what it counted, which is the defect class this lane keeps
+    finding elsewhere.
+    """
+
+    planned: int
+    cancelled: int
 
 
 def execute_closed_pr_sweep(
@@ -285,13 +321,14 @@ def execute_closed_pr_sweep(
     still_closed: Callable[[QueuedRun], bool] = (
         lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0
     ),
-) -> int:
-    """Cancel each selected run, logging one line per run. Returns the cancelled count.
+) -> SweepCounts:
+    """Cancel each selected run, logging one line per run.
 
     The branch is rechecked immediately before each cancellation. The open-PR snapshot can
     go stale while the sweep runs, and a pull request REOPENED in that window owns a run
     this list still calls closed. Cancelling it breaks the one contract the sweep has.
     """
+    planned = 0
     cancelled = 0
     for run in runs:
         if not still_closed(run):
@@ -308,9 +345,10 @@ def execute_closed_pr_sweep(
         )
         print(f"::notice::{line}")
         print(line)
-        if dry_run or _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+        planned += 1
+        if not dry_run and _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
             cancelled += 1
-    return cancelled
+    return SweepCounts(planned, cancelled)
 
 
 def _open_pr_count(head_repo_owner: str, branch: str) -> int:
@@ -332,18 +370,35 @@ def _open_pr_count(head_repo_owner: str, branch: str) -> int:
     return len(payload)
 
 
-def sweep_closed_pr_runs(*, dry_run: bool) -> int:
+def unique_runs(runs: list[QueuedRun]) -> list[QueuedRun]:
+    """One entry per run id, first occurrence kept.
+
+    The queued and in-progress snapshots are two requests, and a run that STARTS between
+    them appears in both. Concatenated, it is logged twice and cancellation is attempted
+    twice, so the reported count measures the race rather than the work.
+    """
+    seen: dict[int, QueuedRun] = {}
+    for run in runs:
+        seen.setdefault(run.run_id, run)
+    return list(seen.values())
+
+
+def sweep_closed_pr_runs(*, dry_run: bool) -> SweepCounts:
     """Cancel unfinished pull_request runs for branches with no open pull request.
 
     Runs are read BEFORE the open-PR list, so any PR that owns a run seen here was
     already open when the list was read.
     """
-    runs = [
-        *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=queued"),
-        *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=in_progress"),
-    ]
+    runs = unique_runs(
+        [
+            *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=queued"),
+            *_paginated_runs(
+                f"repos/{REPO}/actions/runs?event=pull_request&status=in_progress"
+            ),
+        ]
+    )
     return execute_closed_pr_sweep(
-        closed_pr_runs_to_cancel(runs, _open_pr_branches()), dry_run=dry_run
+        closed_pr_runs_to_cancel(runs, _open_pr_heads()), dry_run=dry_run
     )
 
 
@@ -459,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report = sweep(dry_run=args.dry_run)
-        closed_pr_cancelled = sweep_closed_pr_runs(dry_run=args.dry_run)
+        closed_pr = sweep_closed_pr_runs(dry_run=args.dry_run)
     except PreconditionError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
@@ -473,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
         f"bookkeeping_cancel_skipped_not_yet_queued="
         f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
         f"bookkeeping_kept={report.bookkeeping_kept} "
-        f"closed_pr_cancelled={closed_pr_cancelled}"
+        f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled}"
     )
     return EXIT_OK
 

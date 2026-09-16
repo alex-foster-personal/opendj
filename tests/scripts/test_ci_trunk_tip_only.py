@@ -274,13 +274,17 @@ def _recording_gh_api_json(asked: list[str], result: list[object]) -> Callable[[
     return fake_api
 
 
+def _open_prs(*branches: str, owner: str = "maintainer") -> mod.OpenPullRequests:
+    return mod.OpenPullRequests(frozenset((owner, branch) for branch in branches))
+
+
 def test_a_run_for_a_branch_with_no_open_pr_is_cancelled() -> None:
     runs = [
         _pr_run(50, "af--merged"),
         _pr_run(51, "af--open"),
         _pr_run(52, "af--merged", name="E2E"),
     ]
-    assert mod.closed_pr_runs_to_cancel(runs, frozenset({"af--open", "af--other"})) == (
+    assert mod.closed_pr_runs_to_cancel(runs, _open_prs("af--open", "af--other")) == (
         runs[0],
         runs[2],
     )
@@ -288,17 +292,39 @@ def test_a_run_for_a_branch_with_no_open_pr_is_cancelled() -> None:
 
 def test_a_run_for_a_branch_with_an_open_pr_is_kept() -> None:
     runs = [_pr_run(53, "af--open")]
-    assert mod.closed_pr_runs_to_cancel(runs, frozenset({"af--open"})) == ()
+    assert mod.closed_pr_runs_to_cancel(runs, _open_prs("af--open")) == ()
 
 
-def test_an_empty_open_pr_list_refuses_instead_of_cancelling_everything() -> None:
-    with pytest.raises(PreconditionError):
-        mod.closed_pr_runs_to_cancel([_pr_run(54, "af--open")], frozenset())
+def test_a_measured_empty_open_pr_list_is_a_value_not_a_refusal() -> None:
+    """Sol's P1 on #3289, and this test asserted the opposite. A repository whose pull
+    requests are ALL closed is exactly the state this sweep exists for, and refusing every
+    empty set stopped it working there. `OpenPullRequests` is constructed only by a read that
+    COMPLETED (`_open_pr_heads` raises on a failed or malformed page), so an empty one means
+    zero measured, which a bare frozenset could not say."""
+    run = _pr_run(54, "af--open")
+    assert mod.closed_pr_runs_to_cancel([run], mod.OpenPullRequests(frozenset())) == (run,)
+
+
+def test_an_open_pr_on_another_fork_does_not_retain_this_forks_closed_run() -> None:
+    """The owner is half the key. Collapsed to the ref alone, one open `patch-1` retains
+    every other fork's closed `patch-1` runs and the queue stall this sweep targets
+    persists."""
+    run = _pr_run(60, "patch-1", head_repo_owner="someone-else")
+    assert mod.closed_pr_runs_to_cancel([run], _open_prs("patch-1")) == (run,)
+
+
+def test_an_open_pr_on_the_same_fork_still_retains_its_run() -> None:
+    """The control against the overshoot: keying on the pair must not stop the owner's own
+    open pull request protecting its own live run."""
+    run = _pr_run(61, "patch-1", head_repo_owner="someone-else")
+    assert (
+        mod.closed_pr_runs_to_cancel([run], _open_prs("patch-1", owner="someone-else")) == ()
+    )
 
 
 def test_push_runs_are_never_selected_by_the_closed_pr_sweep() -> None:
     push_run = _run(55, name="CI", event="push")
-    assert mod.closed_pr_runs_to_cancel([push_run], frozenset({"af--open"})) == ()
+    assert mod.closed_pr_runs_to_cancel([push_run], _open_prs("af--open")) == ()
 
 
 def test_closed_pr_sweep_dry_run_posts_nothing(
@@ -306,10 +332,12 @@ def test_closed_pr_sweep_dry_run_posts_nothing(
 ) -> None:
     posts: list[int] = []
     monkeypatch.setattr(mod, "_cancel_run", posts.append)
-    cancelled = mod.execute_closed_pr_sweep(
+    counts = mod.execute_closed_pr_sweep(
         (_pr_run(56, "af--merged"),), dry_run=True, still_closed=lambda _: True
     )
-    assert cancelled == 1
+    # Sol's P3 on #3289: a dry run PLANS one and CANCELS none. Counted as cancelled, the
+    # summary's `closed_pr_cancelled=N` named something other than what it counted.
+    assert (counts.planned, counts.cancelled) == (1, 0)
     assert posts == []
     out = capsys.readouterr().out
     assert "closed-pr-cancel workflow=CI run_id=56 head_branch=af--merged" in out
@@ -324,11 +352,11 @@ def test_a_branch_reopened_since_the_snapshot_is_not_cancelled(
     posts: list[int] = []
     monkeypatch.setattr(mod, "_cancel_run", posts.append)
 
-    cancelled = mod.execute_closed_pr_sweep(
+    counts = mod.execute_closed_pr_sweep(
         (_pr_run(57, "af--reopened"),), dry_run=False, still_closed=lambda _: False
     )
 
-    assert cancelled == 0
+    assert (counts.planned, counts.cancelled) == (0, 0)
     assert posts == []
     out = capsys.readouterr().out
     assert "closed-pr-skip" in out
@@ -346,11 +374,11 @@ def test_a_branch_still_closed_at_the_recheck_is_cancelled(
 
     monkeypatch.setattr(mod, "_cancel_run", cancel)
 
-    cancelled = mod.execute_closed_pr_sweep(
+    counts = mod.execute_closed_pr_sweep(
         (_pr_run(58, "af--merged"),), dry_run=False, still_closed=lambda _: True
     )
 
-    assert cancelled == 1
+    assert (counts.planned, counts.cancelled) == (1, 1)
     assert posts == [58]
 
 
@@ -403,11 +431,11 @@ def test_the_recheck_asks_under_the_forks_owner_not_this_repositorys(
     asked: list[str] = []
     monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, [{"number": 9}]))
     run = _pr_run(60, "patch-1", head_repo_owner="a-contributor")
-    cancelled = mod.execute_closed_pr_sweep((run,), dry_run=False)
+    counts = mod.execute_closed_pr_sweep((run,), dry_run=False)
     assert asked == [
         f"repos/{mod.REPO}/pulls?state=open&head=a-contributor:patch-1&per_page=1"
     ]
-    assert cancelled == 0
+    assert (counts.planned, counts.cancelled) == (0, 0)
 
 
 def test_a_run_from_this_repository_is_still_asked_under_this_owner(
@@ -418,7 +446,8 @@ def test_a_run_from_this_repository_is_still_asked_under_this_owner(
     monkeypatch.setattr(mod, "_gh_api_json", _recording_gh_api_json(asked, []))
     monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.CANCELLED)
     run = _pr_run(61, "af--merged")
-    assert mod.execute_closed_pr_sweep((run,), dry_run=False) == 1
+    counts = mod.execute_closed_pr_sweep((run,), dry_run=False)
+    assert (counts.planned, counts.cancelled) == (1, 1)
     assert asked == [
         f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--merged&per_page=1"
     ]
@@ -481,3 +510,52 @@ def test_an_ordinary_branch_name_is_left_readable(monkeypatch: pytest.MonkeyPatc
     assert asked == [
         f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--ci-watch&per_page=1"
     ]
+
+
+def test_a_run_seen_in_both_status_snapshots_is_swept_once() -> None:
+    """Sol's P2 on #3289. `queued` and `in_progress` are two requests, so a run that STARTS
+    between them appears in both. Concatenated it is logged twice and cancellation attempted
+    twice, and the reported count measures the race rather than the work."""
+    queued = _pr_run(70, "af--merged")
+    in_progress = _pr_run(70, "af--merged", name="CI")
+    assert mod.unique_runs([queued, in_progress]) == [queued]
+
+
+def test_two_genuinely_different_runs_are_both_kept() -> None:
+    """The control against the overshoot: deduplicating on anything coarser than the run id
+    would silently drop a second real run for the same branch, and the sweep would leave the
+    queue stall it exists to clear."""
+    first = _pr_run(71, "af--merged")
+    second = _pr_run(72, "af--merged", name="E2E")
+    assert mod.unique_runs([first, second]) == [first, second]
+
+
+def test_a_malformed_open_pr_page_raises_instead_of_yielding_an_empty_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The negative control that makes an empty snapshot safe to trust. Dropping the refusal
+    in the pure selector is only correct while NO failed read can produce an
+    `OpenPullRequests` at all: this is what carries that claim, and without it an empty
+    snapshot would mean either zero open pull requests or a read that fell over."""
+    monkeypatch.setattr(mod, "_gh_api_json", lambda _path: {"message": "Bad credentials"})
+    with pytest.raises(PreconditionError):
+        mod._open_pr_heads()
+
+
+def test_an_open_pr_without_a_head_owner_raises_rather_than_defaulting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defaulted to this repository's owner, a fork pull request reads as a DIFFERENT pull
+    request, so its live run looks closed and is cancelled."""
+    monkeypatch.setattr(mod, "_gh_api_json", lambda _path: [{"head": {"ref": "patch-1"}}])
+    with pytest.raises(PreconditionError):
+        mod._open_pr_heads()
+
+
+def test_a_complete_read_of_zero_open_pulls_is_an_empty_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control on the other side: a read that COMPLETES and finds nothing must produce a
+    snapshot, not an exception, or the refusal has simply moved one function along."""
+    monkeypatch.setattr(mod, "_gh_api_json", lambda _path: [])
+    assert mod._open_pr_heads() == mod.OpenPullRequests(frozenset())
