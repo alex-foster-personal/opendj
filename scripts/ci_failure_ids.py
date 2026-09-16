@@ -32,10 +32,26 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-# Mirrors KNOWN_FLAKES in nucbox ~/jobs/sweep/gate-fast.sh, matched as a substring search.
+# The tests the fleet tolerates as flaky, mirroring KNOWN_FLAKES in nucbox
+# ~/jobs/sweep/gate-fast.sh. Stored as LITERALS, not as a regular expression: as a pattern
+# they went into the identity unescaped (`.` matched any character) and unanchored, so any
+# identity merely CONTAINING one was excused. Sol's P1 on #3293 -- a new test named
+# `..._thread_teardown`, or a spec under `my_setup-entry-points.spec.ts`, could fail
+# genuinely and still take the mergeable KNOWN_RED verdict off a name it only extends.
+KNOWN_FLAKE_IDENTITIES = (
+    "setup-entry-points.spec.ts",
+    "test_lifespan_runs_and_joins_a_real_lyric_index_thread",
+    "prefs-golden-blob.test.mjs",
+)
+# Identities are `FAILED tests/a/b.py::name`, `[chromium] (U+203A) tests/s.ts:4:1`,
+# `not ok - name` and `svelte-check path:line`, so a flake name is bounded by a path or
+# node-id separator on the left and ends the identity or is followed by one on the right.
+# A parametrized variant (`name[case]`) does NOT match, which is the safe direction: it
+# reads GENUINE and a person looks, rather than inheriting another test's excuse.
 KNOWN_FLAKES = re.compile(
-    r"setup-entry-points.spec.ts|test_lifespan_runs_and_joins_a_real_lyric_index_thread"
-    r"|prefs-golden-blob.test.mjs"
+    r"(?:^|[/:\s])(?:"
+    + "|".join(re.escape(name) for name in KNOWN_FLAKE_IDENTITIES)
+    + r")(?=$|[:\s])"
 )
 INFRA_CLASS_JOBS = re.compile(r"pytest fast lane|affected-test canary")
 RATCHET_JOBS = re.compile(r"quality ratchet")
@@ -153,6 +169,12 @@ _BEYOND_TESTS = re.compile(
 
 _STEP_ECHO = "##[group]Run "
 _EXIT_ONE = "Process completed with exit code 1"
+# The quality ratchet's own words for a breach (`scripts/quality_gate.py`). A breach is an
+# identity-free exit 1 BY DESIGN -- no test failed, a metric got worse -- and it is the one
+# such exit the fleet ships as debt. Sol's P2 on #3293: without this the ratchet's own step
+# was read as an exit nothing accounted for, every ordinary ratchet log came back
+# UNEXPLAINED, and the documented mergeable debt path ended UNKNOWN on every real run.
+_OWNED_EXIT = re.compile(r"\[quality\] (?:FAIL: [0-9]+ metric\(s\) got worse|REGRESSION\b)")
 
 
 def unowned_exit_steps(log: str) -> list[str]:
@@ -162,8 +184,10 @@ def unowned_exit_steps(log: str) -> list[str]:
     leaves it alone -- and that is what lets a job which runs tests in one step and a build,
     typecheck or ratchet in another carry known-red identities from the first while the
     SECOND is what failed. The runner opens every step with `##[group]Run <command>`, so the
-    step that owns a terminating error is the one whose slice holds it, and the tests own
-    that exit only when a failing-test identity appears in the SAME slice.
+    step that owns a terminating error is the one whose slice holds it. A step OWNS its own
+    exit when it names a failing test in that slice, or when it states its own breach there:
+    the quality ratchet fails on a worsened metric with no test involved, and saying so is
+    an explanation, not a silence.
 
     A log with no step echoes cannot be partitioned, so it returns empty: that is UNKNOWN,
     not proof, exactly as `failure_beyond_tests` documents for its own empty result.
@@ -177,7 +201,8 @@ def unowned_exit_steps(log: str) -> list[str]:
         step = lines[start:end]
         if not any(_EXIT_ONE in _ANSI.sub("", line) for line in step):
             continue
-        if failed_identities("\n".join(step)):
+        body = "\n".join(step)
+        if failed_identities(body) or _OWNED_EXIT.search(_ANSI.sub("", body)):
             continue
         command = _ANSI.sub("", lines[start].split(_STEP_ECHO, 1)[1]).strip()
         found.append(f"exit code 1 in a step that named no failing test: {command}"[:200])

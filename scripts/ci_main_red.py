@@ -33,6 +33,9 @@ WORKFLOW_FILES = ("ci.yml", "e2e.yml")
 CACHE_TTL_S = 600.0
 LOG_READ_TRIES = 3
 LOG_READ_BACKOFF_S = 10.0
+# Walks that disagree with their own head are retried before the baseline gives up on
+# being about a head at all: main merges in bursts, so one collision is ordinary.
+SHA_PIN_TRIES = 3
 CACHE_PATH = Path.home() / ".cache" / "opendj" / "ci-watch" / "main-red.json"
 
 
@@ -102,7 +105,14 @@ def main_red_identities(
     found: set[str] = set()
     pending: set[str] = set()
     remaining_window = window
-    green: set[str] = set()
+    # NEWEST-MEASURED-WINS. A job NAME is decided by the newest run that MEASURED it, and
+    # every older run under that name is main's PAST. A plain union over the window was the
+    # whole rule, and it retained identity A from an older run when the newest run of the
+    # same job failed only on B: a pull request reintroducing A then read KNOWN_RED off a
+    # failure main no longer has, and merged. Sol's P1 on #3293. The window still earns its
+    # keep, filling in jobs the newest run never measured (queued, skipped, cancelled,
+    # unreadable log); it just no longer speaks for a job a newer run already answered.
+    decided: set[str] = set()
     for verdict in verdicts:
         measured: set[str] = set()
         # NEWEST attempt first, for the same reason verdicts are walked newest first: a
@@ -110,31 +120,36 @@ def main_red_identities(
         # identities survived attempt 2 going green, and a pull request reintroducing that
         # failure read KNOWN_RED.
         for attempt in range(verdict.attempts, 0, -1):
-            attempt_green: set[str] = set()
-            for job in jobs_of(verdict.run_id, attempt):
+            jobs = list(jobs_of(verdict.run_id, attempt))
+            # Resolved WITHIN the attempt before precedence applies across attempts, so the
+            # order GitHub happens to return one attempt's jobs in cannot change the answer.
+            succeeded = {job.name for job in jobs if job.conclusion == "success"}
+            for job in jobs:
                 if remaining_window > 0:
                     pending.add(job.name)
                 elif job.name not in pending:
                     continue
-                if job.conclusion == "success":
+                if job.name in decided:
+                    # A newer attempt or verdict already measured this name. Counted
+                    # measured so the window can close, never read for identities.
                     measured.add(job.name)
-                    attempt_green.add(job.name)
+                    continue
+                if job.conclusion == "success" or job.name in succeeded:
+                    measured.add(job.name)
+                    decided.add(job.name)
                 elif job.conclusion == "failure":
-                    if job.name in green:
-                        # A NEWER verdict ran this job to success, so every identity it
-                        # names is main's PAST. Retained, the union keeps subtracting a
-                        # failure main already fixed, and a pull request that reintroduces
-                        # it reads KNOWN_RED and merges. Flap tolerance is for a job the
-                        # newer verdicts left UNMEASURED, not for one they measured green.
-                        measured.add(job.name)
-                        continue
                     try:
                         ids = identities_of(job.job_id)
                     except LogUnreadable:
-                        # The name is NOT retained. Retained, a pull request job with the
-                        # same name and no identity reads BASELINE_MISMATCH and the read is
-                        # baseline that was never measured.
+                        # UNMEASURED, and TERMINAL for this name. The name is not retained
+                        # as a failure: retained, a pull request job with the same name and
+                        # no identity reads BASELINE_MISMATCH off a baseline nobody measured.
+                        # Nor does an older run get to answer in its place -- an older run's
+                        # identities are exactly what newest-measured-wins refuses to
+                        # subtract, and an older run's SUCCESS cannot refute a newer red
+                        # whose cause could not be read.
                         unreadable.add(job.name)
+                        decided.add(job.name)
                         continue
                     if not ids:
                         # The log was READ and named no failing test. The name alone then
@@ -143,11 +158,12 @@ def main_red_identities(
                         # comparison nobody made. A bundle budget check is the worked case:
                         # main 79 KB over and the pull request 300 KB over share one name.
                         unreadable.add(job.name)
+                        decided.add(job.name)
                         continue
                     failed_names.add(job.name)
                     found |= ids
                     measured.add(job.name)
-            green |= attempt_green
+                    decided.add(job.name)
         pending -= measured
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
@@ -244,30 +260,77 @@ def unmeasured_baseline_names(
     return (unreadable | failed_check_runs) - measured
 
 
-def fetch_main_red() -> MainRed:
+def _walk_every_workflow(
+    jobs_of: Callable[[int, int], list[Job]] = _jobs_of,
+    identities_of: Callable[[int], frozenset[str]] = job_log_identities,
+) -> WalkResult:
     identities: set[str] = set()
     failed_names: set[str] = set()
     unreadable: set[str] = set()
     for workflow in WORKFLOW_FILES:
         runs = _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")
         walk = main_red_identities(
-            verdict_runs(runs["workflow_runs"]), _jobs_of, job_log_identities
+            verdict_runs(runs["workflow_runs"]), jobs_of, identities_of
         )
         identities |= walk.identities
         failed_names |= walk.failed_job_names
         unreadable |= walk.unreadable_job_names
-    sha = _main_sha()
-    if unreadable:
-        print(
-            f"[ci-main-red] baseline unmeasured for {sorted(unreadable)}", file=sys.stderr
+    return WalkResult(frozenset(identities), frozenset(failed_names), frozenset(unreadable))
+
+
+def unattributable_baseline(sha: str, failed_check_runs: frozenset[str]) -> MainRed:
+    """A baseline that subtracts NOTHING, for a walk no single head can be held to.
+
+    Main moved under every attempt, so the identities the walk collected belong to a mixture
+    of heads and there is no head they are all true of. Returned as a baseline anyway they
+    are subtracted from pull requests for the cache's whole TTL, which is how a genuine
+    regression reads as main's known red. Empty, every pull request failure reads GENUINE and
+    a person looks: loud, and the direction this tool is allowed to be wrong in.
+    """
+    return MainRed(frozenset(), frozenset(), sha, failed_check_runs)
+
+
+def fetch_main_red(
+    main_sha: Callable[[], str] = _main_sha,
+    walk: Callable[[], WalkResult] = _walk_every_workflow,
+    failed_check_runs: Callable[[str], frozenset[str]] = _failed_check_run_names,
+    tries: int = SHA_PIN_TRIES,
+) -> MainRed:
+    """Main's red, PINNED to one head: the walk is bracketed by two reads of main's SHA and
+    the result is kept only when they agree.
+
+    Sol's P1 on #3293. The head used to be read AFTER the walk, so a merge landing during a
+    walk that takes minutes stamped failures measured at the OLD head with the NEW one. The
+    cache then served them for its whole TTL as that head's baseline, and a pull request
+    reintroducing a failure trunk repair had just fixed was subtracted as main's known red
+    and merged. The stamp is what makes the result a claim about a head, so it has to be a
+    head the whole walk saw.
+    """
+    for _ in range(tries):
+        pinned = main_sha()
+        result = walk()
+        if main_sha() != pinned:
+            continue
+        if result.unreadable_job_names:
+            print(
+                f"[ci-main-red] baseline unmeasured for {sorted(result.unreadable_job_names)}",
+                file=sys.stderr,
+            )
+        measured = frozenset(result.failed_job_names)
+        return MainRed(
+            result.identities,
+            measured,
+            pinned,
+            unmeasured_baseline_names(
+                result.unreadable_job_names, failed_check_runs(pinned), measured
+            ),
         )
-    measured = frozenset(failed_names)
-    return MainRed(
-        frozenset(identities),
-        measured,
-        sha,
-        unmeasured_baseline_names(frozenset(unreadable), _failed_check_run_names(sha), measured),
+    head = main_sha()
+    print(
+        f"[ci-main-red] main moved under {tries} walk(s); baseline subtracts nothing at {head}",
+        file=sys.stderr,
     )
+    return unattributable_baseline(head, failed_check_runs(head))
 
 
 def cached_main_red(

@@ -19,10 +19,12 @@ from __future__ import annotations
 import pytest
 
 from scripts.ci_failure_ids import (
+    KNOWN_FLAKES,
     JobVerdict,
     classify_job,
     failed_identities,
     failure_beyond_tests,
+    unowned_exit_steps,
 )
 
 pytestmark = pytest.mark.requirement("OPS-16")
@@ -355,3 +357,90 @@ def test_a_ratchet_job_that_merely_breached_still_ships_as_debt():
         "quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=False
     )
     assert got.verdict is JobVerdict.RATCHET_DEBT
+
+
+# ----- a known flake is a whole identity, not a substring of one -----
+
+
+def test_each_known_flake_is_still_excused_where_it_really_appears():
+    """The presence half: every name in the list matches in the identity shape it occurs in,
+    or the tightening silently retired the fleet's flake tolerance instead of bounding it."""
+    for identity in (
+        "FAILED tests/ops/test_lyrics.py::test_lifespan_runs_and_joins_a_real_lyric_index_thread",
+        "[chromium] › tests/setup-entry-points.spec.ts:4:1",
+        "not ok - prefs-golden-blob.test.mjs > writes the blob",
+    ):
+        assert KNOWN_FLAKES.search(identity), identity
+
+
+def test_a_test_whose_name_merely_extends_a_known_flake_is_not_excused():
+    """Sol's P1 on #3293. Unanchored, a new test that extends a flake's name inherited its
+    excuse and took the mergeable KNOWN_RED verdict while failing genuinely."""
+    for identity in (
+        "FAILED tests/ops/t.py::test_lifespan_runs_and_joins_a_real_lyric_index_thread_teardown",
+        "[chromium] › tests/my_setup-entry-points.spec.ts:4:1",
+        "not ok - prefs-golden-blob.test.mjsx > writes",
+    ):
+        assert not KNOWN_FLAKES.search(identity), identity
+
+
+def test_the_dots_in_a_flake_name_are_literal():
+    """`.` in an unescaped pattern matched any character, so a neighbouring spec file one
+    edit away from a flake's name was excused by it."""
+    assert not KNOWN_FLAKES.search("[chromium] › tests/setup-entry-pointsxspecxts:4:1")
+
+
+def test_a_flaky_job_is_known_red_end_to_end():
+    """The rule is tested above; this is the WIRING, which a rule test cannot reach: the
+    classifier really consults it, so a job failing only on flakes still merges."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset(
+            {"FAILED tests/ops/test_l.py::test_lifespan_runs_and_joins_a_real_lyric_index_thread"}
+        ),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+    )
+    assert got.verdict is JobVerdict.KNOWN_RED
+
+
+# ----- a step that states its own breach has explained its own exit -----
+
+
+_RATCHET_LOG = (
+    "##[group]Run uv run python -m scripts.quality_gate --check\n"
+    "[quality] REGRESSION        ruff-debt 41 -> 44\n"
+    "[quality] FAIL: 1 metric(s) got worse.\n"
+    "##[error]Process completed with exit code 1\n"
+)
+
+
+def test_a_ratchet_breach_is_not_an_exit_nobody_owns():
+    """Sol's P2 on #3293. A breach is an identity-free exit 1 BY DESIGN, and it is the one
+    such exit the fleet ships as debt. Read as unowned, every ordinary ratchet log came back
+    UNEXPLAINED and the documented mergeable debt path ended UNKNOWN on every real run."""
+    assert unowned_exit_steps(_RATCHET_LOG) == []
+    assert failure_beyond_tests(_RATCHET_LOG) == []
+
+
+def test_a_ratchet_job_whose_breach_is_readable_is_debt_not_unexplained():
+    got = classify_job(
+        "quality ratchet (lint debt, complexity, coupling, dead code)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=bool(failure_beyond_tests(_RATCHET_LOG)),
+    )
+    assert got.verdict is JobVerdict.RATCHET_DEBT
+
+
+def test_a_ratchet_step_that_died_without_stating_a_breach_is_still_unowned():
+    """The control against the overshoot: the excuse belongs to a step that SAID why it
+    failed, not to every step the ratchet job runs. A ratchet killed mid-measurement
+    measured no ratchet, and must not inherit the debt path."""
+    killed = (
+        "##[group]Run uv run python -m scripts.quality_gate --check\n"
+        "##[error]Process completed with exit code 1\n"
+    )
+    assert unowned_exit_steps(killed) != []

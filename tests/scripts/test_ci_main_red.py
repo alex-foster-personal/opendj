@@ -22,10 +22,13 @@ from scripts.ci_main_red import (
     LogUnreadable,
     MainRed,
     Verdict,
+    WalkResult,
     cached_main_red,
+    fetch_main_red,
     job_log_identities,
     main_red_identities,
     read_job_log,
+    unattributable_baseline,
     unmeasured_baseline_names,
     verdict_runs,
 )
@@ -47,9 +50,10 @@ def _walk(runs: dict[int, list[Job]], ids: dict[int, frozenset[str]], order: lis
     return red, reads
 
 
-def test_the_window_is_a_union_over_three_verdicts():
-    """The union is for a trunk that FLAPS: the same job red on two of the last three runs,
-    with a different test named each time, is main's red and not the pull request's."""
+def test_the_newest_measured_run_of_a_job_is_the_only_one_that_names_its_red():
+    """Sol's P1 on #3293. The window was a plain UNION, so an older run's identity survived a
+    newer run of the same job that did not name it. The newer run RAN that test and it passed,
+    so a pull request reintroducing it is a regression, and subtracting it merged one."""
     runs = {
         1: [Job(11, "shard 1", "failure")],
         2: [Job(21, "shard 1", "failure")],
@@ -57,7 +61,21 @@ def test_the_window_is_a_union_over_three_verdicts():
     }
     ids = {11: frozenset({"FAILED tests/t.py::a"}), 21: frozenset({"FAILED tests/t.py::b"})}
     red, _ = _walk(runs, ids, [1, 2, 3])
-    assert red.identities == {"FAILED tests/t.py::a", "FAILED tests/t.py::b"}
+    assert red.identities == {"FAILED tests/t.py::a"}
+
+
+def test_an_older_run_still_names_the_red_of_a_job_the_newest_run_never_measured():
+    """The control against the overshoot: newest-measured-WINS, not newest-run-wins. The
+    window exists for the job a newer run left unmeasured, and reading it there is the whole
+    reason the walk goes deeper than one verdict at all."""
+    runs = {
+        1: [Job(11, "shard 1", "cancelled"), Job(12, "shard 2", "success")],
+        2: [Job(21, "shard 1", "failure"), Job(22, "shard 2", "success")],
+    }
+    ids = {21: frozenset({"FAILED tests/t.py::a"})}
+    red, _ = _walk(runs, ids, [1, 2])
+    assert red.identities == {"FAILED tests/t.py::a"}
+    assert red.failed_job_names == frozenset({"shard 1"})
 
 
 def test_a_failure_a_newer_verdict_ran_green_is_dropped_from_the_union():
@@ -88,16 +106,19 @@ def test_a_job_the_newer_verdicts_never_measured_still_reads_from_an_older_one()
 
 
 def test_an_unmeasured_job_is_read_from_the_next_older_verdict_and_no_deeper():
+    """Only a job NOTHING has measured keeps falling through. Once a verdict answers for a
+    name -- green, or red with identities -- older verdicts are that name's past and are not
+    read at all, which is also why the walk stops short of verdict 5 here."""
     runs = {
         1: [Job(11, "shard 1", "cancelled"), Job(12, "shard 2", "success")],
-        2: [Job(21, "shard 1", "failure"), Job(22, "shard 2", "success")],
-        3: [Job(31, "shard 1", "failure"), Job(32, "shard 2", "success")],
+        2: [Job(21, "shard 1", "cancelled"), Job(22, "shard 2", "success")],
+        3: [Job(31, "shard 1", "cancelled"), Job(32, "shard 2", "success")],
         4: [Job(41, "shard 1", "failure"), Job(42, "shard 2", "failure")],
         5: [Job(51, "shard 1", "failure")],
     }
     ids = {
         41: frozenset({"FAILED tests/s1.py::old"}),
-        42: frozenset({"FAILED tests/s2.py::measured_in_window"}),
+        42: frozenset({"FAILED tests/s2.py::superseded_by_verdict_1"}),
         51: frozenset({"FAILED tests/s1.py::too_deep"}),
     }
     red, reads = _walk(runs, ids, [1, 2, 3, 4, 5])
@@ -212,8 +233,11 @@ def test_an_unreadable_job_does_not_become_a_trusted_red_job_name():
     assert walk.unreadable_job_names == frozenset({"frontend unit + check + build"})
 
 
-def test_a_job_read_on_an_older_verdict_stops_being_unreadable():
-    """The control: the walk still resolves it, and a resolved name is trusted again."""
+def test_an_older_verdict_does_not_supply_a_cause_for_a_newer_unreadable_failure():
+    """A newer run RAN this job and it failed; only the reason could not be read. An older
+    run's identities are a guess at that reason, and the module already refuses that guess
+    for the zero-identity case: two failures under one name share a name and nothing else.
+    Terminal here, matching PR failures end UNKNOWN and a person looks."""
     name = "frontend unit + check + build"
     jobs = {1: [Job(11, name, "failure")], 2: [Job(22, name, "failure")]}
 
@@ -226,9 +250,32 @@ def test_a_job_read_on_an_older_verdict_stops_being_unreadable():
         [Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of
     )
 
-    assert name in walk.failed_job_names
-    assert walk.unreadable_job_names == frozenset()
-    assert "FAILED tests/test_a.py::test_x" in walk.identities
+    assert walk.unreadable_job_names == frozenset({name})
+    assert walk.failed_job_names == frozenset()
+    assert walk.identities == frozenset()
+
+
+def test_an_older_verdict_still_answers_for_a_job_the_unreadable_run_never_ran():
+    """The control: an unreadable log is terminal for the job it was READ for, not for the
+    whole walk. A different job the newer verdict never ran is still read from the older one."""
+    unreadable_name = "frontend unit + check + build"
+    jobs = {
+        1: [Job(11, unreadable_name, "failure")],
+        2: [Job(22, unreadable_name, "failure"), Job(23, "shard 1", "failure")],
+    }
+
+    def identities_of(job_id: int) -> frozenset[str]:
+        if job_id == 11:
+            raise LogUnreadable(job_id)
+        return frozenset({f"FAILED tests/test_{job_id}.py::test_x"})
+
+    walk = main_red_identities(
+        [Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of
+    )
+
+    assert walk.unreadable_job_names == frozenset({unreadable_name})
+    assert walk.failed_job_names == frozenset({"shard 1"})
+    assert walk.identities == frozenset({"FAILED tests/test_23.py::test_x"})
 
 
 # ----- a failed check run at main's head is unmeasured, never red -----
@@ -309,15 +356,35 @@ def test_a_rerun_attempt_that_succeeded_supersedes_the_attempt_it_reran():
     assert red.failed_job_names == frozenset()
 
 
-def test_a_rerun_attempt_that_failed_again_keeps_the_earlier_identities():
-    """The control against the overshoot: reruns exist because trunk flaps, and a rerun that
-    failed AGAIN names main's red. Dropping every earlier attempt outright would report a
-    flapping shard as green between its own attempts."""
+def test_a_rerun_that_failed_again_names_main_red_from_the_rerun_alone():
+    """A rerun that failed AGAIN still names main's red -- the shard is not reported green
+    between its own attempts -- but it names it from the NEWEST attempt. Attempt 2 ran test
+    `a` and it passed there, so `a` is not something a pull request may be excused for.
+    A shard flaky across its own attempts is what KNOWN_FLAKES is for, and reading GENUINE
+    for a flake is loud, where subtracting a real regression is silent."""
     red = _walk_attempts(
         {1: [Job(11, "shard 1", "failure")], 2: [Job(12, "shard 1", "failure")]},
         {11: frozenset({"FAILED tests/t.py::a"}), 12: frozenset({"FAILED tests/t.py::b"})},
     )
-    assert red.identities == {"FAILED tests/t.py::a", "FAILED tests/t.py::b"}
+    assert red.identities == {"FAILED tests/t.py::b"}
+    assert red.failed_job_names == frozenset({"shard 1"})
+
+
+def test_the_order_one_attempt_returns_its_jobs_in_cannot_change_the_answer():
+    """The control on the within-attempt resolution: a name that succeeded anywhere in an
+    attempt is decided green by that attempt, whichever order GitHub listed the jobs in."""
+    both_ways = [
+        [Job(11, "shard 1", "failure"), Job(12, "shard 1", "success")],
+        [Job(12, "shard 1", "success"), Job(11, "shard 1", "failure")],
+    ]
+    for jobs in both_ways:
+        red = main_red_identities(
+            [Verdict(1, 1)],
+            lambda _run_id, _attempt, jobs=jobs: jobs,
+            lambda _job_id: frozenset({"FAILED tests/t.py::a"}),
+        )
+        assert red.identities == frozenset()
+        assert red.failed_job_names == frozenset()
 
 
 class _Walked(Exception):
@@ -367,3 +434,55 @@ def test_a_fresh_cache_about_the_current_main_is_reused(tmp_path):
         cache, now=lambda: cache.stat().st_mtime, main_sha=lambda: "a" * 40, fetch=_raise_walked
     )
     assert got.identities == {"FAILED tests/t.py::still_red"}
+
+
+# ----- the walk is pinned to one main head -----
+
+
+def _pin_walk(heads: list[str], result: WalkResult | None = None, tries: int = 3):
+    """`fetch_main_red` over a scripted sequence of main-SHA reads. The walk is a stub, so
+    the only thing under test is whether the two reads bracketing it agreed."""
+    seen = list(heads)
+    walk = result or WalkResult(
+        frozenset({"FAILED tests/t.py::a"}), frozenset({"shard 1"}), frozenset()
+    )
+    return fetch_main_red(
+        main_sha=lambda: seen.pop(0),
+        walk=lambda: walk,
+        failed_check_runs=lambda _sha: frozenset(),
+        tries=tries,
+    )
+
+
+def test_a_walk_whose_head_held_still_is_stamped_with_that_head():
+    red = _pin_walk(["aaa", "aaa"])
+    assert red.main_sha == "aaa"
+    assert red.identities == {"FAILED tests/t.py::a"}
+
+
+def test_a_head_that_moved_under_the_walk_is_retried_before_it_is_believed():
+    """The retry is the cheap half of the fix: main merges in bursts, so one collision is
+    ordinary and a second walk usually lands inside one head."""
+    red = _pin_walk(["aaa", "bbb", "bbb", "bbb"])
+    assert red.main_sha == "bbb"
+    assert red.identities == {"FAILED tests/t.py::a"}
+
+
+def test_a_head_that_moves_under_every_walk_subtracts_nothing():
+    """Sol's P1 on #3293. The head used to be read AFTER the walk, so failures measured at
+    the old head were stamped with the new one and served from cache for its whole TTL: a
+    pull request reintroducing a failure trunk repair had just fixed read KNOWN_RED. With no
+    head the whole walk saw, there is no baseline, and an empty baseline is loud."""
+    red = _pin_walk(["a", "b", "c", "d", "e", "f", "zzz"])
+    assert red.main_sha == "zzz"
+    assert red.identities == frozenset()
+    assert red.failed_job_names == frozenset()
+
+
+def test_an_unattributable_baseline_still_reports_mains_failing_names_as_unmeasured():
+    """The control against the overshoot: subtracting nothing must not also mean CLAIMING
+    nothing. A zero-identity pull request failure under a name main is red on still ends
+    UNKNOWN rather than GENUINE, because nothing compared the two."""
+    red = unattributable_baseline("zzz", frozenset({"frontend bundle budget"}))
+    assert red.unreadable_job_names == frozenset({"frontend bundle budget"})
+    assert red.identities == frozenset()

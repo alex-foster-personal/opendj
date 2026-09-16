@@ -390,28 +390,36 @@ def poll_until_terminal(
         # `latest and`: zero check-runs is never a verdict. With a non-empty `expected` it is
         # already `missing`; the fail-fast watcher polls a first push with no baseline.
         if latest and not missing and _all_terminal(latest) and stable:
-            if _all_passing(latest) and not expected:
+            if not expected and clock() - start < timeout_s:
                 # An UNKNOWN lower bound, not an empty one. Without a prior push there is
                 # nothing that says which checks this head owes, so "the observed set
                 # stopped growing" is not evidence that they all registered: one early
-                # passing check, stable for two polls, would end the watch before the
-                # shards exist. Failure still stops immediately, below.
+                # check, stable for two polls, would end the watch before the shards exist.
+                #
+                # This used to hold only an ALL-PASSING snapshot open. Sol's P2 on #3293: a
+                # first check finishing known-red or ratchet-debt is not passing, so the
+                # snapshot fell straight through to FAILURE and the watch ended on a board
+                # that was two checks wide. A snapshot the inspector did NOT stop on is
+                # exactly one it has not found a reason to end the wait over, so it is held
+                # open too. `inspect_snapshot` still returns on the first GENUINE failure,
+                # which is what keeps fail-fast fast; the deadline is only ever reached by
+                # failures that are already known not to be the agent's.
                 previous_names = observed_names
-                if clock() - start < timeout_s:
-                    sleep(poll_interval_s)
-                    continue
-                # The deadline does not convert the missing baseline into one. Falling
-                # through to the all-passing branch would report SUCCESS for a head whose
-                # owed checks were never established, which is the one thing this branch
-                # exists to refuse.
-                return (
-                    WaitStatus.NO_BASELINE,
-                    latest,
-                    f"{len(latest)} check(s) passed and the set stopped growing, but no "
-                    "previous push established which checks this head owes, so nothing "
-                    f"says they all registered; deadline reached after {clock() - start:.0f}s",
-                )
+                sleep(poll_interval_s)
+                continue
             if _all_passing(latest):
+                if not expected:
+                    # The deadline does not convert the missing baseline into one. Reporting
+                    # SUCCESS for a head whose owed checks were never established is the one
+                    # thing this branch exists to refuse.
+                    return (
+                        WaitStatus.NO_BASELINE,
+                        latest,
+                        f"{len(latest)} check(s) passed and the set stopped growing, but no "
+                        "previous push established which checks this head owes, so nothing "
+                        f"says they all registered; deadline reached after "
+                        f"{clock() - start:.0f}s",
+                    )
                 return (
                     WaitStatus.SUCCESS,
                     latest,
