@@ -68,10 +68,7 @@ def test_command_sequence_master_mute_last_wins_on_disk(
 def test_safety_prepended_master_mute_never_persists_to_ui_prefs(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """If a safety-prepended master_mute persists to ui-prefs then every browser starts muted.
-
-    [if] the MCP rail's prepended mute reaches ui-prefs.json [then] ⛔️
-    """
+    """[if] the MCP rail's prepended mute reaches ui-prefs.json [then] shared ui-prefs stays unmuted, [else stop]."""
     engine.app.state.data_dir = tmp_path / "data"
     prefs_path = tmp_path / "data" / "state" / "ui-prefs.json"
     order, prepended = prepend_master_mute({"single": {"type": "play", "deck": 1, "playing": True}})
