@@ -140,7 +140,12 @@ def classify_job(
     main_red: frozenset[str],
     main_red_job_names: frozenset[str],
 ) -> JobClassification:
-    """One failed job's verdict, in the order the nucbox merge gate applies its rules."""
+    """One failed job's verdict, in the order the nucbox merge gate applies its rules.
+
+    A ratchet job carries debt only when nothing NEW failed inside it. Keyed on the job name
+    alone, a genuine regression landing in a ratchet job reads RATCHET_DEBT, the watcher ends
+    KNOWN_RED_ONLY, and the agent merges past a real failure.
+    """
     residual = frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
 
     def verdict(kind: JobVerdict) -> JobClassification:
@@ -150,7 +155,7 @@ def classify_job(
         return verdict(JobVerdict.KNOWN_RED)
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)
-    if RATCHET_JOBS.search(job_name):
+    if RATCHET_JOBS.search(job_name) and not residual:
         return verdict(JobVerdict.RATCHET_DEBT)
     if not identities and job_name in main_red_job_names:
         return verdict(JobVerdict.MAIN_RED_JOB)

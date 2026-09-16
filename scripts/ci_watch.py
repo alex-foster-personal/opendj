@@ -58,7 +58,7 @@ from scripts.ci_failure_ids import (
     error_excerpt,
     failed_identities,
 )
-from scripts.ci_main_red import MainRed, cached_main_red, read_job_log
+from scripts.ci_main_red import LogUnreadable, MainRed, cached_main_red, read_job_log
 from scripts.ci_wait import (
     _check_runs_at_sha,
     _head_sha,
@@ -141,7 +141,7 @@ class FailureWatch:
         return None
 
     def _classify(self, run: dict) -> JobClassification | None:
-        """None means UNMEASURED: cancelled, stale, action_required, or no job to read."""
+        """None means UNMEASURED: cancelled, stale, action_required, no job, or no log."""
         job_id = _job_id(run)
         if run["conclusion"] not in CLASSIFIED_CONCLUSIONS or job_id is None:
             return None
@@ -151,7 +151,11 @@ class FailureWatch:
             self.emit(
                 f"  main red baseline: {len(red.identities)} identity(ies) at {red.main_sha[:9]}"
             )
-        log = self.log_of(job_id)
+        try:
+            log = self.log_of(job_id)
+        except LogUnreadable as unreadable:
+            self.emit(f"  (log unreadable) {unreadable}")
+            return None
         identities = failed_identities(log)
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)

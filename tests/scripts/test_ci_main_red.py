@@ -7,6 +7,7 @@ Regression lines:
   - if an older verdict's jobs the window DID measure leak into the baseline then broken
   - if a rerun still in progress is not counted as a verdict then broken
   - if an empty log read is taken for "this job failed no test" then broken
+  - if a log that stays empty after every retry returns a value instead of raising then broken
   - if a job failing without identities on main's measured runs is not a red job name then broken
 """
 
@@ -14,7 +15,15 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.ci_main_red import Job, Verdict, job_log_identities, main_red_identities, verdict_runs
+from scripts.ci_main_red import (
+    Job,
+    LogUnreadable,
+    Verdict,
+    job_log_identities,
+    main_red_identities,
+    read_job_log,
+    verdict_runs,
+)
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -106,3 +115,31 @@ def test_a_job_failing_without_identities_on_main_is_a_red_job_name():
     }
     red, _ = _walk(runs, {}, [1, 2, 3])
     assert red.failed_job_names == {frontend}
+
+
+def test_a_log_that_stays_empty_after_every_retry_raises_rather_than_returning_empty():
+    """An unreadable log is UNMEASURED. Returned as "", it reads as "this job named no
+    failing test", which is how an unmeasured job earns a verdict it did not deserve."""
+    reads: list[int] = []
+
+    def never_readable(job_id: int) -> str:
+        reads.append(job_id)
+        return ""
+
+    with pytest.raises(LogUnreadable):
+        read_job_log(41, never_readable, lambda _: None)
+    assert len(reads) == 3
+
+
+def test_a_log_readable_on_a_later_try_is_returned():
+    """The control: the retry must still succeed, or the raise is just a slower failure."""
+    attempts = iter(["", "", "2026-09-16T09:00:00Z FAILED tests/test_a.py::test_x\n"])
+
+    log = read_job_log(41, lambda _: next(attempts), lambda _: None)
+    assert "test_x" in log
+
+
+def test_the_baseline_treats_an_unreadable_log_as_no_identities_so_the_walk_continues():
+    """`job_log_identities` absorbs it: an empty identity set is what tells the window walk
+    the job is still unmeasured and must be read from an older verdict."""
+    assert job_log_identities(41, lambda _: "", lambda _: None) == frozenset()

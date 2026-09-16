@@ -115,6 +115,27 @@ def test_a_ratchet_breach_is_debt():
     assert got.verdict is JobVerdict.RATCHET_DEBT
 
 
+def test_a_ratchet_job_failing_a_test_main_passes_is_genuine():
+    """Keyed on the job name alone, a real regression landing in a ratchet job reads as debt,
+    the watcher ends KNOWN_RED_ONLY, and the agent merges past it."""
+    got = classify_job(
+        "quality ratchet (lint debt)",
+        frozenset({"FAILED tests/test_new.py::test_regression"}),
+        frozenset(),
+        frozenset(),
+    )
+    assert got.verdict is JobVerdict.GENUINE
+
+
+def test_a_ratchet_job_failing_only_what_main_fails_is_still_debt():
+    """The control: the fix must not turn every ratchet breach into a blocker."""
+    shared = "FAILED tests/test_old.py::test_known"
+    got = classify_job(
+        "quality ratchet (lint debt)", frozenset({shared}), frozenset({shared}), frozenset()
+    )
+    assert got.verdict is JobVerdict.KNOWN_RED
+
+
 def test_a_zero_identity_job_also_red_on_main_is_main_red_job():
     name = "reqs-check + native wheel + contract drift"
     got = classify_job(name, frozenset(), frozenset(), frozenset({name}))

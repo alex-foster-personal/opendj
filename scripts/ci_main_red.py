@@ -36,6 +36,14 @@ LOG_READ_BACKOFF_S = 10.0
 CACHE_PATH = Path.home() / ".cache" / "opendj" / "ci-watch" / "main-red.json"
 
 
+class LogUnreadable(Exception):
+    """A job log that could not be read, so this job measured nothing."""
+
+    def __init__(self, job_id: int) -> None:
+        super().__init__(f"job {job_id}: log still empty after {LOG_READ_TRIES} reads")
+        self.job_id = job_id
+
+
 @dataclass(frozen=True)
 class Verdict:
     run_id: int
@@ -141,7 +149,11 @@ def job_log_identities(
     read 39 identities where the reference implementation read 118, twelve minutes apart on
     the same main SHA, because empty reads dropped whole jobs silently.
     """
-    return failed_identities(read_job_log(job_id, fetch, sleep))
+    try:
+        return failed_identities(read_job_log(job_id, fetch, sleep))
+    except LogUnreadable as unreadable:
+        print(f"[ci-main-red] {unreadable}", file=sys.stderr)
+        return frozenset()
 
 
 def read_job_log(
@@ -149,18 +161,20 @@ def read_job_log(
     fetch: Callable[[int], str] = _fetch_job_log,
     sleep: Callable[[float], None] = time.sleep,
 ) -> str:
-    """A job's full log, retried while the read comes back empty. Still empty after every
-    try is returned empty and said on stderr, never silently taken for a clean log."""
+    """A job's full log, retried while the read comes back empty.
+
+    Still empty after every try means the log could not be READ, which is not the same as a
+    job that failed no test, so it raises rather than returning a value a caller would
+    classify. An empty string here would read as "this job names no failing test", and that
+    is how an unmeasured job earns a verdict it did not deserve.
+    """
     for attempt in range(LOG_READ_TRIES):
         log = fetch(job_id)
         if log:
             return log
         if attempt + 1 < LOG_READ_TRIES:
             sleep(LOG_READ_BACKOFF_S)
-    print(
-        f"[ci-main-red] job {job_id}: log still empty after {LOG_READ_TRIES} reads", file=sys.stderr
-    )
-    return ""
+    raise LogUnreadable(job_id)
 
 
 def _main_sha() -> str:

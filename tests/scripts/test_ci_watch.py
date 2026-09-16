@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from scripts import ci_watch
-from scripts.ci_main_red import MainRed
+from scripts.ci_main_red import LogUnreadable, MainRed
 from scripts.ci_wait_core import WaitStatus, poll_until_terminal
 from scripts.ci_watch import Exit, FailureWatch, exit_for
 
@@ -152,3 +152,27 @@ def test_a_zero_identity_failure_prints_the_log_error_lines():
     blob = "\n".join(lines)
     assert 'budget "other-lazy" exceeded' in blob
     assert "echoed-command-not-a-result" not in blob
+
+
+def test_a_check_whose_log_cannot_be_read_is_unmeasured_not_a_verdict():
+    """A failed job the watcher could not read must end UNKNOWN (exit 3). Classified from an
+    empty log it would look like a job that named no failing test, and a job name matching an
+    infra or ratchet rule would then be waved through."""
+    lines: list[str] = []
+
+    def unreadable(job_id: int) -> str:
+        raise LogUnreadable(job_id)
+
+    watch = FailureWatch(
+        log_of=unreadable,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    outcome = watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 2 of 5)")))
+
+    assert outcome is None
+    assert watch.verdicts[7] is None
+    code, _ = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
+    assert code is Exit.UNKNOWN
+    assert any("log unreadable" in line for line in lines)
