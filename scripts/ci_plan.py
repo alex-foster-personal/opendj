@@ -25,6 +25,7 @@ exit 0, a canary green 25 runs of 28 without running a test). `plan` raises inst
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import subprocess
 import sys
@@ -107,12 +108,17 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 
 # ----- pure: the plan -----
 
-_SOURCE_SUFFIXES = (".py", ".sh", ".ts", ".svelte", ".sql", ".toml")
+# INVERTED, deliberately. This was a whitelist of source suffixes, so anything under a source
+# root wearing an extension nobody had thought of -- `.js`, `.tsx`, `.json`, `.yaml` -- was not
+# source, matched no scope, and planned SKIP_PYTEST. Sol's P1 on #3339. A whitelist of what is
+# source has to be completed before a new language is safe; a whitelist of what is HARMLESS has
+# to be completed before a new language is SKIPPED, and the unlisted case fails closed.
+_HARMLESS_SUFFIXES = (".md", ".rst", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico")
 _SOURCE_ROOTS = ("apps/", "scripts/", "ops/", "tests/")
 
 
 def _is_source(path: str) -> bool:
-    return path.startswith(_SOURCE_ROOTS) and path.endswith(_SOURCE_SUFFIXES)
+    return path.startswith(_SOURCE_ROOTS) and not path.endswith(_HARMLESS_SUFFIXES)
 
 
 def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
@@ -232,7 +238,53 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
     )
 
 
-_IMPORT = re.compile(r"^[^\S\n]*(?:from|import)[^\S\n]+((?:apps|scripts|ops)\.[A-Za-z0-9_]+)", re.M)
+_TOP_PACKAGES = ("apps", "scripts", "ops")
+
+
+def is_test_module(path: str) -> bool:
+    """pytest's own two shapes. Discovery and the completeness invariant have to agree on
+    this: they used different predicates, so a `foo_test.py` could satisfy the ownership
+    check while never being scanned for the imports that put its suite in a scoped plan.
+    Sol's P1 on #3339."""
+    name = path.rsplit("/", 1)[-1]
+    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+
+
+def test_modules(root: Path) -> list[Path]:
+    """Every test module under `root`, by the one predicate above."""
+    return sorted(p for p in root.rglob("*.py") if is_test_module(p.as_posix()))
+
+
+def imported_packages(text: str, where: str) -> set[str]:
+    """The `apps.x` / `scripts.x` / `ops.x` packages a module imports, read with the AST.
+
+    A regular expression missed `from apps import engine_core` outright and saw only the
+    first name in `import apps.foo, apps.bar`. Sol's P1 on #3339, and the reason it was
+    invisible: the generated `dependents` and the guard that checks it used the SAME matcher,
+    so the guard agreed with a derivation that was wrong in exactly the same way. An equality
+    between two runs of one broken instrument proves nothing.
+
+    A file that does not parse RAISES rather than returning an empty set: no imports found
+    and could not look are the same value, and the second one must never narrow a plan.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise PlanError(f"cannot parse {where}: {exc}") from None
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            # `from apps import engine_core` names the package in the ALIAS, not the module.
+            found.update(f"{node.module}.{alias.name}" for alias in node.names)
+            found.add(node.module)
+    return {
+        ".".join(part.split(".")[:2])
+        for part in found
+        if part.split(".")[0] in _TOP_PACKAGES and "." in part
+    }
 
 
 def observed_dependents(
@@ -266,7 +318,7 @@ def observed_dependents(
             text = file.read_text(encoding="utf-8", errors="ignore")
         except OSError as exc:
             raise PlanError(f"cannot read {file}: {exc}") from None
-        for module in set(_IMPORT.findall(text)):
+        for module in imported_packages(text, relative):
             as_path = module.replace(".", "/") + "/"
             for scope in config.scopes:
                 if not matches(as_path, scope.sources):
@@ -297,7 +349,7 @@ def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozens
                 continue
             for file in base.rglob("*.py"):
                 text = file.read_text(encoding="utf-8", errors="ignore")
-                for module in set(_IMPORT.findall(text)):
+                for module in imported_packages(text, file.as_posix()):
                     as_path = module.replace(".", "/") + "/"
                     for other in config.scopes:
                         if other.name != scope.name and matches(as_path, other.sources):
