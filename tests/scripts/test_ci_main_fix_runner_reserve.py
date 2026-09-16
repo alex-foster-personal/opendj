@@ -68,7 +68,9 @@ EXPECTED_RUNS_ON = (
 #: Every other CI_RUNS_ON_LINUX-driven job in ci.yml. This set must NOT grow
 #: without a deliberate edit to this test -- see the class-not-instance
 #: regression line above.
-UNCHANGED_LINUX_JOBS = ["affected-canary", "contracts", "frontend-build", "frontend", "quality"]
+# The `fast` tier job (round 6) is NOT here on purpose: it reads CI_RUNS_ON_FAST
+# ahead of the LINUX pool, pinned by tests/scripts/test_ci_fast_tier_job.py.
+UNCHANGED_LINUX_JOBS = ["contracts", "frontend-build", "frontend", "quality"]
 
 UNCHANGED_RUNS_ON = '${{ fromJSON(vars.CI_RUNS_ON_LINUX || \'"ubuntu-latest"\') }}'
 

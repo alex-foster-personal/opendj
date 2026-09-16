@@ -169,7 +169,7 @@ def test_acquire_refuses_when_ci_state_is_unreadable(tmp_path: Path, monkeypatch
 
     Updated for the new rule (was: "CI never published the artifact then e2e
     must not build locally"). gh exit 4 is "authentication required": the
-    affected-test canary has no token, so a live `gh api` dies before any
+    fast tier job has no token, so a live `gh api` dies before any
     refuse message unless acquire fail-closes on EVERY call, not just the
     artifact-list one. Pin that path with a real subprocess, not the
     developer's logged-in gh (head ed73bf4f7 asserted 4 == 1).
