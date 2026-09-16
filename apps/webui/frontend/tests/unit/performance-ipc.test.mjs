@@ -1264,6 +1264,53 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
 
+test('queryPerformanceState publishes browser pane search, sort, and selected row from the adapter', () => {
+	const empty = ipc.queryPerformanceState().browser;
+	assert.equal(empty.search, null);
+	assert.equal(empty.sort, null);
+	assert.equal(empty.selected_row, null);
+
+	const unregister = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async () => {},
+		readSnapshot: () => ({
+			search: 'house',
+			sort: { key: 'title', direction: 'asc' },
+			selected_row: 'track-99'
+		})
+	});
+	try {
+		const live = ipc.queryPerformanceState().browser;
+		assert.equal(live.search, 'house');
+		assert.deepEqual(live.sort, { key: 'title', direction: 'asc' });
+		assert.equal(live.selected_row, 'track-99');
+		assert.doesNotThrow(() => structuredClone(live));
+	} finally {
+		unregister();
+	}
+
+	const unregisterDesc = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async () => {},
+		readSnapshot: () => ({
+			search: null,
+			sort: { key: 'bpm', direction: 'desc' },
+			selected_row: null
+		})
+	});
+	try {
+		assert.deepEqual(ipc.queryPerformanceState().browser.sort, {
+			key: 'bpm',
+			direction: 'desc'
+		});
+	} finally {
+		unregisterDesc();
+	}
+
+	const after = ipc.queryPerformanceState().browser;
+	assert.equal(after.search, null);
+	assert.equal(after.sort, null);
+	assert.equal(after.selected_row, null);
+});
+
 test('master mute and browser playlist selection are bus commands with queryable state', async () => {
 	const seen = [];
 	globalThis.window = {};
@@ -1271,7 +1318,8 @@ test('master mute and browser playlist selection are bus commands with queryable
 	const unregister = ipc.registerPerformanceBrowserAdapter({
 		selectPlaylist: async (playlistId) => {
 			seen.push(playlistId);
-		}
+		},
+		readSnapshot: () => ({ search: null, sort: null, selected_row: null })
 	});
 	try {
 		const before = ipc.queryPerformanceState().history.length;
