@@ -59,9 +59,16 @@ from scripts.ci_failure_ids import (
     failed_identities,
     failure_beyond_tests,
     ratchet_breach,
+    residual_identities,
     unpartitionable_exit,
 )
-from scripts.ci_main_red import LogUnreadable, MainRed, cached_main_red, read_job_log
+from scripts.ci_main_red import (
+    LogUnreadable,
+    MainRed,
+    cached_main_red,
+    read_job_log,
+    stale_red_identities,
+)
 from scripts.ci_wait import (
     _check_runs_at_sha,
     _head_sha,
@@ -77,6 +84,9 @@ from scripts.ci_wait_core import (
     lifecycle_wait_status,
     poll_until_terminal,
 )
+from scripts.review_coverage_carry import fetch_commits, is_ancestor
+from scripts.review_gate_freshness import CHECKOUT_ROOT
+from scripts.review_gh import TriageError
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
 REPO = "maintainer/music-dj-tools"
@@ -96,6 +106,23 @@ class Exit(IntEnum):
     CLOSED = 5
 
 
+def _advanced_past(measured_sha: str, pr_head_sha: str) -> bool:
+    """True when the pull request's history already contains `measured_sha` (issue #3344):
+    its merge base is at or after that commit, so a baseline measured there cannot say main
+    is still red on it for THIS pull request. Fetches the shas by name first -- never via
+    FETCH_HEAD, which concurrent agents in this shared checkout overwrite (CLAUDE.md).
+
+    An unmeasurable ancestry (a git failure, a missing object `fetch_commits` could not
+    resolve) comes back True: undeterminable must not preserve the excuse, the same
+    direction `stale_red_identities` documents for its own seam.
+    """
+    try:
+        fetch_commits(CHECKOUT_ROOT, measured_sha, pr_head_sha)
+        return is_ancestor(CHECKOUT_ROOT, measured_sha, pr_head_sha)
+    except TriageError:
+        return True
+
+
 @dataclass
 class FailureWatch:
     """Classifies each newly finished non-passing check once, and says when to stop."""
@@ -104,6 +131,8 @@ class FailureWatch:
     main_red: Callable[[], MainRed]
     emit: Callable[[str], None]
     clock: Callable[[], float] = time.monotonic
+    pr_head_sha: str = ""
+    advanced_past: Callable[[str, str], bool] = _advanced_past
     verdicts: dict[int, JobClassification | None] = field(default_factory=dict)
     excerpts: dict[int, list[str]] = field(default_factory=dict)
     started: float | None = None
@@ -193,9 +222,20 @@ class FailureWatch:
             red.unreadable_job_names,
             beyond_tests=bool(beyond),
             ratchet_breach_seen=ratchet_breach(log),
-            baseline_stale=bool(red.measured_shas)
-            and red.measured_shas != frozenset({red.main_sha}),
+            baseline_stale=self._baseline_stale(identities, red),
         )
+
+    def _baseline_stale(self, identities: frozenset[str], red: MainRed) -> bool:
+        """True when this job is excused ONLY by baseline identities THIS pull request has
+        already advanced past (issue #3344): main could have fixed them since, so
+        subtracting them is unproven, not merely old. Bounded to this job's own identities,
+        not the whole baseline, and only checked once the job would otherwise be KNOWN_RED --
+        the ancestor check is real git I/O and most jobs never reach it.
+        """
+        if not identities or residual_identities(identities, red.identities):
+            return False
+        stale = stale_red_identities(red.identities_by_sha, self.pr_head_sha, self.advanced_past)
+        return bool(identities & stale)
 
 
 def _job_id(run: dict) -> int | None:
@@ -272,7 +312,7 @@ def watch_pr(pr: str, *, timeout_s: float, poll_interval_s: float) -> Exit:
     print(f"[ci-watch {_utc()}] PR #{pr} pinned head {head}; polling every {poll_interval_s:.0f}s")
     if expected is None:
         print("  no baseline from an earlier push: failures are watched, GREEN cannot be proven")
-    watch = FailureWatch(read_job_log, cached_main_red, print)
+    watch = FailureWatch(read_job_log, cached_main_red, print, pr_head_sha=head)
     run_event = _memoized_run_event(REPO)
 
     def lifecycle() -> LifecycleOutcome | None:

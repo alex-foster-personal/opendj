@@ -25,6 +25,7 @@ from scripts.ci_failure_ids import JobVerdict
 from scripts.ci_main_red import LogUnreadable, MainRed
 from scripts.ci_wait_core import WaitStatus, poll_until_terminal
 from scripts.ci_watch import Exit, FailureWatch, exit_for
+from scripts.review_gh import TriageError
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -328,10 +329,14 @@ def test_an_exit_the_log_cannot_attribute_is_unmeasured_not_known_red():
     assert "could not be partitioned" in "\n".join(lines)
 
 
-def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
+def test_a_baseline_the_pull_request_advanced_past_ends_the_watch_unknown_not_known_red_only():
     """The WIRING, which the rule test cannot reach. A verdict that is unmergeable in
     `classify_job` and absent from `exit_for`'s unmeasured tuple is a rule nobody applies --
-    that exact gap was found by mutation on this module earlier and is why this exists."""
+    that exact gap was found by mutation on this module earlier and is why this exists.
+
+    Issue #3344: staleness is now about the PULL REQUEST's own merge base, not main's live
+    tip -- `advanced_past` stands in for `git merge-base --is-ancestor measured_sha
+    pr_head_sha`, and answering True here is what used to require comparing against main_sha."""
     lines: list[str] = []
     log = (
         "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
@@ -347,9 +352,12 @@ def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
             frozenset(),
             "o" * 40,
             frozenset({"o" * 40}),
+            {"o" * 40: frozenset({MAIN_FAIL})},
         ),
         emit=lines.append,
         clock=lambda: 0.0,
+        pr_head_sha="p" * 40,
+        advanced_past=lambda _measured, _pr: True,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
@@ -357,41 +365,44 @@ def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
     assert code is Exit.UNKNOWN, why
 
 
-def test_a_baseline_measured_at_two_commits_is_stale_even_when_one_is_the_head():
-    """Sol's P1 on #3293. A walk spans several workflow files and they do not finish on the
-    same commit. Keeping ONE sha let a baseline whose `ci.yml` half was measured at the pinned
-    head carry an `e2e.yml` half measured at an older one and be stamped current, so the older
-    half's obsolete failures were subtracted from pull requests as main's known red. Staleness
-    is an invariant now: EVERY contributing measurement came from the pinned head, or the
-    baseline is stale."""
+def test_only_the_commit_the_pull_request_advanced_past_makes_its_own_identities_stale():
+    """Sol's P1 on #3293, narrowed by issue #3344: a walk spans several workflow files that
+    finish on different commits, but staleness is bounded PER SOURCE COMMIT now, not
+    wholesale. This job's own identity came from the commit the pull request advanced past,
+    so it reads stale even though the baseline also holds an unrelated identity from a
+    commit the pull request has NOT advanced past -- the old wholesale rule downgraded both,
+    which is exactly the cost that blocked ~87% of polls and motivated this bound."""
     lines: list[str] = []
     log = (
         "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
         f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
         "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
     )
+    other = "FAILED tests/b/test_other.py::test_still_fresh"
     watch = FailureWatch(
         log_of=lambda _job: log,
         main_red=lambda: MainRed(
-            frozenset({MAIN_FAIL}),
+            frozenset({MAIN_FAIL, other}),
             frozenset(),
             "h" * 40,
             frozenset(),
-            # The representative sha IS the pinned head, which is exactly the case the old
-            # comparison called fresh.
             "h" * 40,
             frozenset({"h" * 40, "o" * 40}),
+            {"h" * 40: frozenset({other}), "o" * 40: frozenset({MAIN_FAIL})},
         ),
         emit=lines.append,
         clock=lambda: 0.0,
+        pr_head_sha="p" * 40,
+        advanced_past=lambda measured, _pr: measured == "o" * 40,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
 
 
-def test_a_baseline_every_workflow_measured_at_the_head_is_not_stale():
-    """The opposite direction. Treating any multi-workflow baseline as stale would make the
-    watcher useless the moment a second workflow was added, so agreement has to read fresh."""
+def test_a_baseline_the_pull_request_has_not_advanced_past_is_not_stale():
+    """The opposite direction. A pull request whose merge base predates every measurement in
+    the baseline must still read its known-red failures as KNOWN_RED, or the watcher becomes
+    useless the moment ANY per-commit baseline exists."""
     lines: list[str] = []
     log = (
         "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
@@ -407,9 +418,41 @@ def test_a_baseline_every_workflow_measured_at_the_head_is_not_stale():
             frozenset(),
             "h" * 40,
             frozenset({"h" * 40}),
+            {"h" * 40: frozenset({MAIN_FAIL})},
         ),
         emit=lines.append,
         clock=lambda: 0.0,
+        pr_head_sha="p" * 40,
+        advanced_past=lambda _measured, _pr: False,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED
+
+
+# ----- the real advanced_past seam (issue #3344) -----
+
+
+def test_advanced_past_reports_true_when_the_pull_request_contains_the_measured_commit(
+    monkeypatch,
+):
+    monkeypatch.setattr(ci_watch, "fetch_commits", lambda root, *shas: None)
+    monkeypatch.setattr(ci_watch, "is_ancestor", lambda root, ancestor, descendant: True)
+    assert ci_watch._advanced_past("c" * 40, "d" * 40) is True
+
+
+def test_advanced_past_reports_false_when_the_pull_request_does_not_contain_it(monkeypatch):
+    monkeypatch.setattr(ci_watch, "fetch_commits", lambda root, *shas: None)
+    monkeypatch.setattr(ci_watch, "is_ancestor", lambda root, ancestor, descendant: False)
+    assert ci_watch._advanced_past("c" * 40, "d" * 40) is False
+
+
+def test_advanced_past_fails_closed_on_an_undeterminable_ancestry(monkeypatch):
+    """Issue #3344's own seam contract: an ancestry check that could not be answered must
+    read as advanced-past, never as fresh, or a git failure would silently reopen the excuse
+    this whole mechanism exists to close."""
+
+    def _raise(*_args, **_kwargs):
+        raise TriageError("git fetch failed")
+
+    monkeypatch.setattr(ci_watch, "fetch_commits", _raise)
+    assert ci_watch._advanced_past("c" * 40, "d" * 40) is True

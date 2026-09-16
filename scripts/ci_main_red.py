@@ -20,7 +20,7 @@ import json
 import sys
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from scripts.ci_failure_ids import failed_identities
@@ -76,6 +76,11 @@ class MainRed:
     # The whole set, so staleness is an INVARIANT (every measurement came from the pinned
     # head) rather than a comparison against one representative value.
     measured_shas: frozenset[str] = frozenset()
+    # Every identity, keyed by the commit its OWN measurement came from (not the walk's
+    # newest). A pull request's merge base is compared against this, per identity, rather
+    # than against one representative sha: main-at-C's red only excuses a pull request that
+    # has not advanced past C, and a baseline spans several commits at once (issue #3344).
+    identities_by_sha: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 # ----- pure: the window walk -----
@@ -106,6 +111,8 @@ class WalkResult:
     # baseline whose `ci.yml` half was measured at the pinned head carry an `e2e.yml` half
     # measured at an older one, and be stamped current. Sol's P1 on #3293.
     measured_shas: frozenset[str] = frozenset()
+    # Same key as `MainRed.identities_by_sha`, one workflow's share of it.
+    identities_by_sha: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 def _named_failures(
@@ -167,6 +174,7 @@ def main_red_identities(
     # keep, filling in jobs the newest run never measured (queued, skipped, cancelled,
     # unreadable log); it just no longer speaks for a job a newer run already answered.
     decided: set[str] = set()
+    identities_by_sha: dict[str, set[str]] = {}
     # EVERY verdict the RESULT depends on, newest first. Recording only the newest was Sol's
     # second P1 on #3293 and the same defect as the first, one level in: the window fills
     # names the newest verdict never measured from OLDER verdicts at other commits, so a
@@ -212,6 +220,9 @@ def main_red_identities(
                         continue
                     failed_names.add(job.name)
                     found |= ids
+                    # This job's identities all came from THIS verdict's head, so that is
+                    # the commit a pull request's merge base is compared against for them.
+                    identities_by_sha.setdefault(verdict.head_sha, set()).update(ids)
                     measured.add(job.name)
                     decided.add(job.name)
         if len(decided) != decided_before:
@@ -226,6 +237,7 @@ def main_red_identities(
         frozenset(unreadable - failed_names),
         _newest_measured(contributing),
         frozenset(contributing) - {""},
+        {sha: frozenset(ids) for sha, ids in identities_by_sha.items()},
     )
 
 
@@ -316,6 +328,33 @@ def unmeasured_baseline_names(
     return (unreadable | failed_check_runs) - measured
 
 
+def stale_red_identities(
+    identities_by_sha: dict[str, frozenset[str]],
+    pr_head_sha: str,
+    advanced_past: Callable[[str, str], bool],
+) -> frozenset[str]:
+    """Identities this pull request has already advanced past the measurement of (#3344).
+
+    Main-at-C's red only excuses a pull request that has NOT advanced past C: a later main
+    commit can fix C's failure, and a pull request based after that fix reintroducing it
+    would otherwise read KNOWN_RED off a baseline measured before the fix existed. Bounded
+    per SOURCE COMMIT rather than wholesale against main's live tip, which on current
+    numbers is stale on ~87% of polls whether or not it matters to the pull request being
+    watched. `identities_by_sha` empty (no per-commit provenance) yields nothing stale, the
+    same as before this existed.
+
+    `advanced_past` is a seam over `git merge-base --is-ancestor measured_sha pr_head_sha`;
+    an undeterminable answer must come back True (advanced past), never False, or an ancestry
+    check that fails closed would open the same excuse this function exists to close.
+    """
+    return frozenset(
+        identity
+        for sha, identities in identities_by_sha.items()
+        if advanced_past(sha, pr_head_sha)
+        for identity in identities
+    )
+
+
 def _runs_of(workflow: str) -> list[dict]:
     return _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")[
         "workflow_runs"
@@ -331,12 +370,15 @@ def _walk_every_workflow(
     failed_names: set[str] = set()
     unreadable: set[str] = set()
     measured: list[str] = []
+    identities_by_sha: dict[str, frozenset[str]] = {}
     for workflow in WORKFLOW_FILES:
         walk = main_red_identities(verdict_runs(runs_of(workflow)), jobs_of, identities_of)
         identities |= walk.identities
         failed_names |= walk.failed_job_names
         unreadable |= walk.unreadable_job_names
         measured.extend(walk.measured_shas)
+        for sha, ids in walk.identities_by_sha.items():
+            identities_by_sha[sha] = identities_by_sha.get(sha, frozenset()) | ids
     contributing = frozenset(sha for sha in measured if sha)
     return WalkResult(
         frozenset(identities),
@@ -346,6 +388,7 @@ def _walk_every_workflow(
         # on it; the set below is what staleness is read from.
         max(contributing) if len(contributing) == 1 else next((s for s in measured if s), ""),
         contributing,
+        identities_by_sha,
     )
 
 
@@ -409,6 +452,7 @@ def fetch_main_red(
             ),
             result.measured_sha,
             result.measured_shas,
+            result.identities_by_sha,
         )
     head = main_sha()
     print(
@@ -444,6 +488,7 @@ def cached_main_red(
         if (
             "unreadable_job_names" in cached
             and "measured_shas" in cached
+            and "identities_by_sha" in cached
             and current
             and cached["main_sha"] == current
         ):
@@ -454,6 +499,7 @@ def cached_main_red(
                 frozenset(cached["unreadable_job_names"]),
                 cached["measured_sha"],
                 frozenset(cached["measured_shas"]),
+                {sha: frozenset(ids) for sha, ids in cached["identities_by_sha"].items()},
             )
     fresh = fetch()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -467,6 +513,9 @@ def cached_main_red(
                 "unreadable_job_names": sorted(fresh.unreadable_job_names),
                 "measured_sha": fresh.measured_sha,
                 "measured_shas": sorted(fresh.measured_shas),
+                "identities_by_sha": {
+                    sha: sorted(ids) for sha, ids in fresh.identities_by_sha.items()
+                },
             }
         ),
         encoding="utf-8",

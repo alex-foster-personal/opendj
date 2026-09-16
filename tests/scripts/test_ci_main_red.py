@@ -25,11 +25,13 @@ from scripts.ci_main_red import (
     MainRed,
     Verdict,
     WalkResult,
+    _walk_every_workflow,
     cached_main_red,
     fetch_main_red,
     job_log_identities,
     main_red_identities,
     read_job_log,
+    stale_red_identities,
     unattributable_baseline,
     unmeasured_baseline_names,
     verdict_runs,
@@ -408,6 +410,7 @@ def _write_cache(path, sha: str, identities: list[str]) -> None:
                 "unreadable_job_names": [],
                 "measured_sha": sha,
                 "measured_shas": [sha],
+                "identities_by_sha": {sha: identities},
             }
         ),
         encoding="utf-8",
@@ -438,6 +441,35 @@ def test_a_fresh_cache_about_the_current_main_is_reused(tmp_path):
         cache, now=lambda: cache.stat().st_mtime, main_sha=lambda: "a" * 40, fetch=_raise_walked
     )
     assert got.identities == {"FAILED tests/t.py::still_red"}
+
+
+def test_a_cache_without_per_commit_provenance_is_re_walked(tmp_path):
+    """Sol's P1 follow-up, issue #3344. A cache written before `identities_by_sha` existed
+    cannot say which commit EACH identity came from, so a pull request's merge base has
+    nothing to compare against them. Reusing it anyway is the exact defect the sibling test
+    above pins for `measured_sha`/`measured_shas`; this is the same version gate for the new
+    key."""
+    cache = tmp_path / "main-red.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "identities": ["FAILED tests/t.py::old"],
+                "failed_job_names": [],
+                "main_sha": "a" * 40,
+                "unreadable_job_names": [],
+                "measured_sha": "a" * 40,
+                "measured_shas": ["a" * 40],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(_Walked):
+        cached_main_red(
+            cache,
+            now=lambda: cache.stat().st_mtime,
+            main_sha=lambda: "a" * 40,
+            fetch=_raise_walked,
+        )
 
 
 # ----- the walk is pinned to one main head -----
@@ -517,4 +549,130 @@ def test_a_cache_that_cannot_say_which_commit_it_measured_is_re_walked(tmp_path)
         )
 
 
-# ----- a baseline says which commit it is about -----
+# ----- per-commit identity provenance and staleness (issue #3344) -----
+
+
+def test_an_identity_read_from_an_older_verdict_keeps_that_verdicts_own_commit():
+    """The core of issue #3344. A job the newest verdict left unmeasured is read from an
+    older verdict, and that identity's provenance is the OLDER commit, not the newest one
+    the walk happened to measure something else at. Attributing it to the newer commit would
+    let a pull request that advanced past the newer commit, but not the older one, keep an
+    excuse nothing established."""
+    jobs = {
+        1: [Job(11, "shard 1", "cancelled"), Job(12, "shard 2", "failure")],
+        2: [Job(21, "shard 1", "failure")],
+    }
+    ids = {
+        12: frozenset({"FAILED tests/t.py::newest"}),
+        21: frozenset({"FAILED tests/t.py::older"}),
+    }
+    walk = main_red_identities(
+        [Verdict(1, 1, "n" * 40), Verdict(2, 1, "o" * 40)],
+        lambda run_id, _attempt: jobs[run_id],
+        lambda job_id: ids.get(job_id, frozenset()),
+    )
+    assert walk.identities_by_sha == {
+        "n" * 40: frozenset({"FAILED tests/t.py::newest"}),
+        "o" * 40: frozenset({"FAILED tests/t.py::older"}),
+    }
+
+
+def _two_workflow_runs(first_sha: str, second_sha: str):
+    """One completed run per workflow file, each measuring at its own commit."""
+    per_workflow = {
+        "ci.yml": [
+            {"id": 1, "status": "completed", "conclusion": "failure", "run_attempt": 1,
+             "head_sha": first_sha},
+        ],
+        "e2e.yml": [
+            {"id": 2, "status": "completed", "conclusion": "failure", "run_attempt": 1,
+             "head_sha": second_sha},
+        ],
+    }
+    jobs = {
+        1: [Job(11, "pytest fast lane (shard 1 of 5)", "failure")],
+        2: [Job(21, "e2e gate", "failure")],
+    }
+    ids = {11: frozenset({"FAILED tests/a/test_a.py::test_one"}),
+           21: frozenset({"FAILED tests/e/test_e.py::test_two"})}
+    return (
+        lambda workflow: per_workflow[workflow],
+        lambda run_id, _attempt: jobs[run_id],
+        lambda job_id: ids[job_id],
+    )
+
+
+def test_identities_by_sha_keeps_each_workflows_own_commit() -> None:
+    """Issue #3344. `ci.yml` and `e2e.yml` finishing on different commits must keep their
+    identities apart, or a pull request that advanced past only one of the two commits could
+    not be told which half of the baseline it still owes an excuse for."""
+    runs_of, jobs_of, identities_of = _two_workflow_runs("a" * 40, "b" * 40)
+    walk = _walk_every_workflow(jobs_of, identities_of, runs_of)
+    assert walk.identities_by_sha == {
+        "a" * 40: frozenset({"FAILED tests/a/test_a.py::test_one"}),
+        "b" * 40: frozenset({"FAILED tests/e/test_e.py::test_two"}),
+    }
+
+
+def test_identities_by_sha_covers_exactly_the_baseline_identities() -> None:
+    """Invariant, not a value: whatever the walk finds, every identity in it is attributed
+    to SOME commit and none is invented. A drift here silently reopens issue #3344 -- an
+    identity present in `walk.identities` but absent from `identities_by_sha` can never be
+    bounded by a pull request's merge base, so it is excused forever regardless of staleness."""
+    runs_of, jobs_of, identities_of = _two_workflow_runs("a" * 40, "b" * 40)
+    walk = _walk_every_workflow(jobs_of, identities_of, runs_of)
+    assert frozenset().union(*walk.identities_by_sha.values()) == walk.identities
+
+
+# ----- staleness is bounded to what THIS pull request has advanced past (issue #3344) -----
+
+
+def test_stale_red_identities_is_empty_when_the_pull_request_has_not_advanced_past_anything():
+    """The keep direction. Main's red measured at C still excuses this pull request when its
+    merge base is at or before C, so nothing here should read stale."""
+    stale = stale_red_identities(
+        {"c" * 40: frozenset({"FAILED tests/t.py::a"})},
+        "pr" + "0" * 38,
+        advanced_past=lambda _measured, _pr: False,
+    )
+    assert stale == frozenset()
+
+
+def test_stale_red_identities_downgrades_only_the_commit_the_pull_request_advanced_past():
+    """The narrow rule the issue asks for: bounded per SOURCE COMMIT, not wholesale. A pull
+    request that advanced past one measurement but not another must not lose the excuse it
+    still legitimately has."""
+    identities_by_sha = {
+        "old" + "0" * 37: frozenset({"FAILED tests/t.py::advanced_past"}),
+        "new" + "0" * 37: frozenset({"FAILED tests/t.py::not_advanced_past"}),
+    }
+    stale = stale_red_identities(
+        identities_by_sha,
+        "pr" + "0" * 38,
+        advanced_past=lambda measured, _pr: measured == "old" + "0" * 37,
+    )
+    assert stale == frozenset({"FAILED tests/t.py::advanced_past"})
+
+
+def test_stale_red_identities_is_empty_with_no_per_commit_provenance():
+    """A baseline with no `identities_by_sha` (an old cache shape, or a walk that measured
+    nothing) reads no worse than before this existed: nothing is manufactured stale."""
+    assert stale_red_identities({}, "pr" + "0" * 38, advanced_past=lambda *_: True) == frozenset()
+
+
+def test_stale_red_identities_asks_advanced_past_about_the_right_two_shas():
+    """The wiring: `advanced_past` must be asked (measured_sha, pr_head_sha), in that order,
+    once per source commit -- not the pull request's head compared to itself, and not every
+    identity separately."""
+    seen: list[tuple[str, str]] = []
+
+    def spy(measured: str, pr_head: str) -> bool:
+        seen.append((measured, pr_head))
+        return False
+
+    stale_red_identities(
+        {"c" * 40: frozenset({"FAILED tests/t.py::a", "FAILED tests/t.py::b"})},
+        "d" * 40,
+        advanced_past=spy,
+    )
+    assert seen == [("c" * 40, "d" * 40)]

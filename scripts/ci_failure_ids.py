@@ -263,6 +263,11 @@ def failure_beyond_tests(log: str) -> list[str]:
     return found
 
 
+def residual_identities(identities: frozenset[str], main_red: frozenset[str]) -> frozenset[str]:
+    """This job's identities with known flakes and main's own red already excused."""
+    return frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
+
+
 def _fully_explained_verdict(
     *, baseline_stale: bool, leaned_on_main: bool, beyond_tests: bool
 ) -> JobVerdict:
@@ -316,7 +321,7 @@ def classify_job(
     KNOWN_RED_ONLY, and the agent merges past a real failure.
     """
     non_flake = frozenset(i for i in identities if not KNOWN_FLAKES.search(i))
-    residual = non_flake - main_red
+    residual = residual_identities(identities, main_red)
     # Whether the verdict actually LEANS on main's red set. Sol's P2 on #3293: staleness was
     # applied whenever `residual` came out empty, but a failure made entirely of configured
     # flakes empties it without main contributing anything, so a stale baseline turned the
