@@ -51,7 +51,7 @@ export {
  * to forward it to the ring has no business widening that module's importer
  * count.
  */
-type PerfDeck = NonNullable<Parameters<typeof recordPerfEvent>[2]>;
+type PerfDeck = Parameters<typeof recordPerfEvent>[2];
 
 /**
  * Turn an input stamp into the press-to-schedule delta, or nothing.

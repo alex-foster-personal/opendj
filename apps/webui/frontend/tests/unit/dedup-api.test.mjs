@@ -271,7 +271,11 @@ test('applyDedupMerge posts apply with If-Match and accepts pending_apply false'
 	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters/7/apply`);
 	assert.equal(request.method, 'POST');
 	assert.equal(request.headers.get('if-match'), INITIAL_REVISION);
-	assert.deepEqual(body, { cluster_key: CLUSTER_KEY, survivor: 'track-canon' });
+	assert.deepEqual(body, {
+		cluster_key: CLUSTER_KEY,
+		survivor: 'track-canon',
+		confirm_cue_loss: false
+	});
 	assert.equal(record.pending_apply, false);
 	assert.equal(record.playlists[0].playlist_id, 'pl-1');
 });

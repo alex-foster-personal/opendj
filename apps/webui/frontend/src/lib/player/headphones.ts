@@ -752,8 +752,10 @@ export function dualSinkAssignment(args: {
 	return { masterId: masterStillPresent, cueId, autoPinnedMaster: false };
 }
 
-export function audioContextSinkIdIsSupported(context: { setSinkId?: unknown }): boolean {
-	return typeof context.setSinkId === 'function';
+export function audioContextSinkIdIsSupported(
+	context: AudioContext | { setSinkId?: unknown }
+): boolean {
+	return 'setSinkId' in context && typeof context.setSinkId === 'function';
 }
 
 export function preferredAudioInputDeviceId(
@@ -1334,7 +1336,7 @@ async function _playChirpTrain(
 ): Promise<void> {
 	signal.throwIfAborted();
 	const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-	buffer.copyToChannel(samples, 0);
+	buffer.copyToChannel(new Float32Array(samples), 0);
 	const src = ctx.createBufferSource();
 	src.buffer = buffer;
 	src.connect(target);
@@ -1353,10 +1355,6 @@ async function _playChirpTrain(
 			src.onended = () => {
 				signal.removeEventListener('abort', onAbort);
 				resolve();
-			};
-			src.onerror = () => {
-				signal.removeEventListener('abort', onAbort);
-				reject(new Error('cue alignment chirp failed to play'));
 			};
 			try {
 				src.start();

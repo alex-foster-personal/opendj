@@ -363,7 +363,10 @@ test('Sync now posts the effective hub URL and machine name, and refuses without
 		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' }),
 		openGate
 	);
-	assert.deepEqual(decision, { kind: 'post', body: { hub_url: 'http://env-hub:8686', name: 'silver' } });
+	assert.deepEqual(decision, {
+		kind: 'post',
+		body: { hub_url: 'http://env-hub:8686', name: 'silver', force: false }
+	});
 });
 
 test('syncNowRequest refuses when gig posture gates sync', () => {

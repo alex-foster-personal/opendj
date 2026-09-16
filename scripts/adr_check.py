@@ -76,9 +76,10 @@ GATED_GLOBS: tuple[str, ...] = (
 # Horizontal whitespace only. ``\s`` matches a newline, which is how a
 # marker on its own line followed by ``## Tests`` would count as a reason.
 _NONE_RE = re.compile(
-    r"ADR:[ \t]*none[ \t]*,?[ \t]*because[ \t]+\S",
+    r"[`*_]*ADR:[ \t]*none[ \t]*,?[ \t]*because[`*_]*[ \t]+\S",
     re.IGNORECASE,
 )
+_ADR_LINE_RE = re.compile(r"ADR:", re.IGNORECASE)
 _ID_RE = re.compile(
     r"ADR:[ \t]*(?:ADR-)?(\d{4})\b",
     re.IGNORECASE,
@@ -211,6 +212,10 @@ def has_none_because(body: str) -> bool:
     return bool(_NONE_RE.search(normalize_adr_markers(body)))
 
 
+def adr_declaration_lines(body: str) -> list[str]:
+    return [line for line in (body or "").splitlines() if _ADR_LINE_RE.search(line)]
+
+
 def has_adr_new(body: str) -> bool:
     return bool(_NEW_RE.search(body or ""))
 
@@ -262,21 +267,21 @@ def evaluate(
             f"[adr-check] OK -- ADR: none with because-reason (gated paths: {', '.join(hit)})",
         )
 
-    candidates = adr_candidate_lines(body)
-    if candidates:
+    declarations = adr_declaration_lines(body)
+    if declarations:
         return Verdict(
             1,
-            "[adr-check] gated path(s) "
-            + ", ".join(hit)
-            + " with malformed ADR declaration: "
-            + candidates[0],
+            "[adr-check] malformed ADR declaration: "
+            + declarations[0]
+            + f" (gated paths: {', '.join(hit)})",
         )
 
     return Verdict(
         1,
         "[adr-check] gated path(s) "
         + ", ".join(hit)
-        + " with no ADR declaration found",
+        + " with no ADR declaration found (expected ADR: <id> or "
+        + "ADR: none, because <reason> on one line)",
     )
 
 

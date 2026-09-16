@@ -24,9 +24,14 @@ export function removeFromLibraryMenuItem(
 	selectedIds: string[],
 	run: ((ids: string[]) => void) | undefined
 ): TrackLibraryMenuItem {
-	return {
-		id: 'remove-library',
-		label: 'Remove from library',
-		run: run ? () => run(selectedIds) : undefined
-	};
+	return run
+		? {
+				id: 'remove-library',
+				label: 'Remove from library',
+				run: () => run(selectedIds)
+			}
+		: {
+				id: 'remove-library',
+				label: 'Remove from library'
+			};
 }
