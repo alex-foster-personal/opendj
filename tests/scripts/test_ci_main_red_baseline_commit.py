@@ -10,6 +10,8 @@ Regression lines:
   - if an older verdict that supplied a failure is left out of the contributing set then broken
   - if a verdict that only re-measured a decided name marks the baseline stale then broken
   - if a walk that measured nothing claims a contributing commit then broken
+
+[if] the baseline is not the newest commit that measured [then] fail, [else stop].
 """
 
 from __future__ import annotations

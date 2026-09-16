@@ -9,6 +9,8 @@ Regression lines:
   - if an empty log read is taken for "this job failed no test" then broken
   - if a log that stays empty after every retry returns a value instead of raising then broken
   - if a job failing without identities on main's measured runs is not a red job name then broken
+
+[if] the walk reports a baseline commit it did not measure [then] fail, [else stop].
 """
 
 from __future__ import annotations

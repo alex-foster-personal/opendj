@@ -12,6 +12,8 @@ Regression lines:
   - if a failure also on main reads GENUINE then broken
   - if a failed job with zero identities reads anything but loud (GENUINE) outside the
     infra, ratchet and main-red-job rules then broken
+
+[if] a failure is poisoned by a stale baseline it never leaned on [then] fail, [else stop].
 """
 
 from __future__ import annotations
