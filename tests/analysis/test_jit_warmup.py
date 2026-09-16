@@ -194,9 +194,20 @@ try:
         gf.write(str(time.monotonic() + 0.05))
 except FileExistsError:
     pass
-while not os.path.exists(go):
-    time.sleep(0.001)
-start_at = float(open(go, encoding="utf-8").read().strip())
+# The writer creates the go file and then writes the stamp; a sibling that
+# reads between those two steps sees an empty file, so wait for a stamp that
+# parses rather than for the file to exist.
+start_at = None
+while start_at is None and time.monotonic() < deadline:
+    try:
+        text = open(go, encoding="utf-8").read().strip()
+    except OSError:
+        text = ""
+    if text:
+        start_at = float(text)
+    else:
+        time.sleep(0.001)
+assert start_at is not None, "no start stamp appeared within the barrier deadline"
 while time.monotonic() < start_at:
     time.sleep(0.001)
 entered = time.monotonic()

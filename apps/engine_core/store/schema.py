@@ -318,6 +318,10 @@ _SYNC_INFRA: tuple[str, ...] = (
     "TEXT NOT NULL )",
     "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
     "ON local_changelog(table_name, row_pk)",
+    # Legacy v16 (apps/shared/state/migrations_v16.py): the hub-side twin of
+    # idx_local_changelog_table.
+    "CREATE INDEX IF NOT EXISTS idx_hub_changelog_table "
+    "ON hub_changelog(table_name, row_pk)",
 )
 
 
@@ -1307,16 +1311,28 @@ def _now() -> str:
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
-    """Create ``schema_meta`` with the legacy shape, byte-for-byte.
+    """Create the migration bookkeeping tables with the legacy shape, byte-for-byte.
 
-    Same DDL as apps/shared/state/schema.py._ensure_meta, so a DB that has
-    already been through the legacy runner sees an exact no-op.
+    ``schema_meta`` is the same DDL as apps/shared/state/schema.py._ensure_meta
+    and ``schema_meta_markers`` the same as apps/shared/state/migrations_v16
+    (the one-shot repair markers of #3165), so a DB that has already been
+    through the legacy runner sees an exact no-op. Both are infrastructure,
+    hence :data:`apps.shared.state.schema.INFRASTRUCTURE_TABLES` and not
+    :data:`TABLES`.
     """
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_meta (
             version    INTEGER PRIMARY KEY,
             applied_at TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_meta_markers (
+            marker     TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
         )
         """
     )

@@ -307,6 +307,27 @@ mod tests {
         file.set_modified(when).unwrap();
     }
 
+    /// Rotation reads one process-wide low-disk latch and one process-wide
+    /// free-space override, so tests that rotate must not overlap: a
+    /// sibling's `Some(0)` override skipped this module's rotation on CI and
+    /// left 25 archives where at most 20 were expected (Wed 16 Sep 2026).
+    /// Serialize them and pin the free-space figure so the runner's real
+    /// disk never decides the outcome.
+    static ROTATION_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    const HEALTHY_FREE_BYTES: u64 = 10 * ENGINE_LOG_MIN_FREE_BYTES;
+
+    fn with_disk_free<T>(free: u64, body: impl FnOnce() -> T) -> T {
+        let _serial = ROTATION_TESTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        reset_test_disk_free_bytes();
+        set_test_disk_free_bytes(Some(free));
+        let result = body();
+        reset_test_disk_free_bytes();
+        result
+    }
+
     #[test]
     fn rotates_full_log_into_timestamped_archive() {
         let directory = scratch_dir("rotate");
@@ -314,7 +335,7 @@ mod tests {
         let log_path = directory.join("engine.log");
         std::fs::write(&log_path, "current").unwrap();
 
-        rotate_log_if_needed(&log_path, 1).unwrap();
+        with_disk_free(HEALTHY_FREE_BYTES, || rotate_log_if_needed(&log_path, 1)).unwrap();
 
         assert!(!log_path.exists());
         let archives = archive_paths(&directory.join("engine.log"));
@@ -355,7 +376,7 @@ mod tests {
         }
         std::fs::write(&log_path, "live").unwrap();
 
-        rotate_log_if_needed(&log_path, 1).unwrap();
+        with_disk_free(HEALTHY_FREE_BYTES, || rotate_log_if_needed(&log_path, 1)).unwrap();
 
         let archives = archive_paths(&log_path);
         assert!(
@@ -373,13 +394,11 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let log_path = directory.join("engine.log");
         std::fs::write(&log_path, "live").unwrap();
-        set_test_disk_free_bytes(Some(0));
 
-        rotate_log_if_needed(&log_path, 1).unwrap();
+        with_disk_free(0, || rotate_log_if_needed(&log_path, 1)).unwrap();
 
         assert!(log_path.exists());
         assert_eq!(std::fs::read_to_string(&log_path).unwrap(), "live");
-        reset_test_disk_free_bytes();
         std::fs::remove_dir_all(directory).unwrap();
     }
 

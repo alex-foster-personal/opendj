@@ -21,7 +21,11 @@ type DropFsEntry = {
 function entryFromItem(item: DataTransferItem): DropFsEntry | null {
 	const fn = (item as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry;
 	if (typeof fn !== 'function') return null;
-	return fn() as DropFsEntry | null;
+	// `.call(item)`, NOT `fn()`. Detaching a DOM method from its receiver and
+	// calling it bare throws `TypeError: Illegal invocation` in every browser
+	// this app runs in, which is thrown out of the async drop handler as an
+	// unhandled rejection: no modal, no toast, nothing in the UI at all.
+	return fn.call(item) as DropFsEntry | null;
 }
 
 async function readAllEntries(reader: {

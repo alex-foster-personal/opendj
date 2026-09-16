@@ -122,9 +122,9 @@ export async function measureCueLatencyMs(opts: {
 }): Promise<number> {
 	const reference = cueLatencyClickTrain({
 		sampleRate: opts.sampleRate,
-		clickMs: opts.clickMs,
-		periodMs: opts.periodMs,
-		clickCount: opts.clickCount
+		...(opts.clickMs !== undefined ? { clickMs: opts.clickMs } : {}),
+		...(opts.periodMs !== undefined ? { periodMs: opts.periodMs } : {}),
+		...(opts.clickCount !== undefined ? { clickCount: opts.clickCount } : {})
 	});
 	const captured = await opts.playAndRecord(reference);
 	const { lagMs, peakNormalized } = crossCorrelateLagMs(reference, captured, opts.sampleRate);

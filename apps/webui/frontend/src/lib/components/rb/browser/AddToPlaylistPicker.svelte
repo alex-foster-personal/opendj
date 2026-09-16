@@ -46,6 +46,18 @@
 		if (open && e.key === 'Escape') onclose();
 	}
 
+	/**
+	 * The dialog stops keydown propagation so typing inside it never reaches
+	 * the browser panel's global hotkeys. That also stopped Escape from ever
+	 * reaching the window handler above, so the picker could only be closed by
+	 * clicking the scrim: focus lands INSIDE the dialog when it opens, so every
+	 * Escape bubbled into this element and died here. Close first, then stop.
+	 */
+	function onDialogKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') onclose();
+		e.stopPropagation();
+	}
+
 	function onSearchKeydown(e: KeyboardEvent): void {
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
@@ -71,7 +83,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if open}
-	<!-- scrim click closes; Escape handled on window; inner stops propagation -->
+	<!-- scrim click closes; Escape closes on the dialog itself before it stops propagation -->
 	<div class="scrim" role="presentation" onclick={onclose} onkeydown={onWindowKeydown}>
 		<div
 			class="modal"
@@ -82,7 +94,7 @@
 			data-testid="add-to-playlist-picker"
 			tabindex="-1"
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
+			onkeydown={onDialogKeydown}
 		>
 			<div class="m-title">Add to playlist</div>
 

@@ -14,7 +14,10 @@ Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] a head finding shares (ecosystem, package, id) with base [then] it is not NEW.
 - [if] a semgrep control run lacks a required rule id [then] exit 2.
 - [if] semgrep-diff-scope cannot run git or semgrep on changed paths [then] exit 2.
-- [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules or scanned 0 files
+- [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules [then] exit 2 (UNKNOWN).
+- [if] semgrep-summary has --expected-scannable > 0, rules loaded, scanned 0 files, no errors,
+  and no results [then] exit 0 (baseline excluded unchanged files; no new findings).
+- [if] semgrep-summary has --expected-scannable > 0, scanned 0 files, and errors or results
   [then] exit 2 (UNKNOWN), not a pass.
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
 """
@@ -330,22 +333,30 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
+    results = doc.get("results", [])
     if rules is not None:
         scanned = len(doc.get("paths", {}).get("scanned", []))
         print(f"semgrep loaded {rules} rules, scanned {scanned} files")
         expected = args.expected_scannable
-        if expected is not None and expected > 0 and (rules == 0 or scanned == 0):
-            return _unknown(
-                f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
-                f"and scanned {scanned} files"
-            )
+        if expected is not None and expected > 0:
+            if rules == 0:
+                return _unknown(
+                    f"semgrep expected {expected} scannable file(s) but loaded 0 rules"
+                )
+            if scanned == 0:
+                if not errors and not results:
+                    _emit(args, args.title, [], 0)
+                    return 0
+                return _unknown(
+                    f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
+                    f"and scanned {scanned} files"
+                )
         if rules < args.min_rules:
             return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
         if scanned < args.min_files:
             return _unknown(
                 f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
             )
-    results = doc.get("results", [])
     fired = Counter(r["check_id"].rsplit(".", 1)[-1] for r in results)
     silent = [rule for rule in args.require_rule if fired[rule] == 0]
     if silent:

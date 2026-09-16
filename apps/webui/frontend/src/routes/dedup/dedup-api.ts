@@ -309,7 +309,7 @@ export async function applyDedupMerge(
 	try {
 		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/apply', {
 			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
-			body: { cluster_key: clusterKey, survivor },
+			body: { cluster_key: clusterKey, survivor, confirm_cue_loss: false },
 			signal: signal ?? null
 		}));
 	} catch (error) {
@@ -332,7 +332,7 @@ export async function undoDedupMerge(
 	try {
 		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/undo', {
 			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
-			body: { cluster_key: clusterKey, survivor },
+			body: { cluster_key: clusterKey, survivor, confirm_cue_loss: false },
 			signal: signal ?? null
 		}));
 	} catch (error) {

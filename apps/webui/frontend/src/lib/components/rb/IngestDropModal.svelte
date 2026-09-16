@@ -159,6 +159,20 @@
 		}
 	}
 
+	/**
+	 * A floating promise from an event attribute drops its rejection on the
+	 * floor: the drop handler failed silently for a whole release because
+	 * nothing was listening. Report it where the user already looks.
+	 */
+	async function _onDropReported(e: DragEvent): Promise<void> {
+		try {
+			await onDrop(e);
+		} catch (err) {
+			pushToast(`drop failed: ${err instanceof Error ? err.message : err}`, 'error');
+			throw err;
+		}
+	}
+
 	function close(): void {
 		open = false;
 		files = [];
@@ -174,7 +188,7 @@
 	ondragenter={onDragEnter}
 	ondragover={onDragOver}
 	ondragleave={onDragLeave}
-	ondrop={onDrop}
+	ondrop={(e) => void _onDropReported(e)}
 	onkeydown={onKeydown}
 />
 
