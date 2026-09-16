@@ -9,6 +9,8 @@ numeric domains, IDNs, atext punctuation, and delimiters absorbed into a token.
 Regression lines:
 - if the mailbox rule only fires for an enumerated list of providers then broken
 - if a reserved-domain fixture or a version spec is reported then broken
+- if a retina asset name (a pixel multiplier and an image extension for a
+  domain) is reported, or one at a DELEGATED suffix is not, then broken
 - if a path-exempt mailbox is dropped instead of counted as exempt then broken
 - if a mailbox after a slash, in a URL, quoted, at a numeric domain, at a Unicode
   domain, or ending in atext punctuation slips through then broken
@@ -108,7 +110,7 @@ def test_a_mailbox_after_a_slash_is_still_a_mailbox(tmp_path: Path) -> None:
     the first fix for that overshot: it suppressed EVERY single-slash context,
     which is a real address in `docs/<name>@<domain>` as often as it is an
     asset name. Path placement proves nothing either way, so the asset forms
-    are enumerated in ALLOWED_NON_ADDRESSES and everything else fires.
+    are excluded on the domain they carry, and everything else fires.
     """
     path = _write(
         tmp_path,
@@ -121,8 +123,9 @@ def test_a_mailbox_after_a_slash_is_still_a_mailbox(tmp_path: Path) -> None:
     result = audit_paths(tmp_path, [path])
     # Line d FIRES, and that is the intended trade. `.sh` is a real ccTLD, so no
     # shape separates a version spec from a domain; the enumerated exception list
-    # holds the two real ones and everything else is a reviewed line (Codex P1,
-    # #1440). Line c does not fire because it IS enumerated.
+    # holds the real one and everything else is a reviewed line (Codex P1,
+    # #1440). Line c does not fire because its domain is a pixel multiplier at an
+    # undelegated image extension, which no mailbox can sit behind.
     assert [(f.line, f.match) for f in result.findings] == [
         (1, _MAILBOX),
         (2, _MAILBOX),
@@ -318,33 +321,48 @@ def test_a_local_part_must_be_dot_separated_atoms(tmp_path: Path) -> None:
         assert address in matches, f"{address} stopped being reported; the class is too narrow"
 
 
-def test_macos_iconset_slot_names_are_not_mailboxes(tmp_path: Path) -> None:
-    """#1808: scripts/desktop_icons.py's `_iconutil_round_trip` names its five
-    `@2x` iconset slots as quoted Python string literals, e.g.
-    ``"icon_16x16@2x.png"``. Unlike the tauri.conf.json entry already in
-    ALLOWED_NON_ADDRESSES (``128x128@2x.png``, matched after a `/` so `icon_`
-    is not absorbed), a literal has no `/` before it: the quote is not a word
-    boundary, so `icon_` joins the local part and the match differs, five
-    distinct enumerated strings not yet covered by the one existing entry.
+def test_retina_asset_names_are_not_mailboxes(tmp_path: Path) -> None:
+    """#1808, revisited. scripts/desktop_icons.py names its `@2x` iconset slots
+    as quoted Python string literals, and a quote is not a word boundary, so
+    `icon_` joins the local part and every slot parses as a mailbox. #2528 fixed
+    that by enumerating the six filenames then in the tree, which is a VALUE:
+    the build went red again the moment an asset was added, and this is the
+    class fix that replaces it.
 
-    Do NOT fix this by matching any `<word>x<word>@<n>x.<ext>` shape: the
-    control below is exactly that shape, at a size Apple's iconset never
-    ships, and it must still fire -- a rule loosened until it stops
-    complaining is worse than the false positive it was chasing (#1808).
+    THIS REVERSES the direction #1808 took, which was to enumerate and never
+    match the shape. The shape is safe here for a reason that ruling did not
+    weigh: the domain's last label is an image extension, none of the enumerated
+    extensions is a delegated top-level domain, and a mailbox cannot exist at an
+    undelegated one -- so no identity can hide in the exempted set.
+
+    The guard that remains is the one that bites: a multiplier-shaped label at a
+    DELEGATED suffix is a registrable domain that can carry real mail and must
+    still fire. `.zip` and `.photos` are both delegated and both read like asset
+    suffixes, which is exactly why they are the controls.
     """
     iconset_lines = "\n".join(
         f'    "icon_{size}@2x.png",' for size in ("16x16", "32x32", "128x128", "256x256", "512x512")
     )
-    real_mailbox = _MAILBOX
-    unlisted_control = "icon_64x64" + "@" + "2x.png"  # not a real Apple iconset slot
+    accepted = [
+        "icon_64x64" + "@" + "2x.png",  # not an Apple slot; still not a mailbox
+        "logo" + "@" + "3x.webp",  # a web asset pipeline, not an iconset
+        "SPLASH" + "@" + "2X.PNG",  # the extension is matched case-insensitively
+        "sheet" + "@" + "4x.svg",
+    ]
+    fires = [
+        _MAILBOX,
+        "someone" + "@" + "2x.com",  # a multiplier label at a registrable domain
+        "gallery" + "@" + "2x.photos",  # .photos IS delegated and carries mail
+        "bundle" + "@" + "2x.zip",  # .zip IS delegated; it only LOOKS like a file
+        "name" + "@" + "x.png",  # no multiplier, so not the asset shape
+    ]
     path = _write(
         tmp_path,
         "desktop_icons_fixture.py",
         "expected = {\n"
-        f"{iconset_lines}\n"
-        "}\n"
-        f"# {real_mailbox}\n"
-        f"# {unlisted_control}\n",
+        + f"{iconset_lines}\n"
+        + "}\n"
+        + "".join(f"# {x}\n" for x in accepted + fires),
     )
 
     result = audit_paths(tmp_path, [path])
@@ -353,8 +371,10 @@ def test_macos_iconset_slot_names_are_not_mailboxes(tmp_path: Path) -> None:
     for size in ("16x16", "32x32", "128x128", "256x256", "512x512"):
         literal = f"icon_{size}@2x.png"
         assert literal not in matches, f"{literal} is an Apple iconset slot name, not a mailbox"
-    assert real_mailbox in matches, "a real mailbox alongside the iconset names stopped firing"
-    assert unlisted_control in matches, (
-        "an unlisted icon-shaped string stopped firing -- the rule was loosened "
-        "by shape instead of fixed by enumeration"
-    )
+    for name in accepted:
+        assert name not in matches, f"{name} is an asset filename, not a mailbox"
+    for address in fires:
+        assert address in matches, (
+            f"{address} stopped firing -- the rule was loosened past the point "
+            "where a real mailbox can still exist"
+        )

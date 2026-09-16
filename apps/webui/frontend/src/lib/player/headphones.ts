@@ -40,6 +40,7 @@ import {
 	type HeadphoneOutputMode
 } from '$lib/player/constants';
 import {
+	calibrationBlockers,
 	deriveAlignment,
 	type AppliedAlignment,
 	type CueAlignBus,
@@ -629,6 +630,40 @@ export function headphoneAcquisitionKind(caps: {
 	return 'unlock_and_enumerate';
 }
 
+export type MicUnlockDecision = 'already_unlocked' | 'ask' | 'declined';
+
+/** Whether pressing I/O should touch the microphone at all.
+ *
+ * The browser hides output device NAMES until a page has held some media
+ * permission, so the labels are a consequence of the permission rather than
+ * the point of it. That means the mic is only ever a means, and it is never
+ * worth opening when it cannot help:
+ *
+ * - `granted`: the labels are already readable. Opening a stream would buy
+ *   nothing and costs a recording indicator, plus the risk of collapsing a
+ *   Bluetooth headset to its handsfree profile.
+ * - `denied`: the operator has said no. Asking again is refused by the
+ *   browser anyway, so the only honest move is to skip it and say what the
+ *   consequence is.
+ * - anything else (`prompt`, or no Permissions API to ask): the operator just
+ *   pressed I/O, which is the consent, so ask.
+ */
+export function micUnlockDecision(permission: unknown): MicUnlockDecision {
+	if (permission !== null && permission !== undefined && typeof permission !== 'string') {
+		throw new TypeError('microphone permission state must be a string, null or undefined');
+	}
+	if (permission === 'granted') return 'already_unlocked';
+	if (permission === 'denied') return 'declined';
+	return 'ask';
+}
+
+/** What the operator is told when they have declined the microphone. It is not
+ * a failure: two-output cue still works for any device they have already
+ * picked, and practice and split-cable never needed a device at all. */
+export const MIC_DECLINED_NOTICE =
+	'Microphone is off, so the browser hides audio device names. Device picking needs it once; ' +
+	'practice and SPLIT do not need it at all.';
+
 export function outputLooksLikeHeadphones(label: string): boolean {
 	if (typeof label !== 'string') throw new TypeError('output label must be a string');
 	return /headphone|headset|airpods|bluetooth/i.test(label);
@@ -931,6 +966,18 @@ function _clearHeadphoneSelection(): void {
 	_cueClearedByOperator = true;
 }
 
+/** The browser's own answer, or null when it will not be asked (Safari has no
+ * `microphone` descriptor). Never throws: an unknown state means ask. */
+async function _microphonePermissionState(): Promise<string | null> {
+	try {
+		if (typeof navigator === 'undefined' || navigator.permissions === undefined) return null;
+		const status = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+		return status.state;
+	} catch {
+		return null;
+	}
+}
+
 async function _unlockHeadphoneOutputLabels(mediaDevices: MediaDevices): Promise<void> {
 	const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
 	const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);
@@ -1203,9 +1250,11 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 }
 
 /** Must be called from a visible user gesture. Uses the browser output
- * chooser when `selectAudioOutput` exists; otherwise unlocks output labels
- * with a short-lived getUserMedia on the built-in mic (not a Bluetooth
- * headset mic) and enumerates sinks so the operator can pick headphones. */
+ * chooser when `selectAudioOutput` exists; otherwise enumerates sinks so the
+ * operator can pick headphones, unlocking the names with a short-lived
+ * getUserMedia on the built-in mic (not a Bluetooth headset mic) ONLY when
+ * that would actually help -- see `micUnlockDecision`. A declined microphone
+ * is a supported state, not a failure. */
 export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
@@ -1230,8 +1279,19 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		// unlock failure is still raised (and shown) afterwards.
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
-		await _unlockHeadphoneOutputLabels(mediaDevices);
+		const decision = micUnlockDecision(await _microphonePermissionState());
 		_assertCurrentHeadphoneOperation(generation, null);
+		if (decision === 'declined') {
+			// Not an error: nothing failed, the operator chose this. Saying so here
+			// and returning leaves the unlabelled sinks selectable and never opens
+			// a stream the browser would refuse anyway.
+			mixerState.headphones.error = MIC_DECLINED_NOTICE;
+			return;
+		}
+		if (decision === 'ask') {
+			await _unlockHeadphoneOutputLabels(mediaDevices);
+			_assertCurrentHeadphoneOperation(generation, null);
+		}
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
 		const bluetooth = mixerState.headphones.outputs.filter((output) =>
@@ -1361,8 +1421,9 @@ interface _MicStreamHandle extends MicHandle {
 
 /**
  * CUEOUT-14: the audio half of the calibration effects, bound to the LIVE
- * headphone graph. Throws (rather than measuring the wrong sinks) unless the
- * monitor is in two_outputs with a selected cue output.
+ * headphone graph. Throws (rather than measuring the wrong sinks) unless every
+ * precondition holds, and the message names the ones that do not, so a missing
+ * audio graph is never reported as a missing device.
  */
 export function cueAlignAudioEffects(): Pick<
 	CueAlignEffects,
@@ -1371,8 +1432,16 @@ export function cueAlignAudioEffects(): Pick<
 	const ctx = _outputContext;
 	const nodes = _headphoneNodes;
 	const cueId = mixerState.headphones.selected_output_device_id;
-	if (ctx === null || nodes === null || mixerState.headphones.output_mode !== 'two_outputs' || cueId === null) {
-		throw new Error('cue alignment calibration needs two_outputs with a selected headphone output');
+	const blockers = calibrationBlockers({
+		audio_graph_ready: ctx !== null && nodes !== null,
+		output_mode: mixerState.headphones.output_mode,
+		selected_output_device_id: cueId
+	});
+	if (blockers.length > 0) {
+		throw new Error(`cue alignment calibration cannot start: ${blockers.join('; ')}`);
+	}
+	if (ctx === null || nodes === null || cueId === null) {
+		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
 	}
 	return {
 		sampleRate: () => ctx.sampleRate,

@@ -420,6 +420,20 @@ schema_meta:
   foreign_keys: []
 ```
 
+## `schema_meta_markers`
+
+```yaml
+schema_meta_markers:
+  description: Durable completion markers for one-time migration repairs (for example the v15 track_fields stamp backfill). One row per repair name; repeat opens check the marker instead of rescanning.
+  columns:
+    marker: Primary key. Durable name of a one-time migration repair.
+    applied_at: RFC 3339 UTC timestamp the repair completed.
+  schema:
+    marker: TEXT PRIMARY KEY
+    applied_at: TEXT NOT NULL
+  foreign_keys: []
+```
+
 ## `sync_policies`
 
 ```yaml

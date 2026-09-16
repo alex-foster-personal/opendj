@@ -63,12 +63,14 @@
 	} from '$lib/setup/setup-api';
 	import {
 		STEP_TITLES,
-		WIZARD_STEPS,
 		advanceRefusal,
+		backRefusal,
 		fatalBlockers,
 		importPct,
 		setupWizard,
-		stepIndex
+		stepCount,
+		stepPosition,
+		visibleSteps
 	} from '$lib/setup/wizard.svelte';
 
 	/** Only a FINAL refusal (a legacy daemon that has no /api/v1/setup) makes
@@ -108,6 +110,13 @@
 	const source = $derived(setupWizard.source);
 	const folderScan = $derived(setupWizard.folderScan);
 	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderScan, job }));
+	/** Why Back is refused here, or null. Same function that gates the button,
+	 * so the tooltip and the disabled state can never disagree. */
+	const backWhy = $derived(backRefusal(step, { source, detection, folderScan, job }));
+	/** The route THIS branch walks; the folder import never visits 'confirm'. */
+	const route = $derived(visibleSteps(source));
+	const position = $derived(stepPosition(step, source));
+	const total = $derived(stepCount(source));
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
@@ -210,6 +219,21 @@
 	}
 </script>
 
+{#snippet backButton()}
+	<!-- Back is RENDERED on every step, including the ones that refuse it.
+	     A control that vanishes teaches the user nothing; a disabled one with
+	     the reason on it teaches them why. -->
+	<button
+		type="button"
+		class="secondary"
+		onclick={() => setupWizard.back(job)}
+		disabled={backWhy !== null || setupWizard.busy}
+		title={backWhy ?? `Go back to ${STEP_TITLES[route[Math.max(position - 2, 0)]]}`}
+	>
+		Back
+	</button>
+{/snippet}
+
 {#if setupOverlay.open && !setupOverlay.collapsed}
 	<div class="su-backdrop" role="presentation">
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -237,19 +261,37 @@
 
 			<div class="su-body">
 				<section class="su-main" aria-label="Setup steps">
+					<!-- The breadcrumb is NAVIGATION, not decoration: a step already
+					     visited is a button that goes back to it. It lists only the
+					     steps this branch will actually visit, so the folder import
+					     never shows a rekordbox confirmation step it will skip. -->
 					<ol class="steps">
-						{#each WIZARD_STEPS as name (name)}
+						{#each route as name, index (name)}
 							<li
 								class="step"
 								class:current={name === step}
-								class:past={stepIndex(name) < stepIndex(step)}
+								class:past={index < position - 1}
 								aria-current={name === step ? 'step' : undefined}
-								title={`Step ${stepIndex(name) + 1} of ${WIZARD_STEPS.length}`}
 							>
-								{STEP_TITLES[name]}
+								{#if index < position - 1}
+									<button
+										type="button"
+										class="step-link"
+										onclick={() => setupWizard.goTo(name)}
+										disabled={backWhy !== null}
+										title={backWhy ?? `Go back to step ${index + 1} of ${total}: ${STEP_TITLES[name]}`}
+									>
+										{STEP_TITLES[name]}
+									</button>
+								{:else}
+									<span title={`Step ${index + 1} of ${total}`}>{STEP_TITLES[name]}</span>
+								{/if}
 							</li>
 						{/each}
 					</ol>
+					<p class="step-counter" role="status">
+						Step {position} of {total}: {STEP_TITLES[step]}
+					</p>
 
 					{#if refusal !== null}
 						<p class="fatal" role="alert">{refusal}</p>
@@ -292,6 +334,7 @@
 								{/if}
 							{/if}
 							<div class="actions">
+								{@render backButton()}
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
@@ -352,6 +395,38 @@
 								and none are guessed -- the library you get is unanalysed, and the
 								last screen will say so.
 							</p>
+							{#if setupWizard.folderCandidatesState === 'loading'}
+								<p class="status-line muted" role="status">
+									Looking for your music folders...
+								</p>
+							{/if}
+							{#if (setupWizard.folderCandidates ?? []).length > 0}
+								<div class="folder-suggestions">
+									{#each setupWizard.folderCandidates ?? [] as candidate (candidate.path)}
+										{#if candidate.readable}
+											<button
+												type="button"
+												class="folder-chip"
+												onclick={() => {
+													folderInput = candidate.path;
+													void setupWizard.checkFolder(candidate.path);
+												}}
+												disabled={setupWizard.busy || refusal !== null}
+												title="Use {candidate.path}"
+											>
+												{candidate.path}
+											</button>
+										{:else}
+											<span
+												class="folder-chip refused"
+												title={candidate.detail}
+											>
+												{candidate.path}
+											</span>
+										{/if}
+									{/each}
+								</div>
+							{/if}
 							<form class="folder-form" onsubmit={(event) => event.preventDefault()}>
 								<div class="folder-path-row">
 									<input
@@ -426,6 +501,7 @@
 							{/if}
 
 							<div class="actions">
+								{@render backButton()}
 								<button
 									type="button"
 									class="secondary"
@@ -512,6 +588,7 @@
 							     detection said, which is the entire fix: there is no
 							     result that leaves this step with nothing to press. -->
 							<div class="actions">
+								{@render backButton()}
 								<button
 									type="button"
 									class="secondary"
@@ -583,9 +660,7 @@
 								</label>
 							{/if}
 							<div class="actions">
-								<button type="button" class="secondary" onclick={() => setupWizard.back()}>
-									Back
-								</button>
+								{@render backButton()}
 								<button
 									type="button"
 									onclick={() => setupWizard.beginImport({ refreshDecrypt })}
@@ -636,6 +711,7 @@
 								{/if}
 							{/if}
 							<div class="actions">
+								{@render backButton()}
 								<button
 									type="button"
 									class="secondary"
@@ -695,9 +771,7 @@
 							{/if}
 
 							<div class="actions">
-								<button type="button" class="secondary" onclick={() => setupWizard.back()}>
-									Back
-								</button>
+								{@render backButton()}
 								<button type="button" onclick={() => setupWizard.next()}>Continue</button>
 							</div>
 						</div>
@@ -783,6 +857,7 @@
 								</p>
 							{/if}
 							<div class="actions">
+								{@render backButton()}
 								<button type="button" onclick={() => void finish()} disabled={setupWizard.busy}>
 									Start playing
 								</button>
@@ -931,6 +1006,27 @@
 		background: var(--accent);
 		border-color: var(--accent);
 	}
+	/* A visited step is a real button. It inherits the pill's own look so the
+	   breadcrumb does not turn into a row of mismatched controls. */
+	.step-link {
+		all: unset;
+		cursor: pointer;
+		font: inherit;
+		color: inherit;
+	}
+	.step-link:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	.step-link:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+	.step-counter {
+		font-size: 0.85rem;
+		color: var(--muted);
+		margin: -0.5rem 0 1rem;
+	}
 	.panel {
 		border: 1px solid var(--border);
 		background: var(--bg);
@@ -1038,11 +1134,45 @@
 		display: block;
 		margin-top: 0.75rem;
 	}
+	.folder-suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-top: 0.75rem;
+	}
+	.folder-chip {
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 0.25rem 0.6rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--bg);
+		color: var(--fg);
+		cursor: pointer;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.folder-chip:hover:not(:disabled) {
+		border-color: var(--accent-dim);
+	}
+	.folder-chip:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.folder-chip.refused {
+		color: var(--muted);
+		border-color: var(--border);
+		cursor: not-allowed;
+		opacity: 0.7;
+	}
 	.folder-form {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		margin-top: 0.75rem;
+		align-items: center;
 	}
 	.folder-path-row {
 		display: flex;
