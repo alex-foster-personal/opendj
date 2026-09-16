@@ -73,24 +73,106 @@ function _fail(message) {
 // stays error-tolerant: a slice with a real parse error still yields correct
 // directives, because they are recorded during scanning, not after a
 // successful parse.
+// tsc's own directive grammars (pinned in tests/quality/
+// test_frontend_typing_directives.py). Applied only to comment trivia the
+// parser already classified, never to raw lines, so string/template prose
+// cannot score.
+const _SL_DIRECTIVE_RE = /^\/\/\/?\s*@(ts-expect-error|ts-ignore)/;
+const _ML_DIRECTIVE_RE = /^[/*]+\s*@(ts-expect-error|ts-ignore)/;
+const _SL_PRAGMA_RE = /^\s*\/\/\/?\s*@([^\s:]+)((?:[^\S\r\n]|:).*)?$/;
+
+function _pragmaNocheckName(name) {
+  return /^ts-nocheck$/i.test(name);
+}
+
+function _ruleFromSingleLineComment(comment) {
+  const m = comment.match(_SL_DIRECTIVE_RE);
+  return m ? m[1] : null;
+}
+
+function _ruleFromBlockComment(comment) {
+  const finalLine = comment.split(/\r?\n/).pop() ?? '';
+  const trimmed = finalLine.trimStart();
+  const prefixed = trimmed.match(_ML_DIRECTIVE_RE);
+  if (prefixed) return prefixed[1];
+  const bare = trimmed.match(/^@(ts-expect-error|ts-ignore)/);
+  return bare ? bare[1] : null;
+}
+
+function _forEachRealComment(sourceFile, text, cb) {
+  const seen = new Set();
+  const record = (range, commentText) => {
+    if (seen.has(range.pos)) return;
+    seen.add(range.pos);
+    cb(range, commentText);
+  };
+  const walk = (node) => {
+    const leading = ts.getLeadingCommentRanges(text, node.getFullStart());
+    if (leading) {
+      for (const range of leading) record(range, text.slice(range.pos, range.end));
+    }
+    const trailing = ts.getTrailingCommentRanges(text, node.end);
+    if (trailing) {
+      for (const range of trailing) record(range, text.slice(range.pos, range.end));
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(sourceFile);
+  ts.forEachLeadingCommentRange(text, 0, (pos, end) => {
+    record({ pos, end }, text.slice(pos, end));
+  });
+}
+
+function _fileLeadingNocheck(text, lineOffset) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') continue;
+    const m = line.match(_SL_PRAGMA_RE);
+    if (!m) return null;
+    if (!_pragmaNocheckName(m[1])) return null;
+    return { line: i + 1 + lineOffset, rule: 'ts-nocheck' };
+  }
+  return null;
+}
+
 function _directiveHits(text, lineOffset) {
   const sourceFile = ts.createSourceFile('probe.ts', text, ts.ScriptTarget.Latest, true);
   const hits = [];
+  const seen = new Set();
+  const add = (line, rule) => {
+    const key = `${line}:${rule}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    hits.push({ line, rule });
+  };
+
   for (const directive of sourceFile.commentDirectives ?? []) {
     const line = sourceFile.getLineAndCharacterOfPosition(directive.range.pos).line + 1 + lineOffset;
     const rule = directive.type === ts.CommentDirectiveType.ExpectError ? 'ts-expect-error' : 'ts-ignore';
-    hits.push({ line, rule });
+    add(line, rule);
   }
-  const nocheck = sourceFile.pragmas?.get('ts-nocheck');
-  if (nocheck) {
-    // `sourceFile.pragmas` records the pragma's own scanned position, not a
-    // fixed "line 1" -- necessary here because a .svelte script slice can
-    // carry a blank leading line before its first real content line (round
-    // thirteen of PR #731 review: a slice starting right after `<script
-    // lang="ts">` and before its newline puts a directive on line 2, not 1).
-    const line = sourceFile.getLineAndCharacterOfPosition(nocheck.range.pos).line + 1 + lineOffset;
-    hits.push({ line, rule: 'ts-nocheck' });
+
+  _forEachRealComment(sourceFile, text, (range, commentText) => {
+    const line = sourceFile.getLineAndCharacterOfPosition(range.pos).line + 1 + lineOffset;
+    let rule = null;
+    if (commentText.startsWith('//')) {
+      rule = _ruleFromSingleLineComment(commentText);
+    } else if (commentText.startsWith('/*')) {
+      rule = _ruleFromBlockComment(commentText);
+    }
+    if (rule) add(line, rule);
+  });
+
+  const nocheckEntries = sourceFile.pragmas?.get?.('ts-nocheck');
+  const nocheckList = nocheckEntries == null ? [] : Array.isArray(nocheckEntries) ? nocheckEntries : [nocheckEntries];
+  for (const entry of nocheckList) {
+    const line = sourceFile.getLineAndCharacterOfPosition(entry.range.pos).line + 1 + lineOffset;
+    add(line, 'ts-nocheck');
   }
+  const leading = _fileLeadingNocheck(text, lineOffset);
+  if (leading) add(leading.line, leading.rule);
+
   return hits;
 }
 
