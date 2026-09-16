@@ -35,6 +35,7 @@ import argparse
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 
 try:
     from scripts.ci_health_core import (
@@ -60,6 +61,15 @@ BOOKKEEPING_WORKFLOWS = frozenset(
     }
 )
 PAGE_SIZE = 100
+
+_NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
+
+
+class CancelOutcome(Enum):
+    """Result of one cancel POST."""
+
+    CANCELLED = "cancelled"
+    SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
 
 
 @dataclass(frozen=True)
@@ -93,7 +103,9 @@ class SweepReport:
     trunk_tip: str
     retained_ci_run_ids: tuple[int, ...]
     ci_cancelled: int
+    ci_cancel_skipped_not_yet_queued: int
     bookkeeping_cancelled: int
+    bookkeeping_cancel_skipped_not_yet_queued: int
     bookkeeping_kept: int
 
 
@@ -214,33 +226,68 @@ def _cancel_log_line(run: QueuedRun, trunk_tip: str) -> str:
     )
 
 
-def _cancel_run(run_id: int) -> None:
-    _run_gh(["api", "--method", "POST", f"repos/{REPO}/actions/runs/{run_id}/cancel"])
+def _cancel_skip_log_line(run: QueuedRun, trunk_tip: str) -> str:
+    return (
+        f"bookkeeping-cancel-skipped workflow={run.name} run_id={run.run_id} "
+        f"head_sha={run.head_sha} superseded_by={trunk_tip} reason=not-yet-queued"
+    )
+
+
+def _is_not_yet_queued_cancel_conflict(exc: PreconditionError) -> bool:
+    message = str(exc)
+    return all(marker in message for marker in _NOT_YET_QUEUED_CANCEL_MARKERS)
+
+
+def _cancel_run(run_id: int) -> CancelOutcome:
+    try:
+        _run_gh(["api", "--method", "POST", f"repos/{REPO}/actions/runs/{run_id}/cancel"])
+    except PreconditionError as exc:
+        if _is_not_yet_queued_cancel_conflict(exc):
+            return CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        raise
+    return CancelOutcome.CANCELLED
 
 
 def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
     """Apply cancellations for one plan, emitting structured logs."""
     ci_cancelled = 0
+    ci_cancel_skipped_not_yet_queued = 0
     bookkeeping_cancelled = 0
+    bookkeeping_cancel_skipped_not_yet_queued = 0
 
     for run in plan.ci_to_cancel:
-        if not dry_run:
-            _cancel_run(run.run_id)
-        ci_cancelled += 1
+        if dry_run:
+            ci_cancelled += 1
+            continue
+        outcome = _cancel_run(run.run_id)
+        if outcome is CancelOutcome.CANCELLED:
+            ci_cancelled += 1
+        elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
+            ci_cancel_skipped_not_yet_queued += 1
 
     for run in plan.bookkeeping_to_cancel:
         line = _cancel_log_line(run, plan.trunk_tip)
         print(f"::notice::{line}")
         print(line)
-        if not dry_run:
-            _cancel_run(run.run_id)
-        bookkeeping_cancelled += 1
+        if dry_run:
+            bookkeeping_cancelled += 1
+            continue
+        outcome = _cancel_run(run.run_id)
+        if outcome is CancelOutcome.CANCELLED:
+            bookkeeping_cancelled += 1
+        elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
+            bookkeeping_cancel_skipped_not_yet_queued += 1
+            skip_line = _cancel_skip_log_line(run, plan.trunk_tip)
+            print(f"::notice::{skip_line}")
+            print(skip_line)
 
     return SweepReport(
         trunk_tip=plan.trunk_tip,
         retained_ci_run_ids=tuple(sorted(plan.retained_ci_run_ids)),
         ci_cancelled=ci_cancelled,
+        ci_cancel_skipped_not_yet_queued=ci_cancel_skipped_not_yet_queued,
         bookkeeping_cancelled=bookkeeping_cancelled,
+        bookkeeping_cancel_skipped_not_yet_queued=bookkeeping_cancel_skipped_not_yet_queued,
         bookkeeping_kept=plan.bookkeeping_kept,
     )
 
@@ -292,7 +339,10 @@ def main(argv: list[str] | None = None) -> int:
         f"trunk_tip={report.trunk_tip} "
         f"retained_ci_run_ids={list(report.retained_ci_run_ids)} "
         f"ci_cancelled={report.ci_cancelled} "
+        f"ci_cancel_skipped_not_yet_queued={report.ci_cancel_skipped_not_yet_queued} "
         f"bookkeeping_cancelled={report.bookkeeping_cancelled} "
+        f"bookkeeping_cancel_skipped_not_yet_queued="
+        f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
         f"bookkeeping_kept={report.bookkeeping_kept}"
     )
     return EXIT_OK
