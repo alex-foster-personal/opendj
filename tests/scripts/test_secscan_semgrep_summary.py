@@ -1,7 +1,7 @@
 """secscan semgrep-summary: expected diff scope is UNKNOWN when semgrep under-reports.
 
-- if rules loaded but 0 files scanned with --expected-scannable > 0 then exit 2
-- if a Python-changing diff scope expects files but semgrep loads 0 rules then exit 2
+- if a scannable diff loads 0 rules with --expected-scannable > 0 then exit 2
+- if baseline scan loads rules, scans 0 files, and has no errors or results then exit 0
 - if files were scanned with rules loaded and no results then exit 0 with count 0
 - if full mode sees 0 rules and 0 scanned without --expected-scannable then exit 2
 """
@@ -37,9 +37,19 @@ def _doc(rules: int, scanned: int) -> dict:
     }
 
 
-def test_rules_loaded_with_zero_files_is_unknown(tmp_path: Path) -> None:
-    rc, _ = _summary(tmp_path, _doc(rules=5, scanned=0), "--expected-scannable", "3")
-    assert rc == 2, "rules loaded with zero files scanned must read UNKNOWN"
+def test_baseline_clean_zero_scanned_passes(tmp_path: Path) -> None:
+    """[if] baseline scan loads rules but scans 0 paths with no findings [then] pass, [else stop]."""
+    rc, count = _summary(tmp_path, _doc(rules=154, scanned=0), "--expected-scannable", "3")
+    assert rc == 0
+    assert count == "0"
+
+
+def test_zero_scanned_with_semgrep_errors_is_unknown(tmp_path: Path) -> None:
+    """[if] expected scope but semgrep errors with 0 scanned [then] UNKNOWN, [else stop]."""
+    doc = _doc(rules=5, scanned=0)
+    doc["errors"] = [{"level": "error", "type": "SemgrepError", "message": "boom"}]
+    rc, _ = _summary(tmp_path, doc, "--expected-scannable", "3")
+    assert rc == 2
 
 
 def test_python_diff_empty_rules_is_unknown(tmp_path: Path) -> None:
