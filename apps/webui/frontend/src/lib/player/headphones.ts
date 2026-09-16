@@ -40,6 +40,7 @@ import {
 	type HeadphoneOutputMode
 } from '$lib/player/constants';
 import {
+	calibrationBlockers,
 	deriveAlignment,
 	type AppliedAlignment,
 	type CueAlignBus,
@@ -1401,8 +1402,9 @@ interface _MicStreamHandle extends MicHandle {
 
 /**
  * CUEOUT-14: the audio half of the calibration effects, bound to the LIVE
- * headphone graph. Throws (rather than measuring the wrong sinks) unless the
- * monitor is in two_outputs with a selected cue output.
+ * headphone graph. Throws (rather than measuring the wrong sinks) unless every
+ * precondition holds, and the message names the ones that do not, so a missing
+ * audio graph is never reported as a missing device.
  */
 export function cueAlignAudioEffects(): Pick<
 	CueAlignEffects,
@@ -1411,8 +1413,16 @@ export function cueAlignAudioEffects(): Pick<
 	const ctx = _outputContext;
 	const nodes = _headphoneNodes;
 	const cueId = mixerState.headphones.selected_output_device_id;
-	if (ctx === null || nodes === null || mixerState.headphones.output_mode !== 'two_outputs' || cueId === null) {
-		throw new Error('cue alignment calibration needs two_outputs with a selected headphone output');
+	const blockers = calibrationBlockers({
+		audio_graph_ready: ctx !== null && nodes !== null,
+		output_mode: mixerState.headphones.output_mode,
+		selected_output_device_id: cueId
+	});
+	if (blockers.length > 0) {
+		throw new Error(`cue alignment calibration cannot start: ${blockers.join('; ')}`);
+	}
+	if (ctx === null || nodes === null || cueId === null) {
+		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
 	}
 	return {
 		sampleRate: () => ctx.sampleRate,
