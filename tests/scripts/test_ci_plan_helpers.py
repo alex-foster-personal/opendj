@@ -7,6 +7,8 @@ look narrow while resting on an edge nobody derived.
 
 `_config` and `_changed` are duplicated from test_ci_plan.py deliberately, for the reason
 given in test_ci_plan_inputs.py.
+
+[if] a helper's carried scopes are dropped from a plan [then] fail here, [else stop].
 """
 
 from __future__ import annotations
