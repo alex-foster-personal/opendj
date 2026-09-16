@@ -87,7 +87,12 @@ function viteCommand(): string {
 
 export default defineConfig({
 	testDir: '.',
-	testMatch: /preflight-gate|fresh-install-onboarding/,
+	// Anchored on `.spec.ts`. The bare alternation also matched THIS FILE
+	// (testDir is '.'), so Playwright collected the config as a test, both
+	// specs became "test file imports test file" errors, and the vite config
+	// was loaded outside a webServer with no port env - three collection
+	// errors that made the whole suite unrunnable rather than red.
+	testMatch: /(preflight-gate|fresh-install-onboarding)\.spec\.ts$/,
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
