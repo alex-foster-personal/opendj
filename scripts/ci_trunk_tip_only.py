@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -266,10 +267,28 @@ def _open_pr_branches() -> frozenset[str]:
         page += 1
 
 
-def execute_closed_pr_sweep(runs: tuple[QueuedRun, ...], *, dry_run: bool) -> int:
-    """Cancel each selected run, logging one line per run. Returns the cancelled count."""
+def execute_closed_pr_sweep(
+    runs: tuple[QueuedRun, ...],
+    *,
+    dry_run: bool,
+    still_closed: Callable[[str], bool] = lambda branch: _open_pr_count(branch) == 0,
+) -> int:
+    """Cancel each selected run, logging one line per run. Returns the cancelled count.
+
+    The branch is rechecked immediately before each cancellation. The open-PR snapshot can
+    go stale while the sweep runs, and a pull request REOPENED in that window owns a run
+    this list still calls closed. Cancelling it breaks the one contract the sweep has.
+    """
     cancelled = 0
     for run in runs:
+        if not still_closed(run.head_branch):
+            line = (
+                f"closed-pr-skip workflow={run.name} run_id={run.run_id} "
+                f"head_branch={run.head_branch} reason=reopened-since-snapshot"
+            )
+            print(f"::notice::{line}")
+            print(line)
+            continue
         line = (
             f"closed-pr-cancel workflow={run.name} run_id={run.run_id} "
             f"head_branch={run.head_branch} head_sha={run.head_sha} reason=no-open-pr"
@@ -279,6 +298,17 @@ def execute_closed_pr_sweep(runs: tuple[QueuedRun, ...], *, dry_run: bool) -> in
         if dry_run or _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
             cancelled += 1
     return cancelled
+
+
+OWNER = REPO.split("/", 1)[0]
+
+
+def _open_pr_count(branch: str) -> int:
+    """How many open pull requests have this head branch, read fresh."""
+    payload = _gh_api_json(f"repos/{REPO}/pulls?state=open&head={OWNER}:{branch}&per_page=1")
+    if not isinstance(payload, list):
+        raise PreconditionError(f"open pulls for {branch} was not a list: {payload!r}")
+    return len(payload)
 
 
 def sweep_closed_pr_runs(*, dry_run: bool) -> int:

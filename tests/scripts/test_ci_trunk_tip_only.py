@@ -9,8 +9,10 @@ Regression lines:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import ci_trunk_tip_only as mod
 from scripts.ci_health_core import PreconditionError
@@ -289,8 +291,86 @@ def test_closed_pr_sweep_dry_run_posts_nothing(
 ) -> None:
     posts: list[int] = []
     monkeypatch.setattr(mod, "_cancel_run", posts.append)
-    cancelled = mod.execute_closed_pr_sweep((_pr_run(56, "af--merged"),), dry_run=True)
+    cancelled = mod.execute_closed_pr_sweep(
+        (_pr_run(56, "af--merged"),), dry_run=True, still_closed=lambda _: True
+    )
     assert cancelled == 1
     assert posts == []
     out = capsys.readouterr().out
     assert "closed-pr-cancel workflow=CI run_id=56 head_branch=af--merged" in out
+
+
+def test_a_branch_reopened_since_the_snapshot_is_not_cancelled(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The snapshot goes stale while the sweep runs. A pull request reopened in that window
+    owns a run the list still calls closed, and cancelling it breaks the sweep's one
+    contract."""
+    posts: list[int] = []
+    monkeypatch.setattr(mod, "_cancel_run", posts.append)
+
+    cancelled = mod.execute_closed_pr_sweep(
+        (_pr_run(57, "af--reopened"),), dry_run=False, still_closed=lambda _: False
+    )
+
+    assert cancelled == 0
+    assert posts == []
+    out = capsys.readouterr().out
+    assert "closed-pr-skip" in out
+    assert "reason=reopened-since-snapshot" in out
+
+
+def test_a_branch_still_closed_at_the_recheck_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: the recheck must not stop the sweep doing its job."""
+    posts: list[int] = []
+    def cancel(run_id: int) -> mod.CancelOutcome:
+        posts.append(run_id)
+        return mod.CancelOutcome.CANCELLED
+
+    monkeypatch.setattr(mod, "_cancel_run", cancel)
+
+    cancelled = mod.execute_closed_pr_sweep(
+        (_pr_run(58, "af--merged"),), dry_run=False, still_closed=lambda _: True
+    )
+
+    assert cancelled == 1
+    assert posts == [58]
+
+
+def test_the_recheck_asks_for_that_branch_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A recheck that listed every open pull request would be as stale as the snapshot."""
+    asked: list[str] = []
+
+    def fake_api(path: str):
+        asked.append(path)
+        return []
+
+    monkeypatch.setattr(mod, "_gh_api_json", fake_api)
+    assert mod._open_pr_count("af--thing") == 0
+    assert asked == [
+        f"repos/{mod.REPO}/pulls?state=open&head={mod.OWNER}:af--thing&per_page=1"
+    ]
+
+
+def test_the_recheck_reports_an_open_pull_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: [{"number": 1}])
+    assert mod._open_pr_count("af--open") == 1
+
+
+def test_the_recheck_refuses_a_payload_that_is_not_a_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A message object counts len() too, and would read as "some open pull requests"."""
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"message": "Not Found"})
+    with pytest.raises(PreconditionError):
+        mod._open_pr_count("af--thing")
+
+
+def test_the_trunk_tip_workflow_can_list_pull_requests() -> None:
+    """Unspecified workflow permissions are DISABLED, so without this the sweep reads
+    "Resource not accessible by integration" and cancels nothing, silently."""
+    workflow = (
+        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "trunk-tip-only.yml"
+    )
+    permissions = yaml.safe_load(workflow.read_text(encoding="utf-8"))["permissions"]
+    assert permissions.get("pull-requests") == "read", permissions
