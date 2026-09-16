@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections.abc import Callable
@@ -83,6 +84,17 @@ _COMPARE_LETTERS = {
 LINE = "[miss-audit]"
 
 
+_IDENTITY_PREFIX = re.compile(r"^(?:FAILED|ERROR) ")
+
+
+def node_id(identity: str) -> str:
+    """The pytest node id inside a parsed identity: `scripts.ci_failure_ids` keeps the
+    `FAILED ` / `ERROR ` prefix so a log line stays distinguishable from a Playwright or TAP
+    identity, while the ledger and the planner's test paths start at `tests/`. Compared
+    unstripped, every failure misses the ledger and reads as an unseen fast test (Codex P1)."""
+    return _IDENTITY_PREFIX.sub("", identity)
+
+
 class Selection(StrEnum):
     SELECTED = "SELECTED"
     MISSED = "MISSED"
@@ -100,7 +112,7 @@ class RunFailure:
     pr: int | None
     head: str
     identities: frozenset[str]
-    changes: tuple[Change, ...]
+    changes: tuple[Change, ...] | None  # None: the diff could not be read, plan UNKNOWN
     unmeasured_jobs: int
 
 
@@ -122,6 +134,10 @@ class Audit:
     pr_caused: int = 0
     trunk_red: int = 0
     tier_unknown: int = 0
+    plan_unmeasured: int = 0  # PR-caused identities in runs whose plan is UNKNOWN
+    unreadable_runs: int = 0  # PR runs with an unreadable failed pytest job: excluded whole
+    unreadable_identities: int = 0  # what those runs did name, kept out of every count
+    trunk_unreadable_jobs: int = 0  # unreadable failed pytest jobs on main: trunk red incomplete
     plan_missed: list[str] = field(default_factory=list)
     fast_missed: list[str] = field(default_factory=list)
 
@@ -136,13 +152,26 @@ class Audit:
         return counts
 
     @property
+    def plan_denominator(self) -> int:
+        return self.pr_caused - self.plan_unmeasured
+
+    @property
+    def fast_denominator(self) -> int:
+        return self.pr_caused - self.tier_unknown
+
+    @property
     def plan_recall(self) -> float | None:
-        return None if self.pr_caused == 0 else 1 - len(self.plan_missed) / self.pr_caused
+        """None is UNKNOWN: nothing measured, or main's red set was not fully read, so an
+        identity counted as PR-caused may be trunk red."""
+        if self.trunk_unreadable_jobs or self.plan_denominator == 0:
+            return None
+        return 1 - len(self.plan_missed) / self.plan_denominator
 
     @property
     def fast_recall(self) -> float | None:
-        measured = self.pr_caused - self.tier_unknown
-        return None if measured == 0 else 1 - len(self.fast_missed) / measured
+        if self.trunk_unreadable_jobs or self.fast_denominator == 0:
+            return None
+        return 1 - len(self.fast_missed) / self.fast_denominator
 
 
 # ----- pure -----
@@ -153,14 +182,14 @@ def selection_of(identity: str, run_plan: Plan) -> Selection:
         return Selection.SELECTED
     if run_plan.verdict is Verdict.SKIP_PYTEST:
         return Selection.MISSED
-    file_path = identity.split("::", 1)[0]
+    file_path = node_id(identity).split("::", 1)[0]
     return Selection.SELECTED if matches(file_path, run_plan.test_paths) else Selection.MISSED
 
 
 def tier_of(identity: str, ledger: dict[str, float], ceiling: float) -> Tier:
     if "[" in identity and not identity.endswith("]"):
         return Tier.UNKNOWN  # the log parser stopped at whitespace inside the parameter id
-    seconds = ledger.get(identity)
+    seconds = ledger.get(node_id(identity))
     if seconds is None:
         return Tier.FAST  # the tier includes every test the ledger has never seen
     return Tier.FAST if seconds < ceiling else Tier.SLOW
@@ -190,18 +219,41 @@ def audit(
     config: Config,
     ledger: dict[str, float],
     ceiling: float,
+    trunk_unreadable_jobs: int = 0,
 ) -> Audit:
-    result = Audit()
+    result = Audit(trunk_unreadable_jobs=trunk_unreadable_jobs)
     for run in runs:
+        label = f"run {run.run_id} (PR #{run.pr})" if run.pr else f"run {run.run_id}"
+        if run.unmeasured_jobs:
+            # A failed pytest job this run could not read may hold exactly the slow or
+            # unselected failure the audit exists to find: the whole run is unmeasured.
+            result.unreadable_runs += 1
+            result.unreadable_identities += len(run.identities)
+            result.rows.append(
+                Row(
+                    run,
+                    None,
+                    f"UNMEASURED: {run.unmeasured_jobs} unreadable pytest job(s)",
+                    (),
+                    (),
+                    (),
+                    (),
+                    (),
+                )
+            )
+            continue
         caused = tuple(sorted(run.identities - trunk_red))
         red = tuple(sorted(run.identities & trunk_red))
-        verdict: Verdict | None
-        try:
-            run_plan = plan(run.changes, config)
-            verdict, reason = run_plan.verdict, run_plan.reason
-        except PlanError as exc:
-            run_plan, verdict, reason = None, None, f"plan UNKNOWN: {exc}"
-        label = f"run {run.run_id} (PR #{run.pr})" if run.pr else f"run {run.run_id}"
+        run_plan: Plan | None = None
+        verdict: Verdict | None = None
+        if run.changes is None:
+            reason = "plan UNKNOWN: the diff could not be read"
+        else:
+            try:
+                run_plan = plan(run.changes, config)
+                verdict, reason = run_plan.verdict, run_plan.reason
+            except PlanError as exc:
+                reason = f"plan UNKNOWN: {exc}"
         plan_missed = tuple(
             i
             for i in caused
@@ -216,6 +268,8 @@ def audit(
         result.pr_caused += len(caused)
         result.trunk_red += len(red)
         result.tier_unknown += len(unknown)
+        if run_plan is None:
+            result.plan_unmeasured += len(caused)
         result.plan_missed.extend(f"{label}: {i}" for i in plan_missed)
         result.fast_missed.extend(f"{label}: {i}" for i in fast_missed)
     return result
@@ -281,7 +335,7 @@ def _json_list(path: str) -> list[dict]:
     return json.loads(_gh(["api", path]))
 
 
-def _changes_of(head: str, merge_sha: str | None) -> tuple[Change, ...]:
+def _changes_of(head: str, merge_sha: str | None) -> tuple[Change, ...] | None:
     """The run's diff against its branch point. A MERGED head is an ancestor of main, so the
     compare API answers `behind` with zero files; the merge commit's first parent is main at
     merge time, and `git diff` from there is the pull request's diff at that head."""
@@ -289,7 +343,7 @@ def _changes_of(head: str, merge_sha: str | None) -> tuple[Change, ...]:
         try:
             return read_changes(f"{merge_sha}^1", head)
         except PlanError:
-            return ()  # the object is not in this checkout: UNKNOWN, not "no changes"
+            return None  # the object is not in this checkout: UNKNOWN, never an empty diff
     compare = _json(f"repos/{REPO}/compare/main...{head}")
     return changes_from_compare(compare.get("files") or [])
 
@@ -327,18 +381,25 @@ def trunk_red_in_window(
     main_runs: list[dict],
     fetch: Callable[[int], str] = _cached_log,
     sleep: Callable[[float], None] = time.sleep,
-) -> frozenset[str]:
+) -> tuple[frozenset[str], int]:
+    """Main's failing identities over the window, and how many failed pytest jobs could not
+    be read. An unread main job means the subtraction is incomplete, so a PR-caused count
+    built on it is UNKNOWN; the caller must not print a fraction over it."""
     red: set[str] = set()
+    unreadable = 0
     for run in main_runs:
-        identities, _ = _pytest_identities(run, fetch, sleep)
+        identities, missing = _pytest_identities(run, fetch, sleep)
         red |= identities
-    return frozenset(red)
+        unreadable += missing
+    return frozenset(red), unreadable
 
 
 # ----- report -----
 
 
-def _fraction(hit: int, denominator: int) -> str:
+def _fraction(hit: int, denominator: int, *, valid: bool, why: str) -> str:
+    if not valid:
+        return f"UNKNOWN ({why})"
     if not denominator:
         return "UNKNOWN (denominator 0)"
     return f"{hit} / {denominator} = {hit / denominator:.3f}"
@@ -346,10 +407,10 @@ def _fraction(hit: int, denominator: int) -> str:
 
 def report(result: Audit, *, runs_seen: int) -> None:
     measured = sum(1 for r in result.rows if r.pr_caused or r.trunk_red)
-    unmeasured_jobs = sum(r.run.unmeasured_jobs for r in result.rows)
     print(
-        f"{LINE} failed pull_request runs seen={runs_seen} with pytest identities={measured} "
-        f"unreadable pytest jobs={unmeasured_jobs}"
+        f"{LINE} failed pull_request runs seen={runs_seen} measured={measured} "
+        f"excluded for an unreadable pytest job={result.unreadable_runs} "
+        f"(naming {result.unreadable_identities} identities)"
     )
     for row in result.rows:
         print(
@@ -360,22 +421,27 @@ def report(result: Audit, *, runs_seen: int) -> None:
             f"tier_unknown={len(row.tier_unknown)} :: {row.reason}"
         )
     print(
-        f"{LINE} identities: pr_caused={result.pr_caused} (the denominator) "
-        f"trunk_red={result.trunk_red} tier_unknown={result.tier_unknown}"
+        f"{LINE} identities: pr_caused={result.pr_caused} trunk_red={result.trunk_red} "
+        f"plan_unmeasured={result.plan_unmeasured} tier_unknown={result.tier_unknown} "
+        f"trunk_unreadable_jobs={result.trunk_unreadable_jobs}"
     )
     verdicts = " ".join(f"{k}={v}" for k, v in sorted(result.verdicts.items()))
-    print(
-        f"{LINE} plans: {verdicts}"
-        + (
-            "  (plan recall is VACUOUS: no run was narrowed)"
-            if not result.verdicts.get("SCOPED")
-            else ""
-        )
+    vacuous = (
+        "" if result.verdicts.get("SCOPED") else "  (plan recall is VACUOUS: no run was narrowed)"
     )
-    planned = result.pr_caused - len(result.plan_missed)
-    print(f"{LINE} plan recall      = {_fraction(planned, result.pr_caused)}")
-    tiered = result.pr_caused - result.tier_unknown
-    print(f"{LINE} fast-tier recall = {_fraction(tiered - len(result.fast_missed), tiered)}")
+    print(f"{LINE} plans: {verdicts}{vacuous}")
+    trunk_ok = result.trunk_unreadable_jobs == 0
+    why = f"{result.trunk_unreadable_jobs} unreadable main job(s): trunk red incomplete"
+    planned = result.plan_denominator - len(result.plan_missed)
+    print(
+        f"{LINE} plan recall      = "
+        f"{_fraction(planned, result.plan_denominator, valid=trunk_ok, why=why)}"
+    )
+    fast = result.fast_denominator - len(result.fast_missed)
+    print(
+        f"{LINE} fast-tier recall = "
+        f"{_fraction(fast, result.fast_denominator, valid=trunk_ok, why=why)}"
+    )
     for miss in result.plan_missed:
         print(f"{LINE} PLAN MISS  {miss}")
     for miss in result.fast_missed:
@@ -396,11 +462,18 @@ def main(argv: list[str] | None = None) -> int:
     config = read_config()
     pr_runs = _failed_pr_runs(args.runs)
     runs = collect(pr_runs)
-    trunk_red = trunk_red_in_window(_failed_main_runs(args.main_runs))
-    result = audit(runs, trunk_red=trunk_red, config=config, ledger=ledger, ceiling=args.ceiling)
+    trunk_red, trunk_unreadable = trunk_red_in_window(_failed_main_runs(args.main_runs))
+    result = audit(
+        runs,
+        trunk_red=trunk_red,
+        config=config,
+        ledger=ledger,
+        ceiling=args.ceiling,
+        trunk_unreadable_jobs=trunk_unreadable,
+    )
     report(result, runs_seen=len(pr_runs))
-    if result.pr_caused == 0 and result.trunk_red == 0:
-        print(f"{LINE} UNKNOWN: no failed run measured a pytest identity", file=sys.stderr)
+    if result.fast_recall is None and result.plan_recall is None:
+        print(f"{LINE} UNKNOWN: no recall could be measured", file=sys.stderr)
         return 3
     return 0
 

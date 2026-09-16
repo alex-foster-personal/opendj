@@ -20,6 +20,7 @@ from scripts.ci_miss_audit import (
     Tier,
     audit,
     changes_from_compare,
+    node_id,
     selection_of,
     tier_of,
 )
@@ -174,3 +175,66 @@ def test_the_verdict_distribution_exposes_a_vacuous_plan_recall() -> None:
     result = audit(runs, trunk_red=frozenset(), config=CONFIG, ledger=LEDGER, ceiling=0.5)
     assert result.verdicts == {"FULL": 1, "SCOPED": 1}
     assert result.plan_recall == 1.0
+
+
+# ----- the production identity format (Codex P1, Sol P1s) -----
+
+
+def test_identities_keep_the_log_prefix_and_are_matched_by_node_id() -> None:
+    """control: `scripts.ci_failure_ids` yields `FAILED tests/...`; the ledger and the plan
+    start at `tests/`, and comparing unstripped read every failure as an unseen fast test"""
+    assert (
+        node_id("FAILED tests/library/test_b.py::test_slow") == "tests/library/test_b.py::test_slow"
+    )
+    assert node_id("ERROR tests/x.py::test_e") == "tests/x.py::test_e"
+    assert tier_of("FAILED tests/library/test_b.py::test_slow", LEDGER, 0.5) is Tier.SLOW
+    plan = _scoped("tests/engine_core/")
+    assert selection_of("FAILED tests/engine_core/test_a.py::test_x", plan) is Selection.SELECTED
+    assert selection_of("FAILED tests/library/test_b.py::test_z", plan) is Selection.MISSED
+
+
+def test_an_unknown_plan_leaves_the_plan_denominator_but_not_the_fast_one() -> None:
+    """control: identities a run could not plan are not hits; an unreadable diff is UNKNOWN"""
+    unreadable_diff = RunFailure(
+        1, 101, "0000001", frozenset({"FAILED tests/library/test_b.py::test_slow"}), None, 0
+    )
+    planned = _run(2, {"FAILED tests/engine_core/test_a.py::test_fast"}, "apps/engine_core/app.py")
+    result = audit(
+        [unreadable_diff, planned], trunk_red=frozenset(), config=CONFIG, ledger=LEDGER, ceiling=0.5
+    )
+    assert result.rows[0].verdict is None and "could not be read" in result.rows[0].reason
+    assert result.pr_caused == 2
+    assert result.plan_unmeasured == 1
+    assert result.plan_denominator == 1 and result.plan_recall == 1.0
+    assert result.fast_denominator == 2 and result.fast_recall == pytest.approx(0.5)
+
+
+def test_a_run_with_an_unreadable_pytest_job_is_excluded_whole() -> None:
+    """control: the unread job may hold exactly the slow or unselected failure being audited"""
+    partial = RunFailure(
+        1,
+        101,
+        "0000001",
+        frozenset({"FAILED tests/engine_core/test_a.py::test_fast"}),
+        (Change("M", "apps/engine_core/app.py"),),
+        1,
+    )
+    result = audit([partial], trunk_red=frozenset(), config=CONFIG, ledger=LEDGER, ceiling=0.5)
+    assert result.unreadable_runs == 1 and result.unreadable_identities == 1
+    assert result.pr_caused == 0
+    assert result.plan_recall is None and result.fast_recall is None
+
+
+def test_an_unreadable_main_job_makes_both_recalls_unknown() -> None:
+    """control: trunk red is incomplete, so a PR-caused count built on it is not a number"""
+    runs = [_run(1, {"FAILED tests/engine_core/test_a.py::test_fast"}, "apps/engine_core/app.py")]
+    result = audit(
+        runs,
+        trunk_red=frozenset(),
+        config=CONFIG,
+        ledger=LEDGER,
+        ceiling=0.5,
+        trunk_unreadable_jobs=1,
+    )
+    assert result.pr_caused == 1
+    assert result.plan_recall is None and result.fast_recall is None
