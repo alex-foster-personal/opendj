@@ -219,6 +219,16 @@
 			</span>
 		</ControlExplainer>
 	{/if}
+	<ControlExplainer title="CALIBRATE" bullets={calibrateBullets} showDelayMs={60}>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-label="CALIBRATE CUE ALIGNMENT"
+			data-performance-control="cue-calibrate"
+			disabled={!calibrateEnabled}
+			onclick={oncalibrate}>CALIBRATE</button
+		>
+	</ControlExplainer>
 	{#if state.output_mode === 'two_outputs'}
 		<ControlExplainer title="HEAD DELAY" bullets={delayBullets} showDelayMs={60}>
 			<label class="hp-delay">
@@ -235,16 +245,6 @@
 				/>
 				<span class="hp-delay-unit">ms</span>
 			</label>
-		</ControlExplainer>
-		<ControlExplainer title="CALIBRATE" bullets={calibrateBullets} showDelayMs={60}>
-			<button
-				type="button"
-				class="hp-btn"
-				aria-label="CALIBRATE CUE ALIGNMENT"
-				data-performance-control="cue-calibrate"
-				disabled={!calibrateEnabled}
-				onclick={oncalibrate}>CALIBRATE</button
-			>
 		</ControlExplainer>
 		{#if state.master_delay_ms > 0}
 			<ControlExplainer title="ROOM" bullets={roomBullets} showDelayMs={60}>
