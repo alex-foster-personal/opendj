@@ -121,6 +121,34 @@
 
 	let refreshDecrypt = $state(false);
 	let folderInput = $state('');
+
+	/** The global Tauri v2 injects into every window it owns. */
+	const TAURI_GLOBAL = '__TAURI_INTERNALS__';
+
+	function canUseNativeFolderPicker(scope: Record<string, unknown> = globalThis): boolean {
+		return scope[TAURI_GLOBAL] !== undefined && scope[TAURI_GLOBAL] !== null;
+	}
+
+	const nativeFolderPicker = canUseNativeFolderPicker();
+
+	/** Open the OS-native directory picker in the desktop shell; browser tabs keep
+	 * the text field as the only path and this handler is never called there. */
+	async function chooseFolder(): Promise<void> {
+		if (!canUseNativeFolderPicker()) return;
+		try {
+			const { open } = await import('@tauri-apps/plugin-dialog');
+			const selected = await open({
+				directory: true,
+				multiple: false,
+				title: 'Choose a folder'
+			});
+			if (typeof selected === 'string') {
+				folderInput = selected;
+			}
+		} catch {
+			// A failed plugin load or cancelled dialog must not clear a typed path.
+		}
+	}
 	/** The separation job StemsPrompt started, if the tester said yes. Held
 	 * only so the done screen can name it; the TopBar bar owns its progress. */
 	let stemsJobId = $state<string | null>(null);
@@ -325,12 +353,38 @@
 								last screen will say so.
 							</p>
 							<form class="folder-form" onsubmit={(event) => event.preventDefault()}>
-								<input
-									type="text"
-									placeholder="/Users/you/Music"
-									bind:value={folderInput}
-									aria-label="Folder to import"
-								/>
+								<div class="folder-path-row">
+									<input
+										type="text"
+										placeholder="/Users/you/Music"
+										bind:value={folderInput}
+										aria-label="Folder to import"
+									/>
+									<button
+										type="button"
+										class="folder-pick"
+										onclick={() => void chooseFolder()}
+										disabled={setupWizard.busy || refusal !== null || !nativeFolderPicker}
+										title={nativeFolderPicker
+											? 'Choose a folder'
+											: 'Choose a folder (available in the Open DJ desktop app)'}
+										aria-label="Choose a folder"
+									>
+										<svg
+											class="folder-pick-icon"
+											width="16"
+											height="16"
+											viewBox="0 0 16 16"
+											aria-hidden="true"
+											focusable="false"
+										>
+											<path
+												d="M1.5 3.25A1.25 1.25 0 0 1 2.75 2h3.086a1.25 1.25 0 0 1 .884.366l.78.78A1.25 1.25 0 0 1 8.164 3.5H13.25A1.25 1.25 0 0 1 14.5 4.75v7.5A1.25 1.25 0 0 1 13.25 13.5H2.75A1.25 1.25 0 0 1 1.5 12.25v-9Z"
+												fill="currentColor"
+											/>
+										</svg>
+									</button>
+								</div>
 								<button
 									type="submit"
 									onclick={() => setupWizard.checkFolder(folderInput)}
@@ -986,12 +1040,38 @@
 	}
 	.folder-form {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.5rem;
 		margin-top: 0.75rem;
 	}
-	.folder-form input {
+	.folder-path-row {
+		display: flex;
 		flex: 1 1 auto;
-		min-width: 18rem;
+		gap: 0.35rem;
+		min-width: min(100%, 18rem);
+	}
+	.folder-path-row input {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.folder-pick {
+		display: grid;
+		place-items: center;
+		flex: 0 0 auto;
+		width: 2.25rem;
+		padding: 0;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--fg);
+		cursor: pointer;
+	}
+	.folder-pick:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.folder-pick-icon {
+		display: block;
 	}
 	.footnote {
 		font-size: 0.8rem;

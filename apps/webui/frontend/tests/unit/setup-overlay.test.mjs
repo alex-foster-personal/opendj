@@ -405,3 +405,21 @@ test('the wizard gates on the FINAL refusal, never on an unfinished probe', () =
 	// setupRefusal() folds "not yet" into "no"; a surface must not read it.
 	assert.doesNotMatch(overlay, /\$derived\(setupRefusal\(\)\)/);
 });
+
+test('the folder step offers a native picker beside the path field', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /class="folder-path-row"/);
+	assert.match(overlay, /type="button"\s*\n\s*class="folder-pick"/);
+	assert.match(overlay, /aria-label="Choose a folder"/);
+	assert.match(overlay, /bind:value=\{folderInput\}/);
+	assert.match(overlay, /aria-label="Folder to import"/);
+});
+
+test('the folder picker guards on the Tauri runtime and opens a directory dialog', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /__TAURI_INTERNALS__/);
+	assert.match(overlay, /canUseNativeFolderPicker/);
+	assert.match(overlay, /await import\('@tauri-apps\/plugin-dialog'\)/);
+	assert.match(overlay, /directory: true,\s*\n\s*multiple: false/);
+	assert.match(overlay, /if \(typeof selected === 'string'\) \{\s*\n\s*folderInput = selected;/);
+});
