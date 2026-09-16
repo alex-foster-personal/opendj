@@ -161,3 +161,14 @@ def test_a_docs_only_diff_over_selects_today_so_the_audit_reports_no_miss() -> N
     assert result.rows[0].verdict is Verdict.FULL
     assert result.plan_missed == []
     assert result.plan_recall == 1.0
+
+
+def test_the_verdict_distribution_exposes_a_vacuous_plan_recall() -> None:
+    """control: FULL selects by construction, so 1.0 over FULL-only runs must say so"""
+    runs = [
+        _run(1, {"tests/engine_core/test_a.py::test_fast"}, "pyproject.toml"),
+        _run(2, {"tests/engine_core/test_a.py::test_fast"}, "apps/engine_core/app.py"),
+    ]
+    result = audit(runs, trunk_red=frozenset(), config=CONFIG, ledger=LEDGER, ceiling=0.5)
+    assert result.verdicts == {"FULL": 1, "SCOPED": 1}
+    assert result.plan_recall == 1.0

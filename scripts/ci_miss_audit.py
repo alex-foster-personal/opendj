@@ -55,7 +55,18 @@ from scripts.ci_main_red import (
     _json,
     job_log_identities,
 )
-from scripts.ci_plan import Change, Config, Plan, PlanError, Verdict, matches, plan, read_config
+from scripts.ci_plan import (
+    Change,
+    Config,
+    Plan,
+    PlanError,
+    Verdict,
+    matches,
+    plan,
+    read_changes,
+    read_config,
+)
+from scripts.review_gh import _gh
 
 LEDGER_PATH = Path(__file__).resolve().parent.parent / ".test_durations"
 FAST_CEILING_S = 0.5
@@ -113,6 +124,16 @@ class Audit:
     tier_unknown: int = 0
     plan_missed: list[str] = field(default_factory=list)
     fast_missed: list[str] = field(default_factory=list)
+
+    @property
+    def verdicts(self) -> dict[str, int]:
+        """How many runs got each verdict. Plan recall is VACUOUS while SCOPED is 0: FULL
+        selects everything by construction, so 1.0 over FULL-only runs measures nothing."""
+        counts: dict[str, int] = {}
+        for row in self.rows:
+            key = row.verdict.value if row.verdict is not None else "UNKNOWN"
+            counts[key] = counts.get(key, 0) + 1
+        return counts
 
     @property
     def plan_recall(self) -> float | None:
@@ -245,6 +266,34 @@ def _pytest_identities(
     return frozenset(identities), unreadable
 
 
+def _pull_of(head: str) -> tuple[int | None, str | None]:
+    """The pull request a run head belongs to and its merge commit, from the commit itself:
+    a run's own `pull_requests` field is EMPTY once the pull request has closed."""
+    pulls = _json_list(f"repos/{REPO}/commits/{head}/pulls")
+    if not pulls:
+        return None, None
+    return pulls[0]["number"], pulls[0].get("merge_commit_sha") if pulls[0].get(
+        "merged_at"
+    ) else None
+
+
+def _json_list(path: str) -> list[dict]:
+    return json.loads(_gh(["api", path]))
+
+
+def _changes_of(head: str, merge_sha: str | None) -> tuple[Change, ...]:
+    """The run's diff against its branch point. A MERGED head is an ancestor of main, so the
+    compare API answers `behind` with zero files; the merge commit's first parent is main at
+    merge time, and `git diff` from there is the pull request's diff at that head."""
+    if merge_sha:
+        try:
+            return read_changes(f"{merge_sha}^1", head)
+        except PlanError:
+            return ()  # the object is not in this checkout: UNKNOWN, not "no changes"
+    compare = _json(f"repos/{REPO}/compare/main...{head}")
+    return changes_from_compare(compare.get("files") or [])
+
+
 def collect(
     pr_runs: list[dict],
     fetch: Callable[[int], str] = _cached_log,
@@ -255,20 +304,19 @@ def collect(
         identities, unreadable = _pytest_identities(run, fetch, sleep)
         if not identities and unreadable == 0:
             continue  # the run failed outside pytest (frontend, ratchet, e2e); nothing to audit
-        compare = _json(f"repos/{REPO}/compare/main...{run['head_sha']}")
-        prs = run.get("pull_requests") or []
+        pr, merge_sha = _pull_of(run["head_sha"])
         out.append(
             RunFailure(
                 run_id=run["id"],
-                pr=prs[0]["number"] if prs else None,
+                pr=pr,
                 head=run["head_sha"],
                 identities=identities,
-                changes=changes_from_compare(compare.get("files") or []),
+                changes=_changes_of(run["head_sha"], merge_sha),
                 unmeasured_jobs=unreadable,
             )
         )
         print(
-            f"{LINE} read run {run['id']} head {run['head_sha'][:9]}: "
+            f"{LINE} read run {run['id']} head {run['head_sha'][:9]} pr={pr}: "
             f"{len(identities)} identities, {unreadable} unreadable pytest job(s)",
             file=sys.stderr,
         )
@@ -314,6 +362,15 @@ def report(result: Audit, *, runs_seen: int) -> None:
     print(
         f"{LINE} identities: pr_caused={result.pr_caused} (the denominator) "
         f"trunk_red={result.trunk_red} tier_unknown={result.tier_unknown}"
+    )
+    verdicts = " ".join(f"{k}={v}" for k, v in sorted(result.verdicts.items()))
+    print(
+        f"{LINE} plans: {verdicts}"
+        + (
+            "  (plan recall is VACUOUS: no run was narrowed)"
+            if not result.verdicts.get("SCOPED")
+            else ""
+        )
     )
     planned = result.pr_caused - len(result.plan_missed)
     print(f"{LINE} plan recall      = {_fraction(planned, result.pr_caused)}")
