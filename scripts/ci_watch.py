@@ -192,6 +192,10 @@ def _blob_line(run: dict, classification: JobClassification | None, excerpt: lis
         shown = [f"(no test identity) {line}" for line in excerpt] or [
             "(no test identity and no error line found: read the log)"
         ]
+    if classification.verdict is JobVerdict.UNEXPLAINED:
+        # The identities are not why this is unmeasured, so leading with them would hide the
+        # reason an operator has to act on.
+        shown = [f"(beyond the tests) {line}" for line in excerpt] + shown
     body = "".join(f"\n    {identity}" for identity in shown)
     return f"  {classification.verdict} {run['name']} ({run['conclusion']}){more}{body}"
 

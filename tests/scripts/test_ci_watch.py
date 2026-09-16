@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from scripts import ci_watch
+from scripts.ci_failure_ids import JobVerdict
 from scripts.ci_main_red import LogUnreadable, MainRed
 from scripts.ci_wait_core import WaitStatus, poll_until_terminal
 from scripts.ci_watch import Exit, FailureWatch, exit_for
@@ -195,3 +196,42 @@ def test_an_unmeasured_baseline_job_ends_unknown_not_mergeable():
 
     code, _ = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
     assert code is Exit.UNKNOWN
+
+
+def test_a_known_red_job_that_was_also_killed_is_unmeasured_not_known_red():
+    """The wiring, not just the rule. A shard can fail a test main already fails AND be
+    killed for a cap or a timeout. Passing beyond_tests=False here reads the kill as
+    known-red debt and the agent merges on the strength of tests that were red anyway;
+    the mutation that always passes False left every other test in this module green."""
+    lines: list[str] = []
+    log = (
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 137.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.UNEXPLAINED
+    assert "exit code 137" in "\n".join(lines)
+
+
+def test_a_known_red_job_that_finished_normally_is_still_known_red():
+    """The control in the other direction: without it the fix could make every known-red
+    job unmeasured, and the watcher could never report a pull request as clean again."""
+    lines: list[str] = []
+    log = (
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED
