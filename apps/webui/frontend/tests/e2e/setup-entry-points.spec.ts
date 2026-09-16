@@ -391,6 +391,52 @@ test.describe('setup entry points', () => {
 		await expectWizard(page);
 	});
 
+	test('the folder path placeholder reads as a hint, not a pre-filled value', async ({
+		page
+	}) => {
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Choose a folder instead', exact: true })
+			.click();
+
+		const folderInput = dialog.getByRole('textbox', { name: 'Folder to import' });
+		await expect(folderInput).toBeVisible();
+		await expect(folderInput).toHaveValue('');
+
+		const placeholderStyle = await folderInput.evaluate((el) => {
+			const style = window.getComputedStyle(el, '::placeholder');
+			return {
+				fontStyle: style.fontStyle,
+				opacity: Number.parseFloat(style.opacity),
+				color: style.color
+			};
+		});
+		expect(placeholderStyle.fontStyle).toBe('italic');
+		expect(placeholderStyle.opacity).toBeLessThan(1);
+
+		const emptyScreenshot = await folderInput.screenshot();
+
+		await folderInput.fill('/Users/you/Music');
+		await folderInput.blur();
+
+		const typedStyle = await folderInput.evaluate((el) => {
+			const style = window.getComputedStyle(el);
+			return {
+				fontStyle: style.fontStyle,
+				opacity: Number.parseFloat(style.opacity),
+				color: style.color
+			};
+		});
+		expect(typedStyle.fontStyle).not.toBe('italic');
+		expect(typedStyle.opacity).toBe(1);
+
+		const typedScreenshot = await folderInput.screenshot();
+		expect(emptyScreenshot.equals(typedScreenshot)).toBe(false);
+	});
+
 	test('the build identity chip states this app address in its foldout', async ({ page }) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
