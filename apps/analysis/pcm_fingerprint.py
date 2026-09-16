@@ -28,7 +28,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from apps.analysis_waveform.decode import LocalDecodeUnavailable, resolve_ffmpeg
+from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
 
 #-----------------------------------------------------------------------------
 # the contract
@@ -66,9 +66,17 @@ class FingerprintUnavailable(Exception):
 #-----------------------------------------------------------------------------
 
 def _resolve_or_raise() -> str:
+    """The shared ffmpeg lookup, as this module's own failure type.
+
+    Resolved through apps.shared.ffmpeg rather than
+    apps.analysis_waveform.decode: a fingerprint needs the binary, not a
+    waveform decoder, and catching that module's LocalDecodeUnavailable for
+    a resolution failure made "ffmpeg is missing" read as "the waveform
+    could not be decoded" in a module that decodes no waveform.
+    """
     try:
         return resolve_ffmpeg()
-    except LocalDecodeUnavailable as exc:
+    except FfmpegUnavailable as exc:
         raise FingerprintUnavailable(str(exc)) from None
 
 

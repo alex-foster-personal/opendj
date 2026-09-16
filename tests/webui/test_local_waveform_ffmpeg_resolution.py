@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis_waveform import decode
+from apps.shared import ffmpeg as shared_ffmpeg
 
 
 def _make_executable(path: Path) -> Path:
@@ -39,8 +40,12 @@ def test_mdt_ffmpeg_override_wins_over_path_lookup(
 ) -> None:
     override = _make_executable(tmp_path / "custom-ffmpeg")
     monkeypatch.setenv("MDT_FFMPEG", str(override))
+    # Patched where the lookup actually lives. decode.resolve_ffmpeg now
+    # delegates to apps.shared.ffmpeg, so a patch aimed at decode's own
+    # namespace would no longer intercept anything and this assertion would
+    # pass without ever biting.
     monkeypatch.setattr(
-        decode.shutil,
+        shared_ffmpeg.shutil,
         "which",
         lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("PATH lookup must not run")),
     )
