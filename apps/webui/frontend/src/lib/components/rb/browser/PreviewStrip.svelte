@@ -268,6 +268,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="preview-hit"
+		data-testid="preview-strip"
 		style={`width:${W}px;height:${H}px`}
 		title={title ?? 'Click to seek if loaded · hover shows position'}
 		onpointermove={onMove}

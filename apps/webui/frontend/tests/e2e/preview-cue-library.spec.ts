@@ -7,13 +7,11 @@
  * pins, and the deck half is the dangerous one: a click while browsing could
  * jump a deck that was live on air.
  *
- * It drives the AGENT path (`preview_cue` / `preview_stop`) rather than a
- * pointer on the mini-waveform, for a fixture reason worth stating: this
- * suite's generated library has no ANLZ waveform data, so `PreviewStrip`
- * renders its `-` placeholder and there is no strip to click. That is not a
- * weaker test of the thing that matters. The strip's own click handler resolves
- * a ratio and calls straight through to the same `previewCueSeek` this
- * dispatches, and agent parity means the two paths must agree anyway.
+ * The first test drives the AGENT path (`preview_cue` / `preview_stop`). That
+ * alone cannot catch the old bug coming back, because the deck-seek loop lived
+ * in `BrowserPanel.svelte`'s `previewSeek`, which the IPC never calls. The
+ * second test therefore clicks the real mini-waveform of a track that is
+ * PLAYING and MASTER, which is the case that jumps the room.
  * `tests/unit/preview-cue-policy.test.mjs` pins the refusal policy underneath
  * both.
  *
@@ -36,6 +34,15 @@ const TRACK_ROW = '[data-testid="track-row"]';
  *  against a deck sitting near its start. */
 const PREVIEW_RATIO = 0.6;
 
+/** Near the end of a 60 s fixture track, while the deck on air sits near its
+ *  start, so a seek there is tens of seconds from where playback would be. */
+const CLICK_ON_AIR_RATIO = 0.9;
+
+/** How far a playing deck's reported position may sit from start + wall time.
+ *  Covers the state snapshot cadence and output latency, and is still an order
+ *  of magnitude below the jump a seek to CLICK_ON_AIR_RATIO would make. */
+const NATURAL_DRIFT_MS = 3_000;
+
 async function _query(page: Page): Promise<PerformanceState> {
 	return page.evaluate(() => {
 		const ipc = window.musicDjToolsPerformance;
@@ -52,13 +59,22 @@ async function _dispatch(page: Page, command: PerformanceCommand): Promise<void>
 	}, command);
 }
 
-/** Open the page, wait for the IPC surface, and get a library on screen. */
-async function _openPerformance(page: Page): Promise<void> {
-	await page.goto('/performance');
+/**
+ * Open the page, wait for the IPC surface, and get a library on screen.
+ *
+ * `muted` is for any test that PLAYS a deck. Turning the room down instead
+ * would trip the app's silence watchdog, which reports AUDIO CUT and stops the
+ * deck; `?muted=1` mutes after the watchdog's tap, so the deck keeps playing
+ * and nothing is audible.
+ */
+async function _openPerformance(page: Page, opts: { muted: boolean } = { muted: false }): Promise<void> {
+	await page.goto(opts.muted ? '/performance?muted=1' : '/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-	// Quiet for headed runs. This is the ROOM volume; the cue path keeps its own
-	// gain, which must stay above zero or the preview is refused by design.
-	await _dispatch(page, { type: 'master_volume', value: 0.1 });
+	if (!opts.muted) {
+		// Quiet for headed runs. This is the ROOM volume; the cue path keeps its
+		// own gain, which must stay above zero or the preview is refused by design.
+		await _dispatch(page, { type: 'master_volume', value: 0.1 });
+	}
 	await expect.poll(async () => page.locator(TRACK_ROW).count()).toBeGreaterThan(1);
 }
 
@@ -118,6 +134,116 @@ test('previewing a library track plays it without moving the deck that holds it'
 	expect(stopped.preview.route).toBeNull();
 	// Stopping a preview is not a transport action: the deck is untouched.
 	expect(stopped.decks[1].stable_id).toBe(previewed);
+});
+
+/**
+ * CUEOUT-15, the dangerous case, through the real pointer path: a click on the
+ * library mini-waveform of the track that is live on air.
+ *
+ * The generated fixture tracks have no rekordbox ANLZ, so a row shows its
+ * strip only once that track's audio has been decoded locally (the deck load
+ * does that) and the row is selected (BrowserPanel copies a decoded strip into
+ * selected rows only). The test does both before it looks for the strip.
+ *
+ * Regression lines:
+ * - if a library waveform click seeks the deck holding that track then the room hears a jump - broken
+ * - if a library waveform click stops the deck on air then the room goes silent - broken
+ * - if a library waveform click takes master from the deck on air then sync follows the wrong deck - broken
+ * - if a library waveform click does not preview the clicked track then the click does nothing audible - broken
+ * - if stopping a preview touches a deck then the preview is a transport control - broken
+ */
+test('clicking the mini-waveform of the track on air previews it and leaves the master deck alone', async ({
+	page
+}) => {
+	test.setTimeout(180_000);
+	await _openPerformance(page, { muted: true });
+
+	const onAir = await _stableIdOfRow(page, 0);
+	const row = page.locator(TRACK_ROW).nth(0);
+	await _dispatch(page, { type: 'load', deck: 1, stable_id: onAir });
+	await expect
+		.poll(async () => (await _query(page)).decks[1].stable_id, { timeout: 45_000 })
+		.toBe(onAir);
+	await expect
+		.poll(async () => (await _query(page)).decks[1].duration_ms, { timeout: 45_000 })
+		.not.toBeNull();
+
+	// Select through a cell with no handler of its own, then give the local
+	// decode time to reach the row.
+	await row.locator('td.c-time').click();
+	const strip = row.getByTestId('preview-strip');
+	await expect(strip, 'the row never showed a clickable mini-waveform').toBeVisible({
+		timeout: 60_000
+	});
+
+	await _dispatch(page, { type: 'play', deck: 1, playing: true });
+	await expect
+		.poll(
+			async () => {
+				const deck = (await _query(page)).decks[1];
+				return deck.playing && deck.is_master && deck.position_ms > 500;
+			},
+			{ timeout: 30_000, message: 'deck 1 must be playing, master and moving before the click' }
+		)
+		.toBe(true);
+
+	const before = await _query(page);
+	expect(before.decks[1].is_master, 'the deck under test must be the elected master').toBe(true);
+	const durationMs = before.decks[1].duration_ms as number;
+	const clickedMs = CLICK_ON_AIR_RATIO * durationMs;
+	const startMs = before.decks[1].position_ms;
+	expect(
+		clickedMs - startMs,
+		'fixture: the click must land far from the playhead or a seek would not show'
+	).toBeGreaterThan(20_000);
+
+	/** Where the deck would be now if nothing but playback had moved it. */
+	const t0 = Date.now();
+	const naturalPositionMs = (): number => startMs + (Date.now() - t0);
+
+	const box = await strip.boundingBox();
+	if (box === null) throw new Error('the mini-waveform has no layout box');
+	await strip.click({
+		position: { x: Math.round(CLICK_ON_AIR_RATIO * box.width), y: Math.round(box.height / 2) }
+	});
+
+	await expect
+		.poll(async () => (await _query(page)).preview.stable_id, {
+			timeout: 30_000,
+			message:
+				'if a library waveform click does not preview the clicked track then the click does nothing audible - broken'
+		})
+		.toBe(onAir);
+
+	const previewing = await _query(page);
+	const deck = previewing.decks[1];
+	expect(
+		Math.abs(deck.position_ms - naturalPositionMs()),
+		'if a library waveform click seeks the deck holding that track then the room hears a jump - broken'
+	).toBeLessThan(NATURAL_DRIFT_MS);
+	expect(
+		deck.playing,
+		'if a library waveform click stops the deck on air then the room goes silent - broken'
+	).toBe(true);
+	expect(
+		deck.is_master,
+		'if a library waveform click takes master from the deck on air then sync follows the wrong deck - broken'
+	).toBe(true);
+	expect(deck.stable_id).toBe(onAir);
+	expect(previewing.preview.playing).toBe(true);
+
+	// Stop through the row's own control, the other half of the pointer path.
+	await row.getByRole('button', { name: 'STOP PREVIEW' }).click();
+	await expect.poll(async () => (await _query(page)).preview.stable_id).toBeNull();
+	const stopped = (await _query(page)).decks[1];
+	const stopTouchedDeck =
+		'if stopping a preview touches a deck then the preview is a transport control - broken';
+	expect(Math.abs(stopped.position_ms - naturalPositionMs()), stopTouchedDeck).toBeLessThan(
+		NATURAL_DRIFT_MS
+	);
+	expect(stopped.playing, stopTouchedDeck).toBe(true);
+	expect(stopped.is_master, stopTouchedDeck).toBe(true);
+	expect(stopped.stable_id, stopTouchedDeck).toBe(onAir);
 });
 
 /**
