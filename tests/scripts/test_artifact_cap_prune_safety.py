@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-CAP_PRUNE_PY = Path("/Users/dev/code/afmac/ci-lane/artifact_cap_prune.py")
+CAP_PRUNE_PY = Path.home() / "code/afmac/ci-lane/artifact_cap_prune.py"
 
 pytestmark = pytest.mark.skipif(
     not CAP_PRUNE_PY.is_file(), reason=f"{CAP_PRUNE_PY} not present on this machine"

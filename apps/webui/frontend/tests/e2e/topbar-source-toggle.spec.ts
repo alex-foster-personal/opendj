@@ -10,7 +10,7 @@
  *
  * The width test pins an INVARIANT, not the measured numbers in TopBar.svelte's
  * comment blocks: at every width, the command entry is either evicted (a
- * deliberate, honest state the row already uses below 826px) or hittable.
+ * deliberate, honest state the row already uses below 1024px) or hittable.
  * "Crushed" - laid out, visible, zero effective hit area - is the state that is
  * never allowed, because it looks operable and is not. Breakpoints can move
  * without this test rotting; a control that silently stops taking clicks
@@ -65,7 +65,18 @@ test('the command entry is never crushed at any top bar width', async ({ page })
 	// A guard that only ever sees an evicted entry would pass vacuously, so
 	// assert the eviction band is the narrow low-width one it is supposed to
 	// be rather than the whole sweep.
-	expect(widest_evicted, 'the command entry is evicted far above its breakpoint').toBeLessThan(900);
+	//
+	// The bound tracks TopBar.svelte's own `@media (max-width: 1023px)` tier,
+	// which is where the command entry yields. It read 900 for the 825px tier
+	// that shipped before 0dc5335dd ("keep a labelled Google sign-in control
+	// on the /performance top bar", #2357): that commit put a ~100px labelled
+	// sign-in pill permanently in the row and moved every restore tier later,
+	// the command entry's included, and its note in TopBar.svelte states the
+	// new boundary. 1024 is that boundary, so the sweep's widest evicted
+	// sample (1020, at the 5px step) passes and anything wider still fails.
+	expect(widest_evicted, 'the command entry is evicted far above its breakpoint').toBeLessThan(
+		1024
+	);
 });
 
 test('a pointer can travel from the SOURCE button into the menu without it closing', async ({

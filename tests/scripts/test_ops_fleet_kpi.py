@@ -198,9 +198,12 @@ GREEN_LABELS = [
     "sink-triage last run within 7200s (hourly timer opendj-sink-triage.timer)",
     _fatal_label(0),
     PROVISIONING_LABEL,
-    "sink-triage last run within 7200s (hourly timer opendj-sink-triage.timer)",
     "token present for launchers",
 ]
+
+# _health() keys a dict by label, so a label repeated here is unsatisfiable by any
+# output, and the order assertion then fails forever looking like a script regression.
+assert len(set(GREEN_LABELS)) == len(GREEN_LABELS), "duplicate label in GREEN_LABELS"
 
 
 def test_green_fixture_reports_expected_kpis(tmp_path):

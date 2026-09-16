@@ -16,13 +16,20 @@ test('contiguous five-row grip drag POSTs items:move once', async ({ page }) => 
 	await page.waitForSelector(TRACK_ROW, { timeout: 60_000 });
 	await page.waitForSelector(TREE, { timeout: 60_000 });
 
-	const stableIds = await page.locator(TRACK_ROW).evaluateAll((rows) =>
+	// SIX MEMBERSHIPS, not six distinct tracks. What moves here is a slice of
+	// membership rows, each with its own item_id and order_key, so cycling the
+	// library's tracks builds the same six-row playlist this test needs
+	// (`forbid_duplicates` is false, and the API appends rather than dedupes).
+	// Demanding six DISTINCT tracks was an undeclared prerequisite on library
+	// size that the root suite's generated fixture - two tracks, by design -
+	// has never met, so this test could not pass in the harness it ships in.
+	const libraryIds = await page.locator(TRACK_ROW).evaluateAll((rows) =>
 		rows
-			.slice(0, 6)
 			.map((row) => row.getAttribute('data-stable-id'))
 			.filter((id): id is string => id !== null && id !== '')
 	);
-	expect(stableIds.length).toBeGreaterThanOrEqual(6);
+	expect(libraryIds.length).toBeGreaterThan(0);
+	const stableIds = Array.from({ length: 6 }, (_, i) => libraryIds[i % libraryIds.length]);
 
 	const create = await page.request.post('/api/v1/playlists', {
 		data: { name: playlistName }

@@ -17,9 +17,32 @@ from apps.engine_core.__main__ import main
 from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig, apply_env_contract, prepare_layout
 from apps.engine_core.rescue.store import RescueStore
+from apps.shared.state import db as state_db
 from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("RESCUE-04")
+
+DECK1_STABLE_ID = "b" * 40
+
+
+def _seed_live_library_track(data_dir: Path, stable_id: str) -> None:
+    """Create the state schema and put ``stable_id`` in the library, undeleted.
+
+    ``restore`` refuses to guess: a library it cannot read is a 503, not a set
+    of loadable decks. A deck only resumes when its track is really there, so
+    the daemon needs a real state.db before it starts.
+    """
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, "
+            "created_at, updated_at, deleted_at) VALUES (?, 'inferred', ?, ?, "
+            "'2026-09-16T00:00:00Z', '2026-09-16T00:00:00Z', NULL)",
+            (stable_id, stable_id, str(data_dir / f"{stable_id}.wav")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _deck_snapshot(*, stable_id: str | None, playing: bool, deck_id: int) -> dict:
@@ -78,7 +101,7 @@ def engine_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     decks = {}
     for deck_id in (1, 2, 3, 4):
         deck = _deck_snapshot(
-            stable_id="b" * 40 if deck_id == 1 else None,
+            stable_id=DECK1_STABLE_ID if deck_id == 1 else None,
             playing=deck_id == 1,
             deck_id=deck_id,
         )
@@ -107,6 +130,9 @@ def engine_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     RescueStore(data_dir).append(
         captured_at_ms=payload["captured_at_ms"], payload=payload
     )
+    # Seed before the daemon boots: a writer racing schema creation sees a
+    # half-built database.
+    _seed_live_library_track(data_dir, DECK1_STABLE_ID)
 
     app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=port))
     server, thread = start_uvicorn_in_thread(
