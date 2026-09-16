@@ -14,12 +14,16 @@ import {
 const BRAND_LAUNCH_PAUSE_STYLE_ID = 'brand-launch-test-pause';
 
 /**
- * Every CSS animation the launch overlay owns, sorted. The overlay is pure CSS,
+ * Every element the launch overlay animates, sorted. The overlay is pure CSS,
  * so `page.clock` cannot move it: these are driven through the Web Animations
  * API instead, which is the only seam that makes the phase assertions below
  * independent of how loaded the machine is.
+ *
+ * Selected by TARGET, not by animation name: svelte rewrites the `@keyframes`
+ * names in a component's scoped style block, so the names in BrandLaunch.svelte
+ * are not the names `Animation.animationName` reports at runtime.
  */
-const LAUNCH_ANIMATION_NAMES = ['brand-half-slide-dark', 'brand-half-slide-light', 'launch-fade'];
+const LAUNCH_ANIMATED_SELECTORS = ['.brand-half-dark', '.brand-half-light', '.brand-launch'];
 
 /** Cold-open with a fresh launch marker; pause CSS until visible so slow loads cannot miss the 1.6 s window. */
 async function openWithFreshLaunch(
@@ -133,18 +137,19 @@ async function gapAlongDivider(page: import('@playwright/test').Page): Promise<n
 	});
 }
 
-/** Take every launch animation under test control; returns the names captured. */
+/** Take every launch animation under test control; returns the targets captured. */
 async function seizeLaunchAnimations(page: import('@playwright/test').Page): Promise<string[]> {
-	return page.evaluate((names) => {
+	return page.evaluate((selectors) => {
 		const captured: string[] = [];
 		for (const animation of document.getAnimations()) {
-			const name = (animation as Animation & { animationName?: string }).animationName;
-			if (name === undefined || !names.includes(name)) continue;
+			const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+			const selector = selectors.find((candidate) => target?.matches(candidate) === true);
+			if (selector === undefined) continue;
 			animation.pause();
-			captured.push(name);
+			captured.push(selector);
 		}
 		return captured.sort();
-	}, LAUNCH_ANIMATION_NAMES);
+	}, LAUNCH_ANIMATED_SELECTORS);
 }
 
 /** Seek every launch animation to the same offset from first paint (ms). */
@@ -153,10 +158,10 @@ async function seekLaunchTo(
 	elapsedMs: number
 ): Promise<string[]> {
 	return page.evaluate(
-		({ names, offsetMs }) => {
+		({ selectors, offsetMs }) => {
 			for (const animation of document.getAnimations()) {
-				const name = (animation as Animation & { animationName?: string }).animationName;
-				if (name === undefined || !names.includes(name)) continue;
+				const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+				if (!selectors.some((candidate) => target?.matches(candidate) === true)) continue;
 				animation.pause();
 				animation.currentTime = offsetMs;
 			}
@@ -166,24 +171,24 @@ async function seekLaunchTo(
 				return element === null ? 'missing' : getComputedStyle(element).transform;
 			});
 		},
-		{ names: LAUNCH_ANIMATION_NAMES, offsetMs: elapsedMs }
+		{ selectors: LAUNCH_ANIMATED_SELECTORS, offsetMs: elapsedMs }
 	);
 }
 
 /** Hand the overlay back to the wall clock so its real fade can finish. */
 async function releaseLaunchAnimations(page: import('@playwright/test').Page): Promise<void> {
 	await page.evaluate(
-		({ names, styleId }) => {
+		({ selectors, styleId }) => {
 			document.getElementById(styleId)?.remove();
 			for (const animation of document.getAnimations()) {
-				const name = (animation as Animation & { animationName?: string }).animationName;
-				if (name === undefined || !names.includes(name)) continue;
+				const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+				if (!selectors.some((candidate) => target?.matches(candidate) === true)) continue;
 				// play() on a finished animation rewinds it to zero, which would
 				// replay the slide the assertions above just walked through.
 				if (animation.playState !== 'finished') animation.play();
 			}
 		},
-		{ names: LAUNCH_ANIMATION_NAMES, styleId: BRAND_LAUNCH_PAUSE_STYLE_ID }
+		{ selectors: LAUNCH_ANIMATED_SELECTORS, styleId: BRAND_LAUNCH_PAUSE_STYLE_ID }
 	);
 }
 
@@ -205,7 +210,7 @@ test('launch halves slide closed then fade removes overlay', async ({ page }) =>
 	// wall time had reached, and on a loaded runner that frame was the wrong one.
 	const launch = await openWithFreshLaunch(page, '/', { clock: true, keepPaused: true });
 	await expect(launch).toBeVisible();
-	expect(await seizeLaunchAnimations(page)).toEqual(LAUNCH_ANIMATION_NAMES);
+	expect(await seizeLaunchAnimations(page)).toEqual(LAUNCH_ANIMATED_SELECTORS);
 
 	await seekLaunchTo(page, 0);
 	await expect.poll(() => gapAlongDivider(page)).toBeGreaterThan(0);
