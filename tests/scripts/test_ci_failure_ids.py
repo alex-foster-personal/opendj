@@ -336,3 +336,22 @@ def test_a_log_with_no_step_echoes_reports_nothing_rather_than_guessing():
     is UNKNOWN here, not proof the tests owned it, which is what the caller's docstring says."""
     log = f"{TS}FAILED tests/test_a.py::test_b\n{TS}##[error]{_EXIT}\n"
     assert failure_beyond_tests(log) == []
+
+
+def test_a_ratchet_job_that_also_died_beyond_the_tests_is_unmeasured():
+    """Sol's P1 on #3293. RATCHET_DEBT is the only mergeable zero-identity verdict, so it is
+    the one that must read the beyond-the-tests evidence. A cap-killed or disk-full ratchet
+    job measured no ratchet, and shipping that as debt merges a job nobody read."""
+    got = classify_job(
+        "quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=True
+    )
+    assert got.verdict is JobVerdict.UNEXPLAINED
+
+
+def test_a_ratchet_job_that_merely_breached_still_ships_as_debt():
+    """The control: the fix must not turn every ratchet breach into a blocker, which is what
+    the verdict exists to avoid under SHIP mode."""
+    got = classify_job(
+        "quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=False
+    )
+    assert got.verdict is JobVerdict.RATCHET_DEBT

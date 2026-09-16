@@ -13,12 +13,16 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from scripts.ci_main_red import (
     Job,
     LogUnreadable,
+    MainRed,
     Verdict,
+    cached_main_red,
     job_log_identities,
     main_red_identities,
     read_job_log,
@@ -280,3 +284,86 @@ def test_a_read_that_succeeds_after_a_refusal_is_still_returned():
         return "FAILED tests/test_a.py::test_b"
 
     assert read_job_log(1, flaky, lambda _s: None) == "FAILED tests/test_a.py::test_b"
+
+
+def _walk_attempts(by_attempt: dict[int, list[Job]], ids: dict[int, frozenset[str]]):
+    """One verdict whose job list differs per ATTEMPT, i.e. a run whose failed jobs were
+    rerun."""
+    return main_red_identities(
+        [Verdict(1, max(by_attempt))],
+        lambda _run_id, attempt: by_attempt[attempt],
+        lambda job_id: ids.get(job_id, frozenset()),
+    )
+
+
+def test_a_rerun_attempt_that_succeeded_supersedes_the_attempt_it_reran():
+    """Sol's P1 on #3293. Attempts were walked oldest first while the green set was applied
+    only after the whole verdict, so attempt 1's identities survived attempt 2 rerunning the
+    same job to success. Main had fixed it and a pull request reintroducing it read
+    KNOWN_RED."""
+    red = _walk_attempts(
+        {1: [Job(11, "shard 1", "failure")], 2: [Job(12, "shard 1", "success")]},
+        {11: frozenset({"FAILED tests/t.py::a"})},
+    )
+    assert red.identities == frozenset()
+    assert red.failed_job_names == frozenset()
+
+
+def test_a_rerun_attempt_that_failed_again_keeps_the_earlier_identities():
+    """The control against the overshoot: reruns exist because trunk flaps, and a rerun that
+    failed AGAIN names main's red. Dropping every earlier attempt outright would report a
+    flapping shard as green between its own attempts."""
+    red = _walk_attempts(
+        {1: [Job(11, "shard 1", "failure")], 2: [Job(12, "shard 1", "failure")]},
+        {11: frozenset({"FAILED tests/t.py::a"}), 12: frozenset({"FAILED tests/t.py::b"})},
+    )
+    assert red.identities == {"FAILED tests/t.py::a", "FAILED tests/t.py::b"}
+
+
+class _Walked(Exception):
+    """Raised by the stub in place of the verdict walk, so a test can assert the cache was
+    REJECTED without standing up a fake GitHub. Reaching the walk is the observable."""
+
+
+def _raise_walked() -> MainRed:
+    raise _Walked
+
+
+def _write_cache(path, sha: str, identities: list[str]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "identities": identities,
+                "failed_job_names": [],
+                "main_sha": sha,
+                "unreadable_job_names": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_a_fresh_cache_about_an_older_main_is_not_reused(tmp_path):
+    """Sol's P1 on #3293. Age was the whole test, and main moves inside the ten-minute TTL:
+    trunk repair merges a fix and for the rest of that window a pull request reintroducing
+    the same failure is still subtracted as main's red and exits mergeable."""
+    cache = tmp_path / "main-red.json"
+    _write_cache(cache, "a" * 40, ["FAILED tests/t.py::fixed_on_main"])
+    with pytest.raises(_Walked):
+        cached_main_red(
+            cache,
+            now=lambda: cache.stat().st_mtime,
+            main_sha=lambda: "b" * 40,
+            fetch=_raise_walked,
+        )
+
+
+def test_a_fresh_cache_about_the_current_main_is_reused(tmp_path):
+    """The control: the cache exists because the verdict walk is the expensive call, and a
+    check that rejected every cache would make the watcher re-walk main on every poll."""
+    cache = tmp_path / "main-red.json"
+    _write_cache(cache, "a" * 40, ["FAILED tests/t.py::still_red"])
+    got = cached_main_red(
+        cache, now=lambda: cache.stat().st_mtime, main_sha=lambda: "a" * 40, fetch=_raise_walked
+    )
+    assert got.identities == {"FAILED tests/t.py::still_red"}

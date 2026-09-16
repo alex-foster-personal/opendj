@@ -25,10 +25,14 @@ from enum import StrEnum
 from scripts.review_gh import TriageError
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
-# Apps whose check-runs carry no GitHub Actions run to read an event from. Named one by one
-# rather than matched as "anything that is not Actions": the wide form removes a check from
-# the observed and expected sets together, and a check nobody is waiting for cannot fail.
-DROPPED_APP_SLUGS = frozenset({"mergify"})
+# `(app slug, check name)` pairs that carry no GitHub Actions run to read an event from.
+# Named one by one rather than matched as "anything that is not Actions", and keyed on the
+# NAME as well as the app: the wide form removes a check from the observed and expected sets
+# together, and a check nobody is waiting for cannot fail. Keyed on the slug alone, every
+# other check the same app ever emits disappears with it, so a required one the app adds
+# later is silently dropped on the day it appears.
+DROPPED_APP_CHECKS = frozenset({("mergify", "Mergify Merge Queue")})
+DROPPED_APP_SLUGS = frozenset(slug for slug, _name in DROPPED_APP_CHECKS)
 
 
 class WaitStatus(StrEnum):
@@ -200,18 +204,20 @@ def _pull_request_triggered_runs(
     kept: list[dict] = []
     for run in check_runs:
         # Mergify's queue marker has no Actions run to ask for an event, so it is dropped
-        # by NAME rather than by "not GitHub Actions". Dropping every external app removes
+        # by APP AND NAME rather than by "not GitHub Actions". Dropping every external app
+        # removes
         # a required security, coverage or CI check from the observed AND expected sets at
         # once, which is invisible: the waiter then reports success for a check it stopped
         # looking at. An unrecognized app raises instead, so a person decides.
         app_slug = (run.get("app") or {}).get("slug")
-        if app_slug in DROPPED_APP_SLUGS:
+        if (app_slug, run.get("name")) in DROPPED_APP_CHECKS:
             continue
         if app_slug is not None and app_slug != "github-actions":
             raise TriageError(
                 f"check-run {run.get('name')!r} comes from unrecognized app {app_slug!r}: "
-                "add it to DROPPED_APP_SLUGS if it carries no Actions run, or teach this "
-                "function to wait for it. Dropping it silently would hide a required check."
+                "add the (app, name) pair to DROPPED_APP_CHECKS if it carries no Actions "
+                "run, or teach this function to wait for it. Dropping it silently would "
+                "hide a required check."
             )
         run_id = _run_id(run)
         event = seen.get(run_id)

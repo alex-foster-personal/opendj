@@ -105,8 +105,12 @@ def main_red_identities(
     green: set[str] = set()
     for verdict in verdicts:
         measured: set[str] = set()
-        verdict_green: set[str] = set()
-        for attempt in range(1, verdict.attempts + 1):
+        # NEWEST attempt first, for the same reason verdicts are walked newest first: a
+        # rerun that SUCCEEDS supersedes the attempt it reran. Oldest first, attempt 1's
+        # identities survived attempt 2 going green, and a pull request reintroducing that
+        # failure read KNOWN_RED.
+        for attempt in range(verdict.attempts, 0, -1):
+            attempt_green: set[str] = set()
             for job in jobs_of(verdict.run_id, attempt):
                 if remaining_window > 0:
                     pending.add(job.name)
@@ -114,7 +118,7 @@ def main_red_identities(
                     continue
                 if job.conclusion == "success":
                     measured.add(job.name)
-                    verdict_green.add(job.name)
+                    attempt_green.add(job.name)
                 elif job.conclusion == "failure":
                     if job.name in green:
                         # A NEWER verdict ran this job to success, so every identity it
@@ -143,8 +147,8 @@ def main_red_identities(
                     failed_names.add(job.name)
                     found |= ids
                     measured.add(job.name)
+            green |= attempt_green
         pending -= measured
-        green |= verdict_green
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
             break
@@ -266,17 +270,34 @@ def fetch_main_red() -> MainRed:
     )
 
 
-def cached_main_red(cache_path: Path = CACHE_PATH, now: Callable[[], float] = time.time) -> MainRed:
+def cached_main_red(
+    cache_path: Path = CACHE_PATH,
+    now: Callable[[], float] = time.time,
+    main_sha: Callable[[], str] = _main_sha,
+    fetch: Callable[[], MainRed] = fetch_main_red,
+) -> MainRed:
+    """The cached baseline, reused only while it is BOTH fresh and about the current main.
+
+    Age alone was the whole test, and main moves inside the TTL: trunk repair merges a fix
+    and for up to `CACHE_TTL_S` afterwards a pull request reintroducing that same failure is
+    still subtracted as main's red and exits mergeable. Re-reading main's head is one cheap
+    call against the whole verdict walk this cache exists to avoid, so the check is cheap
+    enough to make unconditionally. A head that cannot be read is not a match: the walk runs.
+    """
     if cache_path.exists() and now() - cache_path.stat().st_mtime < CACHE_TTL_S:
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        if "unreadable_job_names" in cached:
+        try:
+            current = main_sha()
+        except TriageError:
+            current = ""
+        if "unreadable_job_names" in cached and current and cached["main_sha"] == current:
             return MainRed(
                 frozenset(cached["identities"]),
                 frozenset(cached["failed_job_names"]),
                 cached["main_sha"],
                 frozenset(cached["unreadable_job_names"]),
             )
-    fresh = fetch_main_red()
+    fresh = fetch()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = cache_path.with_suffix(f".tmp.{time.time_ns()}")
     tmp.write_text(

@@ -236,6 +236,12 @@ def classify_job(
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)
     if RATCHET_JOBS.search(job_name) and not residual:
+        if beyond_tests:
+            # Sol's P1 on #3293. A ratchet breach SHIPS as debt, which makes this the only
+            # mergeable zero-identity verdict, and the branch was granting it without
+            # reading the evidence that the job ALSO timed out, was killed or ran out of
+            # disk. A ratchet that did not finish measured no ratchet.
+            return verdict(JobVerdict.UNEXPLAINED)
         return verdict(JobVerdict.RATCHET_DEBT)
     if not identities and job_name in main_red_job_names:
         # Sol's P1 on #3293. A name is not a cause. Every name in `main_red_job_names` is one
