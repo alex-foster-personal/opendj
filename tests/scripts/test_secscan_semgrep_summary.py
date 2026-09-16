@@ -17,6 +17,11 @@ SECSCAN = Path(__file__).resolve().parents[2] / "scripts" / "security" / "secsca
 
 
 def _summary(tmp_path: Path, doc: dict, *flags: str) -> tuple[int, str]:
+    rc, count, _ = _summary_with_stderr(tmp_path, doc, *flags)
+    return rc, count
+
+
+def _summary_with_stderr(tmp_path: Path, doc: dict, *flags: str) -> tuple[int, str, str]:
     scan = tmp_path / "scan.json"
     scan.write_text(json.dumps(doc), encoding="utf-8")
     count = tmp_path / "scan.count"
@@ -25,7 +30,8 @@ def _summary(tmp_path: Path, doc: dict, *flags: str) -> tuple[int, str]:
          "--min-files", "1", "--count-file", str(count), *flags],
         capture_output=True, text=True, check=False,
     )
-    return proc.returncode, count.read_text(encoding="utf-8").strip() if count.exists() else ""
+    written = count.read_text(encoding="utf-8").strip() if count.exists() else ""
+    return proc.returncode, written, proc.stderr
 
 
 def _doc(rules: int, scanned: int) -> dict:
@@ -71,3 +77,42 @@ def test_clean_scan_passes(tmp_path: Path) -> None:
     rc, count = _summary(tmp_path, _doc(rules=154, scanned=3), "--expected-scannable", "3")
     assert rc == 0
     assert count == "0"
+
+
+# ----- the shape job 104882711482 produced on PR #3362 -------------------------------------------
+# semgrep reports per-rule timings only for files it scanned, so an all-ignored diff arrives
+# here as 0 rules AND 0 scanned. The fix removes that arrival (semgrep-diff-scope now counts 0
+# and scan_sast.sh writes SKIP), and these two lock the summary control in place meanwhile:
+# nothing about an unmeasured scan may read as a pass, with or without skipped evidence.
+
+
+def _ignored_out_doc(skipped: list[dict] | None) -> dict:
+    doc = _doc(rules=0, scanned=0)
+    if skipped is not None:
+        doc["paths"]["skipped"] = skipped
+    return doc
+
+
+def test_ignored_out_diff_is_unknown_even_with_skipped_evidence(tmp_path: Path) -> None:
+    """[if] 0 rules, 0 scanned, and a skipped tests/ path [then] UNKNOWN, [else stop]."""
+    doc = _ignored_out_doc(
+        [{"path": "tests/scripts/test_probe.py", "reason": "semgrepignore_patterns_match"}]
+    )
+    rc, _, stderr = _summary_with_stderr(tmp_path, doc, "--expected-scannable", "1")
+    assert rc == 2, "an unmeasured scan is UNKNOWN; the SKIP belongs upstream in diff scope"
+    assert "ignore list" in stderr, "the reason must name the ignore list, not a rule-load failure"
+
+
+def test_zero_scanned_without_skipped_evidence_is_unknown(tmp_path: Path) -> None:
+    """[if] 0 rules and 0 scanned with no skipped evidence [then] UNKNOWN, [else stop]."""
+    rc, _, _ = _summary_with_stderr(tmp_path, _ignored_out_doc(None), "--expected-scannable", "1")
+    assert rc == 2, "absent evidence is not evidence of an ignored-out diff"
+
+
+def test_rule_load_failure_still_names_the_rule_set(tmp_path: Path) -> None:
+    """[if] files were scanned but 0 rules loaded [then] UNKNOWN blaming the rules, [else stop]."""
+    rc, _, stderr = _summary_with_stderr(
+        tmp_path, _doc(rules=0, scanned=3), "--expected-scannable", "3"
+    )
+    assert rc == 2
+    assert "rule set failed to load" in stderr
