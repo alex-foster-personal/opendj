@@ -39,6 +39,7 @@ def _run(
         name=name,
         event=event,
         head_branch="main",
+        head_repo_owner="maintainer",
         head_sha=head_sha,
         created_at=BASE_TIME.replace(minute=minutes % 60),
     )
@@ -248,12 +249,15 @@ def test_execute_sweep_propagates_bookkeeping_cancel_precondition_error(
 #   - if a push run is selected by the closed-PR sweep then broken
 
 
-def _pr_run(run_id: int, branch: str, *, name: str = "CI") -> mod.QueuedRun:
+def _pr_run(
+    run_id: int, branch: str, *, name: str = "CI", head_repo_owner: str = "maintainer"
+) -> mod.QueuedRun:
     return mod.QueuedRun(
         run_id=run_id,
         name=name,
         event="pull_request",
         head_branch=branch,
+        head_repo_owner=head_repo_owner,
         head_sha=OTHER_SHA,
         created_at=BASE_TIME,
     )
@@ -348,22 +352,22 @@ def test_the_recheck_asks_for_that_branch_alone(monkeypatch: pytest.MonkeyPatch)
         return []
 
     monkeypatch.setattr(mod, "_gh_api_json", fake_api)
-    assert mod._open_pr_count("af--thing") == 0
+    assert mod._open_pr_count("maintainer", "af--thing") == 0
     assert asked == [
-        f"repos/{mod.REPO}/pulls?state=open&head={mod.OWNER}:af--thing&per_page=1"
+        f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--thing&per_page=1"
     ]
 
 
 def test_the_recheck_reports_an_open_pull_request(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mod, "_gh_api_json", lambda path: [{"number": 1}])
-    assert mod._open_pr_count("af--open") == 1
+    assert mod._open_pr_count("maintainer", "af--open") == 1
 
 
 def test_the_recheck_refuses_a_payload_that_is_not_a_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """A message object counts len() too, and would read as "some open pull requests"."""
     monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"message": "Not Found"})
     with pytest.raises(PreconditionError):
-        mod._open_pr_count("af--thing")
+        mod._open_pr_count("maintainer", "af--thing")
 
 
 def test_the_trunk_tip_workflow_can_list_pull_requests() -> None:
@@ -374,3 +378,68 @@ def test_the_trunk_tip_workflow_can_list_pull_requests() -> None:
     )
     permissions = yaml.safe_load(workflow.read_text(encoding="utf-8"))["permissions"]
     assert permissions.get("pull-requests") == "read", permissions
+
+
+# ----- a fork pull request is rechecked under its own owner -----
+
+
+def test_the_recheck_asks_under_the_forks_owner_not_this_repositorys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sol's P1 on #3289. A fork's head branch is owned by the fork, so asking under this
+    repository's owner returns nothing, reads as "no open pull request", and cancels a live
+    run. That is the single contract the recheck exists to hold."""
+    asked: list[str] = []
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [{"number": 9}])
+    run = _pr_run(60, "patch-1", head_repo_owner="a-contributor")
+    cancelled = mod.execute_closed_pr_sweep((run,), dry_run=False)
+    assert asked == [
+        f"repos/{mod.REPO}/pulls?state=open&head=a-contributor:patch-1&per_page=1"
+    ]
+    assert cancelled == 0
+
+
+def test_a_run_from_this_repository_is_still_asked_under_this_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: the ordinary case is the overwhelming majority and must not move."""
+    asked: list[str] = []
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: asked.append(path) or [])
+    monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.CANCELLED)
+    run = _pr_run(61, "af--merged")
+    assert mod.execute_closed_pr_sweep((run,), dry_run=False) == 1
+    assert asked == [
+        f"repos/{mod.REPO}/pulls?state=open&head=maintainer:af--merged&per_page=1"
+    ]
+
+
+def test_a_run_payload_with_no_head_repository_is_refused() -> None:
+    """A run whose head repository is absent cannot be rechecked under any owner. Defaulting
+    to this repository's owner would put the fork bug back, silently, for that run alone."""
+    with pytest.raises(PreconditionError):
+        mod._parse_queued_run(
+            {
+                "id": 1,
+                "name": "CI",
+                "event": "pull_request",
+                "head_branch": "patch-1",
+                "head_sha": OTHER_SHA,
+                "created_at": "2026-09-16T09:00:00Z",
+            }
+        )
+
+
+def test_a_run_payload_carrying_its_head_repository_is_parsed() -> None:
+    """The control: the field the refusal above keys on is one GitHub really sends."""
+    run = mod._parse_queued_run(
+        {
+            "id": 1,
+            "name": "CI",
+            "event": "pull_request",
+            "head_branch": "patch-1",
+            "head_repository": {"owner": {"login": "a-contributor"}},
+            "head_sha": OTHER_SHA,
+            "created_at": "2026-09-16T09:00:00Z",
+        }
+    )
+    assert run.head_repo_owner == "a-contributor"

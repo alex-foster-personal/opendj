@@ -88,6 +88,7 @@ class QueuedRun:
     name: str
     event: str
     head_branch: str
+    head_repo_owner: str
     head_sha: str
     created_at: datetime
 
@@ -124,6 +125,8 @@ def _parse_queued_run(raw: object) -> QueuedRun:
     name = raw.get("name")
     event = raw.get("event")
     head_branch = raw.get("head_branch")
+    head_repo = raw.get("head_repository")
+    head_repo_owner = (head_repo or {}).get("owner", {}).get("login")
     head_sha = raw.get("head_sha")
     created_at = raw.get("created_at")
     missing = [
@@ -133,6 +136,7 @@ def _parse_queued_run(raw: object) -> QueuedRun:
             ("name", name),
             ("event", event),
             ("head_branch", head_branch),
+            ("head_repo_owner", head_repo_owner),
             ("head_sha", head_sha),
             ("created_at", created_at),
         )
@@ -140,7 +144,12 @@ def _parse_queued_run(raw: object) -> QueuedRun:
     ]
     if missing or not isinstance(run_id, int) or not isinstance(name, str):
         raise PreconditionError(f"queued run is missing required fields: {raw!r}")
-    if not isinstance(event, str) or not isinstance(head_branch, str) or not isinstance(head_sha, str):
+    if (
+        not isinstance(event, str)
+        or not isinstance(head_branch, str)
+        or not isinstance(head_repo_owner, str)
+        or not isinstance(head_sha, str)
+    ):
         raise PreconditionError(f"queued run has invalid string fields: {raw!r}")
     if not isinstance(created_at, str):
         raise PreconditionError(f"queued run has no created_at: {raw!r}")
@@ -149,6 +158,7 @@ def _parse_queued_run(raw: object) -> QueuedRun:
         name=name,
         event=event,
         head_branch=head_branch,
+        head_repo_owner=head_repo_owner,
         head_sha=head_sha,
         created_at=_parse_github_timestamp(created_at, "created_at", run_id),
     )
@@ -271,7 +281,9 @@ def execute_closed_pr_sweep(
     runs: tuple[QueuedRun, ...],
     *,
     dry_run: bool,
-    still_closed: Callable[[str], bool] = lambda branch: _open_pr_count(branch) == 0,
+    still_closed: Callable[[QueuedRun], bool] = (
+        lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0
+    ),
 ) -> int:
     """Cancel each selected run, logging one line per run. Returns the cancelled count.
 
@@ -281,7 +293,7 @@ def execute_closed_pr_sweep(
     """
     cancelled = 0
     for run in runs:
-        if not still_closed(run.head_branch):
+        if not still_closed(run):
             line = (
                 f"closed-pr-skip workflow={run.name} run_id={run.run_id} "
                 f"head_branch={run.head_branch} reason=reopened-since-snapshot"
@@ -300,12 +312,17 @@ def execute_closed_pr_sweep(
     return cancelled
 
 
-OWNER = REPO.split("/", 1)[0]
+def _open_pr_count(head_repo_owner: str, branch: str) -> int:
+    """How many open pull requests have this head branch, read fresh.
 
-
-def _open_pr_count(branch: str) -> int:
-    """How many open pull requests have this head branch, read fresh."""
-    payload = _gh_api_json(f"repos/{REPO}/pulls?state=open&head={OWNER}:{branch}&per_page=1")
+    The owner comes from the RUN, not from this repository. A pull request opened from a
+    fork has a head branch owned by the fork, so asking under this repository's owner
+    returns nothing, reads as "no open pull request", and cancels a live run: the one
+    thing the reopened-pull-request contract exists to prevent.
+    """
+    payload = _gh_api_json(
+        f"repos/{REPO}/pulls?state=open&head={head_repo_owner}:{branch}&per_page=1"
+    )
     if not isinstance(payload, list):
         raise PreconditionError(f"open pulls for {branch} was not a list: {payload!r}")
     return len(payload)
