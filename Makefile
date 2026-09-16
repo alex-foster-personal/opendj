@@ -22,10 +22,13 @@ PYTEST_COLLECT_FLOOR ?= 3700
 # its own default under the system temp dir). CI workflows pass it set to a
 # path under $RUNNER_TEMP, which GitHub wipes per job, so a shard killed by
 # its wall budget leaves no lock file behind to outlive the job (see
-# docs/decisions for the ADR). $@ namespaces it per target, so a composite
-# target (release-check: test + waveform-native-verify) never has the second
-# pytest invocation wipe the first one's basetemp out from under it.
-pytest_basetemp_flag = $(if $(PYTEST_BASETEMP),--basetemp=$(PYTEST_BASETEMP)/$@,)
+# docs/decisions for the ADR). The flag is a single directory under
+# PYTEST_BASETEMP (hyphenated with $@), not a nested path: pytest creates the
+# basetemp with parents=False, so the parent must already exist. $@ still
+# namespaces per target, so a composite target (release-check: test +
+# waveform-native-verify) never has the second pytest invocation wipe the
+# first one's basetemp out from under it.
+pytest_basetemp_flag = $(if $(PYTEST_BASETEMP),--basetemp=$(PYTEST_BASETEMP)-$@,)
 
 test:
 	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR) $(pytest_basetemp_flag)
