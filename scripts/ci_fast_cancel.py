@@ -14,6 +14,13 @@ missing baseline must not turn every trunk flake into a cancelled run.
 Exit codes: 0 = decision made (cancelled or not), 3 = UNKNOWN (no baseline; nothing done).
 The leg's verdict is pytest's own exit code, decided before this step runs.
 
+`gh run cancel` cancels the whole run, INCLUDING the job this step runs in (there is no
+per-job cancel in the Actions API), so the job's conclusion becomes "cancelled" rather
+than "failure". The verdict has to outlive that: under GitHub Actions (``GITHUB_ACTIONS``
+set) the decision is also written as a workflow annotation (``::error`` for GENUINE,
+``::warning`` for UNKNOWN) and appended to ``GITHUB_STEP_SUMMARY``, both of which persist
+on a cancelled job, and ci.yml uploads the leg's log and JUnit BEFORE this step runs.
+
 Requirements (mini-PRD)
 - [if] the log names a failure absent from main's red set [then] the run is cancelled and
   the identity printed, [else stop] ✔︎ ✅ 🎯
@@ -25,12 +32,16 @@ Requirements (mini-PRD)
   that is said, because a cap kill is not a pull request defect, [else stop] ✔︎ ✅ 🎯
 - [if] ``--dry-run`` [then] the decision is printed and `gh` is never called, [else stop]
   ✔︎ ✅ 🎯
+- [if] running under GitHub Actions [then] GENUINE is an ``::error`` annotation and
+  UNKNOWN a ``::warning``, both naming the leg, and both land in the step summary before
+  any cancel, [else stop] ✔︎ ✅ 🎯
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -47,7 +58,14 @@ def failed_identities(log: str) -> frozenset[str]:
 
 
 def _baseline(main_red_json: Path | None) -> frozenset[str] | None:
-    """Main's red identities, or None when no baseline can be had."""
+    """Main's red identities, or None when no baseline can be had.
+
+    Only ``identities`` is read, by attribute or key, so the watcher's record can grow
+    (it gained ``measured_sha`` on Wed 16 Sep 2026: the commit the identities are ABOUT,
+    which is usually older than ``main_sha``, since main's head rarely has a completed
+    run). A baseline about an older commit is still a baseline; a refused cache
+    (older payload without ``measured_sha``) surfaces here as the watcher's own error.
+    """
     if main_red_json is not None:
         if not main_red_json.is_file():
             return None
@@ -69,6 +87,18 @@ def decide(failed: frozenset[str], baseline: frozenset[str] | None) -> tuple[str
     return ("GENUINE", genuine) if genuine else ("KNOWN", frozenset())
 
 
+def _announce(level: str, title: str, body: str) -> None:
+    """Persist a verdict past a cancelled job: annotation + step summary, Actions only."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    one_line = body.replace("\n", " ")
+    print(f"::{level} title={title}::{one_line}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as handle:
+            handle.write(f"### {title}\n\n{body}\n\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--log", type=Path, required=True, help="the leg's captured pytest output")
@@ -80,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         help="main's red set in scripts.ci_main_red's cache shape; default imports it",
     )
     parser.add_argument("--dry-run", action="store_true", help="decide and print, never call gh")
+    parser.add_argument("--leg", default="?", help="leg label for annotations (e.g. '2 of 4')")
     args = parser.parse_args(argv)
 
     failed = failed_identities(args.log.read_text(encoding="utf-8", errors="replace"))
@@ -87,6 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     if verdict == "UNKNOWN":
         print(f"{LINE_PREFIX} UNKNOWN: no main-red baseline (scripts.ci_main_red not importable "
               "and no --main-red-json); cancelling nothing")
+        _announce(
+            "warning",
+            f"fast tier leg {args.leg}: cancel decision UNKNOWN",
+            f"No main-red baseline on this head, so the {len(failed)} failing identities "
+            "could not be classified as known or genuine and nothing was cancelled. This is "
+            "NOT evidence about the cancel logic; the dry-run evidence period starts when "
+            "scripts.ci_main_red (PR #3293) is importable.",
+        )
         return EXIT_UNKNOWN
     if verdict == "NONE":
         print(f"{LINE_PREFIX} no failing test identity in the log (infra-class death?); "
@@ -100,6 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{LINE_PREFIX} GENUINE failure(s) not red on main; cancelling run {args.run_id}:")
     for identity in sorted(genuine):
         print(f"  genuine {identity}")
+    mode = "DRY RUN, nothing cancelled" if args.dry_run else f"cancelling run {args.run_id}"
+    _announce(
+        "error",
+        f"fast tier leg {args.leg}: GENUINE red ({mode})",
+        "Failing on main-green identities:\n" + "\n".join(f"- `{i}`" for i in sorted(genuine)),
+    )
     if args.dry_run:
         print(f"{LINE_PREFIX} dry run, gh not called")
         return 0

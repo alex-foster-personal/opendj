@@ -31,7 +31,8 @@ pytestmark = pytest.mark.requirement("INFRA-03")
 
 CI: Path = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 FAST_RUNS_ON = (
-    "${{ fromJSON(vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+    "${{ fromJSON(vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
+    "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 )
 
 
@@ -56,9 +57,18 @@ def _raw_runs_on(job_id: str) -> str:
     raise AssertionError(f"no runs-on line found for job {job_id!r}")
 
 
-def test_fast_job_prefers_its_own_pool_then_linux_then_hosted() -> None:
-    """if CI_RUNS_ON_FAST is not first then a 4-minute leg queues behind a 20-minute shard"""
+def test_fast_job_prefers_its_own_pool_then_the_shard_chain() -> None:
+    """if the fast job drops the shard's PYTEST/E2E chain then legs land on nucbox and read red
+
+    Run 35107758392 (Wed 16 Sep 2026): the plain LINUX pool put all four legs on
+    nucbox and 19 of 20 reds were host-dependent tests that pass on agentbox.
+    """
     assert _raw_runs_on("fast") == FAST_RUNS_ON
+    shard = _raw_runs_on("test")
+    assert shard.endswith(
+        "vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || "
+        "'\"ubuntu-latest\"') }}"
+    ), "the fast chain must stay a suffix of the shard chain; update both together"
 
 
 def test_fast_job_is_pull_request_only_with_four_legs() -> None:
@@ -81,6 +91,14 @@ def test_fast_job_may_cancel_the_run() -> None:
     assert cancel[0]["env"]["GH_TOKEN"] == "${{ github.token }}"
     assert "CI_FAST_CANCEL" in cancel[0]["run"], "disarmed unless the var is 1"
     assert "--dry-run" in cancel[0]["run"], "disarmed unless the var is 1"
+
+
+def test_artifact_upload_precedes_the_cancel_step() -> None:
+    """if the upload runs after the cancel then a cancelled leg loses its log and JUnit"""
+    steps = [s.get("name", "") for s in _jobs()["fast"]["steps"]]
+    upload = next(i for i, n in enumerate(steps) if n.startswith("Upload the leg"))
+    cancel = next(i for i, n in enumerate(steps) if n.startswith("Fail fast"))
+    assert upload < cancel
 
 
 def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:

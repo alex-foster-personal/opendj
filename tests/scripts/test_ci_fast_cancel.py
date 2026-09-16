@@ -6,6 +6,8 @@ Single-line intent:
   - if a missing baseline cancels anything, or exits 0, then broken
   - if a log with no failure identity cancels the run then broken
   - if --dry-run calls gh then broken
+  - if a GENUINE verdict under Actions leaves no annotation or summary then a cancelled job hides it
+  - if an UNKNOWN verdict under Actions is not a warning then a missing baseline reads as evidence
 
 [if] the fast tier fails on a genuine identity [then] the run is cancelled, [else stop].
 """
@@ -137,3 +139,60 @@ def test_dry_run_never_calls_gh(
     )
     assert rc == 0
     assert "dry run, gh not called" in capsys.readouterr().out
+
+
+def test_genuine_under_actions_writes_an_error_annotation_and_step_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if a GENUINE verdict leaves no annotation or summary then a cancelled job hides it"""
+    _forbid_gh(monkeypatch)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    log = _log(tmp_path)
+    baseline = _baseline(tmp_path, ["tests/a/test_x.py::test_two"])
+    rc = ci_fast_cancel.main(
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run",
+         "--leg", "2 of 4"]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "::error title=fast tier leg 2 of 4: GENUINE red (DRY RUN, nothing cancelled)::" in out
+    assert "tests/b/test_y.py::test_three[param-1]" in out
+    written = summary.read_text(encoding="utf-8")
+    assert "### fast tier leg 2 of 4: GENUINE red" in written
+    assert "- `tests/b/test_y.py::test_three[param-1]`" in written
+    assert "test_two" not in written, "a known identity must not be reported as genuine"
+
+
+def test_unknown_under_actions_is_a_warning_not_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if an UNKNOWN verdict is not a warning then a missing baseline reads as evidence"""
+    _forbid_gh(monkeypatch)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    log = _log(tmp_path)
+    rc = ci_fast_cancel.main(
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(tmp_path / "absent.json"),
+         "--leg", "1 of 4"]
+    )
+    assert rc == ci_fast_cancel.EXIT_UNKNOWN
+    out = capsys.readouterr().out
+    assert "::warning title=fast tier leg 1 of 4: cancel decision UNKNOWN::" in out
+    assert "NOT evidence" in summary.read_text(encoding="utf-8")
+
+
+def test_outside_actions_no_annotation_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if annotations print outside Actions then local runs spray ::error lines"""
+    _forbid_gh(monkeypatch)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    log = _log(tmp_path)
+    baseline = _baseline(tmp_path, [])
+    ci_fast_cancel.main(
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run"]
+    )
+    assert "::error" not in capsys.readouterr().out
