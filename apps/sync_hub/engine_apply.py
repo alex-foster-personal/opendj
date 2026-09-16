@@ -239,7 +239,11 @@ def _duplicate_stamps(
 
 
 def _duplicate_incoming_wins(
-    change: RowChange, stored: tuple[str, str], conflict_pk: tuple[str, ...]
+    change: RowChange,
+    stored: tuple[str, str],
+    conflict_pk: tuple[str, ...],
+    *,
+    pull_defers_on_tie: bool = False,
 ) -> bool:
     """LWW between two rows that share a natural key under different pks.
 
@@ -251,6 +255,9 @@ def _duplicate_incoming_wins(
     """
     if change.sort_key != stored:
         return change.sort_key > stored
+    if pull_defers_on_tie:
+        # The hub already elected among tied rows; the spoke follows it.
+        return True
     return change.pk < conflict_pk
 
 
@@ -405,6 +412,7 @@ def _apply(
     record_changelog: bool,
     received_at: str | None = None,
     hub_authoritative: bool = False,
+    hub_row_authority: bool = False,
 ) -> ApplyResult:
     # canonical_now(), not a local isoformat() call (round 3 finding R8): the
     # two disagree on a zero-microsecond tick, where isoformat() omits the
@@ -435,6 +443,7 @@ def _apply(
             record_changelog,
             stamp,
             hub_authoritative=hub_authoritative,
+            hub_row_authority=hub_row_authority,
         )
         if outcome.status == "accepted":
             accepted += 1
@@ -472,6 +481,7 @@ def _apply_one(
     stamp: str,
     *,
     hub_authoritative: bool = False,
+    hub_row_authority: bool = False,
 ) -> _ApplyOneOutcome:
     """Apply one rewritten row. Returns accepted/rejected/quarantined/identity."""
     if change.table == "tracks":
@@ -484,7 +494,11 @@ def _apply_one(
     spec = SPEC_BY_TABLE[change.table]
     columns, values = _checked_values(conn, change.table, spec, change)
     verdict = _resolve_against_stored(
-        conn, spec, change, hub_authoritative=hub_authoritative
+        conn,
+        spec,
+        change,
+        hub_authoritative=hub_authoritative,
+        hub_row_authority=hub_row_authority,
     )
     if verdict.identity_conflict:
         held.add(change.pk[0])
@@ -598,6 +612,7 @@ def _resolve_against_stored(
     change: RowChange,
     *,
     hub_authoritative: bool = False,
+    hub_row_authority: bool = False,
 ) -> _Resolution:
     """Decide ``change`` against what is already stored, or quarantine it.
 
@@ -656,11 +671,22 @@ def _resolve_against_stored(
                     change.sort_key,
                     _sort_key_of(spec.name, stored),
                 )
-        if hub_authoritative:
+        if hub_row_authority:
             return _Resolution(loses=False)
-        return _Resolution(loses=change.sort_key <= _sort_key_of(spec.name, stored))
+        stored_key = _sort_key_of(spec.name, stored)
+        if hub_authoritative:
+            # A pull defers to the hub only on an exact tie: a tie cannot hide a
+            # local edit (an edit stamps a newer key), but a strictly older
+            # pulled row would overwrite one.
+            return _Resolution(loses=change.sort_key < stored_key)
+        return _Resolution(loses=change.sort_key <= stored_key)
     return _resolve_against_duplicates(
-        conn, spec, change, conflict_pks, hub_authoritative=hub_authoritative
+        conn,
+        spec,
+        change,
+        conflict_pks,
+        hub_authoritative=hub_authoritative,
+        hub_row_authority=hub_row_authority,
     )
 
 
@@ -671,6 +697,7 @@ def _resolve_against_duplicates(
     conflict_pks: Sequence[tuple[str, ...]],
     *,
     hub_authoritative: bool = False,
+    hub_row_authority: bool = False,
 ) -> _Resolution:
     """LWW against every local row sharing this row's natural key.
 
@@ -692,11 +719,14 @@ def _resolve_against_duplicates(
         keys.append((tuple(pk), _sort_key_of(spec.name, stored)))
     if faults:
         return _Resolution(loses=False, faults=tuple(faults))
-    if hub_authoritative:
+    if hub_row_authority:
         for conflict_pk in conflict_pks:
             _drop_superseded(conn, spec, conflict_pk)
         return _Resolution(loses=False)
-    if not all(_duplicate_incoming_wins(change, key, pk) for pk, key in keys):
+    if not all(
+        _duplicate_incoming_wins(change, key, pk, pull_defers_on_tie=hub_authoritative)
+        for pk, key in keys
+    ):
         return _Resolution(loses=True)
     for conflict_pk in conflict_pks:
         _drop_superseded(conn, spec, conflict_pk)
@@ -750,15 +780,31 @@ def hub_apply(
 
 
 def spoke_apply(
-    conn: sqlite3.Connection, changes: Sequence[RowChange]
+    conn: sqlite3.Connection,
+    changes: Sequence[RowChange],
+    *,
+    repair_bundle: bool = False,
 ) -> ApplyResult:
     """Merge a hub pull into a spoke DB. Hub rows win identity collapse.
+
+    Every other row still merges by row-level LWW (ADR-0004): an older pulled
+    row must not overwrite a newer local edit, and a row that loses to one of
+    two local duplicates must not drop the one it beat. On an exact tie the
+    spoke defers to the hub's election, which cannot lose a local edit because
+    an edit always stamps a newer key. Only the bounded
+    identity repair bundle (``repair_bundle=True``, ADR-0074) is applied with
+    the hub winning every row, because that bundle IS the hub's verdict for
+    one identity pair and its children.
 
     A spoke keeps no changelog: its pull watermark is the hub's ``seq``, so a
     local changelog would only be a second, divergent numbering.
     """
     return _apply(
-        conn, changes, record_changelog=False, hub_authoritative=True
+        conn,
+        changes,
+        record_changelog=False,
+        hub_authoritative=True,
+        hub_row_authority=repair_bundle,
     )
 
 
