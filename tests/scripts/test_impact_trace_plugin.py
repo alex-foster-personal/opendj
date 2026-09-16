@@ -25,6 +25,7 @@ import pytest
 from scripts.impact_trace_plugin import (
     IGNORED_PARTS,
     REPO,
+    STARTUP_KEY,
     Tracer,
     _program,
     _source_of_cached_bytecode,
@@ -129,6 +130,32 @@ def test_listing_a_directory_is_recorded_as_a_directory(tracer, tmp_path, event)
     record = tracer.records["module:tests/test_a.py"]
     assert record.dirs == {"apps/webui"}
     assert not record.files
+
+
+def test_a_directory_listed_during_startup_is_not_recorded(tmp_path):
+    """Nothing is collected yet at startup, so a listing there is the import machinery or
+    pytest walking the tree. Recorded, one scan of `apps/` made a change to any file in it
+    select every module in the map: measured Wed 16 Sep 2026, 209 of 209."""
+    traced = Tracer(tmp_path)
+    assert traced.current == [STARTUP_KEY]
+    traced.audit("os.scandir", (str(tmp_path / "apps"),))
+    assert not traced.records
+
+
+def test_a_file_read_during_startup_is_still_recorded(tmp_path):
+    """The control: the root conftest's own imports genuinely do reach every test, and
+    dropping them with the listings would delete the record that keeps selection safe."""
+    traced = Tracer(tmp_path)
+    traced.audit(*_open_event(tmp_path / "apps" / "shared" / "state.py"))
+    assert traced.records[STARTUP_KEY].files == {"apps/shared/state.py"}
+
+
+def test_a_directory_listed_after_startup_is_recorded(tmp_path):
+    """The other control: the listing recorder must still fire once a key names a module."""
+    traced = Tracer(tmp_path)
+    traced.current.append("module:tests/test_a.py")
+    traced.audit("os.scandir", (str(tmp_path / "data"),))
+    assert traced.records["module:tests/test_a.py"].dirs == {"data"}
 
 
 def test_a_real_glob_call_is_recorded(tracer, tmp_path):
