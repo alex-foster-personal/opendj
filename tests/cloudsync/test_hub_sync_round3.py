@@ -454,6 +454,52 @@ def test_a_row_losing_to_one_of_two_duplicates_is_rejected_whole(
         conn.close()
 
 
+def test_a_regular_pull_does_not_overwrite_a_newer_local_row(spoke_a: Path) -> None:
+    """Hub authority is for identity collapse and the repair bundle only.
+
+    A plain pulled row that is OLDER than the local copy of the same primary
+    key must lose under row-level LWW (ADR-0004). Letting every pulled row win
+    overwrites a local edit that has not reached the hub yet, and the edit is
+    gone for good because the local stamp is replaced with the older one.
+    """
+    conn = _open(spoke_a)
+    try:
+        machine = sync_stamp.ensure_local_machine(conn)
+        _insert_track(conn, "trk-1", title="t", updated_at=_T0, origin=_DEV_A)
+        location_id = "a" * 32
+
+        def location(url: str, stamp: str) -> protocol.RowChange:
+            values = _location_values(
+                location_id=location_id,
+                stable_id="trk-1",
+                machine_id=machine,
+                file_path="/Music/a.mp3",
+                remote_url=url,
+                updated_at=stamp,
+                origin=_DEV_A,
+            )
+            return protocol.RowChange(
+                table="track_locations", pk=(location_id,), values=dict(values)
+            )
+
+        # POSITIVE CONTROL: a newer pulled row does land, so the probe can see
+        # an overwrite at all.
+        assert engine.spoke_apply(conn, [location("r2://audio/v1", _T1)]).accepted == 1
+        assert engine.spoke_apply(conn, [location("r2://audio/local-edit", _T2)]).accepted == 1
+
+        older = engine.spoke_apply(conn, [location("r2://audio/stale-hub", _T1)])
+        assert older.rejected == 1
+        stored = conn.execute(
+            "SELECT remote_url FROM track_locations WHERE location_id = ?",
+            (location_id,),
+        ).fetchone()
+        assert stored[0] == "r2://audio/local-edit", (
+            "an older pulled row overwrote the newer local edit"
+        )
+    finally:
+        conn.close()
+
+
 # ----- 4a blast radius: a changelog entry whose row is gone -----------------
 
 
