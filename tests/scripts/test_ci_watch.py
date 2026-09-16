@@ -324,3 +324,27 @@ def test_an_exit_the_log_cannot_attribute_is_unmeasured_not_known_red():
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.UNEXPLAINED
     assert "could not be partitioned" in "\n".join(lines)
+
+
+def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
+    """The WIRING, which the rule test cannot reach. A verdict that is unmergeable in
+    `classify_job` and absent from `exit_for`'s unmeasured tuple is a rule nobody applies --
+    that exact gap was found by mutation on this module earlier and is why this exists."""
+    lines: list[str] = []
+    log = (
+        "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(
+            frozenset({MAIN_FAIL}), frozenset(), "h" * 40, frozenset(), "o" * 40
+        ),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
+    code, why = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
+    assert code is Exit.UNKNOWN, why

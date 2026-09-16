@@ -24,6 +24,7 @@ from scripts.ci_failure_ids import (
     classify_job,
     failed_identities,
     failure_beyond_tests,
+    ratchet_breach,
     unowned_exit_steps,
     unpartitionable_exit,
 )
@@ -138,6 +139,7 @@ def test_a_ratchet_breach_is_debt():
         frozenset(),
         frozenset(),
         beyond_tests=False,
+        ratchet_breach_seen=True,
     )
     assert got.verdict is JobVerdict.RATCHET_DEBT
 
@@ -355,7 +357,12 @@ def test_a_ratchet_job_that_merely_breached_still_ships_as_debt():
     """The control: the fix must not turn every ratchet breach into a blocker, which is what
     the verdict exists to avoid under SHIP mode."""
     got = classify_job(
-        "quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=False
+        "quality ratchet (lint debt)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+        ratchet_breach_seen=True,
     )
     assert got.verdict is JobVerdict.RATCHET_DEBT
 
@@ -432,6 +439,7 @@ def test_a_ratchet_job_whose_breach_is_readable_is_debt_not_unexplained():
         frozenset(),
         frozenset(),
         beyond_tests=bool(failure_beyond_tests(_RATCHET_LOG)),
+        ratchet_breach_seen=ratchet_breach(_RATCHET_LOG),
     )
     assert got.verdict is JobVerdict.RATCHET_DEBT
 
@@ -480,3 +488,76 @@ def test_a_log_with_no_exit_at_all_is_not_reported_unpartitionable():
     """The other control: absence of steps is only a problem when there is an exit to
     attribute. A job that failed its conclusion without an exit-1 line is not this case."""
     assert unpartitionable_exit("FAILED tests/a/test_x.py::test_one\n") is False
+
+
+def test_a_ratchet_job_with_no_breach_evidence_is_unmeasured_not_debt():
+    """Sol's P1 on #3293. RATCHET_DEBT is the ONLY mergeable zero-identity verdict, and it was
+    granted on a job NAME plus the ABSENCE of contrary evidence. A truncated log, a runner
+    killed before its terminal line, or any failure whose text this module does not recognize
+    all look identical to a clean ratchet run, so an unmeasured infrastructure failure took
+    the debt path and merged."""
+    got = classify_job(
+        "quality ratchet (lint debt, complexity, coupling, dead code)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+        ratchet_breach_seen=False,
+    )
+    assert got.verdict is JobVerdict.UNEXPLAINED
+
+
+def test_the_breach_default_is_the_unmeasured_one():
+    """The control on the DEFAULT, which is the part a caller forgets. Omitting the argument
+    has to land on the unmergeable verdict, or the safeguard is opt-in and the callers that
+    most need it are the ones that will not pass it."""
+    got = classify_job(
+        "quality ratchet (lint debt, complexity, coupling, dead code)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+    )
+    assert got.verdict is JobVerdict.UNEXPLAINED
+
+
+def test_the_breach_probe_fires_on_a_real_ratchet_log_and_not_on_a_bare_failure():
+    """Presence and absence on the same probe: it has to FIND the breach the ratchet really
+    prints, and not find one in a log that never said it."""
+    assert ratchet_breach(_RATCHET_LOG) is True
+    assert ratchet_breach("##[error]Process completed with exit code 1\n") is False
+
+
+# ----- a match against a commit that is not main's head is unmeasured -----
+
+
+def test_a_match_against_a_stale_baseline_is_not_known_red():
+    """Sol's P1 on #3293. The baseline is usually measured at an OLDER commit than main's
+    head -- 8 of main's newest 60 ci.yml runs are a completed verdict -- and main's red set
+    is volatile across those runs: 61, 111, 21, 21, 10 and 0 identities. A match against a
+    commit main has moved on from does not establish a match against this one, and a failure
+    main fixed in between is exactly what a mergeable KNOWN_RED would excuse."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset({"FAILED tests/t.py::a"}),
+        frozenset({"FAILED tests/t.py::a"}),
+        frozenset(),
+        beyond_tests=False,
+        baseline_stale=True,
+    )
+    assert got.verdict is JobVerdict.BASELINE_STALE
+
+
+def test_a_match_against_a_baseline_at_mains_head_is_still_known_red():
+    """The control against the overshoot: a baseline measured AT the head is the thing this
+    tool exists to use, and refusing that too would make every pull request failure unmeasured
+    and the watcher would never call one clean again."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset({"FAILED tests/t.py::a"}),
+        frozenset({"FAILED tests/t.py::a"}),
+        frozenset(),
+        beyond_tests=False,
+        baseline_stale=False,
+    )
+    assert got.verdict is JobVerdict.KNOWN_RED

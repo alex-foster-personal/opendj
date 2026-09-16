@@ -18,6 +18,9 @@ Job verdicts (`classify_job`):
                    identities that is neither pytest infra nor red on main: loud, never passed.
     KNOWN_RED      every identity is on main or a known flake.
     INFRA          a pytest or canary job with no identity at all (cap kill, runner reclaim).
+    BASELINE_STALE a failure that matches main's red, measured at a commit that is NOT
+                   main's head. Unmeasured: main's red set moves between runs, so a match
+                   against an older commit does not establish a match against this one.
     BASELINE_MISMATCH  a failed job with no identity whose NAME also failed on main, where
                    main's failure DID name failing tests. The two failures share a name and
                    nothing else, so the comparison was never made. Unmeasured.
@@ -75,6 +78,7 @@ class JobVerdict(StrEnum):
     BASELINE_MISMATCH = "BASELINE_MISMATCH"
     RATCHET_DEBT = "RATCHET_DEBT"
     BASELINE_UNREADABLE = "BASELINE_UNREADABLE"
+    BASELINE_STALE = "BASELINE_STALE"
     UNEXPLAINED = "UNEXPLAINED"
 
 
@@ -226,6 +230,19 @@ def unpartitionable_exit(log: str) -> bool:
     return not any(_STEP_ECHO in line for line in lines)
 
 
+def ratchet_breach(log: str) -> bool:
+    """True when the log positively STATES a quality ratchet breach.
+
+    Sol's P1 on #3293. RATCHET_DEBT is the only mergeable zero-identity verdict there is, and
+    it was granted on a job NAME plus the ABSENCE of contrary evidence, which is the exact
+    shape `.claude/rules/verification.md` exists to forbid: a truncated log, a runner killed
+    before it wrote its terminal line, or any failure whose text this module does not
+    recognize all present as "no evidence against", and an unmeasured infrastructure failure
+    took the debt path. The breach is a thing the ratchet SAYS, so it can be required.
+    """
+    return any(_OWNED_EXIT.search(_ANSI.sub("", _strip_prefixes(raw))) for raw in log.split("\n"))
+
+
 def failure_beyond_tests(log: str) -> list[str]:
     """Runner lines saying the job failed for something no test failure accounts for.
 
@@ -254,6 +271,8 @@ def classify_job(
     baseline_unreadable_job_names: frozenset[str] = frozenset(),
     *,
     beyond_tests: bool,
+    ratchet_breach_seen: bool = False,
+    baseline_stale: bool = False,
 ) -> JobClassification:
     """One failed job's verdict, in the order the nucbox merge gate applies its rules.
 
@@ -267,6 +286,13 @@ def classify_job(
         return JobClassification(kind, identities, residual)
 
     if identities and not residual:
+        if baseline_stale:
+            # Sol's P1 on #3293. Every identity here was subtracted using a baseline measured
+            # at a commit that is NOT main's head, and main's red set is volatile: across its
+            # newest completed runs it read 61, 111, 21, 21, 10 and 0 identities. A set that
+            # moves like that is a poor claim about a commit it was not measured at, and a
+            # failure main fixed in between is exactly what gets excused.
+            return verdict(JobVerdict.BASELINE_STALE)
         if beyond_tests:
             # The identities are real but they are not the whole failure. Calling this
             # KNOWN_RED lets a job that ALSO hit a cap kill, a timeout or a build error merge
@@ -276,6 +302,11 @@ def classify_job(
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)
     if RATCHET_JOBS.search(job_name) and not residual:
+        if not ratchet_breach_seen:
+            # Sol's P1 on #3293. The debt path needs the ratchet to have SAID it breached.
+            # Defaulting to False is deliberate: a caller that cannot answer gets the
+            # unmeasured verdict, never the mergeable one.
+            return verdict(JobVerdict.UNEXPLAINED)
         if beyond_tests:
             # Sol's P1 on #3293. A ratchet breach SHIPS as debt, which makes this the only
             # mergeable zero-identity verdict, and the branch was granting it without

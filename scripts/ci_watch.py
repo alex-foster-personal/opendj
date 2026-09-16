@@ -58,6 +58,7 @@ from scripts.ci_failure_ids import (
     error_excerpt,
     failed_identities,
     failure_beyond_tests,
+    ratchet_breach,
     unpartitionable_exit,
 )
 from scripts.ci_main_red import LogUnreadable, MainRed, cached_main_red, read_job_log
@@ -191,6 +192,8 @@ class FailureWatch:
             red.failed_job_names,
             red.unreadable_job_names,
             beyond_tests=bool(beyond),
+            ratchet_breach_seen=ratchet_breach(log),
+            baseline_stale=bool(red.measured_sha) and red.measured_sha != red.main_sha,
         )
 
 
@@ -247,6 +250,7 @@ def exit_for(status: WaitStatus, watch: FailureWatch, *, has_baseline: bool) -> 
             JobVerdict.INFRA,
             JobVerdict.BASELINE_UNREADABLE,
             JobVerdict.BASELINE_MISMATCH,
+            JobVerdict.BASELINE_STALE,
             JobVerdict.UNEXPLAINED,
         )
     ]
