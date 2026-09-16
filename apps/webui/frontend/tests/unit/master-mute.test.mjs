@@ -18,6 +18,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if muting disconnects, bypasses or re-wires any node then a silent browser
  *   stops exercising the audio path and audio bugs hide until a headed run
  * - if setMasterMuted accepts a non-boolean then '0' (truthy) silences the app
+ * - if anything reaches the room delay without passing the mute gain then
+ *   ?muted=1 plays out loud
  */
 
 let mute;
@@ -292,6 +294,22 @@ test('every path to the destination runs through the mute gain and the room dela
 		'if the mute gain still reaches the destination directly then the room delay is ' +
 			'bypassed and cue alignment is silently ignored on that path'
 	);
+
+	// Anything reaching the room delay directly would route around the mute.
+	const masterDelayFeeders = [...body.matchAll(/(\w+)\.connect\(_masterDelay\)/g)].map(
+		([, name]) => name
+	);
+	assert.ok(
+		masterDelayFeeders.length > 0,
+		'if nothing connects to the room delay then the mute-bypass guard is vacuous'
+	);
+	for (const name of masterDelayFeeders) {
+		assert.equal(
+			name,
+			'_masterMuteGain',
+			'if anything reaches the room delay without passing the mute gain then ?muted=1 plays out loud'
+		);
+	}
 });
 
 test('graph build adopts the mute node rather than re-reading the URL', () => {
