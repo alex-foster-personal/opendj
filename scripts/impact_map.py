@@ -26,6 +26,7 @@ import argparse
 import fnmatch
 import json
 import sys
+import tomllib
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -33,6 +34,29 @@ from pathlib import Path, PurePosixPath
 MODULE = "module:"
 FIXTURE = "fixture:"
 DIRECTORY = "dir:"
+
+REPO = Path(__file__).resolve().parent.parent
+PYPROJECT = REPO / "pyproject.toml"
+
+
+def _test_roots(pyproject: Path = PYPROJECT) -> tuple[str, ...]:
+    """The directories pytest is configured to collect from, read from `pyproject.toml`.
+
+    Read rather than hardcoded so the selector cannot drift from the collector: a new test
+    root added to `testpaths` is one this selector starts honoring in the same commit. A
+    missing or empty `testpaths` RAISES, because guessing `tests` would silently reinstate
+    the assumption this function exists to remove.
+    """
+    with pyproject.open("rb") as handle:
+        roots = tomllib.load(handle).get("tool", {}).get("pytest", {}).get(
+            "ini_options", {}
+        ).get("testpaths")
+    if not roots:
+        raise SystemExit(f"UNKNOWN: {pyproject} sets no [tool.pytest.ini_options] testpaths")
+    return tuple(str(PurePosixPath(root)) for root in roots)
+
+
+TEST_ROOTS = _test_roots()
 
 
 @dataclass(frozen=True)
@@ -148,9 +172,20 @@ def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
 
 
 def _is_test_module(path: str) -> bool:
-    """pytest's own default: a `.py` file whose name starts with `test_` or ends `_test`."""
+    """A file pytest would actually collect: inside a configured test root AND named the way
+    pytest names tests.
+
+    The naming half alone is not enough. `scripts/bench/q0-offline/q0_leak_test.py` matches
+    the pattern and is NOT collected, because `pyproject.toml` sets `testpaths = ["tests"]`.
+    Emitted as a test to run, pytest imports its top-level benchmark code and the job fails
+    rather than running a test, so a selector that widened to be safe would break the build.
+    """
+    if not path.endswith(".py"):
+        return False
+    if not any(_is_under(path, root) for root in TEST_ROOTS):
+        return False
     name = PurePosixPath(path).name
-    return path.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+    return name.startswith("test_") or name.endswith("_test.py")
 
 
 def _is_under(module: str, directory: str) -> bool:

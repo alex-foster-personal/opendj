@@ -31,6 +31,11 @@ from scripts.impact_trace_plugin import (
     _source_of_cached_bytecode,
 )
 
+# `pytester` runs a real pytest session in a subprocess, which is the only thing that proves
+# the hook SIGNATURES are ones pytest accepts. Without this the two end-to-end tests below
+# ERROR on a missing fixture and read as coverage while testing nothing.
+pytest_plugins = ["pytester"]
+
 
 @pytest.fixture
 def tracer(tmp_path) -> Tracer:
