@@ -12,11 +12,16 @@ Regression one-liners:
   - if neither is available and the error does not name MDT_FFMPEG then broken
   - if a resolution failure reaches a caller as a bare RuntimeError, rather
     than that caller's own unavailable-type, then broken
+  - if a relative MDT_FFMPEG is returned as given, so subprocess PATH-searches
+    the bare name and launches nothing or the wrong binary, then broken
 """
 
 from __future__ import annotations
 
+import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -114,3 +119,50 @@ def test_the_shared_module_is_the_only_copy_of_the_lookup() -> None:
         "these modules read MDT_FFMPEG themselves instead of calling "
         f"apps.shared.ffmpeg.resolve_ffmpeg: {[str(p) for p in offenders]}"
     )
+
+
+_RELATIVE_OVERRIDE_DRIVER = """
+import subprocess, sys
+from apps.shared.ffmpeg import resolve_ffmpeg
+
+resolved = resolve_ffmpeg()
+assert resolved.startswith("/"), f"resolver returned a relative path: {resolved!r}"
+# The point of the whole check: hand the answer to subprocess exactly as a
+# caller does. A bare basename is PATH-searched here, and this PATH has no
+# customff on it, so an unresolved override raises FileNotFoundError.
+subprocess.run([resolved], check=True, stdin=subprocess.DEVNULL, timeout=10)
+print(resolved)
+"""
+
+
+def test_a_relative_override_is_returned_absolute_and_is_launchable(tmp_path: Path) -> None:
+    """MDT_FFMPEG=customff, present in the cwd and absent from PATH.
+
+    Driven in a real child process with its own cwd, PATH and MDT_FFMPEG
+    rather than by mutating this one: the defect is about what subprocess does
+    with the returned string, so the evidence has to be an actual launch.
+    """
+    workdir = tmp_path / "server-cwd"
+    workdir.mkdir()
+    _make_executable(workdir / "customff")
+    empty_path_dir = tmp_path / "empty-path"
+    empty_path_dir.mkdir()
+
+    completed = subprocess.run(
+        [sys.executable, "-c", _RELATIVE_OVERRIDE_DRIVER],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,  # ruff PLW1510: the return code is inspected explicitly below
+        cwd=workdir,
+        env={
+            **os.environ,
+            "MDT_FFMPEG": "customff",
+            "PATH": str(empty_path_dir),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+        },
+    )
+    assert completed.returncode == 0, (
+        f"relative override driver failed:\nstdout={completed.stdout}\nstderr={completed.stderr}"
+    )
+    assert completed.stdout.strip() == str(workdir / "customff")

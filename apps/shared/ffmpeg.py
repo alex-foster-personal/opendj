@@ -10,6 +10,7 @@ R2 ok   Fail loudly: an absent binary, or a set-but-unusable ``MDT_FFMPEG``,
 Acceptance
 ----------
 [if] MDT_FFMPEG names an executable file       [then] it is returned, PATH unread
+[if] MDT_FFMPEG is a relative path             [then] an ABSOLUTE path is returned
 [if] MDT_FFMPEG is set but not executable      [then] FfmpegUnavailable names MDT_FFMPEG
 [if] MDT_FFMPEG is unset and ffmpeg is on PATH [then] the PATH hit is returned
 [if] neither is available                      [then] FfmpegUnavailable names the override
@@ -63,8 +64,16 @@ def resolve_ffmpeg() -> str:
     """
     override = os.environ.get("MDT_FFMPEG")
     if override:
-        if Path(override).is_file() and os.access(override, os.X_OK):
-            return override
+        # Absolute, because subprocess hands a bare basename to a PATH search.
+        # A relative override such as "customff" that sits in the working
+        # directory passes the checks below and is then either not found at
+        # all or resolved to a DIFFERENT binary on PATH, which is the one
+        # failure mode an explicit override exists to rule out. abspath rather
+        # than resolve: this fixes the lookup, it does not silently follow a
+        # symlink the operator deliberately pointed at.
+        resolved = os.path.abspath(override)
+        if Path(resolved).is_file() and os.access(resolved, os.X_OK):
+            return resolved
         raise FfmpegUnavailable(f"MDT_FFMPEG={override!r} is not an executable file")
     exe = shutil.which(FFMPEG_BINARY)
     if exe is None:
