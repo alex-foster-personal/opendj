@@ -153,15 +153,16 @@ def select_modules(
     about what it observed, so a test added since it was built is UNKNOWN, and a pull
     request that adds a test must run it.
 
-    A DELETED one is not. `changed` comes from a diff, which lists a removed file exactly
-    like an added one, and pytest handed a path that no longer exists errors out instead of
-    running anything: a pull request whose only change is deleting a test would fail CI on
-    the file it deleted. `exists` is a seam so the rule can be tested without a filesystem.
+    A DELETED one is not, and the check is on the EMITTED set rather than on one branch of
+    it. pytest handed a path that no longer exists errors out instead of running anything, so
+    ANY emitted path that is not on disk fails the job, however it was selected. A diff lists
+    a removed file exactly like an added one, so a pull request whose only change is deleting
+    a test would fail CI on the file it deleted; and the map is built from an older commit,
+    so a module deleted since is still in `impact.modules` and would be emitted even when the
+    diff never mentions it. `exists` is a seam so the rule can be tested without a filesystem.
     """
     selected: set[str] = {
-        path
-        for path in changed
-        if _is_test_module(path) and path not in impact.modules and exists(path)
+        path for path in changed if _is_test_module(path) and path not in impact.modules
     }
     fixtures_hit = {
         name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
@@ -180,7 +181,7 @@ def select_modules(
             or any(_is_under(module, directory) for directory in hit_dirs)
         ):
             selected.add(module)
-    return frozenset(selected)
+    return frozenset(path for path in selected if exists(path))
 
 
 def _is_test_module(path: str) -> bool:

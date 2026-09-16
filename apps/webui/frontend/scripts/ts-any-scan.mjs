@@ -154,14 +154,25 @@ function _directiveHits(text, lineOffset) {
   }
 
   _forEachRealComment(sourceFile, text, (range, commentText) => {
-    const line = sourceFile.getLineAndCharacterOfPosition(range.pos).line + 1 + lineOffset;
+    // Which POSITION names the hit's line matters, because this loop and the
+    // `commentDirectives` loop above can both find the same directive and
+    // `add()` de-dups on `line:rule`. A block comment's directive can only sit
+    // on its FINAL physical line -- that is all `_ruleFromBlockComment` looks
+    // at, mirroring tsc's own `lastLineStart` behavior -- and tsc reports that
+    // same final line. Reporting `range.pos` here named the line the comment
+    // OPENED on instead, so the two paths disagreed by the comment's height and
+    // a multi-line block comment scored twice, once per path.
+    let directivePos = range.pos;
     let rule = null;
     if (commentText.startsWith('//')) {
       rule = _ruleFromSingleLineComment(commentText);
     } else if (commentText.startsWith('/*')) {
       rule = _ruleFromBlockComment(commentText);
+      directivePos = range.end;
     }
-    if (rule) add(line, rule);
+    if (rule) {
+      add(sourceFile.getLineAndCharacterOfPosition(directivePos).line + 1 + lineOffset, rule);
+    }
   });
 
   const nocheckEntries = sourceFile.pragmas?.get?.('ts-nocheck');
