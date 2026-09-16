@@ -23,6 +23,12 @@ Reads made while a directory is collected (its conftest.py imports there) are re
 `dir:<path>` and apply to every module beneath it; reads before collection starts (the root
 conftest, pytest's own config reads) under `dir:.`, which applies to every module.
 
+Directory listings are NOT recorded at startup. Nothing has been collected yet there, so a
+listing is the import machinery or pytest walking the tree, never a test's data dependency,
+and recording them made a change to any file sitting directly in `apps/` or `tests/webui/`
+select every module in the map. A listing that IS a dependency happens during collection or
+inside a test, under a key that names the module it belongs to.
+
 Output: one JSON file per process (`<TEST_IMPACT_OUT>/impact-<worker>.json`), merged by
 `scripts/impact_map.py`. A process that recorded nothing still writes its file, so an
 absent file means the process did not finish, never that nothing was read.
@@ -45,6 +51,7 @@ IGNORED_PARTS = frozenset({".git", ".venv", "__pycache__", "node_modules", ".pyt
 PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir"})
 GLOB_EVENTS = frozenset({"glob.glob", "glob.glob/2"})
 SPAWN_EVENTS = frozenset({"subprocess.Popen", "os.posix_spawn", "os.system", "os.exec"})
+STARTUP_KEY = "dir:."
 
 
 def _source_of_cached_bytecode(relative: str) -> str:
@@ -102,7 +109,7 @@ class Tracer:
         self.repo = repo
         self.repo_prefix = str(repo) + os.sep
         self.records: dict[str, Record] = defaultdict(Record)
-        self.current: list[str] = ["dir:."]
+        self.current: list[str] = [STARTUP_KEY]
         self.active = True
 
     def _relative(self, raw: object) -> str | None:
@@ -145,8 +152,12 @@ class Tracer:
             relative = self._relative(args[0] if args else None)
             if relative is None:
                 return
-            target = self.records[key].files if event == "open" else self.records[key].dirs
-            target.add(relative)
+            if event != "open":
+                if key == STARTUP_KEY:
+                    return
+                self.records[key].dirs.add(relative)
+                return
+            self.records[key].files.add(relative)
         elif event in GLOB_EVENTS:
             pattern = self._relative_pattern(args[0] if args else None)
             if pattern is not None:
@@ -177,7 +188,7 @@ def pytest_configure() -> None:
 
 def pytest_sessionstart() -> None:
     """Startup is over: pop `dir:.` so nothing later falls back to "every module"."""
-    if _TRACER.current == ["dir:."]:
+    if _TRACER.current == [STARTUP_KEY]:
         _TRACER.current.pop()
 
 
