@@ -37,6 +37,9 @@ Regression lines:
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from copy import deepcopy
 from pathlib import Path
 
@@ -352,3 +355,76 @@ def test_dropping_unknown_from_the_fail_step_is_rejected() -> None:
         if step.get("name") == "Fail the job when the ledger cannot measure spend":
             step["if"] = "steps.ledger.outcome == 'failure'"
     assert a_failed_ledger_still_fails_the_job(mutated) is False
+
+
+# ----- functional: the shipped bash, run for real against a stubbed `gh` ----------
+#
+# Found live against the real workflow while verifying #3166: dispatching with
+# `month: junk` put "junk" straight into a GitHub issue title and opened a
+# stray issue (#3211) instead of updating the month's real one, because MONTH
+# fell back to the raw, unvalidated workflow_dispatch input the moment the
+# ledger crashed before resolving its own. These tests run the actual shipped
+# script, not a description of it, against a stub `gh` that only records the
+# title it was asked to create.
+
+_GH_STUB = """#!/usr/bin/env bash
+set -euo pipefail
+case "$1 $2" in
+  "issue list")
+    echo -n ""
+    ;;
+  "label create")
+    ;;
+  "issue create")
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --title) printf '%s' "$2" > "$TITLE_OUT"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    ;;
+  *)
+    echo "unhandled mock gh invocation: $*" >&2
+    exit 1
+    ;;
+esac
+"""
+
+
+def _run_alert_script_for_title(tmp_path: Path, month_input: str) -> str:
+    """Run the shipped alert-issue step's bash for real; return the title it created."""
+    script = _step(_workflow(), ALERT_STEP)["run"]
+    gh_stub = tmp_path / "gh"
+    gh_stub.write_text(_GH_STUB)
+    gh_stub.chmod(0o755)
+    title_out = tmp_path / "title.txt"
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "TITLE_OUT": str(title_out),
+        "GH_TOKEN": "x",
+        "LEDGER_OUTCOME": "failure",
+        "STATE": "",
+        "PCT": "",
+        "USED": "",
+        "LIMIT": "",
+        "MONTH": "",
+        "MONTH_INPUT": month_input,
+    }
+    subprocess.run(["bash", "-c", script], check=True, cwd=tmp_path, env=env, timeout=30)
+    return title_out.read_text()
+
+
+def test_a_garbage_month_input_never_reaches_the_issue_title(tmp_path: Path) -> None:
+    """`month: junk` must resolve to a real UTC month, never the raw operator typo."""
+    title = _run_alert_script_for_title(tmp_path, "junk")
+    assert "junk" not in title, f"the raw dispatch input leaked into the issue title: {title!r}"
+    assert re.fullmatch(r"CI budget BLIND: \d{4}-\d{2} .+", title), (
+        f"expected a real YYYY-MM month in the title; got {title!r}"
+    )
+
+
+def test_a_valid_month_input_is_still_honored(tmp_path: Path) -> None:
+    """A well-formed YYYY-MM dispatch input is real operator intent, not noise -- keep it."""
+    title = _run_alert_script_for_title(tmp_path, "2026-07")
+    assert "2026-07" in title, f"a valid month input should be honored; got {title!r}"
