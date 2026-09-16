@@ -22,6 +22,8 @@ import dataclasses
 import subprocess
 from pathlib import Path
 
+from scripts import worktree_lifecycle
+
 
 class PreflightError(RuntimeError):
     """The source checkout cannot safely create a worker branch."""
@@ -46,8 +48,18 @@ def _git(repo: Path, *args: str) -> str:
     return process.stdout.strip()
 
 
+def _assert_remote_tracking_base(repo: Path, base_ref: str) -> None:
+    full_ref = _git(repo, "rev-parse", "--symbolic-full-name", base_ref)
+    if not full_ref.startswith("refs/remotes/"):
+        raise PreflightError(
+            f"base ref {base_ref!r} is source-local ({full_ref}); "
+            "use a fetched remote-tracking ref such as origin/main"
+        )
+
+
 def assert_clean_origin_base(repo: Path, base_ref: str) -> None:
     """Refuse dirty or unpublished source state before any branch is created."""
+    _assert_remote_tracking_base(repo, base_ref)
     status = _git(repo, "status", "--porcelain=v1", "-uall")
     if status:
         raise PreflightError(f"primary checkout is dirty; refusing worker branch from {repo}")
@@ -66,6 +78,9 @@ def assert_clean_origin_base(repo: Path, base_ref: str) -> None:
 def create_worker_worktree(repo: Path, target: Path, branch: str, base_ref: str) -> None:
     """Create one worker branch, proving the source is safe first."""
     assert_clean_origin_base(repo, base_ref)
+    lifecycle_status = worktree_lifecycle.main(["guard", "--repo", str(repo)])
+    if lifecycle_status != 0:
+        raise PreflightError("worktree lifecycle guard refused worker creation")
     process = subprocess.run(
         ["git", "worktree", "add", str(target), "-b", branch, base_ref],
         cwd=repo,

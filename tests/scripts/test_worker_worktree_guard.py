@@ -54,6 +54,14 @@ def test_preflight_refuses_primary_ahead_of_origin(origin_repo: tuple[Path, Path
         guard.assert_clean_origin_base(checkout, "origin/main")
 
 
+def test_preflight_refuses_source_local_base(origin_repo: tuple[Path, Path]) -> None:
+    """[if] base is a local branch [then] worker preflight refuses, [else stop]."""
+    _, checkout = origin_repo
+
+    with pytest.raises(guard.PreflightError, match="source-local"):
+        guard.assert_clean_origin_base(checkout, "main")
+
+
 def test_create_worktree_starts_at_explicit_origin_base(
     origin_repo: tuple[Path, Path], tmp_path: Path
 ) -> None:
