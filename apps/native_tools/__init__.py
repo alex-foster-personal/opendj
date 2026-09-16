@@ -15,6 +15,13 @@ platform-independent guard against a bare ``"sysctl"`` argv anywhere in
 
 Only tools OUTSIDE the directories every launcher keeps (``/usr/bin``,
 ``/bin``) need an entry here. ``vm_stat`` and ``vmmap`` live in ``/usr/bin``.
+
+Its own package, and deliberately a leaf that imports nothing: this started
+under ``apps.shared``, where it put ``apps.diagnostics`` in a mutual-import
+pair with ``apps.shared`` (``shared.machine_pressure`` already reaches into
+``diagnostics.probe_native_metrics``). A constant naming a filesystem path
+belongs to neither side of that, so it sits outside both and cannot be drawn
+into a cycle by anything that imports it later.
 """
 
 from __future__ import annotations

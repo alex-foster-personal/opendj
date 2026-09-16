@@ -227,7 +227,7 @@ def resolve_accelerator(device: str) -> str | None:
         # An M2 and an M3 Max are as different as an L4 and an H100.
         brand = subprocess.run(
             # Absolute: /usr/sbin is not on every launcher's PATH, and this
-            # PEP 723 script cannot import apps.shared.macos_tools.
+            # PEP 723 script cannot import apps.native_tools.
             ["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"],
             capture_output=True, text=True, check=False,
         ).stdout.strip()

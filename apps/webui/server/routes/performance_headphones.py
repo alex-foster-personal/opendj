@@ -490,7 +490,10 @@ async def post_preview_cue(
 )
 async def post_preview_stop(
     request: Request,
-    body: Annotated[dict[str, Any] | None, Body(title="PreviewStopBody")] = None,
+    # Declared so the endpoint accepts and documents an explicit JSON body
+    # even though stopping takes no fields; the sibling refresh route has the
+    # same shape.
+    body: Annotated[dict[str, Any] | None, Body(title="PreviewStopBody")] = None,  # noqa: ARG001
 ) -> HeadphoneStateOut:
     """CUEOUT-15: stop the preview and release the decoded track.
 

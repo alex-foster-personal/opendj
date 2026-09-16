@@ -21,7 +21,7 @@ from apps.diagnostics.probe_types import (
     round_mb,
     run_text,
 )
-from apps.shared.macos_tools import SYSCTL
+from apps.native_tools import SYSCTL
 
 
 class RUsageInfoV4(ctypes.Structure):

@@ -34,7 +34,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
-from apps.shared.macos_tools import SYSCTL
+from apps.native_tools import SYSCTL
 
 CAPABILITY_FILE_NAME: Final[str] = "live_stems_capability.json"
 CAPABILITY_SCHEMA: Final[int] = 1
