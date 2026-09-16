@@ -368,7 +368,7 @@
 		onclick={() => onStemEqMode(!stemEqMode)}>STEM</button
 	>
 	<div class="stem-slot">
-		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
+		<StemRow deck={deck} pending={stemPending} testIdScope="channel" onMute={onStemMute} onSolo={onStemSolo} />
 	</div>
 </div>
 
