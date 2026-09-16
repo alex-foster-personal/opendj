@@ -193,7 +193,8 @@ class FailureWatch:
             red.unreadable_job_names,
             beyond_tests=bool(beyond),
             ratchet_breach_seen=ratchet_breach(log),
-            baseline_stale=bool(red.measured_sha) and red.measured_sha != red.main_sha,
+            baseline_stale=bool(red.measured_shas)
+            and red.measured_shas != frozenset({red.main_sha}),
         )
 
 

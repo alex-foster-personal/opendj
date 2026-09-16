@@ -339,7 +339,12 @@ def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
     watch = FailureWatch(
         log_of=lambda _job: log,
         main_red=lambda: MainRed(
-            frozenset({MAIN_FAIL}), frozenset(), "h" * 40, frozenset(), "o" * 40
+            frozenset({MAIN_FAIL}),
+            frozenset(),
+            "h" * 40,
+            frozenset(),
+            "o" * 40,
+            frozenset({"o" * 40}),
         ),
         emit=lines.append,
         clock=lambda: 0.0,
@@ -348,3 +353,61 @@ def test_a_stale_baseline_ends_the_watch_unknown_not_known_red_only():
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
     code, why = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
     assert code is Exit.UNKNOWN, why
+
+
+def test_a_baseline_measured_at_two_commits_is_stale_even_when_one_is_the_head():
+    """Sol's P1 on #3293. A walk spans several workflow files and they do not finish on the
+    same commit. Keeping ONE sha let a baseline whose `ci.yml` half was measured at the pinned
+    head carry an `e2e.yml` half measured at an older one and be stamped current, so the older
+    half's obsolete failures were subtracted from pull requests as main's known red. Staleness
+    is an invariant now: EVERY contributing measurement came from the pinned head, or the
+    baseline is stale."""
+    lines: list[str] = []
+    log = (
+        "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(
+            frozenset({MAIN_FAIL}),
+            frozenset(),
+            "h" * 40,
+            frozenset(),
+            # The representative sha IS the pinned head, which is exactly the case the old
+            # comparison called fresh.
+            "h" * 40,
+            frozenset({"h" * 40, "o" * 40}),
+        ),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
+
+
+def test_a_baseline_every_workflow_measured_at_the_head_is_not_stale():
+    """The opposite direction. Treating any multi-workflow baseline as stale would make the
+    watcher useless the moment a second workflow was added, so agreement has to read fresh."""
+    lines: list[str] = []
+    log = (
+        "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
+        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
+        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
+    )
+    watch = FailureWatch(
+        log_of=lambda _job: log,
+        main_red=lambda: MainRed(
+            frozenset({MAIN_FAIL}),
+            frozenset(),
+            "h" * 40,
+            frozenset(),
+            "h" * 40,
+            frozenset({"h" * 40}),
+        ),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
+    assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED

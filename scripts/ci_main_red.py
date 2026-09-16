@@ -73,6 +73,9 @@ class MainRed:
     # head's own run has not finished. `main_sha` says when this baseline was taken;
     # `measured_sha` says what it is about, and they are only the same commit sometimes.
     measured_sha: str = ""
+    # The whole set, so staleness is an INVARIANT (every measurement came from the pinned
+    # head) rather than a comparison against one representative value.
+    measured_shas: frozenset[str] = frozenset()
 
 
 # ----- pure: the window walk -----
@@ -98,6 +101,11 @@ class WalkResult:
     # result used to be stamped with main's head whatever it had actually read, and main's
     # head usually has no completed run, so the stamp named a commit the walk never saw.
     measured_sha: str = ""
+    # EVERY commit that contributed a measurement, not just the newest. A walk spans several
+    # workflow files, and they do not finish on the same commit: keeping one SHA let a
+    # baseline whose `ci.yml` half was measured at the pinned head carry an `e2e.yml` half
+    # measured at an older one, and be stamped current. Sol's P1 on #3293.
+    measured_shas: frozenset[str] = frozenset()
 
 
 def main_red_identities(
@@ -187,6 +195,7 @@ def main_red_identities(
         frozenset(failed_names),
         frozenset(unreadable - failed_names),
         measured_sha,
+        frozenset({measured_sha}) if measured_sha else frozenset(),
     )
 
 
@@ -277,28 +286,36 @@ def unmeasured_baseline_names(
     return (unreadable | failed_check_runs) - measured
 
 
+def _runs_of(workflow: str) -> list[dict]:
+    return _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")[
+        "workflow_runs"
+    ]
+
+
 def _walk_every_workflow(
     jobs_of: Callable[[int, int], list[Job]] = _jobs_of,
     identities_of: Callable[[int], frozenset[str]] = job_log_identities,
+    runs_of: Callable[[str], list[dict]] = _runs_of,
 ) -> WalkResult:
     identities: set[str] = set()
     failed_names: set[str] = set()
     unreadable: set[str] = set()
     measured: list[str] = []
     for workflow in WORKFLOW_FILES:
-        runs = _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")
-        walk = main_red_identities(
-            verdict_runs(runs["workflow_runs"]), jobs_of, identities_of
-        )
+        walk = main_red_identities(verdict_runs(runs_of(workflow)), jobs_of, identities_of)
         identities |= walk.identities
         failed_names |= walk.failed_job_names
         unreadable |= walk.unreadable_job_names
-        measured.append(walk.measured_sha)
+        measured.extend(walk.measured_shas)
+    contributing = frozenset(sha for sha in measured if sha)
     return WalkResult(
         frozenset(identities),
         frozenset(failed_names),
         frozenset(unreadable),
-        next((sha for sha in measured if sha), ""),
+        # Still the newest single commit, for the human-readable line only. Nothing DECIDES
+        # on it; the set below is what staleness is read from.
+        max(contributing) if len(contributing) == 1 else next((s for s in measured if s), ""),
+        contributing,
     )
 
 
@@ -341,15 +358,16 @@ def fetch_main_red(
                 file=sys.stderr,
             )
         measured = frozenset(result.failed_job_names)
-        if result.measured_sha and result.measured_sha != pinned:
+        if result.measured_shas and result.measured_shas != frozenset({pinned}):
             # Sol's P1 on #3293. Main's head usually has NO completed run -- 8 of its newest
             # 60 ci.yml runs are a completed verdict, 49 were cancelled by the tip-only
             # sweeper -- so the walk normally reads older commits. Said out loud rather than
             # stamped over, because a baseline that names the head it did not read is the
             # thing that let a failure trunk repair had just fixed read as main's red.
             print(
-                f"[ci-main-red] baseline measured at {result.measured_sha[:9]}, "
-                f"main head is {pinned[:9]}",
+                "[ci-main-red] baseline measured at "
+                + ", ".join(sorted(sha[:9] for sha in result.measured_shas))
+                + f", main head is {pinned[:9]}",
                 file=sys.stderr,
             )
         return MainRed(
@@ -360,6 +378,7 @@ def fetch_main_red(
                 result.unreadable_job_names, failed_check_runs(pinned), measured
             ),
             result.measured_sha,
+            result.measured_shas,
         )
     head = main_sha()
     print(
@@ -394,7 +413,7 @@ def cached_main_red(
         # cannot say that is re-walked rather than reused.
         if (
             "unreadable_job_names" in cached
-            and "measured_sha" in cached
+            and "measured_shas" in cached
             and current
             and cached["main_sha"] == current
         ):
@@ -404,6 +423,7 @@ def cached_main_red(
                 cached["main_sha"],
                 frozenset(cached["unreadable_job_names"]),
                 cached["measured_sha"],
+                frozenset(cached["measured_shas"]),
             )
     fresh = fetch()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -416,6 +436,7 @@ def cached_main_red(
                 "main_sha": fresh.main_sha,
                 "unreadable_job_names": sorted(fresh.unreadable_job_names),
                 "measured_sha": fresh.measured_sha,
+                "measured_shas": sorted(fresh.measured_shas),
             }
         ),
         encoding="utf-8",
