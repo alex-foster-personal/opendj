@@ -275,7 +275,9 @@ def watch_pr(pr: str, *, timeout_s: float, poll_interval_s: float) -> Exit:
     return code
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, watch: Callable[..., Exit] = watch_pr) -> int:
+    """`watch` is a declared seam, the same shape as `log_of` and `main_red` above, so the
+    crash path can be exercised without replacing module state."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("pr")
     parser.add_argument("--timeout-s", type=float, default=TIMEOUT_S)
@@ -283,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(
-            watch_pr(args.pr, timeout_s=args.timeout_s, poll_interval_s=args.poll_interval_s)
+            watch(args.pr, timeout_s=args.timeout_s, poll_interval_s=args.poll_interval_s)
         )
     except Exception:  # an uncaught crash exits 1, which would read as GENUINE
         traceback.print_exc()

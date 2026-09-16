@@ -14,6 +14,8 @@ Regression lines:
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from scripts import ci_watch
@@ -127,12 +129,21 @@ def test_no_check_runs_past_the_grace_period_stops_as_timeout():
     assert outcome is not None and outcome.status is WaitStatus.TIMEOUT
 
 
-def test_a_crash_exits_unknown_not_genuine(monkeypatch):
-    def boom(*_args, **_kwargs):
+def test_a_crash_exits_unknown_not_genuine():
+    """An uncaught crash exits 1, and 1 is this tool's GENUINE code, so a watcher that
+    fell over would read as a proven failure. The error injected is the real one: GitHub
+    answering without `check_runs` is what `_check_runs_at_sha` raises KeyError on."""
+
+    def raise_as_github_would(*_args, **_kwargs):
         raise KeyError("check_runs")
 
-    monkeypatch.setattr(ci_watch, "watch_pr", boom)
-    assert ci_watch.main(["3288"]) == Exit.UNKNOWN
+    assert ci_watch.main(["3288"], watch=raise_as_github_would) == Exit.UNKNOWN
+
+
+def test_the_seam_defaults_to_the_real_watcher():
+    """The control: a seam nothing uses by default is a second implementation. `main` must
+    call the production `watch_pr` when the caller names nothing."""
+    assert inspect.signature(ci_watch.main).parameters["watch"].default is ci_watch.watch_pr
 
 
 def test_a_zero_identity_failure_prints_the_log_error_lines():
