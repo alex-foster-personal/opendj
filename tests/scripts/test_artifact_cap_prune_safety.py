@@ -82,11 +82,14 @@ def _fake_gh(bin_dir: Path, *, pr_list_json: str, pr_view_json: str | None) -> N
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
 
 
-def _run_cap_prune(tmp_path: Path, bin_dir: Path) -> subprocess.CompletedProcess:
+def _run_cap_prune(
+    tmp_path: Path, bin_dir: Path, *, project_filter: str = ""
+) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["WT_CAP_SCAN_ROOTS"] = str(tmp_path)
     env["WT_CAP_BYTES"] = "0"  # force every candidate to be considered
     env["WT_PRUNE_GH_REPO"] = "example-org/example-repo"
+    env["WT_CAP_PROJECT_FILTER"] = project_filter  # "" disables the guard for these fixtures
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     return subprocess.run(
         ["python3", str(CAP_PRUNE_PY)], env=env, capture_output=True, text=True, timeout=30
@@ -144,3 +147,28 @@ def test_merged_and_green_worktree_venv_is_evicted(tmp_path: Path) -> None:
 
     assert not (wt / ".venv").exists(), f"positive control failed: merged+green .venv was not evicted. stdout: {result.stdout!r}"
     assert "EVICTED" in result.stdout, f"expected an EVICTED verdict, got: {result.stdout!r}"
+
+
+def test_out_of_scope_project_survives_even_when_merged_and_green(tmp_path: Path) -> None:
+    """Regression for the Wed 16 Sep 2026 incident: a wide SCAN_ROOTS (~/code)
+    reached unrelated projects (orbital-af-ai-2, bruno-all-files/Investors-Hub,
+    private-profile, tutorials/idd-software-factory) and evicted ~2 GiB of their
+    node_modules/__pycache__ - none of which this pruner was ever meant to
+    touch. The default WT_CAP_PROJECT_FILTER='music-dj-tools' must keep any
+    path that does not contain it, no matter how eligible it otherwise looks.
+    """
+    other_project_root = tmp_path / "some-unrelated-client-project"
+    other_project_root.mkdir()
+    wt = _make_worktree(other_project_root, "af--merged-example", dirty=False)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _fake_gh(
+        bin_dir,
+        pr_list_json=json.dumps([{"number": 7, "state": "MERGED"}]),
+        pr_view_json=json.dumps({"statusCheckRollup": [{"conclusion": "SUCCESS"}]}),
+    )
+
+    result = _run_cap_prune(tmp_path, bin_dir, project_filter="music-dj-tools")
+
+    assert (wt / ".venv").is_dir(), f"scope guard regression: unrelated project's .venv was evicted. stdout: {result.stdout!r}"
+    assert "out-of-scope" in result.stdout, f"expected the scan-complete line to report an out-of-scope skip, got: {result.stdout!r}"
