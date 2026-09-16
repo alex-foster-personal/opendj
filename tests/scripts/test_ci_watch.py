@@ -176,3 +176,22 @@ def test_a_check_whose_log_cannot_be_read_is_unmeasured_not_a_verdict():
     code, _ = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
     assert code is Exit.UNKNOWN
     assert any("log unreadable" in line for line in lines)
+
+
+def test_an_unmeasured_baseline_job_ends_unknown_not_mergeable():
+    """End to end: a check whose baseline counterpart was never read must not let the watch
+    finish KNOWN_RED_ONLY, which the merging agent treats as mergeable."""
+    name = "frontend unit + check + build"
+    lines: list[str] = []
+    watch = FailureWatch(
+        log_of=lambda job_id: "",
+        main_red=lambda: MainRed(
+            frozenset({MAIN_FAIL}), frozenset(), "m" * 40, frozenset({name})
+        ),
+        emit=lines.append,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(9, name)))
+
+    code, _ = exit_for(WaitStatus.FAILURE, watch, has_baseline=True)
+    assert code is Exit.UNKNOWN

@@ -93,14 +93,17 @@ def test_an_empty_log_read_is_retried_before_it_is_believed():
     assert len(reads) == 3
 
 
-def test_an_always_empty_log_gives_up_after_three_reads():
+def test_an_always_empty_log_gives_up_after_three_reads_and_raises():
+    """It raises rather than returning empty, so the caller can tell "no failing test named"
+    apart from "never read"."""
     reads: list[int] = []
 
     def empty(job_id: int) -> str:
         reads.append(job_id)
         return ""
 
-    assert job_log_identities(7, empty, lambda _s: None) == frozenset()
+    with pytest.raises(LogUnreadable):
+        job_log_identities(7, empty, lambda _s: None)
     assert len(reads) == 3
 
 
@@ -139,7 +142,36 @@ def test_a_log_readable_on_a_later_try_is_returned():
     assert "test_x" in log
 
 
-def test_the_baseline_treats_an_unreadable_log_as_no_identities_so_the_walk_continues():
-    """`job_log_identities` absorbs it: an empty identity set is what tells the window walk
-    the job is still unmeasured and must be read from an older verdict."""
-    assert job_log_identities(41, lambda _: "", lambda _: None) == frozenset()
+def test_an_unreadable_job_does_not_become_a_trusted_red_job_name():
+    """The name must NOT be retained. Retained, a pull request job with the same name and no
+    identity classifies MAIN_RED_JOB and merges off a baseline that was never measured."""
+    jobs = {1: [Job(11, "frontend unit + check + build", "failure")]}
+
+    def unreadable(job_id: int) -> frozenset[str]:
+        raise LogUnreadable(job_id)
+
+    walk = main_red_identities(
+        [Verdict(1, 1)], lambda run_id, attempt: jobs[run_id], unreadable, window=1
+    )
+
+    assert walk.failed_job_names == frozenset()
+    assert walk.unreadable_job_names == frozenset({"frontend unit + check + build"})
+
+
+def test_a_job_read_on_an_older_verdict_stops_being_unreadable():
+    """The control: the walk still resolves it, and a resolved name is trusted again."""
+    name = "frontend unit + check + build"
+    jobs = {1: [Job(11, name, "failure")], 2: [Job(22, name, "failure")]}
+
+    def identities_of(job_id: int) -> frozenset[str]:
+        if job_id == 11:
+            raise LogUnreadable(job_id)
+        return frozenset({"FAILED tests/test_a.py::test_x"})
+
+    walk = main_red_identities(
+        [Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of
+    )
+
+    assert name in walk.failed_job_names
+    assert walk.unreadable_job_names == frozenset()
+    assert "FAILED tests/test_a.py::test_x" in walk.identities

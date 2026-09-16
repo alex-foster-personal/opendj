@@ -62,6 +62,7 @@ class MainRed:
     identities: frozenset[str]
     failed_job_names: frozenset[str]
     main_sha: str
+    unreadable_job_names: frozenset[str] = frozenset()
 
 
 # ----- pure: the window walk -----
@@ -82,6 +83,7 @@ def verdict_runs(runs: Iterable[dict]) -> list[Verdict]:
 class WalkResult:
     identities: frozenset[str]
     failed_job_names: frozenset[str]
+    unreadable_job_names: frozenset[str] = frozenset()
 
 
 def main_red_identities(
@@ -96,6 +98,7 @@ def main_red_identities(
     measured runs, read as GENUINE on a Python-only pull request).
     """
     failed_names: set[str] = set()
+    unreadable: set[str] = set()
     found: set[str] = set()
     pending: set[str] = set()
     remaining_window = window
@@ -110,8 +113,15 @@ def main_red_identities(
                 if job.conclusion == "success":
                     measured.add(job.name)
                 elif job.conclusion == "failure":
+                    try:
+                        ids = identities_of(job.job_id)
+                    except LogUnreadable:
+                        # The name is NOT retained. Retained, a pull request job with the
+                        # same name and no identity reads MAIN_RED_JOB and merges off a
+                        # baseline that was never measured.
+                        unreadable.add(job.name)
+                        continue
                     failed_names.add(job.name)
-                    ids = identities_of(job.job_id)
                     if ids:
                         found |= ids
                         measured.add(job.name)
@@ -119,7 +129,9 @@ def main_red_identities(
         remaining_window = max(remaining_window - 1, 0)
         if remaining_window == 0 and not pending:
             break
-    return WalkResult(frozenset(found), frozenset(failed_names))
+    return WalkResult(
+        frozenset(found), frozenset(failed_names), frozenset(unreadable - failed_names)
+    )
 
 
 # ----- I/O: gh -----
@@ -149,11 +161,7 @@ def job_log_identities(
     read 39 identities where the reference implementation read 118, twelve minutes apart on
     the same main SHA, because empty reads dropped whole jobs silently.
     """
-    try:
-        return failed_identities(read_job_log(job_id, fetch, sleep))
-    except LogUnreadable as unreadable:
-        print(f"[ci-main-red] {unreadable}", file=sys.stderr)
-        return frozenset()
+    return failed_identities(read_job_log(job_id, fetch, sleep))
 
 
 def read_job_log(
@@ -191,6 +199,7 @@ def _failed_check_run_names(sha: str) -> frozenset[str]:
 def fetch_main_red() -> MainRed:
     identities: set[str] = set()
     failed_names: set[str] = set()
+    unreadable: set[str] = set()
     for workflow in WORKFLOW_FILES:
         runs = _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")
         walk = main_red_identities(
@@ -198,20 +207,30 @@ def fetch_main_red() -> MainRed:
         )
         identities |= walk.identities
         failed_names |= walk.failed_job_names
+        unreadable |= walk.unreadable_job_names
     sha = _main_sha()
+    if unreadable:
+        print(
+            f"[ci-main-red] baseline unmeasured for {sorted(unreadable)}", file=sys.stderr
+        )
     return MainRed(
-        frozenset(identities), frozenset(failed_names) | _failed_check_run_names(sha), sha
+        frozenset(identities),
+        frozenset(failed_names) | _failed_check_run_names(sha),
+        sha,
+        frozenset(unreadable - failed_names),
     )
 
 
 def cached_main_red(cache_path: Path = CACHE_PATH, now: Callable[[], float] = time.time) -> MainRed:
     if cache_path.exists() and now() - cache_path.stat().st_mtime < CACHE_TTL_S:
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        return MainRed(
-            frozenset(cached["identities"]),
-            frozenset(cached["failed_job_names"]),
-            cached["main_sha"],
-        )
+        if "unreadable_job_names" in cached:
+            return MainRed(
+                frozenset(cached["identities"]),
+                frozenset(cached["failed_job_names"]),
+                cached["main_sha"],
+                frozenset(cached["unreadable_job_names"]),
+            )
     fresh = fetch_main_red()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = cache_path.with_suffix(f".tmp.{time.time_ns()}")
@@ -221,6 +240,7 @@ def cached_main_red(cache_path: Path = CACHE_PATH, now: Callable[[], float] = ti
                 "identities": sorted(fresh.identities),
                 "failed_job_names": sorted(fresh.failed_job_names),
                 "main_sha": fresh.main_sha,
+                "unreadable_job_names": sorted(fresh.unreadable_job_names),
             }
         ),
         encoding="utf-8",

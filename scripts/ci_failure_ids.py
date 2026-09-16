@@ -54,6 +54,7 @@ class JobVerdict(StrEnum):
     INFRA = "INFRA"
     MAIN_RED_JOB = "MAIN_RED_JOB"
     RATCHET_DEBT = "RATCHET_DEBT"
+    BASELINE_UNREADABLE = "BASELINE_UNREADABLE"
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,7 @@ def classify_job(
     identities: frozenset[str],
     main_red: frozenset[str],
     main_red_job_names: frozenset[str],
+    baseline_unreadable_job_names: frozenset[str] = frozenset(),
 ) -> JobClassification:
     """One failed job's verdict, in the order the nucbox merge gate applies its rules.
 
@@ -159,4 +161,8 @@ def classify_job(
         return verdict(JobVerdict.RATCHET_DEBT)
     if not identities and job_name in main_red_job_names:
         return verdict(JobVerdict.MAIN_RED_JOB)
+    if not identities and job_name in baseline_unreadable_job_names:
+        # Main failed this job too, but its log could not be read, so nothing establishes
+        # that the two failures are the same. Unmeasured, never mergeable.
+        return verdict(JobVerdict.BASELINE_UNREADABLE)
     return verdict(JobVerdict.GENUINE)

@@ -146,3 +146,19 @@ def test_a_zero_identity_job_not_red_on_main_is_loud():
     name = "reqs-check + native wheel + contract drift"
     got = classify_job(name, frozenset(), frozenset(), frozenset({"some other job"}))
     assert got.verdict is JobVerdict.GENUINE
+
+
+def test_a_job_whose_baseline_log_was_unreadable_is_not_main_red():
+    """The exploit path: main failed this job too, but its log was never read, so nothing
+    establishes the two failures are the same. Classified MAIN_RED_JOB it exits mergeable
+    off a baseline that was never measured."""
+    name = "frontend unit + check + build"
+    got = classify_job(name, frozenset(), frozenset(), frozenset(), frozenset({name}))
+    assert got.verdict is JobVerdict.BASELINE_UNREADABLE
+
+
+def test_a_measured_main_red_job_name_still_wins():
+    """The control: a name main was actually READ to fail must stay MAIN_RED_JOB."""
+    name = "frontend unit + check + build"
+    got = classify_job(name, frozenset(), frozenset(), frozenset({name}), frozenset())
+    assert got.verdict is JobVerdict.MAIN_RED_JOB

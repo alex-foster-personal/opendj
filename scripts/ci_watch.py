@@ -159,7 +159,13 @@ class FailureWatch:
         identities = failed_identities(log)
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)
-        return classify_job(run["name"], identities, red.identities, red.failed_job_names)
+        return classify_job(
+            run["name"],
+            identities,
+            red.identities,
+            red.failed_job_names,
+            red.unreadable_job_names,
+        )
 
 
 def _job_id(run: dict) -> int | None:
@@ -202,7 +208,11 @@ def exit_for(status: WaitStatus, watch: FailureWatch, *, has_baseline: bool) -> 
     verdicts = list(watch.verdicts.values())
     if any(v is not None and v.verdict is JobVerdict.GENUINE for v in verdicts):
         return Exit.GENUINE, "a GENUINE failure was recorded"
-    unmeasured = [v for v in verdicts if v is None or v.verdict is JobVerdict.INFRA]
+    unmeasured = [
+        v
+        for v in verdicts
+        if v is None or v.verdict in (JobVerdict.INFRA, JobVerdict.BASELINE_UNREADABLE)
+    ]
     if unmeasured:
         return Exit.UNKNOWN, f"{len(unmeasured)} check(s) finished without a measurement"
     if not has_baseline:
