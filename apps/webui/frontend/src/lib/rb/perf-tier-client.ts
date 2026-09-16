@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '$lib/api/base';
+import { applyPreviewCaps } from '$lib/player/preview-cue.svelte';
 import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
 import { applyAnlzCaps } from '$lib/components/rb/wave/anlz-cache-caps';
 import {
@@ -19,6 +20,7 @@ function _isPerfTierName(value: unknown): value is PerfTierName {
 function _applyTierCaps(): void {
 	applyPrefetchCaps();
 	applyAnlzCaps();
+	applyPreviewCaps();
 }
 
 export const PERF_TIER_PATH = '/api/v1/perf-tier';

@@ -25,6 +25,7 @@ import {
 	resumeCloudsyncSchedulerOwedJob
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
+import { applyPreviewCaps } from '$lib/player/preview-cue.svelte';
 import { applyPrefetchCaps, resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
 import { resumeEagerStemDecodeOwedJob, setEagerStemDecodeShed } from './stem-decode-shed';
@@ -135,7 +136,13 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		isPlaying: anyDeckPlaying,
 		pressureElevated: () => pressureIsElevated(readMachinePressure()),
 		readXruns: () => readXrunSessionCounter().xruns,
-		applyCaps: applyPrefetchCaps,
+		// CUEOUT-15: the preview's decoded-audio budget rides the same closed
+		// loop, so a pressure step evicts previewed PCM at the same moment it
+		// shrinks the prefetch caps.
+		applyCaps: () => {
+			applyPrefetchCaps();
+			applyPreviewCaps();
+		},
 		subscribe: subscribeMachinePressure
 	});
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;

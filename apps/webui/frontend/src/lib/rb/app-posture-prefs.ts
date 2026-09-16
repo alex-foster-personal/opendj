@@ -2,6 +2,7 @@
  * Gig vs Prep resource posture user pref (PERFMODE-03).
  */
 
+import { applyPreviewCaps } from '$lib/player/preview-cue.svelte';
 import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
 import { setResolvedPosture, type AppPosture } from './app-posture';
 
@@ -48,6 +49,7 @@ export function makeAppPosturePrefSetters(
 			syncDiskPrefs({ app_posture: next });
 			setResolvedPosture(next as AppPosture);
 			applyPrefetchCaps();
+			applyPreviewCaps();
 			onPostureChange?.(next);
 		}
 	};
