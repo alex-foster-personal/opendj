@@ -214,3 +214,141 @@ def test_dropping_the_sentinels_own_guard_is_rejected() -> None:
         "removing the sentinel's guard must be caught: without it the STOP step "
         "skips the sentinel on every over-threshold run"
     )
+
+
+# ----- issue #3166: a ledger that cannot measure must not go silent ----------------
+#
+# The ledger step's own failure (most often a credential that lost billing-read
+# scope) exited the job non-zero with no `continue-on-error`, so GitHub skipped
+# both alarm steps above -- 26 consecutive scheduled runs, 11 days, no one told.
+# These tests pin the fix's shape, not its exact wording: the ledger step must
+# survive its own failure, the alarm-issue step must reuse ONE code path to also
+# fire on that failure, and something must still keep the job red.
+
+LEDGER_STEP = "Build the spend ledger"
+ALERT_STEP = "Open or update the budget alert issue"
+
+
+def _watch_steps(workflow: dict) -> list[dict]:
+    return workflow["jobs"]["watch"]["steps"]
+
+
+def _step(workflow: dict, name: str) -> dict:
+    return next(step for step in _watch_steps(workflow) if step.get("name") == name)
+
+
+def alert_issue_step_fires_on_ledger_failure(workflow: dict) -> bool:
+    """Return whether the alert-issue step's own condition covers a blind ledger."""
+    condition = _step(workflow, ALERT_STEP).get("if") or ""
+    return "steps.ledger.outcome" in condition and "failure" in condition
+
+
+def alert_issue_step_fires_on_unknown_state(workflow: dict) -> bool:
+    """Return whether the alert-issue step also covers the ledger's own UNKNOWN verdict.
+
+    UNKNOWN (DEVOPS-11: billing data missing or stale) is a second, quieter way
+    the ledger can fail to measure -- it exits 0 with no WARN/STOP, so it was
+    silent for the same reason the outright crash was.
+    """
+    condition = _step(workflow, ALERT_STEP).get("if") or ""
+    return "steps.ledger.outputs.state == 'UNKNOWN'" in condition
+
+
+def a_failed_ledger_still_fails_the_job(workflow: dict) -> bool:
+    """Return whether some step between the ledger and the sentinel reds the job
+    on either way the ledger can fail to measure: outright failure, or UNKNOWN."""
+    steps = _watch_steps(workflow)
+    names = [step.get("name") for step in steps]
+    ledger_index = names.index(LEDGER_STEP)
+    sentinel_index = names.index(SENTINEL_STEP)
+    return any(
+        "steps.ledger.outcome" in (step.get("if") or "")
+        and "failure" in (step.get("if") or "")
+        and "steps.ledger.outputs.state == 'UNKNOWN'" in (step.get("if") or "")
+        and "exit 1" in (step.get("run") or "")
+        for step in steps[ledger_index:sentinel_index]
+    )
+
+
+def test_the_ledger_step_survives_its_own_failure() -> None:
+    """A broken credential must not take the alarm steps down with it."""
+    ledger = _step(_workflow(), LEDGER_STEP)
+    assert ledger.get("continue-on-error") is True, (
+        "the ledger step has no continue-on-error, so a failed credential skips "
+        "every step after it -- including the alarm that exists to report that "
+        "exact failure (#3166)"
+    )
+
+
+def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
+    """WARN, STOP, and a failed ledger reuse the same alert-issue step."""
+    workflow = _workflow()
+    assert alert_issue_step_fires_on_ledger_failure(workflow), (
+        f"{ALERT_STEP!r} does not gate on steps.ledger.outcome == 'failure', so a "
+        "broken credential opens no alert at all"
+    )
+    condition = _step(workflow, ALERT_STEP)["if"]
+    for state in ("WARN", "STOP"):
+        assert f"steps.ledger.outputs.state == '{state}'" in condition, (
+            f"the {state} alarm path must survive the #3166 fix unweakened; "
+            f"got if: {condition!r}"
+        )
+
+
+def test_a_ledger_failure_still_keeps_the_job_red() -> None:
+    """continue-on-error on the ledger step must not let a blind run go green."""
+    assert a_failed_ledger_still_fails_the_job(_workflow()), (
+        "no step between the ledger and the sentinel fails the job on "
+        "steps.ledger.outcome == 'failure', so continue-on-error alone would "
+        "let a blind run report success -- worse silence than a red run (#3166)"
+    )
+
+
+def test_the_alert_issue_step_also_fires_on_an_unknown_state() -> None:
+    """The ledger's own UNKNOWN verdict is the same 'cannot measure' bug."""
+    assert alert_issue_step_fires_on_unknown_state(_workflow()), (
+        f"{ALERT_STEP!r} does not gate on steps.ledger.outputs.state == 'UNKNOWN', "
+        "so a stale or missing billing feed exits 0 with no WARN/STOP and no alert"
+    )
+
+
+def test_reverting_the_alert_condition_to_pre_fix_is_rejected() -> None:
+    """Mutation: put the WARN/STOP-only condition back and the checker must catch it."""
+    mutated = deepcopy(_workflow())
+    _step(mutated, ALERT_STEP)["if"] = (
+        "steps.ledger.outputs.state == 'WARN' || steps.ledger.outputs.state == 'STOP'"
+    )
+    assert alert_issue_step_fires_on_ledger_failure(mutated) is False
+
+
+def test_removing_the_ledger_fail_step_is_rejected() -> None:
+    """Mutation: drop the step that reds the job on a blind ledger and the checker must catch it."""
+    mutated = deepcopy(_workflow())
+    steps = mutated["jobs"]["watch"]["steps"]
+    steps[:] = [
+        step
+        for step in steps
+        if step.get("name") != "Fail the job when the ledger cannot measure spend"
+    ]
+    assert a_failed_ledger_still_fails_the_job(mutated) is False
+
+
+def test_dropping_unknown_from_the_alert_condition_is_rejected() -> None:
+    """Mutation: narrow the alert condition back to just the crash, drop UNKNOWN."""
+    mutated = deepcopy(_workflow())
+    _step(mutated, ALERT_STEP)["if"] = (
+        "steps.ledger.outcome == 'failure' || "
+        "steps.ledger.outputs.state == 'WARN' || "
+        "steps.ledger.outputs.state == 'STOP'"
+    )
+    assert alert_issue_step_fires_on_unknown_state(mutated) is False
+
+
+def test_dropping_unknown_from_the_fail_step_is_rejected() -> None:
+    """Mutation: narrow the job-reddening condition back to just the crash."""
+    mutated = deepcopy(_workflow())
+    steps = mutated["jobs"]["watch"]["steps"]
+    for step in steps:
+        if step.get("name") == "Fail the job when the ledger cannot measure spend":
+            step["if"] = "steps.ledger.outcome == 'failure'"
+    assert a_failed_ledger_still_fails_the_job(mutated) is False
