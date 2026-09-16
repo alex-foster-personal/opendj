@@ -10,6 +10,10 @@ touched must appear in the active-role changelog -- ``hub_changelog`` when
 ``MDT_IS_HUB=1``, else ``local_changelog`` -- so the existing incremental
 pull and push fences can deliver it. Role comes from the launch contract, not
 from the replicated ``machines.is_hub`` row.
+
+Completion is recorded in ``schema_meta_markers`` (v16) so repeat opens do
+not rescan ``track_fields`` or hold a writer lock across O(N) changelog
+probes (issue #3165).
 """
 from __future__ import annotations
 
@@ -22,6 +26,8 @@ from . import sync_stamp
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 _TRACK_FIELDS: str = "track_fields"
+MARKER_TABLE: str = "schema_meta_markers"
+TRACK_FIELDS_STAMP_BACKFILL_MARKER: str = "v15_track_fields_stamp_backfill"
 
 # v15 has no standalone SQL: the Python backfill owns row updates and changelog
 # appends atomically (issue #3136).
@@ -45,6 +51,31 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
+def _marker_table_exists(conn: sqlite3.Connection) -> bool:
+    return _table_exists(conn, MARKER_TABLE)
+
+
+def _backfill_marker_present(conn: sqlite3.Connection) -> bool:
+    if not _marker_table_exists(conn):
+        return False
+    return (
+        conn.execute(
+            f"SELECT 1 FROM {MARKER_TABLE} WHERE marker = ? LIMIT 1",
+            (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
+        ).fetchone()
+        is not None
+    )
+
+
+def _write_backfill_marker(conn: sqlite3.Connection) -> None:
+    if not _marker_table_exists(conn):
+        return
+    conn.execute(
+        f"INSERT INTO {MARKER_TABLE}(marker, applied_at) VALUES (?, ?)",
+        (TRACK_FIELDS_STAMP_BACKFILL_MARKER, sync_stamp.canonical_now()),
+    )
+
+
 def _changelog_has_row(
     conn: sqlite3.Connection,
     changelog_table: str,
@@ -61,6 +92,35 @@ def _changelog_has_row(
     )
 
 
+def _select_backfill_candidates(
+    conn: sqlite3.Connection,
+    changelog_table: str,
+) -> list[tuple[Any, ...]]:
+    """Return rows needing stamp and/or changelog append via one set-based read."""
+    rows = conn.execute(
+        f"""
+        SELECT tf.stable_id,
+               tf.field_name,
+               tf.modified_at,
+               tf.updated_at,
+               tf.origin_device_id,
+               (tf.updated_at IS NULL) AS needs_stamp,
+               (c.row_pk IS NULL) AS needs_log
+        FROM {_TRACK_FIELDS} tf
+        LEFT JOIN {changelog_table} c
+          ON c.table_name = ?
+         AND c.row_pk = json_array(tf.stable_id, tf.field_name)
+        WHERE tf.modified_at IS NOT NULL
+          AND (
+            tf.updated_at IS NULL
+            OR (tf.updated_at = tf.modified_at AND c.row_pk IS NULL)
+          )
+        """,
+        (_TRACK_FIELDS,),
+    ).fetchall()
+    return list(rows)
+
+
 def log_stamp_backfill_rows(
     conn: sqlite3.Connection,
     *,
@@ -69,6 +129,7 @@ def log_stamp_backfill_rows(
     stamp_by_pk: Mapping[tuple[Any, ...], str],
     origin_by_pk: Mapping[tuple[Any, ...], str | None],
     env: Mapping[str, str] | None = None,
+    skip_duplicate_check: bool = False,
 ) -> int:
     """Append active-role changelog rows for a stamp backfill (reusable primitive).
 
@@ -86,7 +147,9 @@ def log_stamp_backfill_rows(
     logged = 0
     for pk in row_pks:
         encoded_pk = sync_stamp.encode_row_pk(pk)
-        if _changelog_has_row(conn, changelog_table, table, encoded_pk):
+        if not skip_duplicate_check and _changelog_has_row(
+            conn, changelog_table, table, encoded_pk
+        ):
             continue
         stamp = stamp_by_pk[pk]
         origin = origin_by_pk.get(pk)
@@ -108,19 +171,20 @@ def log_stamp_backfill_rows(
 
 def _apply_track_fields_stamp_backfill(
     conn: sqlite3.Connection,
+    candidates: Sequence[tuple[Any, ...]],
     *,
     env: Mapping[str, str] | None = None,
 ) -> int:
-    """Stamp legacy ``track_fields`` rows and log them to the active changelog."""
+    """Apply a pre-selected candidate set inside an existing write transaction."""
+    if _backfill_marker_present(conn):
+        return 0
+
     changelog_table = active_changelog_table(env)
     if not _table_exists(conn, changelog_table):
         return 0
 
-    rows = conn.execute(
-        "SELECT stable_id, field_name, modified_at, updated_at, origin_device_id "
-        f"FROM {_TRACK_FIELDS} WHERE modified_at IS NOT NULL"
-    ).fetchall()
-    if not rows:
+    if not candidates:
+        _write_backfill_marker(conn)
         return 0
 
     touched = 0
@@ -128,27 +192,26 @@ def _apply_track_fields_stamp_backfill(
     stamp_by_pk: dict[tuple[Any, ...], str] = {}
     origin_by_pk: dict[tuple[Any, ...], str | None] = {}
 
-    for stable_id, field_name, modified_at, updated_at, origin in rows:
+    for (
+        stable_id,
+        field_name,
+        modified_at,
+        updated_at,
+        origin,
+        needs_stamp,
+        needs_log,
+    ) in candidates:
         pk = (stable_id, field_name)
-        encoded_pk = sync_stamp.encode_row_pk(pk)
-        if updated_at is None:
+        if needs_stamp:
             conn.execute(
                 f"UPDATE {_TRACK_FIELDS} SET updated_at = modified_at "
                 "WHERE stable_id = ? AND field_name = ? AND updated_at IS NULL",
                 (stable_id, field_name),
             )
-            stamp = str(modified_at)
             touched += 1
-        elif (
-            str(updated_at) == str(modified_at)
-            and not _changelog_has_row(conn, changelog_table, _TRACK_FIELDS, encoded_pk)
-        ):
-            stamp = str(updated_at)
-        else:
+        if not needs_log:
             continue
-
-        if _changelog_has_row(conn, changelog_table, _TRACK_FIELDS, encoded_pk):
-            continue
+        stamp = str(modified_at if needs_stamp else updated_at)
         to_log.append(pk)
         stamp_by_pk[pk] = stamp
         origin_by_pk[pk] = origin
@@ -160,7 +223,9 @@ def _apply_track_fields_stamp_backfill(
         stamp_by_pk=stamp_by_pk,
         origin_by_pk=origin_by_pk,
         env=env,
+        skip_duplicate_check=True,
     )
+    _write_backfill_marker(conn)
     return touched
 
 
@@ -173,17 +238,46 @@ def backfill_track_fields_stamps(
     """Run the v15 track_fields stamp backfill and one-shot changelog re-offer.
 
     When ``transactional`` is false the caller already holds a write
-    transaction (``apply_migrations`` for step 15). Otherwise the whole pass
-    is wrapped in :func:`sync_stamp.stamped_transaction`.
+    transaction (``apply_migrations`` for step 15). Otherwise the candidate
+    read runs outside the lock; only the apply phase uses
+    :func:`sync_stamp.stamped_transaction`.
     """
+    if _backfill_marker_present(conn):
+        return 0
+
+    changelog_table = active_changelog_table(env)
+    if not _table_exists(conn, changelog_table):
+        return 0
+
+    candidates = _select_backfill_candidates(conn, changelog_table)
+
+    if not candidates:
+        if not _marker_table_exists(conn):
+            return 0
+        if transactional:
+            with sync_stamp.stamped_transaction(conn):
+                if _backfill_marker_present(conn):
+                    return 0
+                _write_backfill_marker(conn)
+        else:
+            if _backfill_marker_present(conn):
+                return 0
+            _write_backfill_marker(conn)
+        return 0
+
     if transactional:
         with sync_stamp.stamped_transaction(conn):
-            return _apply_track_fields_stamp_backfill(conn, env=env)
-    return _apply_track_fields_stamp_backfill(conn, env=env)
+            if _backfill_marker_present(conn):
+                return 0
+            return _apply_track_fields_stamp_backfill(conn, candidates, env=env)
+    return _apply_track_fields_stamp_backfill(conn, candidates, env=env)
 
 
 __all__ = [
     "_V15",
+    "HUB_CHANGELOG_TABLE",
+    "MARKER_TABLE",
+    "TRACK_FIELDS_STAMP_BACKFILL_MARKER",
     "active_changelog_table",
     "backfill_track_fields_stamps",
     "log_stamp_backfill_rows",
