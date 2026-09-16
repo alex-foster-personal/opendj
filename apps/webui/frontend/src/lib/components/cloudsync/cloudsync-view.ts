@@ -385,16 +385,16 @@ export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string 
 export const SYNC_DEFER_GIG = 'gig_posture';
 export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
 
-export type UiMirrorDeck = { playing?: boolean };
-export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
+export type UiMirrorDecks = Record<string, { playing?: boolean } | unknown>;
 
 export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
 	if (uiMirror === null) return false;
 	const decks = uiMirror.decks;
 	if (decks === undefined || typeof decks !== 'object') return false;
 	for (const deck of Object.values(decks)) {
-		if (typeof deck !== 'object' || deck === null) continue;
-		if ((deck as UiMirrorDeck).playing === true) return true;
+		if (typeof deck === 'object' && deck !== null && deck.playing === true) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -441,7 +441,7 @@ export function syncNowRequest(
 	}
 	return {
 		kind: 'post',
-		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name, force: false }
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name }
 	};
 }
 
@@ -639,15 +639,23 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
  * into it: the backlog and any given sync's outcome are correlated on a
  * real library but not proven to be the same event on any one run, so this
  * never claims causation, only reports the count honestly.
+ *
+ * #3252: this used to print a `python -m ...` command for a person to run, sat
+ * directly under a green "In sync" heading so background enrichment read as a
+ * sync failure, and never said what was actually degraded. A human-facing panel
+ * hands over no commands; it says what is affected and which machine can act.
+ * The agent-facing path keeps the CLI, and the endpoint that would back a
+ * button does not exist yet, which is tracked on #3252 rather than implied here.
  */
 export function identityBacklogNote(hashPending: number | null): string | null {
 	if (hashPending === null || hashPending <= 0) return null;
 	const plural = hashPending !== 1;
 	return (
-		`${hashPending} track${plural ? 's' : ''} await an audio fingerprint on the hub ` +
-		`(hash_pending). On a machine that holds the audio, run ` +
-		`python -m apps.shared.state.backfill_content_hash --for-hub --live ` +
-		`-- retrying Sync now on this machine will not hash them.`
+		`${hashPending} track${plural ? 's' : ''} on the hub ${plural ? 'are' : 'is'} waiting for an ` +
+		`audio fingerprint. Your library and your sync are unaffected: until ` +
+		`${plural ? 'they are' : 'it is'} fingerprinted, duplicate detection and relinking moved ` +
+		`files are less accurate for ${plural ? 'those tracks' : 'that track'}. Fingerprinting reads ` +
+		`the audio file itself, so it runs on a machine that holds your music, never on the hub.`
 	);
 }
 

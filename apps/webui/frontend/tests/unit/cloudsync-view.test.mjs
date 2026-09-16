@@ -363,10 +363,7 @@ test('Sync now posts the effective hub URL and machine name, and refuses without
 		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' }),
 		openGate
 	);
-	assert.deepEqual(decision, {
-		kind: 'post',
-		body: { hub_url: 'http://env-hub:8686', name: 'silver', force: false }
-	});
+	assert.deepEqual(decision, { kind: 'post', body: { hub_url: 'http://env-hub:8686', name: 'silver' } });
 });
 
 test('syncNowRequest refuses when gig posture gates sync', () => {
@@ -532,22 +529,42 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	}
 });
 
-test('identityBacklogNote reports hash_pending with --for-hub guidance', () => {
+test('identityBacklogNote states the consequence and hands over no command (#3252)', () => {
 	/** if a zero or missing backlog still shows a note then broken */
 	assert.equal(view.identityBacklogNote(null), null);
 	assert.equal(view.identityBacklogNote(0), null);
 
-	/** if a positive hash_pending backlog produces no note, or omits --for-hub, then broken */
 	const many = view.identityBacklogNote(7331);
+
+	/** if the count is missing then the note is not reporting the backlog at all */
 	assert.match(many, /7331 tracks/);
-	assert.match(many, /hash_pending/);
-	assert.match(many, /--for-hub --live/);
-	assert.match(many, /retrying Sync now on this machine will not hash them/);
+
+	/** if a human-facing panel prints a command for a person to run then broken:
+	 * the whole defect in #3252 was handing the user a CLI invocation. */
+	assert.doesNotMatch(many, /python -m/);
+	assert.doesNotMatch(many, /--live/);
+	assert.doesNotMatch(many, /--for-hub/);
+
+	/** if the note never says what is degraded then it cannot be prioritized or
+	 * safely ignored, which is what left the user unable to act on it */
+	assert.match(many, /duplicate detection/i);
+	assert.match(many, /relinking/i);
+
+	/** if it does not say sync is unaffected then it keeps reading as a sync
+	 * failure under the green heading, which is the other half of #3252 */
+	assert.match(many, /unaffected/i);
+
+	/** if it does not say which machine can do the work then the reader is left
+	 * guessing why the hub cannot */
+	assert.match(many, /holds your music/i);
+	assert.match(many, /never on the hub/i);
 
 	/** if singular phrasing is not grammatical for a count of one then broken */
 	const one = view.identityBacklogNote(1);
 	assert.match(one, /1 track /);
 	assert.doesNotMatch(one, /1 tracks/);
+	assert.match(one, /is waiting/);
+	assert.doesNotMatch(one, /are waiting/);
 });
 
 test('env overrides are named when they mask the saved config', () => {
