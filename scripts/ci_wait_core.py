@@ -33,6 +33,9 @@ class WaitStatus(StrEnum):
     NO_BASELINE = "NO_BASELINE"
     MERGED = "MERGED"
     CLOSED_UNMERGED = "CLOSED_UNMERGED"
+    # Only `scripts/ci_watch.py` stops the poll with these, through `inspect_snapshot`.
+    GENUINE_FAILURE = "GENUINE_FAILURE"
+    HEAD_MOVED = "HEAD_MOVED"
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,12 @@ def _pull_request_triggered_runs(
     seen: dict[str, str] = {}
     kept: list[dict] = []
     for run in check_runs:
+        # A check-run another app posts (Mergify's "Mergify Merge Queue") has no Actions run
+        # to ask for an event. Recorded fixtures omit `app`, so only a named non-Actions app
+        # is dropped; anything else still has to yield a run id or raise.
+        app_slug = (run.get("app") or {}).get("slug")
+        if app_slug is not None and app_slug != "github-actions":
+            continue
         run_id = _run_id(run)
         event = seen.get(run_id)
         if event is None:
@@ -291,6 +300,7 @@ def poll_until_terminal(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     lifecycle_check: Callable[[], LifecycleOutcome | None] | None = None,
+    inspect_snapshot: Callable[[dict[str, dict]], LifecycleOutcome | None] | None = None,
 ) -> tuple[WaitStatus, dict[str, dict], str]:
     """Poll `fetch_check_runs` until every name in `expected` exists AND is
     terminal, or `timeout_s` elapses. Never returns SUCCESS for a snapshot
@@ -314,6 +324,10 @@ def poll_until_terminal(
     set has stopped growing: SUCCESS requires the same set of observed names
     on two consecutive polls, so a run that registers between polls delays
     success by exactly one more interval instead of being invisible to it.
+
+    `inspect_snapshot` sees every snapshot before the terminal check and may stop the poll
+    early (the fail-fast watcher stops on the first GENUINE failure). It can only end the
+    wait sooner with its own status, never turn a snapshot into SUCCESS.
     """
     start = clock()
     latest: dict[str, dict] = {}
@@ -324,10 +338,16 @@ def poll_until_terminal(
             if outcome is not None:
                 return outcome.status, latest, outcome.message
         latest = _latest_by_name(fetch_check_runs())
+        if inspect_snapshot is not None:
+            outcome = inspect_snapshot(latest)
+            if outcome is not None:
+                return outcome.status, latest, outcome.message
         missing = _missing(expected, latest)
         observed_names = frozenset(latest.keys())
         stable = observed_names == previous_names
-        if not missing and _all_terminal(latest) and stable:
+        # `latest and`: zero check-runs is never a verdict. With a non-empty `expected` it is
+        # already `missing`; the fail-fast watcher polls a first push with no baseline.
+        if latest and not missing and _all_terminal(latest) and stable:
             if _all_passing(latest):
                 return (
                     WaitStatus.SUCCESS,
