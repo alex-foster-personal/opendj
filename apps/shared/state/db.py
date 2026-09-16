@@ -82,10 +82,10 @@ def open_rw(
     reading 3). It is a no-op on a DB with nothing to claim, so an ordinary
     open still mints no identity file and writes no ``machines`` row.
 
-    When the schema is at least v15,
-    :func:`apps.shared.state.migrations_v15.backfill_track_fields_stamps`
-    stamps legacy ``track_fields`` rows and appends the active-role changelog
-    entry (issue #3136). Idempotent on repeat opens.
+    :func:`apps.shared.state.schema.apply_migrations` runs the v15
+    ``track_fields`` stamp backfill when schema is at least v15 (issue #3136).
+    A durable ``schema_meta_markers`` row (v16, issue #3165) records
+    completion so repeat opens issue only a constant-time marker check.
 
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
@@ -112,12 +112,8 @@ def open_rw(
     try:
         _apply_rw_pragmas(conn)
         if apply_schema:
-            version = _schema.apply_migrations(conn)
+            _schema.apply_migrations(conn)
             _sync_stamp.backfill_local_machine_id(conn)
-            if version >= 15:
-                from .migrations_v15 import backfill_track_fields_stamps
-
-                backfill_track_fields_stamps(conn)
             from apps.database import regenerate_agents_md_if_writable
             regenerate_agents_md_if_writable(
                 conn,

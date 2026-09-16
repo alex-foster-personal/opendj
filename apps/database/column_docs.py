@@ -25,7 +25,7 @@ Coverage: every table :mod:`apps.shared.state.schema` knows about --
 tables it declares in ``FOREIGN_AUTHORITY_TABLES`` but does not create
 (``pairings``, ``smartlists``, ``play_orders``, ``play_order_entries``,
 ``play_orders_schema_meta``, ``tracks_fts``, ``tracks_frecency``), and
-``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- twenty-two tables in all.
+``schema_meta`` and ``schema_meta_markers`` from ``INFRASTRUCTURE_TABLES`` -- twenty-three tables in all.
 The five fts5 shadow tables in ``FOREIGN_AUTHORITY_TABLES``
 (``tracks_fts_config/_content/_data/_docsize/_idx``) are deliberately NOT
 documented here: :mod:`apps.database.generate_agents_md` excludes them
@@ -479,6 +479,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     "schema_meta": {
         "version": "Primary key. Schema version this row records as applied.",
         "applied_at": "RFC 3339 UTC timestamp this version was applied.",
+    },
+    "schema_meta_markers": {
+        "marker": "Primary key. Durable name of a one-time migration repair.",
+        "applied_at": "RFC 3339 UTC timestamp the repair completed.",
     },
     "pairings": {
         "from_stable_id": (

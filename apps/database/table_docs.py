@@ -220,6 +220,11 @@ TABLE_DOCS: dict[str, str] = {
         "migrations -- infrastructure, not domain data. One row per "
         "applied schema version."
     ),
+    "schema_meta_markers": (
+        "Durable completion markers for one-time migration repairs "
+        "(for example the v15 track_fields stamp backfill). One row per "
+        "repair name; repeat opens check the marker instead of rescanning."
+    ),
     # ----- apps.shared.state.schema.FOREIGN_AUTHORITY_TABLES --------------
     # Real tables other modules write into this same file. D2
     # (specs/cloudsync-spec.md) plans to fold these into MIGRATIONS in a

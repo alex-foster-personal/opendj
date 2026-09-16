@@ -16,6 +16,8 @@ from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.shared.state.migrations_v15 import (
     HUB_CHANGELOG_TABLE,
+    MARKER_TABLE,
+    TRACK_FIELDS_STAMP_BACKFILL_MARKER,
     _V15,
     active_changelog_table,
     backfill_track_fields_stamps,
@@ -59,12 +61,17 @@ def _seed_v14_track_fields(conn: sqlite3.Connection) -> None:
     )
 
 
-def test_fresh_ladder_reaches_v15() -> None:
-    """[if] a fresh schema is applied [then] schema_meta records v15, [else stop]."""
+def test_fresh_ladder_reaches_v15_backfill_marker() -> None:
+    """[if] v15 backfill runs once [then] schema_meta_markers records completion, [else stop]."""
     conn = sqlite3.connect(":memory:")
     state_schema.apply_migrations(conn)
     version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-    assert version == 15
+    assert version == state_schema.SCHEMA_VERSION
+    marker = conn.execute(
+        f"SELECT marker FROM {MARKER_TABLE} WHERE marker = ?",
+        (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
+    ).fetchone()
+    assert marker is not None
     conn.close()
 
 
@@ -95,10 +102,29 @@ def test_v15_backfills_only_null_updated_at_from_modified_at(
         conn.close()
 
     state_db.open_rw(path).close()
+    before_second = sqlite3.connect(str(path))
+    track_fields_before = before_second.execute(
+        "SELECT COUNT(*) FROM track_fields"
+    ).fetchone()[0]
+    changelog_before = before_second.execute(
+        "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
+    ).fetchone()[0]
+    before_second.close()
+
     state_db.open_rw(path).close()
 
     migrated = sqlite3.connect(str(path))
     try:
+        assert (
+            migrated.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0]
+            == track_fields_before
+        )
+        assert (
+            migrated.execute(
+                "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
+            ).fetchone()[0]
+            == changelog_before
+        )
         legacy = migrated.execute(
             "SELECT value_json, source, confidence, modified_at, updated_at, origin_device_id "
             "FROM track_fields WHERE field_name = 'bpm'"
@@ -182,6 +208,10 @@ def test_v15_migration_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "VALUES ('trk-1', 'bpm', '128', 'rekordbox', ?, NULL, NULL)",
         (_T_LEGACY,),
     )
+    conn.execute(
+        f"DELETE FROM {MARKER_TABLE} WHERE marker = ?",
+        (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
+    )
     conn.commit()
     before = conn.execute(
         "SELECT value_json, modified_at, updated_at FROM track_fields"
@@ -226,6 +256,10 @@ def test_v15_reoffers_already_stamped_rows_missing_changelog(
         "VALUES ('trk-1', 'bpm', '128', 'rekordbox', ?, ?, NULL)",
         (_T_LEGACY, _T_LEGACY),
     )
+    conn.execute(
+        f"DELETE FROM {MARKER_TABLE} WHERE marker = ?",
+        (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
+    )
     conn.commit()
     conn.close()
 
@@ -267,6 +301,10 @@ def test_v15_reoffers_non_null_origin_rows_missing_changelog(
         "modified_at, updated_at, origin_device_id) "
         "VALUES ('trk-1', 'bpm', '128', 'rekordbox', ?, ?, 'dev-a')",
         (_T_LEGACY, _T_LEGACY),
+    )
+    conn.execute(
+        f"DELETE FROM {MARKER_TABLE} WHERE marker = ?",
+        (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
     )
     conn.commit()
     conn.close()
