@@ -102,11 +102,13 @@ from types import MappingProxyType
 
 try:
     from scripts.review_gh import (
+        REPO,
         TriageError,
         _body_is_at_head,
         _checks,
         _head_sha,
         _paginated_json_list,
+        _require_head_unchanged,
     )
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -114,11 +116,9 @@ except ModuleNotFoundError as exc:
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
 from scripts.review_coverage_carry import print_carry_proofs, verdicts_with_carry
-from scripts.review_docs_only import is_docs_only, render_docs_only_pass
+from scripts.review_docs_only import try_docs_only_coverage
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
-
-REPO = "maintainer/music-dj-tools"
 
 #: Reviewers the merge gate expects. A name absent from a PR's checks (or, for
 #: a CHECKLESS_REVIEWERS entry, absent from evidence) is NOT a pass; it is an
@@ -220,16 +220,6 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 # ----- review artifacts ---------------------------------------------------
-
-
-def _changed_files(pr: str) -> list[str]:
-    """Every path this PR's diff touches, across all pages. Feeds the
-    docs-only check in `triage`; a `gh` failure raises `TriageError` exactly
-    like every other call in this module, so a listing failure is a failed
-    MEASUREMENT and never misread as an empty (and therefore non-docs-only)
-    PR.
-    """
-    return [entry["filename"] for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")]
 
 
 @dataclass(frozen=True)
@@ -489,33 +479,14 @@ def partition_verdicts(
     return unavailable, unreviewed, revived
 
 
-def _require_head_unchanged(sampled: str, current: str) -> None:
-    """Evidence gathered against `sampled` is void if the PR moved to
-    `current` while the three network calls ran (issue #1016 P1 BLOCKING,
-    thread r3927877681): `head_sha` was sampled once, before those
-    round-trips, with no re-check after. Raising here keeps this a failed
-    MEASUREMENT, never a rendered verdict, for a race no retry can undo.
-    """
-    if sampled != current:
-        raise TriageError(
-            f"PR head moved from {sampled} to {current} while collecting "
-            "review evidence; re-run against the new head"
-        )
-
-
 def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
     head_sha = _head_sha(pr)
-    changed_files = _changed_files(pr)
-    if is_docs_only(changed_files):
-        # Coverage is the only thing this exemption waives. Re-sample the
-        # head before printing, the same race guard the normal path applies
-        # after ITS network calls (`_require_head_unchanged` below): a push
-        # landing between the head sample and the files listing must void
-        # this verdict rather than certify a head nobody measured.
-        _require_head_unchanged(head_sha, _head_sha(pr))
-        print(render_docs_only_pass(pr, head_sha, gate_commit, changed_files))
-        return 0
+    docs_only_exit = try_docs_only_coverage(
+        pr, head_sha, gate_commit, lambda: _head_sha(pr)
+    )
+    if docs_only_exit is not None:
+        return docs_only_exit
 
     checks = _checks(pr)
     reviews = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/reviews")
