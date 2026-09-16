@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared import events
+from apps.shared.platform_paths import PROJECT_ROOT
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.stems.selection import has_bundle
 from apps.stems.tiers import DEFAULT_TIER, modal_tiers
@@ -66,6 +67,36 @@ WORKER_SCRIPT: str = "scripts/stems_modal_worker.py"
 LOCAL_WORKER_SCRIPT: str = "scripts/stems_local_worker.py"
 HYDRATE_WORKER_SCRIPT: str = "scripts/stems_hydrate_worker.py"
 R2_FIRST_WORKER_SCRIPT: str = "scripts/stems_r2_first_worker.py"
+
+
+def local_worker_script() -> str:
+    """The on-device worker as an ABSOLUTE path, anchored on the source tree.
+
+    It used to be spawned as the relative ``scripts/stems_local_worker.py``,
+    which is a bet on the cwd of whatever process runs the job. In a checkout
+    that bet happened to win. In the installed app the engine runs from ``/``
+    and the payload ships no ``scripts/`` directory at all, so the job died
+    198 ms after the first-run wizard enqueued it (test Mac, Wed 16 Sep 2026):
+    ``can't open file '//scripts/stems_local_worker.py'``.
+    """
+    return str(PROJECT_ROOT / LOCAL_WORKER_SCRIPT)
+
+
+def local_worker_refusal() -> str | None:
+    """Why the on-device worker cannot be spawned from this install, or None.
+
+    Checked where the local stems GATE is checked, so ``GET /stems/plan``
+    reports it as ``local_refusal`` and the button renders inert with this
+    sentence as its reason -- instead of a job that is accepted, reported as
+    started, and fails in a subprocess nobody is watching.
+    """
+    script = Path(local_worker_script())
+    if script.is_file():
+        return None
+    return (
+        "on-device stem separation is not installed in this build: "
+        f"{LOCAL_WORKER_SCRIPT} is not present at {script}"
+    )
 
 SCOPE_PENDING: str = "pending"
 """The only scope: every library row with audio on disk and no bundle yet.
@@ -289,7 +320,7 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
             "Install uv, or set MDT_UV_BIN."
         )
     if executor == EXECUTOR_LOCAL:
-        refusal = local_stems_gate()
+        refusal = local_stems_gate() or local_worker_refusal()
         if refusal is not None:
             raise StemsJobPayloadError(refusal)
         argv: list[str] = [
@@ -297,7 +328,7 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
             "run",
             "--no-sync",
             "python",
-            LOCAL_WORKER_SCRIPT,
+            local_worker_script(),
         ]
     else:
         argv = [
@@ -390,6 +421,8 @@ __all__ = [
     "StemsJobPayloadError",
     "build_argv",
     "canonical_payload",
+    "local_worker_refusal",
+    "local_worker_script",
     "on_progress",
     "parse_payload",
     "reconcile_from_disk",

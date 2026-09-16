@@ -37,6 +37,7 @@
 		startAnalysisQueueDrain
 	} from '$lib/rb/api-ingest';
 	import { analysisFollowup } from '$lib/setup/analysis-followup';
+	import { stemsJobFeedback } from '$lib/setup/stems-feedback';
 	// StemsPrompt paints from the --rb-* palette, which theme.css scopes under
 	// .perf-root on purpose so it cannot leak into the app's own accent. Its
 	// mount below is wrapped in that class; without this import every colour
@@ -170,6 +171,16 @@
 	 * sentence saying separation had started was drawn and left in the same
 	 * tick and the tester saw no feedback at all. */
 	let stemsJobId = $state<string | null>(null);
+
+	/** The LIVE row for that job, from the jobs store the overlay already
+	 * attaches. An accepted enqueue is not a started separation: on the test
+	 * Mac the job failed 198 ms after its id came back. */
+	const stems = $derived(
+		stemsJobFeedback(
+			stemsJobId,
+			stemsJobId === null ? null : (jobsStore.jobs.find((row) => row.id === stemsJobId) ?? null)
+		)
+	);
 
 	/**
 	 * The live analyze-on-import queue, polled only on the done screen.
@@ -831,11 +842,13 @@
 								/>
 							</div>
 
-							{#if stemsJobId !== null}
+							{#if stems.state === 'failed' || stems.state === 'unknown'}
+								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
+									{stems.message}
+								</p>
+							{:else if stems.state !== 'none'}
 								<p class="started" role="status" title={`Engine job ${stemsJobId}`}>
-									Separation has started, as job <code>{stemsJobId}</code>. It runs
-									in the background and the bar at the top of the app shows how
-									far along it is. Press Continue whenever you like.
+									{stems.message} You can press Continue whenever you like.
 								</p>
 							{/if}
 
@@ -953,11 +966,13 @@
 									whatever was already in it.
 								</p>
 							{/if}
-							{#if stemsJobId !== null}
+							{#if stems.state === 'failed' || stems.state === 'unknown'}
+								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
+									{stems.message}
+								</p>
+							{:else if stems.state !== 'none'}
 								<p class="muted" role="status" title={`Engine job ${stemsJobId}`}>
-									Stem separation is running in the background as job
-									<code>{stemsJobId}</code>; the bar at the top of the app shows
-									how far along it is.
+									{stems.message}
 								</p>
 							{/if}
 							<div class="actions">
