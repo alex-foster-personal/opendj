@@ -10757,12 +10757,20 @@ export interface components {
         PreflightCheckOut: {
             /** Detail */
             detail: string;
+            /** Explainer */
+            explainer?: string | null;
             /** Id */
             id: string;
             /** Label */
             label: string;
             /** Remediation */
             remediation?: string | null;
+            /**
+             * Severity
+             * @default blocking
+             * @enum {string}
+             */
+            severity: "blocking" | "advisory";
             /**
              * Status
              * @enum {string}
@@ -10778,11 +10786,21 @@ export interface components {
         /**
          * PreflightOut
          * @description ``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-         *     gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
-         *     check never blocks it, because a check that could not be exercised is
-         *     not a defect on its own.
+         *     gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
+         *     is ``fail``; a ``pending`` check never blocks it, because a check that
+         *     could not be exercised is not a defect on its own, and an ``advisory``
+         *     check never blocks it either, because the app runs without it.
+         *
+         *     ``advisories`` counts the non-blocking rows the user should still see,
+         *     so a caller can distinguish "everything is fine" from "running, with
+         *     things worth telling you" without recomputing severity for itself.
          */
         PreflightOut: {
+            /**
+             * Advisories
+             * @default 0
+             */
+            advisories: number;
             /** Checks */
             checks: components["schemas"]["PreflightCheckOut"][];
             /**
