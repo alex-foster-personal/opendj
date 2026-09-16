@@ -79,6 +79,17 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"
 
 
+def test_fast_job_is_a_signal_not_a_gate_in_round_6a() -> None:
+    """if the fast job blocks before its precision is measured then host noise blocks every PR
+
+    Runs 35107758392 and 35109932422 (Wed 16 Sep 2026): 19 and 8 reds per run
+    that main's shards on agentbox do not show, all host-dependent. Round 6b
+    flips this to a gate once precision on one host class is measured; that
+    flip edits this test on purpose.
+    """
+    assert _jobs()["fast"]["continue-on-error"] is True
+
+
 def test_fast_job_may_cancel_the_run() -> None:
     """if `actions: write` is dropped then `gh run cancel` dies with 403 on a genuine red"""
     job = _jobs()["fast"]
