@@ -2377,26 +2377,34 @@
 		return { deck: result.deck, reservation };
 	}
 
+	/**
+	 * CUEOUT-15: a click on a library mini-waveform means "play it in my ears
+	 * from here", always, whether or not the track is also on a deck.
+	 *
+	 * It used to seek EVERY deck holding that stable_id, with no check on
+	 * `playing` and none on `is_master`, so a click while browsing could jump
+	 * a deck that was live on air. `_loadOntoDeck` guards the master three
+	 * separate ways for exactly that reason; this path guarded nothing. The
+	 * browser is now a monitoring surface and never a transport control:
+	 * moving a deck is what the deck's own waveform and CUE are for.
+	 *
+	 * `previewCueSeek` owns every refusal, because only it can tell a missing
+	 * engine from a dead sink from a MIX knob at the master end.
+	 */
 	function previewSeek(row: LoadableRow, ratio: number): void {
-		const r = Math.max(0, Math.min(1, ratio));
-		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
-		if (targets.length === 0) {
-			// CUEOUT-15: not on a deck means preview it on the cue bus, which is
-			// what a click on a library waveform means on every other DJ tool.
-			// previewCueSeek owns the refusal, because only it can tell a
-			// missing engine from a dead sink from a MIX knob at the master end.
-			void previewCueSeek(row.stable_id, r);
+		// Same refusal the deck load gives (FR-1), and for the same reason: a
+		// broken link has no audio to preview, and finding that out as an
+		// opaque decoder error several hundred milliseconds later teaches the
+		// operator nothing. `is_streaming` has no local file at all.
+		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
+			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		for (const deck of targets) {
-			const dur = decks[deck].duration_ms;
-			if (dur === null || dur <= 0) continue;
-			void runPerformanceCommandFromUi({
-				type: 'seek',
-				deck,
-				position_ms: Math.round(r * dur)
-			});
+		if (!row.file_exists) {
+			pushToast('preview: audio file missing on disk (broken link)', 'error');
+			return;
 		}
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)));
 	}
 
 	async function _loadOntoDeck(
