@@ -253,6 +253,7 @@
 				{playlistsLoading}
 				{playlistsError}
 				{hiddenBrokenPlaylistCount}
+				oncreate={oncreateplaylist ? () => void rename.createAndRename() : undefined}
 			/>
 			{#each nodes as node (node.playlist_id)}
 				<div
@@ -326,6 +327,11 @@
 					{/if}
 					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 				</div>
+				{#if rename.createdId === node.playlist_id && node.track_count === 0}
+					<div class="row child hint" data-testid="playlist-new-hint">
+						Drag tracks or a folder here to add music
+					</div>
+				{/if}
 			{/each}
 			<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
 		{/if}
@@ -424,6 +430,15 @@
 	}
 	.row.child {
 		padding-left: 22px;
+	}
+	.row.hint {
+		color: var(--rb-text-dim);
+		font-style: italic;
+		cursor: default;
+		pointer-events: none;
+	}
+	.row.hint:hover {
+		background: transparent;
 	}
 	.name {
 		flex: 1;
