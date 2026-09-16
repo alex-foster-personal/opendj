@@ -21,6 +21,19 @@ from pathlib import Path
 
 import yaml
 
+#: Check names that a workflow on main USED to emit and no head can emit again. A pull
+#: request whose earlier head ran one of these carries it in its baseline, and the
+#: fail-closed rule below would keep waiting for it forever (a name absent from the catalog
+#: is kept on purpose, because a deleted workflow is not the same as a finished one). A
+#: retired name is the one case where "absent from the catalog" is known, not unknown, so
+#: it is dropped here and nowhere else. Append, never remove: a name can be retired again
+#: by a later rename. Round 6a (specs/ci-fail-fast.md) retired the affected-test canary.
+RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
+    {
+        "affected-test canary (non-blocking early signal)",
+    }
+)
+
 # ----- path filter evaluation ------------------------------------------------
 
 
@@ -169,14 +182,19 @@ def derive_expected_for_changed_paths(
 ) -> frozenset[str]:
     """Drop baseline names whose workflow would not run at the current head.
 
-    Unknown baseline names (not in the catalog) are kept fail-closed. An empty
-    result is deliberate: expansion (workflows newly activated by a path change)
-    stays with `poll_until_terminal`'s two-poll stabilization rule rather than
-    inflating `expected` from YAML alone.
+    Unknown baseline names (not in the catalog) are kept fail-closed, EXCEPT names
+    in RETIRED_CHECK_NAMES, which no head can emit again and would otherwise be
+    waited on until the timeout. An empty result is deliberate: expansion
+    (workflows newly activated by a path change) stays with `poll_until_terminal`'s
+    two-poll stabilization rule rather than inflating `expected` from YAML alone.
     """
     applicable = catalog.applicable_pull_request_job_names(changed_files)
     known = catalog.known_check_names()
-    return frozenset(name for name in baseline if name not in known or name in applicable)
+    return frozenset(
+        name
+        for name in baseline
+        if name not in RETIRED_CHECK_NAMES and (name not in known or name in applicable)
+    )
 
 
 def default_workflows_dir() -> Path:

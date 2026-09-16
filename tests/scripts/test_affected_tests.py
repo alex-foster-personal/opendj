@@ -1,6 +1,8 @@
-"""Wiring tests for scripts/affected_tests.py, the affected-test canary's selector.
+"""Wiring tests for scripts/affected_tests.py, the static-import test selector.
 
-The canary runs the tests this module names BEFORE the sharded lane runs everything, so
+The affected-test canary (SMARTEST-CI rounds 1 and 2) ran the tests this module names
+BEFORE the sharded lane; round 6a replaced that job with the fast tier, and the selector
+stays as the static lower bound for the round 5 planner. It ran first, so
 the cost of being wrong is one-sided: naming too few tests loses some of the fast signal,
 naming too many wastes a little time. Nothing is ever skipped on this basis. The tests
 below pin that asymmetry rather than an exact selection.
@@ -21,15 +23,12 @@ Regression lines:
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
 from scripts.affected_tests import (
-    REPO,
     UnresolvedPaths,
     _changed_against,
     affected_tests,
@@ -189,12 +188,3 @@ def test_a_rename_lists_the_deleted_old_path(tmp_path):
     assert "apps/old_name.py" in changed
     assert "apps/new_name.py" in changed
 
-
-def test_the_canary_step_does_not_discard_the_selector_exit_status():
-    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-    steps = workflow["jobs"]["affected-canary"]["steps"]
-    script = next(step["run"] for step in steps if "scripts.affected_tests" in step.get("run", ""))
-    selector_lines = [line for line in script.splitlines() if "scripts.affected_tests" in line]
-    assert selector_lines, "the canary no longer calls the selector"
-    assert not any("<(" in line for line in selector_lines), selector_lines
-    assert re.search(r"^\s*3\)", script, re.MULTILINE), "the canary does not handle exit 3"

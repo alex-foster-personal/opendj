@@ -162,7 +162,7 @@ def test_pytest_installs_carry_the_observability_extra() -> None:
     exact = "uv pip install --exact --upgrade --python .venv/bin/python"
     install = f"{exact} -r requirements.txt modal {pins}\n"
 
-    assert _workflow("ci.yml").count(install) == 2, "ci.yml: test job and affected-test canary"
+    assert _workflow("ci.yml").count(install) == 2, "ci.yml: test job and fast tier job"
     assert _workflow("full-ci.yml").count(install) == 1, "full-ci.yml: the full suite"
 
 

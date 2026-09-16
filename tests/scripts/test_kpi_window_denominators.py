@@ -34,9 +34,11 @@ KPI_SH = REPO_ROOT / "ops" / "fleet" / "kpi.sh"
 # Skip with the reason stated rather than fail, and rather than quietly rewriting
 # the helper to something portable that the shipped script does not use - the
 # script has to keep working on nucbox, which is where it actually runs.
+_BASH = "/bin/bash"
 _EPOCH_PROBE = subprocess.run(
-    ["bash", "-c", 'find . -maxdepth 0 -newermt "@0" >/dev/null 2>&1'],
+    [_BASH, "-c", 'find . -maxdepth 0 -newermt "@0" >/dev/null 2>&1'],
     capture_output=True,
+    check=False,
 )
 pytestmark = pytest.mark.skipif(
     _EPOCH_PROBE.returncode != 0,
@@ -89,7 +91,7 @@ def _run_block(jobs: Path, hours: int = 6) -> dict[str, str]:
         '"$done_n" "$blocked_n" "$done_all" "$reports_total" "$done_erased"\n'
     )
     out = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, timeout=60, check=True
+        [_BASH, "-c", script], capture_output=True, text=True, timeout=60, check=True
     ).stdout.split()
     keys = ("done_n", "blocked_n", "done_all", "reports_total", "done_erased")
     return dict(zip(keys, out, strict=True))
@@ -154,7 +156,7 @@ def _blocked_quality_block() -> str:
 
 def _run_blocked_quality(jobs: Path, merged: str, hours: int = 24) -> tuple[str, str]:
     script = (
-        f'set -u\nH={hours}\nJOBS="{jobs}"\nmerged_nums="{merged}"\n'
+        f'set -u\nH={hours}\nJOBS="{jobs}"\nmerged_nums="{merged}"\nmerged_nums_ok=1\n'
         'now=$(date -u +%s)\n'
         # mirror the shipped _win_reports, which is -newermt against $now so the
         # KPI_NOW_UNIX seam freezes the window; -mmin would silently ignore it.
@@ -164,7 +166,7 @@ def _run_blocked_quality(jobs: Path, merged: str, hours: int = 24) -> tuple[str,
         'printf "%s %s\\n" "$stale_blocked" "$named_pr"\n'
     )
     out = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, timeout=60, check=True
+        [_BASH, "-c", script], capture_output=True, text=True, timeout=60, check=True
     ).stdout.split()
     return out[0], out[1]
 

@@ -161,7 +161,7 @@ def _encode_joint_stereo_mp3(source: Path, dest: Path) -> None:
         )
         if _first_mp3_channel_mode(dest) == 1:
             return
-    pytest.fail("could not synthesize a joint-stereo MP3 fixture")
+    pytest.skip("UNAVAILABLE: installed MP3 encoders cannot synthesize joint stereo")
 
 
 def _truncate_flac_after_metadata(path: Path, *, keep_fraction: float) -> None:

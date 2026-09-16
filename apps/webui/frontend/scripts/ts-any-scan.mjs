@@ -90,19 +90,13 @@ function _ruleFromSingleLineComment(comment) {
   return m ? m[1] : null;
 }
 
-// Returns the rule AND how many lines below the comment's opening the
-// directive sits, because only the block's FINAL line is matched: tsc applies
-// a `/* ... @ts-ignore */` to the line the directive is written on, not to the
-// line the `/*` opened on. Reporting the opening line made every multi-line
-// block score twice, once here and once from tsc's own `commentDirectives`.
 function _ruleFromBlockComment(comment) {
-  const lines = comment.split(/\r?\n/);
-  const lineOffset = lines.length - 1;
-  const trimmed = (lines[lineOffset] ?? '').trimStart();
+  const finalLine = comment.split(/\r?\n/).pop() ?? '';
+  const trimmed = finalLine.trimStart();
   const prefixed = trimmed.match(_ML_DIRECTIVE_RE);
-  if (prefixed) return { rule: prefixed[1], lineOffset };
+  if (prefixed) return prefixed[1];
   const bare = trimmed.match(/^@(ts-expect-error|ts-ignore)/);
-  return bare ? { rule: bare[1], lineOffset } : null;
+  return bare ? bare[1] : null;
 }
 
 function _forEachRealComment(sourceFile, text, cb) {
@@ -160,13 +154,24 @@ function _directiveHits(text, lineOffset) {
   }
 
   _forEachRealComment(sourceFile, text, (range, commentText) => {
-    const line = sourceFile.getLineAndCharacterOfPosition(range.pos).line + 1 + lineOffset;
+    // Which POSITION names the hit's line matters, because this loop and the
+    // `commentDirectives` loop above can both find the same directive and
+    // `add()` de-dups on `line:rule`. A block comment's directive can only sit
+    // on its FINAL physical line -- that is all `_ruleFromBlockComment` looks
+    // at, mirroring tsc's own `lastLineStart` behavior -- and tsc reports that
+    // same final line. Reporting `range.pos` here named the line the comment
+    // OPENED on instead, so the two paths disagreed by the comment's height and
+    // a multi-line block comment scored twice, once per path.
+    let directivePos = range.pos;
+    let rule = null;
     if (commentText.startsWith('//')) {
-      const rule = _ruleFromSingleLineComment(commentText);
-      if (rule) add(line, rule);
+      rule = _ruleFromSingleLineComment(commentText);
     } else if (commentText.startsWith('/*')) {
-      const found = _ruleFromBlockComment(commentText);
-      if (found) add(line + found.lineOffset, found.rule);
+      rule = _ruleFromBlockComment(commentText);
+      directivePos = range.end;
+    }
+    if (rule) {
+      add(sourceFile.getLineAndCharacterOfPosition(directivePos).line + 1 + lineOffset, rule);
     }
   });
 
