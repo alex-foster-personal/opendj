@@ -5020,7 +5020,7 @@ export interface paths {
          *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
          *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
-        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
+        head: operations["head_track_audio_api_v1_tracks__stable_id__audio_head"];
         patch?: never;
         trace?: never;
     };
@@ -22757,7 +22757,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_get: {
+    head_track_audio_api_v1_tracks__stable_id__audio_head: {
         parameters: {
             query?: never;
             header?: never;
