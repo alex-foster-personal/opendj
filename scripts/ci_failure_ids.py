@@ -20,6 +20,8 @@ Job verdicts (`classify_job`):
     INFRA          a pytest or canary job with no identity at all (cap kill, runner reclaim).
     MAIN_RED_JOB   a failed job with no identity whose NAME is also red on main's head.
     RATCHET_DEBT   quality ratchet breach, which ships and is debt-logged under SHIP mode.
+    UNEXPLAINED    identities were found, all known, and the job ALSO failed for a reason no
+                   test accounts for (cancel, timeout, kill, a non-1 exit). Unmeasured.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ class JobVerdict(StrEnum):
     MAIN_RED_JOB = "MAIN_RED_JOB"
     RATCHET_DEBT = "RATCHET_DEBT"
     BASELINE_UNREADABLE = "BASELINE_UNREADABLE"
+    UNEXPLAINED = "UNEXPLAINED"
 
 
 @dataclass(frozen=True)
@@ -135,12 +138,43 @@ def error_excerpt(log: str) -> list[str]:
     return found
 
 
+# A runner line that a failing test never produces. Exit code 1 is what pytest, vitest and
+# playwright return when tests fail, so it is the ONE code that test identities can explain;
+# 137 (killed), 143 (terminated), 124 (timeout) and 2 (interrupted, usage error) cannot be.
+_BEYOND_TESTS = re.compile(
+    r"The operation was canceled"
+    r"|exceeded the maximum execution time"
+    r"|No space left on device"
+    r"|Process completed with exit code (?!1\b)[0-9]+"
+)
+
+
+def failure_beyond_tests(log: str) -> list[str]:
+    """Runner lines saying the job failed for something no test failure accounts for.
+
+    Returns the evidence rather than a bare bool so the watch can print WHY a job it would
+    otherwise have called known-red is unmeasured instead. Empty means no such evidence was
+    found, which is not the same as proof there is none: this reads only the runner's own
+    terminal lines, and a silent truncation leaves nothing to match.
+    """
+    found: list[str] = []
+    for raw in log.split("\n"):
+        line = _ANSI.sub("", _strip_prefixes(raw)).strip()
+        if _BEYOND_TESTS.search(line):
+            found.append(line[:200])
+            if len(found) == EXCERPT_LINES:
+                break
+    return found
+
+
 def classify_job(
     job_name: str,
     identities: frozenset[str],
     main_red: frozenset[str],
     main_red_job_names: frozenset[str],
     baseline_unreadable_job_names: frozenset[str] = frozenset(),
+    *,
+    beyond_tests: bool,
 ) -> JobClassification:
     """One failed job's verdict, in the order the nucbox merge gate applies its rules.
 
@@ -153,6 +187,11 @@ def classify_job(
     def verdict(kind: JobVerdict) -> JobClassification:
         return JobClassification(kind, identities, residual)
 
+    if identities and beyond_tests:
+        # The identities are real but they are not the whole failure. Calling this KNOWN_RED
+        # lets a job that ALSO hit a cap kill, a timeout or a build error merge on the
+        # strength of tests that were already red, with the other failure never looked at.
+        return verdict(JobVerdict.UNEXPLAINED)
     if identities and not residual:
         return verdict(JobVerdict.KNOWN_RED)
     if not identities and INFRA_CLASS_JOBS.search(job_name):

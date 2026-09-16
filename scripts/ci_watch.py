@@ -57,6 +57,7 @@ from scripts.ci_failure_ids import (
     classify_job,
     error_excerpt,
     failed_identities,
+    failure_beyond_tests,
 )
 from scripts.ci_main_red import LogUnreadable, MainRed, cached_main_red, read_job_log
 from scripts.ci_wait import (
@@ -157,14 +158,18 @@ class FailureWatch:
             self.emit(f"  (log unreadable) {unreadable}")
             return None
         identities = failed_identities(log)
+        beyond = failure_beyond_tests(log)
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)
+        elif beyond:
+            self.excerpts[run["id"]] = beyond
         return classify_job(
             run["name"],
             identities,
             red.identities,
             red.failed_job_names,
             red.unreadable_job_names,
+            beyond_tests=bool(beyond),
         )
 
 
@@ -211,7 +216,9 @@ def exit_for(status: WaitStatus, watch: FailureWatch, *, has_baseline: bool) -> 
     unmeasured = [
         v
         for v in verdicts
-        if v is None or v.verdict in (JobVerdict.INFRA, JobVerdict.BASELINE_UNREADABLE)
+        if v is None
+        or v.verdict
+        in (JobVerdict.INFRA, JobVerdict.BASELINE_UNREADABLE, JobVerdict.UNEXPLAINED)
     ]
     if unmeasured:
         return Exit.UNKNOWN, f"{len(unmeasured)} check(s) finished without a measurement"

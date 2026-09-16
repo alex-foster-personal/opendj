@@ -22,6 +22,7 @@ from scripts.ci_main_red import (
     job_log_identities,
     main_red_identities,
     read_job_log,
+    unmeasured_baseline_names,
     verdict_runs,
 )
 
@@ -175,3 +176,31 @@ def test_a_job_read_on_an_older_verdict_stops_being_unreadable():
     assert name in walk.failed_job_names
     assert walk.unreadable_job_names == frozenset()
     assert "FAILED tests/test_a.py::test_x" in walk.identities
+
+
+# ----- a failed check run at main's head is unmeasured, never red -----
+
+
+def test_a_failed_check_run_name_is_carried_as_unmeasured_not_as_red():
+    """Sol's P1 on #3293. A check run gives a conclusion and no log this tool parsed, so it
+    says main is red under that name and NOT what failed. Counted red it reads MAIN_RED_JOB
+    against a zero-identity pull request failure and merges off an unmeasured baseline."""
+    assert unmeasured_baseline_names(
+        frozenset(), frozenset({"other-lazy bundle budget"}), frozenset()
+    ) == frozenset({"other-lazy bundle budget"})
+
+
+def test_a_name_whose_log_was_actually_read_is_not_called_unmeasured():
+    """The control, in the direction the fix could overshoot: a name main was measured on
+    must stay measured, or every known-red job on main becomes UNKNOWN and nothing merges."""
+    assert unmeasured_baseline_names(
+        frozenset({"pytest fast lane (shard 1 of 5)"}),
+        frozenset({"pytest fast lane (shard 1 of 5)"}),
+        frozenset({"pytest fast lane (shard 1 of 5)"}),
+    ) == frozenset()
+
+
+def test_names_from_both_sources_are_unioned():
+    assert unmeasured_baseline_names(
+        frozenset({"unreadable job"}), frozenset({"failed check run"}), frozenset()
+    ) == frozenset({"unreadable job", "failed check run"})

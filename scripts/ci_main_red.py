@@ -196,6 +196,24 @@ def _failed_check_run_names(sha: str) -> frozenset[str]:
     )
 
 
+def unmeasured_baseline_names(
+    unreadable: frozenset[str], failed_check_runs: frozenset[str], measured: frozenset[str]
+) -> frozenset[str]:
+    """Names main failed under, where nothing read a log to say WHAT failed.
+
+    A failed check run at main's head carries a conclusion and nothing else: this tool never
+    parsed a log for it, so it establishes that main is red under that name and not that a
+    pull request failing under the same name failed the same way. Counted red, such a name
+    reads MAIN_RED_JOB against a zero-identity pull request failure and the agent merges off
+    a baseline nobody measured. The bundle budget check is the case that makes it concrete,
+    where main can be 79 KB over and the pull request 300 KB over under one name.
+
+    Counted unmeasured, the watch exits UNKNOWN and a person looks, which is the direction
+    this tool is allowed to be wrong in.
+    """
+    return (unreadable | failed_check_runs) - measured
+
+
 def fetch_main_red() -> MainRed:
     identities: set[str] = set()
     failed_names: set[str] = set()
@@ -213,11 +231,12 @@ def fetch_main_red() -> MainRed:
         print(
             f"[ci-main-red] baseline unmeasured for {sorted(unreadable)}", file=sys.stderr
         )
+    measured = frozenset(failed_names)
     return MainRed(
         frozenset(identities),
-        frozenset(failed_names) | _failed_check_run_names(sha),
+        measured,
         sha,
-        frozenset(unreadable - failed_names),
+        unmeasured_baseline_names(frozenset(unreadable), _failed_check_run_names(sha), measured),
     )
 
 

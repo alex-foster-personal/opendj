@@ -18,7 +18,12 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.ci_failure_ids import JobVerdict, classify_job, failed_identities
+from scripts.ci_failure_ids import (
+    JobVerdict,
+    classify_job,
+    failed_identities,
+    failure_beyond_tests,
+)
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -87,31 +92,49 @@ ONE = frozenset({"FAILED tests/a/test_x.py::test_one"})
 
 
 def test_a_failure_not_on_main_is_genuine():
-    got = classify_job("pytest fast lane (shard 1 of 5)", ONE, frozenset(), frozenset())
+    got = classify_job(
+        "pytest fast lane (shard 1 of 5)",
+        ONE,
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+    )
     assert got.verdict is JobVerdict.GENUINE
     assert got.residual == ONE
 
 
 def test_a_failure_on_main_is_known_red():
-    got = classify_job("pytest fast lane (shard 1 of 5)", ONE, ONE, frozenset())
+    got = classify_job("pytest fast lane (shard 1 of 5)", ONE, ONE, frozenset(), beyond_tests=False)
     assert got.verdict is JobVerdict.KNOWN_RED
 
 
 def test_a_known_flake_is_known_red():
     flake = frozenset({"not ok - prefs-golden-blob.test.mjs bundles"})
     assert (
-        classify_job("frontend unit", flake, frozenset(), frozenset()).verdict
+        classify_job("frontend unit", flake, frozenset(), frozenset(), beyond_tests=False).verdict
         is JobVerdict.KNOWN_RED
     )
 
 
 def test_a_shard_with_no_identity_is_infra():
-    got = classify_job("pytest fast lane (shard 2 of 5)", frozenset(), frozenset(), frozenset())
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+    )
     assert got.verdict is JobVerdict.INFRA
 
 
 def test_a_ratchet_breach_is_debt():
-    got = classify_job("quality ratchet (lint debt)", frozenset(), frozenset(), frozenset())
+    got = classify_job(
+        "quality ratchet (lint debt)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=False,
+    )
     assert got.verdict is JobVerdict.RATCHET_DEBT
 
 
@@ -123,6 +146,7 @@ def test_a_ratchet_job_failing_a_test_main_passes_is_genuine():
         frozenset({"FAILED tests/test_new.py::test_regression"}),
         frozenset(),
         frozenset(),
+        beyond_tests=False,
     )
     assert got.verdict is JobVerdict.GENUINE
 
@@ -131,20 +155,26 @@ def test_a_ratchet_job_failing_only_what_main_fails_is_still_debt():
     """The control: the fix must not turn every ratchet breach into a blocker."""
     shared = "FAILED tests/test_old.py::test_known"
     got = classify_job(
-        "quality ratchet (lint debt)", frozenset({shared}), frozenset({shared}), frozenset()
+        "quality ratchet (lint debt)",
+        frozenset({shared}),
+        frozenset({shared}),
+        frozenset(),
+        beyond_tests=False,
     )
     assert got.verdict is JobVerdict.KNOWN_RED
 
 
 def test_a_zero_identity_job_also_red_on_main_is_main_red_job():
     name = "reqs-check + native wheel + contract drift"
-    got = classify_job(name, frozenset(), frozenset(), frozenset({name}))
+    got = classify_job(name, frozenset(), frozenset(), frozenset({name}), beyond_tests=False)
     assert got.verdict is JobVerdict.MAIN_RED_JOB
 
 
 def test_a_zero_identity_job_not_red_on_main_is_loud():
     name = "reqs-check + native wheel + contract drift"
-    got = classify_job(name, frozenset(), frozenset(), frozenset({"some other job"}))
+    got = classify_job(
+        name, frozenset(), frozenset(), frozenset({"some other job"}), beyond_tests=False
+    )
     assert got.verdict is JobVerdict.GENUINE
 
 
@@ -153,12 +183,95 @@ def test_a_job_whose_baseline_log_was_unreadable_is_not_main_red():
     establishes the two failures are the same. Classified MAIN_RED_JOB it exits mergeable
     off a baseline that was never measured."""
     name = "frontend unit + check + build"
-    got = classify_job(name, frozenset(), frozenset(), frozenset(), frozenset({name}))
+    got = classify_job(
+        name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False
+    )
     assert got.verdict is JobVerdict.BASELINE_UNREADABLE
 
 
 def test_a_measured_main_red_job_name_still_wins():
     """The control: a name main was actually READ to fail must stay MAIN_RED_JOB."""
     name = "frontend unit + check + build"
-    got = classify_job(name, frozenset(), frozenset(), frozenset({name}), frozenset())
+    got = classify_job(
+        name,
+        frozenset(),
+        frozenset(),
+        frozenset({name}),
+        frozenset(),
+        beyond_tests=False,
+    )
     assert got.verdict is JobVerdict.MAIN_RED_JOB
+
+
+# ----- a job that also failed for something no test explains -----
+
+
+def test_known_identities_plus_a_cap_kill_is_not_known_red():
+    """Sol's P1 on #3293. A shard can fail tests main already fails AND be killed for a
+    budget or a timeout. Read as KNOWN_RED the agent merges on the strength of the tests,
+    and the kill is never looked at."""
+    shared = "FAILED tests/test_old.py::test_known"
+    got = classify_job(
+        "pytest fast lane (shard 1 of 5)",
+        frozenset({shared}),
+        frozenset({shared}),
+        frozenset(),
+        beyond_tests=True,
+    )
+    assert got.verdict is JobVerdict.UNEXPLAINED
+
+
+def test_known_identities_alone_are_still_known_red():
+    """The control, in the direction the fix could overshoot: without it, every known-red
+    job becomes unmeasured and the watcher stops being able to say a pull request is clean."""
+    shared = "FAILED tests/test_old.py::test_known"
+    got = classify_job(
+        "pytest fast lane (shard 1 of 5)",
+        frozenset({shared}),
+        frozenset({shared}),
+        frozenset(),
+        beyond_tests=False,
+    )
+    assert got.verdict is JobVerdict.KNOWN_RED
+
+
+def test_a_zero_identity_job_keeps_its_own_verdict():
+    """The other control: the new rule is scoped to jobs that DID report identities. A cap
+    kill with no identity at all is still INFRA, which the unmeasured bucket already held."""
+    got = classify_job(
+        "pytest fast lane (shard 2 of 5)",
+        frozenset(),
+        frozenset(),
+        frozenset(),
+        beyond_tests=True,
+    )
+    assert got.verdict is JobVerdict.INFRA
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "##[error]The operation was canceled.",
+        "##[error]The job running on runner agentbox-4 has exceeded the maximum execution time",
+        "##[error]Process completed with exit code 137.",
+        "##[error]Process completed with exit code 2.",
+        "cp: error writing '/x': No space left on device",
+    ],
+)
+def test_a_runner_failure_no_test_explains_is_found(line):
+    assert failure_beyond_tests(f"some output\n{line}\nmore output") == [line]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "##[error]Process completed with exit code 1.",
+        "FAILED tests/test_a.py::test_b - AssertionError",
+        "=========== 3 failed, 2118 passed, 40 skipped in 277.98s ============",
+        "ERROR tests/test_c.py",
+    ],
+)
+def test_an_ordinary_test_failure_is_not_read_as_something_beyond_it(line):
+    """Exit code 1 is what pytest, vitest and playwright return when tests fail, so it is the
+    one code the identities can account for. Matching it would make every red job unmeasured."""
+    assert failure_beyond_tests(f"some output\n{line}\nmore output") == []
