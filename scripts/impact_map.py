@@ -6,7 +6,10 @@ The map is keyed by test module. `select_modules` answers "which test modules co
 to these paths affect" from what the modules were OBSERVED to touch:
 
     a file the module (or a fixture it uses, or a conftest above it) opened
-    a directory it listed, if the changed path is anywhere beneath it
+    a directory it listed, if the changed path is DIRECTLY in it. `os.scandir` observes
+    only a directory's own entries, so a test that walks a tree scans every level it
+    descends into and each one is recorded; crediting a listing with the whole subtree
+    instead makes one startup scan of `apps/` select every module for every change
     a glob it expanded, if the changed path matches the pattern
 
 It returns UNKNOWN (never an empty selection) for what tracing cannot see: a module that
@@ -41,8 +44,7 @@ class Touches:
     def reaches(self, path: str) -> bool:
         if path in self.files:
             return True
-        parents = {str(parent) for parent in PurePosixPath(path).parents}
-        if parents & self.dirs:
+        if str(PurePosixPath(path).parent) in self.dirs:
             return True
         return any(_glob_matches(pattern, path) for pattern in self.globs)
 
