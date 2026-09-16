@@ -187,12 +187,12 @@ def classify_job(
     def verdict(kind: JobVerdict) -> JobClassification:
         return JobClassification(kind, identities, residual)
 
-    if identities and beyond_tests:
-        # The identities are real but they are not the whole failure. Calling this KNOWN_RED
-        # lets a job that ALSO hit a cap kill, a timeout or a build error merge on the
-        # strength of tests that were already red, with the other failure never looked at.
-        return verdict(JobVerdict.UNEXPLAINED)
     if identities and not residual:
+        if beyond_tests:
+            # The identities are real but they are not the whole failure. Calling this
+            # KNOWN_RED lets a job that ALSO hit a cap kill, a timeout or a build error merge
+            # on the strength of tests that were already red, the other failure never read.
+            return verdict(JobVerdict.UNEXPLAINED)
         return verdict(JobVerdict.KNOWN_RED)
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)

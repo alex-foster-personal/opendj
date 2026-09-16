@@ -275,3 +275,17 @@ def test_an_ordinary_test_failure_is_not_read_as_something_beyond_it(line):
     """Exit code 1 is what pytest, vitest and playwright return when tests fail, so it is the
     one code the identities can account for. Matching it would make every red job unmeasured."""
     assert failure_beyond_tests(f"some output\n{line}\nmore output") == []
+
+
+def test_a_new_failure_plus_a_cap_kill_is_still_genuine():
+    """Ordering. UNEXPLAINED is the verdict for a job whose failures are ALL already main's;
+    a job that broke something new is GENUINE whatever else went wrong beside it, or the
+    loudest verdict this tool has gets downgraded to unmeasured by an unrelated kill."""
+    got = classify_job(
+        "pytest fast lane (shard 1 of 5)",
+        frozenset({"FAILED tests/test_new.py::test_this_pr_broke"}),
+        frozenset({"FAILED tests/test_old.py::test_known"}),
+        frozenset(),
+        beyond_tests=True,
+    )
+    assert got.verdict is JobVerdict.GENUINE
