@@ -239,7 +239,11 @@ def _duplicate_stamps(
 
 
 def _duplicate_incoming_wins(
-    change: RowChange, stored: tuple[str, str], conflict_pk: tuple[str, ...]
+    change: RowChange,
+    stored: tuple[str, str],
+    conflict_pk: tuple[str, ...],
+    *,
+    hub_authoritative: bool = False,
 ) -> bool:
     """LWW between two rows that share a natural key under different pks.
 
@@ -248,9 +252,18 @@ def _duplicate_incoming_wins(
     converge on the same survivor. Without it, two rows with identical
     ``(updated_at, origin_device_id)`` reject each other forever and the
     digest never matches (the shape of round 1 finding 5b).
+
+    ``hub_authoritative`` settles that TIE in the pulled row's favor and
+    nothing else. A spoke re-running the pk tiebreak against a row the hub
+    already elected is how the two disagree over which duplicate survives,
+    so on a pull the hub's choice stands. It is a tiebreak override, not a
+    stamp override: a duplicate that is STRICTLY newer still wins, because
+    the stamps are comparable and the pulled row is simply the stale copy.
     """
     if change.sort_key != stored:
         return change.sort_key > stored
+    if hub_authoritative:
+        return True
     return change.pk < conflict_pk
 
 
@@ -680,6 +693,15 @@ def _resolve_against_duplicates(
     incoming row: the alternative is hard-deleting that duplicate on a
     comparison that was never made, which is the exact loss
     :func:`_duplicate_stamps` refuses to guess at.
+
+    ``hub_authoritative`` reaches the pk TIEBREAK in
+    :func:`_duplicate_incoming_wins` and stops there. It does not license
+    accepting the row outright: a pulled ``track_locations`` row can collide
+    with one local row on the path index and a DIFFERENT local row on the
+    url index (round 2 finding N5), and one that loses the url comparison is
+    rejected WHOLE. Dropping every duplicate first, as the #3100 wiring did,
+    hard-deleted the newer local row the pulled row had just lost to and left
+    nothing in its place.
     """
     faults: list[protocol.StampFault] = []
     keys: list[tuple[tuple[str, ...], tuple[str, str]]] = []
@@ -692,11 +714,12 @@ def _resolve_against_duplicates(
         keys.append((tuple(pk), _sort_key_of(spec.name, stored)))
     if faults:
         return _Resolution(loses=False, faults=tuple(faults))
-    if hub_authoritative:
-        for conflict_pk in conflict_pks:
-            _drop_superseded(conn, spec, conflict_pk)
-        return _Resolution(loses=False)
-    if not all(_duplicate_incoming_wins(change, key, pk) for pk, key in keys):
+    if not all(
+        _duplicate_incoming_wins(
+            change, key, pk, hub_authoritative=hub_authoritative
+        )
+        for pk, key in keys
+    ):
         return _Resolution(loses=True)
     for conflict_pk in conflict_pks:
         _drop_superseded(conn, spec, conflict_pk)
