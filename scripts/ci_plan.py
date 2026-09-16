@@ -131,6 +131,48 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # everything is merely useless, where one that skips a suite it should have run is wrong.
 
 
+def _classify_paths(
+    paths: list[str], config: Config
+) -> tuple[set[str], list[str], list[str]]:
+    """Every changed path into exactly one of three buckets: the scopes it hits, the paths no
+    scope claims, and the claimed paths whose dependencies the closure cannot read.
+
+    Lifted out of `plan` because that function sits on the C901 ceiling and this loop is the
+    part with the branches. The three buckets are returned rather than acted on here, so the
+    ORDER the verdicts are checked in stays visible in one place.
+    """
+    hit: set[str] = set()
+    unclaimed_source: list[str] = []
+    unanalyzable: list[str] = []
+    for path in paths:
+        owners = [s.name for s in config.scopes if matches(path, s.sources + s.tests)]
+        if owners:
+            hit.update(owners)
+            if not _dependencies_derivable(path):
+                unanalyzable.append(path)
+        elif matches(path, config.always):
+            hit.add(_ALWAYS)
+        else:
+            unclaimed_source.append(path)
+    return hit, unclaimed_source, unanalyzable
+
+
+def _dependencies_derivable(path: str) -> bool:
+    """Whether the closure can see who consumes this file.
+
+    `_source_reachability` reads Python imports and nothing else, so a scope's TypeScript,
+    Svelte, shell or JSON sources contribute NO edges. Owning the changed path is therefore
+    not enough: a `.ts` file consumed across a scope boundary produces a SCOPED plan that
+    omits the suites that consume it, which is under-selection with the scope config looking
+    entirely correct. 2058 of this repository's 4646 claimed files are not Python, measured,
+    so this is the common case rather than an edge. Sol's P1 on #3339.
+
+    Deliberately a property of the INSTRUMENT, not a list of risky file types: it answers
+    "can the derivation see this", so teaching the closure a new language is what widens it.
+    """
+    return path.endswith(".py")
+
+
 def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
     """`hit` plus the scopes each hit scope lists as depending on it. ONE HOP, deliberately.
 
@@ -175,22 +217,20 @@ def plan(
         return Plan(Verdict.FULL, (), (), f"full trigger: {triggered[0]}")
 
     by_name = {s.name: s for s in config.scopes}
-    hit: set[str] = set()
-    unclaimed_source: list[str] = []
-    for path in paths:
-        owners = [s.name for s in config.scopes if matches(path, s.sources + s.tests)]
-        if owners:
-            hit.update(owners)
-        elif matches(path, config.always):
-            hit.add(_ALWAYS)
-        else:
-            unclaimed_source.append(path)
+    hit, unclaimed_source, unanalyzable = _classify_paths(paths, config)
     if unclaimed_source:
         return Plan(
             Verdict.FULL,
             (),
             (),
             f"a source path no scope claims: {unclaimed_source[0]}",
+        )
+    if unanalyzable:
+        return Plan(
+            Verdict.FULL,
+            (),
+            (),
+            f"a claimed path whose dependencies cannot be derived: {unanalyzable[0]}",
         )
     if not hit:
         # UNREACHABLE by construction, and deliberately loud rather than deleted. Every path
