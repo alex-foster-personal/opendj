@@ -1,0 +1,177 @@
+# Scopes for SMARTEST-CI's pull request planner (`scripts/ci_plan.py`, round 5).
+#
+# Scope names are the module names `mergify ci scopes` will use, so queue batching by
+# scope needs no renames later. Patterns: a trailing `/` is a path prefix, `*` stops at a
+# directory boundary and `**` crosses one.
+#
+# The planner NARROWS only; anything it cannot place answers FULL, and
+# `tests/scripts/test_ci_plan_config.py` fails when a tracked test module is claimed by
+# no scope and matched by no `always` entry, which is how a new test directory is stopped
+# from becoming a silently unrun one.
+version: 1
+
+# A change here means the selection itself cannot be trusted to narrow.
+full_triggers:
+  - "pyproject.toml"
+  - "uv.lock"
+  - "justfile"
+  - "conftest.py"
+  - "**/conftest.py"
+  - ".github/workflows/**"
+  - "ci/test-scopes.yml"
+  - "scripts/ci_plan.py"
+  - "tests/fixtures/**"
+  - "tests/helpers/**"
+  - "apps/shared/**"
+
+# Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
+always:
+  - "tests/*.py"
+  - "tests/analysis_contract/"
+  - "tests/controller_probe/"
+  - "tests/data/"
+  - "tests/docs/"
+  - "tests/integration/"
+  - "tests/live/"
+  - "tests/lyrics_search/"
+  - "tests/ops/"
+
+scopes:
+  - name: adapters
+    sources: ["apps/adapters/"]
+    tests: ["tests/adapters/"]
+  - name: agentbox
+    sources: ["apps/agentbox/"]
+    tests: ["tests/agentbox/"]
+  - name: analysis
+    sources: ["apps/analysis/"]
+    tests: ["tests/analysis/"]
+  - name: analysis_beatgrid
+    sources: ["apps/analysis_beatgrid/"]
+    tests: ["tests/analysis_beatgrid/"]
+  - name: analysis_bench
+    sources: ["apps/analysis_bench/"]
+    tests: ["tests/analysis_bench/"]
+  - name: analysis_key
+    sources: ["apps/analysis_key/"]
+    tests: ["tests/analysis_key/"]
+  - name: analysis_loudness
+    sources: ["apps/analysis_loudness/"]
+    tests: ["tests/analysis_loudness/"]
+  - name: analysis_waveform
+    sources: ["apps/analysis_waveform/"]
+    tests: ["tests/analysis_waveform/"]
+  - name: audit
+    sources: ["apps/audit/"]
+    tests: ["tests/audit/"]
+  - name: cloud
+    sources: ["apps/cloud/"]
+    tests: ["tests/cloud/"]
+  - name: database
+    sources: ["apps/database/"]
+    tests: ["tests/database/"]
+  - name: dedup
+    sources: ["apps/dedup/"]
+    tests: ["tests/dedup/"]
+  - name: dj_copilot
+    sources: ["apps/dj_copilot/"]
+    tests: ["tests/dj_copilot/"]
+  - name: engine_core
+    sources: ["apps/engine_core/"]
+    tests: ["tests/engine_core/"]
+  - name: entitlements
+    sources: ["apps/entitlements/"]
+    tests: ["tests/entitlements/"]
+  - name: launcher
+    sources: ["apps/launcher/"]
+    tests: ["tests/launcher/"]
+  - name: loudness
+    sources: ["apps/loudness/"]
+    tests: ["tests/loudness/"]
+  - name: lyrics
+    sources: ["apps/lyrics/"]
+    tests: ["tests/lyrics/"]
+  - name: mik
+    sources: ["apps/mik/"]
+    tests: ["tests/mik/"]
+  - name: open_dj
+    sources: ["apps/open_dj/"]
+    tests: ["tests/open_dj/"]
+  - name: opendj_cli
+    sources: ["apps/opendj_cli/"]
+    tests: ["tests/opendj_cli/"]
+  - name: pairings
+    sources: ["apps/pairings/"]
+    tests: ["tests/pairings/"]
+  - name: parity
+    sources: ["apps/parity/"]
+    tests: ["tests/parity/"]
+  - name: play_analytics
+    sources: ["apps/play_analytics/"]
+    tests: ["tests/play_analytics/"]
+  - name: playlist_sets
+    sources: ["apps/playlist_sets/"]
+    tests: ["tests/playlist_sets/"]
+  - name: reconcile
+    sources: ["apps/reconcile/"]
+    tests: ["tests/reconcile/"]
+  - name: sets
+    sources: ["apps/sets/"]
+    tests: ["tests/sets/"]
+  - name: shared
+    sources: ["apps/shared/"]
+    tests: ["tests/shared/"]
+  - name: smartlists
+    sources: ["apps/smartlists/"]
+    tests: ["tests/smartlists/"]
+  - name: spotify
+    sources: ["apps/spotify/"]
+    tests: ["tests/spotify/"]
+  - name: stems
+    sources: ["apps/stems/"]
+    tests: ["tests/stems/"]
+  - name: streaming_transfer
+    sources: ["apps/streaming_transfer/"]
+    tests: ["tests/streaming_transfer/"]
+  - name: sync
+    sources: ["apps/sync/"]
+    tests: ["tests/sync/"]
+  - name: sync_hub
+    sources: ["apps/sync_hub/"]
+    tests: ["tests/sync_hub/"]
+  - name: tags
+    sources: ["apps/tags/"]
+    tests: ["tests/tags/"]
+  - name: vocals
+    sources: ["apps/vocals/"]
+    tests: ["tests/vocals/"]
+  - name: voice
+    sources: ["apps/voice/"]
+    tests: ["tests/voice/"]
+  - name: webui
+    sources: ["apps/webui/"]
+    tests: ["tests/webui/"]
+  - name: agentic_testing
+    sources: ["ops/agentic_testing/"]
+    tests: ["tests/agentic_testing/"]
+  - name: beatbench
+    sources: ["ops/beatbench/", "scripts/beatbench/"]
+    tests: ["tests/beatbench/"]
+  - name: cloudsync
+    sources: ["ops/cloudsync/"]
+    tests: ["tests/cloudsync/"]
+  - name: fixtures
+    sources: ["scripts/fixtures/"]
+    tests: ["tests/fixtures/"]
+  - name: lyrics_alignment
+    sources: ["scripts/lyrics_alignment/"]
+    tests: ["tests/lyrics_alignment/"]
+  - name: perf
+    sources: ["ops/perf/", "scripts/perf/"]
+    tests: ["tests/perf/"]
+  - name: quality
+    sources: ["ops/quality/", "scripts/quality/"]
+    tests: ["tests/quality/"]
+  - name: scripts
+    sources: ["scripts/"]
+    tests: ["tests/scripts/"]
