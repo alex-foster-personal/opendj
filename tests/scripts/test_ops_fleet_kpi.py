@@ -103,6 +103,25 @@ def _iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _install_review_triage_stub(home: Path, mapping_file: Path) -> Path:
+    """Hermetic seam for backlog clean's review-triage gate (issue #3380)."""
+    stub = home / "review-triage-stub.sh"
+    stub.write_text(
+        f"""#!/bin/sh
+set -eu
+pr="$1"
+mapfile="{mapping_file}"
+invoked=$(jq -c --arg pr "$pr" '.invoked += [$pr | tonumber]' "$mapfile")
+printf '%s' "$invoked" > "$mapfile"
+rc=$(jq -r --arg pr "$pr" '.[$pr] // .default // 0' "$mapfile")
+exit "$rc"
+""",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
 def _env(fixture: Path, home: Path) -> dict[str, str]:
     gh_config = home / "gh-config"
     gh_config.mkdir(exist_ok=True)
@@ -115,6 +134,7 @@ def _env(fixture: Path, home: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     gh_stub.chmod(0o755)
+    review_triage_stub = _install_review_triage_stub(home, fixture / "review-triage.json")
     env = {k: v for k, v in os.environ.items() if not k.startswith("KPI_")}
     env.update(
         {
@@ -125,6 +145,7 @@ def _env(fixture: Path, home: Path) -> dict[str, str]:
             "KPI_GH_FIXTURES_DIR": str(fixture / "gh"),
             "KPI_PROBES_DIR": str(fixture / "probes"),
             "KPI_NOW_UNIX": str(NOW),
+            "KPI_REVIEW_TRIAGE_CMD": str(review_triage_stub),
         }
     )
     return env
@@ -617,3 +638,44 @@ def test_script_is_executable_and_syntax_clean():
     """If ops/fleet/kpi.sh loses its shebang or exec bit then broken."""
     assert KPI.exists()
     assert KPI.stat().st_mode & 0o111, f"not executable: {KPI}"
+
+
+def test_github_clean_pr_with_failing_review_gate_is_not_clean(tmp_path):
+    """[if] mergeable_state is CLEAN but review-triage exits 1 [then] clean excludes it, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    mapping = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))
+    mapping["1108"] = 1
+    (fixture / "review-triage.json").write_text(json.dumps(mapping), encoding="utf-8")
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=2" in out
+    assert "actionable=5" in out
+
+
+def test_review_gate_measurement_failure_makes_clean_unmeasurable(tmp_path):
+    """[if] review-triage cannot measure a CLEAN actionable PR [then] clean=?, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    mapping = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))
+    mapping["1102"] = 3
+    (fixture / "review-triage.json").write_text(json.dumps(mapping), encoding="utf-8")
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=?" in out
+    assert "review-triage COULD NOT MEASURE for actionable PR #1102" in proc.stderr
+
+
+def test_only_github_clean_actionable_prs_invoke_review_gate(tmp_path):
+    """[if] a PR is not actionable or not GitHub-clean [then] review-triage is not run, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    invoked = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))["invoked"]
+    assert invoked == [1101, 1102, 1108]
