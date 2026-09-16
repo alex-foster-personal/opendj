@@ -87,8 +87,6 @@ def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:
     """if --tier-min-selected or --ledger-coverage-min is dropped then a thin run reads green"""
     run = _pytest_step(_jobs()["fast"])
     for flag in (
-        "-p scripts.pytest_fast_tier",
-        "-p scripts.pytest_tier_floor",
         "--fast-tier fast",
         "--fast-tier-max-seconds 0.5",
         "--ledger-coverage-min 0.95",
@@ -99,6 +97,14 @@ def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:
         assert flag in run, flag
     assert "--store-durations" not in run, "four partial legs must never overwrite the ledger"
     assert "--clean-durations" not in run
+    assert "-p scripts." not in run, "the console script cannot import -p plugins; conftest does"
+
+
+def test_tier_plugins_are_registered_by_the_root_conftest() -> None:
+    """if the tier plugins leave conftest then `--fast-tier` is an unknown option in CI"""
+    conftest = (CI.parents[2] / "conftest.py").read_text(encoding="utf-8")
+    assert '"scripts.pytest_fast_tier"' in conftest
+    assert '"scripts.pytest_tier_floor"' in conftest
 
 
 def test_fast_job_ignores_match_the_shard_job() -> None:
@@ -113,7 +119,8 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
 def test_shard_job_gains_only_the_ledger_guard() -> None:
     """if the shard job loses --ledger-coverage-min then a thin ledger balances by count again"""
     shard = _pytest_step(_jobs()["test"])
-    assert "-p scripts.pytest_fast_tier --ledger-coverage-min 0.95" in shard
+    assert "--ledger-coverage-min 0.95" in shard
+    assert "-p scripts." not in shard
     assert "--fast-tier" not in shard, "the sharded lane still runs everything (6a is additive)"
     assert "--store-durations --clean-durations" in shard
 

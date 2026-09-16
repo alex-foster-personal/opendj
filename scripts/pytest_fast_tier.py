@@ -12,8 +12,11 @@ A test the ledger has never seen is INCLUDED in the fast tier: a new test is usu
 and excluding it would mean a new test never runs early. ``--timeout`` (pytest-timeout) is
 the cap on the exception.
 
-Load it explicitly, ``pytest -p scripts.pytest_fast_tier ...``. It is inert unless one of
-its options is given. Its ``pytest_collection_modifyitems`` runs FIRST so the coverage floor
+Registered by the root ``conftest.py`` (``pytest_plugins``), because the ``.venv/bin/pytest``
+console script ci.yml runs does not put the checkout on ``sys.path`` and ``-p scripts.x``
+cannot import there. ``-p scripts.pytest_fast_tier`` still works under ``python -m pytest``
+and is what the tests use in a rootdir with no conftest. Inert unless one of its options is
+given. Its ``pytest_collection_modifyitems`` runs FIRST so the coverage floor
 is measured over the whole collection before pytest-split (trylast) deselects other groups,
 and so pytest-split then balances only the tier's tests.
 
