@@ -423,3 +423,16 @@ test('the folder picker guards on the Tauri runtime and opens a directory dialog
 	assert.match(overlay, /directory: true,\s*\n\s*multiple: false/);
 	assert.match(overlay, /if \(typeof selected === 'string'\) \{\s*\n\s*folderInput = selected;/);
 });
+
+test('the folder path placeholder is dim and italic, not the input itself', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\.folder-form input::placeholder\s*\{/);
+	assert.match(overlay, /font-style:\s*italic/);
+	assert.match(overlay, /opacity:\s*0\.65/);
+	assert.match(overlay, /color:\s*var\(--muted\)/);
+	// Dimming belongs on the pseudo-element only; typed text keeps normal styles.
+	const baseInputRule = overlay.match(/\.folder-form input\s*\{[^}]+\}/)?.[0] ?? '';
+	assert.doesNotMatch(baseInputRule, /font-style:\s*italic/);
+	assert.doesNotMatch(baseInputRule, /opacity:/);
+	assert.doesNotMatch(baseInputRule, /color:\s*var\(--muted\)/);
+});

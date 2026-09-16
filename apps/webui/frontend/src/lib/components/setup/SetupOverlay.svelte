@@ -1073,6 +1073,11 @@
 	.folder-pick-icon {
 		display: block;
 	}
+	.folder-form input::placeholder {
+		color: var(--muted);
+		opacity: 0.65;
+		font-style: italic;
+	}
 	.footnote {
 		font-size: 0.8rem;
 		margin-top: 1rem;
