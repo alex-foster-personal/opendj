@@ -281,3 +281,19 @@ def test_a_plain_failure_with_the_same_log_is_still_known_red():
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED
+
+
+def test_a_zero_identity_job_matching_a_main_red_job_name_ends_unknown_not_known_red():
+    """The wiring, not the rule. Mutating classify_job's new BASELINE_MISMATCH verdict out of
+    `exit_for`'s unmeasured bucket left the whole suite green while the job fell through to
+    KNOWN_RED_ONLY and merged -- which is Sol's P1 restored with the fix still in place."""
+    name = "frontend unit + check + build"
+    watch = FailureWatch(
+        log_of=lambda _job_id: "2026-09-16T09:00:00Z something failed, no test named\n",
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset({name}), "m" * 40),
+        emit=lambda _line: None,
+        clock=lambda: 0.0,
+    )
+    watch.inspect(_snapshot(_check(7, name)))
+    assert watch.verdicts[7].verdict is JobVerdict.BASELINE_MISMATCH
+    assert exit_for(WaitStatus.FAILURE, watch, has_baseline=True)[0] is Exit.UNKNOWN
