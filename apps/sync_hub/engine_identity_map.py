@@ -13,14 +13,32 @@ bundle, and ADR 04 c6 fires on a library that is not corrupt.
 from __future__ import annotations
 
 import sqlite3
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from apps.shared.state import db as state_db
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_identity import _follow_remap, remap_track_children
 from apps.sync_hub.sync_set import identity_duplicate_remap
 
 REMAP_TABLE: str = "sync_identity_remap"
+
+#: Loser/survivor pairs remapped per write transaction. Matches
+#: ``client.PUSH_BATCH_ROWS`` in spirit: a 900+ row backlog (issue #3251)
+#: must never hold one write transaction for its whole length, or a single
+#: SQLITE_BUSY mid-backlog rolls back every already-remapped row too.
+IDENTITY_REMAP_BATCH_ROWS: int = 200
+
+#: Backoff between retries once a batch's own BEGIN IMMEDIATE has already
+#: waited out busy_timeout and still found the writer lock held. This is the
+#: honest outer guard, not the fix -- batching above is what stops one
+#: contended batch from re-doing the whole backlog's work.
+_BUSY_RETRY_BACKOFFS_S: tuple[float, ...] = (0.25, 0.5, 1.0)
+
+#: Patchable seam: tests hook this to release a lock-holder deterministically
+#: on retry instead of racing real wall-clock sleeps.
+_sleep = time.sleep
 
 
 @dataclass(frozen=True)
@@ -176,20 +194,77 @@ def apply_hub_identity_rejects(
     return applied, tuple(repairs)
 
 
+def _busy_timeout_ms(conn: sqlite3.Connection) -> int:
+    row = conn.execute("PRAGMA busy_timeout").fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _commit_remap_batch(
+    conn: sqlite3.Connection,
+    batch: Sequence[tuple[str, str]],
+    *,
+    batch_index: int,
+    batch_count: int,
+) -> None:
+    """Remap one bounded batch of loser/survivor pairs in its own write transaction.
+
+    ``BEGIN IMMEDIATE`` claims the write lock up front, so a busy database
+    fails here -- before any row in this batch moves -- rather than partway
+    through. SQLite's own ``busy_timeout`` already waits out the lock once;
+    a :class:`sqlite3.OperationalError` reaching this function means that
+    wait was exhausted. Retrying with backoff on top of that is a second,
+    honest wait for the SAME cause (issue #3251: self-contention, a writer
+    elsewhere in this process), never a substitute for the batching above.
+    """
+    attempts = len(_BUSY_RETRY_BACKOFFS_S) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            if not state_db.is_sqlite_busy(exc) or attempt == attempts:
+                raise state_db.StateStoreBusyError(
+                    "STATE_DB_BUSY: prepare_spoke_identity could not acquire "
+                    f"the state DB write lock for remap batch {batch_index}/"
+                    f"{batch_count} ({len(batch)} rows) after {attempt} "
+                    f"attempt(s) and busy_timeout={_busy_timeout_ms(conn)}ms "
+                    "per attempt; the lock holder is another connection "
+                    f"inside this same process (self-contention, not a peer "
+                    f"process): {exc}"
+                ) from exc
+            _sleep(_BUSY_RETRY_BACKOFFS_S[attempt - 1])
+            continue
+        try:
+            for loser, survivor in batch:
+                remap_track_children(conn, loser, survivor)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+        return
+
+
 def prepare_spoke_identity(conn: sqlite3.Connection) -> int:
     """Remap children of local content-identity losers onto the survivor.
 
     Does not drop the loser ``tracks`` row: the app still sees it, and
     :mod:`apps.sync_hub.sync_set` holds it out of the offer and the digest.
+    Commits in batches of :data:`IDENTITY_REMAP_BATCH_ROWS` pairs (issue
+    #3251): a 900+ row backlog never holds one write transaction across the
+    whole remap, so a mid-backlog lock conflict costs one batch's work, not
+    the round, and WAL checkpoints get a chance to run between batches.
     Returns how many loser PKs were remapped.
     """
-    remap = effective_identity_remap(conn)
-    for loser, survivor in remap.items():
-        remap_track_children(conn, loser, survivor)
+    remap = list(effective_identity_remap(conn).items())
+    batch_count = -(-len(remap) // IDENTITY_REMAP_BATCH_ROWS) if remap else 0
+    for index in range(batch_count):
+        start = index * IDENTITY_REMAP_BATCH_ROWS
+        batch = remap[start : start + IDENTITY_REMAP_BATCH_ROWS]
+        _commit_remap_batch(conn, batch, batch_index=index + 1, batch_count=batch_count)
     return len(remap)
 
 
 __all__ = [
+    "IDENTITY_REMAP_BATCH_ROWS",
     "IdentityRepairRequest",
     "REMAP_TABLE",
     "_remove_remap_loser",
