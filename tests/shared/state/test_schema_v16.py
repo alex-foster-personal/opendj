@@ -74,7 +74,7 @@ def test_v15_to_v16_upgrade_adds_marker_table_and_hub_index(tmp_path: Path) -> N
     upgraded = sqlite3.connect(str(path))
     try:
         assert upgraded.execute(
-            f"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
             (MARKER_TABLE,),
         ).fetchone() is not None
         assert "idx_hub_changelog_table" in _index_names(upgraded, "hub_changelog")
