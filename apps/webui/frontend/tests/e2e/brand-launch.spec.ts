@@ -72,7 +72,7 @@ async function gapAlongDivider(page: import('@playwright/test').Page): Promise<n
 		const all = [...corners(d), ...corners(l)];
 		const cx = all.reduce((sum, [x]) => sum + x, 0) / all.length;
 		const cy = all.reduce((sum, [, y]) => sum + y, 0) / all.length;
-		const project = ([x, y]: [number, number]) => (x - cx) * nx + (y - cy) * ny;
+		const project = (point: number[]) => (point[0] - cx) * nx + (point[1] - cy) * ny;
 		const darkProj = corners(d).map(project);
 		const lightProj = corners(l).map(project);
 		const bboxGap = Math.max(0, Math.min(...lightProj) - Math.max(...darkProj));

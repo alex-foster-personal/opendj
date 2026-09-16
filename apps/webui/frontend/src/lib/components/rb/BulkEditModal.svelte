@@ -111,7 +111,7 @@
 			const res = await bulkEditTracks({
 				stable_ids: stableIds,
 				expected_etags: etags,
-				...(setRating ? { rating } : {}),
+				...(setRating && rating !== undefined ? { rating } : {}),
 				...(setNotes ? { notes } : {}),
 				...(setGenre ? { genre } : {}),
 				...(setComments ? { comments } : {}),

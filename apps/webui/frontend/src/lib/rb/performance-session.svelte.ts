@@ -332,8 +332,8 @@ export function installPerformanceSessionRestore(
 			query,
 			document: documentRef,
 			window: windowRef,
-			setInterval: opts.setInterval,
-			clearInterval: opts.clearInterval
+			...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
+			...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {})
 		});
 		writer.flush(true);
 		activeSessionWriter = writer;

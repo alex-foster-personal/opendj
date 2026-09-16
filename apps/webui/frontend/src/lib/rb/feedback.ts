@@ -311,9 +311,13 @@ export interface LifecyclePin {
  * new state. Both read as `open`: the amber default is the honest answer, and
  * it is the state that hides nothing.
  */
+function _isPinStatus(raw: string): raw is PinStatus {
+  return (PIN_STATUSES as readonly string[]).includes(raw);
+}
+
 export function pinStatus(pin: LifecyclePin): PinStatus {
   const raw = pin.status ?? "open";
-  return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
+  return _isPinStatus(raw) ? raw : "open";
 }
 
 // Partial state (pin 58a16ac781db, follow-on to #907) lives in
