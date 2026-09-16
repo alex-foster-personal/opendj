@@ -406,6 +406,22 @@ def observed_dependents(
         relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
         owner = owner_of(relative)
         if owner is None:
+            # TWO reasons a file can have no owning scope, and they are not the same reason.
+            # An `always` path runs in EVERY scoped plan, so it needs no edge to be reached
+            # and skipping it is correct. A path that is neither owned NOR always-run is a
+            # dependency this derivation cannot place, and skipping THAT loses the edge
+            # silently: a global helper importing scope A, consumed by suites in scope B,
+            # would leave B unrun when A changes. Sol's P1 on #3339. The two cases coincide
+            # today (measured: zero files in the second class), which is exactly why one
+            # `continue` could serve both and nothing would say when that stopped being true.
+            if matches(relative, config.always):
+                continue
+            if imported_packages(_read_source(file, relative), relative):
+                raise PlanError(
+                    f"{relative} is claimed by no scope and matched by no `always` entry, "
+                    "yet imports one; it carries a dependency this derivation cannot place. "
+                    "Claim it in ci/test-scopes.yml rather than narrowing a plan without it"
+                )
             continue
         for module in imported_packages(_read_source(file, relative), relative):
             as_path = module.replace(".", "/") + "/"
