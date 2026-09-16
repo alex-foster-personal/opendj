@@ -4,6 +4,7 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
+import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -118,6 +119,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	PREVIEW_BEAT_SYNC_SETTING,
 	{
 		id: 'perf_tier',
 		label: 'Performance tier',

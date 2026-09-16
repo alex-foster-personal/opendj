@@ -73,7 +73,16 @@ _HEADPHONE_IPC_PREDICATE = frozenset(
         command_type
         for command_type in command_fields()
         if command_type.startswith("headphone_")
-        or command_type in {"channel_cue", "output_mode", "head_delay_ms", "master_delay_ms"}
+        # CUEOUT-15: preview_* joins at `cueSum`, like channel CUE.
+        or command_type
+        in {
+            "channel_cue",
+            "output_mode",
+            "head_delay_ms",
+            "master_delay_ms",
+            "preview_cue",
+            "preview_stop",
+        }
     }
 )
 
@@ -189,9 +198,7 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             },
         }
     elif command_type == "headphone_master_select":
-        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command[
-            "device_id"
-        ]
+        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command["device_id"]
         changed = {
             "mixer": {
                 "headphones": {
@@ -200,9 +207,7 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             },
         }
     elif command_type == "headphone_input_select":
-        mirror["mixer"]["headphones"]["selected_input_device_id"] = command[
-            "device_id"
-        ]
+        mirror["mixer"]["headphones"]["selected_input_device_id"] = command["device_id"]
         changed = {
             "mixer": {
                 "headphones": {
@@ -411,6 +416,16 @@ def test_no_page_returns_503() -> None:
             "/api/v1/performance/headphones/calibrate/abort",
             {},
             {"type": "headphone_calibrate_abort"},
+        ),
+        (
+            "/api/v1/performance/headphones/preview",
+            {"stable_id": "trk-9", "ratio": 0.25},
+            {"type": "preview_cue", "stable_id": "trk-9", "ratio": 0.25},
+        ),
+        (
+            "/api/v1/performance/headphones/preview/stop",
+            {},
+            {"type": "preview_stop"},
         ),
     ],
 )
