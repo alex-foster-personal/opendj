@@ -438,6 +438,7 @@ test.describe('setup entry points', () => {
 
 		await folderInput.fill('/Users/you/Music');
 		await folderInput.blur();
+		await expect(folderInput).toHaveValue('/Users/you/Music');
 
 		const typedStyle = await folderInput.evaluate((el) => {
 			const style = window.getComputedStyle(el);
@@ -450,8 +451,15 @@ test.describe('setup entry points', () => {
 		expect(typedStyle.fontStyle).not.toBe('italic');
 		expect(typedStyle.opacity).toBe(1);
 
-		const typedScreenshot = await folderInput.screenshot();
-		expect(emptyScreenshot.equals(typedScreenshot)).toBe(false);
+		// The value lands before the glyphs do. A single screenshot here catches
+		// whatever frame the compositor happened to have up, which on a loaded
+		// runner is still the empty one -- so wait for the typed state to PAINT
+		// differently rather than asserting against one arbitrary frame.
+		await expect
+			.poll(async () => (await folderInput.screenshot()).equals(emptyScreenshot), {
+				message: 'the typed value must render differently from the italic placeholder'
+			})
+			.toBe(false);
 	});
 
 	test('the build identity chip states this app address in its foldout', async ({ page }) => {
