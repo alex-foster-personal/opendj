@@ -19,10 +19,27 @@ process.env.LIBRARY_JOBS_E2E_API_BASE = endpoints.backendOrigin;
 process.env.LIBRARY_JOBS_E2E_FRONTEND_PORT = String(endpoints.frontendPort);
 process.env.LIBRARY_JOBS_E2E_DATA_DIR = dataDir;
 
+// MUSIC_DJ_FRONTEND_PORT / MUSIC_DJ_BACKEND_PORT tell the daemon which
+// frontend it is paired with. Since the mutating-origin guard landed
+// (apps/webui/server/request_guard.py, issue #2689) the daemon 403s
+// ORIGIN_NOT_ALLOWED on every POST/PUT/PATCH/DELETE whose Origin is not its
+// own paired frontend, and this suite's backend was only ever told its own
+// --port: it resolved the frontend port from the checkout's root .env
+// (whatever pair this worktree happens to have claimed), never 5277, so every
+// "do next" enqueue was refused. The lane then read back empty and the
+// ordering assertion compared [] against the two selected ids. The GETs this
+// spec polls are not mutating, so they kept answering 200 and the failure
+// surfaced as an ordering mismatch rather than as the 403 it was.
+//
+// Declaring the pairing is the same mechanism the shipped dev server uses; it
+// grants this suite's origin and nothing else, so a foreign origin is still
+// refused.
 const engineEnv = {
 	...process.env,
 	MDT_DATA_DIR: dataDir,
 	MDT_LIBRARY_MODE: 'local',
+	MUSIC_DJ_FRONTEND_PORT: String(endpoints.frontendPort),
+	MUSIC_DJ_BACKEND_PORT: String(endpoints.backendPort),
 	MUSIC_DJ_LIBRARY_JOBS: 'on',
 	MUSIC_DJ_LIBRARY_JOBS_RUNNER: 'dry',
 	MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S: '2.5'
