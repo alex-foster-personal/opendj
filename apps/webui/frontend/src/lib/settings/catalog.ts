@@ -11,7 +11,7 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
+export type { SettingDef, SettingGroupId } from './catalog-types';
 import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
