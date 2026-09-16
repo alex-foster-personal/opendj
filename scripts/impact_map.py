@@ -1,0 +1,181 @@
+"""Merge per-process traces from `scripts.impact_trace_plugin` into one impact map, and select.
+
+SMARTEST-CI (specs/ci-fail-fast.md, part 3). Pure except for the CLI at the bottom.
+
+The map is keyed by test module. `select_modules` answers "which test modules could a change
+to these paths affect" from what the modules were OBSERVED to touch:
+
+    a file the module (or a fixture it uses, or a conftest above it) opened
+    a directory it listed, if the changed path is anywhere beneath it
+    a glob it expanded, if the changed path matches the pattern
+
+It returns UNKNOWN (never an empty selection) for what tracing cannot see: a module that
+spawned a subprocess is selected for every change, because its child's reads are untraced.
+
+Usage:
+    python -m scripts.impact_map merge .tmp/impact --out .tmp/impact-map.json
+    python -m scripts.impact_map select .tmp/impact-map.json apps/webui/frontend/src/x.ts
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import sys
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+MODULE = "module:"
+FIXTURE = "fixture:"
+DIRECTORY = "dir:"
+
+
+@dataclass(frozen=True)
+class Touches:
+    files: frozenset[str]
+    dirs: frozenset[str]
+    globs: frozenset[str]
+
+    def reaches(self, path: str) -> bool:
+        if path in self.files:
+            return True
+        parents = {str(parent) for parent in PurePosixPath(path).parents}
+        if parents & self.dirs:
+            return True
+        return any(_glob_matches(pattern, path) for pattern in self.globs)
+
+
+@dataclass(frozen=True)
+class ModuleImpact:
+    touches: Touches
+    fixtures: frozenset[str]
+    spawns: frozenset[str]
+
+
+@dataclass(frozen=True)
+class ImpactMap:
+    modules: dict[str, ModuleImpact]
+    fixtures: dict[str, Touches]
+    directories: dict[str, Touches]
+
+
+def _glob_matches(pattern: str, path: str) -> bool:
+    """Both sides are repo-relative (the tracer normalizes patterns), so this is `fnmatch`.
+
+    `fnmatch` lets `*` cross a path separator, so `apps/*.ts` also matches `apps/x/y.ts`.
+    That over-selects rather than under-selects, which is the direction selection is allowed
+    to err in.
+    """
+    return fnmatch.fnmatch(path, pattern)
+
+
+# ----- merge -----
+
+
+def merge_traces(payloads: list[dict]) -> dict:
+    """Union every process's records. Keys are stable across processes."""
+    merged: dict[str, dict] = defaultdict(
+        lambda: {"files": set(), "dirs": set(), "globs": set(), "fixtures": set(), "spawns": set()}
+    )
+    for payload in payloads:
+        for key, record in payload["records"].items():
+            target = merged[key]
+            for field in ("files", "dirs", "globs", "fixtures", "spawns"):
+                target[field].update(record[field])
+    return {
+        key: {
+            field: sorted(value[field])
+            for field in ("files", "dirs", "globs", "fixtures", "spawns")
+        }
+        for key, value in sorted(merged.items())
+    }
+
+
+def load_map(records: dict) -> ImpactMap:
+    def touches(record: dict) -> Touches:
+        return Touches(
+            frozenset(record["files"]), frozenset(record["dirs"]), frozenset(record["globs"])
+        )
+
+    modules, fixtures, directories = {}, {}, {}
+    for key, record in records.items():
+        if key.startswith(MODULE):
+            modules[key[len(MODULE) :]] = ModuleImpact(
+                touches(record), frozenset(record["fixtures"]), frozenset(record["spawns"])
+            )
+        elif key.startswith(FIXTURE):
+            fixtures[key[len(FIXTURE) :]] = touches(record)
+        elif key.startswith(DIRECTORY):
+            directories[key[len(DIRECTORY) :]] = touches(record)
+    return ImpactMap(modules, fixtures, directories)
+
+
+# ----- select -----
+
+
+def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
+    """Test modules the observed traces say a change to `changed` can reach."""
+    selected: set[str] = set()
+    fixtures_hit = {
+        name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
+    }
+    hit_dirs = [
+        directory
+        for directory, touches in impact.directories.items()
+        if any(map(touches.reaches, changed))
+    ]
+    for module, entry in impact.modules.items():
+        if (
+            entry.spawns
+            or module in changed
+            or any(map(entry.touches.reaches, changed))
+            or entry.fixtures & fixtures_hit
+            or any(_is_under(module, directory) for directory in hit_dirs)
+        ):
+            selected.add(module)
+    return frozenset(selected)
+
+
+def _is_under(module: str, directory: str) -> bool:
+    return directory in (".", "") or module.startswith(directory.rstrip("/") + "/")
+
+
+# ----- CLI -----
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    merge = sub.add_parser("merge")
+    merge.add_argument("trace_dir", type=Path)
+    merge.add_argument("--out", type=Path, required=True)
+    select = sub.add_parser("select")
+    select.add_argument("map", type=Path)
+    select.add_argument("paths", nargs="+")
+    args = parser.parse_args(argv)
+
+    if args.command == "merge":
+        traces = sorted(args.trace_dir.glob("impact-*.json"))
+        if not traces:
+            print(f"UNKNOWN: no impact-*.json under {args.trace_dir}", file=sys.stderr)
+            return 3
+        merged = merge_traces([json.loads(path.read_text(encoding="utf-8")) for path in traces])
+        args.out.write_text(json.dumps(merged, indent=1), encoding="utf-8")
+        modules = sum(key.startswith(MODULE) for key in merged)
+        spawning = sum(
+            bool(key.startswith(MODULE) and value["spawns"]) for key, value in merged.items()
+        )
+        print(
+            f"merged {len(traces)} trace(s): {modules} test modules, {spawning} spawn subprocesses"
+        )
+        return 0
+    impact = load_map(json.loads(args.map.read_text(encoding="utf-8")))
+    for module in sorted(select_modules(impact, args.paths)):
+        print(module)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
