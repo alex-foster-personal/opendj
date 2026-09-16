@@ -48,6 +48,11 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import {
+		previewCue,
+		previewCueRatioFor,
+		stopPreviewCue
+	} from '$lib/player/preview-cue.svelte';
 	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -227,7 +232,9 @@
 			if (st.playing) return ratio;
 			if (fallback === null) fallback = ratio;
 		}
-		return fallback;
+		// CUEOUT-15: a deck always wins the playhead, because a deck can be on
+		// air and the preview never is. Only a row on no deck shows a preview.
+		return fallback ?? previewCueRatioFor(stableId);
 	}
 
 	function _badgeFor(row: BrowserRow): AnalysisBadge {
@@ -1618,6 +1625,8 @@
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
+								previewing={previewCue.stable_id === row.stable_id}
+								onstop={stopPreviewCue}
 								stable_id={row.stable_id}
 								enabled={row.lyrics?.has_words === true}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}

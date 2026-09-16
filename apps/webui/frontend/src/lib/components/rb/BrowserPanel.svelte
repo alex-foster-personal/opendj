@@ -147,6 +147,7 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import { previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
@@ -2380,10 +2381,11 @@
 		const r = Math.max(0, Math.min(1, ratio));
 		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
 		if (targets.length === 0) {
-			pushToast(
-				'preview seek: track not on a deck (headphone cue not implemented - see PARITY-TODO)',
-				'error'
-			);
+			// CUEOUT-15: not on a deck means preview it on the cue bus, which is
+			// what a click on a library waveform means on every other DJ tool.
+			// previewCueSeek owns the refusal, because only it can tell a
+			// missing engine from a dead sink from a MIX knob at the master end.
+			void previewCueSeek(row.stable_id, r);
 			return;
 		}
 		for (const deck of targets) {

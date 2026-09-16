@@ -2853,6 +2853,20 @@ async function _upgradeDeckStems(
 }
 
 /**
+ * CUEOUT-15: build and resume the graph for a source that is NOT a deck.
+ *
+ * Every other entry point that builds the graph does so on its way to loading
+ * or playing a deck, so before the first deck load there is no AudioContext
+ * and no cue bus to join. The library preview needs both and owns neither,
+ * and refusing it with "load a deck once first" would make the feature
+ * unreachable on a fresh page. Rejects rather than returning a flag: the
+ * caller reports the real reason, never silence.
+ */
+export async function ensureAudioGraphForCue(): Promise<void> {
+	await _resumeContext();
+}
+
+/**
  * The monitor's tap into the engine graph, handed to the headphone module as a
  * thunk. Resolved lazily on purpose: a headphone selection must still build the
  * graph at the point INSIDE its try block where it always did, so a graph-build

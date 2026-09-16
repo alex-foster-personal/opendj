@@ -47,6 +47,8 @@
 		revealed,
 		nowRatio = null,
 		onseek,
+		previewing = false,
+		onstop,
 		stable_id = null,
 		enabled = true
 	}: {
@@ -67,6 +69,10 @@
 		 */
 		nowRatio?: number | null;
 		onseek?: (ratio: number) => void;
+		/** CUEOUT-15: this row is the live cue preview, so the playhead is the
+		 * preview's rather than a deck's and a stop control is offered. */
+		previewing?: boolean;
+		onstop?: () => void;
 		stable_id?: string | null;
 		enabled?: boolean;
 	} = $props();
@@ -264,7 +270,24 @@
 	>
 		<canvas bind:this={canvas} style={`width:${W}px;height:${H}px`}></canvas>
 		{#if nowX !== null}
-			<span class="now" style={`left:${nowX}px`} aria-hidden="true"></span>
+			<span
+				class="now"
+				class:preview={previewing}
+				style={`left:${nowX}px`}
+				aria-hidden="true"
+			></span>
+		{/if}
+		{#if previewing && onstop !== undefined}
+			<button
+				class="stop-preview"
+				type="button"
+				aria-label="STOP PREVIEW"
+				title="Stop the headphone cue preview of this track"
+				onclick={(e) => {
+					e.stopPropagation();
+					onstop?.();
+				}}>&#9632;</button
+			>
 		{/if}
 		{#if hoverX !== null}
 			<span class="scrub" style={`left:${hoverX}px`} aria-hidden="true"></span>
@@ -280,6 +303,27 @@
 		position: relative;
 		display: inline-block;
 		cursor: crosshair;
+	}
+	/* The preview playhead is deliberately NOT the deck colour: a deck can be
+	   on air and this never is, so the two must not read as the same thing. */
+	.now.preview {
+		background: var(--rb-orange, #f0a030);
+		box-shadow: 0 0 3px var(--rb-orange, #f0a030);
+	}
+	.stop-preview {
+		position: absolute;
+		top: 0;
+		right: 0;
+		z-index: 2;
+		width: 12px;
+		height: 12px;
+		padding: 0;
+		border: none;
+		line-height: 1;
+		font-size: 8px;
+		color: var(--rb-bg, #111);
+		background: var(--rb-orange, #f0a030);
+		cursor: pointer;
 	}
 	canvas {
 		display: block;
