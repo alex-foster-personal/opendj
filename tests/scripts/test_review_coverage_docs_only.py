@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts import review_coverage, review_coverage_carry, review_docs_only
+from scripts import review_coverage, review_coverage_carry
 from scripts.review_gh import TriageError
 
 _PR = "3290"
@@ -47,7 +47,6 @@ def _wire(
         return []
 
     monkeypatch.setattr(review_coverage, "_paginated_json_list", fake_paginated)
-    monkeypatch.setattr(review_docs_only, "_paginated_json_list", fake_paginated)
 
     def fake_checks(pr: str) -> list[dict]:
         if checks_and_reviews_forbidden:
@@ -134,7 +133,6 @@ def test_gh_failure_listing_files_is_a_measurement_failure_not_a_pass() -> None:
             raise TriageError(f"gh api {path} failed (1): boom")
 
         monkeypatch.setattr(review_coverage, "_paginated_json_list", raising_paginated)
-        monkeypatch.setattr(review_docs_only, "_paginated_json_list", raising_paginated)
 
         with pytest.raises(TriageError):
             review_coverage.triage(_PR)

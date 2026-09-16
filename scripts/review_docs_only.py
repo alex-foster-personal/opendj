@@ -29,14 +29,13 @@ so the two cannot drift the way two independently maintained lists could.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from scripts.ci_wait_workflows import (
     WorkflowCatalog,
     default_workflows_dir,
     workflow_would_run_for_files,
 )
-from scripts.review_gh import REPO, _paginated_json_list, _require_head_unchanged
 
 #: The workflow whose `pull_request.paths` filter defines "docs-only" for the
 #: whole repo. If this file stops declaring a `paths:` filter (e.g. someone
@@ -124,33 +123,3 @@ def render_docs_only_pass(
     ]
     lines.extend(f"    {path}" for path in sorted(changed_files))
     return "\n".join(lines)
-
-
-def changed_files_for_pr(pr: str) -> list[str]:
-    """Every path this PR's diff touches, across all pages."""
-    return [
-        entry["filename"]
-        for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")
-    ]
-
-
-def try_docs_only_coverage(
-    pr: str,
-    head_sha: str,
-    gate_commit: str,
-    resample_head_sha: Callable[[], str],
-) -> int | None:
-    """Return 0 when the PR is docs-only and the pass board was printed.
-
-    Returns None when the normal reviewer-coverage path must run. Re-sample
-    the head before printing, the same race guard the normal path applies
-    after its network calls: a push landing between the head sample and the
-    files listing must void this verdict rather than certify a head nobody
-    measured.
-    """
-    changed_files = changed_files_for_pr(pr)
-    if not is_docs_only(changed_files):
-        return None
-    _require_head_unchanged(head_sha, resample_head_sha())
-    print(render_docs_only_pass(pr, head_sha, gate_commit, changed_files))
-    return 0
