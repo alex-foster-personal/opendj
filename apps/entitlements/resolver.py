@@ -37,14 +37,11 @@ from dataclasses import dataclass
 
 from apps.entitlements import lifecycle
 from apps.entitlements.source import EntitlementSource, Standing
+from apps.shared.wire_codes import NOT_IN_PLAN_CODE
 
 #: The one switch. Unset or blank -> inert. Any value -> fail fast, because
 #: no provider integration exists to name.
 PROVIDER_ENV: str = "MDT_ENTITLEMENTS_PROVIDER"
-
-#: The stable code every plan refusal carries, on the wire and in the
-#: exception. Callers branch on this, never on the prose.
-NOT_IN_PLAN_CODE: str = "entitlement_not_in_plan"
 
 NOT_IN_PLAN_MESSAGE: str = (
     "this feature is not included in the plan on your account. Open the "

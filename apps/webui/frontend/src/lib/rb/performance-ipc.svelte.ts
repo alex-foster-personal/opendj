@@ -118,12 +118,15 @@ import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
 	EqBand,
+	HeadphoneAlignmentMode,
 	HeadphoneOutputMode,
 	HeadphoneState,
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
+import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/constants';
+import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -164,7 +167,11 @@ export type HeadphoneCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	| { type: 'headphone_master_select'; device_id: string }
 	| { type: 'headphone_input_select'; device_id: string }
-	| { type: 'output_mode'; mode: HeadphoneOutputMode };
+	| { type: 'output_mode'; mode: HeadphoneOutputMode }
+	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'master_delay_ms'; value: number }
+	| { type: 'headphone_calibrate'; interactive?: boolean }
+	| { type: 'headphone_calibrate_abort' };
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -221,7 +228,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'head_delay_ms'; value: number }
-	| { type: 'master_mute'; muted: boolean }
+	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
@@ -229,6 +236,10 @@ export type PerformanceCommand =
 	| { type: 'headphone_master_select'; device_id: string }
 	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
+	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'master_delay_ms'; value: number }
+	| { type: 'headphone_calibrate'; interactive?: boolean }
+	| { type: 'headphone_calibrate_abort' }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
@@ -932,8 +943,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, value: _unit('value', record.value) };
 	}
 	if (type === 'master_mute') {
-		_exactKeys(record, ['type', 'muted']);
-		return { type, muted: _boolean('muted', record.muted) };
+		if (record.persist === undefined) {
+			_exactKeys(record, ['type', 'muted']);
+			return { type, muted: _boolean('muted', record.muted) };
+		}
+		_exactKeys(record, ['type', 'muted', 'persist']);
+		return { type, muted: _boolean('muted', record.muted), persist: _boolean('persist', record.persist) };
 	}
 	if (type === 'browser_select_playlist') {
 		_exactKeys(record, ['type', 'playlist_id']);
@@ -980,6 +995,30 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'value']);
 		assertHeadDelayMs(record.value);
 		return { type, value: record.value };
+	}
+	if (type === 'headphone_alignment_mode') {
+		_exactKeys(record, ['type', 'value']);
+		assertHeadphoneAlignmentMode(record.value);
+		return { type, value: record.value };
+	}
+	if (type === 'master_delay_ms') {
+		_exactKeys(record, ['type', 'value']);
+		assertMasterDelayMs(record.value);
+		return { type, value: record.value };
+	}
+	if (type === 'headphone_calibrate') {
+		// `interactive` is the modal's flag (wait for the ear-cup step); HTTP and
+		// CLI callers omit it and get the headless run.
+		_exactKeys(record, ['type', 'interactive']);
+		if (record.interactive === undefined) return { type };
+		if (typeof record.interactive !== 'boolean') {
+			throw new TypeError(`headphone_calibrate interactive must be boolean; got ${String(record.interactive)}`);
+		}
+		return { type, interactive: record.interactive };
+	}
+	if (type === 'headphone_calibrate_abort') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
@@ -1597,7 +1636,9 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_output_select' ||
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_input_select' ||
-		command.type === 'output_mode'
+		command.type === 'output_mode' ||
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
+		command.type === 'headphone_calibrate'
 	) {
 		return ['headphone'];
 	}
@@ -1622,6 +1663,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms' ||
+		// CUEOUT-14: the abort must never queue behind the calibration it stops.
+		command.type === 'headphone_calibrate_abort' ||
 		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
@@ -1835,7 +1880,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
 	} else if (command.type === 'master_mute') {
-		setMasterMuted(command.muted);
+		// persist:false is the MCP safety rail's mute: silence this page now,
+		// but never store it where another browser would start muted.
+		setMasterMuted(command.muted, { persist: command.persist !== false });
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
 		await _browserAdapter.selectPlaylist(command.playlist_id);
@@ -1858,6 +1905,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.selectAudioInput(command.device_id);
 	} else if (command.type === 'output_mode') {
 		engine.setHeadphoneOutputMode(command.mode);
+	} else if (command.type === 'headphone_alignment_mode') {
+		engine.setHeadphoneAlignmentMode(command.value);
+	} else if (command.type === 'master_delay_ms') {
+		engine.setMasterDelayMs(command.value);
+	} else if (command.type === 'headphone_calibrate') {
+		await startCueAlignment({ interactive: command.interactive ?? false });
+	} else if (command.type === 'headphone_calibrate_abort') {
+		abortCueAlignment();
 	} else if (command.type === 'analysis_source') {
 		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {

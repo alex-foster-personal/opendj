@@ -32,11 +32,10 @@ fn low_disk_state() -> &'static Mutex<LowDiskState> {
 
 #[cfg(test)]
 pub fn set_test_disk_free_bytes(free: Option<u64>) {
-    TEST_DISK_FREE_BYTES
+    *TEST_DISK_FREE_BYTES
         .get_or_init(|| Mutex::new(None))
         .lock()
-        .expect("test disk free mutex")
-        .replace(free);
+        .expect("test disk free mutex") = free;
 }
 
 #[cfg(test)]
@@ -98,12 +97,11 @@ fn disk_free_bytes_unix(_path: &Path) -> Result<u64, std::io::Error> {
     ))
 }
 
-fn log_low_disk_once(path: &Path, free_bytes: u64) {
-    let mut guard = low_disk_state().lock().expect("low disk mutex");
-    if guard.low_disk_logged {
+fn log_low_disk_once(state: &mut LowDiskState, path: &Path, free_bytes: u64) {
+    if state.low_disk_logged {
         return;
     }
-    guard.low_disk_logged = true;
+    state.low_disk_logged = true;
     eprintln!(
         "[ERROR] engine log rotation disabled: {} has {} bytes free (minimum {})",
         path.display(),
@@ -127,7 +125,7 @@ fn rotation_allowed(path: &Path) -> Result<bool, std::io::Error> {
     let free = disk_free_bytes(&mount)?;
     if free < ENGINE_LOG_MIN_FREE_BYTES {
         guard.rotation_disabled = true;
-        log_low_disk_once(&mount, free);
+        log_low_disk_once(&mut guard, &mount, free);
         return Ok(false);
     }
     Ok(true)

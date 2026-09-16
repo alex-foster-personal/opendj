@@ -339,6 +339,16 @@ def write_launch_json(
     return content
 
 
+def _launch_documents_equal(actual_text: str, expected_text: str) -> bool:
+    """Return whether two launch.json texts carry the same configuration."""
+    if actual_text == expected_text:
+        return True
+    try:
+        return json.loads(actual_text) == json.loads(expected_text)
+    except json.JSONDecodeError:
+        return False
+
+
 def check_launch_json(
     *,
     launch_path: Path = DEFAULT_LAUNCH_PATH,
@@ -357,7 +367,7 @@ def check_launch_json(
         dotenv_path=dotenv_path,
     )
     actual = launch_path.read_text(encoding="utf-8")
-    if actual != expected:
+    if not _launch_documents_equal(actual, expected):
         raise DevServerRegistryError(
             f"{launch_path} is stale for profile {profile!r}. "
             f"Refresh from {registry_path} with "

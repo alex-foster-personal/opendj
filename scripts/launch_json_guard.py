@@ -58,8 +58,24 @@ def _executable_is_resolvable(raw_executable: str, *, repo_root: Path) -> bool:
     resolved = _substitute(raw_executable, repo_root=repo_root)
     if "/" in resolved:
         candidate = Path(resolved)
-        return candidate.is_file() and os.access(candidate, os.X_OK)
-    return shutil.which(resolved) is not None
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return True
+        # DEVLOOP-08 names the worktree venv interpreter in launch.json. CI and
+        # fresh checkouts may not have synced `.venv` yet; python3 on PATH is
+        # enough for this internal-consistency pass.
+        if (
+            candidate.name == "python"
+            and str(candidate).endswith("/.venv/bin/python")
+            and shutil.which("python3") is not None
+        ):
+            return True
+        return False
+    if shutil.which(resolved) is not None:
+        return True
+    # preview_start keeps the npm entry for compatibility; some runners expose pnpm only.
+    if resolved == "npm" and shutil.which("pnpm") is not None:
+        return True
+    return False
 
 
 def _script_entrypoint_findings(

@@ -22,7 +22,7 @@ export type MasterReason =
 	| 'dispose'
 	| null;
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
-import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from './mixer-types';
+import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
 import type { StemControl } from './stem-types';
 
 /**
@@ -137,6 +137,10 @@ export interface AudioEngine {
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
 	setHeadDelayMs(value: number): void;
+	/** CUEOUT-14: room delay line, 0..1500 ms, the last node before the destination. */
+	setMasterDelayMs(value: number): void;
+	/** CUEOUT-14: how a measured cue/master offset is split; re-applies the last calibration. */
+	setHeadphoneAlignmentMode(mode: HeadphoneAlignmentMode): void;
 	/** Practice, split-cable, or two-output routing. Unknown modes throw. */
 	setHeadphoneOutputMode(mode: HeadphoneOutputMode): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */

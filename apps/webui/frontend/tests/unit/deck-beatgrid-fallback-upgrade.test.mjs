@@ -1003,9 +1003,13 @@ test('_clearLoadedTrackState re-elects a failed/replaced master and reconciles i
 			'the shared scheduler (_reconcileStrandedFollowersBeforeClear), exactly like _resyncAfterBeatgridUpgrade, ' +
 			'or it can race a concurrent command on the master or a follower (issue #734 send-back r3912339491)'
 	);
-	const electIndex = body.indexOf('_electPlayingMaster()');
+	// Re-pointed after 0a8631e82 "fix: unlock and resume locked paused Beat Sync MASTER
+	// (DECKUX-17, #320)": the bare `_electPlayingMaster()` became a forced, reasoned
+	// election. Pinning the exact call also pins `force: true`, which an unload needs.
+	const electCall = "_electPlayingMaster({ force: true, reason: 'unload' })";
+	const electIndex = body.indexOf(electCall);
 	const reconcileIndex = body.indexOf('_beatgridGuards.beforeClear(');
-	assert.ok(electIndex > 0, '_electPlayingMaster() call not found inside _clearLoadedTrackState');
+	assert.ok(electIndex > 0, `${electCall} call not found inside _clearLoadedTrackState`);
 	assert.ok(
 		electIndex < reconcileIndex,
 		"the replacement master must be elected BEFORE reconciling this deck's stranded followers - " +
@@ -1043,9 +1047,11 @@ test('unload() elects a replacement master BEFORE reconciling its stranded follo
 	const end = source.indexOf('\n\tsetSyncMode(deck: DeckId', start);
 	assert.ok(end > start, 'setSyncMode marker not found after unload()');
 	const body = source.slice(start, end);
-	const electIndex = body.indexOf('_electPlayingMaster()');
+	// Re-pointed after 0a8631e82 (DECKUX-17, #320): same reshaped election call as above.
+	const electCall = "_electPlayingMaster({ force: true, reason: 'unload' })";
+	const electIndex = body.indexOf(electCall);
 	const reconcileIndex = body.indexOf('_beatgridGuards.beforeClear(');
-	assert.ok(electIndex > 0, '_electPlayingMaster() call not found inside unload()');
+	assert.ok(electIndex > 0, `${electCall} call not found inside unload()`);
 	assert.ok(reconcileIndex > 0, '_beatgridGuards.beforeClear() call not found inside unload()');
 	assert.ok(
 		electIndex < reconcileIndex,
@@ -1054,7 +1060,7 @@ test('unload() elects a replacement master BEFORE reconciling its stranded follo
 			'master and permanently drops its pending followers (issue #734 send-back Findings 5 shape, r3912339497)'
 	);
 	assert.equal(
-		body.split('_electPlayingMaster()').length - 1,
+		body.split('_electPlayingMaster(').length - 1,
 		1,
 		'unload() must elect exactly once - a second, now-redundant election call after reconciliation would ' +
 			'mean this fix only added a call rather than reordering the existing one'
@@ -1218,17 +1224,25 @@ test('_synchronizeFollowers gives every scheduled operation its session guard be
 		'every direct, blended, and re-anchored schedule in the batch must receive the session predicate, not only the batch after Promise.allSettled'
 	);
 	const scheduleStart = source.indexOf('async function _scheduleDeck(');
-	const scheduleEnd = source.indexOf('\n/**\n * Re-read the processor', scheduleStart);
+	// Re-pointed after c8d78c993 "fix: LATENCY-02 QUANTIZED LAUNCH gestures, armed glyph,
+	// and master clock": the "Re-read the processor" doc comment that ended _scheduleDeck
+	// is gone (the next declaration is now _observeLiveProcessorLatency), and both the
+	// optimistic write and the rollback gained the armed-launch term. Same ordering pinned.
+	const scheduleEnd = source.indexOf('\nasync function _observeLiveProcessorLatency(', scheduleStart);
 	assert.ok(scheduleStart > 0 && scheduleEnd > scheduleStart, 'cannot locate _scheduleDeck for rollback guard');
 	const scheduleBody = source.slice(scheduleStart, scheduleEnd);
-	const optimisticWrite = scheduleBody.indexOf('deckStates[deck].playing = active;');
+	const optimisticWrite = scheduleBody.indexOf(
+		'deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;'
+	);
 	const guard = scheduleBody.indexOf('if (!isCurrent()) throw new Error');
+	assert.notEqual(optimisticWrite, -1, 'the optimistic playing write not found inside _scheduleDeck');
 	assert.ok(
 		guard >= 0 && guard < optimisticWrite,
 		'the session guard must run before _scheduleDeck publishes its optimistic playing state'
 	);
-	assert.ok(
-		scheduleBody.includes('if (isCurrent()) deckStates[deck].playing = rt.desiredActive;'),
+	assert.match(
+		scheduleBody,
+		/if \(isCurrent\(\)\) \{\s*deckStates\[deck\]\.playing =\s*_quantizedLaunchAt\[deck\] !== null && rt\.desiredActive \? false : rt\.desiredActive;/,
 		'the rejection rollback must not write through the deck id after disposal replaced the session'
 	);
 });

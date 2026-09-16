@@ -24,14 +24,20 @@ const TRACK_TABLE = fileURLToPath(
 	new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
 );
 
+const TRACK_TABLE_SUPPORT = fileURLToPath(
+	new URL('../../src/lib/components/rb/browser/track-table-support.ts', import.meta.url)
+);
+
 let tips;
 let source;
+let supportSource;
 
 before(async () => {
 	tips = await loadTypeScriptModule('src/lib/rb/column-tips.ts');
 	// Line endings are a checkout detail, not source content: a Windows
 	// checkout carries CRLF, and the '>\n' tag scan below would find none.
 	source = readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n');
+	supportSource = readFileSync(TRACK_TABLE_SUPPORT, 'utf8').replaceAll('\r\n', '\n');
 });
 
 /** Every `title={...}` expression in the file, brace-aware. */
@@ -90,10 +96,19 @@ test('columnHeaderTitle keeps BOTH the explainer and the sort hint', () => {
 // ------------------------------------------------- the wiring into the table
 
 test('TrackTable resolves header titles through the column-tips module', () => {
+	// #1944 (733a03679) moved TrackTable's helper imports behind the
+	// track-table-support barrel, so the wiring is now two hops: TrackTable
+	// imports columnHeaderTitle from the barrel, and the barrel re-exports it
+	// from column-tips. Either hop missing orphans the module again.
 	assert.match(
 		source,
-		/import \{[^}]*columnHeaderTitle[^}]*\} from '\$lib\/rb\/column-tips'/,
-		'TrackTable no longer imports column-tips - the module is orphaned again'
+		/import \{[^}]*\bcolumnHeaderTitle\b[^}]*\} from '\.\/track-table-support'/,
+		'TrackTable no longer imports columnHeaderTitle - the column-tips module is orphaned again'
+	);
+	assert.match(
+		supportSource,
+		/export \{[^}]*\bcolumnHeaderTitle\b[^}]*\} from '\$lib\/rb\/column-tips'/,
+		'track-table-support no longer re-exports columnHeaderTitle from column-tips - the module is orphaned again'
 	);
 });
 

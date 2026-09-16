@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from apps.opendj_cli.orders import SEQUENCE, SINGLE
@@ -90,8 +90,13 @@ def master_is_muted(mirror_delta: Mapping[str, Any] | None) -> bool:
 
 
 def prepend_master_mute(order: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Return an order with master mute first when a play would be audible."""
-    mute_command = {"type": "master_mute", "muted": True}
+    """Return an order with master mute first when a play would be audible.
+
+    The mute is `persist: False`: it silences this run only. Persisting it
+    would write master_muted into the shared ui-prefs.json, and every browser
+    that loads the app next (including the maintainer's headed one) would start muted.
+    """
+    mute_command = {"type": "master_mute", "muted": True, "persist": False}
     if SINGLE in order:
         return {SEQUENCE: [mute_command, order[SINGLE]]}, True
     commands = _commands_in_order(order)

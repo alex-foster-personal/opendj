@@ -27,7 +27,9 @@ Regression lines:
     second wipes the first's tmp files out from under it mid-job
   - if the Makefile's $(PYTEST) targets stop accepting PYTEST_BASETEMP then a
     workflow can pass the variable and have it silently ignored
-"""
+  - if the Makefile joins PYTEST_BASETEMP and $@ with '/' then pytest's
+    tmp_path setup errors on a freshly wiped RUNNER_TEMP (issue #3162)
+    """
 
 from __future__ import annotations
 
@@ -56,6 +58,10 @@ _DIRECT_PYTEST_RE = [
     re.compile(r"\buv\s+run\b[^\n]*?(?:-m\s+pytest\b|\bpytest\b)"),
 ]
 _MAKE_INVOCATION_RE = re.compile(r"^make\s+([A-Za-z0-9_.-]+)")
+_MAKEFILE_BASETEMP_FLAG_RE = re.compile(
+    r"pytest_basetemp_flag\s*=\s*\$\(if\s+\$\(PYTEST_BASETEMP\),"
+    r"--basetemp=\$\(PYTEST_BASETEMP\)-\$@,\)"
+)
 
 # The flag itself must resolve under RUNNER_TEMP with the fail-loud `:?`
 # form. `${RUNNER_TEMP:-/tmp}` (a silent default) does NOT satisfy this.
@@ -150,6 +156,19 @@ def _makefile_pytest_targets() -> set[str]:
     prereqs, recipes = _parse_makefile(MAKEFILE.read_text(encoding="utf-8"))
     memo: dict[str, bool] = {}
     return {t for t in prereqs if _reaches_pytest(t, prereqs, recipes, memo)}
+
+
+def test_makefile_basetemp_flag_uses_hyphenated_target_suffix() -> None:
+    """if PYTEST_BASETEMP/$@ is used then tmp_path setup fails on a wiped runner"""
+    makefile_text = MAKEFILE.read_text(encoding="utf-8")
+    assert _MAKEFILE_BASETEMP_FLAG_RE.search(makefile_text), (
+        "pytest_basetemp_flag must join PYTEST_BASETEMP and $@ with '-', not '/', "
+        "so pytest can create the basetemp on a freshly wiped RUNNER_TEMP"
+    )
+    assert "PYTEST_BASETEMP)/$@" not in makefile_text, (
+        "nested PYTEST_BASETEMP/$@ basetemp paths require a parent directory "
+        "pytest does not create (issue #3162)"
+    )
 
 
 def test_makefile_targets_reaching_pytest_forward_a_basetemp_override() -> None:

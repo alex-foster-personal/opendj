@@ -15,6 +15,7 @@
 	import { onMount, tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { DECK_IDS, engine, getDeckState, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { masterMuteReason } from '$lib/player/master-mute.svelte';
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { StageDeck } from '$lib/lyrics/stage-store.svelte';
 	import { anyDeckPlaying } from '$lib/rb/playing-gate';
@@ -751,15 +752,18 @@
 		class:muted={isMasterMuted()}
 		aria-label="master mute"
 		aria-pressed={isMasterMuted()}
+		data-mute-reason={masterMuteReason() ?? undefined}
 		title={isMasterMuted()
-			? 'Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).'
+			? `${masterMuteReason() ?? ''} Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).`
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
 		onclick={() => void runPerformanceCommandFromUi({ type: 'master_mute', muted: !isMasterMuted() })}
 	>
 		<!-- Muted says MUTED, because the button reports a STATE, not an
 		     action; audible shows the speaker glyph, because there is no state
 		     worth spelling out when nothing is wrong (pin 55a26655b749). -->
-		{#if isMasterMuted()}
+		{#if isMasterMuted() && masterMuteReason() !== null}
+			MUTED (saved setting)
+		{:else if isMasterMuted()}
 			MUTED
 		{:else}
 			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">

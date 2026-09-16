@@ -2732,6 +2732,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/alignment-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Headphone Alignment Mode
+         * @description CUEOUT-14: headphones_only, delay_all, or hybrid. Re-applies the last
+         *     calibration without re-measuring.
+         */
+        post: operations["post_headphone_alignment_mode_api_v1_performance_headphones_alignment_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/calibrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Headphone Calibrate
+         * @description CUEOUT-14: run the mic calibration headlessly (no ear-cup pause). The
+         *     call holds until the run reaches applied (200) or failed (400 with the
+         *     page's error); an abort resolves with the state at idle.
+         */
+        post: operations["post_headphone_calibrate_api_v1_performance_headphones_calibrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/calibrate/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Headphone Calibrate Abort
+         * @description CUEOUT-14: stop a running calibration; decks resume, nothing is applied.
+         */
+        post: operations["post_headphone_calibrate_abort_api_v1_performance_headphones_calibrate_abort_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/headphones/channel-cue": {
         parameters: {
             query?: never;
@@ -2794,6 +2857,26 @@ export interface paths {
         put?: never;
         /** Post Headphone Level */
         post: operations["post_headphone_level_api_v1_performance_headphones_level_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/master-delay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Master Delay Ms
+         * @description CUEOUT-14: room delay line, 0..1500 ms, the last node before the output.
+         */
+        post: operations["post_master_delay_ms_api_v1_performance_headphones_master_delay_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8197,6 +8280,22 @@ export interface components {
             /** Wire Version */
             wire_version: number;
         };
+        /**
+         * HeadphoneCalibrationOut
+         * @description CUEOUT-14 calibration progress; `step` is the modal's state machine.
+         */
+        HeadphoneCalibrationOut: {
+            /** Cue Latency Ms */
+            cue_latency_ms: number | null;
+            /** Error */
+            error: string | null;
+            /** Master Latency Ms */
+            master_latency_ms: number | null;
+            /** Offset Ms */
+            offset_ms: number | null;
+            /** Step */
+            step: string;
+        };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
             /** Id */
@@ -8208,6 +8307,9 @@ export interface components {
         HeadphoneStateOut: {
             /** Active */
             active: boolean;
+            /** Alignment Mode */
+            alignment_mode: string;
+            calibration: components["schemas"]["HeadphoneCalibrationOut"];
             /** Error */
             error: string | null;
             /** Head Delay Ms */
@@ -8216,6 +8318,8 @@ export interface components {
             inputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
             /** Level */
             level: number;
+            /** Master Delay Ms */
+            master_delay_ms: number;
             /** Mix */
             mix: number;
             /** Output Mode */
@@ -18736,10 +18840,52 @@ export interface operations {
             };
         };
     };
+    post_headphone_alignment_mode_api_v1_performance_headphones_alignment_mode_post: _HeadphoneJsonPost;
+    post_headphone_calibrate_api_v1_performance_headphones_calibrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Headphone state after a headless cue alignment calibration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+        };
+    };
+    post_headphone_calibrate_abort_api_v1_performance_headphones_calibrate_abort_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Headphone state after aborting an in-flight calibration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+        };
+    };
     post_channel_cue_api_v1_performance_headphones_channel_cue_post: _HeadphoneJsonPost;
     post_head_delay_ms_api_v1_performance_headphones_head_delay_post: _HeadphoneJsonPost;
     post_headphone_input_select_api_v1_performance_headphones_inputs_select_post: _HeadphoneJsonPost;
     post_headphone_level_api_v1_performance_headphones_level_post: _HeadphoneJsonPost;
+    post_master_delay_ms_api_v1_performance_headphones_master_delay_post: _HeadphoneJsonPost;
     post_headphone_mix_api_v1_performance_headphones_mix_post: _HeadphoneJsonPost;
     post_output_mode_api_v1_performance_headphones_output_mode_post: _HeadphoneJsonPost;
     post_headphone_master_select_api_v1_performance_headphones_outputs_master_post: _HeadphoneJsonPost;

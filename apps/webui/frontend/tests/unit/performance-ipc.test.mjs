@@ -992,6 +992,15 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			selected_input_device_id: null,
 			output_mode: 'practice',
 			head_delay_ms: 0,
+			alignment_mode: 'hybrid',
+			master_delay_ms: 0,
+			calibration: {
+				step: 'idle',
+				cue_latency_ms: null,
+				master_latency_ms: null,
+				offset_ms: null,
+				error: null
+			},
 			outputs: [],
 			inputs: [],
 			supported: false,
@@ -1082,7 +1091,11 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_master_select'/);
 	assert.match(mixer, /type: 'headphone_input_select'/);
 	assert.match(headphones, /onclick=\{onacquire\}/);
-	assert.match(headphones, /Grant browser access to a second audio output/);
+	// bf60d7d67 feat(webui): pin master and cue sinks from I/O menu (#2409)
+	// replaced the "+ OUT" grant button (title "Grant browser access to a second
+	// audio output") with the I/O button, which still calls onacquire.
+	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{onacquire\}/);
+	assert.match(headphones, /I\/O briefly uses the built-in mic so device names appear/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);

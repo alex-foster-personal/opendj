@@ -30,15 +30,33 @@ async function assertCenterInViewport(
 	expect(cy, `${label} center y`).toBeGreaterThanOrEqual(0);
 	expect(cy, `${label} center y`).toBeLessThanOrEqual(viewport.height);
 
+	const elementHandle = await locator.elementHandle();
+	expect(elementHandle, `${label} elementHandle`).not.toBeNull();
+
+	// Issue #3097: `hit.ok` alone passes whenever ANY element sits at the
+	// center - including one that covers the real target, like the fixed
+	// PerformanceAppNav. The check must confirm the element AT the center
+	// IS the target (or is contained by it, e.g. an inner span/svg).
 	const hit = await page.evaluate(
-		({ x, y }) => {
+		({ x, y, el }) => {
 			const target = document.elementFromPoint(x, y);
-			if (target === null) return { ok: false, tag: 'null' };
-			return { ok: true, tag: target.tagName, testid: (target as HTMLElement).dataset?.testid ?? '' };
+			if (target === null) return { ok: false, tag: 'null', isTarget: false, testid: '' };
+			const isTarget = target === el || (el as Element).contains(target);
+			return {
+				ok: true,
+				tag: target.tagName,
+				testid: (target as HTMLElement).dataset?.testid ?? '',
+				isTarget
+			};
 		},
-		{ x: Math.round(cx), y: Math.round(cy) }
+		{ x: Math.round(cx), y: Math.round(cy), el: elementHandle }
 	);
 	expect(hit.ok, `${label} elementFromPoint at center`).toBe(true);
+	expect(
+		hit.isTarget,
+		`${label} elementFromPoint at center must be the target (or inside it), got ` +
+			`<${hit.tag}> data-testid="${hit.testid}" instead`
+	).toBe(true);
 }
 
 for (const viewport of VIEWPORTS) {

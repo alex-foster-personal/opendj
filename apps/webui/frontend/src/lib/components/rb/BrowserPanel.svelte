@@ -8,6 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
+	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
@@ -40,6 +41,7 @@
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
+		resolveRowMarkerAnlz,
 		resolveRowVocals,
 		isAppropriateNext,
 		resolveSearchFilterFallback,
@@ -214,6 +216,7 @@
 		getAnlzEntry,
 		isAnlzEntryUsable,
 		registerAnlzConsumer,
+		resolveDisplayedAnlz,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
@@ -403,6 +406,23 @@
 			cachedVocals: (stable_id: string): Vocals | undefined => {
 				const entry = getAnlzEntry(stable_id);
 				return entry !== undefined && entry.status === 'ready' ? vocalsOf(entry.data) : undefined;
+			}
+		})
+	);
+	// Strip cue/phrase markers (LIBUX-12), resolved here for the same reason as
+	// vocalsById: TrackTable renders per row and must render from props alone.
+	const markerAnlzById = $derived.by(() =>
+		resolveRowMarkerAnlz({
+			rows: pane.rows,
+			decks: DECK_IDS.flatMap((d) => {
+				const st = decks[d];
+				if (st.stable_id === null) return [];
+				return [{ stable_id: st.stable_id, playing: st.playing, anlz: resolveDisplayedAnlz(st.anlz, st.stable_id) }];
+			}),
+			// Pure read, same contract as cachedVocals above.
+			cachedAnlz: (stable_id: string) => {
+				const entry = getAnlzEntry(stable_id);
+				return entry !== undefined && entry.status === 'ready' ? entry.data : undefined;
 			}
 		})
 	);
@@ -1189,7 +1209,7 @@
 	function _replaceQueryParams(params: URLSearchParams): void {
 		const url = new URL(window.location.href);
 		url.search = params.toString();
-		window.history.replaceState(null, '', formatReplaceStateUrl(url));
+		replaceState(formatReplaceStateUrl(url), {});
 	}
 
 	function _writeSpotifyQuery(playlistId: string | null): void {
@@ -3273,6 +3293,7 @@
 			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
+			{markerAnlzById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
@@ -3695,6 +3716,14 @@
 		align-items: center;
 		gap: 8px;
 		padding: 0 6px;
+		/* Issue #3097: this row and PerformanceAppNav (position: fixed,
+		 * bottom-left, height 18px) are both anchored to the exact same
+		 * bottom-left rectangle - this row via normal grid flow, the nav via
+		 * `position: fixed` on top of it (z-index 50). Left-padding by the
+		 * nav's reserved width keeps this row's own content (the wordmark
+		 * first of all) from rendering underneath it, instead of merely
+		 * being covered by a higher stacking context. */
+		padding-left: var(--rb-perf-nav-w);
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
 	}

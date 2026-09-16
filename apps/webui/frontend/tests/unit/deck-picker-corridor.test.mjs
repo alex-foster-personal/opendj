@@ -213,11 +213,20 @@ test('the box stays anchored inside c-title, clear of the preview column, and fl
 
 test('reduced motion disables the opacity fade only - the 100ms corridor grace must survive it', () => {
 	const text = source(TABLE_PATH);
-	const reducedMotionMatch = text.match(
-		/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\t\}/
+	// f82275752 (fix(webui): close library pin gaps, #2425) added a second,
+	// earlier reduced-motion block for .cloud-transfer-indicator, so the first
+	// match is no longer the deck-picker one. Pin the block that owns .deck-btns.
+	const reducedMotionBodies = [
+		...text.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\t\}/g)
+	].map((match) => match[1]);
+	assert.ok(reducedMotionBodies.length > 0, 'expected a prefers-reduced-motion media query');
+	const deckButtonBodies = reducedMotionBodies.filter((candidate) => /\.deck-btns\s*\{/.test(candidate));
+	assert.equal(
+		deckButtonBodies.length,
+		1,
+		'expected exactly one prefers-reduced-motion media query governing .deck-btns'
 	);
-	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion media query');
-	const body = reducedMotionMatch[1];
+	const body = deckButtonBodies[0];
 	assert.match(
 		body,
 		/\.deck-btns\s*\{\s*transition: opacity 0s;/,

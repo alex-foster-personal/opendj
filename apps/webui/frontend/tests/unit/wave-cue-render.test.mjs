@@ -32,6 +32,9 @@ const PREVIEW_STRIP = fileURLToPath(
 const TRACK_TABLE = fileURLToPath(
 	new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
 );
+const BROWSER_PANEL = fileURLToPath(
+	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
+);
 
 before(async () => {
 	globalThis.Path2D = class {
@@ -312,12 +315,16 @@ describe('library preview marker parity (LIBUX-12)', () => {
 	});
 
 	it('receives only real loaded or already-cached ANLZ, without a per-row fetch', () => {
+		// The per-row table renders from props alone (H20): BrowserPanel resolves
+		// markerAnlzById once and TrackTable only indexes it.
 		const source = readFileSync(TRACK_TABLE, 'utf8');
-		const start = source.indexOf('function _markerAnlzFor');
-		const end = source.indexOf('function _badgeFor', start);
-		const helper = start >= 0 && end > start ? source.slice(start, end) : '';
+		const panel = readFileSync(BROWSER_PANEL, 'utf8');
+		const start = panel.indexOf('const markerAnlzById = $derived.by(');
+		const end = panel.indexOf('\n\t);', start);
+		const helper = start >= 0 && end > start ? panel.slice(start, end) : '';
 
-		assert.match(source, /markerAnlz=\{_markerAnlzFor\(row\.stable_id\)\}/);
+		assert.match(source, /markerAnlz=\{markerAnlzById\[row\.stable_id\] \?\? null\}/);
+		assert.match(helper, /resolveRowMarkerAnlz\(/, 'markers bypass the pure resolver');
 		assert.match(helper, /resolveDisplayedAnlz\(/, 'loaded deck ANLZ is not reused');
 		assert.match(helper, /getAnlzEntry\(/, 'shared real ANLZ cache is not reused');
 		assert.doesNotMatch(helper, /ensureAnlz|fetchAnlz/, 'virtual rows must not fan out /anlz fetches');

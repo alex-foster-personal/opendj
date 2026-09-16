@@ -82,6 +82,11 @@ def open_rw(
     reading 3). It is a no-op on a DB with nothing to claim, so an ordinary
     open still mints no identity file and writes no ``machines`` row.
 
+    :func:`apps.shared.state.schema.apply_migrations` runs the v15
+    ``track_fields`` stamp backfill when schema is at least v15 (issue #3136).
+    A durable ``schema_meta_markers`` row (v16, issue #3165) records
+    completion so repeat opens issue only a constant-time marker check.
+
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
     ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs

@@ -30,9 +30,12 @@ import { makeDiskWriteChain } from '../rb/disk-write-chain';
  * MASTER_MUTE_STORAGE_KEY, and startup mutes when EITHER the URL says `muted=1`
  * OR the stored value is exactly '1'. Before this, muting and then reloading
  * brought the audio back unannounced, which is the unsafe direction for a mute.
- * The stored value only ever comes from an explicit mute in this browser
- * profile, so it cannot silence a headed client by accident the way a stray
- * query value could, and a stored unmute can never override `?muted=1`.
+ * The stored value only comes from an explicit mute (this profile's button, or
+ * a CLI `master_mute` verb persisted to ui-prefs.json and hydrated), never from
+ * the MCP safety rail: its prepended mute is `persist: false` and skips both
+ * localStorage and disk. A stored unmute can never override `?muted=1`. A mute
+ * that arrives from disk on load sets `masterMuteReason()` so the topbar can
+ * say WHY the page came up muted instead of silencing the maintainer without a word.
  *
  * Regression lines:
  * - if a mute made before a reload is lost after it then the page comes back
@@ -44,6 +47,8 @@ import { makeDiskWriteChain } from '../rb/disk-write-chain';
  * - if muting disconnects or bypasses any node then a silent browser stops
  *   exercising the audio path and audio bugs hide until a headed run
  * - if a value other than '1' mutes then a stray query param silences the maintainer
+ * - if a `persist: false` mute writes localStorage or disk then an agent test
+ *   run silences every browser that loads the app next
  */
 
 /** The query parameter that arms the startup mute. Exact match on '1'. */
@@ -143,12 +148,40 @@ export function isMasterMuted(): boolean {
 
 /** Set the mute and push it to the gain node. Value-only: the node keeps every
  * connection it has, so the graph upstream and downstream is untouched. */
-export function setMasterMuted(muted: boolean): void {
+export function setMasterMuted(muted: boolean, options: { persist: boolean } = { persist: true }): void {
 	if (typeof muted !== 'boolean') throw new TypeError('setMasterMuted: muted must be boolean');
+	if (typeof options.persist !== 'boolean') throw new TypeError('setMasterMuted: persist must be boolean');
 	_muted = muted;
+	_reason = null;
 	_applyMasterMute();
+	if (!options.persist) return;
 	writeStoredMasterMuted(_browserStorage(), muted);
 	void persistMasterMutedToDisk(muted);
+}
+
+/** Why the page is muted when the mute did not come from a click in this page,
+ * or null. Cleared by any later setMasterMuted. */
+let _reason = $state<string | null>(null);
+
+export const MASTER_MUTE_DISK_REASON =
+	'Muted on load by the saved setting master_muted=true in ui-prefs.json (set by a CLI master_mute or another browser).';
+
+export function masterMuteReason(): string | null {
+	return _reason;
+}
+
+/** Apply the disk ui-prefs value on hydrate. Disk is authoritative across
+ * profiles: false clears a stale stored mute in this profile, and true mutes
+ * with a visible reason. The disk is not re-written with what was just read. */
+export function hydrateMasterMutedFromDisk(muted: boolean): void {
+	if (typeof muted !== 'boolean') throw new TypeError('hydrateMasterMutedFromDisk: muted must be boolean');
+	const wasMuted = _muted;
+	_lastDiskSynced = muted;
+	setMasterMuted(muted);
+	if (muted && !wasMuted) {
+		_reason = MASTER_MUTE_DISK_REASON;
+		console.warn(`master mute: ${MASTER_MUTE_DISK_REASON}`);
+	}
 }
 
 type MasterMuteDiskPatch = { master_muted: boolean };

@@ -264,12 +264,15 @@ export function scheduleOffsetStages(input: {
 	 */
 	baseLatencySec: number | undefined;
 	outputLatencySec: number | undefined;
+	/** CUEOUT-14: the room delay line, carried into `input_to_output_ms` only;
+	 * validated by `inputToOutputMs`. */
+	masterDelayMs?: number;
 	active: boolean;
 	/** Q1: ms from the input stamp to the `contextTimeSec` read. */
 	pressToScheduleMs?: number;
 }): Record<string, number> {
 	for (const [name, value] of Object.entries(input)) {
-		if (name === 'active' || name === 'pressToScheduleMs') continue;
+		if (name === 'active' || name === 'pressToScheduleMs' || name === 'masterDelayMs') continue;
 		if (name === 'baseLatencySec' || name === 'outputLatencySec') continue;
 		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
 	}
@@ -314,7 +317,8 @@ export function scheduleOffsetStages(input: {
 		pressToScheduleMs,
 		scheduledOffsetMs,
 		baseLatencySec: input.baseLatencySec,
-		outputLatencySec: input.outputLatencySec
+		outputLatencySec: input.outputLatencySec,
+		...(input.masterDelayMs === undefined ? {} : { masterDelayMs: input.masterDelayMs })
 	});
 	return {
 		// The Class A budget turns on this one, post-clamp.
