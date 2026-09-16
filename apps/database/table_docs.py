@@ -221,9 +221,9 @@ TABLE_DOCS: dict[str, str] = {
         "applied schema version."
     ),
     "schema_meta_markers": (
-        "Durable one-shot repair markers for post-migration backfills and "
-        "hub changelog stamp repairs -- infrastructure, not domain data. "
-        "One row per completed marker name."
+        "Durable completion markers for one-time migration repairs "
+        "(for example the v15 track_fields stamp backfill). One row per "
+        "repair name; repeat opens check the marker instead of rescanning."
     ),
     # ----- apps.shared.state.schema.FOREIGN_AUTHORITY_TABLES --------------
     # Real tables other modules write into this same file. D2

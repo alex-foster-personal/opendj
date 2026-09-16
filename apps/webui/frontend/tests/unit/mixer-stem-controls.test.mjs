@@ -45,3 +45,11 @@ test('the shared row remains the sole availability and RoFormer drums-reason imp
 	assert.match(row, /it is mixed into INST, so it cannot be muted on its own/);
 	assert.match(row, /stems \$\{deck\.stems\.status\}: \$\{deck\.stems\.error \?\? 'no aligned artifact'\}/);
 });
+
+test('deck and mixer scopes publish distinct stem chip testids', async () => {
+	const row = await source('deck/StemRow.svelte');
+	const strip = await source('mixer/ChannelStrip.svelte');
+	assert.match(row, /testIdScope = 'deck'/);
+	assert.match(row, /data-testid=\{`stem-\$\{stem\.id\}-\$\{testIdScope\}-\$\{deck\.deck_id\}`\}/);
+	assert.match(strip, /testIdScope="channel"/);
+});

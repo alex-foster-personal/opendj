@@ -236,19 +236,26 @@ test('the setter works before any node exists and applies on attach', () => {
 //-----------------------------------------------------------------------------
 // engine wiring
 //
-// The mute is only a mute if it is the LAST node before the destination. That
-// is a property of how _ensureGraph strings the nodes together, and the engine
-// never returns the wiring to a caller, so it is pinned as source text -- the
-// same drift-guard shape control-explainer-phase-lock and load-memory-kpis use.
+// The mute is only a mute if every path to the destination runs through it.
+// Since CUEOUT-14 the room delay line sits between the mute and the speakers,
+// so the mute is the last GAIN rather than the last node; what still has to
+// hold is that nothing reaches the destination around it. That is a property
+// of how _ensureGraph strings the nodes together, and the engine never returns
+// the wiring to a caller, so it is pinned as source text -- the same
+// drift-guard shape control-explainer-phase-lock and load-memory-kpis use.
 //-----------------------------------------------------------------------------
 
-test('the mute gain is the final node before the destination on both output paths', () => {
+test('every path to the destination runs through the mute gain and the room delay', () => {
 	const body = engineBlockAfter('function _ensureGraph(): AudioContext {');
 
-	// Internal path: master bus -> mute -> speakers.
+	// Internal path: master bus -> mute -> room delay -> speakers.
 	assert.ok(
-		body.includes('_masterMuteGain.connect(_ctx.destination)'),
-		'if the mute gain does not feed _ctx.destination then muting silences nothing'
+		body.includes('_masterMuteGain.connect(_masterDelay)'),
+		'if the mute gain does not feed the room delay then muting silences nothing'
+	);
+	assert.ok(
+		body.includes('_masterDelay.connect(_ctx.destination)'),
+		'if the room delay does not feed _ctx.destination then the speakers are dead'
 	);
 	assert.ok(
 		body.includes('wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
@@ -259,11 +266,15 @@ test('the mute gain is the final node before the destination on both output path
 		'if the split-cable path does not feed the mute gain then split_cable is out of the chain'
 	);
 
-	// External-mixer path (?extroute=): merger -> mute -> speakers.
+	// External-mixer path (?extroute=): merger -> mute -> room delay -> speakers.
 	assert.ok(
 		body.includes('_externalMerger.connect(_masterMuteGain)'),
 		'if extroute bypasses the mute gain then ?muted=1 is silently ignored on the ' +
 			'multichannel path and a routed deck plays out loud'
+	);
+	assert.ok(
+		body.includes('_masterDelay.connect(dest)'),
+		'if the room delay does not feed the routed destination then extroute is dead'
 	);
 
 	// Anything reaching the destination directly would route around the mute.
@@ -274,6 +285,12 @@ test('the mute gain is the final node before the destination on both output path
 	assert.ok(
 		!body.includes('_externalMerger.connect(dest)'),
 		'if the merger still reaches the destination directly then the mute is orphaned'
+	);
+	assert.ok(
+		!body.includes('_masterMuteGain.connect(dest)') &&
+			!body.includes('_masterMuteGain.connect(_ctx.destination)'),
+		'if the mute gain still reaches the destination directly then the room delay is ' +
+			'bypassed and cue alignment is silently ignored on that path'
 	);
 });
 

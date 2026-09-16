@@ -18,7 +18,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state import schema_markers
 from apps.shared.state import sync_stamp
-from apps.shared.state.migrations_v16 import REPAIR_MARKER
+from apps.shared.state.migrations_v17 import REPAIR_MARKER
 from apps.sync_hub import client, digest_diff, engine_apply, protocol
 from apps.sync_hub.engine_common import HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE
 from apps.sync_hub.protocol_common import EPOCH

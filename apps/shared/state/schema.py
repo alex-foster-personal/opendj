@@ -36,8 +36,9 @@ from .migrations_v13 import _V13
 from .migrations_v14 import _V14
 from .migrations_v15 import _V15, backfill_track_fields_stamps
 from .migrations_v16 import _V16
+from .migrations_v17 import _V17, repair_hub_changelog_stamps
 
-SCHEMA_VERSION: int = 16
+SCHEMA_VERSION: int = 17
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -59,6 +60,7 @@ MIGRATIONS: list[list[str]] = [
     _V14,
     _V15,
     _V16,
+    _V17,
 ]
 
 
@@ -86,8 +88,6 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     """
     _ensure_meta(conn)
     current = _current_version(conn)
-    if current >= SCHEMA_VERSION:
-        return current
 
     for step_idx in range(current, SCHEMA_VERSION):
         statements = MIGRATIONS[step_idx]
@@ -99,8 +99,6 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         try:
             for stmt in statements:
                 conn.execute(stmt)
-            if target_version == 15:
-                backfill_track_fields_stamps(conn, transactional=False)
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
                 (target_version, datetime.now(UTC).isoformat()),
@@ -109,6 +107,11 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         except Exception:
             conn.execute("ROLLBACK")
             raise
+
+    if _current_version(conn) >= 16:
+        backfill_track_fields_stamps(conn)
+    if _current_version(conn) >= 17:
+        repair_hub_changelog_stamps(conn)
 
     return _current_version(conn)
 

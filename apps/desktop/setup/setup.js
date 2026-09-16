@@ -12,6 +12,9 @@
  *   -> `startBootstrap`
  * - ✔︎ ✅ Never render a third state: no blank window, no endless spinner,
  *   no fabricated library data.
+ * - ✔︎ ✅ Every button reacts to being pressed and reports failure in
+ *   words, including Relaunch on the engine-fatal screen.
+ *   -> `relaunchEngine`
  *
  * Acceptance tests:
  *
@@ -23,6 +26,15 @@
  *   `resolveEngineOrigin` returns DEFAULT_ENGINE_ORIGIN, [else ⛔️].
  * - [if] an origin is supplied but is not a loopback http(s) URL [then]
  *   resolution throws rather than probing it, [else ⛔️].
+ * - [if] Relaunch is pressed with no supervisor health port [then] the
+ *   screen says it cannot relaunch and why, [else ⛔️].
+ * - [if] the relaunch request is refused [then] the screen names the
+ *   address and the refusal, [else ⛔️].
+ * - [if] the request is accepted but nothing answers at the engine
+ *   address before the timeout [then] the screen reports that the engine
+ *   did not come back, [else ⛔️].
+ * - [if] the engine answers after the request [then] the page leaves for
+ *   the engine origin, [else ⛔️].
  */
 
 /**
@@ -144,12 +156,100 @@ function showFatal(supervisor) {
 	byId('fatal-port').textContent = String(port);
 }
 
-function requestRelaunch(healthPort) {
+/**
+ * Ask the shell to restart the engine, and SAY WHAT HAPPENED.
+ *
+ * House rule (the maintainer, Tue 15 Sep 2026): every button reacts to being
+ * pressed, and a button whose action fails says so. The first version of
+ * this function returned silently when no health port was known and
+ * otherwise fired an opaque `no-cors` POST it never looked at, so on the
+ * one screen a user reaches only when something is already broken, the
+ * only control on it did nothing observable either way.
+ *
+ * Acceptance is the PRESENCE of a restarted engine, never the absence of
+ * a thrown error: an accepted POST proves the supervisor's health server
+ * took the request, not that the engine came back. So this polls the
+ * engine's own address afterwards and reports success only once
+ * something answers there.
+ *
+ * `no-cors` is kept for both calls for the reason stated on screen: the
+ * page is `tauri://localhost` and neither loopback server sends CORS
+ * headers, so a normal-mode read would be blocked by the browser and a
+ * delivered request would be indistinguishable from a refused one. The
+ * opaque form still separates "connection accepted" from "refused",
+ * which is the bit that matters here.
+ */
+export const RELAUNCH_VERIFY_TIMEOUT_MS = 20000;
+export const RELAUNCH_POLL_INTERVAL_MS = 500;
+
+export function relaunchUrl(healthPort) {
+	return `http://127.0.0.1:${healthPort}/api/v1/relaunch`;
+}
+
+export async function relaunchEngine({
+	healthPort,
+	engineOrigin,
+	setStatus,
+	fetchImpl = globalThis.fetch,
+	probe = probeEngine,
+	sleep = defaultSleep,
+	now = () => Date.now(),
+	timeoutMs = RELAUNCH_VERIFY_TIMEOUT_MS,
+	pollIntervalMs = RELAUNCH_POLL_INTERVAL_MS
+} = {}) {
+	setStatus('working', 'Asking Open DJ to start the engine...');
+
 	if (!healthPort) {
-		return;
+		setStatus(
+			'bad',
+			'Cannot relaunch: this window was never told which port the app ' +
+				'supervisor listens on, so there is nothing to ask. Quit Open DJ ' +
+				'and open it again from Finder.'
+		);
+		return { ok: false, reason: 'no-health-port' };
 	}
-	const url = `http://127.0.0.1:${healthPort}/api/v1/relaunch`;
-	void fetch(url, { method: 'POST', mode: 'no-cors', cache: 'no-store' });
+
+	const url = relaunchUrl(healthPort);
+	try {
+		await fetchImpl(url, { method: 'POST', mode: 'no-cors', cache: 'no-store' });
+	} catch (err) {
+		const detail = err instanceof Error ? err.message : String(err);
+		setStatus(
+			'bad',
+			`Relaunch request was refused at ${url} (${detail || 'connection refused'}). ` +
+				'The app supervisor is not answering. Quit Open DJ and open it again from Finder.'
+		);
+		return { ok: false, reason: 'request-refused', detail };
+	}
+
+	setStatus('working', 'Relaunch accepted. Waiting for the engine to answer...');
+
+	const deadline = now() + timeoutMs;
+	let lastDetail = 'no response';
+	for (;;) {
+		const result = await probe(engineOrigin, fetchImpl);
+		if (result.reachable) {
+			setStatus('good', `Engine is answering at ${engineOrigin}. Opening it...`);
+			return { ok: true, url: result.url };
+		}
+		lastDetail = result.detail;
+		if (now() >= deadline) {
+			break;
+		}
+		await sleep(pollIntervalMs);
+	}
+
+	setStatus(
+		'bad',
+		`The engine did not answer at ${engineOrigin} within ` +
+			`${Math.round(timeoutMs / 1000)}s of the relaunch (${lastDetail}). ` +
+			'It failed to start again. Quit Open DJ and open it again from Finder.'
+	);
+	return { ok: false, reason: 'engine-absent', detail: lastDetail };
+}
+
+function defaultSleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function showUnreachable(result, attempts) {
@@ -244,20 +344,61 @@ function parseFatalQuery(search) {
 	};
 }
 
+/**
+ * Where the engine should be answering once it restarts. The dead
+ * engine's own port is the specific answer; the resolved origin is the
+ * fallback, and both are loopback.
+ */
+export function fatalEngineOrigin(supervisor, search = '') {
+	const port = Number(supervisor?.lock_port ?? 0);
+	if (Number.isInteger(port) && port > 0) {
+		return `http://127.0.0.1:${port}`;
+	}
+	return resolveEngineOrigin(search, globalThis.OPENDJ_ENGINE_ORIGIN);
+}
+
+export function setButtonStatus(id, tone, message) {
+	const el = byId(id);
+	el.dataset.tone = tone;
+	el.textContent = message;
+}
+
+function wireRelaunchButton(supervisor, search, navigate = defaultNavigate) {
+	const button = byId('relaunch');
+	const engineOrigin = fatalEngineOrigin(supervisor, search);
+	button.addEventListener('click', () => {
+		// React FIRST, before any await: the press itself must be visible
+		// even if every call below fails.
+		button.disabled = true;
+		void relaunchEngine({
+			healthPort: supervisor?.health_port,
+			engineOrigin,
+			setStatus: (tone, message) => setButtonStatus('relaunch-status', tone, message)
+		}).then((result) => {
+			if (result.ok) {
+				navigate(engineOrigin);
+			} else {
+				button.disabled = false;
+			}
+		});
+	});
+}
+
+function defaultNavigate(origin) {
+	globalThis.location.replace(origin);
+}
+
 // Auto-start only in a real page, never when imported by a test runner.
 if (typeof document !== 'undefined' && document.getElementById('root') !== null) {
 	const search = globalThis.location?.search ?? '';
 	const fatal = parseFatalQuery(search);
 	if (fatal !== null) {
 		showFatal(fatal);
-		byId('relaunch').addEventListener('click', () => {
-			requestRelaunch(fatal.health_port);
-		});
+		wireRelaunchButton(fatal, search);
 	} else if (globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.engine === 'dead') {
-		showFatal(globalThis.__OPENDJ_ENGINE_SUPERVISOR__);
-		byId('relaunch').addEventListener('click', () => {
-			requestRelaunch(globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port);
-		});
+		const supervisor = globalThis.__OPENDJ_ENGINE_SUPERVISOR__;
+		showFatal(supervisor);
+		wireRelaunchButton(supervisor, search);
 	} else {
 		startBootstrap({
 			origin: resolveEngineOrigin(search, globalThis.OPENDJ_ENGINE_ORIGIN)

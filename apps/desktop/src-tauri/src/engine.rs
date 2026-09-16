@@ -252,7 +252,10 @@ impl Engine {
             libc::killpg(pid, libc::SIGKILL);
         }
         let _ = self.child.wait();
-        append_shell_log("shutdown", &format!("engine pgid {pid} reaped after SIGKILL"));
+        append_shell_log(
+            "shutdown",
+            &format!("engine pgid {pid} reaped after SIGKILL"),
+        );
     }
 }
 
@@ -388,8 +391,7 @@ pub fn build_profile_for(
         return None;
     }
     let container_set = container_id.is_some_and(|value| !value.trim().is_empty());
-    let home_in_container =
-        home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
+    let home_in_container = home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
     if container_set || home_in_container {
         Some(APPSTORE_PROFILE)
     } else {
@@ -401,7 +403,11 @@ pub fn build_profile_for(
 fn build_profile() -> Option<&'static str> {
     let container = std::env::var(SANDBOX_CONTAINER_ENV).ok();
     let home = std::env::var("HOME").ok();
-    build_profile_for(container.as_deref(), home.as_deref(), cfg!(target_os = "macos"))
+    build_profile_for(
+        container.as_deref(),
+        home.as_deref(),
+        cfg!(target_os = "macos"),
+    )
 }
 
 // ----- spawn --------------------------------------------------------------
@@ -463,7 +469,10 @@ pub fn spawn(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
+        .env(
+            "OPENDJ_ENGINE_WARN_LOG",
+            log_path.with_file_name("engine-warn.log"),
+        )
         .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
         .env("OPENDJ_PARENT_PID", std::process::id().to_string())
         .process_group(0);
@@ -539,7 +548,10 @@ impl LogSink {
     /// failed first is the cause, and the second is usually its consequence.
     fn record_failure(&self, detail: String) {
         append_shell_log("ERROR", &detail);
-        let mut slot = self.failure.lock().expect("engine log failure mutex poisoned");
+        let mut slot = self
+            .failure
+            .lock()
+            .expect("engine log failure mutex poisoned");
         if slot.is_none() {
             *slot = Some(detail);
         }
@@ -634,14 +646,9 @@ fn log_boot_id() -> String {
     format!("shell-{}-{millis}", std::process::id())
 }
 
-/// Append one shell-owned line to the shared engine log.
-pub fn append_shell_log(level: &str, message: &str) {
-    let Some(path) = SHELL_LOG_PATH.get() else {
-        eprintln!("[{level}] {message}");
-        return;
-    };
+fn append_shell_log_to_path(log_path: &Path, level: &str, message: &str) {
     let line = format!("[shell {level}] {message}\n");
-    if let Err(err) = append_rotated(path, line.as_bytes()) {
+    if let Err(err) = append_rotated(log_path, line.as_bytes()) {
         if err.kind() == std::io::ErrorKind::NotFound {
             eprintln!("[{level}] {message}");
             return;
@@ -650,8 +657,16 @@ pub fn append_shell_log(level: &str, message: &str) {
     }
 }
 
-/// Route shell stderr and panics into the same engine log the child uses.
-pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+/// Append one shell-owned line to the shared engine log.
+pub fn append_shell_log(level: &str, message: &str) {
+    let Some(path) = SHELL_LOG_PATH.get() else {
+        eprintln!("[{level}] {message}");
+        return;
+    };
+    append_shell_log_to_path(path, level, message);
+}
+
+fn install_shell_log_path(lock: &OnceLock<PathBuf>, log_path: &Path) -> Result<(), EngineError> {
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
             EngineError::new(
@@ -661,7 +676,24 @@ pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
         })?;
     }
     verify_log_writable(log_path)?;
-    let _ = SHELL_LOG_PATH.set(log_path.to_path_buf());
+    match lock.set(log_path.to_path_buf()) {
+        Ok(()) => Ok(()),
+        Err(requested) => {
+            let retained = lock
+                .get()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "unknown".into());
+            Err(EngineError::new(
+                "Open DJ shell logging is already installed.",
+                format!("retained {} requested {}", retained, requested.display()),
+            ))
+        }
+    }
+}
+
+/// Route shell stderr and panics into the same engine log the child uses.
+pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+    install_shell_log_path(&SHELL_LOG_PATH, log_path)?;
     std::panic::set_hook(Box::new(|info| {
         let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
             (*message).to_string()
@@ -737,7 +769,10 @@ mod tests {
         // An exported-but-empty variable is the shell's version of a zero
         // that is both a value and an error signature. Empty means absent.
         assert_eq!(build_profile_for(Some(""), Some("/Users/dj"), true), None);
-        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj"), true), None);
+        assert_eq!(
+            build_profile_for(Some("   "), Some("/Users/dj"), true),
+            None
+        );
     }
 
     #[test]
@@ -892,7 +927,10 @@ mod tests {
 
         let failure = pump_stream(stream, "stderr", &sink).unwrap_err();
 
-        assert!(failure.contains("could not read engine stderr"), "{failure}");
+        assert!(
+            failure.contains("could not read engine stderr"),
+            "{failure}"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -913,7 +951,10 @@ mod tests {
         let sink = LogSink::new(log_path);
         let stream = ScriptedStream::new(vec![Ok(b"line\n")]);
         let failure = pump_stream(stream, "stdout", &sink).unwrap_err();
-        assert!(failure.contains("could not write engine stdout"), "{failure}");
+        assert!(
+            failure.contains("could not write engine stdout"),
+            "{failure}"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -991,7 +1032,10 @@ mod tests {
 
         let failure = engine.wait_until_healthy(BOOT_TIMEOUT).unwrap_err();
 
-        assert!(failure.headline.contains("lost the engine log"), "{failure}");
+        assert!(
+            failure.headline.contains("lost the engine log"),
+            "{failure}"
+        );
         assert!(failure.detail.contains("disk full"), "{failure}");
         engine.shutdown();
         std::fs::remove_dir_all(directory).unwrap();
@@ -1001,14 +1045,52 @@ mod tests {
     fn shell_logging_appends_prefixed_lines() {
         let directory = scratch_dir("shell-log");
         let log_path = directory.join("engine.log");
-        install_shell_logging(&log_path).unwrap();
-        append_shell_log("WARN", "monitor scale factor 0");
-        assert_eq!(
-            std::fs::read_to_string(&log_path).unwrap(),
-            "[shell WARN] monitor scale factor 0\n"
+        append_shell_log_to_path(&log_path, "WARN", "monitor scale factor 0");
+        let contents = std::fs::read_to_string(&log_path).unwrap();
+        assert!(
+            contents.contains("[shell WARN] monitor scale factor 0\n"),
+            "expected prefixed line in log, got: {contents}"
         );
         std::fs::remove_dir_all(directory).unwrap();
-        append_shell_log("panic", "probe");
     }
 
+    #[test]
+    fn shell_logging_missing_path_does_not_panic() {
+        let directory = scratch_dir("shell-log-missing");
+        let log_path = directory.join("engine.log");
+        append_shell_log_to_path(&log_path, "WARN", "before");
+        std::fs::remove_dir_all(directory).unwrap();
+        append_shell_log_to_path(&log_path, "panic", "probe");
+    }
+
+    #[test]
+    fn shell_logging_rejects_second_install() {
+        let first_dir = scratch_dir("shell-log-first");
+        let first_path = first_dir.join("engine.log");
+        let second_dir = scratch_dir("shell-log-second");
+        let second_path = second_dir.join("engine.log");
+        let lock = OnceLock::new();
+
+        install_shell_log_path(&lock, &first_path).unwrap();
+        let failure = install_shell_log_path(&lock, &second_path).unwrap_err();
+
+        assert!(
+            failure
+                .headline
+                .contains("shell logging is already installed"),
+            "{failure}"
+        );
+        assert!(
+            failure.detail.contains(&first_path.display().to_string()),
+            "{failure}"
+        );
+        assert!(
+            failure.detail.contains(&second_path.display().to_string()),
+            "{failure}"
+        );
+        assert_eq!(lock.get(), Some(&first_path));
+
+        std::fs::remove_dir_all(first_dir).unwrap();
+        std::fs::remove_dir_all(second_dir).unwrap();
+    }
 }
