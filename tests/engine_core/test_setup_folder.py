@@ -584,7 +584,6 @@ def test_folder_mode_argv_carries_every_root() -> None:
         {"data_dir": "/tmp/library", "mode": "folder", "roots": []},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": ["relative"]},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": ["/"]},
-        {"data_dir": "/tmp/library", "mode": "folder", "roots": ["/tmp/.."]},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": [""]},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": "/tmp/a"},
     ],
@@ -594,3 +593,65 @@ def test_folder_mode_argv_refuses_what_it_cannot_trust(
 ) -> None:
     with pytest.raises(SetupPayloadError):
         build_argv(payload)
+
+
+def _dotdot_chain_to_root(start: Path) -> Path:
+    """A path built only from `..` segments that lands on the filesystem root.
+
+    Written this way because the obvious literal is a platform trap. This
+    case used to be spelled `/tmp/..`, which reaches the root on Linux and
+    NOT on macOS, where `/tmp` is a symlink to `/private/tmp` so `/tmp/..`
+    resolves to `/private`. The guard was right to accept `/private`, the
+    literal was wrong, and the macOS run therefore exercised nothing while
+    still looking like a real assertion.
+    """
+    resolved = start.resolve()
+    # parts[0] is the anchor ('/'), so everything after it is one level to climb.
+    climbs = len(resolved.parts) - 1
+    return resolved.joinpath(*([".."] * climbs))
+
+
+def test_a_dotdot_chain_that_reaches_the_root_is_refused(tmp_path: Path) -> None:
+    """SETUP-08 through a path that only RESOLVES to the root, not '/' literally.
+
+    Refusing the literal "/" is easy. The case that matters is a path the
+    operator could plausibly submit, which walks up to the root once resolved.
+    """
+    candidate = _dotdot_chain_to_root(tmp_path)
+
+    # The fixture's own precondition, asserted rather than assumed: if this
+    # does not actually reach the root on this platform, fail HERE and say so,
+    # instead of passing the test for a reason that has nothing to do with the
+    # guard under test.
+    assert candidate.resolve(strict=False) == Path(tmp_path.resolve().anchor), (
+        f"fixture is not exercising the root guard: {candidate} resolves to "
+        f"{candidate.resolve(strict=False)}, not {tmp_path.resolve().anchor}"
+    )
+
+    with pytest.raises(SetupPayloadError):
+        build_argv(
+            {
+                "data_dir": str(tmp_path),
+                "mode": "folder",
+                "roots": [str(candidate)],
+            }
+        )
+
+
+def test_control_a_dotdot_chain_stopping_ABOVE_the_root_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """The control that stops the test above from passing for free.
+
+    One `..` fewer lands on a real directory one level under the root. That is
+    an ordinary folder and MUST be accepted, so a guard that simply refused
+    every path containing '..' would fail here.
+    """
+    resolved = tmp_path.resolve()
+    candidate = resolved.joinpath(*([".."] * (len(resolved.parts) - 2)))
+    assert candidate.resolve(strict=False) != Path(resolved.anchor)
+
+    argv = build_argv(
+        {"data_dir": str(tmp_path), "mode": "folder", "roots": [str(candidate)]}
+    )
+    assert "--root" in argv
