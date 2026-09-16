@@ -25,7 +25,16 @@ const engineEnv = {
 	MDT_LIBRARY_MODE: 'local',
 	MUSIC_DJ_LIBRARY_JOBS: 'on',
 	MUSIC_DJ_LIBRARY_JOBS_RUNNER: 'dry',
-	MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S: '2.5'
+	// Two-sided, and the spec (specs/d4a29afe_stems-lyrics-e2e.md) names the
+	// lower bound: the hold must exceed the time from the menu click to the
+	// GET and the panel asserts, or a job settles mid-interaction and the
+	// lane reads idle. 2.5s met that on a quiet machine and not on a loaded
+	// CI host, where opening the panel alone can take seconds. The upper
+	// bound is the NEXT test: a cancel marks the row but does not interrupt
+	// the runner's sleep, so the hold is also the worst-case wait before the
+	// next test's job is claimed, and it has to stay inside that test's 15s
+	// expect budget.
+	MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S: '8'
 };
 
 export default defineConfig({
