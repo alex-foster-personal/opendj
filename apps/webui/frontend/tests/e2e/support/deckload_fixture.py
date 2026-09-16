@@ -117,8 +117,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.analysis.lanes import LaneResult
+from apps.analysis.pcm_fingerprint import canonical_decode_fingerprint
 from apps.analysis.record import AnalysisRecord
-from apps.analysis.store import upsert_record
+from apps.analysis.store import open_conn as open_analysis_conn, upsert_record
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 
@@ -547,19 +548,45 @@ def _stable_ids_in_track_order(
     return ordered
 
 
-def _constant_beatgrid_payload(bpm: float, grid_span_s: float = 300.0) -> dict[str, object]:
+def _constant_beatgrid_payload(bpm: float, grid_span_s: float) -> dict[str, object]:
+    """A constant-tempo grid over ``grid_span_s`` of audio at ``bpm``.
+
+    Every key the beatgrid lane contract requires is written here
+    (``apps/analysis/lane_payloads.py::_validate_beatgrid``): ``bpm``,
+    ``bpm_confidence``, ``octave_reason`` and ``first_downbeat_s`` as well as
+    the beats themselves. They are not decoration for the validator -- the
+    deck reads the projected ``bpm`` and the downbeat, so a payload without
+    them is one the app could not consume.
+
+    The grid stops at the last beat that fits INSIDE the audio. An earlier
+    version appended a final beat pinned to ``grid_span_s`` itself, which put
+    one beat at an interval that contradicted the constant tempo the rest of
+    the grid declares.
+    """
     interval = 60.0 / bpm
     beats: list[dict[str, object]] = []
     n = 1
     index = 0
-    while index * interval < grid_span_s:
-        beats.append({"t": round(index * interval, 3), "n": n, "bpm": bpm})
+    while index * interval <= grid_span_s:
+        beats.append({"t": round(index * interval, 5), "n": n, "bpm": bpm})
         n = 1 if n == 4 else n + 1
         index += 1
-    if beats[-1]["t"] < grid_span_s:
-        beats.append({"t": grid_span_s, "n": n, "bpm": bpm})
+    if len(beats) < 2:
+        raise SystemExit(
+            f"[ERROR] a {grid_span_s}s grid at {bpm} bpm holds {len(beats)} beat(s); "
+            "the deck requires at least 2"
+        )
     return {
         "beats": beats,
+        "bpm": bpm,
+        # The grid is CONSTRUCTED at this tempo rather than estimated from the
+        # audio, so there is nothing to be uncertain about and no octave rule
+        # fired. `octave_reason` is a free-form short string naming the rule
+        # (`apps/analysis_beatgrid/bpm.py`); borrowing one of the estimator's
+        # own reasons here would claim an estimate that never ran.
+        "bpm_confidence": 1.0,
+        "octave_reason": "fixture_declared_bpm",
+        "first_downbeat_s": 0.0,
         "beat_count": len(beats),
         "static_grid_untrusted": False,
         "tempo_changes": [],
@@ -567,18 +594,58 @@ def _constant_beatgrid_payload(bpm: float, grid_span_s: float = 300.0) -> dict[s
 
 
 def _seed_own_beatgrids(state_db_path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
-    now = datetime.now(UTC).isoformat()
-    conn = state_db.open_rw(state_db_path)
+    """Write one own_beatgrid record per fixture row, describing its OWN audio.
+
+    Three things here are read from the file the row points at rather than
+    asserted as constants, because an own record that disagrees with its
+    audio is a fixture that measures something the app would never serve:
+
+    * ``decode_fingerprint`` is the canonical sha256 of this file decoded at
+      the pinned parameters (``apps/analysis/pcm_fingerprint.py``). The v1
+      record contract checks that field for SHAPE, so a placeholder string is
+      refused at ``upsert`` -- and the staleness comparison the field exists
+      for (``apps/analysis/depends_on.py``) is meaningless without it.
+    * ``bpm`` and the grid come from the track's own declared tempo, so the
+      124 bpm fixture no longer carries a 128 bpm grid.
+    * ``duration_s`` is the track's own length, so the grid cannot outlive
+      the audio.
+    """
+    # A datetime, not its ISO string: `AnalysisRecord.to_json` reads `.tzinfo`.
+    now = datetime.now(UTC)
+    by_filename = {track.filename: track for track in (*FIXTURE_TRACKS, AUTOPLAY_CHAIN_TRACK)}
+    # `apps.analysis.store` owns the `analysis` table and the shared-state
+    # migration ladder does not run its DDL, so a plain `state_db.open_rw`
+    # here reaches `upsert_record` with no table to write to. `open_conn`
+    # is the store's own idempotent door: state migrations first, then the
+    # analysis-domain DDL, exactly as the engine does at serve time.
+    conn = open_analysis_conn(state_db_path)
     try:
-        for stable_id, _title, _file_path in rows:
+        for stable_id, _title, file_path in rows:
+            if not file_path:
+                raise SystemExit(
+                    f"[ERROR] rescue-playback row {stable_id!r} has no file_path, so its "
+                    "beatgrid record cannot describe any audio"
+                )
+            audio_path = Path(file_path)
+            if not audio_path.is_file():
+                raise SystemExit(
+                    f"[ERROR] rescue-playback row {stable_id!r} points at {file_path!r}, "
+                    "which is not a file"
+                )
+            track = by_filename.get(audio_path.name)
+            if track is None:
+                raise SystemExit(
+                    f"[ERROR] rescue-playback row {stable_id!r} has audio {audio_path.name!r}, "
+                    f"which is not one of {sorted(by_filename)}"
+                )
             record = AnalysisRecord(
                 stable_id=stable_id,
                 backend="own_beatgrid.inapp",
                 backend_version="1.0.0",
                 analyzed_at=now,
-                duration_s=300.0,
+                duration_s=track.seconds,
                 sample_rate=SAMPLE_RATE_HZ,
-                bpm=128.0,
+                bpm=track.bpm,
                 bpm_confidence=1.0,
                 key_camelot="8A",
                 key_openkey="1m",
@@ -589,11 +656,11 @@ def _seed_own_beatgrids(state_db_path: Path, rows: list[tuple[str, str | None, s
                 producer_version="1.0.0",
                 uses_model=False,
                 model_sha256=None,
-                decode_fingerprint="fixture-rescue-playback",
+                decode_fingerprint=f"sha256:{canonical_decode_fingerprint(audio_path)}",
                 lanes={
                     "beatgrid": LaneResult(
                         status="ok",
-                        payload=_constant_beatgrid_payload(128.0),
+                        payload=_constant_beatgrid_payload(track.bpm, track.seconds),
                     )
                 },
             )
