@@ -263,6 +263,11 @@ def failure_beyond_tests(log: str) -> list[str]:
     return found
 
 
+def residual_identities(identities: frozenset[str], main_red: frozenset[str]) -> frozenset[str]:
+    """This job's identities with known flakes and main's own red already excused."""
+    return frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
+
+
 def classify_job(
     job_name: str,
     identities: frozenset[str],
@@ -280,7 +285,7 @@ def classify_job(
     alone, a genuine regression landing in a ratchet job reads RATCHET_DEBT, the watcher ends
     KNOWN_RED_ONLY, and the agent merges past a real failure.
     """
-    residual = frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
+    residual = residual_identities(identities, main_red)
 
     def verdict(kind: JobVerdict) -> JobClassification:
         return JobClassification(kind, identities, residual)
