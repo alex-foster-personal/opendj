@@ -11,6 +11,13 @@ export const APP_MODE_PREF_IDS = [
 	'music-player'
 ] as const;
 
+/** Disk/API ui-prefs `app_mode` object (AppModeOut). Partial on PUT. */
+export interface DiskAppModePatch {
+	id?: AppModeId;
+	last_gig_at?: string | null;
+}
+
+/** localStorage shape: flat mode id under `app_mode`. */
 export interface AppModePrefs {
 	app_mode: AppModeId;
 }
@@ -38,16 +45,18 @@ export interface AppModePrefSetters {
 	setAppMode(next: AppModeId): void;
 }
 
+export type AppModeDiskSyncPatch = { app_mode?: DiskAppModePatch };
+
 export function makeAppModePrefSetters(
 	state: AppModePrefs,
 	persist: () => void,
-	syncDiskPrefs: (patch: Partial<AppModePrefs>) => void
+	syncDiskPrefs: (patch: AppModeDiskSyncPatch) => void
 ): AppModePrefSetters {
 	return {
 		setAppMode(next) {
 			state.app_mode = next;
 			persist();
-			syncDiskPrefs({ app_mode: next });
+			syncDiskPrefs({ app_mode: { id: next } });
 		}
 	};
 }
@@ -62,7 +71,7 @@ export function mergeAppModePrefsFromParsed(
 export function bindAppModePrefSetters(
 	state: AppModePrefs,
 	persist: () => void,
-	syncDiskPrefs: (patch: Partial<AppModePrefs>) => void
+	syncDiskPrefs: (patch: AppModeDiskSyncPatch) => void
 ): AppModePrefSetters {
 	return makeAppModePrefSetters(state, persist, syncDiskPrefs);
 }
