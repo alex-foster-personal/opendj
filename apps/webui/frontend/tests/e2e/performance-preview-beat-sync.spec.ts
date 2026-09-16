@@ -63,7 +63,11 @@ async function _previewRate(page: Page, stable_id: string, bpm: number): Promise
 /** Open the settings overlay, find the row by its own tooltip, pick an option. */
 async function _setPreviewBeatSync(page: Page, value: 'off' | 'tempo'): Promise<void> {
 	await page.keyboard.press('Meta+Comma');
-	const select = page.getByTitle('Tempo-match a library preview to the playing master deck');
+	// The row and its control carry the same tooltip, so this asks for the
+	// control by element: a `getByTitle` here matches both and is ambiguous.
+	const select = page.locator(
+		'select[title="Tempo-match a library preview to the playing master deck"]'
+	);
 	await expect(select).toBeVisible();
 	await select.selectOption(value);
 	await page.keyboard.press('Escape');
