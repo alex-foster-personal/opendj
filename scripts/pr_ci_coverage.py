@@ -64,6 +64,7 @@ try:
         _parse_github_timestamp,
         _run_gh,
     )
+    from scripts.review_docs_only import is_docs_only
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.pr_ci_coverage") from None
@@ -73,7 +74,6 @@ except ModuleNotFoundError as exc:
 
 PAGE_SIZE = 100
 MAX_API_WORKERS = 12
-EXCLUDED_DOCS_PREFIXES = ("docs/", "handoffs/", ".planning/", "specs/", "blog/")
 # ci-budget-watch.yml schedules this script every 12h. A PR can merge in the gap
 # between two runs, dropping out of `pulls?state=open` before its head is ever
 # re-checked - the exact shape of issue #1368, where a status posted `failure`
@@ -354,16 +354,17 @@ def _has_actions_run_at_head(head_sha: str) -> bool:
 # ----- verdict ---------------------------------------------------------------------
 
 
-def _is_docs_path(path: str) -> bool:
-    """Match ci.yml's docs-only exclusions, including its requirements exception."""
-    if path == ".planning/REQUIREMENTS.md":
-        return False
-    return path.endswith(".md") or path.startswith(EXCLUDED_DOCS_PREFIXES)
-
-
 def _requires_ci(files: list[str]) -> bool:
-    """A PR needs CI if any changed file is outside ci.yml's docs exclusions."""
-    return any(not _is_docs_path(path) for path in files)
+    """A PR needs CI if any changed file is outside ci.yml's docs exclusions.
+
+    ``files`` is non-empty for every real caller (``_changed_files`` raises on
+    an empty PR rather than returning one), so this is exactly the negation of
+    ``is_docs_only``: "at least one file is not docs" iff "not every file is
+    docs". Delegates to ``scripts.review_docs_only.is_docs_only``, which
+    parses ci.yml's own `pull_request.paths` filter, instead of a
+    hand-maintained prefix list that could drift from it.
+    """
+    return not is_docs_only(files)
 
 
 def _inspect_pr(pr: tuple[int, str] | OpenPr) -> Inspection:
