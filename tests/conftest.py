@@ -120,8 +120,39 @@ _HAS_SOXR: bool = _ffmpeg_can_resample()
 _HAS_MADMOM: bool = importlib.util.find_spec("madmom") is not None
 
 
+def _expected_ci_venv_python(repo_root: Path) -> Path | None:
+    """Return this repo's own venv interpreter, or None if it was never provisioned.
+
+    Scoped deliberately narrow (issue #3486), because a blunt assert here
+    would fail every session whose interpreter is legitimately not this
+    venv, not just the wrong-interpreter class it targets:
+
+    - CI only (``CI`` env var). A local dev run has no such convention to
+      enforce and must never start failing because of one.
+    - Only when ``.venv`` was actually provisioned at the path this repo's
+      own tooling uses (``scripts/ci_venv.sh``, ``uv sync``). A job that
+      never provisions one has nothing to compare against.
+    - Per-invocation opt-out via ``CI_VENV_PROBE_ALLOW_MISMATCH``, for the
+      one CI step that runs pytest in a deliberately isolated,
+      dependency-free uv environment on purpose
+      (.github/workflows/ci.yml "Frontend typing-gate unit tests").
+    """
+    if not os.environ.get("CI") or os.environ.get("CI_VENV_PROBE_ALLOW_MISMATCH"):
+        return None
+    bin_dir = "Scripts" if os.name == "nt" else "bin"
+    python_name = "python.exe" if os.name == "nt" else "python"
+    venv_python = repo_root / ".venv" / bin_dir / python_name
+    return venv_python if venv_python.is_file() else None
+
+
 def _log_ci_venv_probe(phase: str) -> None:
-    """Record the test interpreter and a non-preloading audio import probe."""
+    """Record the test interpreter and a non-preloading audio import probe.
+
+    Also fail-fasts, within the narrow scope above, when this session's
+    interpreter is not this repo's own venv -- the trap CLAUDE.md documents:
+    ``uv run`` falls back to a PATH command's own interpreter when the
+    command is absent from the project environment.
+    """
     probe = (
         "try:\n"
         "    import soundfile\n"
@@ -147,6 +178,22 @@ def _log_ci_venv_probe(phase: str) -> None:
         f"prefix={sys.prefix!r} venv_exists={(Path.cwd() / '.venv').is_dir()} {result}",
         flush=True,
     )
+    repo_root = Path(__file__).resolve().parents[1]
+    expected = _expected_ci_venv_python(repo_root)
+    if expected is None:
+        return
+    actual = Path(sys.executable).resolve()
+    if actual != expected.resolve():
+        raise RuntimeError(
+            f"CI_VENV_PROBE phase={phase}: wrong interpreter -- expected this "
+            f"repo's own venv at {str(expected.resolve())!r} but this pytest "
+            f"session is running under {str(actual)!r}. `uv run` falls back to "
+            "a PATH command's own interpreter when the command is absent from "
+            "the project environment (see CLAUDE.md); run `uv sync --extra dev` "
+            "first. If this session is a deliberately isolated, "
+            "dependency-free pytest run, set CI_VENV_PROBE_ALLOW_MISMATCH=1 "
+            "for it."
+        )
 
 
 def _has_rb_parity_marker(path: Path) -> bool:
