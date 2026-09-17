@@ -31,6 +31,13 @@
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import { capabilities } from '$lib/api/capabilities.svelte';
 	import { jobsStore, errorTail } from '$lib/rb/jobs-store.svelte';
+	import {
+		type AnalysisQueue,
+		getAnalysisQueue,
+		startAnalysisQueueDrain
+	} from '$lib/rb/api-ingest';
+	import { analysisFollowup } from '$lib/setup/analysis-followup';
+	import { stemsJobFeedback } from '$lib/setup/stems-feedback';
 	// StemsPrompt paints from the --rb-* palette, which theme.css scopes under
 	// .perf-root on purpose so it cannot leak into the app's own accent. Its
 	// mount below is wrapped in that class; without this import every colour
@@ -159,8 +166,73 @@
 		}
 	}
 	/** The separation job StemsPrompt started, if the tester said yes. Held
-	 * only so the done screen can name it; the TopBar bar owns its progress. */
+	 * so BOTH the stems step and the done screen can name it: run 2 on the
+	 * test Mac advanced straight past the prompt on enqueue, so the one
+	 * sentence saying separation had started was drawn and left in the same
+	 * tick and the tester saw no feedback at all. */
 	let stemsJobId = $state<string | null>(null);
+
+	/** The LIVE row for that job, from the jobs store the overlay already
+	 * attaches. An accepted enqueue is not a started separation: on the test
+	 * Mac the job failed 198 ms after its id came back. */
+	const stems = $derived(
+		stemsJobFeedback(
+			stemsJobId,
+			stemsJobId === null ? null : (jobsStore.jobs.find((row) => row.id === stemsJobId) ?? null)
+		)
+	);
+
+	/**
+	 * The live analyze-on-import queue, polled only on the done screen.
+	 *
+	 * A FOLDER import has no rekordbox database behind it, so there is no ANLZ
+	 * anywhere to read a BPM, key or beatgrid from: own analysis is the only
+	 * source there is. The daemon's reconcile loop does drain this queue by
+	 * itself, but on a 60s timer, so the wizard asks for the drain now rather
+	 * than handing over a library that reads as un-analysed.
+	 */
+	let analysisQueue = $state<AnalysisQueue | null>(null);
+	let analysisReadError = $state<string | null>(null);
+	let drainRequested = false;
+	const ANALYSIS_POLL_MS = 2000;
+
+	const analysis = $derived(analysisFollowup(analysisQueue));
+
+	/** True only where own analysis is the ONLY source: a folder import. A
+	 * rekordbox import has its own analyses line on this screen already. */
+	const showAnalysis = $derived(
+		step === 'done' && lastImport !== null && lastImport.kind === 'folder'
+	);
+
+	$effect(() => {
+		if (!showAnalysis) return;
+		let stopped = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		async function tick(): Promise<void> {
+			try {
+				const next = await getAnalysisQueue(1);
+				if (stopped) return;
+				analysisQueue = next;
+				analysisReadError = null;
+				// One request, once. A drain that fails must not be relaunched
+				// every two seconds by a screen nobody is watching.
+				if (!drainRequested && analysisFollowup(next).shouldStartDrain) {
+					drainRequested = true;
+					await startAnalysisQueueDrain();
+				}
+			} catch (exc) {
+				// Never a silent empty state: a queue that cannot be read is a
+				// stated unknown, not a library that needs nothing.
+				if (!stopped) analysisReadError = exc instanceof Error ? exc.message : String(exc);
+			}
+			if (!stopped) timer = setTimeout(() => void tick(), ANALYSIS_POLL_MS);
+		}
+		void tick();
+		return () => {
+			stopped = true;
+			if (timer !== undefined) clearTimeout(timer);
+		};
+	});
 
 	/**
 	 * Load, and RE-load if the daemon was not identified the first time.
@@ -754,19 +826,29 @@
 								thing that can disagree with the run.
 							-->
 							<div class="perf-root stems-mount">
+								<!--
+									NO auto-advance on enqueue. It used to call next() in the
+									same tick the job id arrived, so the one screen that said
+									separation had started was drawn and left together and the
+									tester saw the wizard jump with no feedback at all
+									(test Mac, run 2, Wed 16 Sep 2026). Skipping still
+									advances: there is nothing to report about a no.
+								-->
 								<StemsPrompt
 									onenqueued={(jobId) => {
 										stemsJobId = jobId;
-										setupWizard.next();
 									}}
 									onskip={() => setupWizard.next()}
 								/>
 							</div>
 
-							{#if stemsJobId !== null}
-								<p class="muted" title={`Engine job ${stemsJobId}`}>
-									Separation is running in the background as job
-									<code>{stemsJobId}</code>. You can finish setup now.
+							{#if stems.state === 'failed' || stems.state === 'unknown'}
+								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
+									{stems.message}
+								</p>
+							{:else if stems.state !== 'none'}
+								<p class="started" role="status" title={`Engine job ${stemsJobId}`}>
+									{stems.message} You can press Continue whenever you like.
 								</p>
 							{/if}
 
@@ -826,14 +908,42 @@
 										{lastImport.files_seen} readable audio files
 									</strong>.
 								</p>
-								<p class="warning" role="status">
-									<span
-										title="Imported tracks with no BPM, key or beatgrid. A folder import reads tags only."
+								<!--
+									The import itself reads tags only, which used to be the
+									whole sentence and read as a dead end. It is only half:
+									own analysis then supplies the BPM, key and beatgrid,
+									and this reads the live queue rather than the frozen
+									import record so the number moves.
+								-->
+								{#if analysisReadError !== null}
+									<p class="fatal" role="alert" title={analysisReadError}>
+										Could not read what still needs analyzing, so the state of
+										these tracks is unknown: {analysisReadError}
+									</p>
+								{:else if analysis.state === 'failed'}
+									<p class="fatal" role="alert" title={analysis.message}>
+										{analysis.message}
+									</p>
+								{:else if analysis.state === 'working'}
+									<p
+										class="warning"
+										role="status"
+										title="Tracks analyzed by Open DJ's own analysis, out of the imported tracks with no rekordbox analysis to read"
 									>
-										{lastImport.tracks_without_analysis}
-									</span>
-									of them have no analysis at all. {lastImport.analysis_detail}.
-								</p>
+										{analysis.message}
+									</p>
+									<progress
+										max={analysis.total}
+										value={analysis.analyzed}
+										title={`${analysis.analyzed} of ${analysis.total} analyzed`}
+									></progress>
+								{:else if analysis.state === 'done'}
+									<p class="muted" role="status" title={analysis.message}>
+										{analysis.message}
+									</p>
+								{:else}
+									<p class="muted" role="status">{analysis.message}</p>
+								{/if}
 								{#if lastImport.files_dataless > 0}
 									<p class="muted">
 										<span
@@ -854,6 +964,15 @@
 								<p class="muted">
 									No import was recorded for this data directory. The library is
 									whatever was already in it.
+								</p>
+							{/if}
+							{#if stems.state === 'failed' || stems.state === 'unknown'}
+								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
+									{stems.message}
+								</p>
+							{:else if stems.state !== 'none'}
+								<p class="muted" role="status" title={`Engine job ${stemsJobId}`}>
+									{stems.message}
 								</p>
 							{/if}
 							<div class="actions">
@@ -1126,6 +1245,18 @@
 		display: grid;
 		gap: 0.35rem;
 		padding: 0.75rem 1rem;
+	}
+	.started {
+		margin: 8px 0 0;
+		font-size: 13px;
+		color: var(--ok, #4ecb8c);
+	}
+	.panel progress {
+		display: block;
+		width: 100%;
+		max-width: 420px;
+		height: 6px;
+		margin: 6px 0 0;
 	}
 	.stems-mount {
 		margin-top: 0.75rem;

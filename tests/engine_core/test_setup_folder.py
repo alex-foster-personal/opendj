@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import struct
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -94,7 +94,7 @@ def unreadable(tmp_path: Path) -> Iterator[Path]:
         blocked.chmod(0o755)
 
 
-def _emit_sink() -> tuple[list[tuple[float, str]], object]:
+def _emit_sink() -> tuple[list[tuple[float, str]], Callable[[float, str], None]]:
     sink: list[tuple[float, str]] = []
 
     def emit(progress: float, message: str) -> None:
@@ -296,7 +296,6 @@ def test_run_folder_import_reports_progress_and_records_the_outcome(
     )
     assert outcome.tracks_written == 3
     assert outcome.tracks_without_analysis == 3
-    assert outcome.analysis_available is False
     progresses = [progress for progress, _ in sink]
     assert progresses == sorted(progresses)
     assert progresses[-1] == pytest.approx(1.0)
@@ -473,7 +472,6 @@ def test_status_renders_a_folder_outcome_as_a_folder_outcome(
     last = client.get(f"{API}/status").json()["last_import"]
     assert last["kind"] == "folder"
     assert last["tracks_without_analysis"] == 3
-    assert last["analysis_available"] is False
 
 
 def test_permissions_reports_every_probed_root(client: TestClient) -> None:
@@ -655,3 +653,41 @@ def test_control_a_dotdot_chain_stopping_ABOVE_the_root_is_accepted(
         {"data_dir": str(tmp_path), "mode": "folder", "roots": [str(candidate)]}
     )
     assert "--root" in argv
+
+
+# ----- analysis_available is MEASURED, not declared ------------------------
+# It used to be a hardcoded False on the dataclass. On the shipped build that
+# happened to be right, and that is the problem: a field that reads False
+# whether or not the engine can analyze cannot tell a tester which of the two
+# they are looking at. A folder import is the one path with no rekordbox ANLZ
+# to read, so this is the field that decides whether those tracks EVER get a
+# beatgrid. Both directions are exercised because a test venv without the
+# analysis extra makes the False case pass for the wrong reason.
+@pytest.mark.requirement("SETUP-14")
+@pytest.mark.parametrize("installed", [True, False])
+def test_analysis_available_reports_what_this_engine_can_actually_do(
+    library: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch, installed: bool
+) -> None:
+    """[if] analysis_available ignores whether the backend is installed [then] fail, [else stop]."""
+    from apps.analysis import backends
+
+    monkeypatch.setattr(backends, "default_backend_installed", lambda: installed)
+    _sink, emit = _emit_sink()
+    outcome = importer.run_folder_import(data_dir, emit=emit, roots=[library])
+    assert outcome.analysis_available is installed
+    last_import = record.read(data_dir).last_import
+    assert last_import is not None
+    assert last_import["analysis_available"] is installed
+
+
+@pytest.mark.requirement("SETUP-14")
+def test_the_folder_outcome_names_where_the_analysis_comes_from() -> None:
+    """[if] the outcome detail omits the analysis queue [then] fail, [else stop].
+
+    The stored detail is what an agent driving setup over HTTP reads, so
+    "none are guessed" on its own left it with no next step to take."""
+    detail = importer.FolderImportOutcome.analysis_detail
+    assert "/api/v1/analysis-queue" in detail
+    # control: it still says the import itself writes none, which is true and
+    # is the half a tester must not stop being told.
+    assert "no BPM" in detail

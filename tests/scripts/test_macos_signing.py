@@ -505,3 +505,43 @@ def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
         if SUFFIXED_MKTEMP.search(line)
     ]
     assert hits == [], "\n".join(hits)
+
+
+# ---------------------------------------------------------------------------
+# INSTALL-26: the signed engine may JIT
+# ---------------------------------------------------------------------------
+
+ENGINE_ENTITLEMENTS: Path = REPO_ROOT / "apps/desktop/src-tauri/Entitlements.engine.plist"
+JIT_ENTITLEMENT = "com.apple.security.cs.allow-unsigned-executable-memory"
+
+
+def test_engine_entitlements_grant_exactly_unsigned_executable_memory() -> None:
+    """If the engine plist loses this key, or swaps it for allow-jit, every numba
+    JIT under the hardened runtime is SIGKILLed and own analysis never runs.
+
+    Exactly one key: anything wider is attack surface the engine has not been
+    measured to need.
+    """
+    import plistlib
+
+    entitlements = plistlib.loads(ENGINE_ENTITLEMENTS.read_bytes())
+    assert entitlements == {JIT_ENTITLEMENT: True}
+
+
+def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() -> None:
+    """If `payload` stops calling either step, a build signs an interpreter that
+    cannot analyze and still reports success.
+
+    The behavior itself needs a Developer ID certificate and a real payload, so
+    it is proved by the build (the JIT smoke runs on every signed `just dmg`);
+    this pins that the stage still reaches both, after the unentitled pass.
+    """
+    source = SIGN_SCRIPT.read_text()
+    start = source.index("cmd_payload() {")
+    body = source[start : source.index("\n}\n", start)]
+    unentitled = body.index("codesign --force --timestamp --options runtime")
+    entitle = body.index('_sign_engine_executables "$payload"')
+    smoke = body.index('_prove_signed_engine_can_jit "$payload"')
+    assert unentitled < entitle < smoke
+    entitlements_path = "$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
+    assert f'ENGINE_ENTITLEMENTS="{entitlements_path}"' in source
