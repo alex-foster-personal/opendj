@@ -24,6 +24,7 @@ one when the segment ends at the separator between them.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import shlex
 from pathlib import Path
@@ -148,7 +149,7 @@ def _tokenize(command: str) -> list[str]:
         return command.split()
 
 
-def _python_commands(text: str) -> list[tuple[int, list[str]]]:
+def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     """argv lists spelled as Python list/tuple literals of string constants.
 
     savepoint_gate.py builds its argv this way, and the literal may be wrapped
@@ -158,8 +159,12 @@ def _python_commands(text: str) -> list[tuple[int, list[str]]]:
     """
     try:
         tree = ast.parse(text)
-    except SyntaxError:
-        return []
+    except SyntaxError as exc:
+        raise AssertionError(
+            f"cannot parse {_display(path)} as Python ({exc.__class__.__name__}: {exc}). "
+            "An unparseable surface must not read as one with no `node --test` call: "
+            "that is a silent skip of an executable surface, not a clean result."
+        ) from exc
     docstrings = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -220,16 +225,32 @@ def _logical_lines(text: str) -> list[tuple[int, str]]:
 def _commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     """Every command in one file, as (line number, argv)."""
     if path.suffix == ".py":
-        return _python_commands(text)
+        return _python_commands(path, text)
     commands: list[tuple[int, list[str]]] = []
+    if path.suffix == ".json":
+        # A JSON line is `"key": "command",`, so the surrounding syntax would
+        # read as tokens: here the quoted string VALUES are the commands. This
+        # extraction is confined to JSON deliberately. Applying it wherever a
+        # line happened to contain a quote discarded the rest of that line, so
+        # `node --test "$FILE"` scanned as the single token `$FILE` and the
+        # invocation vanished from both the census and the offender check.
+        try:
+            json.loads(text)
+        except ValueError as exc:
+            raise AssertionError(
+                f"cannot parse {_display(path)} as JSON ({exc}). An unparseable "
+                "surface must not read as one with no `node --test` call."
+            ) from exc
+        for lineno, line in _logical_lines(text):
+            commands.extend((lineno, _tokenize(value)) for value in _QUOTED.findall(line))
+        return commands
     for lineno, line in _logical_lines(text):
         if line.lstrip().startswith("#"):
             # A whole-line comment is documentation. Only whole-line: an inline
             # `#` can sit inside a quoted argument, and truncating there would
             # hide a real invocation, which is the false-negative direction.
             continue
-        quoted = _QUOTED.findall(line)
-        commands.extend((lineno, _tokenize(value)) for value in quoted or [line])
+        commands.append((lineno, _tokenize(line)))
     return commands
 
 
@@ -357,13 +378,20 @@ def test_a_reporter_only_command_is_not_a_runner_call() -> None:
 def test_a_flag_belonging_to_a_later_command_is_not_this_ones() -> None:
     """package.json:25 is `node scripts/build-design-system.mjs`; the next line's
     flags must not reach it."""
-    two_lines = (
-        '  "design-system:build": "node scripts/build-design-system.mjs",\n'
-        '  "test:design-system": "node --test --test-reporter=tap x.test.mjs"\n'
+    # A whole document, not a fragment: the scanner fails closed on JSON it
+    # cannot parse, and a fixture that could not stand in for the real surface
+    # would be testing a shape package.json never has.
+    package_json = (
+        "{\n"
+        '  "scripts": {\n'
+        '    "design-system:build": "node scripts/build-design-system.mjs",\n'
+        '    "test:design-system": "node --test --test-reporter=tap x.test.mjs"\n'
+        "  }\n"
+        "}\n"
     )
-    found = _scan("f", two_lines, suffix=".json")
-    assert [lineno for _, lineno, _ in found] == [2], (
-        f"only the second line is a runner call, got lines {[n for _, n, _ in found]}"
+    found = _scan("f", package_json, suffix=".json")
+    assert [lineno for _, lineno, _ in found] == [4], (
+        f"only the second script is a runner call, got lines {[n for _, n, _ in found]}"
     )
     assert _scan("f", "node build.mjs --watch && tsc --test") == [], (
         "the --test here is an argument of tsc, in a separate command"
@@ -420,6 +448,50 @@ def test_an_unreadable_surface_fails_instead_of_being_skipped(tmp_path: Path) ->
     binary.write_bytes(b"node --test \xff\xfe not utf-8")
     with pytest.raises(AssertionError, match="cannot scan"):
         _read_or_fail(binary)
+
+
+def test_a_quoted_argument_does_not_hide_the_call() -> None:
+    """A quoted argument is an argument, not the whole command.
+
+    The scanner used to take a line's quoted substrings INSTEAD of the line
+    whenever it contained any, so `node --test "$FILE"` scanned as the lone
+    token `$FILE`: the invocation disappeared from the census AND from the
+    offender check, which is the false-negative direction this guard exists to
+    prevent.
+    """
+    for command in (
+        'node --test "$FILE"',
+        'node --test "tests/unit" --test-reporter=tap',
+        '"$(FRONTEND_NODE)" --test "tests/unit"',
+    ):
+        assert _scan("f", command), f"{command!r} is a runner call and must be found"
+
+    bare = _scan("f", 'node --test "$FILE"')
+    assert all(TAP_FLAG not in argv for _, _, argv in bare), (
+        "this call has no reporter and must be reportable as an offender"
+    )
+    compliant = _scan("f", 'node --test "tests/unit" --test-reporter=tap')
+    assert any(TAP_FLAG in argv for _, _, argv in compliant), (
+        "a quoted argument must not cost a compliant call its reporter either"
+    )
+
+
+def test_an_unparseable_python_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
+    """A SyntaxError used to return no commands, so a broken executable surface
+    read exactly like one containing no runner call."""
+    broken = tmp_path / "broken.py"
+    broken.write_text('subprocess.run(["node", "--test"]\n', encoding="utf-8")
+    with pytest.raises(AssertionError, match="cannot parse"):
+        _commands(broken, broken.read_text(encoding="utf-8"))
+
+
+def test_an_unparseable_json_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
+    """Same class on the JSON surface: package.json is where four of the six
+    known call sites live, so it may never read as empty by accident."""
+    broken = tmp_path / "package.json"
+    broken.write_text('{"scripts": {"test:unit": "node --test"\n', encoding="utf-8")
+    with pytest.raises(AssertionError, match="cannot parse"):
+        _commands(broken, broken.read_text(encoding="utf-8"))
 
 
 def test_declared_scope_excludes_the_binaries_that_actually_live_here() -> None:
