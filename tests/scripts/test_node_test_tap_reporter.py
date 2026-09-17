@@ -14,7 +14,10 @@ seventh invocation added later is caught here instead of at the next cascade.
 
 from __future__ import annotations
 
+import ast
+import io
 import re
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -71,10 +74,21 @@ _STANDALONE_TEST = r"--test(?![-\w=])"
 # never offers it again -- one real call site disappears for every false one
 # found. Every `node` token therefore gets its own candidacy.
 _INVOCATION = re.compile(rf"node(?=[\s\S]{{0,80}}?{_STANDALONE_TEST})", re.IGNORECASE)
+_TEST_FLAG = re.compile(_STANDALONE_TEST)
 _WINDOW = 300
-# A candidate is a real runner call, not prose or a neighbor's overspill, when
-# its own window names a test file or a runner flag.
-_IS_REAL_CALL = re.compile(r"\.test\.mjs|--test-concurrency")
+
+# What may sit BETWEEN a `node` and the `--test` that belongs to it: whitespace,
+# the quoting and punctuation of whatever file embeds the command, and other
+# option tokens. Anything else -- a bare word or a path -- means the `--test`
+# belongs to a LATER command, not this one.
+#
+# This replaces an earlier `.test.mjs|--test-concurrency` filter, which required
+# the window to name a test file or a concurrency flag and so silently discarded
+# `node --test tests/unit`, `node --test foo.test.js` and bare discovery
+# `node --test` (Sol P1, third round). Those are exactly the invocations that
+# could reintroduce the failure-masking reporter unnoticed. The standalone
+# `--test` is now the evidence; this rule only decides WHOSE `--test` it is.
+_GAP = re.compile(r'(?:[\s"\',:\[\]()$]|-{1,2}[\w.=/-]+)*')
 
 
 def _in_scope(path: Path) -> bool:
@@ -128,17 +142,71 @@ def _scan_text(label: str, text: str) -> list[tuple[str, int, str]]:
         # invocation as its own evidence and is counted as a compliant site.
         next_start = starts[index + 1] if index + 1 < len(starts) else len(text)
         window = text[start : min(start + _WINDOW, next_start)]
-        if not _IS_REAL_CALL.search(window):
+        flag = _TEST_FLAG.search(window)
+        if flag is None or not _GAP.fullmatch(window[len("node") : flag.start()]):
             continue
         lineno = text.count("\n", 0, start) + 1
         sites.append((label, lineno, window))
     return sites
 
 
+def _blank(text: str, start: int, end: int) -> str:
+    """Erase a span but keep every offset and line break, so reported line
+    numbers still point at the real source."""
+    span = text[start:end]
+    return text[:start] + "".join(c if c == "\n" else " " for c in span) + text[end:]
+
+
+def _strip_prose(path: Path, text: str) -> str:
+    """Remove documentation, which is not an executable surface.
+
+    savepoint_gate.py's module docstring contains the words `node --test` in a
+    sentence. Treating the standalone flag as runner evidence (above) makes that
+    sentence look exactly like a call site with no TAP reporter, so the guard
+    would fail on prose. Comments and docstrings are stripped; a string inside a
+    list literal -- which is how savepoint_gate.py actually spells its argv -- is
+    code and is kept.
+    """
+    if path.suffix == ".py":
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return text
+        for node in ast.walk(tree):
+            holders = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            if not isinstance(node, holders):
+                continue
+            body = getattr(node, "body", None)
+            if not body or not isinstance(body[0], ast.Expr):
+                continue
+            if not isinstance(body[0].value, ast.Constant):
+                continue
+            if not isinstance(body[0].value.value, str):
+                continue
+            doc = body[0]
+            lines = text.splitlines(keepends=True)
+            offset = sum(len(line) for line in lines[: doc.lineno - 1])
+            end = sum(len(line) for line in lines[: doc.end_lineno])
+            text = _blank(text, offset, end)
+        try:
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+                if tok.type == tokenize.COMMENT:
+                    lines = text.splitlines(keepends=True)
+                    offset = sum(len(line) for line in lines[: tok.start[0] - 1])
+                    text = _blank(text, offset + tok.start[1], offset + tok.end[1])
+        except (tokenize.TokenError, IndentationError):
+            pass
+        return text
+    # Line-oriented formats: only a WHOLE-line comment is stripped. An inline `#`
+    # may sit inside a quoted argument, and dropping the rest of that line would
+    # hide a real invocation -- a false negative, the dangerous direction.
+    return "\n".join("" if line.lstrip().startswith("#") else line for line in text.split("\n"))
+
+
 def _node_test_sites() -> list[tuple[str, int, str]]:
     sites: list[tuple[str, int, str]] = []
     for path in _candidate_files():
-        sites.extend(_scan_text(_display(path), _read_or_fail(path)))
+        sites.extend(_scan_text(_display(path), _strip_prose(path, _read_or_fail(path))))
     return sites
 
 
@@ -205,6 +273,61 @@ def test_a_reporter_only_command_is_not_counted_as_a_test_runner_call() -> None:
             f"{text!r} has no standalone --test flag, so node does not run the test "
             "runner; counting it certifies a command that cannot fail this guard"
         )
+
+
+def test_every_standalone_runner_form_is_recognized() -> None:
+    """The earlier filter required `.test.mjs` or `--test-concurrency` in the
+    window, so three ordinary runner forms evaded the census AND the TAP
+    assertion entirely, which is where the failure-masking reporter would come
+    back unnoticed (Sol P1, third round)."""
+    forms = {
+        "directory argument": "node --test tests/unit",
+        "a .js test file": "node --test foo.test.js",
+        "default discovery": "node --test",
+        "flag before --test": "node --experimental-vm-modules --test tests/unit",
+    }
+    for label, command in forms.items():
+        found = _scan_text("fixture", command)
+        assert len(found) == 1, f"{label}: {command!r} was not recognized as a runner call"
+        assert "--test-reporter=tap" not in found[0][2], "fixture sanity: this form has no reporter"
+
+
+def test_a_test_flag_belonging_to_a_later_command_is_not_this_ones() -> None:
+    """package.json:25 is `node scripts/build-design-system.mjs`, and the next
+    line's `--test` is within reach. A bare word between the two says the flag
+    belongs to the LATER command."""
+    adjacent = '"build": "node scripts/build-design-system.mjs",\n"test": "node --test x.test.mjs"'
+    found = _scan_text("fixture", adjacent)
+    assert [lineno for _, lineno, _ in found] == [2], (
+        f"only the second line is a runner call, got lines {[n for _, n, _ in found]}"
+    )
+
+    # The case above is also excluded by the window ending at the next `node`,
+    # so on its own it does not test the gap rule at all -- a control must be
+    # able to fail for the reason under test. Here there is no second `node`,
+    # so ONLY the gap rule can reject it: the `--test` belongs to `tsc`.
+    not_ours = '"build": "node scripts/build.mjs --watch && tsc --test"'
+    assert _scan_text("fixture", not_ours) == [], (
+        "the --test here is an argument of tsc, not of node; a bare word between "
+        "the two is what says so"
+    )
+
+
+def test_a_documented_command_is_not_a_call_site(tmp_path: Path) -> None:
+    """savepoint_gate.py's module docstring says `node --test` in a sentence.
+    Once the standalone flag is the evidence, prose reads exactly like a
+    non-compliant call, so documentation must be stripped -- but a string in a
+    list literal is code and must survive."""
+    module = tmp_path / "m.py"
+    module.write_text(
+        '"""Without the flag node --test would hang forever."""\n'
+        "# another mention: node --test tests/unit\n"
+        'ARGV = ["node", "--test", "--test-reporter=tap"]\n'
+    )
+    found = _scan_text("m.py", _strip_prose(module, module.read_text()))
+    assert [lineno for _, lineno, _ in found] == [3], (
+        f"expected only the argv literal on line 3, got {found}"
+    )
 
 
 def test_an_unreadable_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
