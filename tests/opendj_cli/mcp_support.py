@@ -18,6 +18,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+pytest.importorskip(
+    "mcp",
+    reason=(
+        "UNAVAILABLE: the MCP client SDK is not installed here, so the stdio "
+        "session tests cannot run. This is a capability report, not a pass."
+    ),
+)
+
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult
