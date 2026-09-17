@@ -69,6 +69,7 @@ SHARD_JOB = "test"
 # INPUT_TOKEN when it appears. The job boundary is the control.
 INSIGHTS_JOB = "ci-insights"
 STAGE_STEP_NAME = "Stage this shard's JUnit report"
+STAGE_STEP_ID = "stage-insights"
 OUTCOME_STEP_ID = "shard-outcome"
 PYTEST_STEP_ID = "pytest-shard"
 UPLOAD_STEP_ID = "mergify-insights"
@@ -215,7 +216,12 @@ def test_upload_step_passes_the_test_runner_outcome() -> None:
     # The outcome crosses a job boundary, so the chain has two links and both
     # have to hold: the test job writes the pytest step's own outcome into the
     # artifact, and the insights job reads it back out.
-    assert f"steps.{PYTEST_STEP_ID}.outcome" in _stage_step()["run"], (
+    stage = _stage_step()
+    # The outcome reaches the script through the step env rather than a direct
+    # interpolation, so both halves are searched: naming only `run` would turn
+    # this into a check that cannot fire the moment the wiring moves.
+    stage_text = str(stage.get("env", {})) + stage["run"]
+    assert f"steps.{PYTEST_STEP_ID}.outcome" in stage_text, (
         "The staging step no longer records the pytest step's own outcome, so "
         "the value the upload reads back is whatever happens to be in the "
         "file -- silent-failure detection would be off with nothing raised."
@@ -334,21 +340,31 @@ def test_ci_insights_steps_are_skipped_without_a_token() -> None:
 
 
 def test_a_stale_report_cannot_be_staged_as_this_runs_result() -> None:
-    """if staging keeps an old dir then a dead shard uploads a previous run."""
-    run = _stage_step()["run"]
-    rm_at = run.find("rm -rf ci-insights-out")
-    mkdir_at = run.find("mkdir -p ci-insights-out")
-    assert rm_at != -1, (
-        "The staging step no longer clears ci-insights-out before creating it. "
-        "This workspace is persistent and the step runs under always(), so a "
-        "directory left by an earlier run survives: mkdir -p keeps its "
-        "junit-shard-N.xml, the upload job reads report=true, and a PREVIOUS "
-        "run's results are recorded as this one's. An absence rendered as a "
-        "measurement is the one outcome this lane must never produce."
+    """if the staging dir is reused then a dead shard uploads a previous run."""
+    stage = _stage_step()
+    stage_dir = stage.get("env", {}).get("STAGE_DIR", "")
+    assert stage_dir, (
+        "The staging step no longer names a STAGE_DIR. The previous revision "
+        "cleared a FIXED directory with `rm -rf`, which this script's lack of "
+        "errexit made unsafe: a failed rm fell through to a `mkdir -p` that "
+        "reused the surviving directory and the step still reported success. "
+        "The directory must instead be named so that reuse is impossible."
     )
-    assert mkdir_at != -1 and rm_at < mkdir_at, (
-        f"rm -rf is at {rm_at} and mkdir at {mkdir_at}: clearing must come "
-        "FIRST, or it deletes the directory it was meant to recreate."
+    # The name has to distinguish a RE-RUN of the same run, not just two runs:
+    # run_id alone repeats across attempts, which is exactly the case that
+    # produced two reds on one head while re-running this very pull request.
+    for token in ("github.run_id", "github.run_attempt", SHARD_EXPR):
+        assert token in stage_dir, (
+            f"STAGE_DIR is {stage_dir!r}, which does not vary by {token}. Two "
+            "executions that share a directory name on this persistent "
+            "workspace can hand one another's JUnit report to the upload job, "
+            "and an absence rendered as a measurement is the one outcome this "
+            "lane must never produce."
+        )
+    assert stage["run"].count(stage_dir) == 0, (
+        f"The run block interpolates the directory expression directly rather "
+        f"than reading $STAGE_DIR, so the name is repeated in several places "
+        "and can drift between them."
     )
 
 
@@ -378,4 +394,76 @@ def test_staging_failure_cannot_redden_the_lane() -> None:
         "pytest passed, which contradicts the measure-only contract that the "
         "artifact upload below it already honors. The isolated job's "
         "missing-report guard is what should expose an instrumentation failure."
+    )
+
+
+def test_staging_refuses_a_report_the_pytest_step_did_not_write() -> None:
+    """if staging ignores the outcome then a skipped pytest uploads an old run."""
+    run = _stage_step()["run"]
+    # The rm -f that clears a previous run's report lives INSIDE the pytest
+    # step. When checkout or any earlier step fails, pytest is skipped, that rm
+    # never runs, and this always() step would find the earlier run's report
+    # still in the persistent workspace. A skipped pytest has no result, and no
+    # result must travel as an absence rather than as the last report lying
+    # around (Sol P1 on #3447, round 2).
+    assert "PYTEST_OUTCOME" in run, (
+        "The staging step no longer consults the pytest step's outcome before "
+        "copying, so a run in which pytest never executed can still stage a "
+        "report and have it recorded as this run's measurement."
+    )
+    cp_at = run.find("cp ")
+    # Anchored to the WHOLE case arm, not searched as a substring. `success|
+    # failure` is a substring of `success|failure|skipped|*)`, so a `find`
+    # keeps passing for a gate widened to accept everything -- this guard was
+    # written that way first and a mutation walked straight through it.
+    arm = re.search(r"^[ \t]*success\|failure\)[ \t]*$", run, re.MULTILINE)
+    assert arm is not None, (
+        "The staging step does not gate the copy on pytest having actually "
+        "run, and ONLY on that. The accepted outcomes must be exactly "
+        "success and failure. Any other outcome -- skipped, cancelled, or an "
+        "empty string from a step that never started -- means there is no "
+        "result to stage, so widening the arm to admit one reintroduces the "
+        "defect this gate exists to prevent."
+    )
+    gate_at = arm.start()
+    assert cp_at != -1 and gate_at < cp_at, (
+        f"The outcome gate is at {gate_at} and the copy at {cp_at}: the gate "
+        "must come FIRST or it cannot prevent the copy it exists to prevent."
+    )
+
+
+def test_a_staging_failure_suppresses_the_upload() -> None:
+    """if the upload ignores staging then a failed cleanup publishes stale data."""
+    upload = None
+    for step in _steps(SHARD_JOB):
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@") and (
+            "ci-insights" in str(step.get("with", {}).get("name", ""))
+        ):
+            upload = step
+            break
+    assert upload is not None, (
+        "The shard job no longer uploads a ci-insights artifact, so the "
+        "isolated job has nothing to read and the lane records nothing."
+    )
+    condition = str(upload.get("if", ""))
+    assert f"steps.{STAGE_STEP_ID}.outcome" in condition, (
+        f"The artifact upload runs on {condition!r}, which does not consult "
+        "the staging step. Staging is continue-on-error, so when it fails the "
+        "job carries on and an unconditional upload publishes whatever is in "
+        "the directory -- which, on a failed cleanup, is an earlier run's "
+        "report presented as this one's measurement."
+    )
+    # `conclusion` is rewritten to success by continue-on-error, so a check
+    # reading it would pass for a staging step that actually failed. This is
+    # the same class as a wrapper exit code reporting success for an inner
+    # command that failed.
+    assert f"steps.{STAGE_STEP_ID}.conclusion" not in condition, (
+        f"The upload condition reads `conclusion` in {condition!r}. "
+        "continue-on-error rewrites conclusion to success, so this condition "
+        "is true even when staging failed: it looks like a guard and cannot "
+        "ever refuse. Read `outcome`, which is the result before the rewrite."
+    )
+    assert "always()" in condition, (
+        "The upload lost always(), so the runs most worth recording -- the "
+        "red ones -- stop being uploaded at all."
     )
