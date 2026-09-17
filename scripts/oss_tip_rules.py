@@ -230,6 +230,16 @@ _RETINA_ASSET_DOMAIN = re.compile(
     r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE
 )
 
+# A systemd UNIT TYPE is not a mail TLD. `systemctl list-timers` renders the unit it
+# activates as `<unit>@<instance>.<type>`, so recording one verbatim reads as an address
+# at `<instance>.<type>` (`idd-lane@5.service`) -- a real shape, which is why it matched.
+# Every label was checked against the IANA root zone on Thu 17 Sep 2026 and is NOT a
+# delegated TLD, so no mailbox can exist behind one. `.target` IS delegated and is absent
+# here for that reason, so a mailbox there is registrable and is still reported.
+_SYSTEMD_UNIT_TYPE_LABELS = frozenset(
+    "service timer socket mount automount path slice scope swap device".split()
+)
+
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
@@ -538,7 +548,8 @@ def _is_placeholder_home(user: str) -> bool:
 
 def _is_reserved_mail_domain(domain: str) -> bool:
     lowered = domain.lower()
-    if lowered.split(".")[-1] in _RESERVED_MAIL_TLDS:
+    # Both are final labels no mailbox can sit at: reserved by policy, or not delegated.
+    if lowered.split(".")[-1] in _RESERVED_MAIL_TLDS | _SYSTEMD_UNIT_TYPE_LABELS:
         return True
     # A host on an ALLOWED tailnet is a fixture by the same construction the
     # tailnet rule uses, and `<user>@<host>` there is an ssh destination rather

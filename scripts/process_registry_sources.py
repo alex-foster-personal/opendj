@@ -26,6 +26,8 @@ import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from scripts.oss_tip_rules import PATTERNS, _rule_accepts
+
 
 class SchedulerKind(StrEnum):
     LAUNCHD = "launchd"
@@ -310,6 +312,61 @@ def classify(host_name: str, unit_name: str) -> tuple[bool, str, str]:
     return _default_for_host(host_name)
 
 
+# --------------------------------------------------------- identity scrub
+
+
+# What each rule's match is replaced BY when a recorded value is normalized on its way
+# into the artifact. The rule set itself is NOT restated here: `PATTERNS` and
+# `_rule_accepts` come from `scripts/oss_tip_rules`, so a new identity shape is defined
+# once and both the audit and this scrubber pick it up. Two scrubbers that disagreed
+# would be worse than none, because the drift check below compares the two.
+#
+# Every placeholder is itself exempt from the rule it replaces, which is what makes the
+# scrub idempotent: a second pass finds nothing left to replace, so re-running the
+# generator over an already-normalized artifact cannot drift it. `/Users/dev` and
+# `box.example-tailnet.ts.net` are the placeholders the repo already standardizes on;
+# the `<>` forms are templates, which the audit exempts on FORM rather than by value.
+_SCRUB_PLACEHOLDERS: dict[str, str] = {
+    "home-path": "/Users/dev",
+    "windows-home-path": "C:\\Users\\dev",
+    "linux-home-path": "/home/dev",
+    "consumer-mailbox": "<mailbox>@example.invalid",
+    "tailnet-name": "box.example-tailnet.ts.net",
+    "cgnat-address": "<cgnat-address>",
+}
+
+
+def scrub_identities(text: str) -> str:
+    """Replace every string the going-public audit would report with a placeholder.
+
+    The registry is a GENERATED, tracked artifact, and this module is what collects the
+    values that go into it: a real home directory, mailbox or tailnet name in a unit
+    name, a timer's activated unit or a launchd label on any queried host would be
+    written straight into the repository and reported by `scripts.oss_tip_audit` on the
+    next CI pass. Scrubbing HERE fixes the class; editing the committed JSON fixes one
+    instance and leaves the next regeneration to reintroduce it (ADR-0077).
+
+    The replacements have to agree with what the audit reports, so the matching is the
+    audit's own: `_rule_accepts` is called with the text PRECEDING the match, because
+    the home-path rules use it to tell a URL route from a home directory.
+
+    Idempotent by construction -- see `_SCRUB_PLACEHOLDERS` -- which is the property
+    that stops a regeneration from silently undoing the scrub.
+    """
+    for rule, pattern in PATTERNS:
+        rewritten: list[str] = []
+        cursor = 0
+        for match in pattern.finditer(text):
+            if not _rule_accepts(rule, match, text[: match.start()]):
+                continue
+            rewritten += [text[cursor : match.start()], _SCRUB_PLACEHOLDERS[rule]]
+            cursor = match.end()
+        if rewritten:
+            rewritten.append(text[cursor:])
+            text = "".join(rewritten)
+    return text
+
+
 # ------------------------------------------------------------------ data
 
 
@@ -328,7 +385,10 @@ class ProcessUnit:
     naming: str  # "ok" | "violation" | "n/a"
 
     def to_json(self) -> dict:
-        d = dict(self.__dict__)
+        # Every string goes through the scrubber, not just the obvious ones: the unit
+        # name, the command and the schedule all come off a live host, and this is the
+        # single boundary at which a recorded value becomes the tracked artifact.
+        d = {k: scrub_identities(v) if isinstance(v, str) else v for k, v in self.__dict__.items()}
         d["scheduler"] = self.scheduler.value
         return d
 
@@ -394,4 +454,5 @@ __all__ = [
     "_ssh",
     "classify",
     "naming_status",
+    "scrub_identities",
 ]
