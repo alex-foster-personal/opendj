@@ -1293,7 +1293,8 @@ def _eval_sync_drift() -> list[Metric]:
 def _hotspots() -> HotspotResult:
     """Churn x size, or an explicit UNKNOWN when git cannot measure it."""
     code, log, stderr = _run_capture([
-        "git", "log", f"--since={CFG.CHURN_DAYS}.days", "--name-only", "--pretty=format:",
+        "git", "log", f"--since={CFG.CHURN_DAYS}.days", "--no-renames",
+        "--name-only", "--pretty=format:",
     ])
     if code != 0:
         detail = f"git log ... exited {code}; stderr: {stderr[-2000:]}"
