@@ -2,10 +2,18 @@
 scoped narrowly enough that it never fires outside that class (issue #3486).
 
 The probe (conftest.py:_log_ci_venv_probe) used to be a bare ``print()``: it
-named the wrong interpreter and the resulting missing module on every CI run
-that hit it, and nothing ever read the line or failed the job. Three PRs sat
-blocked behind a job whose real failure was buried under a diagnosis nobody
-consumed.
+named the session's interpreter on every CI run that hit it, and nothing ever
+read the line or failed the job.
+
+Do NOT read the probe's ``soundfile=ERROR`` field as a cause of any CI failure.
+It reports the result of an import attempt and prints on passing runs too: a
+``quality ratchet`` job with ``conclusion=success`` (run 35267002927, job
+105358198653) carries four identical copies of it, under both a ``uv`` build
+interpreter and the project venv. Reading that string as a shared root cause for
+three blocked PRs is exactly the mistake this docstring used to repeat; those
+PRs each failed on their own diff (hard gates, merge-base ratchet deltas, and
+assertions naming their own new files). A string present in green and red runs
+alike distinguishes nothing.
 
 Each case below drives a REAL pytest subprocess (not a unit test of the
 helper) so the assertions are about the behavior CI actually depends on:
