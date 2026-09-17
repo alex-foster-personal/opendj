@@ -8,12 +8,27 @@ async function assertInsideWindow(
 	locator: import('@playwright/test').Locator
 ): Promise<void> {
 	const box = await locator.boundingBox();
-	const win = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
 	expect(box, 'surface must have geometry').not.toBeNull();
-	expect(box!.x).toBeGreaterThanOrEqual(0);
-	expect(box!.y).toBeGreaterThanOrEqual(0);
-	expect(box!.x + box!.width).toBeLessThanOrEqual(win.w);
-	expect(box!.y + box!.height).toBeLessThanOrEqual(win.h);
+
+	await expect
+		.poll(
+			async () => {
+				const polled = await locator.boundingBox();
+				if (!polled) return null;
+				const win = await page.evaluate(() => ({
+					w: window.innerWidth,
+					h: window.innerHeight
+				}));
+				return (
+					polled.x >= 0 &&
+					polled.y >= 0 &&
+					polled.x + polled.width <= win.w &&
+					polled.y + polled.height <= win.h
+				);
+			},
+			{ timeout: 5_000 }
+		)
+		.toBe(true);
 }
 
 async function seedPinsVisible(page: import('@playwright/test').Page): Promise<void> {
