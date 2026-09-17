@@ -436,3 +436,75 @@ test('the folder path placeholder is dim and italic, not the input itself', () =
 	assert.doesNotMatch(baseInputRule, /opacity:/);
 	assert.doesNotMatch(baseInputRule, /color:\s*var\(--muted\)/);
 });
+
+test('the folder picker is a real control, and says so when it cannot run', () => {
+	// A native picker shipped on main while this branch was open, replacing the
+	// honestly-disabled placeholder this test used to guard. The requirement is
+	// unchanged in spirit: there is a visible picker affordance, and it never
+	// pretends to work where it cannot.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /class="folder-pick"/);
+	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(\)\}/);
+	// outside the desktop shell there is no native picker, and the control says
+	// which app can do it rather than failing silently
+	assert.match(overlay, /!nativeFolderPicker/);
+	assert.match(overlay, /available in the Open DJ desktop app/);
+});
+
+test('denied folder candidates render as refused chips, not hidden', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\{#if candidate\.readable\}/);
+	assert.match(overlay, /class="folder-chip refused"/);
+	assert.match(overlay, /title=\{candidate\.detail\}/);
+});
+
+// ---------------------------------------------------------------- forward/back
+//
+// the maintainer, Wed 16 Sep 2026: "We also can't go forward or back in the first-run
+// setup which is confusing - add forward and back. Block going forward if it's
+// impossible to let user skip a section ofc."
+//
+// These read the source, like the rest of this file. The BEHAVIOUR of the
+// rules they depend on is proven against the real module in
+// setup-wizard-navigation.test.mjs; what is checked here is that the markup
+// actually wires the controls to those rules.
+
+test('every step panel renders a Back control', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	// one shared snippet, rendered once per panel (detect has two branches),
+	// so Back cannot be present on some steps and missing on others.
+	assert.match(overlay, /\{#snippet backButton\(\)\}/);
+	const renders = overlay.match(/\{@render backButton\(\)\}/g) ?? [];
+	assert.equal(renders.length, 7, `expected a Back control on all 7 panels, found ${renders.length}`);
+});
+
+test('Back is gated by backRefusal, and says why in the same breath', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /const backWhy = \$derived\(backRefusal\(/);
+	const snippet = overlay.match(/\{#snippet backButton\(\)\}[\s\S]*?\{\/snippet\}/)?.[0] ?? '';
+	assert.match(snippet, /disabled=\{backWhy !== null/, 'Back must be disabled by the refusal');
+	assert.match(snippet, /title=\{backWhy \?\?/, 'the refusal must be the tooltip, not a separate string');
+});
+
+test('Back hands the live job to the rule instead of guessing', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	// The job row lives in jobsStore; the wizard store keeps no copy. If this
+	// call drops the argument, a running import stops blocking Back.
+	assert.match(overlay, /setupWizard\.back\(job\)/);
+});
+
+test('the breadcrumb walks this branch only, and past steps are real links', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\{#each route as name, index \(name\)\}/);
+	assert.match(overlay, /const route = \$derived\(visibleSteps\(source\)\)/);
+	assert.match(overlay, /class="step-link"/);
+	assert.match(overlay, /onclick=\{\(\) => setupWizard\.goTo\(name\)\}/);
+	// and it no longer hard-codes the full step list, which would show the
+	// folder branch a confirm step it never visits
+	assert.doesNotMatch(overlay, /\{#each WIZARD_STEPS as name/);
+});
+
+test('the user is told where they are, not left to count pills', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /Step \{position\} of \{total\}/);
+});

@@ -1,0 +1,8 @@
+# Tests in the fast tier whatever the durations ledger recorded (scripts/pytest_fast_tier.py,
+# --fast-tier-always). One pytest node id, or one test file path for every test in it, per
+# line. Evidence for each entry is the round 7 miss audit (specs/ci-fail-fast.md,
+# `just ci-miss-audit`): the fast tier caught 9 of 20 pull-request-caused failures on Wed
+# 16 Sep 2026, and these two tests were 8 of the 11 misses. Every entry must match a
+# collected test, or the fast tier refuses to run.
+tests/test_requirement_markers.py::test_marked_tests_have_if_then_intent_docstrings
+tests/scripts/test_requirement_marker_ratchet_gate.py::test_green_tree_passes

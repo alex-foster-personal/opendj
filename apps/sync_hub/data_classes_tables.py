@@ -154,12 +154,15 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "Migration bookkeeping",
         state_tables(
             "schema_meta",
+            "schema_meta_markers",
             "pairing_capture_schema_meta",
             "play_orders_schema_meta",
             "playlist_sets_schema_meta",
         ),
         "machine_local",
-        "Records which migrations ran on THIS file; each machine migrates itself.",
+        "Records which migrations ran on THIS file, and which one-shot repairs "
+        "have completed on it (schema_meta_markers, v16); each machine migrates "
+        "and repairs itself.",
         (),
     ),
     fixed(

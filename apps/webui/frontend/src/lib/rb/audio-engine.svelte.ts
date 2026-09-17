@@ -85,7 +85,7 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
-import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
 	beginDeckLoad,
@@ -2852,6 +2852,12 @@ async function _upgradeDeckStems(
 	}
 }
 
+/** CUEOUT-15: build and resume the graph for a non-deck source (the library
+ * preview), which must work before any deck has loaded. Rejects, never silent. */
+export async function ensureAudioGraphForCue(): Promise<void> {
+	await _resumeContext();
+}
+
 /**
  * The monitor's tap into the engine graph, handed to the headphone module as a
  * thunk. Resolved lazily on purpose: a headphone selection must still build the
@@ -2974,12 +2980,7 @@ class RbAudioEngine implements AudioEngine {
 			const anlzPromise: Promise<AnlzWithVocals> = anlzCached
 				? Promise.resolve(cachedAnlz.data as AnlzWithVocals)
 				: (fetchAnlzForDeckLoad(stable_id) as Promise<AnlzWithVocals>);
-			// Prefetch hit: copyPrefetchedAudio (slice) so decode cannot detach cache.
-			const prefetchedAudio = copyPrefetchedAudio(stable_id);
-			const audioPromise =
-				prefetchedAudio !== null
-					? Promise.resolve(prefetchedAudio)
-					: fetchAudioArrayBuffer(stable_id);
+			const audio = deckLoadAudio(stable_id, _ctx?.sampleRate ?? null, fetchAudioArrayBuffer);
 			// LAZY-STEMS: the critical path fetches ONLY what first playback needs.
 			// `probeStem` used to ride here as a fifth request and, being last in
 			// the list behind a multi-MB audio download on a single-worker engine,
@@ -2988,13 +2989,12 @@ class RbAudioEngine implements AudioEngine {
 			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
 				await Promise.all([
 					time('getTrack', getTrack(stable_id)),
-					time(prefetchedAudio !== null ? 'fetchAudioCacheHit' : 'fetchAudio', audioPromise),
+					time(audio.fetchStage, audio.bytes),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
 					time('fetchHotCues', fetchHotCueSlots(stable_id))
 				]);
 			stages.fetchWall = perfMs();
-			stages.audioBytes = audioBytes.byteLength;
-			stages.audioPrefetchHit = prefetchedAudio !== null ? 1 : 0;
+			Object.assign(stages, audio.stats(audioBytes));
 			const ctx = _ensureGraph();
 			loadCtx = ctx;
 			track = trackRes.track;
@@ -3011,7 +3011,7 @@ class RbAudioEngine implements AudioEngine {
 			// audible is being deferred here, only the per-stem gain branches.
 			// SPIKE-PERF: overlap decode with worklet create.
 			const [decodedMix, mixProcessor] = await Promise.all([
-				time('decodeMix', ctx.decodeAudioData(audioBytes)),
+				time(audio.decodeStage, decodeDeckLoadAudio(ctx, stable_id, audio, audioBytes)),
 				time('stretchCreate', StretchDeckProcessor.create(ctx, processorOptions))
 			]);
 			buffer = decodedMix;

@@ -27,6 +27,7 @@ import {
 	isRetryableAnlzData
 } from '$lib/components/rb/wave/anlz-cache-retry';
 import type { AnlzData } from '$lib/rb/anlz-types';
+import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
 	type AnalysisSourceRefreshDeck,
@@ -63,6 +64,7 @@ export type AnlzEntry =
 
 const _cache = $state<Record<string, AnlzEntry>>({});
 bindAnlzCapCache(_cache);
+registerCapsConsumer('anlz', applyAnlzCaps);
 
 /** Floor between refetches of a retryable entry (ms). A stable_id with no
  * decode yet sits behind a reactive $effect (WaveRow.svelte) that reruns on

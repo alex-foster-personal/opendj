@@ -73,17 +73,16 @@
 							? () => onduplicate?.(node)
 							: undefined
 			},
-			{
-				id: 'forbid-duplicates',
-				label: 'Forbid duplicates',
-				checked: kind === 'playlist' && node !== undefined
-					? node.forbid_duplicates === true
-					: undefined,
-				run:
-					kind === 'playlist' && node !== undefined
-						? () => onforbidduplicates?.(node)
-						: undefined
-			},
+			...(kind === 'playlist' && node !== undefined
+				? [
+						{
+							id: 'forbid-duplicates',
+							label: 'Forbid duplicates',
+							checked: node.forbid_duplicates === true,
+							run: () => onforbidduplicates?.(node)
+						}
+					]
+				: [{ id: 'forbid-duplicates', label: 'Forbid duplicates' }]),
 			{ id: 'export', label: 'Export' }, { id: 'spotify', label: 'Import from Spotify' },
 			{ id: 'offline', label: 'Pin offline' }, { id: 'sort', label: 'Sort by...' },
 			{ id: 'reveal', label: 'Reveal in tree', run: kind === 'playlist' && node !== undefined ? () => onselect(node) : undefined }

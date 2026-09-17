@@ -99,7 +99,16 @@ async function installDestinationTap(page: Page): Promise<void> {
 }
 
 async function loadAndPlayDeck1(page: Page): Promise<void> {
-	await page.getByText('All Tracks', { exact: true }).first().click();
+	// The All Tracks pane is selected by the `?playlist=all` deep link the
+	// caller navigates with, which is the same query BrowserPanel itself
+	// writes when the pane is picked in the tree. This used to CLICK the
+	// tree's All Tracks row, which made an audio measurement depend on the
+	// browser panel's layout: at this spec's 1280x800 viewport the panel is
+	// ~103px tall, its tree scroller is starved to 4px, and once the fixture
+	// carries a handful of playlists the row lands below the fold and under
+	// the fixed PerformanceAppNav overlay, which then eats the click. That
+	// layout fault is real and logged in .planning/TECH-DEBT.md; it is not
+	// what this spec measures.
 	const firstRow = page.locator(TRACK_ROW).first();
 	await expect(firstRow).toBeVisible({ timeout: 30_000 });
 	const stableId = await firstRow.getAttribute('data-stable-id');
@@ -122,7 +131,7 @@ test('a playing deck on default mixer state is non-silent at AudioContext.destin
 	}, PREFS_STORAGE_KEY);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	// Deliberately NO ?muted=1: the mute is one of the stages under test.
-	await page.goto(`${UI_BASE}/performance`);
+	await page.goto(`${UI_BASE}/performance?playlist=all`);
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await loadAndPlayDeck1(page);
 

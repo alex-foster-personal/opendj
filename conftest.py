@@ -48,8 +48,18 @@ os.environ["MUSIC_DJ_AUTO_ANALYZE"] = "off"
 
 import pytest
 
-# Register the reqs plugin (coverage-matrix.md writer + --live-db gate).
-pytest_plugins = ["scripts.pytest_reqs_plugin"]
+# Register the reqs plugin (coverage-matrix.md writer + --live-db gate), and the
+# SMARTEST-CI tier plugins (specs/ci-fail-fast.md round 6a). They are registered
+# HERE and not with `-p` on the command line because `.venv/bin/pytest` (the
+# console script ci.yml runs) does not put the checkout on sys.path, so
+# `-p scripts.x` dies with "No module named 'scripts'" before any option is
+# parsed; a rootdir conftest is imported with rootdir on sys.path. Both plugins
+# are inert unless one of their options is given.
+pytest_plugins = [
+    "scripts.pytest_reqs_plugin",
+    "scripts.pytest_fast_tier",
+    "scripts.pytest_tier_floor",
+]
 
 
 REPO_ROOT: Path = Path(__file__).resolve().parent

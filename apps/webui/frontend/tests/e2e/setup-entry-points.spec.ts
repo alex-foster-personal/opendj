@@ -199,7 +199,24 @@ test.describe('setup entry points', () => {
 		expect(typeof darwinEntry?.signature).toBe('string');
 		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
 
-		expect(errors.filter((e) => !e.includes('favicon'))).toEqual([]);
+		// The USB panel's 503 is a DESIGNED refusal, not a fault, and it is the
+		// one console error this page can legitimately emit on a CI host.
+		// LibraryNav mounts on '/' and polls GET /api/v1/usb/volumes every 5s
+		// (startUsbWatch, added by e474e66a2 LIBMX-13, Sun 13 Sep 2026); that
+		// route answers 503 `unsupported_platform:<os>` on anything that is not
+		// darwin (df1987077, Sun 31 Aug 2026 - it refuses rather than returning
+		// an empty list that would read as "nothing is plugged in"). The CI
+		// runner is Linux, so 503 is the CORRECT answer there and WebKit logs
+		// the refused fetch itself; the app handles it (usbTracker.lastError)
+		// and logs nothing of its own.
+		//
+		// The allowance is deliberately pinned to that one endpoint AND that
+		// one status, so a usb/volumes 500, any other endpoint's failure, and
+		// any app-emitted console error all still fail this assertion.
+		const usbCapabilityRefusal = /status of 503 .*\/api\/v1\/usb\/volumes/;
+		expect(
+			errors.filter((e) => !e.includes('favicon') && !usbCapabilityRefusal.test(e))
+		).toEqual([]);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
@@ -421,6 +438,7 @@ test.describe('setup entry points', () => {
 
 		await folderInput.fill('/Users/you/Music');
 		await folderInput.blur();
+		await expect(folderInput).toHaveValue('/Users/you/Music');
 
 		const typedStyle = await folderInput.evaluate((el) => {
 			const style = window.getComputedStyle(el);
@@ -433,8 +451,15 @@ test.describe('setup entry points', () => {
 		expect(typedStyle.fontStyle).not.toBe('italic');
 		expect(typedStyle.opacity).toBe(1);
 
-		const typedScreenshot = await folderInput.screenshot();
-		expect(emptyScreenshot.equals(typedScreenshot)).toBe(false);
+		// The value lands before the glyphs do. A single screenshot here catches
+		// whatever frame the compositor happened to have up, which on a loaded
+		// runner is still the empty one -- so wait for the typed state to PAINT
+		// differently rather than asserting against one arbitrary frame.
+		await expect
+			.poll(async () => (await folderInput.screenshot()).equals(emptyScreenshot), {
+				message: 'the typed value must render differently from the italic placeholder'
+			})
+			.toBe(false);
 	});
 
 	test('the build identity chip states this app address in its foldout', async ({ page }) => {

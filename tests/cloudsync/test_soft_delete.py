@@ -418,6 +418,13 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # engine.py's apply section into engine_apply.py (quality-gate
     # file_size ratchet); the DELETE text moved with it.
     ("apps/sync_hub/engine_apply.py", "dynamic:MEMBERSHIP_TABLE"),
+    # apps.sync_hub.engine_identity_map._remove_remap_loser: the
+    # sync_identity_remap table records which duplicate stable_id lost an
+    # identity merge on THIS hub. It is not a protocol.SYNC_TABLES member, it
+    # never crosses the wire, and it carries no deleted_at column, so a hard
+    # DELETE of a retired remap row is the only correct shape (round 2 CI
+    # green, Wed 16 Sep 2026).
+    ("apps/sync_hub/engine_identity_map.py", "dynamic:REMAP_TABLE"),
     # apps.sync_hub.engine_apply._drop_superseded -- the one place a hard
     # DELETE against an arbitrary SYNC_TABLES member is correct by design:
     # two peers minted different natural-key duplicates (round 1 finding

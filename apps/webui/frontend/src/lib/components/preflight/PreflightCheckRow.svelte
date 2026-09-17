@@ -60,11 +60,46 @@
 		mode === 'boot' && check.user_remediation ? check.user_remediation : check.remediation
 	);
 
-	function lightClass(status: PreflightCheck['status']): string {
-		if (status === 'pass') return 'light-pass';
-		if (status === 'fail') return 'light-fail';
-		return 'light-pending';
+	/**
+	 * Three colours, and the third one carries information.
+	 *
+	 * Green: this passed. Red: this failed AND the app cannot usefully run
+	 * until it is fixed. Orange: this needs saying but the app runs anyway,
+	 * which covers both a failed advisory check and one that could not be
+	 * exercised at all.
+	 *
+	 * Painting every non-pass red (what shipped before) taught the user that
+	 * red does not mean stop, which costs the colour its meaning on the one
+	 * row where it does.
+	 */
+	function lightClass(check: PreflightCheck): string {
+		if (check.status === 'pass') return 'light-pass';
+		if (check.status === 'fail' && severityOf(check) === 'blocking') return 'light-fail';
+		return 'light-warn';
 	}
+
+	/** Unknown severity reads as blocking, matching the server's default. */
+	function severityOf(check: PreflightCheck): string {
+		return check.severity ?? 'blocking';
+	}
+
+	/** Plain-language "what is this, and what do I do" for the hover. */
+	function explainerOf(check: PreflightCheck): string | null {
+		return check.explainer ?? null;
+	}
+
+	const lightTitle = $derived.by(() => {
+		const meaning =
+			check.status === 'pass'
+				? 'Working.'
+				: check.status === 'fail' && severityOf(check) === 'blocking'
+					? 'Not working, and Open DJ needs this before it can run.'
+					: check.status === 'fail'
+						? 'Not working, but you can carry on; fixing it is optional.'
+						: 'Not checked yet; you can carry on.';
+		const explainer = explainerOf(check);
+		return explainer ? `${displayLabel}: ${meaning} ${explainer}` : `${displayLabel}: ${meaning}`;
+	});
 
 	/** The `x-apple.systempreferences:` deep link inside a remediation
 	 * sentence, or null when the remediation carries no such link (e.g. the
@@ -86,14 +121,16 @@
 <li data-check-id={check.id} data-check-status={check.status}>
 	<details open={check.status !== 'pass'}>
 		<summary>
-			<span class="light {lightClass(check.status)}" title={`${displayLabel}: ${check.status}`}
-			></span>
-			<span class="label">{displayLabel}</span>
+			<span class="light {lightClass(check)}" title={lightTitle}></span>
+			<span class="label" title={lightTitle}>{displayLabel}</span>
 			{#if mode === 'admin'}
 				<span class="status-word">{check.status}</span>
 			{/if}
 		</summary>
-		<p class="detail" title={displayDetail}>{displayDetail}</p>
+		<p class="detail" title={explainerOf(check) ?? displayDetail}>{displayDetail}</p>
+		{#if explainerOf(check)}
+			<p class="explainer">{explainerOf(check)}</p>
+		{/if}
 		{#if displayRemediation}
 			<p class="remediation">{displayRemediation}</p>
 			{#if settingsUrl(displayRemediation)}
@@ -132,8 +169,8 @@
 	.light-fail {
 		background: var(--danger);
 	}
-	.light-pending {
-		background: var(--accent);
+	.light-warn {
+		background: var(--preflight-warn);
 	}
 	.label {
 		font-weight: 600;
@@ -143,6 +180,7 @@
 		font-size: 0.85em;
 	}
 	.detail,
+	.explainer,
 	.remediation {
 		margin: 0.25rem 0 0 1.5rem;
 		color: var(--muted);

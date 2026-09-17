@@ -6470,6 +6470,20 @@
         "title": "FleetOut",
         "type": "object"
       },
+      "FolderCandidatesOut": {
+        "description": "Existing folders under the user's home worth offering as one-click\nsetup suggestions, instead of making them type a path blind.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "title": "FolderCandidatesOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -13156,6 +13170,17 @@
             "title": "Detail",
             "type": "string"
           },
+          "explainer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainer"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -13174,6 +13199,15 @@
               }
             ],
             "title": "Remediation"
+          },
+          "severity": {
+            "default": "blocking",
+            "enum": [
+              "blocking",
+              "advisory"
+            ],
+            "title": "Severity",
+            "type": "string"
           },
           "status": {
             "enum": [
@@ -13228,8 +13262,13 @@
         "type": "object"
       },
       "PreflightOut": {
-        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``\ncheck never blocks it, because a check that could not be exercised is\nnot a defect on its own.",
+        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff a check that is ``severity: blocking``\nis ``fail``; a ``pending`` check never blocks it, because a check that\ncould not be exercised is not a defect on its own, and an ``advisory``\ncheck never blocks it either, because the app runs without it.\n\n``advisories`` counts the non-blocking rows the user should still see,\nso a caller can distinguish \"everything is fine\" from \"running, with\nthings worth telling you\" without recomputing severity for itself.",
         "properties": {
+          "advisories": {
+            "default": 0,
+            "title": "Advisories",
+            "type": "integer"
+          },
           "checks": {
             "items": {
               "$ref": "#/components/schemas/PreflightCheckOut"
@@ -28373,6 +28412,100 @@
         ]
       }
     },
+    "/api/v1/performance/headphones/preview": {
+      "post": {
+        "description": "CUEOUT-15: play `stable_id` from `ratio` of its length on the cue bus.\n\nThis is the mini-waveform click, driven without a pointer. It loads no\ndeck and moves no transport, so it can be issued while all four decks\nare busy and while one of them is on air.\n\nA preview that could not be heard is a 400 carrying the reason the page\nwould have shown the operator (no audio graph, a dead cue sink, MIX at\nthe master end, GAIN at zero), never a 200 over silence.\n\nOptional `bpm` is the track's own tempo; with the preview tempo-match\nsetting on and a master deck playing, the preview matches that tempo\n(CUEOUT-15 R6). Omit it and the preview plays at the track's own tempo.",
+        "operationId": "post_preview_cue_api_v1_performance_headphones_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "PreviewCueBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Cue-bus state after starting the library preview"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Cue",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/preview/stop": {
+      "post": {
+        "description": "CUEOUT-15: stop the preview and release the decoded track.\n\nIdempotent: stopping when nothing is previewing is a success, because\nthe caller's intent (nothing playing on the preview voice) is satisfied.",
+        "operationId": "post_preview_stop_api_v1_performance_headphones_preview_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "PreviewStopBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Cue-bus state after stopping the library preview"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Stop",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
     "/api/v1/performance/rescue-snapshots": {
       "post": {
         "operationId": "post_rescue_snapshot_api_v1_performance_rescue_snapshots_post",
@@ -30947,6 +31080,28 @@
           }
         },
         "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/music-folders": {
+      "get": {
+        "description": "Existing folders under HOME worth suggesting, before typing a path.\n\nNever a guess: only paths that exist on this machine are returned, and\na candidate macOS refuses to list is still reported, marked denied,\nrather than silently omitted.",
+        "operationId": "music_folder_candidates_api_v1_setup_detect_music_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderCandidatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Music Folder Candidates",
         "tags": [
           "setup"
         ]
@@ -33837,7 +33992,7 @@
       },
       "head": {
         "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).\n\nBefore streaming, a subprocess probe opens the resolved path under\n``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503\nwith ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).",
-        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
+        "operationId": "head_track_audio_api_v1_tracks__stable_id__audio_head",
         "parameters": [
           {
             "in": "path",

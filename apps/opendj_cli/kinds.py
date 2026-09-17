@@ -57,6 +57,13 @@ def number_value(key: str, raw: str) -> float:
     return parsed
 
 
+def positive_number_value(key: str, raw: str) -> float:
+    parsed = number_value(key, raw)
+    if parsed <= 0:
+        raise ValueError(f"{key} must be a positive number, got {raw!r}")
+    return parsed
+
+
 def unit_value(key: str, raw: str) -> float:
     parsed = number_value(key, raw)
     if parsed < 0.0 or parsed > 1.0:
