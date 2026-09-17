@@ -1,0 +1,25 @@
+<!-- @dsCard group="Performance controls" name="Fader" subtitle="Idle, playing (pulse), looped (orange)" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Fader</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	.ds-fader-cell { display: grid; justify-items: center; gap: 6px; color: var(--rb-text-dim); font-size: var(--rb-fs-label); }
+	.ds-fader-cell .rb-fader { height: 120px; }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame">
+	<div class="ds-cells">
+		<div class="ds-fader-cell"><div class="rb-fader" title="Channel 1 level: 0 dB"><div class="rb-fader-track"></div><div class="rb-fader-thumb" style="top: 20%"></div></div>idle</div>
+		<div class="ds-fader-cell"><div class="rb-fader playing" title="Channel 2 level: -6 dB"><div class="rb-fader-track"></div><div class="rb-fader-thumb" style="top: 45%"></div></div><code>.playing</code></div>
+		<div class="ds-fader-cell"><div class="rb-fader looped" title="Channel 3 level: -12 dB"><div class="rb-fader-track"></div><div class="rb-fader-thumb" style="top: 65%"></div></div><code>.looped</code></div>
+		<div class="ds-fader-cell"><div class="rb-fader" title="Channel 4 level: -inf dB"><div class="rb-fader-track"></div><div class="rb-fader-thumb" style="top: calc(100% - 12px)"></div></div>closed</div>
+	</div>
+</div>
+<p class="ds-note">30 px wide vertical track (3 px, near-black) with a 12 px thumb carrying a 2 px blue line. <code>.playing</code> pulses the line at 0.85 s; <code>.looped</code> turns it orange. Position is the thumb's inline <code>top</code>. Reduced motion disables the pulse.</p>
+</body>
+</html>

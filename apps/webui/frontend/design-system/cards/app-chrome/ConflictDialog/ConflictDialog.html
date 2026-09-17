@@ -1,0 +1,31 @@
+<!-- @dsCard group="App chrome" name="ConflictDialog" subtitle="Modal overlay with panel and actions" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ConflictDialog</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	/* The live overlay is position: fixed; contained here so the card grid can crop it. */
+	.ds-frame { height: 340px; background: var(--bg); }
+	.ds-frame .conflict-dialog { position: absolute; }
+	.conflict-dialog h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+	.conflict-dialog p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+	<div class="conflict-dialog" role="dialog" aria-labelledby="ds-dlg-title">
+		<div class="panel">
+			<h3 id="ds-dlg-title">Cue points changed in rekordbox</h3>
+			<p>"Sandstorm (Extended)" has 3 cues in rekordbox and 5 in Open DJ. Choose which set to keep; the other is saved as a backup.</p>
+			<div class="actions">
+				<button type="button">Keep Open DJ</button>
+				<button type="button" class="primary">Use rekordbox</button>
+			</div>
+		</div>
+	</div>
+</div>
+</body>
+</html>

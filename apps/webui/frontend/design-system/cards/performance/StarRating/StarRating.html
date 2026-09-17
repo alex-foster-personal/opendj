@@ -1,0 +1,24 @@
+<!-- @dsCard group="Performance controls" name="StarRating" subtitle="Outline stars: empty, filled, hover preview" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>StarRating</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	.ds-stars { display: flex; gap: 1px; }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame">
+	<div class="ds-cells">
+		<div class="ds-cell"><div class="ds-stars" title="Rating: 3 of 5"><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star">★</span><span class="rb-star">★</span></div><small>3 of 5</small></div>
+		<div class="ds-cell"><div class="ds-stars" title="Rating: 3 of 5, previewing 4"><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star preview">★</span><span class="rb-star">★</span></div><small>hover preview on the 4th</small></div>
+		<div class="ds-cell"><div class="ds-stars" title="Rating: not set"><span class="rb-star">★</span><span class="rb-star">★</span><span class="rb-star">★</span><span class="rb-star">★</span><span class="rb-star">★</span></div><small>unrated</small></div>
+		<div class="ds-cell"><div class="ds-stars" style="--rb-star-size: 8px" title="Rating: 5 of 5"><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star filled">★</span><span class="rb-star filled">★</span></div><small>narrow column: <code>--rb-star-size: 8px</code></small></div>
+	</div>
+</div>
+<p class="ds-note">Empty stars are <code>#3a3f46</code>, filled are <code>--rb-text</code>, the hover preview is one step brighter. The container carries the rating in its <code>title</code>. Narrow table columns shrink the glyph via <code>--rb-star-size</code>.</p>
+</body>
+</html>

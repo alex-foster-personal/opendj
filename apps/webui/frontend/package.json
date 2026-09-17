@@ -21,7 +21,9 @@
     "test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
     "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts && node scripts/compact-headphone-api-types.mjs",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "design-system:build": "node scripts/build-design-system.mjs",
+    "test:design-system": "node --test tests/unit/design-system-bundle.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
