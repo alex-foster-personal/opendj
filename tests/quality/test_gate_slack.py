@@ -75,7 +75,7 @@ def _run_gate(
     monkeypatch.setattr(qg, "EVALUATORS", (qg.Evaluator("fake", "fake title", _fake_eval),))
     monkeypatch.setattr(qg, "_load_baseline", lambda: {_KEY: _ALLOWANCE})
     monkeypatch.setattr(qg, "_load_slack", lambda: dict(slack or {}))
-    monkeypatch.setattr(qg, "_hotspots", list)
+    monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
     monkeypatch.setattr(qg, "_resolve_base", lambda: (_BASE_SHORT, ""))
     monkeypatch.setattr(qg, "_measure_owners_at_base", _measure)
 

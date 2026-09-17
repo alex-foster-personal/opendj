@@ -114,6 +114,7 @@ except ModuleNotFoundError as exc:
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
 from scripts.review_coverage_carry import print_carry_proofs, verdicts_with_carry
+from scripts.review_docs_only import is_docs_only, render_docs_only_pass
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
@@ -219,6 +220,16 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 # ----- review artifacts ---------------------------------------------------
+
+
+def _changed_files(pr: str) -> list[str]:
+    """Every path this PR's diff touches, across all pages. Feeds the
+    docs-only check in `triage`; a `gh` failure raises `TriageError` exactly
+    like every other call in this module, so a listing failure is a failed
+    MEASUREMENT and never misread as an empty (and therefore non-docs-only)
+    PR.
+    """
+    return [entry["filename"] for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")]
 
 
 @dataclass(frozen=True)
@@ -494,8 +505,19 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
 
 def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
-    checks = _checks(pr)
     head_sha = _head_sha(pr)
+    changed_files = _changed_files(pr)
+    if is_docs_only(changed_files):
+        # Coverage is the only thing this exemption waives. Re-sample the
+        # head before printing, the same race guard the normal path applies
+        # after ITS network calls (`_require_head_unchanged` below): a push
+        # landing between the head sample and the files listing must void
+        # this verdict rather than certify a head nobody measured.
+        _require_head_unchanged(head_sha, _head_sha(pr))
+        print(render_docs_only_pass(pr, head_sha, gate_commit, changed_files))
+        return 0
+
+    checks = _checks(pr)
     reviews = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/reviews")
     inline = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/comments")
     issue = _paginated_json_list(f"repos/{REPO}/issues/{pr}/comments")

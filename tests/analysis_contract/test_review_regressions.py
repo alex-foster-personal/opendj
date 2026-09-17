@@ -373,37 +373,31 @@ def test_expected_toggle_revision_over_http_closes_the_aba_gap(tmp_path) -> None
 def test_a_combined_write_that_fails_on_the_default_restores_the_toggle(
     tmp_path,
 ) -> None:
-    """discussion_r3974993965 P2 BLOCKING, reproduced first: `_apply_toggle`
-    mutates the process-global toggle BEFORE `set_default`/`commit`, so a
-    genuine failure on the durable half used to leave the toggle changed
-    while the whole PUT reported an error.
+    """discussion_r3974993965 P2 BLOCKING, issue #3189: a combined PUT that
+    cannot open the database writably must leave the toggle at its prior value
+    and `toggle_revision` at launch state `0` because `_apply_toggle` is
+    never reached.
+
+    Since commit `3df9acb93` the route opens the writable connection before
+    calling `_apply_toggle`, so a real `BEGIN EXCLUSIVE` lock held before any
+    priming PUT blocks that open on migration work. The end state matches an
+    uncompensated rollback (toggle `unset`, default `rbx`) but revision `0`
+    correctly reports that no toggle write occurred. See
+    `test_a_combined_write_compensation_bumps_toggle_revision` for the path
+    where the toggle write lands and compensation bumps the counter to `2`.
 
     The failure is a REAL `sqlite3.OperationalError`: a second connection to
     the SAME file holds `BEGIN EXCLUSIVE` so the route's own write blocks for
     the real `busy_timeout` and then genuinely fails, no production code
-    replaced (AGENTS.md's no-mocks contract). The lock is taken only AFTER a
-    priming PUT has already migrated the analysis schema for real - taking it
-    earlier would fail `_open()`'s own idempotent `CREATE TABLE IF NOT
-    EXISTS` instead of the later `commit()` this test is actually about,
-    which would make the toggle assertions below pass for the wrong reason
-    (never touched, not compensated) rather than the reason under test.
+    replaced (AGENTS.md's no-mocks contract).
     """
     path, conn = _bare_db(tmp_path)
     conn.close()
     app = _app_on(path)
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            prime = client.put(
-                "/api/v1/analysis/source", json={"lane": "beatgrid", "default": "rbx"}
-            )
-            assert prime.status_code == 200
-
             locker = sqlite3.connect(str(path), timeout=0.1)
             locker.execute("BEGIN EXCLUSIVE")
-            locker.execute(
-                "INSERT INTO analysis_source_default (lane, source, updated_at) "
-                "VALUES ('key', 'own', 'x')"
-            )
             try:
                 resp = client.put(
                     "/api/v1/analysis/source",
@@ -416,29 +410,71 @@ def test_a_combined_write_that_fails_on_the_default_restores_the_toggle(
 
             after = client.get("/api/v1/analysis/source").json()
             assert after["lanes"]["beatgrid"]["toggle"] == "unset", (
-                "the toggle must be restored to what it held before this failed "
-                "combined write, not left at the value the failed durable half "
-                "never actually committed"
+                "the toggle must still be at launch state because the open-time "
+                "failure never reached `_apply_toggle`"
             )
             assert after["lanes"]["beatgrid"]["default"] == "rbx", (
                 "the durable half must not have taken effect either"
             )
-            assert after["lanes"]["beatgrid"]["toggle_revision"] == 2, (
-                "one write for the failed switch, one for the compensation - "
-                "both are real writes, not a no-op that merely never touched it"
-            )
+            # 3df9acb93: writable open precedes `_apply_toggle`, so an
+            # open-time lock failure is not a toggle write and revision stays 0.
+            assert after["lanes"]["beatgrid"]["toggle_revision"] == 0
 
             # Control: the SAME shape of PUT, with the lock released, applies
             # both halves normally - the fix must not refuse every combined
-            # write, only compensate a genuinely failed one.
+            # write, only fail closed when the durable path cannot open.
             ok = client.put(
                 "/api/v1/analysis/source",
                 json={"lane": "beatgrid", "toggle": "own", "default": "own"},
             )
             assert ok.status_code == 200
             assert ok.json()["lanes"]["beatgrid"] == {
-                "default": "own", "toggle": "own", "toggle_revision": 3, "effective": "own",
+                "default": "own", "toggle": "own", "toggle_revision": 1, "effective": "own",
             }
+    finally:
+        selection.reset_toggles()
+
+
+def test_a_combined_write_compensation_bumps_toggle_revision(tmp_path) -> None:
+    """issue #3189: when `_apply_toggle` has already run and the durable half
+    fails, compensation is a second real `write_toggle` and clients must see
+    revision 2 so they know to re-read after the rollback.
+
+    Uses the production `_commit_default_or_compensate` helper with a genuine
+    read-only SQLite connection so `set_default`/`commit` fail through SQLite,
+    not through a mock or patched function.
+    """
+    from apps.webui.server.routes.analysis_source import _commit_default_or_compensate
+
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app) as client:
+            prime = client.put(
+                "/api/v1/analysis/source", json={"lane": "beatgrid", "default": "rbx"}
+            )
+            assert prime.status_code == 200
+
+            toggle_write = selection.write_toggle("beatgrid", "own")
+            assert toggle_write == selection.ToggleWrite(previous="unset", revision=1)
+
+            ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            ro.execute("PRAGMA query_only = ON")
+            try:
+                with pytest.raises(sqlite3.Error):
+                    _commit_default_or_compensate(
+                        ro, "beatgrid", "own", "own", toggle_write
+                    )
+            finally:
+                ro.close()
+
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["beatgrid"]["toggle"] == "unset"
+            assert after["lanes"]["beatgrid"]["default"] == "rbx"
+            assert after["lanes"]["beatgrid"]["toggle_revision"] == 2, (
+                "one write for the switch, one for the compensation"
+            )
     finally:
         selection.reset_toggles()
 

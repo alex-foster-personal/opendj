@@ -87,6 +87,13 @@ def open_rw(
     A durable ``schema_meta_markers`` row (v16, issue #3165) records
     completion so repeat opens issue only a constant-time marker check.
 
+    At v17 it also runs
+    :func:`apps.shared.state.migrations_v17.repair_hub_changelog_stamps`
+    (issue #3171): on a hub, latest ``hub_changelog`` rows whose stamp
+    disagrees with the live domain row are re-offered at a fresh sequence.
+    Candidate discovery runs before ``BEGIN IMMEDIATE`` and a marker makes
+    later opens constant-time.
+
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
     ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs

@@ -187,6 +187,7 @@ export function viewportFloatingPopover(
 	const gap = options.gap ?? DEFAULT_FLOAT_GAP_PX;
 
 	function place(): void {
+		if (triggerEl === null) return;
 		const triggerRect = triggerEl.getBoundingClientRect();
 		const width = popover.offsetWidth;
 		const height = popover.offsetHeight;

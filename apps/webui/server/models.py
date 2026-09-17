@@ -496,16 +496,35 @@ class PreflightCheckOut(BaseModel):
     user_label: str | None = None
     user_detail: str | None = None
     user_remediation: str | None = None
+    #: How much this check MATTERS, which is a different axis from whether it
+    #: passed (the maintainer, Wed 16 Sep 2026, after a fresh-Mac first run: "some
+    #: checks aren't so important"). ``blocking`` means the app cannot
+    #: usefully run until it passes, so the boot gate holds. ``advisory``
+    #: means the app runs fine and the user is told, so the gate does not
+    #: hold. The UI paints red for a failed blocking check and orange for a
+    #: failed or unexercised advisory one, rather than red for everything.
+    severity: Literal["blocking", "advisory"] = "blocking"
+    #: One sentence answering "what do I do about this?", shown on hover.
+    #: Distinct from ``remediation``: that is the fix for a FAILURE, this is
+    #: present on every row including passes, so a user can ask what a row
+    #: means without having to break it first.
+    explainer: str | None = None
 
 
 class PreflightOut(BaseModel):
     """``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-    gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
-    check never blocks it, because a check that could not be exercised is
-    not a defect on its own.
+    gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
+    is ``fail``; a ``pending`` check never blocks it, because a check that
+    could not be exercised is not a defect on its own, and an ``advisory``
+    check never blocks it either, because the app runs without it.
+
+    ``advisories`` counts the non-blocking rows the user should still see,
+    so a caller can distinguish "everything is fine" from "running, with
+    things worth telling you" without recomputing severity for itself.
     """
 
     status: Literal["pass", "fail"]
+    advisories: int = 0
     checks: list[PreflightCheckOut]
 
 

@@ -18,6 +18,7 @@ import socket
 import sqlite3
 import sys
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -153,7 +154,7 @@ def detect_platform() -> str:
     return platform
 
 
-def is_hub_from_env(env: dict[str, str] | None = None) -> bool:
+def is_hub_from_env(env: Mapping[str, str] | None = None) -> bool:
     """True iff ``MDT_IS_HUB`` is exactly ``1``.
 
     Unset or ``0`` is False. Any other value raises rather than being read

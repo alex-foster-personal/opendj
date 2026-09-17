@@ -87,12 +87,12 @@
 		void runPerformanceCommandFromUi({ type: 'channel_cue', deck, enabled });
 	}
 
-	function handleStemMute(deck: DeckId, stem: StemControl): void {
+	async function handleStemMute(deck: DeckId, stem: StemControl): Promise<void> {
 		const muted = getDeckState(deck).stems.controls[stem].muted;
 		void runPerformanceCommandFromUi({ type: 'stem_mute', deck, stem, muted: !muted });
 	}
 
-	function handleStemSolo(deck: DeckId, stem: StemControl): void {
+	async function handleStemSolo(deck: DeckId, stem: StemControl): Promise<void> {
 		const solo = getDeckState(deck).stems.controls[stem].solo;
 		void runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
 	}

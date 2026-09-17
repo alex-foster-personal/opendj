@@ -4,12 +4,16 @@
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.request_guard import (
+    _E2E_FRONTEND_PORTS,
     RequestGuardBindRefused,
     assert_request_guard_bind_allowed,
 )
@@ -21,6 +25,7 @@ LOOPBACK_BASE_URL = "http://127.0.0.1"
 SHARE_HOST = "dj.example"
 SHARE_TOKEN = "share-secret-token"
 TAILNET_HOST = "agentbox.example-tailnet.ts.net"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _client(
@@ -169,3 +174,61 @@ def test_origin_guard_disabled_when_cors_disabled() -> None:
         headers={"Origin": "https://evil.example"},
     )
     assert resp.json().get("code") != "ORIGIN_NOT_ALLOWED"
+
+
+def _library_jobs_e2e_frontend_port() -> int:
+    """The port the library-jobs Playwright suite serves the SPA from.
+
+    Read from the suite's own source rather than copied, so moving the suite
+    to another port moves this test with it instead of leaving a stale
+    literal that passes for the wrong reason.
+    """
+    source = (
+        REPOSITORY_ROOT
+        / "apps"
+        / "webui"
+        / "frontend"
+        / "tests"
+        / "e2e"
+        / "library-jobs-e2e-endpoints.ts"
+    )
+    text = source.read_text(encoding="utf-8")
+    match = re.search(r"export const LIBRARY_JOBS_E2E_FRONTEND_PORT\s*=\s*(\d+)\s*;", text)
+    if match is None:
+        raise AssertionError(f"LIBRARY_JOBS_E2E_FRONTEND_PORT is not declared in {source}")
+    return int(match.group(1))
+
+
+def test_post_allows_library_jobs_e2e_frontend_origin() -> None:
+    """A fixed-port e2e suite binds a vite port the daemon's own port_config
+    never sees, so the guard has to name it. Omitting 5277 refused every
+    browser POST that suite makes (enqueue included) with ORIGIN_NOT_ALLOWED.
+    """
+    port = _library_jobs_e2e_frontend_port()
+    client = _client(frontend_port=9411, backend_port=8697)
+    resp = client.post(
+        "/api/v1/commands",
+        json={"single": {"type": "play", "deck": 1, "playing": True}},
+        headers={"Origin": f"http://127.0.0.1:{port}"},
+    )
+    assert resp.status_code != 403 or resp.json().get("code") not in {
+        "ORIGIN_NOT_ALLOWED",
+        "HOST_NOT_ALLOWED",
+    }
+
+
+def test_post_rejects_unlisted_loopback_frontend_origin() -> None:
+    """Negative control: the guard is still a guard. A loopback vite port
+    that no suite owns and port_config never handed out is refused, so the
+    test above cannot pass by the allowlist having gone permissive.
+    """
+    unlisted = 5279
+    assert unlisted not in _E2E_FRONTEND_PORTS
+    client = _client(frontend_port=9411, backend_port=8697)
+    resp = client.post(
+        "/api/v1/commands",
+        json={"single": {"type": "play", "deck": 1, "playing": True}},
+        headers={"Origin": f"http://127.0.0.1:{unlisted}"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ORIGIN_NOT_ALLOWED"

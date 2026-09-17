@@ -1,3 +1,5 @@
+<script lang="ts"></script>
+
 <!-- PERF-UI-02 (issue #2406): compact escape hatch when /performance bypasses the app shell.
      NAV-01: the hatch originally carried only Library + Admin, so every
      library-hygiene tool (missing tracks, duplicate review, smartlists) was

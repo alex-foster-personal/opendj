@@ -41,7 +41,7 @@ export function isStreamingUri(path: string | null | undefined): boolean {
 export async function runCopyPaths(
 	targetIds: readonly string[],
 	deps: {
-		getTrack: (id: string) => Promise<{ track: { file_path: string | null } }>;
+		getTrack: (id: string) => Promise<{ track: { file_path?: string | null } }>;
 		writeClipboard: (text: string) => Promise<void>;
 		pushToast: ToastFn;
 	} = {

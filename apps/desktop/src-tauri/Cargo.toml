@@ -40,6 +40,7 @@ tauri-plugin-process = "2"
 # Open OAuth consent URLs in the system browser so Google passkeys/WebAuthn work
 # outside the embedded WKWebView.
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 
 # DEBUG BUILDS ONLY, and deliberately expressed as a cfg-gated DEPENDENCY

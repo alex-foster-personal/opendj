@@ -14,6 +14,7 @@ import {
 	mirrorStallMessage
 } from './mirror-publish-stall';
 import { countVisibleTrackRows } from './track-row-visibility';
+import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-mirror-controls';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -40,22 +41,8 @@ function _visibleRowsCount(): number {
 	}
 }
 
-function _controlName(element: Element, index: number): string {
-	return (
-		element.getAttribute('data-testid') ??
-		element.getAttribute('aria-label') ??
-		(element.textContent?.trim() || `control-${index + 1}`)
-	);
-}
-
 function _controls(): Record<string, 'available' | 'inert'> {
-	const controls: Record<string, 'available' | 'inert'> = {};
-	document.querySelectorAll('button, input, [role="button"], [role="slider"]').forEach((element, index) => {
-		controls[_controlName(element, index)] = element.classList.contains('rb-inert')
-			? 'inert'
-			: 'available';
-	});
-	return controls;
+	return buildControlsMap(document.querySelectorAll(CONTROL_SELECTOR));
 }
 
 function _position(deck: ReturnType<typeof queryPerformanceState>['decks'][1]): {
@@ -118,7 +105,13 @@ export function buildUiMirror(): Record<string, unknown> {
 				phrases: deck.phrases
 			}])
 		),
-		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: _visibleRowsCount() },
+		browser: {
+			playlist: state.browser.active_playlist,
+			search: state.browser.search,
+			sort: state.browser.sort,
+			selected_row: state.browser.selected_row,
+			visible_rows_count: _visibleRowsCount()
+		},
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
@@ -148,7 +141,9 @@ export function buildUiMirror(): Record<string, unknown> {
 		// set reads why AutoPlay stopped from the same object a person reads
 		// off the screen, rather than having to catch a five-second toast.
 		autoplay_stall: readAutoPlayStall(),
-		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) => _controlName(element, index)),
+		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) =>
+			controlPreferredName(element, index)
+		),
 		controls: _controls()
 	};
 }

@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
+// The chip under test lives in the APP-SHELL header, and both tests open `/`
+// cold: without this the PERFMODE-11 landing redirect can detach the chip
+// mid-click. support/boot-landing.ts has the full account.
+test.beforeEach(async ({ page }) => {
+	await spendBootLanding(page);
+});
+
 // requirement: CSSTATUS-04
 // [if] the CloudSync chip is healthy on first load [then] it is not in error state and keeps its navigable title, [else stop]
 test('at 900px the CloudSync chip is a single-line link to /cloudsync', async ({ page }) => {

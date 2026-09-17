@@ -2968,6 +2968,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Preview Cue
+         * @description CUEOUT-15: play `stable_id` from `ratio` of its length on the cue bus.
+         *
+         *     This is the mini-waveform click, driven without a pointer. It loads no
+         *     deck and moves no transport, so it can be issued while all four decks
+         *     are busy and while one of them is on air.
+         *
+         *     A preview that could not be heard is a 400 carrying the reason the page
+         *     would have shown the operator (no audio graph, a dead cue sink, MIX at
+         *     the master end, GAIN at zero), never a 200 over silence.
+         *
+         *     Optional `bpm` is the track's own tempo; with the preview tempo-match
+         *     setting on and a master deck playing, the preview matches that tempo
+         *     (CUEOUT-15 R6). Omit it and the preview plays at the track's own tempo.
+         */
+        post: operations["post_preview_cue_api_v1_performance_headphones_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/preview/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Preview Stop
+         * @description CUEOUT-15: stop the preview and release the decoded track.
+         *
+         *     Idempotent: stopping when nothing is previewing is a success, because
+         *     the caller's intent (nothing playing on the preview voice) is satisfied.
+         */
+        post: operations["post_preview_stop_api_v1_performance_headphones_preview_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/rescue-snapshots": {
         parameters: {
             query?: never;
@@ -3936,6 +3991,30 @@ export interface paths {
          *     folder would be a fabrication.
          */
         get: operations["detect_folder_api_v1_setup_detect_folder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/detect/music-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Music Folder Candidates
+         * @description Existing folders under HOME worth suggesting, before typing a path.
+         *
+         *     Never a guess: only paths that exist on this machine are returned, and
+         *     a candidate macOS refuses to list is still reported, marked denied,
+         *     rather than silently omitted.
+         */
+        get: operations["music_folder_candidates_api_v1_setup_detect_music_folders_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5020,7 +5099,7 @@ export interface paths {
          *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
          *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
-        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
+        head: operations["head_track_audio_api_v1_tracks__stable_id__audio_head"];
         patch?: never;
         trace?: never;
     };
@@ -8107,6 +8186,15 @@ export interface components {
             unowned: number;
         };
         /**
+         * FolderCandidatesOut
+         * @description Existing folders under the user's home worth offering as one-click
+         *     setup suggestions, instead of making them type a path blind.
+         */
+        FolderCandidatesOut: {
+            /** Candidates */
+            candidates?: components["schemas"]["AccessProbeOut"][];
+        };
+        /**
          * FolderImportIn
          * @description Point at one or more folders of audio files. No rekordbox involved.
          */
@@ -10757,12 +10845,20 @@ export interface components {
         PreflightCheckOut: {
             /** Detail */
             detail: string;
+            /** Explainer */
+            explainer?: string | null;
             /** Id */
             id: string;
             /** Label */
             label: string;
             /** Remediation */
             remediation?: string | null;
+            /**
+             * Severity
+             * @default blocking
+             * @enum {string}
+             */
+            severity: "blocking" | "advisory";
             /**
              * Status
              * @enum {string}
@@ -10778,11 +10874,21 @@ export interface components {
         /**
          * PreflightOut
          * @description ``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-         *     gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
-         *     check never blocks it, because a check that could not be exercised is
-         *     not a defect on its own.
+         *     gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
+         *     is ``fail``; a ``pending`` check never blocks it, because a check that
+         *     could not be exercised is not a defect on its own, and an ``advisory``
+         *     check never blocks it either, because the app runs without it.
+         *
+         *     ``advisories`` counts the non-blocking rows the user should still see,
+         *     so a caller can distinguish "everything is fine" from "running, with
+         *     things worth telling you" without recomputing severity for itself.
          */
         PreflightOut: {
+            /**
+             * Advisories
+             * @default 0
+             */
+            advisories: number;
             /** Checks */
             checks: components["schemas"]["PreflightCheckOut"][];
             /**
@@ -18925,6 +19031,42 @@ export interface operations {
         };
     };
     post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: _HeadphoneJsonPost;
+    post_preview_cue_api_v1_performance_headphones_preview_post: _HeadphoneJsonPost;
+    post_preview_stop_api_v1_performance_headphones_preview_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Cue-bus state after stopping the library preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_rescue_snapshot_api_v1_performance_rescue_snapshots_post: {
         parameters: {
             query?: never;
@@ -20728,6 +20870,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    music_folder_candidates_api_v1_setup_detect_music_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderCandidatesOut"];
                 };
             };
         };
@@ -22757,7 +22919,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_get: {
+    head_track_audio_api_v1_tracks__stable_id__audio_head: {
         parameters: {
             query?: never;
             header?: never;

@@ -9,6 +9,8 @@ import pytest
 
 from apps.engine_core import log_disk
 
+pytestmark = pytest.mark.usefixtures("hermetic_rotation_gate")
+
 
 def test_rotation_allowed_logs_once_on_low_disk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture

@@ -22,6 +22,7 @@ import {
 
 let _tracksState: PressureCapState = createPressureCapState();
 let _bytesState: PressureCapState = createPressureCapState();
+let _previewBytesState: PressureCapState = createPressureCapState();
 
 /** Scaled prefetch track cap for the current pressure state. */
 export function pressureScaledPrefetchTrackCap(tierCap: number): number {
@@ -33,10 +34,30 @@ export function pressureScaledPrefetchByteCap(tierCap: number): number {
 	return pressureScaledCap(tierCap, SCALERS.LOW.prefetch_bytes, _bytesState);
 }
 
+/** Scaled decoded-preview byte cap for the current pressure state (CUEOUT-15). */
+export function pressureScaledPreviewPcmByteCap(tierCap: number): number {
+	return pressureScaledCap(tierCap, SCALERS.LOW.preview_pcm_bytes, _previewBytesState);
+}
+
+/**
+ * Has the preview cap stepped down from baseline?
+ *
+ * The preview's hover warm reads this to decide whether to SKIP a speculative
+ * decode, rather than defer it the way the eager stem decode does. A deferred
+ * warm is worthless: by the time signals clear the operator has already
+ * clicked or moved on, so the owed work would land as pure cost. Reusing the
+ * stepper's own state rather than re-deriving the pressure signal keeps one
+ * closed loop in the page and means the warm resumes as the cap steps back up.
+ */
+export function previewWarmIsShed(): boolean {
+	return _previewBytesState.steps > 0;
+}
+
 /** Test-only: reset to baseline (steps = 0) between cases. */
 export function resetPressureScaledPrefetchCaps(): void {
 	_tracksState = createPressureCapState();
 	_bytesState = createPressureCapState();
+	_previewBytesState = createPressureCapState();
 }
 
 export interface ArmPrefetchPressureCapScalingOptions {
@@ -56,6 +77,7 @@ export function armPrefetchPressureCapScaling(options: ArmPrefetchPressureCapSca
 		const elevated = options.isPlaying() && (options.pressureElevated() || xrunWindowElevated);
 		_tracksState = stepPressureCapState(_tracksState, elevated);
 		_bytesState = stepPressureCapState(_bytesState, elevated);
+		_previewBytesState = stepPressureCapState(_previewBytesState, elevated);
 		xrunsAtPreviousTick = options.readXruns();
 		options.applyCaps();
 	});
