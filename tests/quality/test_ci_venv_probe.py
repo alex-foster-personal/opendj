@@ -31,13 +31,24 @@ helper) so the assertions are about the behavior CI actually depends on:
 - ``test_passes_on_mismatched_venv_outside_ci``: the other
   opposite-mutation guard -- a local developer run (no CI env var) must
   never start failing because of this, whatever its venv is.
+- ``test_soundfile_absent_in_isolated_ci_session``: expected optional-dep
+  absence prints ``soundfile=absent``, not ``soundfile=ERROR``.
+- ``test_soundfile_present_when_analysis_extra_installed``: a real importable
+  ``soundfile`` prints ``soundfile=present``, distinguishing the two states.
+- ``test_soundfile_error_on_broken_install``: a real ``soundfile`` wheel
+  installed with ``uv pip --no-deps`` (missing transitive ``numpy``) still
+  prints ``soundfile=ERROR``.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _TARGET = "tests/quality/test_conftest_optional_starlette.py"
@@ -63,7 +74,12 @@ sys.exit(pytest.main(["--collect-only", "-q", "-p", "no:cacheprovider", sys.argv
 """
 
 
-def _run(script: str, env_overrides: dict[str, str | None]) -> subprocess.CompletedProcess[str]:
+def _run(
+    script: str,
+    env_overrides: dict[str, str | None],
+    *,
+    python: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     for key, value in env_overrides.items():
         if value is None:
@@ -71,13 +87,57 @@ def _run(script: str, env_overrides: dict[str, str | None]) -> subprocess.Comple
         else:
             env[key] = value
     return subprocess.run(
-        [sys.executable, "-c", script, _TARGET],
+        [python or sys.executable, "-c", script, _TARGET],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
         check=False,
         text=True,
         timeout=120,
+    )
+
+
+def _probe_lines(output: str) -> list[str]:
+    return [line for line in output.splitlines() if line.startswith("CI_VENV_PROBE")]
+
+
+def _run_uv_pytest_collect(
+    *,
+    env_overrides: dict[str, str | None],
+    extra_uv_args: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    for key, value in env_overrides.items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    cmd = [
+        "uv",
+        "run",
+        "--no-project",
+        "--isolated",
+        "--python",
+        "3.11",
+        "--with",
+        "pytest",
+        *(extra_uv_args or []),
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        _TARGET,
+    ]
+    return subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=180,
     )
 
 
@@ -165,4 +225,116 @@ def test_passes_on_mismatched_venv_outside_ci() -> None:
     assert proc.returncode == 0, (
         "if a non-CI (local developer) session fails because of this guard, "
         f"then it over-corrected past its intended scope (rc={proc.returncode}):\n{output}"
+    )
+
+
+def test_soundfile_absent_in_isolated_ci_session() -> None:
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required to reproduce CI's isolated pytest environment")
+
+    proc = _run_uv_pytest_collect(
+        env_overrides={
+            "CI": "true",
+            "CI_VENV_PROBE_ALLOW_MISMATCH": "1",
+        },
+    )
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 0, (
+        "if the isolated CI typing-gate environment cannot collect, then the "
+        f"absent-status probe cannot be measured (rc={proc.returncode}):\n{output}"
+    )
+    probe_lines = _probe_lines(output)
+    assert probe_lines, f"CI_VENV_PROBE line missing from isolated session:\n{output}"
+    assert any("soundfile=absent" in line for line in probe_lines), (
+        f"expected soundfile=absent in probe output:\n{output}"
+    )
+    assert not any("soundfile=ERROR" in line for line in probe_lines), (
+        f"expected absence must not read as ERROR:\n{output}"
+    )
+
+
+def test_soundfile_present_when_analysis_extra_installed() -> None:
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required to install the analysis extra for this probe")
+
+    proc = _run_uv_pytest_collect(
+        env_overrides={
+            "CI": "true",
+            "CI_VENV_PROBE_ALLOW_MISMATCH": "1",
+        },
+        extra_uv_args=["--with", "soundfile>=0.12"],
+    )
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 0, (
+        "if soundfile cannot be installed for the present probe, then the "
+        f"negative control cannot be measured (rc={proc.returncode}):\n{output}"
+    )
+    probe_lines = _probe_lines(output)
+    assert probe_lines, f"CI_VENV_PROBE line missing from present session:\n{output}"
+    assert any("soundfile=present" in line for line in probe_lines), (
+        f"expected soundfile=present in probe output:\n{output}"
+    )
+    assert not any("soundfile=absent" in line for line in probe_lines), (
+        f"present install must not read as absent:\n{output}"
+    )
+
+
+def _broken_soundfile_venv_python(tmp_root: Path) -> Path:
+    """Return a venv python where soundfile is installed but not importable."""
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required to reproduce a broken soundfile install")
+
+    venv = tmp_root / "venv"
+    subprocess.run(
+        ["uv", "venv", str(venv), "--python", "3.11"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    python = venv / "bin" / "python"
+    if not python.is_file():
+        python = venv / "Scripts" / "python.exe"
+    assert python.is_file(), f"expected venv python under {venv}"
+
+    for packages in (["pytest"], ["soundfile>=0.12", "--no-deps"]):
+        completed = subprocess.run(
+            ["uv", "pip", "install", "--python", str(python), *packages],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 0, (
+            "if the broken soundfile fixture cannot be provisioned, then the "
+            f"fault probe cannot be measured:\n{completed.stdout}{completed.stderr}"
+        )
+    return python
+
+
+def test_soundfile_error_on_broken_install() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        python = _broken_soundfile_venv_python(Path(tmp))
+        proc = _run(
+            _COLLECT_WITH_REAL_PREFIX,
+            {
+                "CI": None,
+                "CI_VENV_PROBE_ALLOW_MISMATCH": None,
+            },
+            python=str(python),
+        )
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 0, (
+        "if a broken soundfile install aborts collection, then the fault probe "
+        f"cannot be measured (rc={proc.returncode}):\n{output}"
+    )
+    probe_lines = _probe_lines(output)
+    assert probe_lines, f"CI_VENV_PROBE line missing from fault session:\n{output}"
+    assert any(
+        "soundfile=ERROR" in line and "ModuleNotFoundError" in line for line in probe_lines
+    ), (
+        f"broken install must still read as ERROR with exception detail:\n{output}"
+    )
+    assert not any("soundfile=absent" in line for line in probe_lines), (
+        f"broken install must not be softened to absent:\n{output}"
     )

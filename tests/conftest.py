@@ -163,10 +163,15 @@ def _log_ci_venv_probe(phase: str) -> None:
     probe = (
         "try:\n"
         "    import soundfile\n"
+        "except ModuleNotFoundError as error:\n"
+        "    if error.name == 'soundfile':\n"
+        "        print('soundfile=absent')\n"
+        "    else:\n"
+        "        print(f'soundfile=ERROR: {type(error).__name__}: {error}')\n"
         "except Exception as error:\n"
         "    print(f'soundfile=ERROR: {type(error).__name__}: {error}')\n"
         "else:\n"
-        "    print('soundfile=OK')\n"
+        "    print('soundfile=present')\n"
     )
     try:
         completed = subprocess.run(
@@ -175,8 +180,17 @@ def _log_ci_venv_probe(phase: str) -> None:
             check=False,
             text=True,
         )
-        result = (completed.stdout or completed.stderr).strip().replace("\n", " | ")
-        result = result or f"soundfile=ERROR: subprocess exit {completed.returncode}"
+        result = (completed.stdout or completed.stderr or "").strip().replace(
+            "\n", " | "
+        )
+        if completed.returncode != 0:
+            if "soundfile=ERROR" not in result:
+                exit_detail = (
+                    f"soundfile=ERROR: subprocess exit {completed.returncode}"
+                )
+                result = f"{result} | {exit_detail}" if result else exit_detail
+        elif not result:
+            result = "soundfile=ERROR: subprocess produced no output"
     except OSError as error:
         result = f"soundfile=ERROR: {type(error).__name__}: {error}"
     print(
