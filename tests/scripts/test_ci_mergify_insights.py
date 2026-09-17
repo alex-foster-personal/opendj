@@ -52,7 +52,8 @@ Regression lines:
 from __future__ import annotations
 
 import re
-from pathlib import Path
+import json
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -60,6 +61,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 SHARD_JOB = "test"
+# The CI Insights upload lives in its OWN job, with no checkout step, so that
+# secrets.MERGIFY_TOKEN is never in scope in a job that runs repository code
+# (Sol P1 on #3256, round 2). Step-level scoping was the first answer and it
+# is not sufficient on a self-hosted runner: the job's processes outlive the
+# step, so a test that forks a background process can read the upload action's
+# INPUT_TOKEN when it appears. The job boundary is the control.
+INSIGHTS_JOB = "ci-insights"
+STAGE_STEP_NAME = "Stage this shard's JUnit report"
+OUTCOME_STEP_ID = "shard-outcome"
 PYTEST_STEP_ID = "pytest-shard"
 UPLOAD_STEP_ID = "mergify-insights"
 PROBE_STEP_ID = "mergify-token"
@@ -78,23 +88,33 @@ def _shard_job() -> dict:
     return _load_ci()["jobs"][SHARD_JOB]
 
 
-def _steps() -> list[dict]:
-    return _shard_job()["steps"]
+def _job(name: str) -> dict:
+    jobs = _load_ci()["jobs"]
+    assert name in jobs, (
+        f"ci.yml has no job named {name!r}. The CI Insights wiring is "
+        f"addressed by job name; renaming one without the other turns every "
+        f"check below into one that cannot fire. Jobs present: {sorted(jobs)}"
+    )
+    return jobs[name]
 
 
-def _step_by_id(step_id: str) -> dict:
-    for step in _steps():
+def _steps(job: str = SHARD_JOB) -> list[dict]:
+    return _job(job)["steps"]
+
+
+def _step_by_id(step_id: str, job: str = INSIGHTS_JOB) -> dict:
+    for step in _steps(job):
         if step.get("id") == step_id:
             return step
     raise AssertionError(
-        f"ci.yml job '{SHARD_JOB}' has no step with id '{step_id}'. "
+        f"ci.yml job '{job}' has no step with id '{step_id}'. "
         "The CI Insights wiring is addressed by id, so renaming one without "
         "the other turns the check into one that cannot fire."
     )
 
 
 def _pytest_run_block() -> str:
-    return _step_by_id(PYTEST_STEP_ID)["run"]
+    return _step_by_id(PYTEST_STEP_ID, SHARD_JOB)["run"]
 
 
 def test_pytest_shard_writes_a_junit_report() -> None:
@@ -117,14 +137,34 @@ def _junitxml_path() -> str:
     return match.group(1)
 
 
+def _stage_step() -> dict:
+    for step in _steps(SHARD_JOB):
+        if STAGE_STEP_NAME in step.get("name", ""):
+            return step
+    raise AssertionError(
+        f"The {STAGE_STEP_NAME!r} step is gone from job {SHARD_JOB!r}. It is "
+        "the only thing carrying the JUnit report across the job boundary, "
+        "so without it the isolated upload job downloads an empty artifact "
+        "and records nothing, while every step still reads green."
+    )
+
+
 def test_junit_report_path_matches_the_upload_report_path() -> None:
     """if the two disagree then the upload finds nothing, and looks fine."""
     written = _junitxml_path()
     uploaded = _step_by_id(UPLOAD_STEP_ID)["with"]["report_path"]
-    assert written == uploaded, (
+    # The upload reads the DOWNLOADED copy, so the paths differ by the
+    # download directory. The invariant that matters is that the same
+    # per-shard filename is written, staged and then read.
+    assert PurePosixPath(uploaded).name == PurePosixPath(written).name, (
         f"pytest writes {written!r} but the CI Insights step uploads "
-        f"{uploaded!r}. Both halves look correctly configured in isolation, "
-        "so this fails as an empty dashboard rather than as a red check."
+        f"{uploaded!r}, and the filenames do not match. Both halves look "
+        "correctly configured in isolation, so this fails as an empty "
+        "dashboard rather than as a red check."
+    )
+    assert written in _stage_step()["run"], (
+        f"The staging step does not copy {written!r}, so nothing the upload "
+        "job downloads will contain the report it is configured to read."
     )
 
 
@@ -165,13 +205,23 @@ def test_upload_step_passes_the_test_runner_outcome() -> None:
         "single defect this lane was wired first to catch, and without this "
         "input uploads keep succeeding so nothing ever looks wrong."
     )
-    assert f"steps.{PYTEST_STEP_ID}.outcome" in outcome, (
-        f"test_step_outcome is {outcome!r}, which does not read the pytest "
-        f"step's own outcome (steps.{PYTEST_STEP_ID}.outcome). An expression "
-        "naming a step that does not exist resolves to an empty string, and "
-        "the action treats empty the same as omitted -- so detection would "
-        "be off with no error raised anywhere."
+    assert f"steps.{OUTCOME_STEP_ID}.outputs.outcome" in outcome, (
+        f"test_step_outcome is {outcome!r}, which does not read the recovered "
+        f"pytest outcome (steps.{OUTCOME_STEP_ID}.outputs.outcome). An "
+        "expression naming a step that does not exist resolves to an empty "
+        "string, and the action treats empty the same as omitted -- so "
+        "detection would be off with no error raised anywhere."
     )
+    # The outcome crosses a job boundary, so the chain has two links and both
+    # have to hold: the test job writes the pytest step's own outcome into the
+    # artifact, and the insights job reads it back out.
+    assert f"steps.{PYTEST_STEP_ID}.outcome" in _stage_step()["run"], (
+        "The staging step no longer records the pytest step's own outcome, so "
+        "the value the upload reads back is whatever happens to be in the "
+        "file -- silent-failure detection would be off with nothing raised."
+    )
+    recovered = _step_by_id(OUTCOME_STEP_ID)["run"]
+    assert "outcome.txt" in recovered, recovered
 
 
 def test_upload_step_cannot_redden_the_lane() -> None:
@@ -198,7 +248,7 @@ def test_upload_step_is_pinned_to_a_sha() -> None:
 
 
 def _guard_step() -> dict:
-    for step in _steps():
+    for step in _steps(INSIGHTS_JOB):
         if "must have recorded something" in step.get("name", ""):
             return step
     raise AssertionError(
@@ -234,31 +284,34 @@ def test_guard_separates_rejected_from_failed_from_unknown() -> None:
     )
 
 
-def test_the_token_reaches_only_the_probe_and_the_upload_action() -> None:
-    """if the secret is on the job env or any other step then pytest can read it."""
-    assert "MERGIFY_TOKEN" not in _shard_job().get("env", {}), (
-        "MERGIFY_TOKEN is on the job env again, so pytest and every helper "
-        "subprocess the suite spawns can read and exfiltrate it (Sol P1 on "
-        "#3256). Scope it to the probe step and the upload action only."
+def test_the_secret_never_shares_a_job_with_repository_code() -> None:
+    """if the upload job gains a checkout then a test can read the token."""
+    jobs = _load_ci()["jobs"]
+    holders = sorted(
+        name for name, job in jobs.items() if "secrets.MERGIFY_TOKEN" in json.dumps(job)
     )
-    holders = [
-        step.get("id") or step.get("name")
-        for step in _steps()
-        if "secrets.MERGIFY_TOKEN" in str(step.get("env", {}))
-        or "secrets.MERGIFY_TOKEN" in str(step.get("with", {}))
+    assert holders == [INSIGHTS_JOB], (
+        f"secrets.MERGIFY_TOKEN is reachable from jobs {holders}, not only "
+        f"from {INSIGHTS_JOB!r}. Any job that also runs repository code can "
+        "leak it: on a self-hosted runner a test may fork a background "
+        "process that outlives its step and read the secret out of a later "
+        "step's environment, so scoping it to a step is not a boundary."
+    )
+    checkouts = [
+        step.get("name")
+        for step in _steps(INSIGHTS_JOB)
+        if str(step.get("uses", "")).startswith("actions/checkout")
     ]
-    assert holders == [PROBE_STEP_ID, UPLOAD_STEP_ID], holders
-
-
-def test_the_probe_runs_before_checkout_and_exports_only_a_boolean() -> None:
-    """if the probe runs after checkout, or exports the value, then broken."""
-    steps = _steps()
-    probe_index = next(i for i, s in enumerate(steps) if s.get("id") == PROBE_STEP_ID)
-    checkout_index = next(
-        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/checkout")
+    assert checkouts == [], (
+        f"Job {INSIGHTS_JOB!r} now checks out the repository ({checkouts}). "
+        "That reintroduces exactly what this split removed: repository code "
+        "running in the job that holds the credential."
     )
-    assert probe_index < checkout_index, (probe_index, checkout_index)
-    run = steps[probe_index]["run"]
+
+
+def test_the_probe_exports_only_a_boolean() -> None:
+    """if the probe exports the value then every later step can read it."""
+    run = _step_by_id(PROBE_STEP_ID)["run"]
     assert "present=true" in run and "present=false" in run, run
     assert "$MERGIFY_TOKEN" not in run.replace("${MERGIFY_TOKEN:-}", ""), run
 
