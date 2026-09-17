@@ -942,7 +942,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          persist-credentials: false
+          # Credentials persist on purpose: the drift step runs `git fetch origin`
+          # against this private repo on a GitHub-hosted runner, which has no other
+          # credential. Suppressed by file:line in .github/zizmor.yml.
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
           # git cherry compares patch ids across the whole divergence, so this
