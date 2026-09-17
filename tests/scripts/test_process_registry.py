@@ -1,5 +1,7 @@
 """Fleet process registry: naming convention + drift check (DEVOPS-14, issue #2542).
 
+[if] a live owned unit drifts from the registry [then] the check fails loudly, [else stop].
+
 No live SSH here: every test injects a fake host collector so the suite is
 deterministic and network-free, per this repo's usual fixture-injection
 convention. The live wiring (`scripts.process_registry_gen`'s real ssh/
