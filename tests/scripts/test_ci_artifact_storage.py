@@ -21,6 +21,11 @@ import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 MAX_RETENTION_DAYS = 3
+#: The durations upload's own ceiling, tighter than MAX_RETENTION_DAYS above.
+#: Both this module's docstring ("kept for one day") and the step's own comment
+#: in ci.yml ("One day of retention is all the rebalance ever reads") already
+#: commit to one day; this constant is that same number, not a new decision.
+DURATIONS_MAX_RETENTION_DAYS = 1
 #: Uploads that ARE the job's deliverable: they must fail loud and may keep
 #: their own retention. Everything else is a byproduct.
 DELIVERABLE_UPLOADS = {
@@ -60,12 +65,20 @@ def _all_workflows() -> list[str]:
 
 
 def test_the_durations_upload_is_non_fatal_and_short_lived() -> None:
-    """[if] the durations upload can fail the shard or outlive a day [then] fail, [else stop]."""
-    steps = [s for _, s in _upload_steps("ci.yml") if "durations" in (s.get("name") or "")]
-    assert len(steps) == 1, [s.get("name") for s in steps]
-    step = steps[0]
-    assert step.get("continue-on-error") is True, "a storage block on this step must not red trunk"
-    assert int(step["with"]["retention-days"]) == 1
+    """[if] a durations step can red the shard or outlive its ceiling [then] fail, [else stop]."""
+    steps = [(job, s) for job, s in _upload_steps("ci.yml") if "durations" in (s.get("name") or "")]
+    assert steps, "no step named for a shard durations upload exists in ci.yml"
+    for job, step in steps:
+        offender = f"ci.yml:{job}:{step.get('name')}"
+        assert step.get("continue-on-error") is True, (
+            f"{offender} is missing continue-on-error: true -- "
+            "a storage block on this step must not red trunk"
+        )
+        days = int(step["with"]["retention-days"])
+        assert days <= DURATIONS_MAX_RETENTION_DAYS, (
+            f"{offender} retention-days={days} exceeds the durations upload "
+            f"ceiling of {DURATIONS_MAX_RETENTION_DAYS} day(s)"
+        )
 
 
 def test_every_byproduct_upload_is_non_fatal() -> None:
