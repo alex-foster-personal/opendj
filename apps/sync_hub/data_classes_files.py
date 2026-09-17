@@ -466,6 +466,8 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "apps/webui/frontend/build/",
         "apps/webui/frontend/.svelte-kit/",
         "apps/webui/frontend/.vite/",
+        "/ds-bundle/",
+        "/.ds-sync/",
         "apps/launcher/src-tauri/Cargo.lock",
         "ops/quality/report.md",
         "ops/quality/metrics.json",
