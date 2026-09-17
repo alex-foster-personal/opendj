@@ -331,3 +331,51 @@ def test_ci_insights_steps_are_skipped_without_a_token() -> None:
             "recording are the RED ones; a step that only runs on success "
             "records exactly the wrong half of the history."
         )
+
+
+def test_a_stale_report_cannot_be_staged_as_this_runs_result() -> None:
+    """if staging keeps an old dir then a dead shard uploads a previous run."""
+    run = _stage_step()["run"]
+    rm_at = run.find("rm -rf ci-insights-out")
+    mkdir_at = run.find("mkdir -p ci-insights-out")
+    assert rm_at != -1, (
+        "The staging step no longer clears ci-insights-out before creating it. "
+        "This workspace is persistent and the step runs under always(), so a "
+        "directory left by an earlier run survives: mkdir -p keeps its "
+        "junit-shard-N.xml, the upload job reads report=true, and a PREVIOUS "
+        "run's results are recorded as this one's. An absence rendered as a "
+        "measurement is the one outcome this lane must never produce."
+    )
+    assert mkdir_at != -1 and rm_at < mkdir_at, (
+        f"rm -rf is at {rm_at} and mkdir at {mkdir_at}: clearing must come "
+        "FIRST, or it deletes the directory it was meant to recreate."
+    )
+
+
+def test_the_pytest_step_clears_a_stale_report_before_writing_one() -> None:
+    """if the old report survives then an absent result reads as a present one."""
+    run = _pytest_run_block()
+    assert 'rm -f "junit-shard-' in run, (
+        "The pytest step no longer removes a report left by an earlier run on "
+        "this persistent workspace. Clearing the staging directory is not "
+        "enough on its own: if this attempt dies before pytest writes, the "
+        "inherited file is copied and uploaded as this run's result. checkout "
+        "usually cleans it, but staging runs under always() and so also runs "
+        "on the paths where checkout itself failed."
+    )
+    junit = _junitxml_path()
+    assert junit in run.split("rm -f ")[1].split("\n")[0], (
+        f"The rm -f does not name the same path pytest writes ({junit!r}), so "
+        "a stale report under the real name survives untouched."
+    )
+
+
+def test_staging_failure_cannot_redden_the_lane() -> None:
+    """if staging is fatal then broken instrumentation fails a green suite."""
+    assert _stage_step().get("continue-on-error") is True, (
+        "The staging step is fatal again. A transient mkdir, copy, permission "
+        "or disk-space failure would redden the whole test job even when "
+        "pytest passed, which contradicts the measure-only contract that the "
+        "artifact upload below it already honors. The isolated job's "
+        "missing-report guard is what should expose an instrumentation failure."
+    )
