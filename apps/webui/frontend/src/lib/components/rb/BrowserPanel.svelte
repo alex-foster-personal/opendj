@@ -147,6 +147,7 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
@@ -2050,7 +2051,16 @@
 	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		const startedAt = performance.now();
 		const detail = await getSmartlistTracks(id);
-		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		const rows = detail.tracks.map((wire, i) =>
+			_rowFromPlaylistWire(
+				{
+					...wire,
+					has_remote_copy: wire.has_remote_copy ?? false,
+					cloud_transfer: wire.cloud_transfer ?? null
+				},
+				i + 1
+			)
+		);
 		recordLibraryLoadTiming('playlist', {
 			fetchMs: performance.now() - startedAt,
 			rows: rows.length
@@ -2376,25 +2386,44 @@
 		return { deck: result.deck, reservation };
 	}
 
-	function previewSeek(row: LoadableRow, ratio: number): void {
-		const r = Math.max(0, Math.min(1, ratio));
-		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
-		if (targets.length === 0) {
-			pushToast(
-				'preview seek: track not on a deck (headphone cue not implemented - see PARITY-TODO)',
-				'error'
-			);
+	/**
+	 * CUEOUT-15: a click on a library mini-waveform means "play it in my ears
+	 * from here", always, whether or not the track is also on a deck.
+	 *
+	 * It used to seek EVERY deck holding that stable_id, with no check on
+	 * `playing` and none on `is_master`, so a click while browsing could jump
+	 * a deck that was live on air. `_loadOntoDeck` guards the master three
+	 * separate ways for exactly that reason; this path guarded nothing. The
+	 * browser is now a monitoring surface and never a transport control:
+	 * moving a deck is what the deck's own waveform and CUE are for.
+	 *
+	 * `previewCueSeek` owns every refusal, because only it can tell a missing
+	 * engine from a dead sink from a MIX knob at the master end.
+	 */
+	function previewSeek(row: LoadableRow & { bpm?: number | null }, ratio: number): void {
+		// Same refusal the deck load gives (FR-1), and for the same reason: a
+		// broken link has no audio to preview, and finding that out as an
+		// opaque decoder error several hundred milliseconds later teaches the
+		// operator nothing. `is_streaming` has no local file at all.
+		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
+			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		for (const deck of targets) {
-			const dur = decks[deck].duration_ms;
-			if (dur === null || dur <= 0) continue;
-			void runPerformanceCommandFromUi({
-				type: 'seek',
-				deck,
-				position_ms: Math.round(r * dur)
-			});
+		if (!row.file_exists) {
+			pushToast('preview: audio file missing on disk (broken link)', 'error');
+			return;
 		}
+		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
+		// R6) costs no request on the click path.
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)), {
+			trackBpm: row.bpm ?? null
+		}).then((outcome) => {
+			if (!outcome.ok) {
+				if (outcome.reason !== PREVIEW_SUPERSEDED) pushToast(outcome.reason, 'error');
+			} else if (outcome.warning !== null) {
+				pushToast(outcome.warning, 'warn');
+			}
+		});
 	}
 
 	async function _loadOntoDeck(

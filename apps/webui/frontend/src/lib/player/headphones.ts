@@ -659,10 +659,32 @@ export function micUnlockDecision(permission: unknown): MicUnlockDecision {
 
 /** What the operator is told when they have declined the microphone. It is not
  * a failure: two-output cue still works for any device they have already
- * picked, and practice and split-cable never needed a device at all. */
+ * picked, and practice and split-cable never needed a device at all. Names the
+ * PERMISSION rather than the microphone, because the microphone is not off:
+ * the page's access to it is, which is the thing the operator can change. */
 export const MIC_DECLINED_NOTICE =
-	'Microphone is off, so the browser hides audio device names. Device picking needs it once; ' +
-	'practice and SPLIT do not need it at all.';
+	'Microphone permission is off, so the browser hides audio device names. Device picking needs ' +
+	'it once; practice and SPLIT do not need it at all.';
+
+/** What the operator is told when the machine has NO microphone at all. Not a
+ * refusal and not a failure: there is nothing to grant, so opening a stream
+ * could never have unlocked the names, and there is no action that would
+ * change that. Same supported state as a declined microphone, with the thing
+ * that is absent named, because a pane that says only "acquisition failed"
+ * sends the operator looking for a fault on a machine that has none. */
+export const MIC_ABSENT_NOTICE =
+	'Microphone unavailable, so the browser hides audio device names. Device picking needs one ' +
+	'once; practice and SPLIT do not need it at all.';
+
+/** True when a getUserMedia rejection means the machine HAS no such device,
+ * as opposed to refusing to open one it has. The two DOMException names are
+ * the current one and the legacy alias browsers still emit; any other
+ * rejection is a real failure and must keep travelling. */
+export function microphoneIsMissing(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const name = (error as { name?: unknown }).name;
+	return name === 'NotFoundError' || name === 'DevicesNotFoundError';
+}
 
 export function outputLooksLikeHeadphones(label: string): boolean {
 	if (typeof label !== 'string') throw new TypeError('output label must be a string');
@@ -730,8 +752,10 @@ export function dualSinkAssignment(args: {
 	return { masterId: masterStillPresent, cueId, autoPinnedMaster: false };
 }
 
-export function audioContextSinkIdIsSupported(context: { setSinkId?: unknown }): boolean {
-	return typeof context.setSinkId === 'function';
+export function audioContextSinkIdIsSupported(
+	context: AudioContext | { setSinkId?: unknown }
+): boolean {
+	return 'setSinkId' in context && typeof context.setSinkId === 'function';
 }
 
 export function preferredAudioInputDeviceId(
@@ -1104,6 +1128,25 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	return _headphoneNodes;
 }
 
+/**
+ * The cue bus, for a source that is NOT one of the four decks.
+ *
+ * `cueSum` is the single point every output mode already honours: `practice`
+ * blends it into the main path (`wirePracticeBlendIntoMasterPath`),
+ * `two_outputs` sends it only to the monitor sink, and `split_cable` puts it
+ * on the right leg. So anything joined here inherits the whole CUEOUT routing
+ * policy, including CUEOUT-09's rule that the MAIN speaker line is never
+ * interrupted, instead of carrying a second copy of it.
+ *
+ * Returns null rather than building the graph: a caller that is not the engine
+ * has no master bus to hand `ensureHeadphoneGraph`, and "no engine yet" is a
+ * refusal the caller must report, never something to paper over.
+ */
+export function peekCueBus(): { context: AudioContext; cueSum: GainNode } | null {
+	if (_outputContext === null || _headphoneNodes === null) return null;
+	return { context: _outputContext, cueSum: _headphoneNodes.cueSum };
+}
+
 function _createDetachedHeadphoneElement(): HTMLAudioElement {
 	return new Audio();
 }
@@ -1270,7 +1313,18 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			return;
 		}
 		if (decision === 'ask') {
-			await _unlockHeadphoneOutputLabels(mediaDevices);
+			try {
+				await _unlockHeadphoneOutputLabels(mediaDevices);
+			} catch (error) {
+				if (!microphoneIsMissing(error)) throw error;
+				// A machine with no microphone is the `declined` case with the
+				// choice taken out of the operator's hands: the sinks listed
+				// above stay selectable, their names stay hidden, and nothing
+				// here failed. Any other rejection still travels.
+				_assertCurrentHeadphoneOperation(generation, null);
+				mixerState.headphones.error = MIC_ABSENT_NOTICE;
+				return;
+			}
 			_assertCurrentHeadphoneOperation(generation, null);
 		}
 		await refreshHeadphoneOutputs(monitorSource);
@@ -1301,7 +1355,7 @@ async function _playChirpTrain(
 ): Promise<void> {
 	signal.throwIfAborted();
 	const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-	buffer.copyToChannel(samples, 0);
+	buffer.copyToChannel(new Float32Array(samples), 0);
 	const src = ctx.createBufferSource();
 	src.buffer = buffer;
 	src.connect(target);
@@ -1320,10 +1374,6 @@ async function _playChirpTrain(
 			src.onended = () => {
 				signal.removeEventListener('abort', onAbort);
 				resolve();
-			};
-			src.onerror = () => {
-				signal.removeEventListener('abort', onAbort);
-				reject(new Error('cue alignment chirp failed to play'));
 			};
 			try {
 				src.start();

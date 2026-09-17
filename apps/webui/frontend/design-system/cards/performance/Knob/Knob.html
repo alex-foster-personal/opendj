@@ -1,0 +1,25 @@
+<!-- @dsCard group="Performance controls" name="Knob" subtitle="Rotary with blue indicator at -135, 0, +135 deg" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Knob</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	.ds-knob-cell { display: grid; justify-items: center; gap: 4px; color: var(--rb-text-dim); font-size: var(--rb-fs-label); }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame">
+	<div class="ds-cells">
+		<div class="ds-knob-cell"><div class="rb-knob" title="Low EQ: -26 dB"><div class="rb-knob-indicator" style="transform: rotate(-135deg)"></div></div>LOW</div>
+		<div class="ds-knob-cell"><div class="rb-knob" title="Mid EQ: 0 dB"><div class="rb-knob-indicator" style="transform: rotate(0deg)"></div></div>MID</div>
+		<div class="ds-knob-cell"><div class="rb-knob" title="High EQ: +6 dB"><div class="rb-knob-indicator" style="transform: rotate(135deg)"></div></div>HI</div>
+		<div class="ds-knob-cell"><div class="rb-knob" title="Filter: center"><div class="rb-knob-indicator" style="transform: rotate(0deg)"></div></div>FILTER</div>
+		<div class="ds-knob-cell"><div class="rb-knob" title="Trim: -8 dB"><div class="rb-knob-indicator" style="transform: rotate(-60deg)"></div></div>TRIM</div>
+	</div>
+</div>
+<p class="ds-note">26 px dark radial ring with a 1 px border; the 2 x 9 px blue indicator rotates via an inline <code>transform</code> on <code>.rb-knob-indicator</code> (origin at the ring center). Labels are 10 px uppercase, dim. The knob carries a <code>title</code> with the value and unit.</p>
+</body>
+</html>

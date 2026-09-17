@@ -18,6 +18,7 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -80,6 +81,8 @@ export type LibraryDensity = 'compact' | 'cosy';
 /** The two optional suggestion panels below the library table. */
 export type LibraryPanel = 'next' | 'recommended';
 
+export type { PreviewBeatSync };
+
 /** App + /performance chrome theme. Default dark. */
 export type UiTheme = 'dark' | 'light';
 
@@ -96,6 +99,12 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
+	/**
+	 * CUEOUT-15 R6: tempo of the library preview voice. 'tempo' matches a
+	 * playing master deck when the match fits the preview pitch range (half and
+	 * double time count); 'off' plays every preview at its own tempo.
+	 */
+	preview_beat_sync: PreviewBeatSync;
 /** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
@@ -185,6 +194,7 @@ const DEFAULTS: RbUiPrefs = {
 	hide_broken_links: false,
 	library_density: 'compact',
 	beat_sync_max: true,
+	preview_beat_sync: 'tempo',
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -352,6 +362,16 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (
+		parsed.preview_beat_sync !== undefined &&
+		parsed.preview_beat_sync !== 'off' &&
+		parsed.preview_beat_sync !== 'tempo'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (preview_beat_sync is not off or tempo) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.jog_radial_waveform !== undefined && typeof parsed.jog_radial_waveform !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (jog_radial_waveform is not a boolean) - ` +
@@ -406,6 +426,7 @@ function _load(): RbUiPrefs {
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
+		preview_beat_sync: parsed.preview_beat_sync ?? DEFAULTS.preview_beat_sync,
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
@@ -487,6 +508,12 @@ export function setLibraryDensity(next: LibraryDensity): void {
 
 export function setBeatSyncMax(next: boolean): void {
 	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'beat_sync_max', next);
+}
+
+/** Local-only: the engine holds no preview voice, so this never leaves the page. */
+export function setPreviewBeatSync(next: PreviewBeatSync): void {
+	uiPrefs.preview_beat_sync = next;
+	_persist();
 }
 
 export function setAutoPlayEnabled(next: boolean): void {

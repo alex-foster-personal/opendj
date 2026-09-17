@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
+// Each test here opens `/` cold and reads the APP-SHELL header, which the
+// PERFMODE-11 landing redirect replaces with the performance top bar mid-load;
+// support/boot-landing.ts has the full account.
+test.beforeEach(async ({ page }) => {
+	await spendBootLanding(page);
+});
+
 test('at 1280px the header status strip separates every readout with middle dots', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/');

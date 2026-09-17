@@ -108,3 +108,76 @@ test('stop() tears down the subscription: further ticks (via a manual call) have
 	tick(); // no-op: the driver's listener was already unsubscribed by stop()
 	assert.equal(mod.pressureScaledPrefetchByteCap(STANDARD_BYTES), STANDARD_BYTES);
 });
+
+// CUEOUT-15: the library preview's decoded-PCM budget rides the same stepper.
+const MiB = 1024 * 1024;
+const HIGH_PREVIEW_BYTES = 256 * MiB;
+const LOW_PREVIEW_BYTES = 64 * MiB;
+
+test('sustained pressure while playing steps the preview budget down to the LOW floor and back', () => {
+	const { state, tick, stop } = armWithFakes({ playing: true });
+	state.elevated = true;
+	const seen = [];
+	for (let i = 0; i < 5; i += 1) {
+		tick();
+		seen.push(mod.pressureScaledPreviewPcmByteCap(HIGH_PREVIEW_BYTES));
+	}
+	assert.ok(
+		seen[0] < HIGH_PREVIEW_BYTES && seen[1] < seen[0],
+		`if the preview budget does not shrink step by step under pressure then preview decode competes with the decks - broken: ${seen}`
+	);
+	assert.equal(
+		seen[4],
+		LOW_PREVIEW_BYTES,
+		'if sustained pressure does not reach the LOW tier floor then the preview budget is not bounded under load - broken'
+	);
+
+	state.elevated = false;
+	for (let i = 0; i < 3; i += 1) tick();
+	assert.equal(
+		mod.pressureScaledPreviewPcmByteCap(HIGH_PREVIEW_BYTES),
+		HIGH_PREVIEW_BYTES,
+		'if clearing pressure does not restore the tier budget then previews stay slow after the load is gone - broken'
+	);
+	stop();
+});
+
+test('hover warm decode is shed from the first elevated tick and restored once fully clear', () => {
+	const { state, tick, stop } = armWithFakes({ playing: true });
+	assert.equal(
+		mod.previewWarmIsShed(),
+		false,
+		'if warm decode is shed at baseline then hover never warms - broken'
+	);
+
+	state.elevated = true;
+	tick();
+	assert.equal(
+		mod.previewWarmIsShed(),
+		true,
+		'if one elevated tick while playing does not shed speculative decode then a hover can starve the decks - broken'
+	);
+
+	state.elevated = false;
+	tick();
+	assert.equal(
+		mod.previewWarmIsShed(),
+		false,
+		'if warm decode stays shed after pressure clears then hover warm is lost for good - broken'
+	);
+	stop();
+});
+
+test('with no deck playing, pressure never sheds preview warm or shrinks its budget', () => {
+	const { state, tick, stop } = armWithFakes({ playing: false });
+	state.elevated = true;
+	tick();
+	tick();
+	assert.equal(
+		mod.previewWarmIsShed(),
+		false,
+		'if prep-time browsing is shed with nothing playing then preview is slow for no reason - broken'
+	);
+	assert.equal(mod.pressureScaledPreviewPcmByteCap(HIGH_PREVIEW_BYTES), HIGH_PREVIEW_BYTES);
+	stop();
+});

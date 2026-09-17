@@ -14,6 +14,10 @@ export const SCALERS: Record<
 	{
 		prefetch_tracks: number;
 		prefetch_bytes: number;
+		/** Decoded PCM the library preview may hold (CUEOUT-15). Decoded, not
+		 * compressed: measured at about 0.34 MB per second of audio, so this
+		 * buys far fewer tracks than `prefetch_bytes` of the same size. */
+		preview_pcm_bytes: number;
 		anlz_entries: number;
 		anlz_bytes: number;
 		stem_decode: 'mix-only' | 'mix-first' | 'eager';
@@ -23,6 +27,7 @@ export const SCALERS: Record<
 	LOW: {
 		prefetch_tracks: 2,
 		prefetch_bytes: 24 * MiB,
+		preview_pcm_bytes: 64 * MiB,
 		anlz_entries: 8,
 		anlz_bytes: 10 * MiB,
 		stem_decode: 'mix-only',
@@ -31,6 +36,7 @@ export const SCALERS: Record<
 	STANDARD: {
 		prefetch_tracks: 4,
 		prefetch_bytes: 48 * MiB,
+		preview_pcm_bytes: 160 * MiB,
 		anlz_entries: 32,
 		anlz_bytes: 40 * MiB,
 		stem_decode: 'mix-first',
@@ -39,6 +45,7 @@ export const SCALERS: Record<
 	HIGH: {
 		prefetch_tracks: 6,
 		prefetch_bytes: 96 * MiB,
+		preview_pcm_bytes: 256 * MiB,
 		anlz_entries: 64,
 		anlz_bytes: 80 * MiB,
 		stem_decode: 'eager',

@@ -1,0 +1,28 @@
+<!-- @dsCard group="Performance controls" name="Panel" subtitle="Panel surface, raised chrome, off-tempo deck tint" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Panel</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	.ds-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+	.rb-panel { padding: 8px; }
+	.rb-panel h3 { margin: 0 0 4px; font-size: var(--rb-fs-deck-title); font-weight: 600; color: var(--rb-text); }
+	.rb-panel p { margin: 0; color: var(--rb-text-dim); font-size: var(--rb-fs-label); }
+	.rb-deck { position: relative; }
+	.ds-raised { background: var(--rb-panel-raised); border: 1px solid var(--rb-border); border-radius: 2px; padding: 4px 6px; display: inline-block; font-size: var(--rb-fs-label); }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame">
+	<div class="ds-panels">
+		<div class="rb-panel"><h3>DECK 1</h3><p>Sandstorm (Extended)</p><p title="Tempo 136.00 BPM">136.00 BPM</p><span class="ds-raised" style="margin-top:6px">raised chrome</span></div>
+		<div class="rb-panel rb-deck"><h3>DECK 2</h3><p>Cola</p><p title="Tempo 122.00 BPM, drifting +0.4 BPM from master">122.40 BPM</p><span class="jog-off-tempo ds-raised" style="margin-top:6px" title="Audible tempo mismatch">off tempo</span></div>
+		<div class="rb-panel"><h3>MIXER</h3><p>4 channels</p><p title="Master output level: -1.2 dBFS">-1.2 dBFS</p></div>
+	</div>
+</div>
+<p class="ds-note"><code>.rb-panel</code> is the panel surface with a 1 px <code>--rb-border</code>. Raised chrome is <code>--rb-panel-raised</code> with 2 px radius. A deck (<code>.rb-deck</code>, positioned) containing <code>.jog-off-tempo</code> gets a pulsing red tint at 2.5 to 10% opacity; reduced motion holds it static.</p>
+</body>
+</html>

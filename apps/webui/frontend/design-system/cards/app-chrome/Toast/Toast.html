@@ -1,0 +1,25 @@
+<!-- @dsCard group="App chrome" name="Toast" subtitle="Info, warn, error" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Toast</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	/* The live .toast-stack is fixed bottom-right; shown in flow here. */
+	.ds-toasts { display: flex; flex-direction: column; gap: 0.4rem; max-width: 360px; }
+</style>
+</head>
+<body>
+<section class="ds-section">
+	<h2>Toast scale</h2>
+	<div class="ds-toasts">
+		<div class="toast">Playlist saved to rekordbox</div>
+		<div class="toast warn">3 tracks skipped: no audio on volume "Music SSD"</div>
+		<div class="toast error">Engine unreachable on port 8585</div>
+	</div>
+	<p class="ds-note">Severity is the border color only: default <code>--border</code>, <code>.warn</code> amber <code>--warning</code>, <code>.error</code> red <code>--danger</code>. Amber and red separate by lightness as well as hue so the rungs survive deuteranopia and protanopia. Toasts stack bottom-right in <code>.toast-stack</code>.</p>
+</section>
+</body>
+</html>

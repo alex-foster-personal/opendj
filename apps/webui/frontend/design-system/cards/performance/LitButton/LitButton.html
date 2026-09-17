@@ -1,0 +1,30 @@
+<!-- @dsCard group="Performance controls" name="LitButton" subtitle="Default, lit, master, inert" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LitButton</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+</head>
+<body>
+<div class="perf-root ds-perf-frame">
+	<div class="ds-cells">
+		<div class="ds-cell"><button type="button" class="rb-lit-button">SYNC</button><small><code>.rb-lit-button</code></small></div>
+		<div class="ds-cell"><button type="button" class="rb-lit-button lit">SYNC</button><small><code>.lit</code>: active blue + glow</small></div>
+		<div class="ds-cell"><button type="button" class="rb-lit-button master-btn lit">MASTER</button><small><code>.master-btn.lit</code>: soft gold</small></div>
+		<div class="ds-cell"><button type="button" class="rb-lit-button" disabled>SLIP</button><small><code>disabled</code></small></div>
+		<div class="ds-cell"><button type="button" class="rb-lit-button rb-inert" disabled title="not implemented - see PARITY-TODO" aria-label="not implemented - see PARITY-TODO">QUANTIZE</button><small>inert: <code>.rb-inert</code> + PARITY-TODO tooltip</small></div>
+	</div>
+	<div class="ds-cells" style="margin-top:12px">
+		<button type="button" class="rb-lit-button lit">CUE</button>
+		<button type="button" class="rb-lit-button lit">PLAY</button>
+		<button type="button" class="rb-lit-button">LOOP IN</button>
+		<button type="button" class="rb-lit-button">LOOP OUT</button>
+		<button type="button" class="rb-lit-button">1/2</button>
+		<button type="button" class="rb-lit-button">X2</button>
+	</div>
+</div>
+<p class="ds-note">10 px uppercase labels on the raised panel fill, 2 px radius, 2 x 6 px padding. Only one button in a cluster is master. Inert controls stay in their real position at 75% opacity with the exact tooltip string.</p>
+</body>
+</html>

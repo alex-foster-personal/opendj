@@ -129,9 +129,13 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              is a genuine 17th route in this shared bucket; new measured
 //              64,328, same +5% ceil-to-KiB rule => 67,584 (66 KiB). Widened
 //              deliberately per the rule above, not by accident.
-//              This surface exists so that no chunk is unmeasured. It spans 16
-//              routes plus the error template, so its 3 KB of headroom is TIGHT
-//              by construction; widen it deliberately if ordinary feature work
+//              RAISED again Fri 11 Sep 2026 and Wed 16 Sep 2026; the derivation
+//              for each lives beside the BUDGETS entry rather than here, so the
+//              running figure is stated in one place only.
+//              This surface exists so that no chunk is unmeasured. It spans every
+//              route that is not "/" or /performance, plus the error template, so
+//              its headroom is TIGHT by construction and it absorbs feature work
+//              from the whole app; widen it deliberately if ordinary feature work
 //              starts tripping it, but widen it visibly rather than by accident.
 //
 // The +5% rule applies to the two ratcheted budgets (performance, other-lazy)
@@ -166,7 +170,54 @@ const BUDGETS = [
   // RAISED Fri 11 Sep 2026: the Library Wheel route (/library-wheel SVG sunburst,
   // axis picker, fail-fast wheel-api client) is a new lazy SvelteKit node in this
   // shared bucket; measured 113,342, same +5% ceil-to-KiB rule => 119,808 (117 KiB).
-  { name: 'other-lazy', limit: 119808, measured: 113342, note: 'all other routes plus deferred shell' },
+  // RAISED Wed 16 Sep 2026: 117 -> 206 KiB. Inherited trunk growth, not a
+  // regression from this diff: pristine origin/main measured 200,329 in CI (job
+  // "frontend unit + check + build") and 200,327 on a clean `git worktree add
+  // --detach` of the same tip, against a 119,808 limit. This branch measures
+  // 200,328, and its only source change is a knip config file that emits no JS.
+  // The growth was attributed file by file against a clean detached build of
+  // 09a0b80d4, the commit that set the 117 KiB ceiling, so every byte below is a
+  // measured base-to-head delta and not an estimate. Local on both sides, so the
+  // known local-vs-CI minification gap cancels:
+  //   base 113,225 over 28 files  ->  head 200,328 over 33 files, +87,103.
+  // Re-measuring either side moves it by a few tens of bytes (terser mangles by
+  // symbol frequency, so Rollup concatenation order perturbs the result); read
+  // every figure here as carrying that jitter, and re-measure rather than
+  // quoting one back. The +5 files are exactly the five items below.
+  //   +56,875  the SECOND wasm audio decoder. `mpg123-decoder` arrived with
+  //            d06137cc9 (PERF-STEMDEC-03, mp3 WASM decode vs decodeAudioData,
+  //            issue #2058) and is `await import()`ed from
+  //            src/lib/player/decode/flac-stem-decode.ts exactly as the flac one
+  //            is, so it is correctly lazy and correctly charged here. What was
+  //            one 43,821 chunk is now three: mpg123 56,476, flac 39,986, and
+  //            their shared @wasm-audio-decoders runtime split out at 4,234.
+  //            Fetched only when a stemmed deck decodes, never at boot, so it
+  //            costs the boot-latency budget nothing. If the decoders are ever
+  //            unified behind one codec shim, this limit comes back down with it.
+  //   +30,228  everything else, no single dominant item. Of it, +4,097 is three
+  //            genuinely new lazy route nodes (/analysis-backfill 3,527,
+  //            /music-player 289, /prep 281); the rest is ordinary feature work
+  //            on routes already in this bucket, led by /admin +14,662 (the
+  //            Diagnostics #2411 and Playground #2414 tabs, 15 -> 28 files under
+  //            src/routes/admin), /cloudsync +4,437 (Status/Config/Sync/Fleet UI,
+  //            #2014), /track/[stable_id] +3,567 (lyrics hub, #2851),
+  //            /playlist/[id] +1,168, /sets +874, and a long tail under 600
+  //            bytes each.
+  // Checked for the cheaper fixes first and neither applies: nothing here is
+  // mis-attributed (the decoders sit behind real dynamic imports, and the chunk
+  // that imports them is in the library closure, which is what puts them in this
+  // bucket by design), and no eager import can be demoted to recover the weight.
+  // So this is the documented widen-deliberately case: 200,328, +5% => 210,345,
+  // ceil to KiB => 210,944 (206 KiB). CI's 200,329 and trunk's local 200,327 give
+  // the same 206 KiB, so the ceiling does not turn on which side was measured.
+  // SEPARATE FINDING, deliberately NOT actioned here: `library` moved 110,770 ->
+  // 250,263 over the same range and now sits at 97.8% of its inherited 256,000
+  // ceiling, about 5,700 bytes from red. A 66,479 gzip chunk of deck engine (Beat
+  // Sync, KEY SYNC, SLIP, Signalsmith stretch, headphone output, mixer singleton)
+  // is in the STATIC closure of the root layout, so "/" pays for it at boot. That
+  // is a boot-weight question for the perf program, not a CI-green one, and
+  // raising a budget that is not failing is not this change's to make.
+  { name: 'other-lazy', limit: 210944, measured: 200328, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

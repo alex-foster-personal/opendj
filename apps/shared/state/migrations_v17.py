@@ -167,7 +167,7 @@ def repair_hub_changelog_stamps(
     # (tests/cloudsync/test_cloudsync_ops_routes.py).
     if not schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
         return 0
-    if schema_markers.has_marker(conn, REPAIR_MARKER):
+    if schema_markers.marker_row_present(conn, REPAIR_MARKER):
         return 0
     try:
         is_hub = machine_identity.is_hub_from_env(env)

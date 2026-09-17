@@ -14,7 +14,14 @@ Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] a head finding shares (ecosystem, package, id) with base [then] it is not NEW.
 - [if] a semgrep control run lacks a required rule id [then] exit 2.
 - [if] semgrep-diff-scope cannot run git or semgrep on changed paths [then] exit 2.
-- [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules or scanned 0 files
+- [if] every changed path is on semgrep's default ignore list (tests/) [then] semgrep-diff-scope
+  counts 0, so scan_sast.sh writes SKIP instead of running a scan that sees nothing.
+- [if] a changed path is outside the default ignore list [then] semgrep-diff-scope counts it,
+  even when an ignored path changed in the same diff.
+- [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules [then] exit 2 (UNKNOWN).
+- [if] semgrep-summary has --expected-scannable > 0, rules loaded, scanned 0 files, no errors,
+  and no results [then] exit 0 (baseline excluded unchanged files; no new findings).
+- [if] semgrep-summary has --expected-scannable > 0, scanned 0 files, and errors or results
   [then] exit 2 (UNKNOWN), not a pass.
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
 """
@@ -86,6 +93,15 @@ def _emit(args: argparse.Namespace, title: str, lines: list[str], count: int) ->
 
 def _relative(path: str, root: str) -> str:
     return path[len(root) :].lstrip("/") if root and path.startswith(root) else path
+
+
+def _scan_path_relative(path: str, root: Path) -> str:
+    if path.startswith("./"):
+        path = path[2:]
+    root_text = str(root.resolve())
+    if path.startswith(root_text):
+        return path[len(root_text) :].lstrip("/")
+    return path
 
 
 def _osv_findings(doc: dict, root: str) -> tuple[list[OsvFinding], dict[str, int]]:
@@ -253,11 +269,22 @@ def _git_file_at_ref(root: Path, ref: str, rel_path: str) -> bool:
 def _semgrep_scannable_count(
     *,
     root: Path,
+    base: str,
     semgrep: str,
     configs: list[str],
     excludes: list[str],
     candidates: list[str],
 ) -> int:
+    """Count the changed files the diff-aware scan will actually see.
+
+    The real PR scan runs from the repo root with --baseline-commit and applies
+    semgrep's default ignore list (tests/ among others). Naming changed files as
+    explicit targets or --include patterns instead forces them past that list, so
+    a tests/-only diff counted 1 here and scanned 0 there, and the mismatch
+    read as UNKNOWN (job 104882711482 on PR #3362). Run the same root +
+    --baseline-commit invocation and intersect paths.scanned with the git diff
+    candidates.
+    """
     cmd = [
         semgrep,
         "scan",
@@ -266,10 +293,12 @@ def _semgrep_scannable_count(
         "--time",
         "--metrics=off",
         "--disable-version-check",
+        "--baseline-commit",
+        base,
     ]
     for prefix in excludes:
         cmd.extend(["--exclude", prefix])
-    cmd.extend(candidates)
+    cmd.append(".")
     proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
     if proc.returncode not in (0, 1):
         raise RuntimeError(
@@ -280,7 +309,8 @@ def _semgrep_scannable_count(
     doc = json.loads(proc.stdout)
     if not isinstance(doc, dict):
         raise RuntimeError("semgrep JSON root is not an object")
-    return len(doc.get("paths", {}).get("scanned", []))
+    scanned = {_scan_path_relative(path, root) for path in doc.get("paths", {}).get("scanned", [])}
+    return len(scanned & set(candidates))
 
 
 def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
@@ -304,6 +334,7 @@ def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
     try:
         count = _semgrep_scannable_count(
             root=root,
+            base=args.base,
             semgrep=args.semgrep,
             configs=configs,
             excludes=args.exclude,
@@ -330,22 +361,39 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
+    results = doc.get("results", [])
     if rules is not None:
         scanned = len(doc.get("paths", {}).get("scanned", []))
         print(f"semgrep loaded {rules} rules, scanned {scanned} files")
         expected = args.expected_scannable
-        if expected is not None and expected > 0 and (rules == 0 or scanned == 0):
-            return _unknown(
-                f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
-                f"and scanned {scanned} files"
-            )
+        if expected is not None and expected > 0:
+            if rules == 0:
+                # semgrep reports per-rule timings only for files it scanned, so
+                # 0 rules with 0 scanned is an ignored-out diff, not a rule-load
+                # failure. Both stay UNKNOWN; only the reason differs.
+                detail = (
+                    "and scanned 0: the changed paths may all be on semgrep's default "
+                    "ignore list; rerun with --verbose for paths.skipped"
+                    if scanned == 0
+                    else f"while scanning {scanned} file(s): the rule set failed to load"
+                )
+                return _unknown(
+                    f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
+                )
+            if scanned == 0:
+                if not errors and not results:
+                    _emit(args, args.title, [], 0)
+                    return 0
+                return _unknown(
+                    f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
+                    f"and scanned {scanned} files"
+                )
         if rules < args.min_rules:
             return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
         if scanned < args.min_files:
             return _unknown(
                 f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
             )
-    results = doc.get("results", [])
     fired = Counter(r["check_id"].rsplit(".", 1)[-1] for r in results)
     silent = [rule for rule in args.require_rule if fired[rule] == 0]
     if silent:

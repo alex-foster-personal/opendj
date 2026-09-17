@@ -1,0 +1,22 @@
+<!-- @dsCard group="App chrome" name="Button" subtitle="Default, primary, disabled" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Button</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+</head>
+<body>
+<section class="ds-section">
+	<h2>App chrome buttons</h2>
+	<div class="ds-cells">
+		<div class="ds-cell"><button type="button">Cancel</button><small>default: <code>&lt;button&gt;</code></small></div>
+		<div class="ds-cell"><button type="button" class="primary">Save changes</button><small><code>.primary</code>, solid accent</small></div>
+		<div class="ds-cell"><button type="button" disabled>Export</button><small><code>disabled</code></small></div>
+		<div class="ds-cell"><button type="button" disabled title="not implemented - see PARITY-TODO" aria-label="not implemented - see PARITY-TODO">Sync to cloud</button><small>inert control: disabled + PARITY-TODO tooltip</small></div>
+	</div>
+	<p class="ds-note">Buttons inherit the page font, 6 px radius, 0.4 x 0.9 rem padding. Hover lifts the fill one step. There is no destructive variant: confirm destructive actions in a dialog instead.</p>
+</section>
+</body>
+</html>
