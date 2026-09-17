@@ -289,8 +289,10 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
         "sla yellow_h=1 red_h=2 over_yellow=4 over_red=3 builder_freeze=off freeze_at=15" in out
     )
 
+    # skipped= names the unreachable hosts recorded in the kpi file (issue #3431);
+    # the fixture's run reached nucbox and silver but not air.
     assert (
-        "sink-triage last_run=2026-09-04T18:28:00Z new_issues=0 fingerprints=2 "
+        "sink-triage last_run=2026-09-04T18:28:00Z new_issues=0 fingerprints=2 skipped=air "
         "(source: "
     ) in out
 

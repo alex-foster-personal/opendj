@@ -237,7 +237,7 @@ _RETINA_ASSET_DOMAIN = re.compile(
 # delegated TLD, so no mailbox can exist behind one. `.target` IS delegated and is absent
 # here for that reason, so a mailbox there is registrable and is still reported.
 _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
-    "service timer socket mount automount path slice scope swap device".split()
+    ("service", "timer", "socket", "mount", "automount", "path", "slice", "scope", "swap", "device")
 )
 
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
