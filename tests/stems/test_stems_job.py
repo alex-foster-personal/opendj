@@ -302,7 +302,10 @@ def test_an_unparseable_payload_reconciles_to_unknown() -> None:
 # supposed to make the button inert never looked at whether the worker exists.
 @pytest.mark.requirement("STEM-36")
 def test_the_local_worker_argv_names_an_absolute_path() -> None:
-    """A relative path is a bet on the cwd of whoever spawns the job."""
+    """[if] the local worker argv is a relative path [then] fail, [else stop].
+
+    A relative path is a bet on the cwd of whoever spawns the job.
+    """
     from apps.stems import job as stems_job
 
     assert Path(stems_job.local_worker_script()).is_absolute()
@@ -312,6 +315,7 @@ def test_the_local_worker_argv_names_an_absolute_path() -> None:
 def test_the_gate_refuses_when_the_local_worker_is_not_installed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """[if] the gate stays open with no worker script on disk [then] fail, [else stop]."""
     from apps.stems import job as stems_job
 
     monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
@@ -322,7 +326,9 @@ def test_the_gate_refuses_when_the_local_worker_is_not_installed(
 
 @pytest.mark.requirement("STEM-36")
 def test_the_gate_allows_it_when_the_local_worker_IS_installed() -> None:
-    """The opposite mutation. A refusal that fires in a real checkout would
+    """[if] the gate refuses in a checkout that ships the worker [then] fail, [else stop].
+
+    The opposite mutation. A refusal that fires in a real checkout would
     turn local stems off for every developer, which no bug report would
     mention because the feature would simply be gone."""
     from apps.stems import job as stems_job
@@ -334,7 +340,9 @@ def test_the_gate_allows_it_when_the_local_worker_IS_installed() -> None:
 def test_build_argv_refuses_rather_than_naming_a_script_that_is_not_there(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The last line of defence: even if the gate is bypassed, the job must
+    """[if] build_argv names a worker script that is absent [then] fail, [else stop].
+
+    The last line of defence: even if the gate is bypassed, the job must
     not be queued to die in a subprocess nobody is watching."""
     from apps.stems import job as stems_job
 
@@ -352,7 +360,9 @@ def test_build_argv_refuses_rather_than_naming_a_script_that_is_not_there(
 def test_the_plan_gate_reports_a_missing_worker_as_its_refusal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """GET /stems/plan reads local_stems_gate() for `local_refusal`, and the
+    """[if] the plan gate omits a missing worker from its refusal [then] fail, [else stop].
+
+    GET /stems/plan reads local_stems_gate() for `local_refusal`, and the
     wizard's StemsPrompt renders that inert with the sentence as its reason.
     So the worker check has to be IN the gate, not only in build_argv, or the
     button stays live and the tester presses it into a job that cannot run."""

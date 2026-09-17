@@ -668,6 +668,7 @@ def test_control_a_dotdot_chain_stopping_ABOVE_the_root_is_accepted(
 def test_analysis_available_reports_what_this_engine_can_actually_do(
     library: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch, installed: bool
 ) -> None:
+    """[if] analysis_available ignores whether the backend is installed [then] fail, [else stop]."""
     from apps.analysis import backends
 
     monkeypatch.setattr(backends, "default_backend_installed", lambda: installed)
@@ -679,7 +680,9 @@ def test_analysis_available_reports_what_this_engine_can_actually_do(
 
 @pytest.mark.requirement("SETUP-14")
 def test_the_folder_outcome_names_where_the_analysis_comes_from() -> None:
-    """The stored detail is what an agent driving setup over HTTP reads, so
+    """[if] the outcome detail omits the analysis queue [then] fail, [else stop].
+
+    The stored detail is what an agent driving setup over HTTP reads, so
     "none are guessed" on its own left it with no next step to take."""
     detail = importer.FolderImportOutcome.analysis_detail
     assert "/api/v1/analysis-queue" in detail
