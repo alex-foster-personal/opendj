@@ -1,10 +1,15 @@
 """The ``opendj`` console script: AGENT-05's client of the AGENT-03 bus.
 
     opendj state [--json]
+    opendj status [--json]
     opendj deck 1 play | pause | cue | seek 42000
     opendj eq 2 low 0.2 --over 4beats
     opendj do "load 1 <stable-id>" then "play 1" and "play 2"
+    opendj api GET /api/v1/smartlists
+    opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
+    opendj install-cli [--target ~/.local/bin/opendj]
+    opendj update check | opendj update apply [--timeout-s SECONDS]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -62,11 +67,16 @@ from apps.opendj_cli.orders import (
     single,
     slowed_since,
 )
-from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
+from apps.opendj_cli.helptext import LIBRARY_EPILOG, print_verbs
+from apps.opendj_cli.origin import (
+    EngineIdentityMismatch,
+    EngineNotRunning,
+    EngineOrigin,
+    resolve_verified_origin,
+)
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
-    describe_verbs,
     parse_duration,
     parse_invocation,
 )
@@ -75,9 +85,14 @@ from apps.opendj_cli.verbs import (
 _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 
 _STATE_COMMAND = "state"
+_STATUS_COMMAND = "status"
+_OPEN_COMMAND = "open"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
+_INSTALL_COMMAND = "install-cli"
+_MCP_COMMAND = "mcp"
+_UPDATE_COMMAND = "update"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -137,6 +152,8 @@ def _parser(as_json: bool = False) -> _Parser:
         as_json=as_json,
         prog="opendj",
         description="Drive the running Open DJ performance surface over the AGENT-03 bus.",
+        epilog=LIBRARY_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("invocation", nargs="*", help="a verb and its arguments")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
@@ -217,12 +234,38 @@ def _run_state(args: argparse.Namespace, origin: EngineOrigin) -> int:
     client = EngineClient(origin=origin, timeout_s=args.timeout)
     try:
         mirror = client.mirror()
+        prefs = client.ui_prefs()
+    except _REFUSALS as error:
+        return _refusal(args, error)
+    payload = {
+        **mirror,
+        "persisted": {"master_muted": prefs["master_muted"]},
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(_state_text(mirror, prefs))
+    return EXIT_CONFIRMED
+
+
+def _run_open(args: argparse.Namespace, origin: EngineOrigin, rest: Sequence[str]) -> int:
+    from apps.opendj_cli.shell_navigate import open_performance
+
+    if len(rest) != 1:
+        raise InvocationError("usage: opendj open performance")
+    target = rest[0]
+    if target not in ("performance", "/performance"):
+        raise InvocationError(
+            f"unknown route {target!r}; only performance (/performance) is supported"
+        )
+    try:
+        result = open_performance(origin)
     except _REFUSALS as error:
         return _refusal(args, error)
     if args.json:
-        print(json.dumps(mirror, indent=2, sort_keys=True))
+        print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        print(_state_text(mirror))
+        print(f"opened {result['route']} (client_open={result['client_open']})")
     return EXIT_CONFIRMED
 
 
@@ -526,7 +569,7 @@ def _dispatch_text(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _state_text(mirror: dict[str, Any]) -> str:
+def _state_text(mirror: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
     lines = [
         f"context: {mirror.get('context_state', 'absent')}",
         f"open: {mirror.get('client_open', 'absent')}",
@@ -537,6 +580,8 @@ def _state_text(mirror: dict[str, Any]) -> str:
             f"master: muted={master.get('muted', 'absent')} "
             f"level={master.get('level', 'absent')} rms={master.get('rms', 'absent')}"
         )
+    if prefs is not None:
+        lines.append(f"persisted: master_muted={prefs.get('master_muted', 'absent')}")
     mixer = mirror.get("mixer")
     if isinstance(mixer, dict):
         lines.append(f"crossfader: {mixer.get('crossfader', 'absent')}")
@@ -578,33 +623,6 @@ def _state_text(mirror: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _print_verbs(as_json: bool) -> None:
-    rows = describe_verbs()
-    if as_json:
-        print(json.dumps(rows, indent=2, sort_keys=True))
-        return
-    name_width = max(len(row["verb"]) for row in rows)
-    command_width = max(len(row["command"]) for row in rows)
-    usage_width = max(len(row["usage"]) for row in rows)
-    print(f"{'verb':<{name_width}}  {'bus command':<{command_width}}  usage")
-    for row in rows:
-        print(
-            f"{row['verb']:<{name_width}}  {row['command']:<{command_width}}  "
-            f"{row['usage']:<{usage_width}}  {_verb_flags(row)}".rstrip()
-        )
-
-
-def _verb_flags(row: dict[str, Any]) -> str:
-    flags = []
-    if row["quick_draw"]:
-        flags.append("quick-draw " + ",".join(row["quick_draw"]))
-    if row["rampable"]:
-        flags.append("--over")
-    if row["confirmed_against_mirror"]:
-        flags.append("mirror-confirmed")
-    return "  ".join(flags)
-
-
 # ----- entry point ---------------------------------------------------------
 
 def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
@@ -614,51 +632,94 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     head, *rest = tokens
     if head == _STATE_COMMAND and rest:
         raise InvocationError(f"state takes no arguments, got {rest[0]!r}")
+    if head == _STATUS_COMMAND and rest:
+        raise InvocationError(f"status takes no arguments, got {rest[0]!r}")
+    if head == _OPEN_COMMAND and not rest:
+        raise InvocationError("usage: opendj open performance")
     return head, rest
 
 
-def _split_api_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
-    """Return global argv and api argv when ``api`` is the subcommand.
+def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list[str]] | None:
+    """Return global argv and subcommand argv when ``name`` is the subcommand.
 
-    Everything after ``api`` is handed to :mod:`api_cli`, including a
-    request-body ``--json`` that would collide with this module's output flag.
+    Everything after the subcommand is handed to its own module, including
+    flags this parser does not know: ``api`` carries a request-body ``--json``
+    that would collide with this module's output flag, and ``update`` carries
+    ``--timeout-s``. Both would be refused as "unrecognized arguments" before
+    their module ever saw them.
     """
-    if _API_COMMAND not in tokens:
+    if name not in tokens:
         return None
-    index = tokens.index(_API_COMMAND)
+    index = tokens.index(name)
     return list(tokens[:index]), list(tokens[index + 1 :])
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
-    api_split = _split_api_tokens(tokens)
+    mcp_split = _split_subcommand(tokens, _MCP_COMMAND)
+    if mcp_split is not None:
+        global_tokens, mcp_tokens = mcp_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _MCP_COMMAND]
+        )
+        if args.list_verbs:
+            print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import mcp_cli
+
+        return mcp_cli.run(mcp_tokens, lock=args.lock)
+    update_split = _split_subcommand(tokens, _UPDATE_COMMAND)
+    if update_split is not None:
+        global_tokens, update_tokens = update_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _UPDATE_COMMAND]
+        )
+        if args.list_verbs:
+            print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import update_cli
+
+        return update_cli.run(update_tokens, as_json=args.json, lock=args.lock)
+    api_split = _split_subcommand(tokens, _API_COMMAND)
     if api_split is not None:
         global_tokens, api_tokens = api_split
         args = _parser(as_json="--json" in global_tokens).parse_args(
             [*global_tokens, _API_COMMAND]
         )
         if args.list_verbs:
-            _print_verbs(args.json)
+            print_verbs(args.json)
             return EXIT_CONFIRMED
         from apps.opendj_cli import api_cli
 
-        return api_cli.run(api_tokens, as_json=args.json)
+        return api_cli.run(api_tokens, as_json=args.json, lock=args.lock)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
-        _print_verbs(args.json)
+        print_verbs(args.json)
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)
+        if head == _INSTALL_COMMAND:
+            from apps.opendj_cli import install_cli
+
+            return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
-            return _run_state(args, resolve_origin(args.lock))
+            return _run_state(args, resolve_verified_origin(args.lock))
+        if head == _STATUS_COMMAND:
+            from apps.opendj_cli import status_cli
+
+            return status_cli.run(rest, as_json=args.json, lock=args.lock)
+        if head == _OPEN_COMMAND:
+            return _run_open(args, resolve_verified_origin(args.lock), rest)
         if head == _TRACK_COMMAND:
             from apps.opendj_cli import track_cli
 
             return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
         orders, over = _plan(args, head, rest)
-        return _dispatch(args, resolve_origin(args.lock), orders, over)
+        return _dispatch(args, resolve_verified_origin(args.lock), orders, over)
     except InvocationError as error:
         return _fail(args, "usage", str(error), EXIT_FAILED)
+    except EngineIdentityMismatch as error:
+        return _fail(args, "engine_identity_mismatch", str(error), EXIT_NO_ENGINE)
     except EngineNotRunning as error:
         return _fail(args, "engine_not_running", str(error), EXIT_NO_ENGINE)
 

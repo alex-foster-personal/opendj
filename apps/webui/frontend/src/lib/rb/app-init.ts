@@ -13,9 +13,23 @@
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { applyExplicitPerfTierPref, fetchPerfTier } from './perf-tier-client';
-import { pressureIsElevated, readMachinePressure, startMachinePressurePolling } from './machine-pressure';
+import {
+	pressureIsElevated,
+	readMachinePressure,
+	startMachinePressurePolling,
+	subscribeMachinePressure
+} from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
+import {
+	armCloudsyncSchedulerShed,
+	resumeCloudsyncSchedulerOwedJob
+} from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
+import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
+import { applyAllCaps } from '$lib/rb/cache-caps-registry';
+import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
+import { resumeEagerStemDecodeOwedJob, setEagerStemDecodeShed } from './stem-decode-shed';
+import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
@@ -96,12 +110,36 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	const stopReloadCountdown = installReloadCountdown();
 	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
 	const stopClientPerformanceSampling = startClientPerformanceSampling(scheduler);
+	let stopCloudsyncSchedulerShed: (() => void) | undefined;
 	const stopBackgroundDemandShed = startBackgroundDemandShed({
 		isPlaying: anyDeckPlaying,
 		pressureElevated: () => pressureIsElevated(readMachinePressure()),
 		readXruns: () => readXrunSessionCounter().xruns,
 		notify: (suggestion) => pushToast(suggestion.message, 'warn'),
-		jobs: []
+		jobs: [
+			{ id: 'cloudsync-scheduler', run: resumeCloudsyncSchedulerOwedJob },
+			{ id: 'audio-prefetch-cache-caps', run: resumeAudioPrefetchOwedPump },
+			{ id: 'eager-stem-decode', run: resumeEagerStemDecodeOwedJob },
+			{ id: 'waveform-detail-bands', run: resumeAnlzPrefetchOwedFetch }
+		],
+		onShed: (shed) => {
+			stopCloudsyncSchedulerShed = armCloudsyncSchedulerShed(
+				shed,
+				() => readXrunSessionCounter().xruns
+			);
+			setAudioPrefetchShedRequest((id) => shed.request(id));
+			setEagerStemDecodeShed(shed);
+			setAnlzPrefetchShedRequest((id) => shed.request(id));
+		}
+	});
+	const stopPrefetchPressureCapScaling = armPrefetchPressureCapScaling({
+		isPlaying: anyDeckPlaying,
+		pressureElevated: () => pressureIsElevated(readMachinePressure()),
+		readXruns: () => readXrunSessionCounter().xruns,
+		// Every registered cache re-evicts on each pressure step, so a cache
+		// added later cannot miss the closed loop.
+		applyCaps: applyAllCaps,
+		subscribe: subscribeMachinePressure
 	});
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;
 	setSilenceDropoutHandler(handleSilenceDropoutPlan);
@@ -126,6 +164,11 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);
+		setAudioPrefetchShedRequest(null);
+		setEagerStemDecodeShed(null);
+		setAnlzPrefetchShedRequest(null);
+		stopPrefetchPressureCapScaling();
+		stopCloudsyncSchedulerShed?.();
 		stopBackgroundDemandShed();
 		stopMachinePressurePolling();
 		stopClientPerformanceSampling();

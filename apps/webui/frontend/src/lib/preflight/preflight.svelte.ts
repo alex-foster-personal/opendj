@@ -26,14 +26,51 @@
  */
 import { type PreflightCheck, type PreflightResult, getPreflight } from '../api';
 
-let overallStatus = $state<'unknown' | PreflightResult['status']>('unknown');
+export type PreflightOverallStatus = 'unknown' | PreflightResult['status'];
+
+/** The check id for PREFLIGHT-02's library-attached row. */
+export const LIBRARY_ATTACHED_CHECK_ID = 'library-attached';
+
+/** Whether the boot preflight screen should cover the whole app.
+ *
+ * While a modal overlay is open (setup, settings, account, sign-in) the boot
+ * gate must yield so the user can interact with it. Issue #2709 fixed setup;
+ * #2722 generalises to every root overlay pair. */
+export function shouldBlockOnPreflight(
+	status: PreflightOverallStatus,
+	yieldBootGate: boolean
+): boolean {
+	if (yieldBootGate) return false;
+	return status !== 'pass';
+}
+
+/** After this many consecutive fail polls, boot copy escalates (issue #2722 P1-4). */
+export const FAIL_ESCALATION_THRESHOLD = 3;
+
+/** Which preflight rows should render. While setup is open the
+ * library-attached row is hidden because the wizard is handling it. */
+export function visiblePreflightChecks(
+	checks: PreflightCheck[],
+	setupOpen: boolean
+): PreflightCheck[] {
+	if (!setupOpen) return checks;
+	return checks.filter((check) => check.id !== LIBRARY_ATTACHED_CHECK_ID);
+}
+
+let overallStatus = $state<PreflightOverallStatus>('unknown');
 let checks = $state<PreflightCheck[]>([]);
 let error = $state<string | null>(null);
+let consecutiveFailPolls = $state(0);
 
 function _applyResult(result: PreflightResult): void {
 	overallStatus = result.status;
 	checks = result.checks;
 	error = null;
+	if (result.status === 'pass') {
+		consecutiveFailPolls = 0;
+	} else if (result.status === 'fail') {
+		consecutiveFailPolls += 1;
+	}
 }
 
 /** One GET, applied to state. Never throws: a caller polling on an interval
@@ -58,6 +95,7 @@ export function _resetPreflightForTests(): void {
 	overallStatus = 'unknown';
 	checks = [];
 	error = null;
+	consecutiveFailPolls = 0;
 }
 
 export const preflightGate = {
@@ -70,8 +108,14 @@ export const preflightGate = {
 	get error() {
 		return error;
 	},
+	get consecutiveFailPolls() {
+		return consecutiveFailPolls;
+	},
 	/** The boot gate's ONLY exit. Deliberately no skip/continue-anyway. */
 	get cleared() {
 		return overallStatus === 'pass';
+	},
+	get needsActionCopy() {
+		return consecutiveFailPolls >= FAIL_ESCALATION_THRESHOLD;
 	}
 };

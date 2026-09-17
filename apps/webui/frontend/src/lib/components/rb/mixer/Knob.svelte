@@ -1,8 +1,9 @@
 <script lang="ts">
 	/**
 	 * Rotary knob: SVG dark ring + indicator line (SCREENSHOT-SPEC 6).
-	 * Real knobs: drag-vertical to turn, double-click resets to 0.5, arrow
-	 * keys nudge, mouse wheel nudges. Inert knobs render identically but
+	 * Real knobs: drag-vertical to turn, double-click resets to resetValue
+	 * (0.5 for EQ/filter, 0 for CUE<>MASTER mix), arrow keys nudge, mouse
+	 * wheel nudges. Inert knobs render identically but
 	 * ignore input and carry the standard tooltip.
 	 *
 	 * All input routes through $lib/rb/knob-control (H5): shift+click selects
@@ -47,6 +48,8 @@
 		size?: number;
 		/** When set, indicator and label use this color and EQ warn overlays are suppressed. */
 		accentColor?: string;
+		/** Double-click reset. EQ/filter stay at the 0.5 detent; MIX is 0 (full cue). */
+		resetValue?: number;
 	}
 
 	let {
@@ -58,7 +61,8 @@
 		inert = false,
 		tone = 'accent',
 		size = 30,
-		accentColor
+		accentColor,
+		resetValue = 0.5
 	}: Props = $props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -152,7 +156,7 @@
 
 	function handleDblClick(): void {
 		if (!live) return;
-		setKnobAbsolute(knobId, 0.5); // center detent reset
+		setKnobAbsolute(knobId, resetValue);
 	}
 
 	function handleKeyDown(e: KeyboardEvent): void {
@@ -317,11 +321,11 @@
 	.knob.knob-stem-accent .indicator:not(.white):not(.rainbow) {
 		stroke: var(--knob-accent-color);
 	}
+	.knob.knob-stem-accent .cap {
+		stroke: color-mix(in srgb, var(--knob-accent-color) 80%, #101318);
+		fill: color-mix(in srgb, var(--knob-accent-color) 42%, #23272f);
+	}
 	.knob.knob-stem-accent .label {
 		color: var(--knob-accent-color);
-	}
-	.knob.knob-stem-accent .cap {
-		stroke: color-mix(in srgb, var(--knob-accent-color) 70%, #101318);
-		fill: color-mix(in srgb, var(--knob-accent-color) 18%, #23272f);
 	}
 </style>

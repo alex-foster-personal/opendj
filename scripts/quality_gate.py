@@ -887,7 +887,14 @@ def _mypy_metrics(records: list[dict[str, Any]], files_checked: int) -> list[Met
         # summary counts neither, and neither does this.
         if record["severity"] != "error":
             continue
-        bucket = _mypy_bucket(record["file"])
+        rel = record["file"]
+        # tests/ imports ops.agentic_testing; mypy follows those imports out of
+        # [tool.mypy] files (apps, tests, scripts). Scoring them as test debt
+        # inflates mypy.errors_tests past the ceiling; aborting hides every
+        # other metric. Drop follow-import hits from the unscored ops/ tree.
+        if rel.split("/", 1)[0] == "ops":
+            continue
+        bucket = _mypy_bucket(rel)
         by_bucket[bucket] += 1
         by_code[bucket][record.get("code") or "unknown"] += 1
 
@@ -1513,6 +1520,14 @@ def _measure_owners_at_base(
         ]
         proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
         if not out_json.exists():
+            # Base's own gate can abort before --json (mypy follow-import into
+            # ops/agentic_testing/coach.py is the live case). Overlay this
+            # run's gate onto the throwaway worktree and retry so trunk debt
+            # can still inherit. The tree being measured stays the merge-base.
+            dest = base_dir / "scripts" / "quality_gate.py"
+            dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+            proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "
                 f"without metrics: {proc.stderr.strip()[-300:]}"
@@ -1694,6 +1709,26 @@ def _markdown(
     return "\n".join(lines) + "\n"
 
 
+def _write_trend_summary(trend_lines: list[str]) -> None:
+    """Append main's non-blocking growth trend to the GitHub Actions job summary.
+
+    No-ops outside CI (GITHUB_STEP_SUMMARY unset) so a local run is not affected.
+    """
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if not summary_file or not trend_lines:
+        return
+    body = "\n".join(f"- {line}" for line in trend_lines)
+    with Path(summary_file).open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n## quality ratchet: main trend report (non-blocking, issue #3246)\n\n"
+            "These plain-ratchet metrics are above their `ops/quality/baseline.json` "
+            "allowance on main. This is a REPORT, not a gate: the enforced check is the "
+            "per-PR delta vs merge-base (see "
+            "docs/decisions/ADR-NEW-quality-ratchet-new-code-gate.md).\n\n"
+            f"{body}\n"
+        )
+
+
 # ----- main ----------------------------------------------------------------
 
 
@@ -1827,6 +1862,41 @@ def _select(only: str | None) -> list[Evaluator]:
     return [e for e in EVALUATORS if e.name in wanted]
 
 
+def _classify_regressions(
+    regressions: list[str],
+    check: BaseCheck,
+    baseline: dict[str, float],
+    slack: dict[str, float] | None,
+    main_report_only: bool,
+) -> tuple[int, list[str]]:
+    """Print each regression line; split it into kept-vs-trend-only (issue #3246).
+
+    An inherited metric prints INHERITED in place of REGRESSION and is counted
+    as neither -- it already passed. Everything else prints REGRESSION: a
+    HARD_ZERO gate always counts as kept (a correctness invariant, not a
+    growth-sensitive count), and a plain-ratchet metric counts as kept unless
+    main_report_only downgrades it to a non-blocking trend line. PR runs never
+    pass main_report_only, so this only ever downgrades a main push/schedule
+    run -- see ADR-NEW-quality-ratchet-new-code-gate.md.
+    """
+    regressions_kept = 0
+    trend_only: list[str] = []
+    for line in regressions:
+        key = line.split(":", 1)[0]
+        if key in check.inherited:
+            m, base_value = check.inherited[key]
+            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
+            print(f"[quality] {line1}")
+            print(line2)
+        elif main_report_only and key not in HARD_ZERO:
+            print(f"[quality] REGRESSION        {line}")
+            trend_only.append(line)
+        else:
+            print(f"[quality] REGRESSION        {line}")
+            regressions_kept += 1
+    return regressions_kept, trend_only
+
+
 def _print_ratchet_verdict(
     ratchets: list[str],
     unknown: list[str],
@@ -1835,6 +1905,7 @@ def _print_ratchet_verdict(
     baseline: dict[str, float],
     within_slack: list[str] | None = None,
     slack: dict[str, float] | None = None,
+    main_report_only: bool = False,
 ) -> int:
     """Print the ratchet/regression readout and return the run's exit code.
 
@@ -1853,22 +1924,23 @@ def _print_ratchet_verdict(
         print(f"[quality] NO BASELINE       {line}")
     for line in used_slack:
         print(f"[quality] WITHIN SLACK      {line}")
-    regressions_kept = 0
-    for line in regressions:
-        key = line.split(":", 1)[0]
-        if key in check.inherited:
-            m, base_value = check.inherited[key]
-            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
-            print(f"[quality] {line1}")
-            print(line2)
-        else:
-            regressions_kept += 1
-            print(f"[quality] REGRESSION        {line}")
+    regressions_kept, trend_only = _classify_regressions(
+        regressions, check, baseline, slack, main_report_only
+    )
     for note in check.notes:
         print(f"[quality] base compare: {note}")
+    if main_report_only and trend_only:
+        _write_trend_summary(trend_only)
     if regressions_kept:
         print(f"\n[quality] FAIL: {regressions_kept} metric(s) got worse.")
         return 1
+    if main_report_only and trend_only:
+        print(
+            f"\n[quality] TREND (non-blocking, main push/schedule -- issue #3246): "
+            f"{len(trend_only)} metric(s) above the ops/quality/baseline.json allowance; "
+            "the enforced gate is the per-PR delta vs merge-base, not this absolute count."
+        )
+        return 0
     if check.inherited:
         print(
             f"\n[quality] PASS: {len(check.inherited)} metric(s) over allowance "
@@ -1902,6 +1974,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, help="write a markdown report here")
     parser.add_argument("--json", type=Path, help="write raw metrics JSON here")
     parser.add_argument("--list", action="store_true", help="list evaluators and exit")
+    parser.add_argument(
+        "--main-report-only", action="store_true",
+        help="on a main push/schedule CI run, print plain-ratchet regressions "
+             "(baseline.json allowances) as a non-blocking trend report and exit 0; "
+             "HARD_ZERO gates and PR merge-base regressions are unaffected (issue #3246)",
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -1989,7 +2067,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     ratchet_exit_code = _print_ratchet_verdict(
-        ratchets, unknown, regressions, check, baseline, within_slack, slack
+        ratchets, unknown, regressions, check, baseline, within_slack, slack,
+        main_report_only=args.main_report_only,
     )
     if measurement_failures:
         print(

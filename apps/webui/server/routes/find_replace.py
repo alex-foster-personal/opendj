@@ -14,10 +14,10 @@ Two endpoints:
     StateBackend.update_track chokepoint (StateWriter underneath, so the
     edit survives a daemon restart same as rating/notes/tags).
 
-v1 scope: the only find-and-replace field is ``notes`` (the sole free-text
-field already wired end-to-end through the state layer for webui edits -
-title/artist/album are identity facts on ``tracks``, not the provenance-
-wrapped write path this feature builds on. See RECON-FEATURES.md).
+v1 scope: find-and-replace fields are ``notes``, ``genre``, and ``comments``
+(the free-text fields wired end-to-end through the state layer for webui
+edits - title/artist/album are identity facts on ``tracks``, not the
+provenance-wrapped write path this feature builds on. See RECON-FEATURES.md).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from ..etag import compute_etag
 
 router = APIRouter(prefix="/find-replace", tags=["find-replace"])
 
-FindReplaceField = Literal["notes"]
+FindReplaceField = Literal["notes", "genre", "comments"]
 FindReplaceMode = Literal["literal", "regex"]
 _MAX_REGEX_PATTERN_CHARS = 256
 _MAX_REGEX_INPUT_CHARS = 10_000
@@ -134,7 +134,7 @@ def _new_value(
             status_code=422,
             detail={
                 "error": "input_too_large",
-                "message": "notes value exceeds regex safety limit",
+                "message": "value exceeds regex safety limit",
             },
         )
     try:
@@ -254,7 +254,7 @@ def apply(
     results = [
         FindReplaceApplyRowOut(
             stable_id=track.stable_id,
-            new_value=track.notes,
+            new_value=getattr(track, body.field),
             etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag),
         )
         for track in tracks

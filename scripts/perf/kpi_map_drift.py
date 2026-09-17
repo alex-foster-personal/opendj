@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 import re
 
-_SCENARIO_ROW = re.compile(r"^\|\s*(S\d+)\s*\|", re.MULTILINE)
+_SCENARIO_ROW = re.compile(r"^\|\s*(S\d+|[A-Z]+(?:-[A-Z]+)+)\s*\|", re.MULTILINE)
 _PERCENTILE_LABEL = re.compile(r"p\d{2,3}")
 _CELL_NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)\s*(ms|s|%)?")
 
@@ -33,6 +33,12 @@ def spec_scenario_ids(spec_text: str) -> list[str]:
     Only the id column is parsed. Parsing the whole table would couple this
     tool to the spec's prose formatting, which changes often; the id column is
     the one part that cannot change without the scenario set changing.
+
+    An id is either the numbered `S\\d+` shape (S1..S13) or a hyphenated
+    all-caps name (BOOT-LIB), which needs at least one hyphen precisely so it
+    is not confused with the `T1`/`T2`/`B1`..`B4` ids used by this same
+    document's unrelated Findings and Bet tables further down - those are a
+    single letter plus digits, no hyphen, and must stay invisible here.
     """
     seen: list[str] = []
     for match in _SCENARIO_ROW.finditer(spec_text):

@@ -18,6 +18,7 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -33,6 +34,12 @@ import {
 	type LyricsPrefs
 } from './lyrics-prefs';
 import {
+	APP_MODE_PREF_DEFAULTS,
+	bindAppModePrefSetters,
+	mergeAppModePrefsFromParsed,
+	type AppModePrefs
+} from './app-mode-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
@@ -44,13 +51,19 @@ import {
 	mergePerfTierPrefsFromParsed,
 	type PerfTierPrefs
 } from './perf-tier-prefs';
-import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
+import {
+	makePrefsHydrator,
+	setLibraryBrowserDiskPref,
+	setTopbarDiskPref,
+	syncDiskPrefs
+} from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
+export type { AppModeId } from './app-mode';
 export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
@@ -68,13 +81,15 @@ export type LibraryDensity = 'compact' | 'cosy';
 /** The two optional suggestion panels below the library table. */
 export type LibraryPanel = 'next' | 'recommended';
 
+export type { PreviewBeatSync };
+
 /** App + /performance chrome theme. Default dark. */
 export type UiTheme = 'dark' | 'light';
 
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, LyricsPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -84,6 +99,12 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, LyricsPrefs {
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
+	/**
+	 * CUEOUT-15 R6: tempo of the library preview voice. 'tempo' matches a
+	 * playing master deck when the match fits the preview pitch range (half and
+	 * double time count); 'off' plays every preview at its own tempo.
+	 */
+	preview_beat_sync: PreviewBeatSync;
 /** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
@@ -173,6 +194,7 @@ const DEFAULTS: RbUiPrefs = {
 	hide_broken_links: false,
 	library_density: 'compact',
 	beat_sync_max: true,
+	preview_beat_sync: 'tempo',
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -197,7 +219,8 @@ const DEFAULTS: RbUiPrefs = {
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
-	...APP_POSTURE_PREF_DEFAULTS
+	...APP_POSTURE_PREF_DEFAULTS,
+	...APP_MODE_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -339,6 +362,16 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (
+		parsed.preview_beat_sync !== undefined &&
+		parsed.preview_beat_sync !== 'off' &&
+		parsed.preview_beat_sync !== 'tempo'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (preview_beat_sync is not off or tempo) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.jog_radial_waveform !== undefined && typeof parsed.jog_radial_waveform !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (jog_radial_waveform is not a boolean) - ` +
@@ -393,6 +426,7 @@ function _load(): RbUiPrefs {
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
+		preview_beat_sync: parsed.preview_beat_sync ?? DEFAULTS.preview_beat_sync,
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
@@ -407,7 +441,10 @@ function _load(): RbUiPrefs {
 		...LIBRARY_FILTER_PREF_DEFAULTS,
 		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY),
 		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
-		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY)
+		...APP_POSTURE_PREF_DEFAULTS,
+		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
+		...APP_MODE_PREF_DEFAULTS,
+		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -416,7 +453,7 @@ function _persist(): void {
 }
 
 /** One shared write queue (issue #1578) - see disk-write-chain.ts. */
-const _syncDiskPrefs = createDiskPrefsSync();
+const _syncDiskPrefs = syncDiskPrefs;
 
 // -------------------------------------------------------- public API
 
@@ -427,8 +464,7 @@ export const uiPrefs = $state<RbUiPrefs>(_load());
 _applyThemeDom(uiPrefs.theme);
 
 export function setHideBrokenLinks(next: boolean): void {
-	uiPrefs.hide_broken_links = next;
-	_persist();
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
 }
 
 /** Persist the tree width after clamping it to its documented 220-520px range. */
@@ -467,28 +503,29 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 
 export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
 export function setLibraryDensity(next: LibraryDensity): void {
-	uiPrefs.library_density = next;
-	_persist();
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
 }
 
 export function setBeatSyncMax(next: boolean): void {
-	uiPrefs.beat_sync_max = next;
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'beat_sync_max', next);
+}
+
+/** Local-only: the engine holds no preview voice, so this never leaves the page. */
+export function setPreviewBeatSync(next: PreviewBeatSync): void {
+	uiPrefs.preview_beat_sync = next;
 	_persist();
 }
 
 export function setAutoPlayEnabled(next: boolean): void {
-	uiPrefs.auto_play_enabled = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enabled', next);
 }
 
 export function setAutoPlayEnforceOrder(next: boolean): void {
-	uiPrefs.auto_play_enforce_order = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enforce_order', next);
 }
 
 export function setAutoPlayMaximizeReach(next: boolean): void {
-	uiPrefs.auto_play_maximize_reach = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_maximize_reach', next);
 }
 
 /** Collapse one suggestion panel while retaining the other panel's state. */
@@ -505,7 +542,7 @@ export const {
 	toggleNextOnlyFilter,
 	setRemixesFilter,
 	setVocalsFilter
-} = makeLibraryFilterSetters(uiPrefs, _persist);
+} = makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
@@ -560,6 +597,7 @@ export const {
 
 export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

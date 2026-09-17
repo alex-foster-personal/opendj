@@ -19,7 +19,10 @@ pytest_plugins = ["tests.test_smartlists_route"]
 
 @pytest.mark.requirement("LIBM-83")
 def test_delete_smartlist_create_delete_list_absent(client, state_db_path):
-    """[if] DELETE on an existing smartlist [then] 204 and absent from list/GET."""
+    """[if] DELETE on an existing smartlist [then] 204 and absent from list/GET.
+
+    [if] delete succeeds [then] the row is gone from list, GET, and table, [else stop].
+    """
     sid = _create_smartlist(state_db_path, "deletable", _BPM_RULE)
     r = client.delete(f"/api/v1/smartlists/{sid}")
     assert r.status_code == 204
@@ -36,11 +39,14 @@ def test_delete_smartlist_create_delete_list_absent(client, state_db_path):
     conn = sqlite3.connect(str(state_db_path))
     try:
         row = conn.execute(
-            "SELECT 1 FROM smartlists WHERE id=?", (sid,),
+            "SELECT name, deleted_at FROM smartlists WHERE id=?", (sid,),
         ).fetchone()
     finally:
         conn.close()
-    assert row is None
+    assert row is not None
+    assert row[1] is not None
+    assert "__deleted__" in row[0]
+    assert sid in row[0]
 
     recreated = client.post(
         "/api/v1/smartlists",
@@ -51,7 +57,10 @@ def test_delete_smartlist_create_delete_list_absent(client, state_db_path):
 
 @pytest.mark.requirement("LIBM-83")
 def test_delete_smartlist_unknown_id_404(client):
-    """[if] DELETE on unknown id [then] 404 SMARTLIST_NOT_FOUND."""
+    """[if] DELETE on unknown id [then] 404 SMARTLIST_NOT_FOUND.
+
+    [if] DELETE targets an id with no row [then] 404 SMARTLIST_NOT_FOUND, [else stop].
+    """
     r = client.delete("/api/v1/smartlists/nope")
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "SMARTLIST_NOT_FOUND"
@@ -59,7 +68,10 @@ def test_delete_smartlist_unknown_id_404(client):
 
 @pytest.mark.requirement("LIBM-83")
 def test_delete_smartlist_peer_cloud_lock_503_leaves_row(state_db_path):
-    """[if] peer lock held [then] DELETE 503 and row still GET-able."""
+    """[if] peer lock held [then] DELETE 503 and row still GET-able.
+
+    [if] a peer holds the cloud lock [then] DELETE 503s and the row survives, [else stop].
+    """
     sid = _create_smartlist(state_db_path, "locked", _BPM_RULE)
     with _make_client(
         state_db_path,
@@ -75,7 +87,10 @@ def test_delete_smartlist_peer_cloud_lock_503_leaves_row(state_db_path):
 
 @pytest.mark.requirement("LIBM-83")
 def test_delete_smartlist_openapi_documents_delete(client):
-    """[if] OpenAPI is dumped [then] DELETE route returns 204."""
+    """[if] OpenAPI is dumped [then] DELETE route returns 204.
+
+    [if] the OpenAPI spec's DELETE op omits 204 [then] the contract undersells it, [else stop].
+    """
     spec = client.get("/openapi.json").json()
     delete_op = spec["paths"]["/api/v1/smartlists/{smartlist_id}"]["delete"]
     assert "204" in delete_op["responses"]
@@ -83,7 +98,10 @@ def test_delete_smartlist_openapi_documents_delete(client):
 
 @pytest.mark.requirement("LIBM-83")
 def test_delete_smartlist_missing_table_404(tmp_path: Path):
-    """[if] smartlists table absent [then] DELETE 404 not 500."""
+    """[if] smartlists table absent [then] DELETE 404 not 500.
+
+    [if] the smartlists table is missing [then] DELETE 404s instead of 500ing, [else stop].
+    """
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path, apply_schema=True)
     conn.close()

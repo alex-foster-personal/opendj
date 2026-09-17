@@ -74,14 +74,47 @@ before(async () => {
 
 // ------------------------------------------------------ the markup contract
 
+/**
+ * Names of module-level constants in `source` that hold exactly INERT_TITLE.
+ * Inert controls now reference the shared constant (e.g. TrackActions.svelte's
+ * `title={INERT_TITLE}`, a68c83a59 UXR-02) instead of repeating the literal,
+ * so a literal-only scan finds none and would pass vacuously.
+ */
+function inertTitleConstants(source) {
+	const names = new Set();
+	for (const match of source.matchAll(/\bconst\s+(\w+)\s*=\s*(['"])([^'"\n]*)\2/g)) {
+		if (match[3] === INERT_TITLE) names.add(match[1]);
+	}
+	return names;
+}
+
+/** True when an open tag carries the inert title, literally or via a constant. */
+function carriesInertTitle(attrs, constantNames) {
+	if (attrs.includes(INERT_TITLE)) return true;
+	for (const name of constantNames) {
+		if (new RegExp(`\\{\\s*${name}\\s*\\}`).test(attrs)) return true;
+	}
+	return false;
+}
+
+test('inert-title detection sees a constant-referenced control, and flags one missing disabled', () => {
+	// Mutation control: without constant resolution the first case is invisible.
+	const source = `<script>const INERT = '${INERT_TITLE}';</script>\n<button title={INERT}>x</button>`;
+	const names = inertTitleConstants(source);
+	const button = openTags(source).find((tag) => tag.name === 'button');
+	assert.equal(carriesInertTitle(button.attrs, names), true);
+	assert.equal(/\bdisabled\b/.test(button.attrs), false, 'fixture must be the offending shape');
+});
+
 test('every inert form control carries BOTH disabled and the exact PARITY-TODO title', () => {
 	const offenders = [];
 	let checked = 0;
 	for (const file of svelteFiles(SRC)) {
 		const source = readFileSync(file, 'utf8');
 		if (!source.includes(INERT_TITLE)) continue;
+		const constantNames = inertTitleConstants(source);
 		for (const tag of openTags(source)) {
-			if (!tag.attrs.includes(INERT_TITLE)) continue;
+			if (!carriesInertTitle(tag.attrs, constantNames)) continue;
 			if (!DISABLEABLE.has(tag.name)) continue;
 			checked++;
 			if (!/\bdisabled\b/.test(tag.attrs)) {

@@ -24,20 +24,72 @@
 	 *   ✔︎ 🎯 every numeric/status readout carries a `title` explaining itself
 	 *     (house rule), not just a color.
 	 *     [if] the light or the status word has no title/text fallback [then ⛔️] broken
+	 *   ✔︎ 🎯 PREFLIGHT-02 (issue #2589): a `library-attached` row that is
+	 *     `pending` because setup was dismissed with an empty library shows a
+	 *     real, working "Run setup" control -- a dismissed-empty library must
+	 *     never be a dead end with only prose remediation. That row's markup
+	 *     lives in PreflightCheckRow.svelte (see its own doc for why it is a
+	 *     separate, lifecycle-hook-free component).
+	 *     [if] this state renders no control, or a disabled/inert one, while
+	 *     the daemon is reachable [then ⛔️] broken
+	 *
+	 * NAVIGATION IS INJECTED, never imported, exactly for the reason
+	 * `run-setup.ts` documents: `$app/navigation` only exists inside a
+	 * SvelteKit runtime. Both call sites already import `goto` for their own
+	 * use and pass it straight through to PreflightCheckRow.
 	 */
 	import { onDestroy, onMount } from 'svelte';
-	import type { PreflightCheck } from '$lib/api';
+	import { OVERLAY_Z } from '$lib/overlays/stack';
+	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
+	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
 	import {
 		checkPreflight,
 		preflightGate,
 		requestPermissions
 	} from '$lib/preflight/preflight.svelte';
+	import { firstRunGate, retryFirstRunGate } from '$lib/setup/first-run-gate.svelte';
+	import { runSetup, runSetupBlocked } from '$lib/setup/run-setup';
+	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
 
-	let { mode = 'boot' }: { mode?: 'boot' | 'admin' } = $props();
+	let {
+		mode = 'boot',
+		blocking = true,
+		hideCheckIds = [],
+		navigate
+	}: {
+		mode?: 'boot' | 'admin';
+		blocking?: boolean;
+		hideCheckIds?: string[];
+		navigate?: (path: string) => unknown;
+	} = $props();
+
+	const hiddenIds = $derived(new Set(hideCheckIds));
+	const visibleChecks = $derived(
+		preflightGate.checks.filter((check) => !hiddenIds.has(check.id))
+	);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
+	let importBusy = $state(false);
+	let importError = $state<string | null>(null);
+
+	const bootHeadline = $derived(
+		mode === 'boot' && blocking
+			? bootGateHeading(blocking, preflightGate.checks, preflightGate.consecutiveFailPolls)
+			: mode === 'boot'
+				? 'Startup checks'
+				: 'Preflight'
+	);
+
+	const showImportCta = $derived(
+		mode === 'boot' &&
+			blocking &&
+			(needsImportAction(preflightGate.checks) ||
+				preflightGate.needsActionCopy ||
+				firstRunGate.hasError ||
+				firstRunGate.isResolving)
+	);
 
 	function stopPolling(): void {
 		if (timer === null) return;
@@ -45,9 +97,13 @@
 		timer = null;
 	}
 
+	async function pollPreflight(): Promise<void> {
+		await checkPreflight();
+	}
+
 	function ensurePolling(): void {
 		if (timer !== null) return;
-		timer = setInterval(() => void checkPreflight(), POLL_MS);
+		timer = setInterval(() => void pollPreflight(), POLL_MS);
 	}
 
 	// Boot mode polls only while not yet cleared (a fresh pass stops it, and
@@ -67,64 +123,102 @@
 	});
 
 	onMount(() => {
-		void checkPreflight();
+		void pollPreflight();
 	});
 
 	onDestroy(stopPolling);
 
-	function lightClass(status: PreflightCheck['status']): string {
-		if (status === 'pass') return 'light-pass';
-		if (status === 'fail') return 'light-fail';
-		return 'light-pending';
+	const showSurface = $derived(
+		mode === 'admin' ||
+			blocking ||
+			visibleChecks.length > 0 ||
+			preflightGate.error !== null ||
+			firstRunGate.hasError
+	);
+
+	async function handleImportMusic(): Promise<void> {
+		if (!navigate || importBusy) return;
+		importBusy = true;
+		importError = await runSetup(navigate);
+		importBusy = false;
 	}
 
-	/** The `x-apple.systempreferences:` deep link inside a remediation
-	 * sentence, or null when the remediation carries no such link (e.g. the
-	 * state-db check's remediation, which only ever names a restart). */
-	function settingsUrl(remediation: string | null | undefined): string | null {
-		if (!remediation) return null;
-		const match = remediation.match(/x-apple\.systempreferences:\S+/);
-		return match ? match[0] : null;
+	async function retrySetupCheck(): Promise<void> {
+		const show = await retryFirstRunGate();
+		if (show !== true || !navigate) return;
+		importBusy = true;
+		importError = await runSetup(navigate);
+		importBusy = false;
+	}
+
+	function bootRowLabel(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckLabel(check, mode);
+	}
+
+	function bootRowDetail(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckDetail(check, mode);
 	}
 </script>
 
+{#if showSurface}
 <section
 	class="preflight"
-	class:preflight-boot={mode === 'boot'}
+	class:preflight-boot={mode === 'boot' && blocking}
+	class:preflight-boot-strip={mode === 'boot' && !blocking}
 	class:preflight-admin={mode === 'admin'}
 	data-preflight-mode={mode}
 	data-preflight-status={preflightGate.status}
+	data-preflight-blocking={blocking ? 'true' : 'false'}
+	style:--preflight-boot-z={mode === 'boot' && blocking ? OVERLAY_Z.preflightBoot : undefined}
 >
-	<h2>{mode === 'boot' ? 'Starting up' : 'Preflight'}</h2>
+	{#if mode === 'boot' && blocking}
+		<header class="preflight-brand" aria-label="Open DJ">
+			<div class="preflight-mark" aria-hidden="true"></div>
+			<div class="preflight-lockup">
+				<span class="preflight-name">Open DJ</span>
+				<p class="preflight-welcome">
+					Welcome. Import your music to start DJing, or keep going once setup finishes.
+				</p>
+			</div>
+		</header>
+	{/if}
+	<h2>{bootHeadline}</h2>
 	{#if preflightGate.error}
 		<p class="preflight-error">Could not reach the engine: {preflightGate.error}</p>
 	{/if}
+	{#if mode === 'boot' && blocking && firstRunGate.hasError}
+		<p class="preflight-error" role="alert">{firstRunGate.error}</p>
+		<button type="button" class="preflight-retry-first-run" onclick={() => void retrySetupCheck()}>
+			Retry setup check
+		</button>
+	{/if}
 	<ul class="preflight-checks">
-		{#each preflightGate.checks as check (check.id)}
-			<li data-check-id={check.id} data-check-status={check.status}>
-				<details open={check.status !== 'pass'}>
-					<summary>
-						<span
-							class="light {lightClass(check.status)}"
-							title={`${check.label}: ${check.status}`}
-						></span>
-						<span class="label">{check.label}</span>
-						<span class="status-word">{check.status}</span>
-					</summary>
-					<p class="detail" title={check.detail}>{check.detail}</p>
-					{#if check.remediation}
-						<p class="remediation">{check.remediation}</p>
-						{#if settingsUrl(check.remediation)}
-							<a href={settingsUrl(check.remediation)} class="settings-link">
-								Open System Settings
-							</a>
-						{/if}
-					{/if}
-				</details>
-			</li>
+		{#each visibleChecks as check (check.id)}
+			<PreflightCheckRow
+				{check}
+				{navigate}
+				{mode}
+				label={mode === 'boot' ? bootRowLabel(check) : check.label}
+				detail={mode === 'boot' ? bootRowDetail(check) : check.detail}
+			/>
 		{/each}
 	</ul>
 	<div class="preflight-actions">
+		{#if showImportCta}
+			<button
+				type="button"
+				class="preflight-import"
+				data-testid="preflight-import-music"
+				disabled={importBusy || runSetupBlocked() !== null || !navigate}
+				title={runSetupBlocked() ?? 'Open setup to import rekordbox or a music folder.'}
+				onclick={() => void handleImportMusic()}
+			>
+				{importBusy ? 'Opening setup...' : 'Import your music'}
+			</button>
+			{#if importError}
+				<p class="preflight-error">{importError}</p>
+			{/if}
+		{/if}
 		<button type="button" onclick={() => void checkPreflight()}>Re-check</button>
 		<button
 			type="button"
@@ -134,10 +228,13 @@
 			Re-request permissions
 		</button>
 	</div>
-	{#if mode === 'boot'}
+	{#if mode === 'boot' && blocking && !preflightGate.needsActionCopy}
 		<p class="note">This screen clears itself automatically once every check passes.</p>
+	{:else if mode === 'boot' && blocking && preflightGate.needsActionCopy}
+		<p class="note">Import your music below to continue, or fix the items above and re-check.</p>
 	{/if}
 </section>
+{/if}
 
 <style>
 	/* No success/positive token exists in app.css yet; scoped here rather
@@ -145,9 +242,14 @@
 	   already made for --kpi-ok). */
 	:global(:root) {
 		--preflight-ok: #4ecb8c;
+		/* Orange is the "worth saying, not worth stopping for" colour. It is
+		   defined next to the green for the same reason that one was scoped
+		   here: app.css has no severity tokens yet. */
+		--preflight-warn: #e8a33d;
 	}
 	:global(html[data-theme='light']) {
 		--preflight-ok: #2e9e63;
+		--preflight-warn: #b3701a;
 	}
 
 	.preflight {
@@ -160,14 +262,70 @@
 		background: var(--surface);
 		color: var(--fg);
 	}
+	.preflight-brand {
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+	}
+	.preflight-mark {
+		width: 3rem;
+		height: 3rem;
+		flex: none;
+		background: url('/favicon.svg') center / contain no-repeat;
+	}
+	.preflight-name {
+		display: block;
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	.preflight-welcome {
+		margin: 0.2rem 0 0;
+		color: var(--muted);
+		font-size: 0.9em;
+	}
 	.preflight-boot {
 		position: fixed;
 		inset: 0;
-		z-index: 1000;
+		z-index: var(--preflight-boot-z, 360);
 		max-width: 520px;
 		margin: 10vh auto;
 		height: fit-content;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+		background: var(--surface);
+	}
+	.preflight-boot::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		z-index: -1;
+		background: rgba(0, 0, 0, 0.55);
+		pointer-events: none;
+	}
+	.preflight-boot-strip {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 360;
+		max-width: none;
+		margin: 0;
+		border-radius: 0;
+		border-top: none;
+		border-left: none;
+		border-right: none;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+	}
+	.preflight-boot-strip h2 {
+		font-size: 0.95rem;
+	}
+	.preflight-boot-strip .preflight-checks {
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 0.75rem 1.25rem;
+	}
+	.preflight-boot-strip .note {
+		display: none;
 	}
 	.preflight-error {
 		color: var(--danger);
@@ -179,45 +337,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-	}
-	.preflight-checks summary {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-	}
-	.light {
-		display: inline-block;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		flex: none;
-	}
-	.light-pass {
-		background: var(--preflight-ok);
-	}
-	.light-fail {
-		background: var(--danger);
-	}
-	.light-pending {
-		background: var(--accent);
-	}
-	.label {
-		font-weight: 600;
-	}
-	.status-word {
-		color: var(--muted);
-		font-size: 0.85em;
-	}
-	.detail,
-	.remediation {
-		margin: 0.25rem 0 0 1.5rem;
-		color: var(--muted);
-		font-size: 0.9em;
-	}
-	.settings-link {
-		margin-left: 1.5rem;
-		display: inline-block;
 	}
 	.preflight-actions {
 		display: flex;

@@ -57,6 +57,8 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_master_select', device_id: 'speakers' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_input_select', device_id: 'mic' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }), ['headphone']);
@@ -986,9 +988,21 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			mix: 0.25,
 			level: 0.75,
 			selected_output_device_id: null,
+			selected_master_output_device_id: null,
+			selected_input_device_id: null,
 			output_mode: 'practice',
 			head_delay_ms: 0,
+			alignment_mode: 'hybrid',
+			master_delay_ms: 0,
+			calibration: {
+				step: 'idle',
+				cue_latency_ms: null,
+				master_latency_ms: null,
+				offset_ms: null,
+				error: null
+			},
 			outputs: [],
+			inputs: [],
 			supported: false,
 			active: false,
 			error: null
@@ -1074,8 +1088,14 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_outputs_refresh'/);
 	assert.match(mixer, /type: 'headphone_output_acquire'/);
 	assert.match(mixer, /type: 'headphone_output_select'/);
+	assert.match(mixer, /type: 'headphone_master_select'/);
+	assert.match(mixer, /type: 'headphone_input_select'/);
 	assert.match(headphones, /onclick=\{onacquire\}/);
-	assert.match(headphones, /Grant browser access to a second audio output/);
+	// bf60d7d67 feat(webui): pin master and cue sinks from I/O menu (#2409)
+	// replaced the "+ OUT" grant button (title "Grant browser access to a second
+	// audio output") with the I/O button, which still calls onacquire.
+	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{onacquire\}/);
+	assert.match(headphones, /I\/O briefly uses the built-in mic so device names appear/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
@@ -1244,6 +1264,53 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
 
+test('queryPerformanceState publishes browser pane search, sort, and selected row from the adapter', () => {
+	const empty = ipc.queryPerformanceState().browser;
+	assert.equal(empty.search, null);
+	assert.equal(empty.sort, null);
+	assert.equal(empty.selected_row, null);
+
+	const unregister = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async () => {},
+		readSnapshot: () => ({
+			search: 'house',
+			sort: { key: 'title', direction: 'asc' },
+			selected_row: 'track-99'
+		})
+	});
+	try {
+		const live = ipc.queryPerformanceState().browser;
+		assert.equal(live.search, 'house');
+		assert.deepEqual(live.sort, { key: 'title', direction: 'asc' });
+		assert.equal(live.selected_row, 'track-99');
+		assert.doesNotThrow(() => structuredClone(live));
+	} finally {
+		unregister();
+	}
+
+	const unregisterDesc = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async () => {},
+		readSnapshot: () => ({
+			search: null,
+			sort: { key: 'bpm', direction: 'desc' },
+			selected_row: null
+		})
+	});
+	try {
+		assert.deepEqual(ipc.queryPerformanceState().browser.sort, {
+			key: 'bpm',
+			direction: 'desc'
+		});
+	} finally {
+		unregisterDesc();
+	}
+
+	const after = ipc.queryPerformanceState().browser;
+	assert.equal(after.search, null);
+	assert.equal(after.sort, null);
+	assert.equal(after.selected_row, null);
+});
+
 test('master mute and browser playlist selection are bus commands with queryable state', async () => {
 	const seen = [];
 	globalThis.window = {};
@@ -1251,7 +1318,8 @@ test('master mute and browser playlist selection are bus commands with queryable
 	const unregister = ipc.registerPerformanceBrowserAdapter({
 		selectPlaylist: async (playlistId) => {
 			seen.push(playlistId);
-		}
+		},
+		readSnapshot: () => ({ search: null, sort: null, selected_row: null })
 	});
 	try {
 		const before = ipc.queryPerformanceState().history.length;
@@ -1332,6 +1400,102 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 		'own',
 		'an IPC consumer mutating its own snapshot must not write back into the toggle'
 	);
+});
+
+test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed', async () => {
+	globalThis.window = {};
+	ipc.resetQuantizedLaunchArmedForTest();
+	const armCalls = [];
+	const clearCalls = [];
+	let clockSec = 10;
+	const resetDriver = ipc.installPerformanceQuantizedLaunchDriverForTest({
+		arm: async (...args) => {
+			armCalls.push(args);
+			return 12.25;
+		},
+		clear: (deck) => {
+			clearCalls.push(deck);
+		},
+		contextTimeNowSec: () => clockSec
+	});
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await window.musicDjToolsPerformance.dispatch({
+			type: 'play',
+			deck: 2,
+			playing: true,
+			quantize: true
+		});
+		assert.equal(armCalls.length, 1);
+		const armed = ipc.queryPerformanceState().decks[2].quantized_launch_armed;
+		assert.notEqual(armed, null);
+		assert.ok(armed.remaining_ms > 0);
+		await window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 2, playing: true });
+		assert.equal(clearCalls.length, 1);
+		assert.equal(ipc.queryPerformanceState().decks[2].quantized_launch_armed, null);
+		clockSec = 12.26;
+		assert.equal(ipc.queryPerformanceState().decks[2].quantized_launch_armed, null);
+	} finally {
+		uninstall();
+		resetDriver();
+		ipc.resetQuantizedLaunchArmedForTest();
+		delete globalThis.window;
+	}
+});
+
+test('LATENCY-02 play parse accepts omitted quantize and rejects unknown fields', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'play',
+				deck: 1,
+				playing: true,
+				extra: true
+			}),
+			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lock play during restore', async () => {
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({
+			type: 'rescue_resume',
+			decks: [{ deck: 1, position_ms: 5000 }, { deck: 3, position_ms: 12_000 }]
+		}),
+		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'rescue_stop_all' }),
+		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
+	);
+
+	ipc.setRescueRestorePhaseForTest('restoring');
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'load', deck: 1, stable_id: 'track-a' }),
+			/rescue restore owns controls/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'rescue_resume', decks: [] }),
+			/requires at least one deck/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'rescue_stop_all', extra: true }),
+			/unexpected fields/i
+		);
+	} finally {
+		ipc.setRescueRestorePhaseForTest('idle');
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('master command accepts optional lock and query exposes master_mode', async () => {

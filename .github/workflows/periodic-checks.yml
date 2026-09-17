@@ -75,10 +75,12 @@ concurrency:
   group: periodic-checks
   cancel-in-progress: false
 
+# issues: read at the top (the window job reads ledger comments); only the jobs
+# that post to the ledger issue widen to issues: write (zizmor excessive-permissions).
 permissions:
   actions: read
   contents: read
-  issues: write
+  issues: read
 
 env:
   LEDGER_ISSUE: "1492"
@@ -164,14 +166,55 @@ jobs:
           fi
 
       # Depth 1 is enough: the merge count comes from gh api compare, not git.
+      # clean: false, like every other self-hosted checkout in this workflow
+      # (tests/scripts/test_ci_workspace_reuse.py): this job installs nothing
+      # itself, but it shares a persistent runner with every other job here,
+      # and a clean: true checkout wipes node_modules/.venv/target for the
+      # NEXT job regardless of whether THIS one needed them.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # agentbox runners have shipped gh 2.62.0 (confirmed live: agentbox-15,
+      # job 103871571683, Fri 12 Sep 2026 onward), below the 2.64.0 that
+      # `gh api --paginate --slurp` needs (scripts/gh_version_guard.py:
+      # MIN_GH_VERSION). require_gh_min_version() turns that into a named
+      # failure instead of the opaque `unknown flag: --slurp`, but a named
+      # failure still skips all 13 downstream jobs (#2883) -- so this step
+      # installs a pinned, checksum-verified gh ahead of it rather than
+      # relying on the runner image. tests/quality/test_periodic_checks_gh_version.py
+      # asserts this pin never drops below the guard's own floor.
+      - name: Install pinned gh (agentbox ships 2.62.0, --slurp needs 2.64.0+)
+        env:
+          GH_CLI_VERSION: "2.100.0"
+          GH_CLI_SHA256: "e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be"
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/gh-cli-pin"
+          rm -rf "$dir" && mkdir -p "$dir"
+          tarball="${dir}/gh.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+          echo "${GH_CLI_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$dir"
+          install -Dm755 "${dir}/gh_${GH_CLI_VERSION}_linux_amd64/bin/gh" "${dir}/bin/gh"
+          # Prepend, not append: GITHUB_PATH entries go to the FRONT of PATH
+          # for later steps, so this must win over whatever gh the runner
+          # image already has ahead of it on PATH.
+          echo "${dir}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify gh version
+        run: gh --version
 
       - name: Compute the window
         id: compute
@@ -220,6 +263,114 @@ jobs:
           echo "- reason: ${reason}" >> "$GITHUB_STEP_SUMMARY"
           echo "- head: \`${head}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- row 10 (windows parity): \`${wp_run}\` (${wp_reason})" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Watchdog for `window` itself (issue #2906). Every downstream job
+  # (report/skip-report/windows-parity-report/windows-parity-skip-report) is
+  # gated on `needs.window.result == 'success'`, so a failure IN `window` had
+  # no path to the ledger at all: five weeks silent until #2905 fixed the one
+  # cause (agentbox `gh` 2.62 lacking `--slurp`) that was actually tripping it.
+  # This job is the missing CLASS fix: it fires on ANY future `window` failure,
+  # not just that one.
+  #
+  # It must not read anything `window` would only have produced on success --
+  # that is the exact mistake being fixed -- so its evidence comes from the
+  # Actions API for this run's own `merge window` job, never from
+  # `needs.window.outputs.*`.
+  #
+  # CANCELLED counts as failure here, unlike trunk-job-verdict.yml's own
+  # `!= 'cancelled'` exclusion. That exclusion exists because ordinary PR CI
+  # churn cancels runs constantly, and alerting on every one would be alert
+  # fatigue. `window` has no such churn: it runs on a fixed schedule or a
+  # manual dispatch, its concurrency group sets `cancel-in-progress: false`,
+  # and nothing else in this workflow can cancel it. The only way `window`
+  # reads `cancelled` is a human or an external actor stopping the run, which
+  # is exactly the "reads as neutral in every dashboard" case
+  # trunk-job-verdict.yml was built to stop, so it is alarmed here rather than
+  # excused.
+  #
+  # SKIPPED is not reachable for `window`: it is the first job in this
+  # workflow, carries no `if:` of its own, and has no `needs:`, so nothing
+  # upstream can skip it. No branch here handles a state its subject cannot
+  # enter.
+  # ---------------------------------------------------------------------------
+  window-failure-report:
+    name: ledger comment (window job failed)
+    needs: [window]
+    if: always() && (needs.window.result == 'failure' || needs.window.result == 'cancelled')
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Record the window failure and fail visibly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WINDOW_RESULT: ${{ needs.window.result }}
+        run: |
+          set -euo pipefail
+          short="${HEAD_SHA:0:8}"
+
+          # `window`'s own outputs are exactly what it may not have produced --
+          # it failed or was cancelled before reaching them. Ask the Actions
+          # API about THIS run's "merge window" job instead: its conclusion
+          # and per-step conclusions exist regardless of what the job's own
+          # script did.
+          job_json="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs" \
+            --jq '[.jobs[] | select(.name == "merge window")][0] // empty')"
+
+          if [ -z "$job_json" ]; then
+            job_url="${RUN_URL}"
+            failed_step="UNKNOWN - the merge window job was not found in this run's job list"
+          else
+            job_url="$(jq -r '.html_url' <<<"$job_json")"
+            failed_step="$(jq -r '
+              [.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled")][0].name
+              // "UNKNOWN - no step reported failure or cancellation"
+            ' <<<"$job_json")"
+          fi
+
+          title="Periodic checks: the window job itself ${WINDOW_RESULT} at $short"
+
+          # --repo is REQUIRED: this job has no actions/checkout step (window
+          # failed before anything meaningful could be checked out), so gh has
+          # no git remote to infer the repository from. Verified empirically
+          # (issue #2906 PR testing): gh label create with neither --repo nor
+          # a git checkout fails outright with "failed to run git: fatal: not
+          # a git repository", which would have killed this step under
+          # set -euo pipefail before it ever reached the ledger comment below.
+          gh label create ci:periodic-checks-window-failed \
+            --repo "$REPO" \
+            --color B60205 \
+            --description "The window job failed/was cancelled before it could report; downstream rows were skipped" \
+            --force
+
+          report_file="${RUNNER_TEMP}/window-failure-${RUN_ID}.md"
+          cat > "$report_file" <<EOF
+          ## periodic-checks.yml: the \`window\` job itself ${WINDOW_RESULT}
+
+          - Commit: \`${HEAD_SHA}\`
+          - Trigger: \`${EVENT_NAME}\`
+          - Run: [${RUN_ID}](${RUN_URL})
+          - Job: [merge window](${job_url})
+          - Failed/cancelled step: \`${failed_step}\`
+
+          Every downstream row (report/skip-report/windows-parity-report) is
+          gated on \`needs.window.result == 'success'\`, so none of them ran
+          and none of them could have reported this. This comment is the only
+          record of this window until a human fixes \`window\` itself.
+
+          <!-- periodic-checks window-failure sha=${HEAD_SHA} run=${RUN_ID} -->
+          EOF
+
+          gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file "$report_file"
+          cat "$report_file" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error title=$title::The periodic-checks window job ${WINDOW_RESULT} on commit $short. See ${RUN_URL}"
+          exit 1
 
   # ---------------------------------------------------------------------------
   # Row 1: the full pytest suite, including the slow product-edge suites the
@@ -307,6 +458,7 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -447,6 +599,7 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -582,6 +735,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
 
@@ -716,6 +870,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
 
@@ -787,6 +942,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
           # git cherry compares patch ids across the whole divergence, so this
@@ -875,6 +1031,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
           clean: true
@@ -963,6 +1120,74 @@ jobs:
           exit 1
 
   # ---------------------------------------------------------------------------
+  # Row 7: desktop dmg smoke Linux observe (DEVOPS-04, #2352).
+  # Headed Mac build/launch/attach cannot run here. This job is the fail-fast
+  # wiring Linux can land: the in-repo instrument still refuses zero counts
+  # and never calls ship_dmg.sh, and the ledger reports headed evidence as
+  # OBSERVED or UNOBSERVED/needs:mac. UNKNOWN (exit 2) reds the job. A missing
+  # Mac run is UNOBSERVED, never a silent skip and never a row=7 SHA marker
+  # (that marker is owned by ops/dmg-smoke/run.sh on the Air).
+  # ---------------------------------------------------------------------------
+  dmg-smoke-cadence:
+    name: desktop dmg smoke observe
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.observe.outputs.verdict }}
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ needs.window.outputs.head }}
+          clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Desktop dmg smoke cadence observe
+        id: observe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if python -m scripts.dmg_smoke_cadence_observe \
+               --repo "$GITHUB_REPOSITORY" \
+               --ledger-issue "$LEDGER_ISSUE" > observe.out 2> observe.err; then
+            code=0
+          else
+            code=$?
+          fi
+          cat observe.err >&2
+          cat observe.out
+          declared="$(sed -n 's/^\[dmg-smoke-cadence\] \(.*\)$/\1/p' observe.out | tail -n 1)"
+          if [ "$code" -eq 2 ] || [ -z "$declared" ]; then
+            verdict="UNKNOWN - NOT MEASURED (exit ${code})"
+          else
+            verdict="$declared"
+          fi
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Desktop dmg smoke (row 7)"
+            echo ""
+            echo "verdict: \`${verdict}\`"
+            echo ""
+            echo '```'
+            cat observe.out 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -eq 0 ] && [ -n "$declared" ]; then
+            exit 0
+          fi
+          exit 1
+
+  # ---------------------------------------------------------------------------
   # Row 14: duplicate-writer / near-duplicate fleet state (DEVOPS-10, #1580).
   # Cheap, no product toolchain: PyYAML plus the committed inventory at
   # ops/fleet/state-files.yaml. Runs every merge window, same as preview-drift
@@ -977,6 +1202,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: true
 
@@ -1081,6 +1307,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          persist-credentials: false
           ref: main
           clean: false
 
@@ -1341,8 +1568,12 @@ jobs:
   # count would grow without bound.
   # ---------------------------------------------------------------------------
   report:
+    permissions:
+      actions: read
+      contents: read
+      issues: write
     name: ledger comment
-    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, duplicate-writer]
+    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, dmg-smoke-cadence, duplicate-writer]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
@@ -1395,9 +1626,16 @@ jobs:
             fi
           fi
 
+      # clean: false, like every other self-hosted checkout in this workflow
+      # (tests/scripts/test_ci_workspace_reuse.py): same runner, same rule.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -1424,6 +1662,8 @@ jobs:
           V_DRIFT: ${{ needs.preview-drift.outputs.verdict }}
           R_REQS: ${{ needs.reqs-drift.result }}
           V_REQS: ${{ needs.reqs-drift.outputs.verdict }}
+          R_DMG: ${{ needs.dmg-smoke-cadence.result }}
+          V_DMG: ${{ needs.dmg-smoke-cadence.outputs.verdict }}
           R_DUPES: ${{ needs.duplicate-writer.result }}
         run: |
           set -euo pipefail
@@ -1597,12 +1837,14 @@ jobs:
           | 5 | perf bench (boot burst) | $(mark "$R_PERF") |
           | 6 | perf bench (stem decode) | $(mark "$R_PERF_STEM") |
           | 6 | perf bench (waveform render) | $(mark "$R_PERF_WAVE") |
+          | 7 | desktop dmg smoke (Linux observe; headed attach needs:mac) | $(mark "$R_DMG") verdict \`${V_DMG:-UNKNOWN}\` |
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
           | 14 | duplicate-writer (fleet state inventory) | $(mark "$R_DUPES") |
 
-          Rows 3 and 8 and the Air-only dmg row: see
-          \`docs/ops/periodic-checks.md\`. Row 10 (Windows parity) posts its
+          Rows 3 and 8: see \`docs/ops/periodic-checks.md\`. Row 7 Linux
+          observe is in this table; headed Mac attach stays needs:mac until
+          \`com.af.dmg-smoke\` is loaded. Row 10 (Windows parity) posts its
           own ledger comment when its merges:100 window fires. A row absent
           from this table did not run and must not be read as passing.
           $( [ -z "$alarm" ] || printf '\n**%s**\n' "$alarm" )

@@ -62,13 +62,16 @@ import hashlib
 import json
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Literal
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
 
 #: The sync protocol's version. See the module docstring for what bumps it.
-WIRE_VERSION: int = 3
+#: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
+#: field older peers ignore, advertised by the ``identity-reject/v1``
+#: capability token: NOT a wire change under the rule above, so no bump.
+WIRE_VERSION: int = 5
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -82,6 +85,19 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     2: "46eb07a34e02e019",
     # v3: playlist_memberships item_id + order_key (LIBM-20). Measured Sat 12 Sep 2026.
     3: "00a3594073b7dc9b",
+    # v4: playlists forbid_duplicates (LIBM-D2 / #2416). Measured Sun 13 Sep 2026.
+    4: "6985ab3a573661be",
+    # v5: track_fields LWW falls back to modified_at when updated_at is NULL
+    # (issue #3101). Row shape unchanged; semantic contract marker below.
+    5: "8945d178ba66d099",
+}
+
+#: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
+#: see a meaning change, so a wire bump that changes LWW ordering without
+#: altering columns records its contract here and folds it into
+#: :func:`measure_wire_shape`.
+WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
+    5: "track_fields_modified_at_lww_fallback",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for
@@ -100,6 +116,55 @@ class Incompatibility:
 
     code: str
     message: str
+
+
+@dataclasses.dataclass(frozen=True)
+class UpdateRequiredState:
+    """Typed wire-version mismatch surfaced to operators and the UI."""
+
+    code: Literal["SYNC_WIRE_VERSION"]
+    local_wire_version: int
+    peer_wire_version: int
+    action: str
+
+
+_UPDATE_REQUIRED_ACTION: str = "install the latest Open DJ"
+_LOCAL_WIRE_RE = re.compile(r"this machine speaks v(\d+)", re.IGNORECASE)
+_PEER_WIRE_RE = re.compile(
+    r"(?:peer|hub) speaks sync wire v(\d+)", re.IGNORECASE
+)
+
+
+def parse_update_required(error_message: str) -> UpdateRequiredState | None:
+    """Return a typed update-required state when ``error_message`` is wire mismatch."""
+    if not error_message.strip():
+        return None
+    code: str | None = None
+    json_start = error_message.find("{")
+    if json_start >= 0:
+        tail = error_message[json_start:]
+        try:
+            payload = json.loads(tail)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+            if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+                code = detail["code"]
+    if code is None and CODE_WIRE in error_message:
+        code = CODE_WIRE
+    if code != CODE_WIRE and "SyncVersionMismatch" not in error_message:
+        return None
+    local_match = _LOCAL_WIRE_RE.search(error_message)
+    peer_match = _PEER_WIRE_RE.search(error_message)
+    if local_match is None or peer_match is None:
+        return None
+    return UpdateRequiredState(
+        code=CODE_WIRE,
+        local_wire_version=int(local_match.group(1)),
+        peer_wire_version=int(peer_match.group(1)),
+        action=_UPDATE_REQUIRED_ACTION,
+    )
 
 
 # ----- the gate ----------------------------------------------------------------
@@ -215,10 +280,14 @@ def _table_shape(conn: sqlite3.Connection, table: str) -> dict[str, Any]:
 
 def measure_wire_shape(conn: sqlite3.Connection) -> dict[str, Any]:
     """Everything a row must agree on to cross the wire, read off ``conn``."""
-    return {
+    shape: dict[str, Any] = {
         "tables": {table: _table_shape(conn, table) for table in protocol.DIGEST_TABLES},
         "machine_row": [field.name for field in dataclasses.fields(protocol.MachineRow)],
     }
+    contract = WIRE_SEMANTIC_CONTRACTS.get(WIRE_VERSION)
+    if contract is not None:
+        shape["semantic_contract"] = contract
+    return shape
 
 
 def wire_fingerprint(shape: dict[str, Any]) -> str:
@@ -288,14 +357,17 @@ __all__ = [
     "CODE_SCHEMA",
     "CODE_WIRE",
     "WIRE_FINGERPRINTS",
+    "WIRE_SEMANTIC_CONTRACTS",
     "WIRE_VERSION",
     "Incompatibility",
+    "UpdateRequiredState",
     "WireShapeError",
     "check_clauses",
     "fingerprint_history_problems",
     "fresh_ladder_drift",
     "incompatibility",
     "measure_wire_shape",
+    "parse_update_required",
     "wire_fingerprint",
     "wire_shape_drift",
 ]

@@ -59,8 +59,49 @@ QUARANTINE_V1: str = "quarantine/v1"
 #: case can duplicate overlapping recordings.
 LIBRARY_SIZE_V1: str = "library-size/v1"
 
+#: The caller understands ``hash_pending`` on row payloads, a hub ``/hash-pending``
+#: listing, and digest responses that report ``hash_pending`` separately from
+#: ``quarantined`` (issue #2850, ADR-0068).
+HASH_PENDING_V1: str = "hash-pending/v1"
+
+#: The caller understands per-row identity-collapse rejections on push
+#: (issue #3057).
+IDENTITY_REJECT_V1: str = "identity-reject/v1"
+
 #: Everything this build understands, advertised on every request it makes.
-THIS_BUILD: tuple[str, ...] = (QUARANTINE_V1, LIBRARY_SIZE_V1)
+THIS_BUILD: tuple[str, ...] = (
+    QUARANTINE_V1,
+    LIBRARY_SIZE_V1,
+    HASH_PENDING_V1,
+    IDENTITY_REJECT_V1,
+)
+
+
+def understands_hash_pending(advertised: Sequence[str] | None) -> bool:
+    """True only when the caller NAMED :data:`HASH_PENDING_V1`."""
+    return advertised is not None and HASH_PENDING_V1 in advertised
+
+
+def hash_pending_upgrade_message() -> str:
+    """Operator-facing status text when the hub cannot accept hash_pending rows."""
+    return (
+        f"Hub needs upgrade for hash-pending sync ({HASH_PENDING_V1}); "
+        "upgrade the hub before retrying."
+    )
+
+
+def hash_pending_refusal(
+    endpoint: str, count: int, advertised: Sequence[str] | None
+) -> str:
+    """Message when a batch carries ``hash_pending`` rows the peer cannot read."""
+    named = "nothing" if not advertised else ", ".join(sorted(advertised))
+    return (
+        f"{count} offered row(s) carry hash_pending=true but the caller "
+        f"advertised {named} and does not understand {HASH_PENDING_V1!r}. "
+        f"Refusing the whole {endpoint} instead of dropping those rows "
+        f"silently. Upgrade the caller to a build that advertises "
+        f"{HASH_PENDING_V1!r}, or upgrade this hub before retrying."
+    )
 
 
 def understands_quarantine(advertised: Sequence[str] | None) -> bool:
@@ -96,9 +137,14 @@ def refusal(endpoint: str, detail: str, advertised: Sequence[str] | None) -> str
 
 
 __all__ = [
+    "HASH_PENDING_V1",
+    "IDENTITY_REJECT_V1",
     "LIBRARY_SIZE_V1",
     "QUARANTINE_V1",
     "THIS_BUILD",
+    "hash_pending_refusal",
+    "hash_pending_upgrade_message",
     "refusal",
+    "understands_hash_pending",
     "understands_quarantine",
 ]

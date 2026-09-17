@@ -111,6 +111,13 @@ export interface CloudSyncRecentResult {
 /** Which source decided a CloudSync config field; an env override wins over the file. */
 export type CloudSyncConfigSource = 'env' | 'file' | 'default';
 
+export interface CloudSyncUpdateRequired {
+	code: 'SYNC_WIRE_VERSION';
+	local_wire_version: number;
+	peer_wire_version: number;
+	action: string;
+}
+
 export interface CloudSyncStatus {
 	/** configured AND running: true only while a scheduler heartbeat is fresh. */
 	enabled: boolean;
@@ -127,8 +134,36 @@ export interface CloudSyncStatus {
 	last_pull_at: string | null;
 	last_result: { status: CloudSyncResultStatus; message: string } | null;
 	rows_pending: number | null;
+	/** Live tracks offered as hash_pending while awaiting content_hash (ADR-0068). */
+	hash_pending: number | null;
+	/** Direct stamp faults and identity-dup losers only (CSSTATUS-07). */
+	quarantined: number | null;
+	/** Every row held outside the sync set, including transitive holds. */
+	excluded_total: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
+	update_required: CloudSyncUpdateRequired | null;
+	digest_diff?: Array<{
+		table: string;
+		stable_id: string;
+		newer_side: string;
+		stamp?: string;
+	}> | null;
+	credential_notice?: {
+		verdict: string;
+		action: string;
+		hub_machine_id: string;
+	} | null;
+}
+
+/**
+ * Identity backlog counters from GET /api/v1/cloudsync/identity-backlog.
+ * `hash_pending` rows travel to the hub and sync; `unsyncable_inferred` is
+ * identity-dup losers only (CLOUDSYNC-16, ADR-0068).
+ */
+export interface CloudSyncIdentityBacklog {
+	unsyncable_inferred: number;
+	hash_pending: number;
 }
 
 // ----------------------------------------------------------- local path table
@@ -162,6 +197,9 @@ type CloudSyncPaths = {
 	};
 	'/api/v1/cloudsync/status': {
 		get: { responses: { 200: { content: { 'application/json': CloudSyncStatus } } } };
+	};
+	'/api/v1/cloudsync/identity-backlog': {
+		get: { responses: { 200: { content: { 'application/json': CloudSyncIdentityBacklog } } } };
 	};
 };
 
@@ -221,4 +259,8 @@ export async function getOverview(): Promise<CloudSyncOverview> {
 
 export async function getStatus(): Promise<CloudSyncStatus> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/status', {}));
+}
+
+export async function getIdentityBacklog(): Promise<CloudSyncIdentityBacklog> {
+	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/identity-backlog', {}));
 }

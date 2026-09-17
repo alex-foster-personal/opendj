@@ -1,7 +1,7 @@
 """Bulk edit across selected tracks (bulk-edit, issue #178).
 
 One endpoint, PATCH-shaped semantics but multi-row: sets the same
-rating/notes/tags_add/tags_remove across every stable_id in the request.
+rating/notes/genre/comments/tags_add/tags_remove across every stable_id in the request.
 Two-phase like find-replace (see find_replace.py docstring): every row's
 expected_etag is checked against the live etag with zero writes first: if
 ANY row has drifted the whole batch is rejected (409, nothing applied).
@@ -21,12 +21,20 @@ from ..etag import compute_etag
 
 router = APIRouter(prefix="/bulk-edit", tags=["bulk-edit"])
 
+# Same cap as find_replace.py's _MAX_STABLE_IDS: an unbounded batch has no
+# input-layer rejection, so it is only ever stopped deep inside the backend
+# (a 404 on the first unknown id, or a full per-row etag scan), never
+# cleanly and never before doing that much work.
+_MAX_STABLE_IDS = 100
+
 
 class BulkEditIn(BaseModel):
-    stable_ids: list[str] = Field(min_length=1)
+    stable_ids: list[str] = Field(min_length=1, max_length=_MAX_STABLE_IDS)
     expected_etags: dict[str, str]
     rating: int | None = None
     notes: str | None = None
+    genre: str | None = None
+    comments: str | None = None
     tags_add: list[str] | None = None
     tags_remove: list[str] | None = None
 
@@ -35,11 +43,13 @@ class BulkEditIn(BaseModel):
         if (
             self.rating is None
             and self.notes is None
+            and self.genre is None
+            and self.comments is None
             and self.tags_add is None
             and self.tags_remove is None
         ):
             raise ValueError(
-                "at least one of rating/notes/tags_add/tags_remove is required"
+                "at least one of rating/notes/genre/comments/tags_add/tags_remove is required"
             )
         if self.rating is not None and not (0 <= self.rating <= 5):
             raise ValueError("rating must be between 0 and 5")
@@ -73,6 +83,10 @@ def bulk_edit(
         patch_dict["rating"] = body.rating
     if body.notes is not None:
         patch_dict["notes"] = body.notes
+    if body.genre is not None:
+        patch_dict["genre"] = body.genre
+    if body.comments is not None:
+        patch_dict["comments"] = body.comments
     if body.tags_add is not None:
         patch_dict["tags_add"] = body.tags_add
     if body.tags_remove is not None:

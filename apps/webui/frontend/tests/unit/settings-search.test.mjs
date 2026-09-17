@@ -85,6 +85,28 @@ test('app_posture is searchable under gig and prep', async () => {
 	assert.ok(prep.keyword.some((s) => s.id === 'app_posture'));
 });
 
+// requirement: CSUI-01
+// if CloudSync catalog link rows drift or lose their hrefs then broken
+test('filterSettings returns three implemented CloudSync link rows', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const hits = mod.filterSettings('cloudsync', { hideTodo: true, group: 'cloudsync' });
+	const ids = hits.all.map((s) => s.id);
+	assert.deepEqual(ids, ['cloudsync.machines', 'cloudsync.playlist_pins', 'cloudsync.overview']);
+	for (const def of hits.all) {
+		assert.equal(def.implemented, true);
+		assert.equal(def.control.kind, 'link');
+	}
+	const hrefs = hits.all.map((s) => s.control.href);
+	assert.deepEqual(hrefs, [
+		'/cloudsync?tab=policies',
+		'/cloudsync?tab=pins',
+		'/cloudsync?tab=overview'
+	]);
+	assert.match(hits.all[0].label, /machines & asset policy/);
+	assert.match(hits.all[1].label, /playlist pins/);
+	assert.match(hits.all[2].label, /fleet overview/);
+});
+
 test('keyboard helpers move and toggle booleans', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/keyboard.ts');
 	assert.equal(mod.moveSelection(0, 1, 3), 1);

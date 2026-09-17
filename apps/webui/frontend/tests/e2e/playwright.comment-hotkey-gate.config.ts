@@ -110,10 +110,24 @@ export default defineConfig({
 			timeout: 120_000,
 			// A stray MDT_DATA_DIR from a lane .env must not outrank this
 			// fixture dir; see playwright.hotcue-mapping-gate.config.ts.
+			//
+			// MUSIC_DJ_FRONTEND_PORT / MUSIC_DJ_BACKEND_PORT tell the daemon
+			// which frontend it is paired with. Since the mutating-origin guard
+			// landed (apps/webui/server/request_guard.py, issue #2689) the
+			// daemon 403s ORIGIN_NOT_ALLOWED on every POST/PUT/PATCH/DELETE
+			// whose Origin is not its own paired frontend, and this suite's
+			// backend was only ever told its own --port: it resolved the
+			// frontend port from the checkout's root .env (whatever pair this
+			// worktree happens to have claimed), never 5321, so every real pin
+			// save was refused. Declaring the pairing is the same mechanism the
+			// shipped dev server uses; it grants this suite's origin and
+			// nothing else, so a foreign origin is still refused.
 			env: {
 				...process.env,
 				MDT_DATA_DIR: FIXTURE_DATA_DIR,
-				MDT_LIBRARY_MODE: 'local'
+				MDT_LIBRARY_MODE: 'local',
+				MUSIC_DJ_FRONTEND_PORT: String(COMMENT_HOTKEY_GATE_FRONTEND_PORT),
+				MUSIC_DJ_BACKEND_PORT: String(COMMENT_HOTKEY_GATE_API_PORT)
 			}
 		},
 		{

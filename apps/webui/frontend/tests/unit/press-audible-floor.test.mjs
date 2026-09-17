@@ -379,7 +379,9 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 	// press despite the parameter existing to carry it.
 	const cluster = readSource('src/lib/components/rb/deck/TransportCluster.svelte');
 	assert.ok(
-		cluster.includes('onclick={async (event) => await onPlayPause(event.timeStamp)}'),
+		// c8d78c993 (fix: LATENCY-02 QUANTIZED LAUNCH gestures, armed glyph, and master
+		// clock) added a quantize arg after the stamp; the stamp is still the first arg.
+		/await onPlayPause\(event\.timeStamp, event\.metaKey \|\| event\.ctrlKey\)\}/.test(cluster),
 		'the play button must hand on its own event stamp'
 	);
 	assert.ok(
@@ -389,7 +391,8 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 
 	const deck = readSource('src/lib/components/rb/Deck.svelte');
 	assert.ok(
-		deck.includes('async function playPause(pressT0Ms?: number)') &&
+		// c8d78c993 (LATENCY-02 QUANTIZED LAUNCH) appended a quantize param after the stamp.
+		deck.includes('async function playPause(pressT0Ms?: number, quantize?: boolean)') &&
 			deck.includes('async function returnToCue(pressT0Ms?: number)'),
 		'the deck handlers must accept the stamp rather than dropping it on the floor'
 	);
@@ -405,7 +408,11 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 			'path that should be measuring from after its own dispatch'
 	);
 	assert.ok(
-		hotkeys.includes("{ type: 'play', deck, playing: !st.playing }, pressT0Ms"),
+		// c8d78c993 (LATENCY-02 QUANTIZED LAUNCH) split the play literal across lines to
+		// carry an optional quantize flag; the keydown stamp must still be the second arg.
+		/const playing = !st\.playing;\s*await runPerformanceCommandFromUi\(\s*\{\s*type: 'play',\s*deck,\s*playing,\s*\.\.\.\(quantize === true && playing \? \{ quantize: true \} : \{\}\)\s*\},\s*pressT0Ms\s*\)/.test(
+			hotkeys
+		),
 		'the keydown stamp must reach the command'
 	);
 
@@ -491,8 +498,12 @@ test('NEGATIVE CONTROL: a press on an empty deck dispatches nothing at all', () 
 	const hotkeys = readSource('src/lib/rb/performance-hotkeys.ts');
 	const body = hotkeys.slice(hotkeys.indexOf('async function _toggleRecentPlay('));
 	const guardAt = body.indexOf('if (st.stable_id === null) return;');
-	const dispatchAt = body.indexOf("runPerformanceCommandFromUi({ type: 'play'");
+	// c8d78c993 (LATENCY-02 QUANTIZED LAUNCH) made the play literal multi-line. The
+	// earlier load_play_intent dispatch (6d4762389) targets a deck mid-load, not an
+	// empty one, so the ordering is pinned against the play dispatch specifically.
+	const dispatchAt = body.search(/runPerformanceCommandFromUi\(\s*\{\s*type: 'play',/);
 	assert.ok(guardAt !== -1, 'the empty-deck guard must exist');
+	assert.ok(dispatchAt !== -1, 'the play dispatch must exist to order the guard against');
 	assert.ok(
 		guardAt < dispatchAt,
 		'and must return BEFORE the play command, or an empty deck reaches the engine and ' +
@@ -582,10 +593,22 @@ test('a Beat Sync follower start carries the press that caused it', () => {
 	// common start in a real set produced a PLAIN row and never appeared in
 	// the headline number.
 	const body = readSource('src/lib/rb/audio-engine.svelte.ts');
-	assert.ok(
-		body.includes('await _synchronizeFollowers(activeMaster, [deck], {'),
-		'the sync branch of play() must forward the press it was given'
+	// 0a8631e82 (fix: unlock and resume locked paused Beat Sync MASTER, DECKUX-17) and
+	// c8d78c993 (LATENCY-02 master clock) replaced the single activeMaster branch with
+	// several master-selection branches (syncClock, elected). EVERY follower start
+	// inside play() must forward the stamp, not merely one of them.
+	const playBody = body.slice(
+		body.indexOf('async play(deck: DeckId, pressT0Ms?: number'),
+		body.indexOf('async pause(deck: DeckId, pressT0Ms?: number)')
 	);
+	const followerStarts = playBody.match(/await _synchronizeFollowers\([^)]*\[deck\], \{[\s\S]*?\}\);/g) ?? [];
+	assert.ok(followerStarts.length > 0, 'play() must still have a Beat Sync follower branch');
+	for (const call of followerStarts) {
+		assert.ok(
+			call.includes('...(pressT0Ms === undefined ? {} : { pressT0Ms })'),
+			`the sync branch of play() must forward the press it was given: ${call}`
+		);
+	}
 	assert.ok(
 		/return _scheduleDeck\(\s*item\.deck,[\s\S]*?options\.pressT0Ms\s*\);/.test(body),
 		'and the follower schedule must actually spend it, not just receive it'
@@ -677,8 +700,11 @@ test('the deferred play marks its stamp as load-spanning before spending it', ()
 		panel.indexOf('\n\tfunction ', panel.indexOf('async function _loadOntoDeck('))
 	);
 	const markAt = fn.indexOf('markLoadSpanningPress(pendingPlay.pressT0Ms)');
-	const dispatchAt = fn.indexOf("{ type: 'play', deck: target, playing: true }");
+	// c8d78c993 (LATENCY-02 QUANTIZED LAUNCH) made the deferred play literal multi-line
+	// to carry pendingPlay.quantize; ordering is pinned against that new shape.
+	const dispatchAt = fn.search(/\{\s*type: 'play',\s*deck: target,\s*playing: true,/);
 	assert.ok(markAt !== -1, 'the deferred play must mark its stamp load-spanning');
+	assert.ok(dispatchAt !== -1, 'the deferred play dispatch must exist to order the mark against');
 	assert.ok(
 		markAt < dispatchAt,
 		'marking after the dispatch races scheduleRowFacts reading the classification'

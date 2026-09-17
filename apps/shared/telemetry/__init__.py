@@ -86,7 +86,7 @@ import logging
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast, get_args
 
 from apps.shared.telemetry.scrub import (
     ALLOWED_CONTEXT_KEYS,
@@ -108,10 +108,16 @@ TELEMETRY_ENV: str = "OPENDJ_TELEMETRY"
 #: OPENDJ_SENTRY_DSN_BACKEND.
 DSN_ENV: str = "SENTRY_DSN"
 
+#: Sentry's own variable name too. afmac's opendj-preview sets it to
+#: "preview"; until Mon 14 Sep 2026 init passed environment= explicitly and
+#: silently overrode it to "dev", so preview traffic was mislabeled.
+ENVIRONMENT_ENV: str = "SENTRY_ENVIRONMENT"
+
 TRUTHY: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 FALSEY: frozenset[str] = frozenset({"0", "false", "no", "off"})
 
-Environment = Literal["dev", "ship"]
+Environment = Literal["dev", "preview", "fleet", "ship"]
+ENVIRONMENTS: frozenset[str] = frozenset(get_args(Environment))
 
 class TelemetryConfigError(RuntimeError):
     """Telemetry was asked for by name and cannot be delivered."""
@@ -159,6 +165,19 @@ def _flag(raw: str | None) -> bool | None:
     )
 
 
+def _environment(environ: Mapping[str, str], build_source: str | None) -> Environment:
+    """SENTRY_ENVIRONMENT when set (and known), else ship for a payload, dev otherwise."""
+    raw = (environ.get(ENVIRONMENT_ENV) or "").strip()
+    if not raw:
+        return "ship" if build_source == "payload" else "dev"
+    if raw not in ENVIRONMENTS:
+        raise TelemetryConfigError(
+            f"{ENVIRONMENT_ENV}={raw!r} is not one of {sorted(ENVIRONMENTS)}. "
+            "Unset it to let the build decide."
+        )
+    return cast(Environment, raw)
+
+
 def decide_telemetry(
     environ: Mapping[str, str],
     *,
@@ -172,7 +191,7 @@ def decide_telemetry(
     build could not describe itself, which is treated as a checkout: a build
     that cannot say what it is has no business reporting under a release.
     """
-    environment: Environment = "ship" if build_source == "payload" else "dev"
+    environment = _environment(environ, build_source)
     dsn = (environ.get(DSN_ENV) or "").strip()
     explicit = _flag(environ.get(TELEMETRY_ENV))
 
@@ -238,6 +257,7 @@ def init_telemetry(
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
     except ImportError as exc:
         detail = (
@@ -270,6 +290,11 @@ def init_telemetry(
         max_breadcrumbs=25,
         before_send=_before_send,
         integrations=[
+            # Logs are breadcrumbs only. The default (event_level=ERROR) sent
+            # every log.error as a second, unscrubbed event: 92 of the org's
+            # 219 events on Mon 14 Sep 2026. Errors reach Sentry through the
+            # explicit captures and warning_log's forward, never the logger.
+            LoggingIntegration(level=logging.INFO, event_level=None, sentry_logs_level=None),
             StarletteIntegration(failed_request_status_codes=set()),
             FastApiIntegration(failed_request_status_codes=set()),
         ],
@@ -286,13 +311,16 @@ def init_telemetry(
 def _before_send(
     event: dict[str, Any], hint: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
-    """Stamp error id / host / sha, then run the privacy scrub."""
-    try:
-        from apps.shared.telemetry.sink import enrich_sentry_event
+    """Stamp error id / host / sha, spend the quota budget, then run the privacy scrub."""
+    from apps.shared.telemetry.budget import SENTRY_BUDGET
+    from apps.shared.telemetry.sink import enrich_sentry_event, event_error_id
 
+    try:
         enrich_sentry_event(event, hint)
     except Exception:
         log.warning("error-sink enrich failed", exc_info=True)
+    if not SENTRY_BUDGET.admit(event_error_id(event) or "eid-unidentified"):
+        return None
     return scrub_event(event, hint)
 
 
@@ -336,9 +364,11 @@ def capture_browser_error(
     in agreement.
 
     Returns the Sentry event id, or None when telemetry is off (the common
-    case, and not a failure). Never raises: reporting an error must not
-    become one.
+    case, and not a failure), when the error is a perf-event console mirror,
+    or when the quota budget refused it. Never raises: reporting an error
+    must not become one.
     """
+    from apps.shared.telemetry.budget import is_dev_tooling_console, is_perf_console_mirror
     from apps.shared.telemetry.sink import (
         capture_error_event,
         client_error_message,
@@ -351,6 +381,8 @@ def capture_browser_error(
         source_site=client_source_site(kind, url),
         kind="client",
     )
+    if is_perf_console_mirror(kind, message) or is_dev_tooling_console(kind, message):
+        return None
     client = _client()
     if client is None:
         return None
@@ -408,6 +440,8 @@ __all__ = [
     "ALLOWED_CONTEXT_KEYS",
     "BROWSER_CONTEXT_FIELDS",
     "DSN_ENV",
+    "ENVIRONMENTS",
+    "ENVIRONMENT_ENV",
     "FILTERED",
     "REDACTED",
     "SDK_CONTEXT_BLOCKS",

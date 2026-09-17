@@ -90,7 +90,7 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 	{
 		id: 'performance-space',
 		chord: 'Space',
-		description: 'Toggle play/pause on the most recent deck',
+		description: 'Stop a playing library preview; otherwise toggle play/pause on the most recent deck',
 		group: 'Performance'
 	},
 	{

@@ -4,6 +4,7 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
+import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -11,65 +12,8 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type SettingGroupId =
-	| 'appearance'
-	| 'library'
-	| 'performance'
-	| 'confirmations'
-	| 'sync'
-	| 'cloudsync'
-	| 'advanced'
-	| 'rekordbox'
-	| 'djay';
-
-export interface SettingGroup {
-	id: SettingGroupId;
-	label: string;
-}
-
-export type SettingControl =
-	| { kind: 'boolean' }
-	| { kind: 'enum'; options: ReadonlyArray<{ value: string; label: string }> }
-	| {
-			kind: 'multi_bool';
-			keys: ReadonlyArray<{ id: string; label: string; title: string }>;
-	  }
-	// Pure-navigation entry: no inline widget, just a searchable pointer to a
-	// full route page. SettingsOverlay.svelte's control-kind branches
-	// (boolean/enum/multi_bool) do not render one of these -- by design,
-	// this lane could not touch that shared component (fan-out file
-	// ownership) -- so today the row is discoverable and shows its target in
-	// `detail`/`title`, but clicking it does not yet navigate. A follow-up
-	// in SettingsOverlay.svelte adding `{:else if kind === 'link'}<a href=...>`
-	// (and a matching branch in `activateSetting`) makes it clickable.
-	| { kind: 'link'; href: string }
-	// A live numeric row: range slider + value readout + a "default" reset.
-	// Bounds come from the module that VALIDATES the value (never a second
-	// literal here), so no slider position can be one the setter refuses.
-	| {
-			kind: 'number';
-			min: number;
-			max: number;
-			step: number;
-			/** What "Reset to default" restores, and the value shown as default. */
-			defaultValue: number;
-			/** Rendered after the readout, e.g. 'x'. */
-			unit: string;
-	  };
-
-export interface SettingDef {
-	id: string;
-	label: string;
-	group: SettingGroupId;
-	keywords: readonly string[];
-	/** Short RHS hover tooltip. */
-	title: string;
-	/** Longer explanation shown on focus/hover. */
-	detail: string;
-	/** false = grayed inert todo (PARITY-TODO). */
-	implemented: boolean;
-	control: SettingControl;
-}
+export type { SettingDef, SettingGroupId } from './catalog-types';
+import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
@@ -175,6 +119,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	PREVIEW_BEAT_SYNC_SETTING,
 	{
 		id: 'perf_tier',
 		label: 'Performance tier',
@@ -353,7 +298,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		keywords: ['rekordbox', 'djay', 'opendj', 'open-dj', 'ratings', 'writeback', 'vendor'],
 		title: 'Preferred destinations for rating/metadata writeback',
 		detail:
-			'Saves which vendors you want auto-sync to target. Vendor DB writeback is not automatic yet - use apps/sync/apply_ratings.py (CLI). Preference + plumbing only.',
+			'Saves which vendors you want auto-sync to target. Manual sync runs through POST /api/v1/rb-djay-sync/* or python -m apps.sync (dry-run by default). Preference + plumbing only.',
 		implemented: true,
 		control: {
 			kind: 'multi_bool',
@@ -381,11 +326,11 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Run ratings writeback now',
 		group: 'sync',
 		keywords: ['apply_ratings', 'writeback', 'sync', 'now', 'cli'],
-		title: TODO,
+		title: 'POST /api/v1/rb-djay-sync/ratings/apply (dry-run default)',
 		detail:
-			'Will call apply_ratings / OpenDJ writeback when wired. Today: preference destinations above + manual CLI only.',
-		implemented: false,
-		control: { kind: 'boolean' }
+			'Ratings sync is reachable at POST /api/v1/rb-djay-sync/ratings/apply and python -m apps.sync apply-ratings. Live writes still require explicit risk acknowledgement and the rekordbox writeback gate.',
+		implemented: true,
+		control: { kind: 'link', href: '/api/v1/rb-djay-sync/status' }
 	},
 	{
 		id: 'lyrics_global',
@@ -472,12 +417,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 
 	// ----- cloudsync (specs/cloudsync-spec.md D5) -------------------------
-	// Navigation entries only (no inline widget) -- the real controls are
-	// the policy matrix / pin list / overview table on the /cloudsync route.
+	// Navigation entries to the policy matrix / pin list / overview on /cloudsync.
 	// Full CRUD backing every row there is live at /api/v1/cloudsync/*
-	// (apps/webui/server/routes/cloudsync.py); implemented: true is correct
-	// even though these specific catalog rows are not yet click-to-navigate
-	// (see the 'link' control-kind comment above).
+	// (apps/webui/server/routes/cloudsync.py).
 	{
 		id: 'cloudsync.machines',
 		label: 'CloudSync: machines & asset policy',
@@ -591,4 +533,14 @@ function _todo(
 
 export function groupLabel(id: SettingGroupId): string {
 	return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
+}
+
+export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };
+
+/** Implemented link-kind rows in catalog order for a settings group. */
+export function catalogLinkSettings(group: SettingGroupId): LinkSettingDef[] {
+	return SETTINGS_CATALOG.filter(
+		(def): def is LinkSettingDef =>
+			def.group === group && def.implemented && def.control.kind === 'link'
+	);
 }

@@ -14,6 +14,7 @@
  */
 
 import { decodeStemParts, stemDecodeLabels } from '$lib/player/decode/flac-stem-decode';
+import { awaitEagerStemDecodeSlot } from '$lib/rb/stem-decode-shed';
 import { assertUnitRange, stemLinearFromKnob } from '$lib/player/constants';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
@@ -95,6 +96,9 @@ export async function decodeStemBuffers(
 	encoded: Partial<Record<StemPart, ArrayBuffer>>,
 	parts: readonly StemPart[]
 ): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
+	// PERFMODE-04 (eager-stem-decode): the deck is already playable on its mix
+	// buffer at this point, so yielding here under pressure never blocks audio.
+	await awaitEagerStemDecodeSlot();
 	const decoded = await decodeStemParts(ctx, encoded, parts);
 	return { buffers: decoded.buffers, labels: stemDecodeLabels(decoded.reports) };
 }

@@ -8,6 +8,7 @@ as coupling debt.
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from fastapi import Request, status
@@ -15,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.shared.state.db import StateStoreBusyError, is_sqlite_busy
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
@@ -108,6 +110,43 @@ async def handle_backend_error(_request: Request, exc: BackendError) -> JSONResp
     )
 
 
+STATE_STORE_BUSY_CODE = "STATE_STORE_BUSY"
+
+
+def _state_store_busy_body(exc: BaseException) -> dict[str, Any]:
+    message = str(exc).strip() or "database is locked"
+    if "busy" not in message.lower() and "locked" not in message.lower():
+        message = f"state store is busy: {message}"
+    elif not message.lower().startswith("state store"):
+        message = f"state store is busy: {message}"
+    return {
+        "detail": {
+            "code": STATE_STORE_BUSY_CODE,
+            "message": message,
+        },
+    }
+
+
+async def handle_state_store_busy(
+    _request: Request, exc: StateStoreBusyError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=_state_store_busy_body(exc),
+    )
+
+
+async def handle_sqlite_busy_operational_error(
+    _request: Request, exc: sqlite3.OperationalError,
+) -> JSONResponse:
+    if not is_sqlite_busy(exc):
+        raise exc
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=_state_store_busy_body(exc),
+    )
+
+
 async def handle_rekordbox_writeback_disabled(
     _request: Request, exc: RekordboxWritebackDisabled
 ) -> JSONResponse:
@@ -135,6 +174,7 @@ def precondition_required(message: str) -> JSONResponse:
 __all__ = [
     "ConflictBody",
     "ErrorBody",
+    "STATE_STORE_BUSY_CODE",
     "handle_already_exists",
     "handle_backend_error",
     "handle_bulk_limit",
@@ -143,6 +183,8 @@ __all__ = [
     "handle_rekordbox_writeback_disabled",
     "handle_slice_not_contiguous",
     "handle_smartlist_immutable",
+    "handle_sqlite_busy_operational_error",
+    "handle_state_store_busy",
     "handle_target_inside_slice",
     "precondition_required",
 ]

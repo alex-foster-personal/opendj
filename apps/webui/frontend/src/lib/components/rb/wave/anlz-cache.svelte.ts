@@ -27,6 +27,7 @@ import {
 	isRetryableAnlzData
 } from '$lib/components/rb/wave/anlz-cache-retry';
 import type { AnlzData } from '$lib/rb/anlz-types';
+import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
 	type AnalysisSourceRefreshDeck,
@@ -63,6 +64,7 @@ export type AnlzEntry =
 
 const _cache = $state<Record<string, AnlzEntry>>({});
 bindAnlzCapCache(_cache);
+registerCapsConsumer('anlz', applyAnlzCaps);
 
 /** Floor between refetches of a retryable entry (ms). A stable_id with no
  * decode yet sits behind a reactive $effect (WaveRow.svelte) that reruns on
@@ -574,6 +576,48 @@ export function ensureAnlz(stable_id: string): void {
 		return;
 	}
 	_fetchAndPublish(stable_id);
+}
+
+/**
+ * PERFMODE-04 shed bridge (waveform-detail-bands job). Null until app-init.ts
+ * arms the background demand shed, same nullable component-scope-bridge
+ * pattern as setSilenceDropoutHandler. Gates ONLY the row-select prefetch
+ * path (BrowserPanel.svelte); WaveRow.svelte's `ensureAnlz` call for an
+ * already-loaded deck's beatgrid/waveform is NOT gated through this - that
+ * data feeds the sync engine for a track already on a deck, not speculative
+ * ahead-of-need prefetch, so it stays immediate.
+ */
+let _wantedForPrefetch: string | null = null;
+let _shedRequest: ((id: 'waveform-detail-bands') => void) | null = null;
+
+export function setAnlzPrefetchShedRequest(fn: ((id: 'waveform-detail-bands') => void) | null): void {
+	_shedRequest = fn;
+}
+
+/**
+ * Row-select prefetch variant of `ensureAnlz`: same cache-hit/freshness
+ * check, but the fetch kick itself is gated behind BACKGROUND_SHED_JOBS'
+ * `waveform-detail-bands` job while a deck plays under pressure.
+ */
+export function ensureAnlzPrefetch(stable_id: string): void {
+	const existing = _cache[stable_id];
+	if (existing !== undefined && !dueForEnsureRefetch(existing)) {
+		if (isAnlzEntryUsable(existing)) retouchAnlzReadyEntry(_cache, stable_id);
+		return;
+	}
+	if (_shedRequest === null) {
+		_fetchAndPublish(stable_id);
+		return;
+	}
+	_wantedForPrefetch = stable_id;
+	_shedRequest('waveform-detail-bands');
+}
+
+/** Drain callback: fetch whatever prefetch is currently wanted, if anything. */
+export async function resumeAnlzPrefetchOwedFetch(): Promise<void> {
+	const sid = _wantedForPrefetch;
+	_wantedForPrefetch = null;
+	if (sid !== null) _fetchAndPublish(sid);
 }
 
 /** Re-fetches /anlz for a track whose cached entry may have gone stale, WITHOUT

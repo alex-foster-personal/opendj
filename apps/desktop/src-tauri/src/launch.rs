@@ -48,6 +48,58 @@ pub fn pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+/// Whether a pid can still act (not dead, not a zombie).
+///
+/// Mirrors `scripts/lib/owner_still_running.sh`: unreadable process state is
+/// treated as running so callers do not signal or respawn against uncertainty.
+pub fn pid_can_act(pid: u32) -> bool {
+    if pid == 0 || !pid_alive(pid) {
+        return false;
+    }
+    match process_state(pid) {
+        None => true,
+        Some('Z') | Some('z') => false,
+        Some(_) => true,
+    }
+}
+
+fn process_state(pid: u32) -> Option<char> {
+    #[cfg(target_os = "linux")]
+    {
+        let path = format!("/proc/{}/stat", pid);
+        let content = std::fs::read_to_string(path).ok()?;
+        let after_paren = content.rsplit(')').next()?;
+        let state = after_paren.split_whitespace().next()?;
+        return state.chars().next();
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.trim().chars().next()
+    }
+}
+
+pub fn read_lock_fields(lock_path: &Path) -> Option<(u32, u16)> {
+    if !lock_path.is_file() {
+        return None;
+    }
+    let raw = std::fs::read(lock_path).ok()?;
+    let holder = parse_lock_json(&raw);
+    let pid = holder.pid?;
+    let port = holder.port?;
+    if pid == 0 || port == 0 {
+        return None;
+    }
+    Some((pid, port))
+}
+
 fn parse_lock_json(raw: &[u8]) -> LockJson {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(raw) else {
         return LockJson::default();
@@ -98,11 +150,11 @@ pub fn inspect_lock(lock_path: &Path, health_check: fn(u16) -> bool) -> LaunchPl
             ),
         };
     }
-    if !pid_alive(pid) {
+    if !pid_can_act(pid) {
         return LaunchPlan::StopOrQuit {
             pid,
             detail: format!(
-                "engine lock {} is held by dead pid {}",
+                "engine lock {} is held by dead or zombie pid {}",
                 lock_path.display(),
                 pid
             ),
@@ -133,18 +185,34 @@ pub fn origin_for_adopt(host: &str, port: u16) -> String {
 /// SIGTERM then SIGKILL a holder pid, using killpg when it is a group leader.
 pub fn stop_holder_pid(pid: u32) {
     let pgid = pid as i32;
+    engine::append_shell_log("shutdown", &format!("stopping adopted engine pid {pid}: SIGTERM"));
+    let sigterm_sent = std::time::Instant::now();
     unsafe {
         if libc::killpg(pgid, libc::SIGTERM) != 0 {
             libc::kill(pgid, libc::SIGTERM);
         }
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = sigterm_sent + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
         if !pid_alive(pid) {
+            engine::append_shell_log(
+                "shutdown",
+                &format!(
+                    "adopted engine pid {pid} exited {}ms after SIGTERM",
+                    sigterm_sent.elapsed().as_millis()
+                ),
+            );
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
+    engine::append_shell_log(
+        "shutdown",
+        &format!(
+            "adopted engine pid {pid} did not exit within {}ms of SIGTERM; escalating to SIGKILL",
+            sigterm_sent.elapsed().as_millis()
+        ),
+    );
     unsafe {
         if libc::killpg(pgid, libc::SIGKILL) != 0 {
             libc::kill(pgid, libc::SIGKILL);
@@ -152,6 +220,19 @@ pub fn stop_holder_pid(pid: u32) {
     }
     while pid_alive(pid) {
         std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    engine::append_shell_log("shutdown", &format!("adopted engine pid {pid} gone after SIGKILL"));
+}
+
+#[cfg(unix)]
+fn spawn_zombie_child() -> (u32, libc::pid_t) {
+    unsafe {
+        let pid = libc::fork();
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            libc::_exit(0);
+        }
+        (pid as u32, pid)
     }
 }
 
@@ -341,5 +422,26 @@ mod tests {
         let port = spawn_health_server();
         set_dead_proxy_env();
         assert!(wait_health_ok(port), "health_ok should accept a local 200 response");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pid_can_act_rejects_a_zombie_child() {
+        let (child_pid, raw_pid) = spawn_zombie_child();
+        thread::sleep(Duration::from_millis(50));
+        assert!(pid_alive(child_pid), "zombie should answer kill -0");
+        assert!(!pid_can_act(child_pid), "zombie must not count as acting");
+        let mut status = 0;
+        assert_eq!(
+            unsafe { libc::waitpid(raw_pid, &mut status, 0) },
+            raw_pid,
+            "parent must reap zombie"
+        );
+        assert!(!pid_alive(child_pid));
+    }
+
+    #[test]
+    fn pid_can_act_rejects_zero() {
+        assert!(!pid_can_act(0));
     }
 }

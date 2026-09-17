@@ -1,6 +1,8 @@
 """Print the pytest modules a change reaches, via a static import graph.
 
-Read-only. Used by the affected-test canary in `ci.yml`, which runs these tests FIRST as a
+Read-only. Was used by the affected-test canary in `ci.yml` (SMARTEST-CI rounds 1 and 2,
+replaced by the fast tier in round 6a); kept as the static lower bound for the round 5
+planner. The canary ran these tests FIRST as a
 fast non-blocking signal while the full sharded lane runs everything anyway.
 
 WHAT THIS IS NOT. This is a LOWER bound on what a change can affect. It sees static
@@ -15,6 +17,12 @@ direction, and the correct instrument for that is per-test coverage, not imports
 
 Measured on 10 merged PRs Wed 9 Sep 2026: the median change reached 1.8% of the 719 pytest
 modules, the largest reached 15.7%, and two reached under 1%.
+
+FAIL LOUD. A changed `.py` path the graph cannot resolve (deleted, renamed away, under a
+skipped directory, or simply not there) exits 3 and names the paths. Until Wed 16 Sep 2026
+it contributed nothing and exited 0, so an unreadable change and a change no test reaches
+printed the same empty selection. Exit codes: 0 selection printed (possibly empty, with the
+reason on stderr), 3 UNKNOWN.
 
 Usage:
     python -m scripts.affected_tests --base origin/main
@@ -31,6 +39,7 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+EXIT_UNKNOWN = 3
 
 #: Directories that hold no importable first-party source.
 SKIP_PARTS = frozenset({".venv", "node_modules", ".git", "build", "dist", ".tmp"})
@@ -73,6 +82,14 @@ def _imports_of(path: Path) -> set[str]:
     return found
 
 
+class UnresolvedPaths(Exception):
+    """Changed Python paths that are not modules in the graph, so their reach is unknown."""
+
+    def __init__(self, paths: list[str]) -> None:
+        super().__init__(", ".join(paths))
+        self.paths = paths
+
+
 def _source_files(root: Path) -> list[Path]:
     return [p for p in root.rglob("*.py") if not SKIP_PARTS & set(p.parts)]
 
@@ -107,9 +124,18 @@ def _is_test(relative: Path) -> bool:
 
 
 def affected_tests(changed: list[str], root: Path = REPO) -> list[str]:
-    """Test modules reachable from the changed files, plus changed tests themselves."""
+    """Test modules reachable from the changed files, plus changed tests themselves.
+
+    Raises UnresolvedPaths for a changed `.py` path that is not a module in the graph: a
+    deleted module's importers are exactly the tests most likely to break, and the graph
+    built from the current tree cannot name them.
+    """
     importers, module_of = build_graph(root)
-    changed_set = {str(Path(c)) for c in changed}
+    changed_set = {str(Path(c)) for c in changed if c.endswith(".py")}
+    known_paths = {str(relative) for relative in module_of.values()}
+    unresolved = sorted(changed_set - known_paths)
+    if unresolved:
+        raise UnresolvedPaths(unresolved)
     seeds = {name for name, relative in module_of.items() if str(relative) in changed_set}
     seen = set(seeds)
     stack = list(seeds)
@@ -121,17 +147,25 @@ def affected_tests(changed: list[str], root: Path = REPO) -> list[str]:
     return sorted(str(module_of[name]) for name in seen if _is_test(module_of[name]))
 
 
-def _changed_against(base: str) -> list[str]:
-    """Files changed against `base`, via the merge base so a stale branch is not noise."""
+def _changed_against(base: str, root: Path = REPO) -> list[str]:
+    """Files changed against `base`, via the merge base so a stale branch is not noise.
+
+    `--no-renames` so a rename lists its OLD path too: rename detection reports only the new
+    one, and the module that vanished is the one whose importers break.
+    """
     merge_base = subprocess.run(
-        ["git", "merge-base", "HEAD", base], capture_output=True, text=True, cwd=REPO
+        ["git", "merge-base", "HEAD", base],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        check=False,
     )
     reference = merge_base.stdout.strip() if merge_base.returncode == 0 else base
     diff = subprocess.run(
-        ["git", "diff", "--name-only", reference, "HEAD"],
+        ["git", "diff", "--name-only", "--no-renames", reference, "HEAD"],
         capture_output=True,
         text=True,
-        cwd=REPO,
+        cwd=root,
         check=True,
     )
     return [line for line in diff.stdout.splitlines() if line.endswith(".py")]
@@ -145,10 +179,26 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     changed = arguments.files if arguments.files else _changed_against(arguments.base)
-    if not changed:
+    python_changed = [path for path in changed if path.endswith(".py")]
+    if not python_changed:
         print("# no Python file changed", file=sys.stderr)
         return 0
-    for path in affected_tests(changed):
+    try:
+        selection = affected_tests(python_changed)
+    except UnresolvedPaths as unresolved:
+        print(
+            f"UNKNOWN: {len(unresolved.paths)} changed Python path(s) are not modules in the "
+            f"import graph (deleted, renamed, skipped or missing), so their reach cannot be "
+            f"computed: {', '.join(unresolved.paths)}",
+            file=sys.stderr,
+        )
+        return EXIT_UNKNOWN
+    if not selection:
+        print(
+            f"# {len(python_changed)} Python file(s) changed; no test module reaches them",
+            file=sys.stderr,
+        )
+    for path in selection:
         print(path)
     return 0
 

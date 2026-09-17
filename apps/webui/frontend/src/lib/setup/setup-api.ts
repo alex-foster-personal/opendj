@@ -33,6 +33,7 @@ export type AccessProbe = components['schemas']['AccessProbeOut'];
 export type SetupImportOptions = components['schemas']['SetupImportIn'];
 export type FolderImportOptions = components['schemas']['FolderImportIn'];
 export type FolderScan = components['schemas']['FolderScanOut'];
+export type FolderCandidates = components['schemas']['FolderCandidatesOut'];
 export type SetupJob = components['schemas']['JobOut'];
 export type LastImport = NonNullable<SetupStatus['last_import']>;
 
@@ -133,6 +134,10 @@ export async function getStemsSetup(): Promise<StemsSetup> {
  */
 export async function getPermissions(): Promise<Permissions> {
 	return unwrap(api.GET('/api/v1/setup/permissions'));
+}
+
+export async function getFolderCandidates(): Promise<FolderCandidates> {
+	return unwrap(api.GET('/api/v1/setup/detect/music-folders'));
 }
 
 /** The caveat sentence for a count, or null when nothing was blocked.

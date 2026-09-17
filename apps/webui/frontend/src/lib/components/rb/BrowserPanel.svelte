@@ -8,6 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
+	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
@@ -31,10 +32,16 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
+	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
 	import {
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
+		resolveRowMarkerAnlz,
 		resolveRowVocals,
 		isAppropriateNext,
 		resolveSearchFilterFallback,
@@ -43,11 +50,8 @@
 		libraryJobsStore,
 		LibraryJobsChrome,
 		type NextOnlyRef,
-		getIngestCoverage,
-		type IngestCoverage,
-		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot,
 		completeLibraryUsable,
+		recordOpenToLibraryRows,
 		formatReplaceStateUrl,
 		addToPlaylistToastMessage,
 		appendTracksToPlaylist,
@@ -119,11 +123,17 @@
 		markPlaylistCreateGrace,
 		movePlaylistItems,
 		PlaylistConflictError,
+		patchPlaylist,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
 	import {
-		hydrateConfirmPrefsFromDisk,
+		bootTracksPrefetch,
+		canBootAllTracksEarly,
+		fetchBootTracksFirstPage,
+		LIBRARY_BOOT_PAGE_SIZE,
+	} from '$lib/rb/library-boot-hydration';
+	import {
 		rememberSpotifyRecent,
 		setConfirmPref,
 		setHideBrokenLinks,
@@ -137,6 +147,7 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
@@ -181,7 +192,8 @@
 		rowHasVocalLyrics,
 		rowIsRemix,
 		sortRows,
-		visibleRowsOf
+		visibleRowsOf,
+		collectionSearchEmptyMessage
 	} from './browser/pane-contract.svelte';
 	import type {
 		BrowserRow,
@@ -201,10 +213,11 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import {
-		ensureAnlz,
+		ensureAnlzPrefetch,
 		getAnlzEntry,
 		isAnlzEntryUsable,
 		registerAnlzConsumer,
+		resolveDisplayedAnlz,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
@@ -214,7 +227,7 @@
 	// playlists were never fetch-capped (getPlaylistHydrated already
 	// returns the full membership in one call), only client-sliced - that
 	// slice is gone too (see _fetchPlaylistRows).
-	const PAGE_SIZE = 500;
+	const PAGE_SIZE = LIBRARY_BOOT_PAGE_SIZE;
 	// Whole-collection FTS5 search stays hard-capped (unrelated to the
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
@@ -397,6 +410,23 @@
 			}
 		})
 	);
+	// Strip cue/phrase markers (LIBUX-12), resolved here for the same reason as
+	// vocalsById: TrackTable renders per row and must render from props alone.
+	const markerAnlzById = $derived.by(() =>
+		resolveRowMarkerAnlz({
+			rows: pane.rows,
+			decks: DECK_IDS.flatMap((d) => {
+				const st = decks[d];
+				if (st.stable_id === null) return [];
+				return [{ stable_id: st.stable_id, playing: st.playing, anlz: resolveDisplayedAnlz(st.anlz, st.stable_id) }];
+			}),
+			// Pure read, same contract as cachedVocals above.
+			cachedAnlz: (stable_id: string) => {
+				const entry = getAnlzEntry(stable_id);
+				return entry !== undefined && entry.status === 'ready' ? entry.data : undefined;
+			}
+		})
+	);
 	/** Reactively copies a decoded local waveform strip into the selected
 	 * row(s), across every pane and every row loaded there. Reads the shared
 	 * anlz cache (same pattern as `vocalsById` above) instead of fetching
@@ -501,9 +531,17 @@
 					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
+					forbid_duplicates: p.forbid_duplicates === true,
 					children: []
 				})
 			)
+	);
+	const hiddenBrokenPlaylistCount = $derived(
+		uiPrefs.hide_broken_links
+			? playlists.filter(
+					(p) => !isWithinCreateGrace(p.playlist_id) && playlistMostlyBroken(p)
+				).length
+			: 0
 	);
 	const tabs = $derived(
 		panes.map(
@@ -720,8 +758,7 @@
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (visibleRows.length === 0) return 'no tracks match the search';
-			else return null;
+			return collectionSearchEmptyMessage(pane.search_error, visibleRows.length);
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
@@ -758,7 +795,19 @@
 			})
 		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
-			selectPlaylist: _selectPlaylistFromCommand
+			selectPlaylist: _selectPlaylistFromCommand,
+			readSnapshot: () => {
+				const p = panes[activePane];
+				const trimmedSearch = p.search.trim();
+				return {
+					search: trimmedSearch === '' ? null : p.search,
+					sort:
+						p.sort_key === null
+							? null
+							: { key: p.sort_key, direction: p.sort_dir === 1 ? 'asc' : 'desc' },
+					selected_row: p.selected_id
+				};
+			}
 		});
 		const url = new URL(window.location.href);
 		const lv1 = parseLv1(url.searchParams);
@@ -808,7 +857,6 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
-		void hydrateConfirmPrefsFromDisk();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1001,30 +1049,42 @@
 		playlistsError = null;
 		const bootHealthEpoch = _healthWriteEpoch;
 		const bootPlaylistsEpoch = _playlistsWriteEpoch;
+		const bootAllTracksEarly = canBootAllTracksEarly({
+			remembered: uiPrefs.last_playlist,
+			url_playlist_id: urlPlaylistId,
+			source,
+			spotify_selected_id: spotifySelectedId
+		});
+		let bootPaneRestored = false;
+		const healthPromise = getHealthAtBoot(getHealth);
+		const playlistsPromise = listPlaylistsHydrated();
 		try {
-			const [healthRes, lists] = await Promise.all([
-				getHealthAtBoot(getHealth),
-				listPlaylistsHydrated()
-			]);
-			libraryHealthError = null;
-			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
-			// the bus's first-ever open) can write a fresher allTracksCount and
-			// playlists while this Promise.all is still in flight. Applying this
-			// boot snapshot unconditionally would clobber that fresher data with
-			// older data (PR #1656 review round 9, P2 BLOCKING) - see
-			// reconcileBootSnapshot's doc comment. Each field is reconciled
-			// against its OWN write epoch: _refreshLibraryRowsOnce writes
-			// playlists (via _refreshPlaylists) and allTracksCount (via the
-			// health re-read) at different times within one call, so a
-			// playlists-only write in between must not discard this boot
-			// read's still-uncontested health value, and vice versa (PR #1656
-			// review round 11, P2 BLOCKING).
-			allTracksCount = reconcileBootSnapshot({
-				bootEpoch: bootHealthEpoch,
-				currentEpoch: _healthWriteEpoch,
-				bootValue: healthRes.health.state_db.tracks,
-				currentValue: allTracksCount
-			});
+			if (bootAllTracksEarly) {
+				await bootTracksPrefetch().prefsPromise.catch(() => {});
+				const healthRes = await healthPromise;
+				libraryHealthError = null;
+				allTracksCount = reconcileBootSnapshot({
+					bootEpoch: bootHealthEpoch,
+					currentEpoch: _healthWriteEpoch,
+					bootValue: healthRes.health.state_db.tracks,
+					currentValue: allTracksCount
+				});
+				if (!(source === 'spotify' && spotifySelectedId !== null)) {
+					await _restoreBootPane();
+					bootPaneRestored = true;
+				}
+			}
+			const lists = await playlistsPromise;
+			if (!bootAllTracksEarly) {
+				const healthRes = await healthPromise;
+				libraryHealthError = null;
+				allTracksCount = reconcileBootSnapshot({
+					bootEpoch: bootHealthEpoch,
+					currentEpoch: _healthWriteEpoch,
+					bootValue: healthRes.health.state_db.tracks,
+					currentValue: allTracksCount
+				});
+			}
 			playlists = reconcileBootSnapshot({
 				bootEpoch: bootPlaylistsEpoch,
 				currentEpoch: _playlistsWriteEpoch,
@@ -1046,7 +1106,7 @@
 				} else {
 					_selectSpotifyPlaylist(selected, false);
 				}
-			} else {
+			} else if (!bootPaneRestored) {
 				await _restoreBootPane();
 			}
 		} catch (exc) {
@@ -1162,7 +1222,7 @@
 	function _replaceQueryParams(params: URLSearchParams): void {
 		const url = new URL(window.location.href);
 		url.search = params.toString();
-		window.history.replaceState(null, '', formatReplaceStateUrl(url));
+		replaceState(formatReplaceStateUrl(url), {});
 	}
 
 	function _writeSpotifyQuery(playlistId: string | null): void {
@@ -1573,6 +1633,32 @@
 		}
 	}
 
+	async function toggleForbidDuplicates(node: PlaylistNode): Promise<void> {
+		if (
+			node.kind !== 'playlist' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await patchPlaylist(node.playlist_id, etag, {
+				forbid_duplicates: !node.forbid_duplicates
+			});
+			node.forbid_duplicates = !node.forbid_duplicates;
+			await _refreshPlaylists();
+			pushToast(
+				node.forbid_duplicates
+					? 'Forbid duplicates enabled'
+					: 'Forbid duplicates disabled',
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`forbid duplicates failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
 		if (
 			node.kind === 'all_tracks' ||
@@ -1740,10 +1826,13 @@
 				await fillAllTracksPane({
 					pane: p,
 					seq,
-					fetchPage: (cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+					fetchPage: (cursor) => fetchBootTracksFirstPage(cursor),
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
-					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onFirstPaint: () => {
+						recordOpenToLibraryRows({ source: 'all-tracks' });
+						completeLibraryUsable({ source: 'all-tracks' });
+					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
 					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
 				});
@@ -1757,7 +1846,10 @@
 						listTracksHydrated({ limit: PAGE_SIZE, cursor, tag: node.name }),
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: node.track_count,
-					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onFirstPaint: () => {
+						recordOpenToLibraryRows({ source: 'all-tracks' });
+						completeLibraryUsable({ source: 'all-tracks' });
+					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
 					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
 				});
@@ -1770,6 +1862,10 @@
 						? await _fetchSmartlistRows(node.playlist_id)
 						: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
+			if (node.kind === 'playlist' || node.kind === 'smartlist') {
+				recordOpenToLibraryRows({ source: 'playlist' });
+				completeLibraryUsable({ source: 'playlist' });
+			}
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
 				pushToast(`playlist load failed: ${String(exc)}`, 'error');
@@ -1955,7 +2051,16 @@
 	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		const startedAt = performance.now();
 		const detail = await getSmartlistTracks(id);
-		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		const rows = detail.tracks.map((wire, i) =>
+			_rowFromPlaylistWire(
+				{
+					...wire,
+					has_remote_copy: wire.has_remote_copy ?? false,
+					cloud_transfer: wire.cloud_transfer ?? null
+				},
+				i + 1
+			)
+		);
 		recordLibraryLoadTiming('playlist', {
 			fetchMs: performance.now() - startedAt,
 			rows: rows.length
@@ -2281,25 +2386,44 @@
 		return { deck: result.deck, reservation };
 	}
 
-	function previewSeek(row: LoadableRow, ratio: number): void {
-		const r = Math.max(0, Math.min(1, ratio));
-		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
-		if (targets.length === 0) {
-			pushToast(
-				'preview seek: track not on a deck (headphone cue not implemented - see PARITY-TODO)',
-				'error'
-			);
+	/**
+	 * CUEOUT-15: a click on a library mini-waveform means "play it in my ears
+	 * from here", always, whether or not the track is also on a deck.
+	 *
+	 * It used to seek EVERY deck holding that stable_id, with no check on
+	 * `playing` and none on `is_master`, so a click while browsing could jump
+	 * a deck that was live on air. `_loadOntoDeck` guards the master three
+	 * separate ways for exactly that reason; this path guarded nothing. The
+	 * browser is now a monitoring surface and never a transport control:
+	 * moving a deck is what the deck's own waveform and CUE are for.
+	 *
+	 * `previewCueSeek` owns every refusal, because only it can tell a missing
+	 * engine from a dead sink from a MIX knob at the master end.
+	 */
+	function previewSeek(row: LoadableRow & { bpm?: number | null }, ratio: number): void {
+		// Same refusal the deck load gives (FR-1), and for the same reason: a
+		// broken link has no audio to preview, and finding that out as an
+		// opaque decoder error several hundred milliseconds later teaches the
+		// operator nothing. `is_streaming` has no local file at all.
+		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
+			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		for (const deck of targets) {
-			const dur = decks[deck].duration_ms;
-			if (dur === null || dur <= 0) continue;
-			void runPerformanceCommandFromUi({
-				type: 'seek',
-				deck,
-				position_ms: Math.round(r * dur)
-			});
+		if (!row.file_exists) {
+			pushToast('preview: audio file missing on disk (broken link)', 'error');
+			return;
 		}
+		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
+		// R6) costs no request on the click path.
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)), {
+			trackBpm: row.bpm ?? null
+		}).then((outcome) => {
+			if (!outcome.ok) {
+				if (outcome.reason !== PREVIEW_SUPERSEDED) pushToast(outcome.reason, 'error');
+			} else if (outcome.warning !== null) {
+				pushToast(outcome.warning, 'warn');
+			}
+		});
 	}
 
 	async function _loadOntoDeck(
@@ -2385,7 +2509,12 @@
 						markLoadSpanningPress(pendingPlay.pressT0Ms);
 					}
 					await dispatchPerformanceCommand(
-						{ type: 'play', deck: target, playing: true },
+						{
+							type: 'play',
+							deck: target,
+							playing: true,
+							...(pendingPlay.quantize === true ? { quantize: true } : {})
+						},
 						pendingPlay.pressT0Ms
 					);
 				}
@@ -2485,7 +2614,7 @@
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
 		// result (including a later ambient retry) once it lands in the cache.
-		ensureAnlz(row.stable_id);
+		ensureAnlzPrefetch(row.stable_id);
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
 		ensureAudioPrefetch(row.stable_id);
@@ -2704,10 +2833,12 @@
 			active.search_results = [];
 			active.search_total = 0;
 			active.searching = false;
+			active.search_error = null;
 			if (request !== undefined) _reportBrowserSearchResult(request);
 			return;
 		}
 		active.searching = true;
+		active.search_error = null;
 		const startedAt = performance.now();
 		try {
 			const results = await searchCollection({ q: trimmed, limit: MAX_SEARCH_ROWS });
@@ -2726,6 +2857,7 @@
 			if (active.whole_collection && active.search.trim() === trimmed) {
 				active.search_results = [];
 				active.search_total = 0;
+				active.search_error = String(exc);
 				pushToast(`search failed: ${String(exc)}`, 'error');
 			}
 		} finally {
@@ -2808,6 +2940,19 @@
 			pushToast(`playlist update failed: ${String(exc)}`, 'error');
 			return;
 		}
+		// FLOW-06: every other membership mutation in this file confirms with a
+		// toast; this one silently succeeded, indistinguishable from a no-op.
+		pushToast(`Removed "${row.title ?? row.stable_id}" from playlist`, 'info');
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
+	}
+
+	// FLOW-07: relocate rewrites the track's own path, not a playlist
+	// membership, so a plain pane reload (same call every membership
+	// mutation above already makes) is enough to pick up the fresh
+	// file_exists / mostly_broken state - no separate refetch needed.
+	async function _reloadActivePane(): Promise<void> {
+		const p = pane;
 		const node = _currentNode(p);
 		if (node !== null) await _loadPane(p, node);
 	}
@@ -2916,6 +3061,9 @@
 		}
 		try {
 			await movePlaylistItems(id, p.etag, body);
+			// FLOW-06: silent on success today, so a drag-reorder looked identical
+			// to a dropped/ignored gesture until the row visibly re-sorted.
+			pushToast(count === 1 ? 'Moved track' : `Moved ${count} tracks`, 'info');
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
@@ -2953,6 +3101,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
+				hiddenBrokenPlaylistCount={hiddenBrokenPlaylistCount}
 				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
@@ -2967,6 +3116,7 @@
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
+				onforbidduplicates={(n) => void toggleForbidDuplicates(n)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
@@ -3184,9 +3334,15 @@
 			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
+			{markerAnlzById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
+			onemptyretry={
+				wholeCollectionActive && pane.search_error !== null
+					? () => void _searchWholeCollection(pane, pane.search)
+					: undefined
+			}
 			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
@@ -3212,6 +3368,7 @@
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onrelocated={() => void _reloadActivePane()}
 			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
@@ -3328,6 +3485,7 @@
 	{openModal}
 	stableIds={pane.selected_ids}
 	etags={modalEtags}
+	rows={pane.rows}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
 />
@@ -3599,6 +3757,14 @@
 		align-items: center;
 		gap: 8px;
 		padding: 0 6px;
+		/* Issue #3097: this row and PerformanceAppNav (position: fixed,
+		 * bottom-left, height 18px) are both anchored to the exact same
+		 * bottom-left rectangle - this row via normal grid flow, the nav via
+		 * `position: fixed` on top of it (z-index 50). Left-padding by the
+		 * nav's reserved width keeps this row's own content (the wordmark
+		 * first of all) from rendering underneath it, instead of merely
+		 * being covered by a higher stacking context. */
+		padding-left: var(--rb-perf-nav-w);
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
 	}

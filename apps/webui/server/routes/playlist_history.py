@@ -65,7 +65,7 @@ def _row_out(row: PlaylistRow) -> PlaylistWriteOut:
         playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
     )
 
 

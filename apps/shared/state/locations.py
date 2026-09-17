@@ -26,12 +26,13 @@ import os
 import sqlite3
 import unicodedata
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from apps.shared import audio_quality, fs_residency, platform_paths
+from apps.shared.platform_paths import PathMap
 
 from . import sync_stamp as _sync_stamp
 
@@ -174,6 +175,21 @@ def locations_table_ready(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
+def _locations_machine_scoped(conn: sqlite3.Connection) -> bool:
+    """True when ``track_locations`` carries per-machine ``machine_id`` (schema v6+)."""
+    if not locations_table_ready(conn):
+        return False
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(track_locations)")
+    }
+    return "machine_id" in columns
+
+
+def _tracks_soft_deletes(conn: sqlite3.Connection) -> bool:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+    return "deleted_at" in columns
+
+
 def list_locations(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -220,6 +236,173 @@ def _batched(items: Sequence[str], size: int) -> Iterator[Sequence[str]]:
     """Yield ``items`` in slices of at most ``size``. Never empty."""
     for start in range(0, len(items), size):
         yield items[start : start + size]
+
+
+ResidencyPredicate = Callable[[Path], bool]
+
+
+def _materialise_raw_audio_path(
+    raw: str | None,
+    *,
+    path_map: PathMap | None = None,
+    residency: ResidencyPredicate = fs_residency.is_materialised,
+) -> Path | None:
+    if not raw or raw.startswith(platform_paths.STREAMING_PREFIXES):
+        return None
+    mapped = platform_paths.resolve_asset_path(raw, path_map=path_map)
+    if mapped.resolved is None or not residency(mapped.resolved):
+        return None
+    return mapped.resolved
+
+
+def _local_audio_raw_candidates(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    machine_id: str,
+) -> list[tuple[str, Literal["location", "track_path"]]]:
+    """Ordered raw path candidates for ``stable_id`` on this machine."""
+    candidates: list[tuple[str, Literal["location", "track_path"]]] = []
+    if _locations_machine_scoped(conn):
+        row = conn.execute(
+            "SELECT file_path FROM track_locations "
+            "WHERE stable_id = ? AND machine_id = ? AND deleted_at IS NULL "
+            "AND kind = 'local' AND file_path IS NOT NULL "
+            "ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+            "created_at, location_id "
+            "LIMIT 1",
+            (stable_id, machine_id),
+        ).fetchone()
+        if row is not None and row[0]:
+            candidates.append((str(row[0]), "location"))
+    tracks_sql = (
+        "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL"
+        if _tracks_soft_deletes(conn)
+        else "SELECT file_path FROM tracks WHERE stable_id = ?"
+    )
+    row = conn.execute(tracks_sql, (stable_id,)).fetchone()
+    if row is not None and row[0]:
+        track_path = str(row[0])
+        if not any(raw == track_path for raw, _ in candidates):
+            candidates.append((track_path, "track_path"))
+    return candidates
+
+
+def local_audio_path(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    machine_id: str | None = None,
+    path_map: PathMap | None = None,
+    residency: ResidencyPredicate = fs_residency.is_materialised,
+) -> Path | None:
+    """This machine's materialised local audio path for ``stable_id``.
+
+    Prefers a local ``track_locations`` row on this machine, then
+    ``tracks.file_path``. Returns ``None`` when neither path materialises.
+    ``residency`` is the on-disk gate: the default admits regular files with
+    local bytes; a playback caller that probes ``open()`` itself passes
+    :func:`fs_residency.exists_for_audio_open_probe` so a FIFO or other
+    special node reaches the bounded open probe instead of reading as absent.
+    """
+    owner = machine_id or _sync_stamp.local_machine_id(conn)
+    for raw, _source in _local_audio_raw_candidates(conn, stable_id, machine_id=owner):
+        resolved = _materialise_raw_audio_path(raw, path_map=path_map, residency=residency)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def recorded_audio_path(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    machine_id: str | None = None,
+) -> str | None:
+    """This machine's first RECORDED audio path for ``stable_id``, unprobed.
+
+    Same candidate order as :func:`local_audio_path` (a local
+    ``track_locations`` row on this machine, then ``tracks.file_path``) but
+    without the residency gate, for callers that probe the path themselves
+    and must tell "no recorded location" from "recorded but missing or
+    blocked on disk" (the preflight audio-access row).
+    """
+    owner = machine_id or _sync_stamp.local_machine_id(conn)
+    candidates = _local_audio_raw_candidates(conn, stable_id, machine_id=owner)
+    return candidates[0][0] if candidates else None
+
+
+def local_audio_path_raw(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    machine_id: str | None = None,
+    path_map: PathMap | None = None,
+) -> tuple[str | None, Literal["location", "track_path"]]:
+    """First materialised raw path and which layer supplied it."""
+    owner = machine_id or _sync_stamp.local_machine_id(conn)
+    for raw, source in _local_audio_raw_candidates(conn, stable_id, machine_id=owner):
+        if _materialise_raw_audio_path(raw, path_map=path_map) is not None:
+            return (raw, source)
+    return (None, "track_path")
+
+
+def bulk_local_audio_paths(
+    conn: sqlite3.Connection,
+    stable_ids: Sequence[str],
+    *,
+    machine_id: str | None = None,
+    path_map: PathMap | None = None,
+) -> dict[str, Path | None]:
+    """Materialised local audio paths for many ``stable_ids`` on this machine."""
+    out: dict[str, Path | None] = {sid: None for sid in stable_ids}
+    if not stable_ids:
+        return out
+    owner = machine_id or _sync_stamp.local_machine_id(conn)
+    location_by_id: dict[str, str] = {}
+    track_paths: dict[str, str | None] = {}
+
+    if _locations_machine_scoped(conn):
+        for batch in _batched(list(stable_ids), ID_BIND_BATCH):
+            placeholders = ",".join("?" * len(batch))
+            rows = conn.execute(
+                f"SELECT stable_id, file_path, role, created_at, location_id "
+                f"FROM track_locations "
+                f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
+                f"AND deleted_at IS NULL AND kind = 'local' "
+                f"AND file_path IS NOT NULL "
+                f"ORDER BY stable_id, "
+                f"CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+                f"created_at, location_id",
+                (*batch, owner),
+            ).fetchall()
+            for stable_id, file_path, *_rest in rows:
+                sid = str(stable_id)
+                if sid not in location_by_id and file_path:
+                    location_by_id[sid] = str(file_path)
+
+    tracks_deleted_filter = (
+        " AND deleted_at IS NULL" if _tracks_soft_deletes(conn) else ""
+    )
+    for batch in _batched(list(stable_ids), ID_BIND_BATCH):
+        placeholders = ",".join("?" * len(batch))
+        rows = conn.execute(
+            f"SELECT stable_id, file_path FROM tracks "
+            f"WHERE stable_id IN ({placeholders}){tracks_deleted_filter}",
+            batch,
+        ).fetchall()
+        for stable_id, file_path in rows:
+            track_paths[str(stable_id)] = str(file_path) if file_path else None
+
+    for sid in stable_ids:
+        for raw in (location_by_id.get(sid), track_paths.get(sid)):
+            if not raw:
+                continue
+            resolved = _materialise_raw_audio_path(raw, path_map=path_map)
+            if resolved is not None:
+                out[sid] = resolved
+                break
+    return out
 
 
 def list_location_paths(
@@ -489,8 +672,8 @@ def _candidate_from_path(
     media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
         return None
-    working = fs_residency.is_materialised(path)
-    size = fs_residency.materialised_size(path) if working else None
+    working = fs_residency.exists_for_audio_open_probe(path)
+    size = fs_residency.materialised_size(path) if fs_residency.is_materialised(path) else None
     quality = audio_quality.classify(str(path), duration_ms, size)
     return _Candidate(
         kind=kind,

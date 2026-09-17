@@ -16,10 +16,13 @@ Acceptance tests:
   strict MkDocs build must invoke the docs venv executable.
 - [if] a test spawns `uv run --with modal` against the repo root [then ⛔️]
   the pytest jobs must carry UV_NO_SYNC so `.venv` is not pruned to uv.lock.
+- [if] the `observability` extra is missing from a pytest venv [then ⛔️] the
+  Sentry end-to-end tests fail on import, so every pytest install carries it.
 """
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -144,6 +147,23 @@ def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
             f"{name}: the pytest job must set UV_NO_SYNC so a child `uv run` "
             "cannot resync `.venv` out from under the running suite"
         )
+
+
+def test_pytest_installs_carry_the_observability_extra() -> None:
+    """requirements.txt is the shipped payload and omits sentry-sdk on purpose.
+
+    The Sentry end-to-end tests import sentry_sdk, so each pytest install adds
+    the `observability` extra's pins verbatim. Taking them from pyproject.toml
+    means a changed extra cannot leave CI testing a different SDK range.
+    """
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    extra = pyproject["project"]["optional-dependencies"]["observability"]
+    pins = " ".join(f"'{pin}'" for pin in extra)
+    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
+    install = f"{exact} -r requirements.txt modal {pins}\n"
+
+    assert _workflow("ci.yml").count(install) == 2, "ci.yml: test job and fast tier job"
+    assert _workflow("full-ci.yml").count(install) == 1, "full-ci.yml: the full suite"
 
 
 def test_audio_stack_marker_uses_real_guarded_imports() -> None:

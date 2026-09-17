@@ -44,29 +44,44 @@ GiB = 1024**3
     ],
 )
 def test_classify_auto_boundaries(ram: int, cpus: int, expected: PerfTier) -> None:
+    """
+    [if] ram and cpu cross a boundary [then] classify_auto returns the matching tier, [else stop].
+    """
     assert classify_auto(HostFacts(logical_cpus=cpus, ram_bytes=ram)) == expected
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_classify_from_canary_raises() -> None:
+    """
+    [if] canary thresholds are unmeasured [then] classify_from_canary raises, [else stop].
+    """
     with pytest.raises(CanaryThresholdsUnmeasured):
         classify_from_canary(20_000)
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_override_low_wins_over_high_facts() -> None:
+    """
+    [if] an override is set [then] resolve_tier honors it over high-tier host facts, [else stop].
+    """
     facts = HostFacts(logical_cpus=16, ram_bytes=32 * GiB)
     assert resolve_tier(facts=facts, override="low") == PerfTier.LOW
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_invalid_override_raises() -> None:
+    """
+    [if] an override string is not a valid lowercase tier [then] parse_override raises, [else stop].
+    """
     with pytest.raises(InvalidPerfTierOverride):
         parse_override("AUTO")
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_scalers_for_locked_table() -> None:
+    """
+    [if] a tier's scaler table is read [then] it matches the locked values exactly, [else stop].
+    """
     low = scalers_for(PerfTier.LOW)
     assert low["prefetch_tracks"] == 2
     assert low["prefetch_bytes"] == 24 * 1024 * 1024
@@ -76,12 +91,18 @@ def test_scalers_for_locked_table() -> None:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_background_worker_count_halves_on_low() -> None:
+    """
+    [if] the perf tier is low [then] background_worker_count halves the worker count, [else stop].
+    """
     assert background_worker_count(16, PerfTier.LOW) == 8
     assert background_worker_count(16, PerfTier.STANDARD) == 16
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_tier_wire_cli_shape() -> None:
+    """
+    [if] tier_wire is built from host facts [then] it returns tier, scalers, and host, [else stop].
+    """
     wire = tier_wire(facts=HostFacts(logical_cpus=10, ram_bytes=16 * GiB))
     assert wire["tier"] == "HIGH"
     assert "scalers" in wire
@@ -90,6 +111,9 @@ def test_tier_wire_cli_shape() -> None:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_perf_tier_http_200_with_override_when_host_failed(tmp_path: Path) -> None:
+    """
+    [if] host info fails but prefs set an override [then] the route returns 200, [else stop].
+    """
     prefs = tmp_path / "state" / "ui-prefs.json"
     prefs.parent.mkdir(parents=True)
     prefs.write_text(json.dumps({"perf_tier": "low"}) + "\n", encoding="utf-8")
@@ -108,6 +132,9 @@ def test_perf_tier_http_200_with_override_when_host_failed(tmp_path: Path) -> No
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_perf_tier_http_503_when_auto_and_host_failed(tmp_path: Path) -> None:
+    """
+    [if] host info fails and no override is set [then] the perf-tier route returns 503, [else stop].
+    """
     app = FastAPI()
     setattr(
         app.state,
@@ -122,12 +149,18 @@ def test_perf_tier_http_503_when_auto_and_host_failed(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_tier_wire_auto_without_host_raises() -> None:
+    """
+    [if] override is auto and host facts are missing [then] tier_wire raises, [else stop].
+    """
     with pytest.raises(HostInfoUnavailable):
         tier_wire(facts=None, host_failure="missing", override="auto")
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_resolve_tier_reads_low_from_prefs(tmp_path: Path) -> None:
+    """
+    [if] ui-prefs.json sets perf_tier to low [then] resolve_tier reads and returns low, [else stop].
+    """
     prefs = tmp_path / "state" / "ui-prefs.json"
     prefs.parent.mkdir(parents=True)
     prefs.write_text(json.dumps({"perf_tier": "low"}) + "\n", encoding="utf-8")
@@ -139,6 +172,9 @@ def test_resolve_tier_reads_low_from_prefs(tmp_path: Path) -> None:
 def test_local_stems_refusal_honors_prefs_low(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """
+    [if] prefs set perf_tier to low [then] local_stems_tier_refusal returns a refusal, [else stop].
+    """
     prefs = tmp_path / "state" / "ui-prefs.json"
     prefs.parent.mkdir(parents=True)
     prefs.write_text(json.dumps({"perf_tier": "low"}) + "\n", encoding="utf-8")
@@ -150,6 +186,10 @@ def test_local_stems_refusal_honors_prefs_low(
 def test_cli_exit_two_when_host_unreadable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """
+    [if] read_host_facts raises HostInfoUnavailable [then] the CLI main() exits 2, [else stop].
+    """
+
     def _boom() -> HostFacts:
         raise HostInfoUnavailable("psutil.cpu_count returned None")
 

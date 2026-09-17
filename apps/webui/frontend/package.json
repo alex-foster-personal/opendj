@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test:unit": "svelte-kit sync && node --test --test-concurrency=4 --test-timeout=60000 tests/unit/*.test.mjs",
+    "test:unit:slow": "svelte-kit sync && node --test --test-concurrency=1 --test-timeout=120000 tests/unit/slow/*.test.mjs",
+    "test:unit:all": "svelte-kit sync && node --test --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs tests/unit/slow/*.test.mjs",
     "test:e2e": "uv sync --extra dev --extra tags --extra analysis && uv run --no-sync python -m apps.webui.port_config claim && playwright test",
     "test:live:wave-raf": "node tests/live/wave-row-raf-attribution.mjs",
     "test:live:device-latency-floor": "node tests/live/device-latency-floor.mjs",
@@ -17,17 +19,20 @@
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
     "test:e2e:performance:smoke": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_SMOKE=1 playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-smoke --max-failures=1 --reporter=list",
     "test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
-    "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts",
+    "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts && node scripts/compact-headphone-api-types.mjs",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "design-system:build": "node scripts/build-design-system.mjs",
+    "test:design-system": "node --test tests/unit/design-system-bundle.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
+    "playwright": "1.61.1",
     "@storybook/addon-docs": "10.5.10",
     "@storybook/sveltekit": "10.5.10",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.8.0",
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@types/node": "^22.20.1",
     "esbuild": "0.21.5",
     "openapi-typescript": "^7.4.0",
@@ -36,13 +41,15 @@
     "svelte-check": "^4.0.0",
     "terser": "^5.51.2",
     "typescript": "^5.6.0",
-    "vite": "^5.4.0"
+    "vite": "^6.0.0"
   },
   "type": "module",
   "engines": {
     "node": ">=22.14.0"
   },
   "dependencies": {
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-opener": "^2.2.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@wasm-audio-decoders/flac": "0.2.11",

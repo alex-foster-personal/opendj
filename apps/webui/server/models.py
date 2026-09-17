@@ -225,6 +225,8 @@ class TrackPatch(BaseModel):
     tags_add: list[str] | None = None
     tags_remove: list[str] | None = None
     notes: str | None = None
+    genre: str | None = None
+    comments: str | None = None
     # PREF-01: send null to clear, omit to leave untouched (model_fields_set
     # distinguishes the two - see routes/tracks.py patch_track).
     tempo_pref: TempoPrefPatch | None = None
@@ -257,6 +259,7 @@ class PlaylistSummary(BaseModel):
     # None when the playlist is not a rekordbox one or has no live
     # djmdPlaylist row - clients must not invent an order for those.
     seq: int | None = None
+    forbid_duplicates: bool = False
 
 
 class PlaylistDiff(BaseModel):
@@ -326,6 +329,7 @@ class PlaylistDetail(BaseModel):
     playlist_id: str
     name: str
     vendor: str
+    forbid_duplicates: bool = False
     # Full membership as stable_ids (always unfiltered -- the diff viewer
     # and reorder flows key off this).
     items: list[str]
@@ -444,6 +448,31 @@ class HealthOut(BaseModel):
     bind_host: str
     version: str
     google_oauth_configured: bool
+    #: OPS-32 round 4: this used to be `process_env_keys`, every name in this
+    #: process's own `os.environ`. Round 4 (issue #2637/#2638 follow-on,
+    #: Mon 14 Sep 2026) found that field readable by an UNAUTHENTICATED
+    #: caller on a token-mode share host (`/health` is in
+    #: `share_gate.EXEMPT_SUFFIXES` so cloudflared can probe it before a
+    #: token is presented), which handed a public caller the full list of
+    #: which services/secrets this install has configured. Narrowed to two
+    #: fields, neither of which discloses anything beyond the OPS-32 gate's
+    #: own need: which of the FORBIDDEN prefixes leaked (never the harmless
+    #: majority of the environment), and one positive-control bit. Both
+    #: required (no default) so a missing field still fails the gate fast
+    #: rather than rendering as an empty/false pass.
+    #:
+    #: Sorted NAMES ONLY (never values) matching
+    #: :data:`apps.webui.server.ops32_env_guard.OPS32_FORBIDDEN_ENV_PREFIXES`
+    #: -- exists so a post-install rollout probe can verify the RUNNING
+    #: engine's own environment via its self-report rather than reading it
+    #: off the pid via KERN_PROCARGS2 -- measured Mon 14 Sep 2026 to read
+    #: back zero env strings for the bundled Developer-ID signed python3, so
+    #: procargs2 never actually measured the real packaged engine.
+    process_env_forbidden_keys: list[str]
+    #: Positive control: a real launchd-started app always has HOME, so its
+    #: absence means this field was never a real environment read (a stub, a
+    #: pre-OPS-32 engine with no field at all, or a malformed body).
+    process_env_home_present: bool
 
 
 class PreflightCheckOut(BaseModel):
@@ -454,6 +483,9 @@ class PreflightCheckOut(BaseModel):
     track anywhere in a small sample), which is an honest denominator, never
     a fabricated pass. ``remediation`` is null on a pass or a pending row and
     a real sentence on a fail.
+
+    ``user_*`` fields carry plain-language copy for the boot gate (issue
+    #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
     """
 
     id: str
@@ -461,16 +493,38 @@ class PreflightCheckOut(BaseModel):
     status: Literal["pass", "fail", "pending"]
     detail: str
     remediation: str | None = None
+    user_label: str | None = None
+    user_detail: str | None = None
+    user_remediation: str | None = None
+    #: How much this check MATTERS, which is a different axis from whether it
+    #: passed (the maintainer, Wed 16 Sep 2026, after a fresh-Mac first run: "some
+    #: checks aren't so important"). ``blocking`` means the app cannot
+    #: usefully run until it passes, so the boot gate holds. ``advisory``
+    #: means the app runs fine and the user is told, so the gate does not
+    #: hold. The UI paints red for a failed blocking check and orange for a
+    #: failed or unexercised advisory one, rather than red for everything.
+    severity: Literal["blocking", "advisory"] = "blocking"
+    #: One sentence answering "what do I do about this?", shown on hover.
+    #: Distinct from ``remediation``: that is the fix for a FAILURE, this is
+    #: present on every row including passes, so a user can ask what a row
+    #: means without having to break it first.
+    explainer: str | None = None
 
 
 class PreflightOut(BaseModel):
     """``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-    gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
-    check never blocks it, because a check that could not be exercised is
-    not a defect on its own.
+    gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
+    is ``fail``; a ``pending`` check never blocks it, because a check that
+    could not be exercised is not a defect on its own, and an ``advisory``
+    check never blocks it either, because the app runs without it.
+
+    ``advisories`` counts the non-blocking rows the user should still see,
+    so a caller can distinguish "everything is fine" from "running, with
+    things worth telling you" without recomputing severity for itself.
     """
 
     status: Literal["pass", "fail"]
+    advisories: int = 0
     checks: list[PreflightCheckOut]
 
 

@@ -11,8 +11,10 @@ Backs two UI features and their agent-native parity:
 
 Design constraints honoured here:
   * Rekordbox remains the only writer of its own DB; upload stages files
-    under ``~/Music/Manual Library/_ingest/<batch>/`` and RB import stays a
-    human step (see .agents/skills/ingest-new-tracks).
+    under ``INGEST_INBOX`` (``~/Music/Manual Library/_ingest/<batch>/`` when
+    ``MDT_DATA_DIR`` is unset; ``<data_dir>/Manual Library/_ingest/<batch>/``
+    when it is set) and RB import stays a human step (see
+    .agents/skills/ingest-new-tracks).
   * The refresh job shells out to the existing CLIs (apps.analysis.run,
     apps.stems trickle, apps.vocals from-stems) rather than reimplementing
     them - one code path per pipeline, real data only.
@@ -61,7 +63,7 @@ from pydantic import BaseModel
 from apps.analysis import backlog
 from apps.analysis import run as analysis_run
 from apps.shared.events import publish
-from apps.shared.paths import AUDIO_EXTENSIONS, HOME, STATE_DB
+from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
@@ -81,7 +83,7 @@ from apps.webui.server.routes.ingest_job import (
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -106,7 +108,6 @@ LOG_TAIL_LINES: int = 200
 
 # ----- CFG -------------------------------------------------------------------
 CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
-INGEST_INBOX: Path = HOME / "Music" / "Manual Library" / "_ingest"
 VOCAL_CACHE_DIR: Path = STATE_DB.parent / "vocal-cache"
 LYRICS_CACHE_DIR: Path = STATE_DB.parent / "lyrics-cache"
 DUP_DURATION_TOLERANCE_MS: int = 1_500

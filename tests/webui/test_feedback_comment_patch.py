@@ -142,6 +142,56 @@ def test_patch_rejects_empty_body_and_unknown_status(client: TestClient) -> None
     )
 
 
+def test_blocked_pin_requires_an_actionable_request_and_can_later_unblock(
+    client: TestClient,
+) -> None:
+    pin = _create(client)
+
+    missing_request = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}", json={"status": "blocked"}
+    )
+    assert missing_request.status_code == 422
+
+    existing_note = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={"agent_note": "auth: the maintainer must approve the existing login request."},
+    )
+    assert existing_note.status_code == 200
+    missing_same_patch_request = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}", json={"status": "blocked"}
+    )
+    assert missing_same_patch_request.status_code == 422
+
+    unclear_request = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={"status": "blocked", "agent_note": "I could not work out what you meant."},
+    )
+    assert unclear_request.status_code == 422
+
+    undocumented_prefix = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={"status": "blocked", "agent_note": "auth: the maintainer needs to approve the login request."},
+    )
+    assert undocumented_prefix.status_code == 422
+
+    blocked = client.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={
+            "status": "blocked",
+            "agent_note": (
+                "auth: the maintainer must provide the Rekordbox login approval. "
+                "The import cannot continue without it."
+            ),
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["status"] == "blocked"
+
+    unblocked = client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={"status": "issued"})
+    assert unblocked.status_code == 200, unblocked.text
+    assert unblocked.json()["status"] == "issued", "unblocking must reuse the same pin"
+
+
 def test_rejected_patch_leaves_the_store_readable(http_client: TestClient, tmp_path: Path) -> None:
     """A patch the response model refuses must not reach disk.
 

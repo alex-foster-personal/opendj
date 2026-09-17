@@ -189,7 +189,12 @@ class CommentOut(BaseModel):
     # Pins created before issue #904 have no environment record.
     environment: PinEnvironmentOut | None = None
     # Pin lifecycle (issue #858): absent on pins created before Wed 2 Sep 2026.
-    status: str | None = None  # open | issued | fixed | merged | archived
+    # `blocked` is ONLY for credentials/auth, a destructive-action decision,
+    # or a genuine product fork that needs the maintainer. Unclear instructions are a
+    # question in agent_note, never blocked. Its agent_note starts with
+    # `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+    # `product-fork: the maintainer must ...` to say what the maintainer must provide.
+    status: str | None = None  # open | issued | blocked | fixed | merged | archived
     issue_url: str | None = None
     agent_note: str | None = None
     updated_at: str | None = None

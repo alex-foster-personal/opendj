@@ -58,6 +58,9 @@ concurrency:
   # group and cancel superseded work.
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   macos-native-companion:
     name: macOS native companion wheel
@@ -77,6 +80,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -85,6 +90,10 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        # No uv cache in a release-triggered workflow: a cache written by a PR run
+        # must not feed a tag/release build (zizmor cache-poisoning).
+        with:
+          enable-cache: false
 
       - name: Install release gate dependencies
         run: |
@@ -92,7 +101,9 @@ jobs:
           uv pip install --python .venv/bin/python -r requirements.txt pytest
 
       - name: Build, inspect, install, and prove real ANLZ parity
-        run: make waveform-native-release-check
+        run: |
+          make waveform-native-release-check \
+            PYTEST_BASETEMP="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-native-wheel"
 
       - name: Prove the macOS ABI3 wheel imports on Python 3.14
         # --refresh-package (not --no-cache): see ci.yml's matching step

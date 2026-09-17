@@ -345,7 +345,14 @@
 		aria-label={`cue channel ${deckId}`}
 		title={cueTitle}
 		data-testid={`cue-channel-${deckId}`}
-		onclick={() => oncue(!cueEnabled)}>CUE</button
+		onclick={() => oncue(!cueEnabled)}
+	>
+		<svg class="cue-icon" width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">
+			<!-- headphone band + ear cups, matching the monitor cluster's icon -->
+			<path d="M2 8 V6 a4 4 0 0 1 8 0 v2" fill="none" stroke="currentColor" stroke-width="1.4" />
+			<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
+			<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
+		</svg>CUE</button
 	>
 	<div class="fader-slot">
 		<VFader
@@ -368,7 +375,7 @@
 		onclick={() => onStemEqMode(!stemEqMode)}>STEM</button
 	>
 	<div class="stem-slot">
-		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
+		<StemRow deck={deck} pending={stemPending} testIdScope="channel" onMute={onStemMute} onSolo={onStemSolo} />
 	</div>
 </div>
 
@@ -538,6 +545,15 @@
 		margin-bottom: 3px;
 		flex: none;
 		cursor: pointer;
+		/* The icon sits to the LEFT of the word, inside the button, so a glance
+		   reads "this sends the channel to the headphones" without the label. */
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 3px;
+	}
+	.cue-icon {
+		flex: 0 0 auto;
 	}
 	.strip.less .cue-btn {
 		grid-area: cue;

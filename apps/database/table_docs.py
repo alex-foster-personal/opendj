@@ -220,6 +220,11 @@ TABLE_DOCS: dict[str, str] = {
         "migrations -- infrastructure, not domain data. One row per "
         "applied schema version."
     ),
+    "schema_meta_markers": (
+        "Durable completion markers for one-time migration repairs "
+        "(for example the v15 track_fields stamp backfill). One row per "
+        "repair name; repeat opens check the marker instead of rescanning."
+    ),
     # ----- apps.shared.state.schema.FOREIGN_AUTHORITY_TABLES --------------
     # Real tables other modules write into this same file. D2
     # (specs/cloudsync-spec.md) plans to fold these into MIGRATIONS in a
@@ -296,6 +301,14 @@ TABLE_DOCS: dict[str, str] = {
         "dragged. No FK to tracks -- launcher code links the two tables "
         "softly rather than at the schema level "
         "(apps/launcher/scripts/bootstrap_db.py)."
+    ),
+    "sync_identity_remap": (
+        "Spoke-side bookkeeping for CloudSync content-identity collapses: "
+        "loser_pk -> survivor_pk, remembered across the batched HTTP push "
+        "so a later batch's playlist can still resolve a track PK a prior "
+        "batch already remapped. Not in the sync set itself -- carries no "
+        "updated_at/origin_device_id/deleted_at -- and does not drop the "
+        "loser's tracks row (apps/sync_hub/engine_identity_map.py)."
     ),
     # ----- apps/shared/pairings/schema_sql.py, its SECOND ladder ---------
     # apply_pairing_capture_migrations, applied lazily by the webui capture

@@ -58,6 +58,10 @@ Requirements (mini-PRD):
   / A gate older than main's own gate code renders no verdict (PR #1720).
     [if] a branch cut before a gate fix on main prints PASS [then broken]
     -- see scripts/review_gate_freshness.py
+  / Debt-only pushes carry coverage when only this PR's debt file changed since
+    the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
+    scripts/review_coverage_carry.py). When carry applies, triage prints both
+    SHAs and the local ``git diff --name-only`` path list.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -109,7 +113,9 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
-from scripts.review_gate_freshness import require_gate_current_with_main
+from scripts.review_coverage_carry import print_carry_proofs, verdicts_with_carry
+from scripts.review_docs_only import is_docs_only, render_docs_only_pass
+from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
@@ -216,6 +222,16 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 # ----- review artifacts ---------------------------------------------------
 
 
+def _changed_files(pr: str) -> list[str]:
+    """Every path this PR's diff touches, across all pages. Feeds the
+    docs-only check in `triage`; a `gh` failure raises `TriageError` exactly
+    like every other call in this module, so a listing failure is a failed
+    MEASUREMENT and never misread as an empty (and therefore non-docs-only)
+    PR.
+    """
+    return [entry["filename"] for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")]
+
+
 @dataclass(frozen=True)
 class ReviewerEvidence:
     """What this reviewer actually LEFT on the PR, as opposed to reported."""
@@ -295,18 +311,6 @@ def _collect_evidence(
     return ReviewerEvidence(submitted, comments, tuple(bodies))
 
 
-def _evidence(pr: str, head_sha: str) -> dict[str, ReviewerEvidence]:
-    """Collect per-reviewer artifacts from the three places bots post, each
-    filtered to the PR's current head SHA before it reaches a classifier."""
-    reviews = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/reviews")
-    inline = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/comments")
-    issue = _paginated_json_list(f"repos/{REPO}/issues/{pr}/comments")
-    return {
-        name: _collect_evidence(name, reviews, inline, issue, head_sha)
-        for name in EXPECTED_REVIEWERS
-    }
-
-
 # ----- classification -----------------------------------------------------
 
 
@@ -325,6 +329,8 @@ class ReviewerVerdict:
     # field, so a covered row never reads as "ok" and claims a review that did
     # not happen. See `review_sol.substitute_alternatives`.
     substituted_by: str = ""
+    carried_from: str = ""  # full debt-only carry source SHA (issues #2907, #2871)
+    carried_paths: frozenset[str] = frozenset()  # git diff paths for carry proof
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
@@ -499,12 +505,41 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
 
 def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
-    checks = _checks(pr)
     head_sha = _head_sha(pr)
-    evidence = _evidence(pr, head_sha)
+    changed_files = _changed_files(pr)
+    if is_docs_only(changed_files):
+        # Coverage is the only thing this exemption waives. Re-sample the
+        # head before printing, the same race guard the normal path applies
+        # after ITS network calls (`_require_head_unchanged` below): a push
+        # landing between the head sample and the files listing must void
+        # this verdict rather than certify a head nobody measured.
+        _require_head_unchanged(head_sha, _head_sha(pr))
+        print(render_docs_only_pass(pr, head_sha, gate_commit, changed_files))
+        return 0
+
+    checks = _checks(pr)
+    reviews = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/reviews")
+    inline = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/comments")
+    issue = _paginated_json_list(f"repos/{REPO}/issues/{pr}/comments")
+    evidence = {
+        name: _collect_evidence(name, reviews, inline, issue, head_sha)
+        for name in EXPECTED_REVIEWERS
+    }
     _require_head_unchanged(head_sha, _head_sha(pr))
+
     verdicts = substitute_alternatives(
-        [classify_reviewer(name, checks, evidence.get(name)) for name in EXPECTED_REVIEWERS],
+        verdicts_with_carry(
+            pr,
+            head_sha,
+            checks,
+            evidence,
+            reviews,
+            inline,
+            issue,
+            CHECKOUT_ROOT,
+            EXPECTED_REVIEWERS,
+            classify_reviewer,
+        ),
         EXPECTED_REVIEWERS,
     )
 
@@ -516,6 +551,8 @@ def triage(pr: str) -> int:
         found = evidence.get(verdict.name)
         artifacts = f" [{found.artifact_count} artifact(s)]" if found else ""
         print(f"    {mark} {verdict.name}: {verdict.reason}{artifacts}")
+
+    print_carry_proofs(verdicts, head_sha, CHECKOUT_ROOT)
 
     unavailable, unreviewed, revived = partition_verdicts(verdicts)
     print()

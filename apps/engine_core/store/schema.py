@@ -81,6 +81,7 @@ from functools import cache
 
 from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
+from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -185,7 +186,9 @@ _STATE_CORE: tuple[str, ...] = (
     "CREATE TABLE IF NOT EXISTS playlists ( playlist_id TEXT PRIMARY KEY, "
     "name TEXT NOT NULL, vendor TEXT NOT NULL, vendor_pl_id TEXT NOT NULL, "
     "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
-    "origin_device_id TEXT, deleted_at TEXT, UNIQUE (vendor, vendor_pl_id) )",
+    "origin_device_id TEXT, deleted_at TEXT, "
+    "forbid_duplicates INTEGER NOT NULL DEFAULT 0, "
+    "UNIQUE (vendor, vendor_pl_id) )",
     # Legacy v13 ALTER-splices item_id / order_key after deleted_at, still
     # before the table-level PRIMARY KEY. Do not pretty-print; the parity
     # gate compares normalised sqlite_master bytes.
@@ -315,6 +318,10 @@ _SYNC_INFRA: tuple[str, ...] = (
     "TEXT NOT NULL )",
     "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
     "ON local_changelog(table_name, row_pk)",
+    # Legacy v16 (apps/shared/state/migrations_v16.py): the hub-side twin of
+    # idx_local_changelog_table.
+    "CREATE INDEX IF NOT EXISTS idx_hub_changelog_table "
+    "ON hub_changelog(table_name, row_pk)",
 )
 
 
@@ -726,7 +733,8 @@ _CURATION: tuple[str, ...] = (
         last_evaluated_at            TEXT,
         last_materialized_track_ids  TEXT,
         created_at                   TEXT NOT NULL,
-        modified_at                  TEXT NOT NULL
+        modified_at                  TEXT NOT NULL,
+        deleted_at                   TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_smartlists_name ON smartlists(name)",
@@ -1303,16 +1311,28 @@ def _now() -> str:
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
-    """Create ``schema_meta`` with the legacy shape, byte-for-byte.
+    """Create the migration bookkeeping tables with the legacy shape, byte-for-byte.
 
-    Same DDL as apps/shared/state/schema.py._ensure_meta, so a DB that has
-    already been through the legacy runner sees an exact no-op.
+    ``schema_meta`` is the same DDL as apps/shared/state/schema.py._ensure_meta
+    and ``schema_meta_markers`` the same as apps/shared/state/migrations_v16
+    (the one-shot repair markers of #3165), so a DB that has already been
+    through the legacy runner sees an exact no-op. Both are infrastructure,
+    hence :data:`apps.shared.state.schema.INFRASTRUCTURE_TABLES` and not
+    :data:`TABLES`.
     """
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_meta (
             version    INTEGER PRIMARY KEY,
             applied_at TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_meta_markers (
+            marker     TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
         )
         """
     )
@@ -1691,6 +1711,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     # absorb a create.
     if adopting:
         _assert_adoptable(conn)
+    migrate_smartlists_deleted_at(conn)
     _audit_existing_shapes(conn)
 
     # IMMEDIATE, not the default DEFERRED: this runner reads (the census and

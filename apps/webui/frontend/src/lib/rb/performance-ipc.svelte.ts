@@ -30,6 +30,17 @@
  *     [if] the deck is stopped, or has an engaged loop, or BeatSyncMax is off
  *       [then] the jump fires immediately - a stopped deck has no audible
  *       transition to protect, and an engaged loop already owns its window
+ *   ✔︎ LATENCY-02 QUANTIZED LAUNCH is opt-in via play.quantize / Cmd+Space / Cmd+click.
+ *     [if] Cmd+Space or Cmd+click on play starts a paused loaded deck while a
+ *       playing master has a trusted beatgrid [then] playback is scheduled at the
+ *       next point where this deck's beat 1 aligns with the master's beat 1, and
+ *       the play control shows an armed/waiting countdown until that instant ⛔️
+ *     [if] Space or a plain play click, or a play command with no quantize flag,
+ *       starts a paused loaded deck [then] playback uses the Class A immediate path ⛔️
+ *     [if] the AGENT-03 play command carries quantize: true [then] it takes the same
+ *       QUANTIZED LAUNCH path as Cmd+Space, including the armed countdown in query() ⛔️
+ *     [if] a QUANTIZED LAUNCH cannot be planned [then] the command refuses with a named
+ *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
 import { assertHeadDelayMs } from '$lib/player/constants';
@@ -107,15 +118,25 @@ import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
 	EqBand,
+	HeadphoneAlignmentMode,
 	HeadphoneOutputMode,
 	HeadphoneState,
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
+import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/constants';
+import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
+import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
+import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
+import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
+export {
+	installRescueRingWriterHooks,
+	uninstallRescueRingWriterHooks
+} from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 import {
 	hoveredEdgeList,
@@ -135,6 +156,12 @@ import {
 	performanceFeedbackSummary,
 	recordPerformanceFeedback
 } from '$lib/rb/vibe.svelte';
+import {
+	previewCacheStats,
+	previewCue,
+	previewCueSeek,
+	stopPreviewCue
+} from '$lib/player/preview-cue.svelte';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -145,7 +172,17 @@ export type HeadphoneCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_select'; device_id: string }
-	| { type: 'output_mode'; mode: HeadphoneOutputMode };
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
+	| { type: 'output_mode'; mode: HeadphoneOutputMode }
+	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'master_delay_ms'; value: number }
+	| { type: 'headphone_calibrate'; interactive?: boolean }
+	| { type: 'headphone_calibrate_abort' }
+	// CUEOUT-15: the library preview is a cue-bus voice, so it mirrors here
+	// with the rest of the cue controls rather than beside the deck transport.
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
+	| { type: 'preview_stop' };
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -157,7 +194,13 @@ export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
-	| { type: 'play'; deck: DeckId; playing: boolean }
+	| {
+			type: 'play';
+			deck: DeckId;
+			playing: boolean;
+			quantize?: boolean;
+			start_at_context_sec?: number;
+	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
@@ -196,12 +239,20 @@ export type PerformanceCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'head_delay_ms'; value: number }
-	| { type: 'master_mute'; muted: boolean }
+	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
+	| { type: 'preview_stop' }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
+	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'master_delay_ms'; value: number }
+	| { type: 'headphone_calibrate'; interactive?: boolean }
+	| { type: 'headphone_calibrate_abort' }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
@@ -238,11 +289,15 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
-	| { type: 'playlist_redo' };
+	| { type: 'playlist_redo' }
+	| { type: 'rescue_resume'; decks: Array<{ deck: DeckId; position_ms: number }> }
+	| { type: 'rescue_stop_all' };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
 	stable_id: string | null;
+	/** Resolved source path cached at load time (RESCUE-01). */
+	source_path: string | null;
 	/** Track.has_rb_mapping carried onto the deck (#736); a browser/CLI agent
 	 * driving hot_cue_save checks this before dispatching, the same signal
 	 * HotCueBank reads to go inert-with-tooltip. */
@@ -305,6 +360,8 @@ export interface PerformanceDeckSnapshot {
 	 * downbeat (BeatSyncMax, playing, unlooped); null when nothing is armed
 	 * or once the deferred jump has landed. */
 	hot_cue_armed: { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null;
+	/** LATENCY-02: QUANTIZED LAUNCH armed countdown; null once launched or cleared. */
+	quantized_launch_armed: { remaining_ms: number; launch_at_context_sec: number } | null;
 	command_error: string | null;
 	command_pending: boolean;
 	/** Last command observed for this deck, including MIDI and UI sources. */
@@ -329,9 +386,20 @@ export interface PerformanceState {
 		headphones: HeadphoneState;
 	};
 	master: { muted: boolean };
-	browser: { active_playlist: string | null };
+	browser: {
+		active_playlist: string | null;
+		search: string | null;
+		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
+		selected_row: string | null;
+	};
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
+	rescue_restore: {
+		phase: typeof rescueRestoreStatus.phase;
+		playing_deck_ids: DeckId[];
+		per_deck: Record<DeckId, 'pending' | 'decoded' | 'failed'>;
+		started_at_ms: number;
+	};
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
@@ -351,6 +419,25 @@ export interface PerformanceState {
 	 * default. */
 	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
+	/** CUEOUT-15: the library preview voice. An agent that can START a preview
+	 * (`preview_cue`) has to be able to read whether one is running and where
+	 * it is, or the only way to find out is to look at the screen. `stable_id`
+	 * null means nothing is previewing; it is never a deck. */
+	preview: {
+		stable_id: string | null;
+		playing: boolean;
+		position_ms: number;
+		duration_ms: number | null;
+		route: 'cue' | 'main_practice' | 'split_right' | null;
+		/** CUEOUT-15 R6: 1, or the tempo-match rate against the master deck. */
+		rate: number;
+		/** Decoded preview audio held right now, and the cap it is held under.
+		 * Readable here because "how much memory is the preview holding" is a
+		 * question an agent has to be able to answer without a profiler. */
+		cache_tracks: number;
+		cache_bytes: number;
+		cache_budget_bytes: number;
+	};
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -375,11 +462,18 @@ export interface PairingSnapshot {
 	}>;
 }
 
+export interface PerformanceBrowserPaneSnapshot {
+	search: string | null;
+	sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
+	selected_row: string | null;
+}
+
 /** BrowserPanel owns playlist loading, while this module owns the public
  * command protocol. Registering the narrow adapter keeps both boundaries
  * explicit and makes a missing mounted browser fail loudly for an agent. */
 export interface PerformanceBrowserAdapter {
 	selectPlaylist(playlistId: string): Promise<void>;
+	readSnapshot(): PerformanceBrowserPaneSnapshot;
 }
 
 /** Pin fc60002b81a8: same decoupling shape as PerformanceBrowserAdapter above
@@ -442,6 +536,25 @@ export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAda
 	return () => {
 		if (_browserAdapter !== adapter) throw new Error('performance browser adapter ownership changed');
 		_browserAdapter = null;
+	};
+}
+
+const _EMPTY_BROWSER_PANE_SNAPSHOT: PerformanceBrowserPaneSnapshot = {
+	search: null,
+	sort: null,
+	selected_row: null
+};
+
+function _readBrowserPaneSnapshot(): PerformanceBrowserPaneSnapshot {
+	if (_browserAdapter === null) return _EMPTY_BROWSER_PANE_SNAPSHOT;
+	const snapshot = _browserAdapter.readSnapshot();
+	return {
+		search: snapshot.search,
+		sort:
+			snapshot.sort === null
+				? null
+				: { key: snapshot.sort.key, direction: snapshot.sort.direction },
+		selected_row: snapshot.selected_row
 	};
 }
 
@@ -550,6 +663,40 @@ const hotCueArmed: Record<
 	DeckId,
 	{ slot: HotCueSlot; target_position_ms: number; target_context_time: number } | null
 > = $state({ 1: null, 2: null, 3: null, 4: null });
+
+const quantizedLaunchArmed: Record<DeckId, { launch_at_context_sec: number } | null> = $state({
+	1: null,
+	2: null,
+	3: null,
+	4: null
+});
+
+export interface PerformanceQuantizedLaunchDriver {
+	arm(deck: DeckId, pressT0Ms?: number): Promise<number>;
+	clear(deck: DeckId): void;
+	contextTimeNowSec(): number;
+}
+
+const _defaultQuantizedLaunchDriver: PerformanceQuantizedLaunchDriver = {
+	arm: (deck, pressT0Ms) => engine.armQuantizedLaunch(deck, pressT0Ms),
+	clear: (deck) => engine.clearQuantizedLaunch(deck),
+	contextTimeNowSec: () => engine.contextTimeNowSec()
+};
+let _quantizedLaunchDriver: PerformanceQuantizedLaunchDriver = _defaultQuantizedLaunchDriver;
+
+export function installPerformanceQuantizedLaunchDriverForTest(
+	driver: PerformanceQuantizedLaunchDriver
+): () => void {
+	const previous = _quantizedLaunchDriver;
+	_quantizedLaunchDriver = driver;
+	return () => {
+		_quantizedLaunchDriver = previous;
+	};
+}
+
+export function resetQuantizedLaunchArmedForTest(): void {
+	for (const deckId of DECK_IDS) quantizedLaunchArmed[deckId] = null;
+}
 
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
@@ -726,6 +873,21 @@ export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	'headphone'
 ];
 
+export const PERFORMANCE_RESCUE_COMMAND_SCOPES: readonly CommandScope[] = PERFORMANCE_PRESET_COMMAND_SCOPES;
+
+let _rescueRestoredDecks: DeckId[] = [];
+
+export function rescueRestoreLocksControls(): boolean {
+	return (
+		rescueRestoreStatus.phase === 'restoring' ||
+		rescueRestoreStatus.phase === 'resuming'
+	);
+}
+
+export function setRescueRestorePhaseForTest(phase: typeof rescueRestoreStatus.phase): void {
+	rescueRestoreStatus.phase = phase;
+}
+
 declare global {
 	interface Window {
 		musicDjToolsPerformance?: PerformanceBrowserIpc;
@@ -844,8 +1006,39 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, value: _unit('value', record.value) };
 	}
 	if (type === 'master_mute') {
-		_exactKeys(record, ['type', 'muted']);
-		return { type, muted: _boolean('muted', record.muted) };
+		if (record.persist === undefined) {
+			_exactKeys(record, ['type', 'muted']);
+			return { type, muted: _boolean('muted', record.muted) };
+		}
+		_exactKeys(record, ['type', 'muted', 'persist']);
+		return { type, muted: _boolean('muted', record.muted), persist: _boolean('persist', record.persist) };
+	}
+	if (type === 'preview_cue') {
+		// CUEOUT-15. `ratio` is validated here rather than clamped, because a
+		// caller that sent 1.6 meant something this cannot guess; the pointer
+		// path clamps because a pixel outside the strip DOES have an obvious
+		// intent.
+		_exactKeys(record, ['type', 'stable_id', 'ratio', 'bpm']);
+		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
+			throw new TypeError('stable_id must be a non-empty string');
+		}
+		// `bpm` is the caller's own copy of the track BPM, for the CUEOUT-15 R6
+		// tempo match. Optional: the pointer path always has it from the row,
+		// and an agent that does not send one gets a preview at its own tempo
+		// rather than a metadata request it did not ask for.
+		if (record.bpm !== undefined && (typeof record.bpm !== 'number' || !(record.bpm > 0))) {
+			throw new TypeError('bpm must be a positive number when given');
+		}
+		return {
+			type,
+			stable_id: record.stable_id,
+			ratio: _unit('ratio', record.ratio),
+			...(record.bpm === undefined ? {} : { bpm: record.bpm })
+		};
+	}
+	if (type === 'preview_stop') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'browser_select_playlist') {
 		_exactKeys(record, ['type', 'playlist_id']);
@@ -869,6 +1062,20 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'headphone_master_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
+	if (type === 'headphone_input_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
 	if (type === 'output_mode') {
 		_exactKeys(record, ['type', 'mode']);
 		assertHeadphoneOutputMode(record.mode);
@@ -878,6 +1085,30 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'value']);
 		assertHeadDelayMs(record.value);
 		return { type, value: record.value };
+	}
+	if (type === 'headphone_alignment_mode') {
+		_exactKeys(record, ['type', 'value']);
+		assertHeadphoneAlignmentMode(record.value);
+		return { type, value: record.value };
+	}
+	if (type === 'master_delay_ms') {
+		_exactKeys(record, ['type', 'value']);
+		assertMasterDelayMs(record.value);
+		return { type, value: record.value };
+	}
+	if (type === 'headphone_calibrate') {
+		// `interactive` is the modal's flag (wait for the ear-cup step); HTTP and
+		// CLI callers omit it and get the headless run.
+		_exactKeys(record, ['type', 'interactive']);
+		if (record.interactive === undefined) return { type };
+		if (typeof record.interactive !== 'boolean') {
+			throw new TypeError(`headphone_calibrate interactive must be boolean; got ${String(record.interactive)}`);
+		}
+		return { type, interactive: record.interactive };
+	}
+	if (type === 'headphone_calibrate_abort') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
@@ -919,9 +1150,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
-	if (type === 'playlist_undo' || type === 'playlist_redo') {
+	if (type === 'playlist_undo' || type === 'playlist_redo' || type === 'rescue_stop_all') {
 		_exactKeys(record, ['type']);
 		return { type };
+	}
+	if (type === 'rescue_resume') {
+		_exactKeys(record, ['type', 'decks']);
+		if (!Array.isArray(record.decks) || record.decks.length === 0) {
+			throw new RangeError('rescue_resume requires at least one deck');
+		}
+		const decks = record.decks.map((entry) => {
+			const row = _record(entry);
+			_exactKeys(row, ['deck', 'position_ms']);
+			const position_ms = _finite('position_ms', row.position_ms);
+			if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
+			return { deck: _deck(row.deck), position_ms };
+		});
+		return { type, decks };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -979,8 +1224,25 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (record.lock === undefined) return { type, deck };
 		return { type, deck, lock: _boolean('lock', record.lock) };
 	} else if (type === 'play') {
-		_exactKeys(record, ['type', 'deck', 'playing']);
-		return { type, deck, playing: _boolean('playing', record.playing) };
+		_exactKeys(record, ['type', 'deck', 'playing', 'quantize', 'start_at_context_sec']);
+		const playing = _boolean('playing', record.playing);
+		const start_at_context_sec =
+			record.start_at_context_sec === undefined
+				? undefined
+				: _finite('start_at_context_sec', record.start_at_context_sec);
+		if (start_at_context_sec !== undefined && start_at_context_sec < 0) {
+			throw new RangeError('start_at_context_sec must be >= 0');
+		}
+		if (record.quantize === undefined && start_at_context_sec === undefined) {
+			return { type, deck, playing };
+		}
+		return {
+			type,
+			deck,
+			playing,
+			...(record.quantize === undefined ? {} : { quantize: _boolean('quantize', record.quantize) }),
+			...(start_at_context_sec === undefined ? {} : { start_at_context_sec })
+		};
 	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
@@ -1196,6 +1458,19 @@ function _hotCueArmedSnapshot(
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
+function _quantizedLaunchArmedSnapshot(
+	deckId: DeckId
+): { remaining_ms: number; launch_at_context_sec: number } | null {
+	const armed = quantizedLaunchArmed[deckId];
+	if (armed === null) return null;
+	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
+	if (remainingMs <= 0) {
+		quantizedLaunchArmed[deckId] = null;
+		return null;
+	}
+	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
+}
+
 function _openPairingSnapshot(): PairingSnapshot {
 	const unit: 'beats' | 'time' = uiPrefs.beat_sync_max ? 'beats' : 'time';
 	const decks = DECK_IDS.flatMap((deckId) => {
@@ -1236,6 +1511,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	return {
 		deck_id: deckId,
 		stable_id: deck.stable_id,
+		source_path: deck.source_path,
 		has_rb_mapping: deck.has_rb_mapping,
 		title: deck.title,
 		artist: deck.artist,
@@ -1309,6 +1585,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
 		hot_cue_armed: _hotCueArmedSnapshot(deckId),
+		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
 		last_command_id: _deckCommandIds[deckId]
@@ -1320,6 +1597,7 @@ export function queryPerformanceState(): PerformanceState {
 	if (masterDecks.length > 1) {
 		throw new Error(`engine contract violation: ${masterDecks.length} master decks selected`);
 	}
+	const previewStats = previewCacheStats();
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
@@ -1345,7 +1623,8 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
-				outputs: mixerState.headphones.outputs.map((output) => ({ ...output }))
+				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },
@@ -1355,9 +1634,26 @@ export function queryPerformanceState(): PerformanceState {
 			}
 		},
 		master: { muted: isMasterMuted() },
-		browser: { active_playlist: _activeBrowserPlaylist },
+		browser: { active_playlist: _activeBrowserPlaylist, ..._readBrowserPaneSnapshot() },
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
+		rescue_restore: {
+			phase: rescueRestoreStatus.phase,
+			playing_deck_ids: [...rescueRestoreStatus.playing_deck_ids],
+			per_deck: { ...rescueRestoreStatus.per_deck },
+			started_at_ms: rescueRestoreStatus.started_at_ms
+		},
+		preview: {
+			stable_id: previewCue.stable_id,
+			playing: previewCue.playing,
+			position_ms: previewCue.position_ms,
+			duration_ms: previewCue.duration_ms,
+			route: previewCue.route,
+			rate: previewCue.rate,
+			cache_tracks: previewStats.tracks,
+			cache_bytes: previewStats.bytes,
+			cache_budget_bytes: previewStats.budget_bytes
+		},
 		last_error: performanceCommandStatus.last_error,
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
 		// Proxy wrapping the assigned object - and a Proxy, regardless of what
@@ -1421,6 +1717,11 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
 }
 
+function _completeCommand(command: PerformanceCommand): PerformanceState {
+	notifyRescueTransportEvent(command);
+	return queryPerformanceState();
+}
+
 function _persistenceScope(deck: DeckId): PersistenceScope {
 	return `persistence-${deck}`;
 }
@@ -1428,11 +1729,18 @@ function _persistenceScope(deck: DeckId): PersistenceScope {
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
+	if (command.type === 'rescue_resume' || command.type === 'rescue_stop_all') {
+		return PERFORMANCE_RESCUE_COMMAND_SCOPES;
+	}
 	if (
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
 		command.type === 'headphone_output_select' ||
-		command.type === 'output_mode'
+		command.type === 'headphone_master_select' ||
+		command.type === 'headphone_input_select' ||
+		command.type === 'output_mode' ||
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
+		command.type === 'headphone_calibrate'
 	) {
 		return ['headphone'];
 	}
@@ -1457,6 +1765,14 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms' ||
+		// CUEOUT-14: the abort must never queue behind the calibration it stops.
+		command.type === 'headphone_calibrate_abort' ||
+		// CUEOUT-15: the preview owns no deck, so serializing it behind one
+		// would make a library click wait on a transport it cannot touch.
+		command.type === 'preview_cue' ||
+		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
@@ -1554,6 +1870,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
 		// Q1: the stamp rides WITH the intent, so the play this eventually
@@ -1578,9 +1895,26 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
-		if (command.playing) await engine.play(command.deck, pressT0Ms);
-		else await engine.pause(command.deck, pressT0Ms);
+		if (command.playing) {
+			if (command.start_at_context_sec !== undefined) {
+				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
+			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+				quantizedLaunchArmed[command.deck] = null;
+				_quantizedLaunchDriver.clear(command.deck);
+			} else if (command.quantize === true) {
+				if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+				const launchAt = await _quantizedLaunchDriver.arm(command.deck, pressT0Ms);
+				quantizedLaunchArmed[command.deck] = { launch_at_context_sec: launchAt };
+			} else {
+				await engine.play(command.deck, pressT0Ms);
+			}
+		} else {
+			quantizedLaunchArmed[command.deck] = null;
+			_quantizedLaunchDriver.clear(command.deck);
+			await engine.pause(command.deck, pressT0Ms);
+		}
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'cue') {
 		await engine.pressCue(command.deck, pressT0Ms);
@@ -1652,11 +1986,24 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
 	} else if (command.type === 'master_mute') {
-		setMasterMuted(command.muted);
+		// persist:false is the MCP safety rail's mute: silence this page now,
+		// but never store it where another browser would start muted.
+		setMasterMuted(command.muted, { persist: command.persist !== false });
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
 		await _browserAdapter.selectPlaylist(command.playlist_id);
 		_activeBrowserPlaylist = command.playlist_id;
+	} else if (command.type === 'preview_cue') {
+		// The UI path gets the refusal as a toast. An agent gets it as a failed
+		// step, so `POST /performance/headphones/preview` answers 400 with the
+		// reason instead of 200 over a preview that never started.
+		const outcome = await previewCueSeek(command.stable_id, command.ratio, {
+			trackBpm: command.bpm ?? null
+		});
+		if (!outcome.ok) throw new Error(outcome.reason);
+		if (outcome.warning !== null) pushToast(outcome.warning, 'warn');
+	} else if (command.type === 'preview_stop') {
+		stopPreviewCue();
 	} else if (command.type === 'headphone_mix') {
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
@@ -1669,8 +2016,20 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'headphone_master_select') {
+		await engine.selectMasterOutput(command.device_id);
+	} else if (command.type === 'headphone_input_select') {
+		await engine.selectAudioInput(command.device_id);
 	} else if (command.type === 'output_mode') {
 		engine.setHeadphoneOutputMode(command.mode);
+	} else if (command.type === 'headphone_alignment_mode') {
+		engine.setHeadphoneAlignmentMode(command.value);
+	} else if (command.type === 'master_delay_ms') {
+		engine.setMasterDelayMs(command.value);
+	} else if (command.type === 'headphone_calibrate') {
+		await startCueAlignment({ interactive: command.interactive ?? false });
+	} else if (command.type === 'headphone_calibrate_abort') {
+		abortCueAlignment();
 	} else if (command.type === 'analysis_source') {
 		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
@@ -1737,7 +2096,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (cue === null) throw new Error(`hot cue ${command.slot}: nothing to trigger`);
 		const deckAnlz = getDeckState(command.deck).anlz;
 		const trustAnlz =
-			deckAnlz ?? { beatgrid: { source: 'rekordbox', beats, status: 'ok' } };
+			deckAnlz ?? {
+				beatgrid: {
+					source: 'rekordbox',
+					beats: [...beats],
+					beat_count: beats.length,
+					status: 'ok'
+				}
+			};
 		const plan = planHotCueTrigger(
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
 			playing,
@@ -1826,6 +2192,19 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error('playlist_redo requires a mounted playlist history panel');
 		}
 		await _playlistHistoryAdapter.redo();
+	} else if (command.type === 'rescue_resume') {
+		const plans = command.decks.map((entry) => ({
+			deck: entry.deck,
+			positionSec: entry.position_ms / 1000
+		}));
+		await engine.rescueResumeTogether(plans);
+		_rescueRestoredDecks = command.decks.map((entry) => entry.deck);
+	} else if (command.type === 'rescue_stop_all') {
+		const decks = _rescueRestoredDecks.length > 0 ? _rescueRestoredDecks : DECK_IDS.filter(
+			(deckId) => getDeckState(deckId).playing
+		);
+		await engine.rescueStopAllTogether(decks);
+		_rescueRestoredDecks = [];
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -2271,11 +2650,24 @@ async function _dispatchUnknown(
 		_persistCommandError(deck, error);
 		throw error;
 	}
+	if (
+		rescueRestoreLocksControls() &&
+		(command.type === 'play' ||
+			command.type === 'load' ||
+			command.type === 'unload' ||
+			command.type === 'cue')
+	) {
+		const error = new Error(
+			`rescue restore owns controls at ${rescueRestoreStatus.phase}; command ${command.type} rejected`
+		);
+		_persistCommandError(deck, error);
+		throw error;
+	}
 	if (command.type === 'feedback_mark') {
 		try {
 			const mark = _feedbackMark(command.vote);
 			await recordPerformanceFeedback(mark);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			_persistCommandError(null, error);
 			throw error;
@@ -2313,7 +2705,7 @@ async function _dispatchUnknown(
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error, command);
 			throw error;
@@ -2328,7 +2720,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
@@ -2350,7 +2742,7 @@ async function _dispatchUnknown(
 			// exactly the gap press_to_schedule_ms exists to expose.
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;

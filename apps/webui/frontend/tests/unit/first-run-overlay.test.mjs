@@ -116,23 +116,142 @@ test('resolveFirstRun asks the engine and returns its verdict', async () => {
 	const paths = [];
 	globalThis.fetch = async (request) => {
 		paths.push(new URL(request.url).pathname);
+		if (new URL(request.url).pathname === '/api/v1/health') {
+			return jsonResponse(engineHealth());
+		}
 		return jsonResponse(status({ should_show_wizard: true }));
 	};
+	mod.capabilities._resetForTests();
 	assert.equal(await mod.resolveFirstRun(), true);
 	assert.ok(paths.includes('/api/v1/setup/status'), `asked ${paths.join(', ')}`);
 });
 
+test('resolveFirstRun retries after initial probe failure and still calls setup status', async () => {
+	let healthCalls = 0;
+	const paths = [];
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		paths.push(path);
+		if (path === '/api/v1/health') {
+			healthCalls += 1;
+			if (healthCalls < 3) throw new TypeError('fetch failed: ECONNREFUSED');
+			return jsonResponse(engineHealth());
+		}
+		if (path === '/api/v1/entitlements') {
+			return jsonResponse({ detail: 'not found' }, 404);
+		}
+		return jsonResponse(status({ should_show_wizard: true }));
+	};
+	mod.capabilities._resetForTests();
+	assert.equal(await mod.resolveFirstRun({ timeoutMs: 5_000 }), true);
+	assert.ok(
+		paths.includes('/api/v1/setup/status'),
+		`setup status must run after probe retries: ${paths.join(', ')}`
+	);
+	assert.ok(healthCalls >= 3);
+});
+
+test('resolveFirstRun is not blocked by a parallel entitlements 404', async () => {
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/entitlements') return jsonResponse({ detail: 'not found' }, 404);
+		if (path === '/api/v1/setup/status') {
+			return jsonResponse(status({ should_show_wizard: true }));
+		}
+		throw new Error(`unexpected fetch ${path}`);
+	};
+	mod.capabilities._resetForTests();
+	assert.equal(await mod.resolveFirstRun(), true);
+});
+
+test('resolveFirstRun throws after timeout when the engine never answers', async () => {
+	globalThis.fetch = async () => {
+		throw new TypeError('fetch failed: ECONNREFUSED');
+	};
+	mod.capabilities._resetForTests();
+	await assert.rejects(
+		() => mod.resolveFirstRun({ timeoutMs: 800 }),
+		(err) => err.name === 'FirstRunTimeoutError'
+	);
+});
+
 test('a populated library resolves to no overlay', async () => {
-	globalThis.fetch = async () =>
-		jsonResponse(status({ library_empty: false, tracks: 42, should_show_wizard: false }));
+	globalThis.fetch = async (request) => {
+		if (new URL(request.url).pathname === '/api/v1/health') {
+			return jsonResponse(engineHealth());
+		}
+		return jsonResponse(status({ library_empty: false, tracks: 42, should_show_wizard: false }));
+	};
+	mod.capabilities._resetForTests();
 	assert.equal(await mod.resolveFirstRun(), false);
 });
 
 test('a failed status probe shows the library, not the overlay', async () => {
 	// Never blocks the library: a status call that fails is a reason to show
 	// the tracks, not to strand the user behind a dialog.
-	globalThis.fetch = async () => jsonResponse({ detail: 'boom' }, 500);
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/setup/status') return jsonResponse({ detail: 'boom' }, 500);
+		throw new Error(`unexpected ${path}`);
+	};
+	mod.capabilities._resetForTests();
 	assert.equal(await mod.resolveFirstRun(), false);
+});
+
+test('resolveFirstRunWithMeta surfaces probe timeout instead of silent false', async () => {
+	mod.capabilities._resetForTests();
+	globalThis.fetch = async () => jsonResponse({ status: 'ok' }, 503);
+	const result = await mod.resolveFirstRunWithMeta({ probeTimeoutMs: 300, probeIntervalMs: 50 });
+	assert.equal(result.show, false);
+	assert.ok(result.error, 'expected a visible timeout error');
+});
+
+test('unknown flavor retries until engine answers then requests setup status', async () => {
+	mod.capabilities._resetForTests();
+	let healthCalls = 0;
+	const paths = [];
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') {
+			healthCalls += 1;
+			if (healthCalls < 2) {
+				return jsonResponse({ status: 'ok' }, 503);
+			}
+			return jsonResponse(engineHealth());
+		}
+		paths.push(path);
+		return jsonResponse(status({ should_show_wizard: true }));
+	};
+	const result = await mod.resolveFirstRunWithMeta();
+	assert.equal(result.show, true);
+	assert.equal(result.error, null);
+	assert.ok(paths.includes('/api/v1/setup/status'));
+});
+
+test('legacy flavor never requests setup status', async () => {
+	mod.capabilities._resetForTests();
+	const paths = [];
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		paths.push(path);
+		if (path === '/api/v1/health') {
+			return jsonResponse({
+				status: 'ok',
+				state_db: { path: 'data/state/state.db', tracks: 0, playlists: 0 },
+				cloud: { lock_holder: null },
+				syncthing: null,
+				bind_host: '127.0.0.1',
+				version: '0.1.0'
+			});
+		}
+		return jsonResponse(status());
+	};
+	const result = await mod.resolveFirstRunWithMeta();
+	assert.equal(result.show, false);
+	assert.equal(result.error, null);
+	assert.ok(!paths.includes('/api/v1/setup/status'));
 });
 
 // -------------------------------------------------------------- the markup
@@ -146,7 +265,7 @@ test('the gate lives in the root layout, not on the library page', () => {
 	assert.doesNotMatch(page, /FirstRunOverlay/);
 
 	const layout = read('src/routes/+layout.svelte');
-	assert.match(layout, /resolveFirstRun\(\)/);
+	assert.match(layout, /runFirstRunGate\(\)/);
 	assert.match(layout, /openSetupOverlay\(\)/);
 	assert.match(layout, /<SetupOverlay \/>/);
 	// The destination is spelled once, in run-setup.ts.
@@ -168,9 +287,12 @@ test('the overlay is a labelled dialog hosting the wizard steps', () => {
 	assert.match(overlay, /role="dialog"/);
 	assert.match(overlay, /aria-modal="true"/);
 	assert.match(overlay, /aria-label="First-run setup"/);
-	// The steps are REUSED, not rewritten: same store, same step names.
+	// The steps are REUSED, not rewritten: same store, same step names. The
+	// overlay walks visibleSteps(source) rather than the raw list, because the
+	// folder branch skips the rekordbox confirm step; both come from the one
+	// wizard module, so there is still no second copy of the step names here.
 	assert.match(overlay, /from '\$lib\/setup\/wizard\.svelte'/);
-	assert.match(overlay, /WIZARD_STEPS/);
+	assert.match(overlay, /visibleSteps\(source\)/);
 	assert.match(overlay, /setupWizard\.beginImport/);
 	assert.match(overlay, /setupWizard\.beginFolderImport/);
 });

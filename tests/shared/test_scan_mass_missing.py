@@ -1,6 +1,8 @@
 """LIBM-41: a populated scan root that collapses to empty is an error.
 
 Never purge on absence. Real temp dirs, no mocked filesystem.
+
+[if] a populated scan root reads as empty [then] the guard raises and keeps its rows, [else stop].
 """
 
 from __future__ import annotations

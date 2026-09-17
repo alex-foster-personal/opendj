@@ -418,6 +418,13 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # engine.py's apply section into engine_apply.py (quality-gate
     # file_size ratchet); the DELETE text moved with it.
     ("apps/sync_hub/engine_apply.py", "dynamic:MEMBERSHIP_TABLE"),
+    # apps.sync_hub.engine_identity_map._remove_remap_loser: the
+    # sync_identity_remap table records which duplicate stable_id lost an
+    # identity merge on THIS hub. It is not a protocol.SYNC_TABLES member, it
+    # never crosses the wire, and it carries no deleted_at column, so a hard
+    # DELETE of a retired remap row is the only correct shape (round 2 CI
+    # green, Wed 16 Sep 2026).
+    ("apps/sync_hub/engine_identity_map.py", "dynamic:REMAP_TABLE"),
     # apps.sync_hub.engine_apply._drop_superseded -- the one place a hard
     # DELETE against an arbitrary SYNC_TABLES member is correct by design:
     # two peers minted different natural-key duplicates (round 1 finding
@@ -474,6 +481,20 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     ("apps/sync_hub/engine_identity.py", "dynamic:_ident(table)"),
     ("apps/sync_hub/engine_identity.py", "track_locations"),
     ("apps/sync_hub/engine_identity.py", "playlist_memberships"),
+    # apps/shared/state_authoritative_backup.restore_tables -- offline selective
+    # restore of ADR-0022 backup-only authoritative table groups (issue #2498,
+    # ADR-0022). Runs under EngineLock with the live engine stopped; deletes
+    # every row in the requested full-table group, then INSERT ... SELECT from
+    # a verified local backup inside one transaction. Not a peer-visible row
+    # delete -- wholesale scope replace during disaster recovery. dynamic:name
+    # is _full_table_group's f-string for pairings/smartlists; the guard
+    # cannot resolve which table and flags all dynamic DELETE targets.
+    ("apps/shared/state_authoritative_backup.py", "dynamic:name"),
+    # Same restore path, scoped replace for track_fields notes/tags only
+    # (rating and other field_name rows are untouched). Tombstones would break
+    # count parity and leave ghosts; see track_fields_notes_tags group in
+    # RESTORE_REGISTRY.
+    ("apps/shared/state_authoritative_backup.py", "track_fields"),
 })
 
 

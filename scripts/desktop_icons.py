@@ -13,6 +13,9 @@ Requirements:
   1024 at 1x and 2x) -> :func:`icns_embedded_pixel_sizes`
 - ✔︎ ✅ 🎯 Regeneration from one master PNG produces the same file set Tauri
   would -> :func:`generate_desktop_icons`
+- ✔︎ ✅ 🎯 The master sits on Apple's macOS icon grid (1024 canvas, transparent
+  margin around an 824px tile), so the Dock never draws an inset tile with
+  padding around a full-bleed square (INSTALL-19) -> :func:`_load_master`
 
 Acceptance tests:
 
@@ -21,6 +24,8 @@ Acceptance tests:
 - [if] ``icon.icns`` lacks the 1024px slot [then] verification raises naming
   the missing sizes [else ⛔️].
 - [if] ``64x64.png`` is missing [then] verification raises [else ⛔️].
+- [if] the master has an opaque corner or margin pixel [then] generation
+  raises naming the grid [else ⛔️].
 """
 
 from __future__ import annotations
@@ -71,6 +76,18 @@ DEFAULT_ICONS_DIR: Path = (
 )
 DEFAULT_MASTER: Path = DEFAULT_ICONS_DIR / "app-icon.png"
 MASTER_EDGE_PX: int = 1024
+# Apple's macOS app icon grid: on a 1024 canvas the artwork is an 824px rounded
+# square at (100, 100); everything outside it is transparent. A full-bleed
+# opaque master is what macOS 26 draws as an inset tile with padding.
+MASTER_GRID_MARGIN_PX: int = 100
+MASTER_GRID_PROBE_PX: tuple[tuple[int, int], ...] = (
+    (0, 0),
+    (MASTER_EDGE_PX - 1, 0),
+    (0, MASTER_EDGE_PX - 1),
+    (MASTER_EDGE_PX - 1, MASTER_EDGE_PX - 1),
+    (MASTER_GRID_MARGIN_PX // 2, MASTER_EDGE_PX // 2),
+    (MASTER_EDGE_PX // 2, MASTER_GRID_MARGIN_PX // 2),
+)
 
 
 @dataclass(frozen=True)
@@ -270,7 +287,25 @@ def _load_master(master_path: Path) -> Image.Image:
             raise PayloadBuildError(msg)
         if rgba.width < MASTER_EDGE_PX:
             rgba = _resize_rgba(rgba, MASTER_EDGE_PX)
+        _verify_master_on_apple_grid(rgba, master_path)
         return rgba.copy()
+
+
+def _verify_master_on_apple_grid(rgba: Image.Image, master_path: Path) -> None:
+    """Refuse a full-bleed master: the margin outside Apple's 824px tile must be transparent."""
+    scale = rgba.width / MASTER_EDGE_PX
+    opaque = [
+        (x, y)
+        for x, y in MASTER_GRID_PROBE_PX
+        if rgba.getpixel((int(x * scale), int(y * scale)))[3] != 0
+    ]
+    if opaque:
+        msg = (
+            f"icon master {master_path} is not on Apple's icon grid: expected a transparent "
+            f"{MASTER_GRID_MARGIN_PX}px margin around the tile, found opaque pixels at "
+            + ", ".join(f"({x},{y})" for x, y in opaque)
+        )
+        raise PayloadBuildError(msg)
 
 
 def generate_desktop_icons(

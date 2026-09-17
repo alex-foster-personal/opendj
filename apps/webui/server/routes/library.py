@@ -15,7 +15,7 @@ from apps.webui.server.library_readiness import (
     ReadinessAxis,
     query_library_readiness,
 )
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/library", tags=["library"])
 

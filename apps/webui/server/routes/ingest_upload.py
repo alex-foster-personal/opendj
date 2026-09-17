@@ -10,6 +10,8 @@ Requirements (mini-PRD):
   ✔︎ ✅ POST upload: stage real bytes + duration & fingerprint dup check.
     [if] the file is not audio or the batch name is invalid [then ⛔️] 422
     [if] the upload is empty [then ⛔️] 422, temp file removed
+    [if] mutagen ([tags] extra) is not installed [then ⛔️] 503
+    TAG_READER_UNAVAILABLE before any bytes are staged
     [if] fingerprint >= threshold match exists and force is not set
     [then] file skipped with duplicate_of reported
     [if] the destination filename already exists in the batch [then ⛔️] 409,
@@ -19,22 +21,31 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.fingerprints import ChromaprintMissing, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.webui.server.routes import ingest as ingest_cfg
 
+_TAG_READER_UNAVAILABLE_MESSAGE = (
+    "ingest upload requires the optional 'mutagen' tag reader for "
+    "duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+)
+
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+Verdict = Literal["new", "possible_duplicate", "skipped_duplicate"]
 
 
 class UploadFileResult(BaseModel):
     filename: str
     staged_path: str | None
     skipped_duplicate: bool
+    verdict: Verdict
     duplicate_of: dict | None        # {stable_id, title, artist, method, score}
     duration_s: float | None
     fingerprint_method: str          # "chromaprint" | "duration"
@@ -44,6 +55,22 @@ class UploadOut(BaseModel):
     batch: str
     dest_dir: str
     results: list[UploadFileResult]
+
+
+class DecideIn(BaseModel):
+    batch: str
+    filename: str
+    action: Literal["accept", "reject"]
+
+
+def _raise_tag_reader_unavailable() -> None:
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "TAG_READER_UNAVAILABLE",
+            "message": _TAG_READER_UNAVAILABLE_MESSAGE,
+        },
+    )
 
 
 def _duration_s(path: Path) -> float | None:
@@ -101,53 +128,111 @@ def _best_duplicate(staged: Path, duration_s: float) -> tuple[dict | None, str]:
     return best, "chromaprint"
 
 
+def _safe_relative_path(dest_dir: Path, name: str) -> Path:
+    """Resolve a client-supplied relative path under dest_dir."""
+    rel = Path(name)
+    if not name or rel.is_absolute() or ".." in rel.parts or name.startswith("/"):
+        raise HTTPException(422, f"invalid relative path: {name!r}")
+    if rel.suffix.lower() not in AUDIO_EXTENSIONS:
+        raise HTTPException(422, f"not an audio file: {name!r}")
+    final = (dest_dir / rel).resolve()
+    dest_resolved = dest_dir.resolve()
+    try:
+        final.relative_to(dest_resolved)
+    except ValueError:
+        raise HTTPException(422, f"path escapes dest dir: {name!r}")
+    return final
+
+
+def _hold_path(final: Path) -> Path:
+    return final.parent / (final.name + ".part")
+
+
 def _stage_one_upload(
     dest_dir: Path, up: UploadFile, batch: str, force: bool
 ) -> UploadFileResult:
     """Stage one uploaded file, or skip it as a duplicate. Raises on refusal."""
-    name = Path(up.filename or "").name
-    if not name or Path(name).suffix.lower() not in AUDIO_EXTENSIONS:
-        raise HTTPException(422, f"not an audio file: {up.filename!r}")
-    final = dest_dir / name
+    name = up.filename or ""
+    final = _safe_relative_path(dest_dir, name)
+    rel_name = str(final.relative_to(dest_dir.resolve()))
+    hold = _hold_path(final)
     if final.exists():
-        # Path.rename() on POSIX would replace the previously staged file
-        # silently; a reused batch name or a double-drop must fail loud,
-        # never destroy staged bytes.
         raise HTTPException(
             409,
-            f"{name!r} is already staged in batch {batch!r} ({final}); "
+            f"{rel_name!r} is already staged in batch {batch!r} ({final}); "
             "remove it or pick a new batch name",
         )
-    tmp = dest_dir / (name + ".part")
-    with tmp.open("wb") as fh:
+    if hold.exists():
+        raise HTTPException(
+            409,
+            f"{rel_name!r} is awaiting a duplicate decision in batch {batch!r}",
+        )
+    if not HAS_MUTAGEN:
+        _raise_tag_reader_unavailable()
+    final.parent.mkdir(parents=True, exist_ok=True)
+    with hold.open("wb") as fh:
         shutil.copyfileobj(up.file, fh)
-    if tmp.stat().st_size == 0:
-        tmp.unlink()
-        raise HTTPException(422, f"empty upload: {name}")
+    if hold.stat().st_size == 0:
+        hold.unlink()
+        raise HTTPException(422, f"empty upload: {rel_name}")
 
-    duration = _duration_s(tmp)
+    try:
+        duration = _duration_s(hold)
+    except ImportError:
+        if hold.exists():
+            hold.unlink()
+        _raise_tag_reader_unavailable()
     dup, method = (None, "duration")
     if duration is not None:
-        dup, method = _best_duplicate(tmp, duration)
-    is_dup = (
+        dup, method = _best_duplicate(hold, duration)
+    is_confirmed_dup = (
         dup is not None
         and dup["method"] == "chromaprint"
         and dup["score"] >= ingest_cfg.DUP_FP_THRESHOLD
     )
-    if is_dup and not force:
-        tmp.unlink()
+    if is_confirmed_dup and not force:
+        hold.unlink()
         return UploadFileResult(
-            filename=name, staged_path=None, skipped_duplicate=True,
+            filename=rel_name, staged_path=None, skipped_duplicate=True,
+            verdict="skipped_duplicate",
             duplicate_of=dup, duration_s=duration, fingerprint_method=method,
         )
-    tmp.rename(final)
+    is_possible_dup = dup is not None and not is_confirmed_dup
+    if is_possible_dup and not force:
+        return UploadFileResult(
+            filename=rel_name, staged_path=None, skipped_duplicate=False,
+            verdict="possible_duplicate",
+            duplicate_of=dup, duration_s=duration, fingerprint_method=method,
+        )
+    hold.rename(final)
     return UploadFileResult(
-        filename=name, staged_path=str(final), skipped_duplicate=False,
+        filename=rel_name, staged_path=str(final), skipped_duplicate=False,
+        verdict="new",
         duplicate_of=dup, duration_s=duration, fingerprint_method=method,
     )
 
 
-@router.post("/upload", response_model=UploadOut)
+@router.post(
+    "/upload",
+    response_model=UploadOut,
+    responses={
+        503: {
+            "description": (
+                "Optional mutagen tag reader ([tags] extra) is not installed."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "code": "TAG_READER_UNAVAILABLE",
+                            "message": _TAG_READER_UNAVAILABLE_MESSAGE,
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
 async def upload(
     files: Annotated[list[UploadFile], File()],
     batch: Annotated[str, Form()],
@@ -161,3 +246,36 @@ async def upload(
     dest_dir.mkdir(parents=True, exist_ok=True)
     results = [_stage_one_upload(dest_dir, up, batch, force) for up in files]
     return UploadOut(batch=batch, dest_dir=str(dest_dir), results=results)
+
+
+@router.post("/upload/decide", response_model=UploadFileResult)
+def decide_upload(body: DecideIn) -> UploadFileResult:
+    if not ingest_cfg.BATCH_RE.match(body.batch):
+        raise HTTPException(422, f"invalid batch name {body.batch!r}")
+    dest_dir = ingest_cfg.INGEST_INBOX / body.batch
+    if not dest_dir.is_dir():
+        raise HTTPException(404, f"batch {body.batch!r} not found")
+    final = _safe_relative_path(dest_dir, body.filename)
+    rel_name = str(final.relative_to(dest_dir.resolve()))
+    hold = _hold_path(final)
+    if body.action == "accept":
+        if not hold.exists():
+            if final.exists():
+                raise HTTPException(409, f"{rel_name!r} already staged")
+            raise HTTPException(404, f"no hold file for {rel_name!r}")
+        hold.rename(final)
+        return UploadFileResult(
+            filename=rel_name, staged_path=str(final), skipped_duplicate=False,
+            verdict="new", duplicate_of=None, duration_s=None,
+            fingerprint_method="duration",
+        )
+    if not hold.exists():
+        if final.exists():
+            raise HTTPException(409, f"{rel_name!r} already staged")
+        raise HTTPException(404, f"no hold file for {rel_name!r}")
+    hold.unlink()
+    return UploadFileResult(
+        filename=rel_name, staged_path=None, skipped_duplicate=True,
+        verdict="skipped_duplicate", duplicate_of=None, duration_s=None,
+        fingerprint_method="duration",
+    )

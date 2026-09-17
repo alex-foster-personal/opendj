@@ -15,6 +15,10 @@
 		usbTracker,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
+	import { canImportUsbVolume, importUsbVolume } from '$lib/rb/usb-import';
+
+	const IMPORT_TITLE =
+		'Import tracks from this stick. Files stay on the stick. Tags only - no BPM, key, or beatgrid.';
 
 	let foldedOpen = $state(false);
 	let promptName = $state('');
@@ -73,7 +77,7 @@
 
 {#if open}
 	<div class="usb-backdrop" role="presentation" onclick={close}></div>
-	<aside class="usb-panel" role="dialog" aria-label="USB volumes" aria-modal="true">
+	<aside class="usb-panel" role="dialog" aria-label="USB volumes" aria-modal="true" data-testid="usb-panel">
 		<header class="usb-head">
 			<strong title="USB stick tracker (#328) - detect only, never writes">USB sticks</strong>
 			<button type="button" class="usb-x" onclick={close} title="Close" aria-label="Close">x</button>
@@ -159,6 +163,16 @@
 						<button
 							type="button"
 							class="usb-mini"
+							data-testid="usb-import-button"
+							title={IMPORT_TITLE}
+							disabled={!canImportUsbVolume(vol)}
+							onclick={() => void importUsbVolume(vol)}
+						>
+							import
+						</button>
+						<button
+							type="button"
+							class="usb-mini"
 							title="Forget this volume"
 							onclick={() => setForgotten(vol.id, true)}
 						>
@@ -201,7 +215,9 @@
 		</details>
 
 		<footer class="usb-foot">
-			<span class="usb-hint" title="GitHub #328 - first-pass detect only">#328 read-only</span>
+			<span class="usb-hint" title="Detect + import; never writes to the stick">
+				Detect + import; never writes to the stick.
+			</span>
 		</footer>
 	</aside>
 {/if}

@@ -1,4 +1,8 @@
-"""``python -m apps.smartlists.cli.create`` -- create a smartlist."""
+"""``python -m apps.smartlists.cli.create`` -- create a smartlist.
+
+Documented agent path: ``opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'``.
+This module writes a local state.db (tests / offline).
+"""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +19,12 @@ from ._common import build_repo
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m apps.smartlists.cli.create",
-        description="Create a smartlist from a JSON rule file.",
+        description=(
+            "Create a smartlist from a JSON rule file. "
+            "Documented agent path: opendj api POST /api/v1/smartlists "
+            '--json \'{"name":"...","rule":{...}}\'. '
+            "This module writes a local state.db (tests / offline)."
+        ),
     )
     p.add_argument("--name", required=True)
     p.add_argument("--rule", required=True, type=Path,

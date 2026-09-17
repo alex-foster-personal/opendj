@@ -33,7 +33,7 @@ from apps.vocals.cli import (
     load_tracks,
     order_todo,
 )
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundleNotFoundError,
@@ -302,34 +302,35 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     """
     import sqlite3
 
+    from apps.shared.platform_paths import load_path_map
+    from apps.shared.state import locations as state_locations
+
     db = Path(data_dir) / "state" / "state.db"
+    path_map = load_path_map(Path(data_dir))
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
             "SELECT file_path FROM tracks "
             "WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
-    if row is None:
-        raise FileNotFoundError(f"no track {stable_id!r} in {db}")
-    if not row[0]:
-        raise FileNotFoundError(f"track {stable_id!r} has no file_path in {db}")
-    from apps.shared.platform_paths import load_path_map, resolve_asset_path
-
-    mapped = resolve_asset_path(
-        str(row[0]), path_map=load_path_map(Path(data_dir))
-    )
-    path = mapped.resolved
-    if path is None or not path.is_file():
-        from apps.shared.crate_index import resolve_crate_audio
-
-        path = resolve_crate_audio(stable_id)
-    if path is None or not path.is_file():
-        raise FileNotFoundError(
-            f"track {stable_id!r} points at {row[0]}, which resolves as "
-            f"{path} ({mapped.reason}) and is not a materialised file. "
-            "Relocate it before asking for stems."
+        if row is None:
+            raise FileNotFoundError(f"no track {stable_id!r} in {db}")
+        canonical_path = row[0]
+        path = state_locations.local_audio_path(
+            conn, stable_id, path_map=path_map,
         )
-    return path
+    if path is not None and path.is_file():
+        return path
+    from apps.shared.crate_index import resolve_crate_audio
+
+    path = resolve_crate_audio(stable_id)
+    if path is not None and path.is_file():
+        return path
+    raise FileNotFoundError(
+        f"track {stable_id!r} points at {canonical_path!r}, which is not a "
+        "materialised file on this machine (no local track_locations row "
+        "either). Relocate it before asking for stems."
+    )
 
 
 def _duration_from_state(data_dir: Path, stable_id: str) -> float:
@@ -477,6 +478,118 @@ def cmd_cancel(args: argparse.Namespace) -> int:
     return 0
 
 
+# ----- R2 hydration index + bulk hydrate (ADR-0024) --------------------------
+
+
+def _default_journal_path(data_dir: Path) -> Path:
+    """Same fixed path ``apps.stems.r2_migration`` journals to."""
+    return Path(data_dir) / "state" / "stem-r2-migration.jsonl"
+
+
+def cmd_build_index(args: argparse.Namespace) -> int:
+    """Fold the R2 push journal into the local stem-index cache, mirrors
+    ``POST /api/v1/stems/index/build``. ``--publish`` also overwrites the
+    R2 pointer object so other machines can fetch it."""
+    from apps.cloud import stem_index
+
+    journal_path = args.journal or _default_journal_path(args.data_dir)
+    index = stem_index.build_index_from_journal(journal_path)
+    cache_path = stem_index.save_cached_index(args.data_dir, index)
+    n_files = sum(len(files) for files in index.values())
+    print(
+        f"built index from {journal_path}: {len(index)} bundles, {n_files} files "
+        f"-> cached at {cache_path}"
+    )
+    if not args.publish:
+        return 0
+    from apps.cloud.config import CloudConfig
+    from apps.cloud.replicate import boto3_s3_client
+
+    cfg = CloudConfig.from_env()
+    etag = stem_index.publish_index(cfg, boto3_s3_client(cfg), index)
+    print(f"published to r2://{cfg.audio_bucket}/{stem_index.INDEX_OBJECT_KEY} (etag {etag})")
+    return 0
+
+
+def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
+    """Hydrate many bundles from R2 within a byte budget, mirrors
+    ``POST /api/v1/stems/bulk-hydrate``. Prints what it fetched and skipped,
+    with reasons -- never silent."""
+    from apps.cloud import stem_hydration, stem_index
+    from apps.cloud.stem_source import resolve_stem_hydration_source
+
+    if args.ids:
+        stable_ids = [sid.strip() for sid in args.ids.split(",") if sid.strip()]
+    elif args.playlist:
+        ctx = Ctx(data_dir=args.data_dir)
+        tracks = load_tracks(ctx, args.playlist)
+        rank = best_playlist_rank(ctx, tracks)
+        ordered = sorted(tracks, key=lambda t: rank.get(t.stable_id, 1 << 30))
+        stable_ids = [t.stable_id for t in ordered]
+    else:
+        raise SystemExit("error: pass --ids a,b,c or --playlist NAME")
+
+    source = resolve_stem_hydration_source(args.data_dir)
+    if source is None:
+        raise SystemExit(
+            "error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub"
+        )
+    from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
+
+    index = stem_index.load_cached_index(args.data_dir)
+    if args.refresh_index or not index:
+        try:
+            source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        except StemSourceError as exc:
+            if hub_transport_failure_kind(exc) == "unreachable":
+                raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+            raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
+        index = stem_index.load_cached_index(args.data_dir)
+    if not index:
+        raise SystemExit(
+            "error: no stem bundle index published in R2 "
+            "(run build-index --publish after the push rail has journaled bundles)"
+        )
+    try:
+        report = stem_hydration.bulk_hydrate(
+            stable_ids,
+            data_dir=args.data_dir,
+            source=source,
+            index=index,
+            byte_budget=args.budget_bytes,
+            include_reserved=args.include_reserved,
+            # Without this, hydrate_one falls back to the fixed DEFAULT_STEMS_DIR
+            # regardless of --data-dir, which would write into the production
+            # stems path from a run against a throwaway data dir.
+            stems_dir=stems_dir(args.data_dir),
+        )
+    except StemSourceError as exc:
+        if hub_transport_failure_kind(exc) == "unreachable":
+            raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+        raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "fetched": [o.__dict__ for o in report.fetched],
+                    "skipped": [o.__dict__ for o in report.skipped],
+                    "bytes_fetched": report.bytes_fetched,
+                },
+                indent=2,
+            )
+        )
+        return 0
+    for outcome in report.fetched:
+        print(f"  fetched {outcome.stable_id} ({outcome.status}, {outcome.bytes_fetched} bytes)")
+    for outcome in report.skipped:
+        print(f"  skipped {outcome.stable_id} ({outcome.reason})")
+    print(
+        f"done: {len(report.fetched)} fetched, {len(report.skipped)} skipped, "
+        f"{report.bytes_fetched / 1e6:.1f} MB"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m apps.stems")
     common = argparse.ArgumentParser(add_help=False)
@@ -549,12 +662,52 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("--json", action="store_true")
     cancel.set_defaults(func=cmd_cancel)
 
+    build_index = sub.add_parser(
+        "build-index", parents=[common],
+        help="fold the R2 push journal into the local stem-index cache (ADR-0024)",
+    )
+    build_index.add_argument("--journal", type=Path, default=None)
+    build_index.add_argument(
+        "--publish", action="store_true",
+        help="also overwrite the R2 pointer object so other machines can fetch it",
+    )
+    build_index.set_defaults(func=cmd_build_index)
+
+    bulk_hydrate = sub.add_parser(
+        "bulk-hydrate", parents=[common],
+        help="hydrate many R2-indexed stem bundles within a byte budget (ADR-0024)",
+    )
+    bulk_ids = bulk_hydrate.add_mutually_exclusive_group(required=True)
+    bulk_ids.add_argument("--ids", default=None, help="comma-separated stable_ids")
+    bulk_ids.add_argument("--playlist", default=None)
+    bulk_hydrate.add_argument("--budget-bytes", type=int, required=True)
+    bulk_hydrate.add_argument(
+        "--include-reserved", action="store_true",
+        help="also hydrate stable_ids in the reservation guard file "
+             "(state/stem-order-reserved-100.json) -- off by default",
+    )
+    bulk_hydrate.add_argument(
+        "--refresh-index", action="store_true",
+        help="fetch the published R2 index into the local cache before hydrating",
+    )
+    bulk_hydrate.add_argument("--json", action="store_true")
+    bulk_hydrate.set_defaults(func=cmd_bulk_hydrate)
+
     return p
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    return int(args.func(args))
+    from apps.vocals.errors import UnknownPlaylistError
+
+    try:
+        args = build_parser().parse_args(argv)
+        return int(args.func(args))
+    except UnknownPlaylistError as exc:
+        raise SystemExit(
+            2,
+            f"error: unknown playlist {exc.name!r}. "
+            f"Known: {', '.join(exc.known) or '(none)'}",
+        )
 
 
 if __name__ == "__main__":

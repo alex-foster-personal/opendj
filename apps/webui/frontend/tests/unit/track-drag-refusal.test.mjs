@@ -77,6 +77,12 @@ const TABLE_PATH = fileURLToPath(
 const PANEL_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
 );
+const DECK_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url)
+);
+const DROP_HELPER_PATH = fileURLToPath(
+	new URL('../../src/lib/rb/deck-track-drop.ts', import.meta.url)
+);
 
 test('the drag start actually consults it, and does not refuse in silence', () => {
 	const table = readFileSync(TABLE_PATH, 'utf8');
@@ -155,6 +161,50 @@ describe('trackDragRefusal is wired end to end, TrackTable to BrowserPanel', () 
 			fn,
 			/is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/,
 			'drag refusal ignores a hydrated rb_meta.is_streaming, unlike the load path'
+		);
+	});
+
+	it('beginTrackDrag carries file_exists and is_streaming for the source row', () => {
+		const fn = table.slice(
+			table.indexOf('function onRowDragStart('),
+			table.indexOf('function onRowDragEnd(')
+		);
+		assert.match(fn, /beginTrackDrag\(ids,\s*\{/);
+		assert.match(fn, /file_exists:\s*row\.file_exists/);
+		assert.match(fn, /is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/);
+	});
+});
+
+describe('deck drop guards (STATE-10, issue #2451)', () => {
+	const deck = readFileSync(DECK_PATH, 'utf8');
+	const dropHelper = readFileSync(DROP_HELPER_PATH, 'utf8');
+
+	it('onTrackDrop snapshots droppedRowFlags before endTrackDrag', () => {
+		const fn = deck.slice(deck.indexOf('async function onTrackDrop('), deck.indexOf('</script>'));
+		const flagsPos = fn.indexOf('droppedRowFlags(');
+		const endPos = fn.indexOf('endTrackDrag()');
+		assert.ok(flagsPos >= 0, 'onTrackDrop must read droppedRowFlags');
+		assert.ok(endPos >= 0, 'onTrackDrop must call endTrackDrag');
+		assert.ok(flagsPos < endPos, 'flags must be snapshotted before endTrackDrag clears them');
+	});
+
+	it('onTrackDrop delegates load guards to applyDeckTrackDrop before dispatching load', () => {
+		const fn = deck.slice(deck.indexOf('async function onTrackDrop('), deck.indexOf('</script>'));
+		const helperPos = fn.indexOf('applyDeckTrackDrop(');
+		const loadPos = fn.indexOf("type: 'load'");
+		assert.ok(helperPos >= 0, 'onTrackDrop must call applyDeckTrackDrop');
+		assert.equal(loadPos, -1, 'onTrackDrop must not dispatch load directly');
+	});
+
+	it('deck-track-drop reuses trackDragRefusal instead of duplicating phrases', () => {
+		assert.match(dropHelper, /trackDragRefusal/);
+		assert.equal(
+			dropHelper.includes('streaming track - deck load not implemented (see PARITY-TODO)'),
+			false
+		);
+		assert.equal(
+			dropHelper.includes('cannot load: audio file missing on disk (broken link)'),
+			false
 		);
 	});
 });

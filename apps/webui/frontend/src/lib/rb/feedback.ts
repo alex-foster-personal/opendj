@@ -280,19 +280,15 @@ export function pinBodyPos(
 
 // ----- pin lifecycle (issue #858) ----------------------------------------
 /**
- * The five states a comment pin moves through. A pin NEVER disappears on its
- * own: only `archived` leaves the canvas, and only because the maintainer pressed
- * Archive on a pin whose work is done.
+ * The six states a comment pin moves through. `blocked` is deliberately narrow:
+ * credentials/auth, a destructive-action decision, or a genuine product fork
+ * that needs the maintainer. Unclear instructions are a question in the agent note, never
+ * blocked. A blocked note begins with one sentence naming what the maintainer must provide.
+ * A pin NEVER disappears on its own: only `archived` leaves the canvas, and only
+ * because the maintainer pressed Archive on a pin whose work is done.
  */
-export type PinStatus = "open" | "issued" | "fixed" | "merged" | "archived";
-
-const PIN_STATUSES: readonly string[] = [
-  "open",
-  "issued",
-  "fixed",
-  "merged",
-  "archived",
-];
+const PIN_STATUSES = ["open", "issued", "blocked", "fixed", "merged", "archived"] as const;
+export type PinStatus = (typeof PIN_STATUSES)[number];
 
 /** The one localStorage key this feature owns: {pin id: updated_at seen}. */
 export const PIN_SEEN_KEY = "mdt.feedback.pinSeen.v1";
@@ -315,9 +311,13 @@ export interface LifecyclePin {
  * new state. Both read as `open`: the amber default is the honest answer, and
  * it is the state that hides nothing.
  */
+function _isPinStatus(raw: string): raw is PinStatus {
+  return (PIN_STATUSES as readonly string[]).includes(raw);
+}
+
 export function pinStatus(pin: LifecyclePin): PinStatus {
   const raw = pin.status ?? "open";
-  return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
+  return _isPinStatus(raw) ? raw : "open";
 }
 
 // Partial state (pin 58a16ac781db, follow-on to #907) lives in
@@ -331,6 +331,7 @@ export interface PinStatusSummary {
 	untriaged: number;
 	open: number;
 	issued: number;
+	blocked: number;
 	fixed: number;
 	merged: number;
 }
@@ -346,6 +347,7 @@ export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSu
 		untriaged: 0,
 		open: 0,
 		issued: 0,
+		blocked: 0,
 		fixed: 0,
 		merged: 0
 	};
@@ -365,9 +367,11 @@ export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSu
 export function describePinStatusSummary(pins: readonly LifecyclePin[]): string {
 	const summary = summarizePinStatuses(pins);
 	return `Active comment pins: ${summary.total} total - ` +
-		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ` +
+		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ${summary.blocked} blocked, ` +
 		`${summary.fixed} fixed, ${summary.merged} merged`;
 }
+
+export { blockedPinDetail, blockedPinRequest } from './feedback-blocked-note';
 
 /** Archived pins leave the canvas; everything else stays on it forever. */
 export function isPinDrawn(pin: LifecyclePin): boolean {

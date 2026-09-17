@@ -34,6 +34,7 @@ from .app_wiring import (
     _bind_core_state,
     _bind_feature_state,
     _bind_stem_and_usage,
+    _bind_stem_hydration,
     _configure_cors,
     _configure_http_middleware,
     _install_exception_handlers,
@@ -43,6 +44,7 @@ from .app_wiring import (
     _resolve_ports,
     _SpaStaticFiles,
 )
+from .request_guard import install_request_guard
 from .backend import StateBackend
 from .cloud_sync import probe_syncthing_status
 from .frontend_build import frontend_build_dir
@@ -80,6 +82,7 @@ def create_app(  # noqa: PLR0913
     auto_user_jobs: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
+    stem_hydration: bool = False,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -98,6 +101,12 @@ def create_app(  # noqa: PLR0913
     :mod:`apps.webui.server.cloudsync_scheduler`). OFF here for the same
     reason: only the daemon entry points arm it, and even armed it runs only
     when ``MDT_CLOUDSYNC_SCHEDULER=1`` and a hub URL are set.
+
+    ``stem_hydration`` arms on-demand R2 stem-bundle hydration (ADR-0024, see
+    :mod:`apps.cloud.stem_hydration`). Same shape as ``cloudsync_scheduler``:
+    OFF here so no test spins up a thread pool or reaches for credentials,
+    and even armed it stays inert unless CloudSync is in ``cloud`` mode AND
+    R2 credentials resolve (``_bind_stem_hydration``).
 
     ``feature_flags`` is UNLIKE those two: it is wired here, not left for
     ``_build_default_app``, because ``load_flags`` reads one small on-disk
@@ -142,11 +151,20 @@ def create_app(  # noqa: PLR0913
         client_event_log_dir,
     )
     _bind_stem_and_usage(app, stem_roots, usage_store)
+    _bind_stem_hydration(
+        app, data_dir=Path(state_db_path).resolve().parent.parent, enabled=stem_hydration
+    )
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     _install_exception_handlers(app)
+    install_request_guard(
+        app,
+        frontend_port=frontend_port,
+        backend_port=port,
+        enable_cors=enable_cors,
+    )
     if enable_cors:
-        _configure_cors(app, frontend_port)
+        _configure_cors(app)
     _configure_http_middleware(app, bind_host)
     _mount_api_routers(app)
     app.include_router(set_share_page_router)
@@ -345,6 +363,7 @@ def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.shared.sync_bind_guard import assert_sync_bind_allowed
+    from apps.webui.server.request_guard import assert_request_guard_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
@@ -352,6 +371,7 @@ def _build_default_app() -> FastAPI:
     # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
     # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
     assert_sync_bind_allowed(bind_host)
+    assert_request_guard_bind_allowed(bind_host)
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()
@@ -394,6 +414,7 @@ def _build_default_app() -> FastAPI:
         lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
         cloudsync_scheduler=True,
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
+        stem_hydration=True,
     )
 
 

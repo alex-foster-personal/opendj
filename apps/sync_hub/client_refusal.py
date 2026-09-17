@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 
-from apps.entitlements import NOT_IN_PLAN_CODE
+from apps.shared.wire_codes import NOT_IN_PLAN_CODE
 from apps.sync_hub.transport import SyncTransportError
 
 log = logging.getLogger("apps.sync_hub.client")

@@ -21,9 +21,10 @@ Two conventions carry the house rules into the schema itself:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FileProbeOut(BaseModel):
@@ -73,6 +74,13 @@ class PermissionsOut(BaseModel):
     denied: list[str] = Field(default_factory=list)
     roots: list[AccessProbeOut] = Field(default_factory=list)
     how_to_grant: str
+
+
+class FolderCandidatesOut(BaseModel):
+    """Existing folders under the user's home worth offering as one-click
+    setup suggestions, instead of making them type a path blind."""
+
+    candidates: list[AccessProbeOut] = Field(default_factory=list)
 
 
 class LastImportOut(BaseModel):
@@ -197,6 +205,19 @@ class FolderImportIn(BaseModel):
         default=None, ge=1, description="import at most N files"
     )
 
+    @field_validator("folders")
+    @classmethod
+    def folders_are_absolute_paths(cls, value: list[str]) -> list[str]:
+        # Rejected here, at the wire boundary, rather than left to fall through
+        # to the access probe (wrong verdict: "not found") or the job-payload
+        # builder (wrong layer: a 400 several calls deep). ``~`` is not
+        # expanded on this path -- the import job walks the literal string --
+        # so a leading ``~`` is refused too, not treated as a convenience.
+        for entry in value:
+            if not entry or not Path(entry).is_absolute():
+                raise ValueError(f"folder must be an absolute path, got {entry!r}")
+        return value
+
 
 class FolderScanOut(BaseModel):
     """What a candidate folder actually holds, before anything is imported.
@@ -257,6 +278,7 @@ class StemsSetupOut(BaseModel):
 __all__ = [
     "AccessProbeOut",
     "FileProbeOut",
+    "FolderCandidatesOut",
     "FolderImportIn",
     "FolderLastImportOut",
     "FolderScanOut",

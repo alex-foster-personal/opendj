@@ -2,11 +2,134 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const ENGINE_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 pub const ENGINE_LOG_RETENTION_DAYS: u64 = 7;
 pub const ENGINE_LOG_MAX_TOTAL_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const ENGINE_LOG_MAX_ARCHIVE_COUNT: usize = 20;
+pub const ENGINE_LOG_MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
+
+struct LowDiskState {
+    rotation_disabled: bool,
+    low_disk_logged: bool,
+}
+
+static LOW_DISK_STATE: OnceLock<Mutex<LowDiskState>> = OnceLock::new();
+
+#[cfg(test)]
+static TEST_DISK_FREE_BYTES: OnceLock<Mutex<Option<u64>>> = OnceLock::new();
+
+fn low_disk_state() -> &'static Mutex<LowDiskState> {
+    LOW_DISK_STATE.get_or_init(|| {
+        Mutex::new(LowDiskState {
+            rotation_disabled: false,
+            low_disk_logged: false,
+        })
+    })
+}
+
+#[cfg(test)]
+pub fn set_test_disk_free_bytes(free: Option<u64>) {
+    *TEST_DISK_FREE_BYTES
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .expect("test disk free mutex") = free;
+}
+
+#[cfg(test)]
+pub fn reset_test_disk_free_bytes() {
+    if let Some(slot) = TEST_DISK_FREE_BYTES.get() {
+        *slot.lock().expect("test disk free mutex") = None;
+    }
+    if let Some(slot) = LOW_DISK_STATE.get() {
+        let mut guard = slot.lock().expect("low disk mutex");
+        guard.rotation_disabled = false;
+        guard.low_disk_logged = false;
+    }
+}
+
+/// Free bytes on the mount containing ``path`` (Unix only).
+pub fn disk_free_bytes(path: &Path) -> Result<u64, std::io::Error> {
+    #[cfg(test)]
+    if let Some(slot) = TEST_DISK_FREE_BYTES.get() {
+        if let Some(free) = *slot.lock().expect("test disk free mutex") {
+            return Ok(free);
+        }
+    }
+    let target = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map(|parent| parent.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    disk_free_bytes_unix(&target)
+}
+
+#[cfg(unix)]
+fn disk_free_bytes_unix(path: &Path) -> Result<u64, std::io::Error> {
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path contains interior nul byte",
+        )
+    })?;
+    let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+    let rc = unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let stat = unsafe { stat.assume_init() };
+    Ok(stat.f_bavail as u64 * stat.f_frsize as u64)
+}
+
+#[cfg(not(unix))]
+fn disk_free_bytes_unix(_path: &Path) -> Result<u64, std::io::Error> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "disk_free_bytes is only implemented on Unix",
+    ))
+}
+
+fn log_low_disk_once(state: &mut LowDiskState, path: &Path, free_bytes: u64) {
+    if state.low_disk_logged {
+        return;
+    }
+    state.low_disk_logged = true;
+    eprintln!(
+        "[ERROR] engine log rotation disabled: {} has {} bytes free (minimum {})",
+        path.display(),
+        free_bytes,
+        ENGINE_LOG_MIN_FREE_BYTES
+    );
+}
+
+fn rotation_allowed(path: &Path) -> Result<bool, std::io::Error> {
+    let mut guard = low_disk_state().lock().expect("low disk mutex");
+    if guard.rotation_disabled {
+        return Ok(false);
+    }
+    let mount = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map(|parent| parent.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    let free = disk_free_bytes(&mount)?;
+    if free < ENGINE_LOG_MIN_FREE_BYTES {
+        guard.rotation_disabled = true;
+        log_low_disk_once(&mut guard, &mount, free);
+        return Ok(false);
+    }
+    Ok(true)
+}
 
 fn archive_timestamp() -> String {
     let total_secs = SystemTime::now()
@@ -79,6 +202,19 @@ fn prune_archives(log_path: &Path) -> std::io::Result<()> {
         }
     }
     let mut archives = archive_paths(log_path);
+    while archives.len() > ENGINE_LOG_MAX_ARCHIVE_COUNT {
+        let oldest = archives
+            .iter()
+            .min_by_key(|path| {
+                std::fs::metadata(path)
+                    .and_then(|meta| meta.modified())
+                    .unwrap_or(UNIX_EPOCH)
+            })
+            .cloned()
+            .expect("archives non-empty");
+        std::fs::remove_file(&oldest)?;
+        archives = archive_paths(log_path);
+    }
     let mut total: u64 = archives
         .iter()
         .filter_map(|path| std::fs::metadata(path).map(|meta| meta.len()).ok())
@@ -109,6 +245,10 @@ pub fn rotate_log_if_needed(log_path: &Path, max_bytes: u64) -> std::io::Result<
         Err(error) => return Err(error),
     };
     if metadata.len() < max_bytes {
+        return Ok(());
+    }
+    let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
+    if !rotation_allowed(parent)? {
         return Ok(());
     }
     let archive = log_path.with_file_name(format!(
@@ -167,6 +307,27 @@ mod tests {
         file.set_modified(when).unwrap();
     }
 
+    /// Rotation reads one process-wide low-disk latch and one process-wide
+    /// free-space override, so tests that rotate must not overlap: a
+    /// sibling's `Some(0)` override skipped this module's rotation on CI and
+    /// left 25 archives where at most 20 were expected (Wed 16 Sep 2026).
+    /// Serialize them and pin the free-space figure so the runner's real
+    /// disk never decides the outcome.
+    static ROTATION_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    const HEALTHY_FREE_BYTES: u64 = 10 * ENGINE_LOG_MIN_FREE_BYTES;
+
+    fn with_disk_free<T>(free: u64, body: impl FnOnce() -> T) -> T {
+        let _serial = ROTATION_TESTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        reset_test_disk_free_bytes();
+        set_test_disk_free_bytes(Some(free));
+        let result = body();
+        reset_test_disk_free_bytes();
+        result
+    }
+
     #[test]
     fn rotates_full_log_into_timestamped_archive() {
         let directory = scratch_dir("rotate");
@@ -174,7 +335,7 @@ mod tests {
         let log_path = directory.join("engine.log");
         std::fs::write(&log_path, "current").unwrap();
 
-        rotate_log_if_needed(&log_path, 1).unwrap();
+        with_disk_free(HEALTHY_FREE_BYTES, || rotate_log_if_needed(&log_path, 1)).unwrap();
 
         assert!(!log_path.exists());
         let archives = archive_paths(&directory.join("engine.log"));
@@ -204,21 +365,40 @@ mod tests {
     }
 
     #[test]
-    fn keeps_more_than_five_recent_archives() {
-        let directory = scratch_dir("keep-many");
+    fn keeps_at_most_max_archive_count() {
+        let directory = scratch_dir("keep-max");
         std::fs::create_dir_all(&directory).unwrap();
         let log_path = directory.join("engine.log");
-        for index in 0..6 {
-            let archive = directory.join(format!("engine.log.2026090{index}T000000Z"));
+        for index in 0..25 {
+            let archive = directory.join(format!("engine.log.202609{index:02}T000000Z"));
             std::fs::write(&archive, format!("archive-{index}")).unwrap();
             set_mtime(&archive, SystemTime::now() - Duration::from_secs(60 * (index + 1)));
         }
         std::fs::write(&log_path, "live").unwrap();
 
-        rotate_log_if_needed(&log_path, 1).unwrap();
+        with_disk_free(HEALTHY_FREE_BYTES, || rotate_log_if_needed(&log_path, 1)).unwrap();
 
         let archives = archive_paths(&log_path);
-        assert!(archives.len() >= 6, "expected at least six archives, got {}", archives.len());
+        assert!(
+            archives.len() <= ENGINE_LOG_MAX_ARCHIVE_COUNT,
+            "expected at most {} archives, got {}",
+            ENGINE_LOG_MAX_ARCHIVE_COUNT,
+            archives.len()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn skips_rotation_when_disk_free_below_minimum() {
+        let directory = scratch_dir("low-disk");
+        std::fs::create_dir_all(&directory).unwrap();
+        let log_path = directory.join("engine.log");
+        std::fs::write(&log_path, "live").unwrap();
+
+        with_disk_free(0, || rotate_log_if_needed(&log_path, 1)).unwrap();
+
+        assert!(log_path.exists());
+        assert_eq!(std::fs::read_to_string(&log_path).unwrap(), "live");
         std::fs::remove_dir_all(directory).unwrap();
     }
 

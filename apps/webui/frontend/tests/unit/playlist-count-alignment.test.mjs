@@ -13,9 +13,15 @@ test('playlist rows contain no fabricated EXTRA badge or name-based analysis sta
 });
 
 test('the real playable count is the final row item after actions and selection badges', () => {
-	assert.match(source, /<span class="count" title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}<\/span>\s*<\/div>\s*\{\/each\}/);
+	// Not anchored to {/each}: a sibling next-step hint (issue #3183) can
+	// follow the row inside the loop body without becoming a row child, so
+	// this only asserts the count is the LAST element INSIDE the row div.
+	assert.match(source, /<span class="count" title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}<\/span>\s*<\/div>/);
 	assert.match(source, /return `\$\{node\.track_count - node\.broken_count\} playable tracks, \$\{node\.broken_count\} broken tracks`;/);
-	assert.match(source, /<span class="name" title=\{node\.name\}>\{node\.name\}<\/span>/);
+	assert.match(
+		source,
+		/<span class="name" title=\{node\.mostly_broken \? _mostlyBrokenTitle\(node\) : node\.name\}>\{node\.name\}<\/span>/
+	);
 });
 
 test('resting count cells have a right-aligned minimum column and vertical centering', () => {

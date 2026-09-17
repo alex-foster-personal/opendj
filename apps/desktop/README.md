@@ -147,9 +147,17 @@ only, so a normal cross-origin read from `tauri://localhost` would be
 blocked before it could tell "refused" from "absent". `no-cors` yields one
 honest bit: the connection was accepted, or it was not.
 
-**Known limitation:** the setup screen guards STARTUP only. Once the window
-has navigated to the engine, an engine that dies mid-session leaves the
-webview on a dead page; recovering that is the SPA's job, not the shell's.
+**Runtime supervision (INSTALL-23, issue #2916):** after boot the shell polls
+its engine child every 5 s. A dead or zombie engine is reaped, shell-side
+`GET /api/v1/health` on the loopback port in `.engine.shell.json` reports
+`engine: dead`, the title bar shows `engine dead`, and the webview returns to
+the bootstrap fatal view instead of spinning on a dead port. Within 30 s the
+shell either restarts on a fresh port (logging
+`engine restarted after exit code N` with a UTC timestamp) or shows fatal with
+Relaunch. When restart fails because the data-dir mount has under 1 GiB free,
+the shell enters `waiting for disk space` (shell health `engine: waiting-disk`,
+`reason: low-disk`) and auto-restarts once space returns instead of showing the
+fatal dialog. Skipped when `OPENDJ_ENGINE_ORIGIN` is set.
 
 **The shell spawns its own engine.** `start_engine` picks a free loopback
 port, spawns the bundled payload and waits for health before the window

@@ -8,6 +8,7 @@ Mounted by the webui at ``/api/v1/sync/*``:
     GET  /api/v1/sync/pull     one chunk of the rows accepted after ``since_seq``
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
     GET  /api/v1/sync/digest   per-table digests for the post-sync compare
+    GET  /api/v1/sync/rows     paginated sync-eligible canonical rows for diff
 
 Machines authenticate with a per-machine sync credential (plan X5), minted by
 ``/enroll`` (ADR 12) and checked on ``hello``, ``push``, ``pull``, ``status``
@@ -59,10 +60,14 @@ from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import (
     capabilities,
+    digest_diff,
     engine,
     enrollment,
     entitlement_gate,
     generation,
+    hash_pending as hash_pending_api,
+    policy_push,
+    policy_store,
     protocol,
     service_credentials,
     service_enroll,
@@ -70,21 +75,33 @@ from apps.sync_hub import (
     service_storage,
     wire_version,
 )
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    clamp_machine_row_for_wire,
+)
 from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
     DigestResponse,
     EnrollRequest,
+    HashPendingResponse,
     HelloRequest,
     HelloResponse,
+    IdentityRejectModel,
     MachineModel,
     PullResponse,
     PushRequest,
     PushResponse,
     RowModel,
+    RowsResponse,
     StatusResponse,
+    SyncRowSampleModel,
 )
+from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
+from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+router.include_router(stem_assets_router)
+router.include_router(lyrics_asr_assets_router)
 #: The 401/503 each credential-gated route declares, per endpoint (plan X5).
 _auth = service_credentials.credential_responses
 
@@ -200,7 +217,8 @@ def _hub_identity(request: Request, conn: sqlite3.Connection) -> str:
 
 def _machine_models(conn: sqlite3.Connection) -> list[MachineModel]:
     return [
-        MachineModel(**machine.to_wire()) for machine in engine.machines_snapshot(conn)
+        MachineModel(**clamp_machine_row_for_wire(machine).to_wire())
+        for machine in engine.machines_snapshot(conn)
     ]
 
 
@@ -228,6 +246,20 @@ def _protocol_error(exc: protocol.SyncProtocolError) -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
+    )
+
+
+def _policy_push_error(exc: policy_push.SyncPolicyViolationError) -> HTTPException:
+    """422: offered policy rows break a blocking rule."""
+    blocking = [v for v in exc.outcome.violations if v.blocking]
+    message = blocking[0].message if blocking else "policy violation on push batch"
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "SYNC_POLICY_VIOLATION",
+            "message": message,
+            "violations": policy_push.blocking_violations_wire(exc.outcome),
+        },
     )
 
 
@@ -323,6 +355,22 @@ def _refuse_unless_capable(
         return
     raise protocol.SyncProtocolError(
         capabilities.refusal(endpoint, detail, advertised)
+    )
+
+
+def _refuse_hash_pending_unless_capable(
+    changes: Sequence[protocol.RowChange],
+    advertised: Sequence[str],
+    endpoint: str,
+) -> None:
+    """Refuse a batch carrying ``hash_pending`` rows the caller cannot read."""
+    pending = sum(1 for change in changes if change.hash_pending)
+    if not pending:
+        return
+    if capabilities.understands_hash_pending(advertised):
+        return
+    raise protocol.SyncProtocolError(
+        capabilities.hash_pending_refusal(endpoint, pending, advertised)
     )
 
 
@@ -422,6 +470,12 @@ def enroll(
         **_auth("push"),
         **SYNC_VERSION_RESPONSES,
         **entitlement_gate.refusals("push"),
+        422: {
+            "description": (
+                "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION "
+                "(blocking policy rule on offered sync_policies / playlist_pins rows)"
+            ),
+        },
     },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
@@ -447,7 +501,11 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         _gate(request, conn, payload.machine_id, "write")
         try:
             with _transaction(conn):
+                _refuse_hash_pending_unless_capable(
+                    changes, payload.capabilities, "push"
+                )
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
+                policy_push.evaluate_push_policies(conn, payload.machine_id, changes)
                 result = engine.hub_apply(conn, changes)
                 # INSIDE the transaction: a refusal must roll the whole batch
                 # back, which is what main's mid-apply raise did and what the
@@ -463,6 +521,13 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             _generation(request, conn)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
+        except policy_push.SyncPolicyViolationError as exc:
+            raise _policy_push_error(exc) from exc
+        except policy_store.PolicyInputError as exc:
+            raise HTTPException(
+                status_code=exc.status,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         except sqlite3.OperationalError as exc:
@@ -472,6 +537,15 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             rejected=result.rejected,
             seq=result.seq,
             quarantined=result.quarantined,
+            hash_pending=result.hash_pending,
+            identity_rejects=[
+                IdentityRejectModel(
+                    table=reject.table,
+                    offered_pk=reject.offered_pk,
+                    survivor_pk=reject.survivor_pk,
+                )
+                for reject in result.identity_rejects
+            ],
         )
 
 
@@ -482,13 +556,22 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
 )
 def pull(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
     since_seq: int = Query(0, ge=0, description="last hub_changelog.seq applied"),
     limit: int = Query(
         engine.DEFAULT_PULL_LIMIT,
         ge=1,
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
+    ),
+    bundle_stable_ids: list[str] = Query(
+        default=[],
+        description=(
+            "optional track stable_id values whose live bundles are appended "
+            "for identity repair without advancing the changelog cursor"
+        ),
     ),
     capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> PullResponse:
@@ -508,26 +591,44 @@ def pull(
         _require_registered(conn, machine_id)
         _gate(request, conn, machine_id, "read")
         try:
-            batch = engine.hub_changes_since(conn, since_seq, limit=limit)
-            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
+            if bundle_stable_ids:
+                rows = engine.hub_track_bundles(conn, bundle_stable_ids)
+                seq = since_seq
+                has_more = False
+                skipped = 0
+                quarantined = 0
+            else:
+                batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+                rows = batch.rows
+                seq = batch.seq
+                has_more = batch.has_more
+                skipped = batch.skipped
+                quarantined = batch.quarantined
+                _refuse_unless_capable(
+                    capabilities_,
+                    "pull",
+                    service_shortfall.pull_shortfall(batch),
+                )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return PullResponse(
-            rows=_row_models(batch.rows),
-            seq=batch.seq,
+            rows=_row_models(rows),
+            seq=seq,
             machines=_machine_models(conn),
-            has_more=batch.has_more,
-            skipped=batch.skipped,
-            quarantined=batch.quarantined,
+            has_more=has_more,
+            skipped=skipped,
+            quarantined=quarantined,
         )
 
 
 @router.get("/status", response_model=StatusResponse, responses=_auth("status"))
 def status(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
 ) -> StatusResponse:
     """Hub identity, current seq, known machines and synced row counts."""
     with _hub_conn(request) as conn:
@@ -616,12 +717,93 @@ def digest(
             overall=computed.overall,
             seq=computed.seq,
             quarantined=dict(computed.quarantined or {}),
+            hash_pending=dict(computed.hash_pending or {}),
+        )
+
+
+@router.get("/rows", response_model=RowsResponse, responses=_auth("rows"))
+def rows(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    table: str = Query(min_length=1, description="sync-set table name"),
+    limit: int = Query(500, ge=1, le=5000),
+    cursor: str | None = Query(default=None),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
+) -> RowsResponse:
+    """Paginated sync-eligible canonical rows for post-sync diff (CSSTATUS-09)."""
+    if table not in protocol.DIGEST_TABLES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SYNC_PROTOCOL",
+                "message": f"table {table!r} is not in the sync digest set",
+            },
+        )
+    with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "rows")
+        _require_registered(conn, machine_id)
+        try:
+            with _transaction(conn):
+                page, next_cursor = digest_diff.hub_sync_row_page(
+                    conn, table, cursor=cursor, limit=limit
+                )
+        except protocol.SyncProtocolError as exc:
+            raise _protocol_error(exc) from exc
+        return RowsResponse(
+            rows=[
+                SyncRowSampleModel(
+                    pk=list(sample.pk),
+                    canonical_hex=sample.canonical_hex,
+                    updated_at=sample.updated_at,
+                    origin_device_id=sample.origin_device_id,
+                    modified_at=sample.modified_at,
+                )
+                for sample in page
+            ],
+            next_cursor=next_cursor,
+        )
+
+
+@router.get(
+    "/hash-pending",
+    response_model=HashPendingResponse,
+    responses=_auth("hash-pending"),
+)
+def hash_pending_list(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    limit: int = Query(500, ge=1, le=5000),
+    cursor: str | None = Query(default=None),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
+) -> HashPendingResponse:
+    """List ``stable_id`` values on this hub still awaiting ``content_hash``."""
+    if not capabilities.understands_hash_pending(capabilities_):
+        raise _protocol_error(
+            protocol.SyncProtocolError(
+                capabilities.hash_pending_refusal(
+                    "hash-pending", 1, capabilities_
+                )
+            )
+        )
+    with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "hash-pending")
+        _require_registered(conn, machine_id)
+        page = hash_pending_api.list_hash_pending(
+            conn, limit=limit, cursor=cursor
+        )
+        return HashPendingResponse(
+            stable_ids=list(page.stable_ids),
+            total=page.total,
+            next_cursor=page.next_cursor,
+            schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
         )
 
 
 __all__ = [
     "DigestResponse",
     "EnrollRequest",
+    "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
     "MachineModel",
@@ -629,6 +811,8 @@ __all__ = [
     "PushRequest",
     "PushResponse",
     "RowModel",
+    "RowsResponse",
     "StatusResponse",
+    "SyncRowSampleModel",
     "router",
 ]

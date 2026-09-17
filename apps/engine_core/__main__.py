@@ -1,4 +1,4 @@
-"""``python -m apps.engine_core serve --data-dir PATH --port N [--host H]``.
+"""``python -m apps.engine_core serve --data-dir PATH --port N [--host H] [--machine-name NAME]``.
 
 argparse rather than typer: typer is not in the repo venv, and a CLI that
 needs a new dependency to print its own help is not a chassis.
@@ -44,6 +44,7 @@ from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowe
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
 EXIT_REFUSED: int = 2
+HUB_MACHINE_NAME_ENV: str = "MDT_HUB_MACHINE_NAME"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,11 +77,56 @@ def build_parser() -> argparse.ArgumentParser:
             "never defaulted to the full build."
         ),
     )
+    serve.add_argument(
+        "--machine-name",
+        default=os.environ.get(HUB_MACHINE_NAME_ENV),
+        help=(
+            "this hub's CloudSync display/registration name "
+            f"(default: ${HUB_MACHINE_NAME_ENV} when set, otherwise the "
+            "short hostname at first sync)"
+        ),
+    )
+    rescue = sub.add_parser("rescue", help="list or restore Gig performance snapshots")
+    rescue_sub = rescue.add_subparsers(dest="rescue_command", required=True)
+    rescue_list = rescue_sub.add_parser("list", help="GET /api/v1/rescue/snapshots")
+    rescue_list.add_argument("--data-dir", required=True)
+    rescue_list.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MUSIC_DJ_BACKEND_PORT", "8585")),
+    )
+    rescue_list.add_argument("--json", action="store_true")
+    rescue_restore = rescue_sub.add_parser(
+        "restore", help="POST /api/v1/rescue/restore"
+    )
+    rescue_restore.add_argument("--data-dir", required=True)
+    rescue_restore.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MUSIC_DJ_BACKEND_PORT", "8585")),
+    )
+    rescue_restore.add_argument("--play", action="store_true")
+    rescue_restore.add_argument("--snapshot-id")
+    rescue_restore.add_argument("--json", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "rescue":
+        from apps.engine_core.rescue_cli import run_rescue
+
+        rescue_argv = [args.rescue_command]
+        rescue_argv.extend(["--data-dir", args.data_dir])
+        rescue_argv.extend(["--port", str(args.port)])
+        if getattr(args, "json", False):
+            rescue_argv.append("--json")
+        if getattr(args, "play", False):
+            rescue_argv.append("--play")
+        snapshot_id = getattr(args, "snapshot_id", None)
+        if snapshot_id:
+            rescue_argv.extend(["--snapshot-id", snapshot_id])
+        return run_rescue(rescue_argv)
     try:
         _apply_build_profile(args.build_profile)
         cfg = build_config(args.data_dir, args.host, args.port)
@@ -88,7 +134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except EngineBootError as exc:
         print(f"[ERROR] engine refused to boot: {exc}", file=sys.stderr)
         return EXIT_REFUSED
-    return _serve(cfg, log_level=args.log_level)
+    return _serve(cfg, log_level=args.log_level, machine_name=args.machine_name)
 
 
 def _apply_build_profile(name: str | None) -> None:
@@ -172,7 +218,7 @@ def _telemetry_decision():
     return decide_telemetry(os.environ, build_source=source, release=release)
 
 
-def _serve(cfg: EngineConfig, *, log_level: str) -> int:
+def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> int:
     lock = EngineLock(cfg.lock_path, host=cfg.host, port=cfg.port)
     try:
         lock.acquire()
@@ -190,6 +236,7 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         # which reads MDT_DATA_DIR at import time.
         import uvicorn
 
+        from apps.engine_core.access_log import configure_access_log_sampling
         from apps.engine_core.app import create_app
         from apps.engine_core.warning_log import configure_warning_log
         from apps.shared.telemetry import TelemetryConfigError, init_telemetry
@@ -203,6 +250,7 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         if warning_log is not None:
             logging.basicConfig(level=logging.INFO)
             configure_warning_log(Path(warning_log), warning_boot_id)
+        configure_access_log_sampling()
 
         # BEFORE create_app, not after: the Sentry FastAPI integration wraps
         # route handlers as they are registered, so a later init would leave
@@ -217,6 +265,8 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
             return EXIT_REFUSED
 
         app = create_app(cfg, lock=lock)
+        if machine_name is not None:
+            app.state.sync_hub_machine_name = machine_name
         print(
             f"[OK] opendj engine {ENGINE_VERSION} boot_id={lock.boot_id} "
             f"contract_rev={app.state.contract_rev} "

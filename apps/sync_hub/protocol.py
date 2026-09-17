@@ -59,19 +59,24 @@ surface it had.
 from __future__ import annotations
 
 import hashlib
-import logging
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from apps.sync_hub import sync_set
+from apps.sync_hub.machine_wire_limits import (
+    MachineWireLimitError,
+    validate_machine_wire_fields,
+)
+from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
     DIGEST_TABLES,
     EPOCH,
     MEMBERSHIP_SPEC,
     MEMBERSHIP_TABLE,
+    MODIFIED_AT,
     NATURAL_KEYS,
     NO_ORIGIN,
     ORIGIN_DEVICE_ID,
@@ -79,6 +84,7 @@ from apps.sync_hub.protocol_common import (
     SPEC_BY_TABLE,
     SYNC_COLUMNS,
     SYNC_TABLES,
+    TRACK_FIELDS_TABLE,
     UPDATED_AT,
     StampFault,
     SyncProtocolError,
@@ -96,9 +102,8 @@ from apps.sync_hub.protocol_common import (
     pk_columns,
     stored_stamp_faults,
     table_columns,
+    validate_hash_pending_row,
 )
-
-log = logging.getLogger(__name__)
 
 # ----- wire payloads -----------------------------------------------------
 
@@ -117,6 +122,7 @@ class RowChange:
     pk: tuple[str, ...]
     values: dict[str, Any]
     members: tuple[dict[str, Any], ...] | None = None
+    hash_pending: bool = False
 
     @property
     def row_pk(self) -> str:
@@ -124,15 +130,15 @@ class RowChange:
 
     @property
     def updated_at(self) -> str:
-        return lww_key(self.values)[0]
+        return lww_key(self.values, table=self.table)[0]
 
     @property
     def origin_device_id(self) -> str:
-        return lww_key(self.values)[1]
+        return lww_key(self.values, table=self.table)[1]
 
     @property
     def sort_key(self) -> tuple[str, str]:
-        return lww_key(self.values)
+        return lww_key(self.values, table=self.table)
 
     def to_wire(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -142,6 +148,8 @@ class RowChange:
         }
         if self.members is not None:
             payload["members"] = [dict(member) for member in self.members]
+        if self.hash_pending:
+            payload["hash_pending"] = True
         return payload
 
     @classmethod
@@ -157,9 +165,16 @@ class RowChange:
         if not isinstance(values, dict):
             raise SyncProtocolError(f"{table}: 'values' must be an object")
         members = _parse_members(payload, table)
+        raw_hp = payload.get("hash_pending", False)
+        if raw_hp not in (False, True, None):
+            raise SyncProtocolError(
+                f"{table}: 'hash_pending' must be a boolean or absent, got {raw_hp!r}"
+            )
+        hash_pending = bool(raw_hp)
         # Canonicalize BEFORE the row can reach a comparison or a table:
         # what this peer sent is the last chance to reject a timestamp that
         # cannot be ordered (module docstring point 4).
+        validate_hash_pending_row(table, values, hash_pending)
         return cls(
             table=table,
             pk=tuple(str(item) for item in raw_pk),
@@ -171,6 +186,32 @@ class RowChange:
                     canonical_values(MEMBERSHIP_TABLE, member) for member in members
                 )
             ),
+            hash_pending=hash_pending,
+        )
+
+
+@dataclass(frozen=True)
+class IdentityReject:
+    """One identity-collapse rejection on push: the offered PK lost to a stored survivor."""
+
+    table: str
+    offered_pk: str
+    survivor_pk: str
+
+    def to_wire(self) -> dict[str, str]:
+        return {
+            "table": self.table,
+            "offered_pk": self.offered_pk,
+            "survivor_pk": self.survivor_pk,
+        }
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> IdentityReject:
+        table = _require_str(payload, "table")
+        return cls(
+            table=table,
+            offered_pk=_require_str(payload, "offered_pk"),
+            survivor_pk=_require_str(payload, "survivor_pk"),
         )
 
 
@@ -200,9 +241,15 @@ class MachineRow:
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> MachineRow:
         raw_root = payload.get("data_root")
+        machine_id = _require_str(payload, "machine_id")
+        name = _require_str(payload, "name")
+        try:
+            validate_machine_wire_fields(machine_id, name)
+        except MachineWireLimitError as exc:
+            raise SyncProtocolError(str(exc)) from exc
         return cls(
-            machine_id=_require_str(payload, "machine_id"),
-            name=_require_str(payload, "name"),
+            machine_id=machine_id,
+            name=name,
             platform=_require_str(payload, "platform"),
             is_hub=bool(payload.get("is_hub", False)),
             data_root=None if raw_root is None else str(raw_root),
@@ -235,6 +282,15 @@ class SyncDigest:
     #: unknown, never coerced to 0, or the readout becomes a failed
     #: measurement rendered as a clean result.
     quarantined: dict[str, int] | None = field(default=None)
+    #: Rows per table offered or held as hash_pending (ADR-0068). Included IN
+    #: the hash but counted separately from ``quarantined``. ``None`` when the
+    #: peer did not report the field.
+    hash_pending: dict[str, int] | None = field(default=None)
+
+    @property
+    def hash_pending_rows(self) -> int | None:
+        """Total rows this peer reported as hash_pending, or None when unknown."""
+        return None if self.hash_pending is None else sum(self.hash_pending.values())
 
     @property
     def quarantined_rows(self) -> int | None:
@@ -247,6 +303,7 @@ class SyncDigest:
             "overall": self.overall,
             "seq": self.seq,
             "quarantined": None if self.quarantined is None else dict(self.quarantined),
+            "hash_pending": None if self.hash_pending is None else dict(self.hash_pending),
         }
 
     @classmethod
@@ -265,6 +322,12 @@ class SyncDigest:
                 f"digest payload 'quarantined' must be an object or absent, "
                 f"got {raw_quarantined!r}"
             )
+        raw_hash_pending = payload.get("hash_pending")
+        if raw_hash_pending is not None and not isinstance(raw_hash_pending, dict):
+            raise SyncProtocolError(
+                f"digest payload 'hash_pending' must be an object or absent, "
+                f"got {raw_hash_pending!r}"
+            )
         return cls(
             tables={str(k): str(v) for k, v in tables.items()},
             overall=_require_str(payload, "overall"),
@@ -273,6 +336,11 @@ class SyncDigest:
                 None
                 if raw_quarantined is None
                 else {str(k): int(v) for k, v in raw_quarantined.items()}
+            ),
+            hash_pending=(
+                None
+                if raw_hash_pending is None
+                else {str(k): int(v) for k, v in raw_hash_pending.items()}
             ),
         )
 
@@ -316,6 +384,7 @@ class TableDigest:
 
     hash: str
     quarantined: int
+    hash_pending: int = 0
 
 
 def table_digest(
@@ -360,6 +429,7 @@ def table_digest(
     digest = hashlib.sha256()
     digest.update(canonical_bytes({"table": table, "columns": list(columns)}))
     quarantined = 0
+    hash_pending = 0
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
     )
@@ -367,16 +437,17 @@ def table_digest(
         reason = sync_set.excluded_reason(conn, table, columns, row, spec, tracking)
         if reason is not None:
             quarantined += 1
-            log.error(
-                "digest excludes one %s row: %s. It is not in the sync set on "
-                "this machine. Repair it with `python -m apps.shared.state."
-                "normalize_stamps --live`.",
-                table,
-                reason,
-            )
+            pk_index = {column: index for index, column in enumerate(columns)}
+            pk = [row[pk_index[column]] for column in spec.pk]
+            record_quarantine(table, pk, reason)
             continue
-        digest.update(canonical_bytes(canonical_row(table, columns, row)))
-    return TableDigest(hash=digest.hexdigest(), quarantined=quarantined)
+        canonical = canonical_row(table, columns, row)
+        if table == "tracks" and sync_set.is_hash_pending_track(
+            dict(zip(columns, row, strict=True)), held=tracking
+        ):
+            hash_pending += 1
+        digest.update(canonical_bytes(canonical))
+    return TableDigest(hash=digest.hexdigest(), quarantined=quarantined, hash_pending=hash_pending)
 
 
 def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
@@ -396,20 +467,28 @@ def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
     counts: two peers holding identical eligible content converge even when
     one of them is holding a legacy row back.
     """
-    held = sync_set.HeldKeys(conn)
-    computed = {name: table_digest(conn, name, held) for name in sync_set.FK_ORDER}
-    tables = {name: value.hash for name, value in computed.items()}
-    overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
-    return SyncDigest(
-        tables=tables,
-        overall=overall,
-        seq=seq,
-        quarantined={
-            name: value.quarantined
-            for name, value in computed.items()
-            if value.quarantined
-        },
-    )
+    with quarantine_pass("digest"):
+        held = sync_set.HeldKeys(conn)
+        computed = {
+            name: table_digest(conn, name, held) for name in sync_set.FK_ORDER
+        }
+        tables = {name: value.hash for name, value in computed.items()}
+        overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
+        return SyncDigest(
+            tables=tables,
+            overall=overall,
+            seq=seq,
+            quarantined={
+                name: value.quarantined
+                for name, value in computed.items()
+                if value.quarantined
+            },
+            hash_pending={
+                name: value.hash_pending
+                for name, value in computed.items()
+                if value.hash_pending
+            },
+        )
 
 
 # ----- small parsing helpers ------------------------------------------------
@@ -463,8 +542,10 @@ __all__ = [
     "DELETED_AT",
     "DIGEST_TABLES",
     "EPOCH",
+    "IdentityReject",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
+    "MODIFIED_AT",
     "NATURAL_KEYS",
     "NO_ORIGIN",
     "ORIGIN_DEVICE_ID",
@@ -472,6 +553,7 @@ __all__ = [
     "SPEC_BY_TABLE",
     "SYNC_COLUMNS",
     "SYNC_TABLES",
+    "TRACK_FIELDS_TABLE",
     "UPDATED_AT",
     "MachineRow",
     "RowChange",

@@ -12,10 +12,12 @@ actual algorithm is the regression anchor.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 
 import pytest
 
 from apps.shared.state import ids
+from apps.shared.state.ingest.path_collisions import path_collision_key
 
 pytestmark = [
     pytest.mark.requirement("OPEN-01b"),
@@ -149,3 +151,36 @@ def test_all_missing_raises() -> None:
             isrc=None, fingerprint=None, duration_ms=None,
             size_bytes=None, abs_path=None, mtime=None,
         )
+
+
+def test_tier3_nfc_nfd_spellings_share_one_inferred_id() -> None:
+    nfc = "/music/caf\u00e9.wav"
+    nfd = unicodedata.normalize("NFD", nfc)
+    digest_nfc, tier_nfc = ids.stable_id(isrc=None, abs_path=nfc, mtime=1.0)
+    digest_nfd, tier_nfd = ids.stable_id(isrc=None, abs_path=nfd, mtime=1.0)
+    assert tier_nfc == tier_nfd == "inferred"
+    canonical = path_collision_key(nfc)
+    expected = hashlib.sha1(f"{canonical}|1.0".encode()).hexdigest()
+    assert digest_nfc == digest_nfd == expected
+
+
+def test_tier3_case_only_spellings_share_one_inferred_id() -> None:
+    upper_digest, tier_upper = ids.stable_id(
+        isrc=None, abs_path="/music/Song.wav", mtime=2.0
+    )
+    lower_digest, tier_lower = ids.stable_id(
+        isrc=None, abs_path="/music/song.wav", mtime=2.0
+    )
+    assert tier_upper == tier_lower == "inferred"
+    canonical = path_collision_key("/music/Song.wav")
+    expected = hashlib.sha1(f"{canonical}|2.0".encode()).hexdigest()
+    assert upper_digest == lower_digest == expected
+
+
+def test_inferred_id_mutation_requires_nfc_normalization() -> None:
+    """NFC and NFD paths must hash identically; removing normalize must fail."""
+    nfc = "/music/caf\u00e9.wav"
+    nfd = unicodedata.normalize("NFD", nfc)
+    digest_nfc, _ = ids.stable_id(isrc=None, abs_path=nfc, mtime=3.0)
+    digest_nfd, _ = ids.stable_id(isrc=None, abs_path=nfd, mtime=3.0)
+    assert digest_nfc == digest_nfd

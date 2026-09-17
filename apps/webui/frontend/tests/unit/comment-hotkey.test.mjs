@@ -44,10 +44,23 @@ test("'m' arms comment pin placement", () => {
 
 test('no shortcut fires while a text field has focus, or with a modifier held', () => {
 	const body = hotkeys.slice(hotkeys.indexOf('const onKey ='));
-	const guard = body.indexOf('isNativeInteractiveTarget(e.target)');
-	const firstKey = body.indexOf("e.code === 'Space'");
-	assert.ok(guard > 0 && firstKey > guard, 'the typing guard no longer precedes the dispatch');
-	assert.match(body, /isNativeInteractiveTarget\(e\.target\) \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) return;/);
+	// LATENCY-02 (c8d78c993) hoisted the Space branch above the shared guard so
+	// Cmd/Ctrl+Space can launch quantized. That branch therefore carries its
+	// own typing guard, which must be its FIRST statement: before any modifier
+	// handling, preventDefault or transport dispatch.
+	const spaceOpen = body.indexOf("if (e.code === 'Space' || e.key === ' ') {");
+	assert.ok(spaceOpen > 0, 'the Space branch moved');
+	const spaceBody = body.slice(spaceOpen + "if (e.code === 'Space' || e.key === ' ') {".length);
+	assert.match(
+		spaceBody,
+		/^\s*if \(isNativeInteractiveTarget\(e\.target\)\) return;/,
+		'the typing guard no longer precedes the Space dispatch'
+	);
+	// Every other key goes through the shared guard, which must come before the
+	// first non-Space dispatch.
+	const guard = body.indexOf('if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;');
+	const firstKey = body.indexOf("e.key === 'Tab'");
+	assert.ok(guard > spaceOpen && firstKey > guard, 'the typing guard no longer precedes the dispatch');
 });
 
 test('Cmd/Ctrl+Enter saves the comment being typed', () => {

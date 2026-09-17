@@ -108,6 +108,28 @@ impl Engine {
         format!("http://127.0.0.1:{}", self.port)
     }
 
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub fn is_log_failed(&self) -> bool {
+        self.log_failure().is_some()
+    }
+
+    /// Non-blocking reap. Returns the exit status when the child has exited.
+    pub fn try_reap(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().ok().flatten()
+    }
+
+    /// Block until the child is reaped.
+    pub fn wait_reap(&mut self) -> std::process::ExitStatus {
+        self.child.wait().expect("wait for engine child")
+    }
+
     /// Wait for the engine to answer its own health route.
     ///
     /// Polling health rather than trusting the spawn is the whole point: a
@@ -186,23 +208,54 @@ impl Engine {
             return;
         }
         let pid = self.child.id() as i32;
+        append_shell_log("shutdown", &format!("stopping engine pgid {pid}: SIGTERM"));
         // SAFETY: killpg on a pgid this process created. A negative or zero
         // pid is impossible here because Child::id() is the spawned pid.
         unsafe {
             libc::killpg(pid, libc::SIGTERM);
         }
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
+        let sigterm_sent = Instant::now();
+        let deadline = sigterm_sent + Duration::from_secs(5);
+        loop {
+            if Instant::now() >= deadline {
+                break;
+            }
             match self.child.try_wait() {
-                Ok(Some(_)) => return,
+                Ok(Some(_)) => {
+                    append_shell_log(
+                        "shutdown",
+                        &format!(
+                            "engine pgid {pid} exited {}ms after SIGTERM",
+                            sigterm_sent.elapsed().as_millis()
+                        ),
+                    );
+                    return;
+                }
                 Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                Err(_) => break,
+                Err(err) => {
+                    append_shell_log(
+                        "WARN",
+                        &format!("could not poll engine pgid {pid} after SIGTERM: {err}"),
+                    );
+                    break;
+                }
             }
         }
+        append_shell_log(
+            "shutdown",
+            &format!(
+                "engine pgid {pid} did not exit within {}ms of SIGTERM; escalating to SIGKILL",
+                sigterm_sent.elapsed().as_millis()
+            ),
+        );
         unsafe {
             libc::killpg(pid, libc::SIGKILL);
         }
         let _ = self.child.wait();
+        append_shell_log(
+            "shutdown",
+            &format!("engine pgid {pid} reaped after SIGKILL"),
+        );
     }
 }
 
@@ -338,8 +391,7 @@ pub fn build_profile_for(
         return None;
     }
     let container_set = container_id.is_some_and(|value| !value.trim().is_empty());
-    let home_in_container =
-        home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
+    let home_in_container = home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
     if container_set || home_in_container {
         Some(APPSTORE_PROFILE)
     } else {
@@ -351,7 +403,11 @@ pub fn build_profile_for(
 fn build_profile() -> Option<&'static str> {
     let container = std::env::var(SANDBOX_CONTAINER_ENV).ok();
     let home = std::env::var("HOME").ok();
-    build_profile_for(container.as_deref(), home.as_deref(), cfg!(target_os = "macos"))
+    build_profile_for(
+        container.as_deref(),
+        home.as_deref(),
+        cfg!(target_os = "macos"),
+    )
 }
 
 // ----- spawn --------------------------------------------------------------
@@ -413,7 +469,10 @@ pub fn spawn(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
+        .env(
+            "OPENDJ_ENGINE_WARN_LOG",
+            log_path.with_file_name("engine-warn.log"),
+        )
         .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
         .env("OPENDJ_PARENT_PID", std::process::id().to_string())
         .process_group(0);
@@ -489,7 +548,10 @@ impl LogSink {
     /// failed first is the cause, and the second is usually its consequence.
     fn record_failure(&self, detail: String) {
         append_shell_log("ERROR", &detail);
-        let mut slot = self.failure.lock().expect("engine log failure mutex poisoned");
+        let mut slot = self
+            .failure
+            .lock()
+            .expect("engine log failure mutex poisoned");
         if slot.is_none() {
             *slot = Some(detail);
         }
@@ -584,14 +646,9 @@ fn log_boot_id() -> String {
     format!("shell-{}-{millis}", std::process::id())
 }
 
-/// Append one shell-owned line to the shared engine log.
-pub fn append_shell_log(level: &str, message: &str) {
-    let Some(path) = SHELL_LOG_PATH.get() else {
-        eprintln!("[{level}] {message}");
-        return;
-    };
+fn append_shell_log_to_path(log_path: &Path, level: &str, message: &str) {
     let line = format!("[shell {level}] {message}\n");
-    if let Err(err) = append_rotated(path, line.as_bytes()) {
+    if let Err(err) = append_rotated(log_path, line.as_bytes()) {
         if err.kind() == std::io::ErrorKind::NotFound {
             eprintln!("[{level}] {message}");
             return;
@@ -600,8 +657,16 @@ pub fn append_shell_log(level: &str, message: &str) {
     }
 }
 
-/// Route shell stderr and panics into the same engine log the child uses.
-pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+/// Append one shell-owned line to the shared engine log.
+pub fn append_shell_log(level: &str, message: &str) {
+    let Some(path) = SHELL_LOG_PATH.get() else {
+        eprintln!("[{level}] {message}");
+        return;
+    };
+    append_shell_log_to_path(path, level, message);
+}
+
+fn install_shell_log_path(lock: &OnceLock<PathBuf>, log_path: &Path) -> Result<(), EngineError> {
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
             EngineError::new(
@@ -611,7 +676,24 @@ pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
         })?;
     }
     verify_log_writable(log_path)?;
-    let _ = SHELL_LOG_PATH.set(log_path.to_path_buf());
+    match lock.set(log_path.to_path_buf()) {
+        Ok(()) => Ok(()),
+        Err(requested) => {
+            let retained = lock
+                .get()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "unknown".into());
+            Err(EngineError::new(
+                "Open DJ shell logging is already installed.",
+                format!("retained {} requested {}", retained, requested.display()),
+            ))
+        }
+    }
+}
+
+/// Route shell stderr and panics into the same engine log the child uses.
+pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+    install_shell_log_path(&SHELL_LOG_PATH, log_path)?;
     std::panic::set_hook(Box::new(|info| {
         let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
             (*message).to_string()
@@ -687,7 +769,10 @@ mod tests {
         // An exported-but-empty variable is the shell's version of a zero
         // that is both a value and an error signature. Empty means absent.
         assert_eq!(build_profile_for(Some(""), Some("/Users/dj"), true), None);
-        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj"), true), None);
+        assert_eq!(
+            build_profile_for(Some("   "), Some("/Users/dj"), true),
+            None
+        );
     }
 
     #[test]
@@ -778,6 +863,37 @@ mod tests {
             .unwrap()
     }
 
+    /// A child that survives SIGTERM, so [`Engine::shutdown`] has no choice
+    /// but to escalate to SIGKILL.
+    ///
+    /// A single tail `sleep 30` will not do: a POSIX shell execs into the
+    /// last command of a script rather than forking it, which replaces the
+    /// shell (and its trap) with a plain `sleep` that dies on SIGTERM like
+    /// any other process. The loop keeps the shell -- and its ignored TERM --
+    /// as the live, tracked process for the whole test.
+    fn sigterm_ignoring_child() -> Child {
+        let mut command = Command::new("/bin/sleep");
+        command
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        // SIG_IGN, unlike a handler function, survives exec, so `sleep`
+        // inherits "ignore SIGTERM" instead of reverting to the default that
+        // would kill it. Set from the child side of fork, before exec, so
+        // the test binary's own (unrelated) signal disposition is untouched.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::signal(libc::SIGTERM, libc::SIG_IGN) == libc::SIG_ERR {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        command.spawn().unwrap()
+    }
+
     #[test]
     fn retries_interrupted_reads_instead_of_ending_the_pump() {
         let directory = scratch_dir("pump-interrupted");
@@ -811,7 +927,10 @@ mod tests {
 
         let failure = pump_stream(stream, "stderr", &sink).unwrap_err();
 
-        assert!(failure.contains("could not read engine stderr"), "{failure}");
+        assert!(
+            failure.contains("could not read engine stderr"),
+            "{failure}"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -832,7 +951,10 @@ mod tests {
         let sink = LogSink::new(log_path);
         let stream = ScriptedStream::new(vec![Ok(b"line\n")]);
         let failure = pump_stream(stream, "stdout", &sink).unwrap_err();
-        assert!(failure.contains("could not write engine stdout"), "{failure}");
+        assert!(
+            failure.contains("could not write engine stdout"),
+            "{failure}"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -853,6 +975,45 @@ mod tests {
         panic!("stop_process_group left the engine running");
     }
 
+    // - if `Engine::shutdown` never escalates past SIGTERM then an engine
+    //   that ignores it (or one wedged deep enough not to act on it) outlives
+    //   the shell that thinks it stopped -> broken
+    // - if shutdown returns before the 5s SIGTERM grace period then a slow
+    //   but honest shutdown looks identical to one that never got a chance to
+    //   comply -> broken (this is the "SIGKILL escalation is logged
+    //   distinctly from SIGTERM" contract issue #2801 asks for; the log
+    //   content itself is exercised by DeathInfo::exit_reason and
+    //   exit_requested_trigger's own tests, since the shell log's global
+    //   OnceLock sink is not reliably assertable across parallel tests)
+
+    #[test]
+    fn shutdown_escalates_to_sigkill_when_sigterm_is_ignored() {
+        let directory = scratch_dir("shutdown-escalate");
+        let log_path = directory.join("engine.log");
+        let sink = Arc::new(LogSink::new(log_path.clone()));
+        let mut engine = Engine {
+            child: sigterm_ignoring_child(),
+            port: 1,
+            data_dir: directory.clone(),
+            log_path,
+            log_sink: sink,
+        };
+
+        let started = Instant::now();
+        engine.shutdown();
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed >= Duration::from_secs(5),
+            "shutdown must wait out the SIGTERM grace period before escalating, took {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "SIGKILL should terminate the child promptly once sent, took {elapsed:?}"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn a_lost_log_fails_the_launch_instead_of_reporting_healthy() {
         let directory = scratch_dir("pump-launch");
@@ -871,7 +1032,10 @@ mod tests {
 
         let failure = engine.wait_until_healthy(BOOT_TIMEOUT).unwrap_err();
 
-        assert!(failure.headline.contains("lost the engine log"), "{failure}");
+        assert!(
+            failure.headline.contains("lost the engine log"),
+            "{failure}"
+        );
         assert!(failure.detail.contains("disk full"), "{failure}");
         engine.shutdown();
         std::fs::remove_dir_all(directory).unwrap();
@@ -881,14 +1045,52 @@ mod tests {
     fn shell_logging_appends_prefixed_lines() {
         let directory = scratch_dir("shell-log");
         let log_path = directory.join("engine.log");
-        install_shell_logging(&log_path).unwrap();
-        append_shell_log("WARN", "monitor scale factor 0");
-        assert_eq!(
-            std::fs::read_to_string(&log_path).unwrap(),
-            "[shell WARN] monitor scale factor 0\n"
+        append_shell_log_to_path(&log_path, "WARN", "monitor scale factor 0");
+        let contents = std::fs::read_to_string(&log_path).unwrap();
+        assert!(
+            contents.contains("[shell WARN] monitor scale factor 0\n"),
+            "expected prefixed line in log, got: {contents}"
         );
         std::fs::remove_dir_all(directory).unwrap();
-        append_shell_log("panic", "probe");
     }
 
+    #[test]
+    fn shell_logging_missing_path_does_not_panic() {
+        let directory = scratch_dir("shell-log-missing");
+        let log_path = directory.join("engine.log");
+        append_shell_log_to_path(&log_path, "WARN", "before");
+        std::fs::remove_dir_all(directory).unwrap();
+        append_shell_log_to_path(&log_path, "panic", "probe");
+    }
+
+    #[test]
+    fn shell_logging_rejects_second_install() {
+        let first_dir = scratch_dir("shell-log-first");
+        let first_path = first_dir.join("engine.log");
+        let second_dir = scratch_dir("shell-log-second");
+        let second_path = second_dir.join("engine.log");
+        let lock = OnceLock::new();
+
+        install_shell_log_path(&lock, &first_path).unwrap();
+        let failure = install_shell_log_path(&lock, &second_path).unwrap_err();
+
+        assert!(
+            failure
+                .headline
+                .contains("shell logging is already installed"),
+            "{failure}"
+        );
+        assert!(
+            failure.detail.contains(&first_path.display().to_string()),
+            "{failure}"
+        );
+        assert!(
+            failure.detail.contains(&second_path.display().to_string()),
+            "{failure}"
+        );
+        assert_eq!(lock.get(), Some(&first_path));
+
+        std::fs::remove_dir_all(first_dir).unwrap();
+        std::fs::remove_dir_all(second_dir).unwrap();
+    }
 }

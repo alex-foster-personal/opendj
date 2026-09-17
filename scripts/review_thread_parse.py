@@ -427,7 +427,7 @@ def _joins_into_a_longer_word(char: str) -> bool:
     A word character continues it outright ("BLOCKINGS"). So does any Unicode
     DASH, because a hyphenated compound is one word for this purpose:
     "BLOCKING-ADJACENT work belongs elsewhere" is prose, not a verdict, and it
-    stays prose when the hyphen is U+2011 or an U+2013 character.
+    stays prose when the hyphen is U+2011 or U+2013.
 
     The dash test asks `unicodedata` for the CATEGORY rather than listing the
     dashes, which is the same rule the wrapper follows one level up: an

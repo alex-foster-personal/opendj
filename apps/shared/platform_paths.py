@@ -36,7 +36,24 @@ HOME: Path = Path.home()
 # This file lives at ``<project>/apps/shared/platform_paths.py`` ->
 # parents[2] is the project root.
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
-DATA_DIR: Path = Path(os.environ.get("MDT_DATA_DIR", PROJECT_ROOT / "data"))
+DATA_DIR_ENV: str = "MDT_DATA_DIR"
+DATA_DIR: Path = Path(os.environ.get(DATA_DIR_ENV, PROJECT_ROOT / "data"))
+
+
+def default_ingest_inbox() -> Path:
+    """Return the ingest staging inbox for this process.
+
+    When ``MDT_DATA_DIR`` is set (worktrees, adversarial sandboxes,
+    ``--data-dir`` engines), staging lives under that data dir so uploads
+    never escape the instance sandbox. When unset (normal desktop daemon),
+    staging stays under ``~/Music/Manual Library/_ingest``.
+    """
+    if DATA_DIR_ENV in os.environ:
+        return DATA_DIR / "Manual Library" / "_ingest"
+    return HOME / "Music" / "Manual Library" / "_ingest"
+
+
+INGEST_INBOX: Path = default_ingest_inbox()
 
 
 def rekordbox_app_dir() -> Path:

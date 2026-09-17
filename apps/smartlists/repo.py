@@ -51,6 +51,19 @@ def _parse_iso(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value)
 
 
+def _live_sql(conn: sqlite3.Connection) -> str:
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(smartlists)")
+    }
+    if "deleted_at" not in columns:
+        return ""
+    return " AND (deleted_at IS NULL OR deleted_at = '')"
+
+
+def _tombstone_name(original: str, smartlist_id: str) -> str:
+    return f"{original}::__deleted__{smartlist_id}"
+
+
 def smartlist_revision(row: SmartlistRow) -> str:
     """Return a deterministic opaque revision for the complete stored row."""
     payload = json.dumps(
@@ -116,6 +129,22 @@ class SmartlistsRepo:
         if ensure_schema:
             ensure_phase08_tables(conn)
 
+    def unused_name(self, base: str) -> str:
+        """Return ``base`` or the first unused ``base N`` among live rows."""
+        live = _live_sql(self.conn)
+        if self.get_by_name(base) is None:
+            return base
+        n = 2
+        while True:
+            candidate = f"{base} {n}"
+            row = self.conn.execute(
+                f"SELECT 1 FROM smartlists WHERE name=?{live}",
+                (candidate,),
+            ).fetchone()
+            if row is None:
+                return candidate
+            n += 1
+
     def create(
         self,
         name: str,
@@ -125,6 +154,8 @@ class SmartlistsRepo:
         rule_schema_version: int = 0,
     ) -> SmartlistRow:
         validate_rule(rule)
+        if not name.strip():
+            raise SmartlistsRepoError("smartlist name must be non-empty")
         if order_by not in _ALLOWED_ORDER_BY:
             raise SmartlistsRepoError(
                 f"order_by {order_by!r} not in allowlist {sorted(_ALLOWED_ORDER_BY)}"
@@ -155,6 +186,7 @@ class SmartlistsRepo:
         *,
         expected_revision: str,
         order_by: str | None = None,
+        name: str | None = None,
     ) -> SmartlistRow:
         """CAS-replace one complete rule inside one explicit transaction."""
         validate_rule(rule)
@@ -162,6 +194,8 @@ class SmartlistsRepo:
             raise SmartlistsRepoError(
                 f"order_by {order_by!r} not in allowlist"
             )
+        if name is not None and not name.strip():
+            raise SmartlistsRepoError("smartlist name must be non-empty")
         rule_json = json.dumps(rule, sort_keys=True)
         ref_fields = sorted(compute_referenced_fields(rule))
         self.conn.execute("BEGIN IMMEDIATE")
@@ -184,9 +218,19 @@ class SmartlistsRepo:
             if order_by is not None:
                 sql += ", order_by=?"
                 params.append(order_by)
-            sql += " WHERE id=?"
+            if name is not None:
+                sql += ", name=?"
+                params.append(name)
+            sql += f" WHERE id=?{_live_sql(self.conn)}"
             params.append(smartlist_id)
-            self.conn.execute(sql, params)
+            try:
+                self.conn.execute(sql, params)
+            except sqlite3.IntegrityError as exc:
+                if name is not None:
+                    raise SmartlistsRepoError(
+                        f"smartlist with name {name!r} already exists"
+                    ) from exc
+                raise
 
             updated = self.get_by_id(smartlist_id)
             if updated is None:
@@ -205,9 +249,10 @@ class SmartlistsRepo:
         smartlist_id: str,
         track_ids: list[str],
     ) -> None:
+        live = _live_sql(self.conn)
         self.conn.execute(
             "UPDATE smartlists SET last_materialized_track_ids=?, "
-            "last_evaluated_at=?, modified_at=? WHERE id=?",
+            f"last_evaluated_at=?, modified_at=? WHERE id=?{live}",
             (
                 json.dumps(track_ids),
                 _now_iso(),
@@ -217,34 +262,73 @@ class SmartlistsRepo:
         )
 
     def delete(self, smartlist_id: str) -> bool:
+        live = _live_sql(self.conn)
+        row = self.conn.execute(
+            f"SELECT name FROM smartlists WHERE id=?{live}",
+            (smartlist_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        original_name = row[0]
+        now = _now_iso()
         cur = self.conn.execute(
-            "DELETE FROM smartlists WHERE id=?", (smartlist_id,),
+            f"UPDATE smartlists SET deleted_at=?, name=?, modified_at=? "
+            f"WHERE id=?{live}",
+            (_now_iso(), _tombstone_name(original_name, smartlist_id), now, smartlist_id),
         )
         return cur.rowcount > 0
 
     def delete_by_name(self, name: str) -> bool:
-        cur = self.conn.execute(
-            "DELETE FROM smartlists WHERE name=?", (name,),
+        live = _live_sql(self.conn)
+        row = self.conn.execute(
+            f"SELECT id, name FROM smartlists WHERE name=?{live}",
+            (name,),
+        ).fetchone()
+        if row is None:
+            return False
+        return self.delete(row[0])
+
+    def duplicate(
+        self,
+        smartlist_id: str,
+        *,
+        name: str | None = None,
+    ) -> SmartlistRow:
+        source = self.get_by_id(smartlist_id)
+        if source is None:
+            raise SmartlistsRepoError(f"smartlist {smartlist_id!r} not found")
+        copy_name = (
+            name
+            if name is not None
+            else self.unused_name(f"{source.name} (copy)")
         )
-        return cur.rowcount > 0
+        return self.create(
+            copy_name,
+            source.rule,
+            order_by=source.order_by,
+            rule_schema_version=source.rule_schema_version,
+        )
 
     def get_by_id(self, smartlist_id: str) -> SmartlistRow | None:
+        live = _live_sql(self.conn)
         row = self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE id=?",
+            f"SELECT {_COLS} FROM smartlists WHERE id=?{live}",
             (smartlist_id,),
         ).fetchone()
         return _row_to_model(row) if row is not None else None
 
     def get_by_name(self, name: str) -> SmartlistRow | None:
+        live = _live_sql(self.conn)
         row = self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE name=?",
+            f"SELECT {_COLS} FROM smartlists WHERE name=?{live}",
             (name,),
         ).fetchone()
         return _row_to_model(row) if row is not None else None
 
     def list_all(self) -> Iterator[SmartlistRow]:
+        live = _live_sql(self.conn)
         for row in self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists ORDER BY name"
+            f"SELECT {_COLS} FROM smartlists WHERE 1=1{live} ORDER BY name"
         ):
             yield _row_to_model(row)
 

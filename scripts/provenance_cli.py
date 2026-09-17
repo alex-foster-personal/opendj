@@ -41,7 +41,7 @@ from scripts.provenance_probe import (
     _unreadable_stores,
     generation_conflict,
 )
-from scripts.provenance_sources import SourceRoots, harvest_all
+from scripts.provenance_sources import SourceRoots, harvest_all, main_worktree
 from scripts.provenance_state import (
     OUT_DIRNAME,
     WATERMARK,
@@ -178,10 +178,16 @@ def main() -> int:
         cursor_db=args.cursor_db or default_roots.cursor_db,
     )
 
-    repo = args.repo.resolve()
-    if not (repo / ".git").exists():
-        print(f"[ERROR] not a git repo: {repo}", file=sys.stderr)
+    if not (args.repo / ".git").exists():
+        print(f"[ERROR] not a git repo: {args.repo.resolve()}", file=sys.stderr)
         return 1
+    # The ledger, index, watermark and lock live in the MAIN checkout only. The
+    # Stop hook passes $CLAUDE_PROJECT_DIR, which in a worktree session is the
+    # worktree, and writing the tracked ledger there left every archived thread
+    # warning about uncommitted docs/threads changes (Tue 15 Sep 2026). The
+    # harvest is already scoped by the main checkout, so nothing is lost, and
+    # one lock now serializes every checkout's sweep instead of one per tree.
+    repo = main_worktree(args.repo.resolve())
 
     if args.feedback_dir is not None:
         try:

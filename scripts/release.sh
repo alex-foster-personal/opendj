@@ -135,15 +135,30 @@ app="$(find "$MACOS_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [ -n "$app" ] || die "just dmg produced no app bundle in $MACOS_DIR"
 dmg="$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
 [ -n "$dmg" ] || die "just dmg produced no dmg in $DMG_DIR"
-archive="$(find "$MACOS_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
-[ -n "$archive" ] || die "just dmg produced no updater archive in $MACOS_DIR"
+built_archive="$(find "$MACOS_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
+[ -n "$built_archive" ] || die "just dmg produced no updater archive in $MACOS_DIR"
+[ -f "$built_archive.sig" ] || die "just dmg produced no updater signature for $built_archive"
+# The updater plugin gunzips the download; a ZIP under the .tar.gz name is
+# refused with "invalid gzip header" and the app stays put (v0.1.2 to v0.1.4).
+archive_magic="$(head -c 2 "$built_archive" | od -An -tx1 | tr -d ' \n')"
+[ "$archive_magic" = "1f8b" ] || die "updater archive $built_archive is not gzip (magic $archive_magic); refusing to publish what the updater cannot install"
+# Tauri names the archive after the product ("Open DJ.app.tar.gz"). GitHub
+# stores an uploaded asset under a space-free name ("Open.DJ.app.tar.gz"), so
+# a manifest URL carrying the space 404s and the in-app updater never installs
+# (v0.1.2, Tue 15 Sep 2026). Publish the same bytes under a name GitHub keeps.
+# The signature is over the bytes, so the rename does not invalidate it.
+archive="$MACOS_DIR/OpenDJ-$version-aarch64.app.tar.gz"
 signature="$archive.sig"
-[ -f "$signature" ] || die "just dmg produced no updater signature for $archive"
+cp "$built_archive" "$archive"
+cp "$built_archive.sig" "$signature"
 
 xcrun stapler validate "$app"
 spctl -a -t exec -vv "$app"
 xcrun stapler validate "$dmg"
-spctl -a -t open -vv "$dmg"
+# A disk image carries no launch context of its own: without an explicit
+# primary-signature context, macOS 26.6.1 answers "rejected, source=Insufficient
+# Context" for a notarized, stapled dmg (measured on the Air, Tue 15 Sep 2026).
+spctl -a -t open --context context:primary-signature -vv "$dmg"
 
 # The asset is uploaded under its FILENAME, and the updater endpoint fetches
 # `latest.json`. So it is named exactly that, inside a unique directory: BSD

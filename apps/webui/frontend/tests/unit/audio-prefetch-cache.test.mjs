@@ -23,11 +23,17 @@ let server;
 let origin;
 /** stable_id -> {size} or {httpStatus} - what the real server will serve. */
 const catalog = new Map();
+/** stable_id -> request count - real socket hits, not a mocked call log. */
+const requestHits = new Map();
 
 before(async () => {
 	server = createServer((req, res) => {
 		const match = /^\/api\/v1\/tracks\/([^/]+)\/audio$/.exec(req.url ?? '');
 		const entry = match === null ? undefined : catalog.get(decodeURIComponent(match[1]));
+		if (entry !== undefined) {
+			const stable_id = decodeURIComponent(match[1]);
+			requestHits.set(stable_id, (requestHits.get(stable_id) ?? 0) + 1);
+		}
 		if (entry === undefined) {
 			res.writeHead(404).end();
 			return;
@@ -269,4 +275,121 @@ test('ensureAudioPrefetch still works after clearAudioPrefetchCache', async () =
 	cache.clearAudioPrefetchCache();
 	assert.equal(await prefetchAndSettle(cache, 'after-clear'), 'ready');
 	assert.equal(cache.audioPrefetchReadyCount(), 1);
+});
+
+// ------------------------------------------- PERFMODE-04 shed (audio-prefetch-cache-caps)
+
+test('while the shed defers, the fetch pump never starts; once released, it does', async () => {
+	const cache = await freshCache();
+	serve('gated', 64 * 1024);
+
+	const requests = [];
+	cache.setAudioPrefetchShedRequest((id) => requests.push(id));
+
+	cache.ensureAudioPrefetch('gated');
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	assert.deepEqual(requests, ['audio-prefetch-cache-caps'], 'ensureAudioPrefetch must ask the shed, not fetch directly');
+	assert.equal(
+		requestHits.get('gated'),
+		undefined,
+		'the work effect (a real HTTP fetch) must be absent while the gate is closed'
+	);
+	assert.equal(cache.audioPrefetchStatus('gated'), 'loading', 'intent is recorded even though the fetch has not run');
+
+	// Release: the drain callback the job registers in app-init.ts.
+	await cache.resumeAudioPrefetchOwedPump();
+	assert.equal(
+		await prefetchAndSettle(cache, 'gated'),
+		'ready',
+		'the work effect must be present once the gate reopens'
+	);
+	assert.equal(requestHits.get('gated'), 1, 'exactly one real fetch once released');
+
+	cache.setAudioPrefetchShedRequest(null);
+});
+
+test('mutation control: an ungated cache is unaffected by setAudioPrefetchShedRequest(null)', async () => {
+	// Guards against a guard that always defers: with no shed armed (the
+	// production default before app-init.ts runs, and every existing test
+	// above), ensureAudioPrefetch must behave exactly as before this PR.
+	const cache = await freshCache();
+	serve('ungated', 4096);
+	assert.equal(await prefetchAndSettle(cache, 'ungated'), 'ready');
+	assert.equal(requestHits.get('ungated'), 1);
+});
+
+// ------------------------------------------------------ decoded audio share
+
+// CUEOUT-15: a deck load reuses the library preview's decode.
+// - if a deck load gets a buffer decoded at another sample rate then the stretch loader rejects the load - broken
+// - if the share returns something with no provider then a deck load plays nothing - broken
+// - if the share misses a matching previewed track then every previewed load pays the decode again - broken
+
+test('sharedDecodedAudio returns the provided buffer only at a matching sample rate', async () => {
+	const cache = await loadTypeScriptModule('src/lib/rb/audio-prefetch-cache.svelte.ts', {
+		viteApiBase: origin
+	});
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 48_000),
+		null,
+		'if the share returns something with no provider then a deck load plays nothing - broken'
+	);
+	const decoded = { sampleRate: 48_000, length: 10, numberOfChannels: 2 };
+	cache.provideDecodedAudio((stable_id) => (stable_id === 'sid-a' ? decoded : null));
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 48_000),
+		decoded,
+		'if the share misses a matching previewed track then every previewed load pays the decode again - broken'
+	);
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 44_100),
+		null,
+		'if a deck load gets a buffer decoded at another sample rate then the stretch loader rejects the load - broken'
+	);
+	assert.equal(cache.sharedDecodedAudio('sid-b', 48_000), null);
+});
+
+test('deckLoadAudio prefers the shared decode, and decodeDeckLoadAudio skips decode only on a matching context', async () => {
+	const cache = await loadTypeScriptModule('src/lib/rb/audio-prefetch-cache.svelte.ts', {
+		viteApiBase: origin
+	});
+	const decoded = { sampleRate: 48_000, length: 10, numberOfChannels: 2 };
+	cache.provideDecodedAudio((stable_id) => (stable_id === 'sid-shared' ? decoded : null));
+	let fetches = 0;
+	const fetchBytes = async () => {
+		fetches += 1;
+		return new ArrayBuffer(8);
+	};
+	let decodes = 0;
+	const ctx = (sampleRate) => ({
+		sampleRate,
+		decodeAudioData: async () => {
+			decodes += 1;
+			return { sampleRate };
+		}
+	});
+
+	const hit = cache.deckLoadAudio('sid-shared', 48_000, fetchBytes);
+	assert.equal(hit.fetchStage, 'decodedShareHit');
+	const hitBytes = await hit.bytes;
+	assert.equal(
+		await cache.decodeDeckLoadAudio(ctx(48_000), 'sid-shared', hit, hitBytes),
+		decoded,
+		'if a previewed track is decoded again on deck load then hover warm saves only the fetch - broken'
+	);
+	assert.equal(fetches + decodes, 0, 'if a shared decode still fetches or decodes then the share is wasted work - broken');
+	assert.deepEqual(hit.stats(hitBytes), { audioBytes: 0, audioPrefetchHit: 0, decodedShareHit: 1 });
+
+	// The context was rebuilt at another rate between choosing and decoding.
+	await cache.decodeDeckLoadAudio(ctx(44_100), 'sid-shared', hit, hitBytes);
+	assert.equal(
+		fetches + decodes,
+		2,
+		'if a rebuilt context at another rate still gets the shared buffer then the stretch loader rejects the load - broken'
+	);
+
+	const cold = cache.deckLoadAudio('sid-cold', 48_000, fetchBytes);
+	assert.equal(cold.fetchStage, 'fetchAudio');
+	assert.equal(cache.deckLoadAudio('sid-shared', null, fetchBytes).fetchStage, 'fetchAudio', 'no context means no share');
 });

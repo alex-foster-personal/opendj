@@ -22,7 +22,7 @@ export type MasterReason =
 	| 'dispose'
 	| null;
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
-import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from './mixer-types';
+import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
 import type { StemControl } from './stem-types';
 
 /**
@@ -44,7 +44,7 @@ export interface AudioEngine {
 	load(deck: DeckId, stable_id: string): Promise<void>;
 	/** Start/resume transport from the current position. Throws if no track
 	 * is loaded on the deck. */
-	play(deck: DeckId): Promise<void>;
+	play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void>;
 	/** Pause transport, keeping position. Throws if no track loaded. */
 	pause(deck: DeckId): Promise<void>;
 	/** Seek to a position in ms (hot-cue click / CUE return). Implemented as
@@ -109,6 +109,9 @@ export interface AudioEngine {
 		armAtPositionSec: number,
 		pressT0Ms?: number
 	): Promise<number>;
+	/** LATENCY-02: arm QUANTIZED LAUNCH on the follower's next shared beat 1. */
+	armQuantizedLaunch(deck: DeckId, pressT0Ms?: number): Promise<number>;
+	clearQuantizedLaunch(deck: DeckId): void;
 	/** The engine's AudioContext clock, for projecting an armed trigger's
 	 * remaining wait without exposing the context itself. */
 	contextTimeNowSec(): number;
@@ -134,6 +137,10 @@ export interface AudioEngine {
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
 	setHeadDelayMs(value: number): void;
+	/** CUEOUT-14: room delay line, 0..1500 ms, the last node before the destination. */
+	setMasterDelayMs(value: number): void;
+	/** CUEOUT-14: how a measured cue/master offset is split; re-applies the last calibration. */
+	setHeadphoneAlignmentMode(mode: HeadphoneAlignmentMode): void;
 	/** Practice, split-cable, or two-output routing. Unknown modes throw. */
 	setHeadphoneOutputMode(mode: HeadphoneOutputMode): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */
@@ -142,4 +149,8 @@ export interface AudioEngine {
 	acquireHeadphoneOutput(): Promise<void>;
 	/** Route the real monitor element to an explicitly enumerated output device. */
 	selectHeadphoneOutput(deviceId: string): Promise<void>;
+	/** Pin the room mix to an enumerated output via AudioContext.setSinkId. */
+	selectMasterOutput(deviceId: string): Promise<void>;
+	/** Pin label-unlock / capture to an enumerated input. Never default a headphone mic. */
+	selectAudioInput(deviceId: string): Promise<void>;
 }

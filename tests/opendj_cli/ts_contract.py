@@ -11,6 +11,7 @@ without a verb is a red test the next time anyone runs the lane.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -33,15 +34,18 @@ def _union_lines(source: Path, marker: str) -> list[str]:
 
     Comments, including the block comments that sit between members, are
     skipped; the union ends at the first line that is neither a member nor a
-    comment, which is the ``export interface`` that follows it.
+    comment, which is the ``export interface`` that follows it. A member the
+    formatter wrapped over several lines is joined back into the one-line
+    ``| { a; b }`` shape the readers below parse.
     """
     lines = source.read_text(encoding="utf-8").splitlines()
     start = next(index for index, line in enumerate(lines) if line.startswith(marker))
     members: list[str] = []
-    for line in lines[start + 1:]:
+    rest = iter(lines[start + 1:])
+    for line in rest:
         stripped = line.strip()
         if stripped.startswith("|"):
-            members.append(stripped)
+            members.append(_join_wrapped_member(stripped, rest, source))
         elif stripped == "" or stripped.startswith(("//", "/*", "*")):
             continue
         else:
@@ -49,6 +53,24 @@ def _union_lines(source: Path, marker: str) -> list[str]:
     if not members:
         raise AssertionError(f"no union members found after {marker!r} in {source}")
     return members
+
+
+def _join_wrapped_member(first: str, rest: Iterator[str], source: Path) -> str:
+    """Consume the continuation lines of a wrapped member from ``rest``.
+
+    ``| {`` / ``type: 'play';`` / ... / ``}`` -> ``| { type: 'play'; ... }``.
+    A one-line member has balanced braces and comes back unchanged.
+    """
+    pieces = [first]
+    depth = first.count("{") - first.count("}")
+    while depth > 0:
+        line = next(rest, None)
+        if line is None:
+            raise AssertionError(f"union member never closes in {source}: {first}")
+        stripped = line.strip()
+        pieces.append(stripped)
+        depth += stripped.count("{") - stripped.count("}")
+    return re.sub(r";\s*(\};?)$", r" \1", " ".join(pieces))
 
 
 def _command_member(line: str) -> str:

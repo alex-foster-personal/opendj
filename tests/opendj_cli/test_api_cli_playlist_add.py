@@ -75,7 +75,9 @@ def test_api_post_items_add_duplicate_allowed(
 ) -> None:
     base_url, _db = library_daemon
     monkeypatch.setattr(
-        api_cli, "resolve_backend_base_url", lambda environ=None: base_url,
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
     )
     import httpx
 
@@ -100,3 +102,51 @@ def test_api_post_items_add_duplicate_allowed(
     assert code2 == api_cli.EXIT_OK
     out2 = json.loads(capsys.readouterr().out)
     assert out2["items"].count("t-004") == 2
+
+
+def test_api_post_items_add_noop_when_forbid_duplicates(
+    library_daemon: tuple[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_url, _db = library_daemon
+    monkeypatch.setattr(
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None, lock_path=None: api_cli._BackendTarget(base_url=base_url),
+    )
+    import httpx
+
+    create = httpx.post(
+        f"{base_url}/api/v1/playlists", json={"name": "CLI Forbid"}, timeout=30,
+    )
+    assert create.status_code == 201
+    pid = create.json()["playlist_id"]
+    etag = create.headers["etag"]
+
+    code = main([
+        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
+        "--json", '{"stable_ids":["t-004"]}',
+    ])
+    assert code == api_cli.EXIT_OK
+    capsys.readouterr()
+    etag_hdr = httpx.get(
+        f"{base_url}/api/v1/playlists/{pid}", timeout=30,
+    ).headers["etag"]
+
+    patch_code = main([
+        "api", "PATCH", f"/api/v1/playlists/{pid}",
+        "-H", f"If-Match: {etag_hdr}",
+        "--json", '{"forbid_duplicates":true}',
+    ])
+    assert patch_code == api_cli.EXIT_OK
+    patch_out = json.loads(capsys.readouterr().out)
+
+    code2 = main([
+        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
+        "--json", '{"stable_ids":["t-004"]}',
+    ])
+    assert code2 == api_cli.EXIT_OK
+    out2 = json.loads(capsys.readouterr().out)
+    assert out2["items"].count("t-004") == 1
+    assert patch_out["forbid_duplicates"] is True

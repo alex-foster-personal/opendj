@@ -56,10 +56,12 @@ test('first IPC load after a fresh /performance open succeeds without a Signalsm
 	await waitForDeckLoad(page, stableId!);
 
 	const firstQuery = await page.evaluate(() => window.musicDjToolsPerformance!.query());
-	expect(firstQuery.decks[1].title.length).toBeGreaterThan(0);
-	expect(firstQuery.decks[1].processor_error).toBeNull();
-	expect(firstQuery.decks[1].command_error).toBeNull();
-	const firstStages = firstQuery.decks[1].last_load_stages;
+	const firstDeck = firstQuery.decks[1];
+	expect(firstDeck).not.toBeNull();
+	expect((firstDeck?.title ?? '').length).toBeGreaterThan(0);
+	expect(firstDeck!.processor_error).toBeNull();
+	expect(firstDeck!.command_error).toBeNull();
+	const firstStages = firstDeck!.last_load_stages;
 	expect(Number.isFinite(firstStages?.stretchCreate)).toBe(true);
 	expect(firstStages!.stretchCreate!).toBeLessThan(STRETCH_CREATE_CEILING_MS);
 
@@ -69,9 +71,11 @@ test('first IPC load after a fresh /performance open succeeds without a Signalsm
 	await waitForDeckLoad(page, stableId!);
 
 	const secondQuery = await page.evaluate(() => window.musicDjToolsPerformance!.query());
-	expect(secondQuery.decks[1].title.length).toBeGreaterThan(0);
-	expect(secondQuery.decks[1].processor_error).toBeNull();
-	expect(secondQuery.decks[1].command_error).toBeNull();
+	const secondDeck = secondQuery.decks[1];
+	expect(secondDeck).not.toBeNull();
+	expect((secondDeck?.title ?? '').length).toBeGreaterThan(0);
+	expect(secondDeck!.processor_error).toBeNull();
+	expect(secondDeck!.command_error).toBeNull();
 
 	const bodyText = await page.locator('body').innerText();
 	expect(bodyText).not.toContain('StretchCommandTimeoutError');

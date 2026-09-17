@@ -120,7 +120,16 @@ def test_exits_2_when_the_lock_names_a_port_nothing_answers_on(
         dead_port = int(probe.getsockname()[1])
     lock = tmp_path / ".engine.lock"
     lock.write_text(
-        json.dumps({"pid": 1, "host": "127.0.0.1", "port": dead_port}), encoding="utf-8"
+        json.dumps(
+            {
+                "pid": 1,
+                "role": "opendj-engine",
+                "host": "127.0.0.1",
+                "port": dead_port,
+                "boot_id": "dead-boot",
+            }
+        ),
+        encoding="utf-8",
     )
 
     dead = Engine(base_url="", port=dead_port, lock_path=lock)
@@ -164,10 +173,11 @@ def test_state_exits_3_when_no_performance_page_is_open(
 ) -> None:
     started = time.monotonic()
     assert main(_argv(engine, "state")) == EXIT_NO_PAGE
-    assert time.monotonic() - started < 5.0
+    elapsed = time.monotonic() - started
+    assert elapsed >= 9.0
 
     captured = capsys.readouterr()
-    assert "no performance page" in captured.err
+    assert "opendj open performance" in captured.err
     assert "409" in captured.err
 
 
@@ -180,8 +190,8 @@ def test_an_order_with_no_page_open_refuses_rather_than_hangs(
     assert main(_argv(engine, "deck", "1", "play")) == EXIT_NO_PAGE
     elapsed = time.monotonic() - started
 
-    assert elapsed < 5.0, f"the refusal took {elapsed:.1f}s, which is a hang"
-    assert "no performance page" in capsys.readouterr().err
+    assert elapsed >= 9.0, f"auto-ensure should wait ~10s before refusing, got {elapsed:.1f}s"
+    assert "opendj open performance" in capsys.readouterr().err
 
 
 def test_deck_play_dispatches_and_is_confirmed_against_the_mirror(

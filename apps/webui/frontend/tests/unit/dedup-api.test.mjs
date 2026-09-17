@@ -32,7 +32,12 @@ function clusterPayload({ decisionAction = null } = {}) {
 						key: '8A',
 						duration_ms: 210000,
 						rating: 4,
-						file_exists: true
+						file_exists: true,
+						cue_count: 0,
+						hot_cue_count: 0,
+						loop_count: 0,
+						has_beatgrid: false,
+						cue_positions_ms: []
 					}
 				],
 				decision:
@@ -266,7 +271,11 @@ test('applyDedupMerge posts apply with If-Match and accepts pending_apply false'
 	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters/7/apply`);
 	assert.equal(request.method, 'POST');
 	assert.equal(request.headers.get('if-match'), INITIAL_REVISION);
-	assert.deepEqual(body, { cluster_key: CLUSTER_KEY, survivor: 'track-canon' });
+	assert.deepEqual(body, {
+		cluster_key: CLUSTER_KEY,
+		survivor: 'track-canon',
+		confirm_cue_loss: false
+	});
 	assert.equal(record.pending_apply, false);
 	assert.equal(record.playlists[0].playlist_id, 'pl-1');
 });
@@ -312,4 +321,16 @@ test('undoDedupMerge posts undo and a 409 becomes DedupConflictError', async () 
 		);
 	assert.ok(caught instanceof dedupApi.DedupConflictError, 'expected a DedupConflictError');
 	assert.equal(caught.revision, NEXT_REVISION);
+});
+
+test('fetchDedupClusters rejects members missing cue_count', async () => {
+	const payload = clusterPayload();
+	delete payload.clusters[0].members[0].cue_count;
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify(payload), {
+			status: 200,
+			headers: { 'content-type': 'application/json', etag: INITIAL_REVISION }
+		});
+
+	await assert.rejects(dedupApi.fetchDedupClusters(), /cue_count/);
 });

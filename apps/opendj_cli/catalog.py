@@ -30,10 +30,13 @@ from apps.opendj_cli.kinds import (
     enum_value,
     head_delay_ms_value,
     int_enum_value,
+    master_delay_ms_value,
     int_value,
     loop_value,
     number_value,
+    rescue_decks_value,
     positive_int_value,
+    positive_number_value,
     text_value,
     unit_value,
 )
@@ -47,6 +50,7 @@ PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
+HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
@@ -153,6 +157,9 @@ _VERBS: tuple[Verb, ...] = (
          )),
     Verb("play", "play", (_DECK,), fixed=(("playing", True),),
          quick_draws=("play.toggle",), observes=_deck_playing()),
+    Verb("play_quantized", "play", (_DECK,),
+         fixed=(("playing", True), ("quantize", True)),
+         observes=(Observe(("decks", "{deck}", "quantized_launch_armed"), PRESENT),)),
     Verb("pause", "play", (_DECK,), fixed=(("playing", False),), observes=_deck_playing()),
     Verb("cue", "cue", (_DECK,), quick_draws=("cue",)),
     Verb("seek", "seek", (_DECK, arg("position_ms", "number", number_value)),
@@ -219,13 +226,42 @@ _VERBS: tuple[Verb, ...] = (
     Verb("head_delay_ms", "head_delay_ms", (
         arg("value", "number", head_delay_ms_value, "0..500"),
     ), note="CUEOUT-03: cue-monitor delay in milliseconds."),
+    Verb("headphone_alignment_mode", "headphone_alignment_mode", (
+        arg("value", "enum", enum_value(HEADPHONE_ALIGNMENT_MODE_VALUES),
+            "headphones_only|delay_all|hybrid"),
+    ), note="CUEOUT-14: how a measured cue/master offset is split; re-applies the last calibration."),
+    Verb("master_delay_ms", "master_delay_ms", (
+        arg("value", "number", master_delay_ms_value, "0..1500"),
+    ), note="CUEOUT-14: room (MASTER) delay in milliseconds, the last node before the output."),
+    Verb("headphone_calibrate", "headphone_calibrate", (),
+         note="CUEOUT-14: headless mic calibration; holds until applied or failed."),
+    Verb("headphone_calibrate_abort", "headphone_calibrate_abort", (),
+         note="CUEOUT-14: stop an in-flight calibration; decks resume, nothing is applied."),
     # ----- browser, library and headphone outputs -----------------------
     Verb("browser_select_playlist", "browser_select_playlist",
          (arg("playlist_id", "text", text_value),)),
     Verb("headphone_outputs_refresh", "headphone_outputs_refresh", ()),
+    # CUEOUT-15: the mini-waveform click, without a pointer. It loads no deck
+    # and moves no transport, so it is issuable while all four decks are busy
+    # and while one of them is on air. `bpm` is the previewed track's own
+    # tempo; supply it and the preview tempo-matches a playing master deck
+    # when the setting is on and the match fits the preview pitch range.
+    Verb("preview_cue", "preview_cue", (
+        arg("stable_id", "text", text_value),
+        arg("ratio", "unit", unit_value, "0..1"),
+        arg("bpm", "number", positive_number_value, "track BPM", optional=True),
+    ), note="CUEOUT-15: play a library track on the cue bus from a point in it."),
+    Verb("preview_stop", "preview_stop", (),
+         note="CUEOUT-15: stop the preview and release the decoded track; idempotent."),
     Verb("headphone_output_acquire", "headphone_output_acquire", ()),
     Verb("headphone_output_select", "headphone_output_select",
          (arg("device_id", "text", text_value),)),
+    Verb("headphone_master_select", "headphone_master_select",
+         (arg("device_id", "text", text_value),),
+         note="CUEOUT-09: pin AudioContext master sink."),
+    Verb("headphone_input_select", "headphone_input_select",
+         (arg("device_id", "text", text_value),),
+         note="CUEOUT-10: audio input; default is never a headphone/HFP mic."),
     Verb("output_mode", "output_mode", (
         arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),
     ), note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split."),
@@ -245,6 +281,9 @@ _VERBS: tuple[Verb, ...] = (
     )),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
+    # RESCUE-01 HTTP parity (not command-bus verbs):
+    #   opendj api GET /api/v1/performance/rescue-snapshots/latest
+    #   opendj api POST /api/v1/performance/rescue-snapshots --json @snapshot.json
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",
@@ -284,6 +323,11 @@ _VERBS: tuple[Verb, ...] = (
          note="Requires a mounted playlist history panel."),
     Verb("playlist_redo", "playlist_redo", (),
          note="Requires a mounted playlist history panel."),
+    Verb("rescue_resume", "rescue_resume", (
+        arg("decks", "rescue_decks", rescue_decks_value, "1:5000[,3:12000]"),
+    ), note="RESCUE-02: schedule every listed deck at position_ms together."),
+    Verb("rescue_stop_all", "rescue_stop_all", (),
+         note="RESCUE-02 Undo: stop every deck restored by rescue playback together."),
 )
 
 VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}

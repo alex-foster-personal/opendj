@@ -19,13 +19,17 @@ from pydantic import BaseModel, Field
 
 from apps.sync_hub import enrollment, service_enroll
 from apps.sync_hub.machine_credentials import CredentialVerdict
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    MACHINE_NAME_MAX_LENGTH,
+)
 
 
 class MachineModel(BaseModel):
     """One ``machines`` row on the wire."""
 
-    machine_id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
+    name: str = Field(min_length=1, max_length=MACHINE_NAME_MAX_LENGTH)
     platform: str = Field(min_length=1)
     is_hub: bool = False
     data_root: str | None = None
@@ -40,6 +44,15 @@ class RowModel(BaseModel):
     pk: list[str] = Field(min_length=1)
     values: dict[str, Any]
     members: list[dict[str, Any]] | None = None
+    hash_pending: bool | None = None
+
+
+class IdentityRejectModel(BaseModel):
+    """One identity-collapse rejection: the offered PK lost to a hub survivor."""
+
+    table: str = Field(min_length=1)
+    offered_pk: str = Field(min_length=1)
+    survivor_pk: str = Field(min_length=1)
 
 
 #: Carried on every request that can move rows (``hello``, ``push``,
@@ -178,7 +191,7 @@ class EnrollRequest(BaseModel):
 
 
 class PushRequest(BaseModel):
-    machine_id: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
     schema_version: int
     wire_version: int | None = _WIRE_VERSION_FIELD
     rows: list[RowModel]
@@ -207,6 +220,11 @@ class PushResponse(BaseModel):
     #: row was never compared and the hub's copy is untouched.
     #: ``accepted + rejected + quarantined`` equals the rows offered.
     quarantined: int = 0
+    hash_pending: int = 0
+    #: Identity-collapse rejections: the offered PK lost to a stored survivor
+    #: (issue #3057). Only emitted for ``tracks`` rows where the hub
+    #: kept a different PK for the same content identity.
+    identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
 
 
 class PullResponse(BaseModel):
@@ -228,6 +246,15 @@ class PullResponse(BaseModel):
     #: needs ``python -m apps.shared.state.normalize_stamps --live``; the
     #: pull still serves everything else.
     quarantined: int = 0
+    hash_pending: int = 0
+
+
+class HashPendingResponse(BaseModel):
+    stable_ids: list[str]
+    total: int
+    next_cursor: str | None = None
+    schema_version: int
+    wire_version: int
 
 
 class StatusResponse(BaseModel):
@@ -245,6 +272,21 @@ class StatusResponse(BaseModel):
     entitlement_provider: str | None
 
 
+class SyncRowSampleModel(BaseModel):
+    """One sync-eligible row for digest diff (CSSTATUS-09)."""
+
+    pk: list[str] = Field(min_length=1)
+    canonical_hex: str = Field(min_length=64, max_length=64)
+    updated_at: str | None = None
+    origin_device_id: str | None = None
+    modified_at: str | None = None
+
+
+class RowsResponse(BaseModel):
+    rows: list[SyncRowSampleModel]
+    next_cursor: str | None = None
+
+
 class DigestResponse(BaseModel):
     tables: dict[str, str]
     overall: str
@@ -259,14 +301,19 @@ class DigestResponse(BaseModel):
     #: have converged, and folding it in would fire the ADR 04 c6 corruption
     #: alarm on ordinary legacy data.
     quarantined: dict[str, int] = Field(default_factory=dict)
+    hash_pending: dict[str, int] = Field(default_factory=dict)
 
 
 __all__ = [
     "SYNC_VERSION_RESPONSES",
     "DigestResponse",
+    "RowsResponse",
+    "SyncRowSampleModel",
     "EnrollRequest",
+    "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
+    "IdentityRejectModel",
     "MachineModel",
     "PullResponse",
     "PushRequest",

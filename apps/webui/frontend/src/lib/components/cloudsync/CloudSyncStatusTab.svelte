@@ -10,21 +10,34 @@
 	 */
 	import { onMount } from 'svelte';
 
-	import { getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
+	import { readApiErrorStatus } from '$lib/api/client';
+	import { api } from '$lib/api/client';
+	import { getIdentityBacklog, getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
 	import {
 		getCloudSyncConfig,
 		putCloudSyncConfig,
 		runCloudSyncNow,
 		type CloudSyncConfigOut
 	} from '$lib/api-cloudsync-ops';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { pushToast } from '$lib/stores.svelte';
 
 	import {
+		CLOUDSYNC_TECHNICAL_DETAILS_LABEL,
+		FORCE_SYNC_LABEL,
 		STATUS_CHANGED_EVENT,
 		configPutBody,
 		envOverrideNotes,
+		forceSyncNowRequest,
 		formFromConfig,
+		identityBacklogNote,
+		presentCloudSyncError,
+		presentCloudSyncResultError,
+		statusHeadline,
 		syncNowRequest,
-		type ConfigFormFields
+		syncRuntimeGateReason,
+		type ConfigFormFields,
+		type UiMirrorDecks
 	} from './cloudsync-view';
 
 	interface Notice {
@@ -32,6 +45,8 @@
 		text: string;
 		/** Hover explanation, required whenever the text carries counts. */
 		title?: string;
+		/** Raw error text for the technical-details disclosure only. */
+		details?: string;
 	}
 
 	/** Tell the status chip to re-read now instead of on its next poll. */
@@ -40,24 +55,70 @@
 	}
 
 	let status = $state<CloudSyncStatus | null>(null);
+	/** null = not yet loaded (or failed to load); the note stays hidden either way. */
+	let identityBacklogCount = $state<number | null>(null);
 	let config = $state<CloudSyncConfigOut | null>(null);
 	let loadError = $state<string | null>(null);
 	let form = $state<ConfigFormFields>({ enabled: false, hubUrl: '', machineName: '' });
 	let saving = $state(false);
 	let syncing = $state(false);
 	let notice = $state<Notice | null>(null);
+	let uiMirror = $state<{ decks?: UiMirrorDecks } | null>(null);
 
-	const syncDecision = $derived(syncNowRequest(config));
+	const syncGate = $derived({
+		appPosture: uiPrefs.app_posture,
+		uiMirror
+	});
+	const syncDecision = $derived(syncNowRequest(config, syncGate));
+	const forceSyncDecision = $derived(forceSyncNowRequest(config));
+	const showForceSync = $derived(
+		config?.effective.hub_url !== null &&
+			config?.effective.hub_url !== undefined &&
+			syncRuntimeGateReason(syncGate.appPosture, syncGate.uiMirror) !== null
+	);
 
 	function message(exc: unknown): string {
 		return exc instanceof Error ? exc.message : String(exc);
 	}
 
+	async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
+		try {
+			const { data } = await api.GET('/api/v1/state/ui-mirror', {});
+			if (data !== undefined && typeof data === 'object') {
+				return data as { decks?: UiMirrorDecks };
+			}
+			return null;
+		} catch (exc) {
+			if (readApiErrorStatus(exc) === 409) return null;
+			return null;
+		}
+	}
+
+	/**
+	 * Best-effort: the identity backlog is a supplementary telemetry note, not
+	 * core status, so a failure here must never block the status panel from
+	 * rendering (same reasoning as `fetchUiMirrorForGate`).
+	 */
+	async function fetchIdentityBacklog(): Promise<number | null> {
+		try {
+			return (await getIdentityBacklog()).hash_pending;
+		} catch {
+			return null;
+		}
+	}
+
 	async function refresh(): Promise<void> {
 		try {
-			const [nextStatus, nextConfig] = await Promise.all([getStatus(), getCloudSyncConfig()]);
+			const [nextStatus, nextConfig, nextMirror, nextBacklog] = await Promise.all([
+				getStatus(),
+				getCloudSyncConfig(),
+				fetchUiMirrorForGate(),
+				fetchIdentityBacklog()
+			]);
 			status = nextStatus;
 			config = nextConfig;
+			uiMirror = nextMirror;
+			identityBacklogCount = nextBacklog;
 			loadError = null;
 		} catch (exc) {
 			loadError = message(exc);
@@ -104,7 +165,43 @@
 			};
 		} catch (exc) {
 			// The failure was journaled server-side; the refresh below shows it.
-			notice = { kind: 'error', text: `Sync failed: ${message(exc)}` };
+			const presented = presentCloudSyncError(exc);
+			notice = {
+				kind: 'error',
+				text: `Sync failed: ${presented.summary}`,
+				details: presented.details
+			};
+		} finally {
+			syncing = false;
+			await refresh();
+			announceStatusChanged();
+		}
+	}
+
+	async function forceSyncNow(): Promise<void> {
+		if (forceSyncDecision.kind === 'refuse') {
+			notice = { kind: 'error', text: forceSyncDecision.reason };
+			return;
+		}
+		pushToast(
+			'Force sync bypasses Gig and playing-deck protection for one round.',
+			'warn'
+		);
+		syncing = true;
+		try {
+			const result = await runCloudSyncNow(forceSyncDecision.body);
+			notice = {
+				kind: 'ok',
+				text: `Sync ${result.digest_inconclusive ? 'inconclusive' : 'ok'}: pushed ${result.pushed}, pulled ${result.pulled}.`,
+				title: `Rows this Force sync pushed to the hub (${result.pushed}) and pulled from it (${result.pulled}); ${result.rounds} round(s), hub sequence ${result.hub_seq}`
+			};
+		} catch (exc) {
+			const presented = presentCloudSyncError(exc);
+			notice = {
+				kind: 'error',
+				text: `Sync failed: ${presented.summary}`,
+				details: presented.details
+			};
 		} finally {
 			syncing = false;
 			await refresh();
@@ -115,6 +212,9 @@
 	function yesNo(value: boolean): string {
 		return value ? 'yes' : 'no';
 	}
+
+	const headline = $derived(statusHeadline(status));
+	const backlogNote = $derived(identityBacklogNote(identityBacklogCount));
 </script>
 
 <section aria-label="CloudSync status" class="status-tab">
@@ -122,15 +222,21 @@
 		<p class="err" role="alert">Failed to load CloudSync status: {loadError}</p>
 	{/if}
 	{#if notice !== null}
-		<p
+		<div
 			class:err={notice.kind === 'error'}
 			class:ok={notice.kind === 'ok'}
 			role="status"
 			title={notice.title}
 			data-testid="cloudsync-notice"
 		>
-			{notice.text}
-		</p>
+			<p class="notice-text">{notice.text}</p>
+			{#if notice.details !== undefined}
+				<details data-testid="cloudsync-notice-details">
+					<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+					<pre class="technical-details">{notice.details}</pre>
+				</details>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="panel" data-testid="cloudsync-status-panel">
@@ -138,39 +244,86 @@
 		{#if status === null}
 			<p class="muted">Loading status...</p>
 		{:else}
-			<dl>
-				<dt>Configured</dt>
-				<dd
-					data-testid="cloudsync-status-configured"
-					title={`Intent only: enabled from ${status.enabled_source}, hub URL from ${status.endpoint_source}`}
+			<p class="headline" class:err={headline.tone === 'error'} class:warn={headline.tone === 'warn'} class:ok={headline.tone === 'ok'} data-testid="cloudsync-status-headline">
+				{headline.text}
+			</p>
+			{#if backlogNote !== null}
+				<p
+					class="headline warn"
+					data-testid="cloudsync-identity-backlog-note"
+					title="apps/sync_hub/sync_set.py::count_hash_pending, live tracks offered as hash_pending on the hub"
 				>
-					{yesNo(status.configured)}
-				</dd>
-				<dt>Running</dt>
-				<dd
-					data-testid="cloudsync-status-running"
-					title="Evidence: true only while the background scheduler's heartbeat file is fresh"
-				>
-					{yesNo(status.running)}
-				</dd>
-				<dt>Heartbeat</dt>
-				<dd title="UTC time of the last scheduler beat, fresh or stale">{status.heartbeat_at ?? 'none'}</dd>
-				<dt>Hub</dt>
-				<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
-				<dt>Last result</dt>
-				<dd data-testid="cloudsync-status-last-result">
-					{status.last_result ? `${status.last_result.status}: ${status.last_result.message}` : 'none yet'}
-				</dd>
-				<dt>Rows pending</dt>
-				<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
-					{status.rows_pending ?? 'not measured'}
-				</dd>
-				<dt>Signed in as</dt>
-				<dd>{status.signed_in_as ?? 'nobody'}</dd>
-			</dl>
-			{#if status.reason}
-				<p class="muted" data-testid="cloudsync-status-reason">{status.reason}</p>
+					{backlogNote}
+				</p>
 			{/if}
+			<details class="tech-detail">
+				<summary>Technical detail</summary>
+				<dl>
+					<dt>Configured</dt>
+					<dd
+						data-testid="cloudsync-status-configured"
+						title={`Intent only: enabled from ${status.enabled_source}, hub URL from ${status.endpoint_source}`}
+					>
+						{yesNo(status.configured)}
+					</dd>
+					<dt>Running</dt>
+					<dd
+						data-testid="cloudsync-status-running"
+						title="Evidence: true only while the background scheduler's heartbeat file is fresh"
+					>
+						{yesNo(status.running)}
+					</dd>
+					<dt>Heartbeat</dt>
+					<dd title="UTC time of the last scheduler beat, fresh or stale">{status.heartbeat_at ?? 'none'}</dd>
+					<dt>Hub</dt>
+					<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
+					<dt>Last result</dt>
+					<dd data-testid="cloudsync-status-last-result">
+						{#if status.last_result === null}
+							none yet
+						{:else if status.last_result.status === 'error'}
+							{status.last_result.status}:
+							{presentCloudSyncResultError(status.last_result, status.update_required).summary}
+							<details data-testid="cloudsync-last-result-details">
+								<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+								<pre class="technical-details">{status.last_result.message}</pre>
+							</details>
+						{:else}
+							{status.last_result.status}: {status.last_result.message}
+						{/if}
+					</dd>
+					<dt>Rows pending</dt>
+					<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
+						{status.rows_pending ?? 'not measured'}
+					</dd>
+					<dt>Hash pending</dt>
+					<dd
+						data-testid="cloudsync-status-hash-pending"
+						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0068)"
+					>
+						{status.hash_pending ?? 'not measured'}
+					</dd>
+					<dt>Quarantined</dt>
+					<dd
+						data-testid="cloudsync-status-quarantined"
+						title="Direct stamp faults and identity-dup losers only"
+					>
+						{status.quarantined ?? 'not measured'}
+					</dd>
+					<dt>Excluded total</dt>
+					<dd
+						data-testid="cloudsync-status-excluded-total"
+						title="Every row held outside the sync set, including transitive parent and membership holds"
+					>
+						{status.excluded_total ?? 'not measured'}
+					</dd>
+					<dt>Signed in as</dt>
+					<dd>{status.signed_in_as ?? 'nobody'}</dd>
+				</dl>
+				{#if status.reason}
+					<p class="muted" data-testid="cloudsync-status-reason">{status.reason}</p>
+				{/if}
+			</details>
 		{/if}
 		<div class="actions">
 			<button
@@ -184,6 +337,17 @@
 			>
 				{syncing ? 'Syncing...' : 'Sync now'}
 			</button>
+			{#if showForceSync}
+				<button
+					type="button"
+					data-testid="cloudsync-force-sync"
+					disabled={syncing || forceSyncDecision.kind === 'refuse'}
+					title={`${FORCE_SYNC_LABEL} (POST /api/v1/cloudsync/sync with force=true)`}
+					onclick={() => forceSyncNow()}
+				>
+					{syncing ? 'Syncing...' : FORCE_SYNC_LABEL}
+				</button>
+			{/if}
 			<button type="button" title="Re-read status and config from the daemon" onclick={() => refresh()}>
 				Refresh
 			</button>
@@ -212,7 +376,17 @@
 							<td>{row.status}</td>
 							<td title="Rows this attempt pushed to the hub">{row.pushed}</td>
 							<td title="Rows this attempt pulled from the hub">{row.pulled}</td>
-							<td>{row.message}</td>
+							<td>
+								{#if row.status === 'error'}
+									{presentCloudSyncResultError(row).summary}
+									<details>
+										<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+										<pre class="technical-details">{row.message}</pre>
+									</details>
+								{:else}
+									{row.message}
+								{/if}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -282,8 +456,31 @@
 		display: grid;
 		grid-template-columns: max-content 1fr;
 		gap: 4px 12px;
-		margin: 0;
+		margin: 0.5rem 0 0;
 		font-size: 0.85rem;
+	}
+	.headline {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--fg);
+	}
+	.headline.ok {
+		color: var(--accent);
+	}
+	.headline.warn {
+		color: var(--warning, #b8860b);
+	}
+	.headline.err {
+		color: var(--danger);
+	}
+	.tech-detail {
+		margin-top: 0.6rem;
+	}
+	.tech-detail summary {
+		cursor: pointer;
+		color: var(--muted);
+		font-size: 0.8rem;
 	}
 	dt {
 		color: var(--muted);
@@ -337,5 +534,15 @@
 	}
 	.err {
 		color: var(--danger);
+	}
+	.notice-text {
+		margin: 0;
+	}
+	.technical-details {
+		margin: 0.35rem 0 0;
+		white-space: pre-wrap;
+		word-break: break-word;
+		font-size: 0.75rem;
+		color: var(--muted);
 	}
 </style>

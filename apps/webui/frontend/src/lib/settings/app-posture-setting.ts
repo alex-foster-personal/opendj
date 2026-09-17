@@ -1,4 +1,4 @@
-import type { SettingDef } from './types';
+import type { SettingDef } from './catalog-types';
 
 export const APP_POSTURE_SETTING: SettingDef = {
 	id: 'app_posture',

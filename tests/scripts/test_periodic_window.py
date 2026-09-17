@@ -15,8 +15,10 @@ from typing import Any
 import pytest
 import yaml
 
+from scripts.gh_version_guard import GhVersionError
 from scripts.periodic_window import (
     BOT_LOGIN,
+    Gh,
     GhError,
     WindowDecision,
     cadence_alarm,
@@ -125,7 +127,10 @@ def _report_script() -> str:
 
 @pytest.mark.requirement("DEVOPS-02")
 def test_no_previous_state_marker_reports_bootstrap_and_runs() -> None:
-    """[if] no previous state marker exists [then] report bootstrap and run."""
+    """[if] no previous state marker exists [then] report bootstrap and run.
+
+    [if] no previous state marker exists [then] it bootstraps and runs, [else stop].
+    """
     gh = FakeGh(comments=[])
     decision = _decide(gh)
     assert decision.run is True
@@ -144,6 +149,8 @@ def test_a_failed_window_still_records_its_state_sha() -> None:
 
     Recording is the report job posting the marker. always() keeps that job
     alive when a row is red; run==true is the window that actually ran.
+
+    [if] a window fails [then] the report job still records the state SHA via always(), [else stop].
     """
     report = _jobs()["report"]
     condition = str(report.get("if", ""))
@@ -158,7 +165,10 @@ def test_a_failed_window_still_records_its_state_sha() -> None:
 
 @pytest.mark.requirement("DEVOPS-02")
 def test_shallow_checkout_does_not_affect_the_count() -> None:
-    """[if] the runner checkout is shallow [then] the count comes from the API."""
+    """[if] the runner checkout is shallow [then] the count comes from the API.
+
+    [if] the runner checkout is shallow [then] the merge count comes from the gh api, [else stop].
+    """
     gh = FakeGh(
         comments=[_bot(_marker(BASE_50), "2026-09-10T05:40:00Z")],
         compare_commits={BASE_50: 12},
@@ -177,7 +187,10 @@ def test_shallow_checkout_does_not_affect_the_count() -> None:
 
 @pytest.mark.requirement("DEVOPS-02")
 def test_elapsed_time_arm_fires_when_count_stays_under_threshold() -> None:
-    """[if] cadence is merges:N OR a clock period [then] elapsed time still fires."""
+    """[if] cadence is merges:N OR a clock period [then] elapsed time still fires.
+
+    [if] 8 days elapsed with the count under threshold [then] the elapsed arm fires, [else stop].
+    """
     eight_days_ago = _iso(NOW - timedelta(days=8))
     gh = FakeGh(
         comments=[_bot(_marker(BASE_50), eight_days_ago)],
@@ -193,7 +206,10 @@ def test_elapsed_time_arm_fires_when_count_stays_under_threshold() -> None:
 
 @pytest.mark.requirement("DEVOPS-02")
 def test_different_thresholds_use_separate_state_markers() -> None:
-    """[if] two rows carry DIFFERENT thresholds [then] each has its own marker."""
+    """[if] two rows carry DIFFERENT thresholds [then] each has its own marker.
+
+    [if] two rows carry different thresholds [then] each keeps its own state marker, [else stop].
+    """
     comments = [
         _bot(_marker(BASE_50, 50), "2026-09-10T00:00:00Z"),
         _bot(_row_marker(10, BASE_100, 100), "2026-09-11T00:00:00Z"),
@@ -315,16 +331,22 @@ def test_write_github_output_uses_row10_keys_for_windows_parity(tmp_path: Path) 
 
 @pytest.mark.requirement("DEVOPS-03")
 def test_ledger_comment_names_a_failed_row() -> None:
-    """[if] a periodic row fails [then] the ledger comment names that row as failed."""
+    """[if] a periodic row fails [then] the ledger comment names that row as failed.
+
+    [if] the full-suite row fails [then] the ledger comment marks row 1 as failed, [else stop].
+    """
     script = _report_script()
-    assert "failure) echo \"FAIL\"" in script or "failure) echo 'FAIL'" in script
-    assert "$(mark \"$R_FULL\")" in script
+    assert 'failure) echo "FAIL"' in script or "failure) echo 'FAIL'" in script
+    assert '$(mark "$R_FULL")' in script
     assert "| 1 |" in script
 
 
 @pytest.mark.requirement("DEVOPS-03")
 def test_skip_under_threshold_reports_skip_and_count() -> None:
-    """[if] the merge count was under threshold [then] report the skip and the count."""
+    """[if] the merge count was under threshold [then] report the skip and the count.
+
+    [if] the merge count stays under threshold [then] the skip comment reports SKIP, [else stop].
+    """
     gh = FakeGh(
         comments=[_bot(_marker(BASE_50), "2026-09-11T05:40:00Z")],
         compare_commits={BASE_50: 7},
@@ -362,7 +384,10 @@ def test_skip_under_threshold_reports_skip_and_count() -> None:
 
 @pytest.mark.requirement("DEVOPS-03")
 def test_cadence_with_zero_runs_is_p0() -> None:
-    """[if] a cadence with zero runs at all [then] it is a P0."""
+    """[if] a cadence with zero runs at all [then] it is a P0.
+
+    [if] a cadence has zero runs or only a stale one [then] cadence_alarm reports P0, [else stop].
+    """
     assert cadence_alarm([], cadence_seconds=86400, now=NOW).startswith("P0:")
     stale = [
         {
@@ -385,6 +410,8 @@ def test_scheduled_workflow_red_more_than_one_cadence_is_p1() -> None:
 
     Newest completed must still be red. An older failure behind a newer pass
     is the display case, not a P1.
+
+    [if] the newest run is still red past one cadence [then] cadence_alarm reports P1, [else stop].
     """
     runs = [
         {
@@ -422,3 +449,32 @@ def test_scheduled_workflow_red_more_than_one_cadence_is_p1() -> None:
         }
     ]
     assert cadence_alarm(fresh_red, cadence_seconds=86400, now=NOW) == ""
+
+
+# ----- Gh._load: the actual crash site (agentbox-15, job 103871571683) ----
+#
+# This module's OWN `Gh` class (not the `FakeGh` test seam above) is what
+# shelled out to the real `gh` in production and died with `unknown flag:
+# --slurp` on gh 2.62.0. scripts/gh_version_guard.py is the fix; these tests
+# mutate the guard to prove `Gh._load` actually calls it, the same way
+# tests/scripts/test_review_gh_version_guard.py proves it for `_gh`.
+
+
+def test_gh_load_calls_the_version_guard_before_invoking_the_subprocess(monkeypatch) -> None:
+    """[if] the installed gh is too old [then ⛔️] `Gh()._load` raises
+    GhVersionError naming both versions and never reaches `subprocess.run` --
+    mutate-the-guard: patches this module's own control flow, not `gh`'s API
+    output (AGENTS.md protects the latter, not the former)."""
+    import scripts.periodic_window as periodic_window_module
+
+    def _reject_version(*_args: object, **_kwargs: object) -> None:
+        raise GhVersionError("gh 2.62.0 is older than the minimum 2.64.0 (test double)")
+
+    def _subprocess_should_not_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Gh._load must not shell out once the version guard has failed")
+
+    monkeypatch.setattr(periodic_window_module, "require_gh_min_version", _reject_version)
+    monkeypatch.setattr(periodic_window_module.subprocess, "run", _subprocess_should_not_run)
+
+    with pytest.raises(GhVersionError, match="test double"):
+        Gh()._load(["gh", "api", "--paginate", "--slurp", "repos/x/issues/1/comments"])

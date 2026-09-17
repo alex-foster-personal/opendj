@@ -18,6 +18,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if muting disconnects, bypasses or re-wires any node then a silent browser
  *   stops exercising the audio path and audio bugs hide until a headed run
  * - if setMasterMuted accepts a non-boolean then '0' (truthy) silences the app
+ * - if anything reaches the room delay without passing the mute gain then
+ *   ?muted=1 plays out loud
  */
 
 let mute;
@@ -236,19 +238,26 @@ test('the setter works before any node exists and applies on attach', () => {
 //-----------------------------------------------------------------------------
 // engine wiring
 //
-// The mute is only a mute if it is the LAST node before the destination. That
-// is a property of how _ensureGraph strings the nodes together, and the engine
-// never returns the wiring to a caller, so it is pinned as source text -- the
-// same drift-guard shape control-explainer-phase-lock and load-memory-kpis use.
+// The mute is only a mute if every path to the destination runs through it.
+// Since CUEOUT-14 the room delay line sits between the mute and the speakers,
+// so the mute is the last GAIN rather than the last node; what still has to
+// hold is that nothing reaches the destination around it. That is a property
+// of how _ensureGraph strings the nodes together, and the engine never returns
+// the wiring to a caller, so it is pinned as source text -- the same
+// drift-guard shape control-explainer-phase-lock and load-memory-kpis use.
 //-----------------------------------------------------------------------------
 
-test('the mute gain is the final node before the destination on both output paths', () => {
+test('every path to the destination runs through the mute gain and the room delay', () => {
 	const body = engineBlockAfter('function _ensureGraph(): AudioContext {');
 
-	// Internal path: master bus -> mute -> speakers.
+	// Internal path: master bus -> mute -> room delay -> speakers.
 	assert.ok(
-		body.includes('_masterMuteGain.connect(_ctx.destination)'),
-		'if the mute gain does not feed _ctx.destination then muting silences nothing'
+		body.includes('_masterMuteGain.connect(_masterDelay)'),
+		'if the mute gain does not feed the room delay then muting silences nothing'
+	);
+	assert.ok(
+		body.includes('_masterDelay.connect(_ctx.destination)'),
+		'if the room delay does not feed _ctx.destination then the speakers are dead'
 	);
 	assert.ok(
 		body.includes('wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
@@ -259,11 +268,15 @@ test('the mute gain is the final node before the destination on both output path
 		'if the split-cable path does not feed the mute gain then split_cable is out of the chain'
 	);
 
-	// External-mixer path (?extroute=): merger -> mute -> speakers.
+	// External-mixer path (?extroute=): merger -> mute -> room delay -> speakers.
 	assert.ok(
 		body.includes('_externalMerger.connect(_masterMuteGain)'),
 		'if extroute bypasses the mute gain then ?muted=1 is silently ignored on the ' +
 			'multichannel path and a routed deck plays out loud'
+	);
+	assert.ok(
+		body.includes('_masterDelay.connect(dest)'),
+		'if the room delay does not feed the routed destination then extroute is dead'
 	);
 
 	// Anything reaching the destination directly would route around the mute.
@@ -275,6 +288,28 @@ test('the mute gain is the final node before the destination on both output path
 		!body.includes('_externalMerger.connect(dest)'),
 		'if the merger still reaches the destination directly then the mute is orphaned'
 	);
+	assert.ok(
+		!body.includes('_masterMuteGain.connect(dest)') &&
+			!body.includes('_masterMuteGain.connect(_ctx.destination)'),
+		'if the mute gain still reaches the destination directly then the room delay is ' +
+			'bypassed and cue alignment is silently ignored on that path'
+	);
+
+	// Anything reaching the room delay directly would route around the mute.
+	const masterDelayFeeders = [...body.matchAll(/(\w+)\.connect\(_masterDelay\)/g)].map(
+		([, name]) => name
+	);
+	assert.ok(
+		masterDelayFeeders.length > 0,
+		'if nothing connects to the room delay then the mute-bypass guard is vacuous'
+	);
+	for (const name of masterDelayFeeders) {
+		assert.equal(
+			name,
+			'_masterMuteGain',
+			'if anything reaches the room delay without passing the mute gain then ?muted=1 plays out loud'
+		);
+	}
 });
 
 test('graph build adopts the mute node rather than re-reading the URL', () => {
@@ -300,4 +335,91 @@ test('teardown releases the mute node but keeps the mute engaged', () => {
 		!body.includes('setMasterMuted(false)'),
 		'if dispose unmutes then a route remount hands a headless agent its audio back'
 	);
+});
+
+//-----------------------------------------------------------------------------
+// stored choice (UXR-01): a user's mute survives a reload
+//-----------------------------------------------------------------------------
+
+function fakeStorage(initial = {}) {
+	const data = { ...initial };
+	return {
+		data,
+		getItem: (key) => (key in data ? data[key] : null),
+		setItem: (key, value) => {
+			data[key] = String(value);
+		},
+		removeItem: (key) => {
+			delete data[key];
+		}
+	};
+}
+
+async function freshModuleWith(search, storage) {
+	globalThis.window = { location: { search }, localStorage: storage };
+	return loadTypeScriptModule('src/lib/player/master-mute.svelte.ts');
+}
+
+test('a mute stored before a reload is still engaged after it, with no URL param', async () => {
+	try {
+		const fresh = await freshModuleWith('', fakeStorage({ [mute.MASTER_MUTE_STORAGE_KEY]: '1' }));
+		assert.equal(fresh.isMasterMuted(), true, 'if a stored mute is dropped then a reload brings the audio back unasked');
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('muting stores exactly 1 and unmuting removes the key, so a reload after unmute is audible', async () => {
+	const storage = fakeStorage();
+	try {
+		const fresh = await freshModuleWith('', storage);
+		fresh.setMasterMuted(true);
+		assert.deepEqual(storage.data, { [fresh.MASTER_MUTE_STORAGE_KEY]: '1' });
+		fresh.setMasterMuted(false);
+		assert.deepEqual(storage.data, {}, 'if unmute leaves a value behind then a later reload can come back muted');
+		const reloaded = await freshModuleWith('', storage);
+		assert.equal(reloaded.isMasterMuted(), false);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('only a stored exact 1 mutes; any other stored value starts audible', () => {
+	for (const raw of ['0', 'true', 'TRUE', '', ' 1', '1x', 'null']) {
+		assert.equal(
+			mute.readStoredMasterMuted(fakeStorage({ [mute.MASTER_MUTE_STORAGE_KEY]: raw })),
+			false,
+			`if a stored ${JSON.stringify(raw)} mutes then a corrupt value silences the headed client`
+		);
+	}
+	assert.equal(mute.readStoredMasterMuted(fakeStorage()), false);
+	assert.equal(mute.readStoredMasterMuted(null), false);
+});
+
+test('a stored unmute never overrides the ?muted=1 belt', async () => {
+	try {
+		const fresh = await freshModuleWith('?muted=1', fakeStorage());
+		assert.equal(fresh.isMasterMuted(), true, 'if storage can veto ?muted=1 then headless agents play out loud');
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('storage that throws starts audible, keeps the in-memory mute, and says so', async () => {
+	const boom = () => {
+		throw new Error('SecurityError');
+	};
+	const warnings = [];
+	const warn = console.warn;
+	console.warn = (message) => warnings.push(message);
+	try {
+		const fresh = await freshModuleWith('', { getItem: boom, setItem: boom, removeItem: boom });
+		assert.equal(fresh.isMasterMuted(), false);
+		fresh.setMasterMuted(true);
+		assert.equal(fresh.isMasterMuted(), true, 'if a storage failure blocks the mute then private mode cannot mute at all');
+		assert.equal(warnings.length, 2, `expected a read and a write warning, got ${JSON.stringify(warnings)}`);
+	} finally {
+		console.warn = warn;
+		delete globalThis.window;
+	}
 });

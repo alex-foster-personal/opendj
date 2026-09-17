@@ -51,7 +51,7 @@ def test_no_setup_uv_cache_is_enabled_unconditionally() -> None:
     offenders = []
     for workflow, job_id, step in _setup_uv_steps():
         value = (step.get("with") or {}).get("enable-cache")
-        if value is None or str(value).strip() == HOSTED_ONLY:
+        if value is None or value is False or str(value).strip() in {HOSTED_ONLY, "false"}:
             continue
         offenders.append(
             f"{workflow}:{job_id}:{step.get('name') or step.get('uses')} enable-cache={value!r}"

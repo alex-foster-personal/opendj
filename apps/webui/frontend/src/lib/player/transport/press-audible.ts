@@ -202,11 +202,19 @@ export function inputToOutputMs(input: {
 	scheduledOffsetMs: number;
 	baseLatencySec: number | undefined;
 	outputLatencySec: number | undefined;
+	/** CUEOUT-14: the room delay line, added on top of the device floor. It is
+	 * a SETTING, not a measurement, so unlike the floor it is never optional:
+	 * an absent value means 0 and a bad value throws. */
+	masterDelayMs?: number;
 }): number | undefined {
+	const masterDelayMs = input.masterDelayMs ?? 0;
+	if (!Number.isFinite(masterDelayMs) || masterDelayMs < 0) {
+		throw new RangeError(`master delay must be a finite non-negative number of ms, got ${masterDelayMs}`);
+	}
 	if (input.pressToScheduleMs === undefined) return undefined;
 	if (!isMeasuredLatencyFloor(input.baseLatencySec)) return undefined;
 	if (!isMeasuredLatencyFloor(input.outputLatencySec)) return undefined;
 	if (!Number.isFinite(input.scheduledOffsetMs)) return undefined;
 	const floorMs = ((input.baseLatencySec as number) + (input.outputLatencySec as number)) * 1000;
-	return input.pressToScheduleMs + input.scheduledOffsetMs + floorMs;
+	return input.pressToScheduleMs + input.scheduledOffsetMs + floorMs + masterDelayMs;
 }

@@ -4,7 +4,11 @@ Linux only: the script reads ``ss`` and ``/proc``. On CI it runs inside a job,
 so every process here has a Runner.Worker ancestor; the tests override the
 live-ancestor marker to exercise both branches from one process tree. CI
 provenance is a cwd under a ``_work`` tree, so holders are started with an
-explicit cwd.
+explicit cwd: ``work_cwd`` for provenance, ``no_work_cwd`` for its absence.
+``no_work_cwd`` deliberately does NOT use pytest's own ``tmp_path``: ADR-0029
+puts CI's --basetemp under ``$RUNNER_TEMP``, which on a self-hosted runner is
+itself under that runner's ``_work`` tree, so ``tmp_path`` is no longer a
+reliable stand-in for "outside every _work tree" there.
 
 Regression lines:
   - if an orphan holder with CI provenance is still alive after the script
@@ -33,6 +37,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -126,6 +131,19 @@ def work_cwd(tmp_path: Path) -> Path:
     return cwd
 
 
+@pytest.fixture
+def no_work_cwd() -> Path:
+    """A cwd guaranteed to sit outside every ``_work`` tree, independent of
+    where --basetemp (and so pytest's own ``tmp_path``) lands. See the module
+    docstring: on a self-hosted runner ``tmp_path`` no longer guarantees this
+    since ADR-0029 moved --basetemp under $RUNNER_TEMP."""
+    cwd = Path(tempfile.mkdtemp(prefix="mdt-no-work-cwd-"))
+    try:
+        yield cwd
+    finally:
+        shutil.rmtree(cwd, ignore_errors=True)
+
+
 def test_an_orphaned_ci_holder_is_terminated_and_named(work_cwd: Path) -> None:
     """if an orphan holder with CI provenance is still alive after the script then broken"""
     port = _free_port()
@@ -195,10 +213,10 @@ def test_a_live_holder_mid_teardown_is_waited_for_not_reported(work_cwd: Path) -
         proc.wait(timeout=10)
 
 
-def test_a_holder_without_ci_provenance_fails_and_is_not_signalled(tmp_path: Path) -> None:
+def test_a_holder_without_ci_provenance_fails_and_is_not_signalled(no_work_cwd: Path) -> None:
     """if a holder outside every _work tree is signalled, or does not fail the step, then broken"""
     port = _free_port()
-    proc = _serve(port, tmp_path)
+    proc = _serve(port, no_work_cwd)
     try:
         result = _run(str(port), live_re=ORPHAN)
         assert result.returncode == 1
@@ -211,7 +229,7 @@ def test_a_holder_without_ci_provenance_fails_and_is_not_signalled(tmp_path: Pat
 
 
 def test_the_trailing_command_runs_only_once_ports_are_clear(
-    work_cwd: Path, tmp_path: Path
+    work_cwd: Path, no_work_cwd: Path
 ) -> None:
     """if the command runs against a held port, or not at all on a clear one, then broken"""
     port = _free_port()
@@ -223,7 +241,7 @@ def test_the_trailing_command_runs_only_once_ports_are_clear(
         assert result.stdout.index("terminating") < result.stdout.index("suite-ran")
     finally:
         proc.kill()
-    blocked = _serve(port, tmp_path)
+    blocked = _serve(port, no_work_cwd)
     try:
         result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN)
         assert result.returncode == 1 and "suite-ran" not in result.stdout
@@ -246,12 +264,12 @@ def test_no_ports_is_a_usage_error() -> None:
 
 
 def test_a_port_still_held_by_a_stranger_after_the_wait_fails_before_the_command(
-    tmp_path: Path,
+    no_work_cwd: Path,
 ) -> None:
     """[if] the release wait expires on a foreign holder and the command still runs [then] fail,
     [else stop]."""
     port = _free_port()
-    proc = _serve(port, tmp_path)  # no CI provenance, and no live-job ancestor
+    proc = _serve(port, no_work_cwd)  # no CI provenance, and no live-job ancestor
     try:
         result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, release_wait_s="1")
         assert result.returncode == 1 and "suite-ran" not in result.stdout
@@ -283,12 +301,12 @@ def test_a_holder_that_vanishes_before_its_identity_is_read_does_not_abort(
 
 
 def test_a_foreign_holder_that_releases_during_the_wait_still_runs_the_command(
-    tmp_path: Path,
+    no_work_cwd: Path,
 ) -> None:
     """if a holder without CI provenance releases during the foreign-holder
     wait and the step still fails then broken (issue #1613)"""
     port = _free_port()
-    proc = _serve(port, tmp_path)  # no CI provenance, and no live-job ancestor
+    proc = _serve(port, no_work_cwd)  # no CI provenance, and no live-job ancestor
     try:
         import threading
 
@@ -305,12 +323,12 @@ def test_a_foreign_holder_that_releases_during_the_wait_still_runs_the_command(
 
 
 def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
-    tmp_path: Path,
+    tmp_path: Path, no_work_cwd: Path
 ) -> None:
     """if a port-ownership registry marker exists but is never surfaced in the
     no-CI-provenance message then broken (issue #1613)"""
     port = _free_port()
-    proc = _serve(port, tmp_path)
+    proc = _serve(port, no_work_cwd)
     registry_dir = tmp_path / "registry"
     registry_dir.mkdir()
     marker = registry_dir / f"{port}-{os.getuid()}.owner"

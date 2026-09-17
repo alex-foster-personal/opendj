@@ -37,6 +37,7 @@ from apps.shared.fingerprints import FingerprintCache
 from apps.shared.hashing import HashCache
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.play_orders.schema import apply_play_order_migrations
+from apps.shared.state.schema import INFRASTRUCTURE_TABLES
 from apps.shared.state.schema import apply_migrations as legacy_state_migrations
 from apps.spotify.state_writer import ensure_aux_tables
 from apps.voice.settings import SettingsStore
@@ -208,10 +209,11 @@ def legacy_caches(tmp_path: Path) -> dict[str, str]:
 def test_table_sets_are_identical(fresh: sqlite3.Connection) -> None:
     """The declared table registry is exactly what the runner creates.
 
-    ``schema_meta`` is the one addition: migration infrastructure, created by
-    the runner rather than declared as domain data.
+    The legacy ``INFRASTRUCTURE_TABLES`` (``schema_meta`` and the v16
+    ``schema_meta_markers``) are the only additions: migration bookkeeping,
+    created by the runner rather than declared as domain data.
     """
-    declared = set(consolidated.ALL_TABLES) | {"schema_meta"}
+    declared = set(consolidated.ALL_TABLES) | set(INFRASTRUCTURE_TABLES)
     created = _table_names(fresh)
     assert not declared - created, (
         f"consolidated schema is missing tables: {sorted(declared - created)}"

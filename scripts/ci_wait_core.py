@@ -25,12 +25,26 @@ from enum import StrEnum
 from scripts.review_gh import TriageError
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
+# `(app slug, check name)` pairs that carry no GitHub Actions run to read an event from.
+# Named one by one rather than matched as "anything that is not Actions", and keyed on the
+# NAME as well as the app: the wide form removes a check from the observed and expected sets
+# together, and a check nobody is waiting for cannot fail. Keyed on the slug alone, every
+# other check the same app ever emits disappears with it, so a required one the app adds
+# later is silently dropped on the day it appears.
+DROPPED_APP_CHECKS = frozenset({("mergify", "Mergify Merge Queue")})
+DROPPED_APP_SLUGS = frozenset(slug for slug, _name in DROPPED_APP_CHECKS)
+
 
 class WaitStatus(StrEnum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
     TIMEOUT = "TIMEOUT"
     NO_BASELINE = "NO_BASELINE"
+    MERGED = "MERGED"
+    CLOSED_UNMERGED = "CLOSED_UNMERGED"
+    # Only `scripts/ci_watch.py` stops the poll with these, through `inspect_snapshot`.
+    GENUINE_FAILURE = "GENUINE_FAILURE"
+    HEAD_MOVED = "HEAD_MOVED"
 
 
 @dataclass(frozen=True)
@@ -44,7 +58,25 @@ class WaitResult:
 
     @property
     def ok(self) -> bool:
-        return self.status is WaitStatus.SUCCESS
+        return self.status in {WaitStatus.SUCCESS, WaitStatus.MERGED}
+
+
+@dataclass(frozen=True)
+class LifecycleOutcome:
+    status: WaitStatus
+    message: str
+
+
+def lifecycle_wait_status(state: str, merged: bool) -> WaitStatus | None:
+    """Map a pulls-API `(state, merged)` pair to a terminal poll outcome.
+
+    `open` PRs keep polling; merged or closed-without-merge stop the loop.
+    """
+    if merged and state == "closed":
+        return WaitStatus.MERGED
+    if state == "closed" and not merged:
+        return WaitStatus.CLOSED_UNMERGED
+    return None
 
 
 # ----- pure: reasoning over an already-fetched check-run snapshot ----------
@@ -171,6 +203,22 @@ def _pull_request_triggered_runs(
     seen: dict[str, str] = {}
     kept: list[dict] = []
     for run in check_runs:
+        # Mergify's queue marker has no Actions run to ask for an event, so it is dropped
+        # by APP AND NAME rather than by "not GitHub Actions". Dropping every external app
+        # removes
+        # a required security, coverage or CI check from the observed AND expected sets at
+        # once, which is invisible: the waiter then reports success for a check it stopped
+        # looking at. An unrecognized app raises instead, so a person decides.
+        app_slug = (run.get("app") or {}).get("slug")
+        if (app_slug, run.get("name")) in DROPPED_APP_CHECKS:
+            continue
+        if app_slug is not None and app_slug != "github-actions":
+            raise TriageError(
+                f"check-run {run.get('name')!r} comes from unrecognized app {app_slug!r}: "
+                "add the (app, name) pair to DROPPED_APP_CHECKS if it carries no Actions "
+                "run, or teach this function to wait for it. Dropping it silently would "
+                "hide a required check."
+            )
         run_id = _run_id(run)
         event = seen.get(run_id)
         if event is None:
@@ -262,6 +310,29 @@ def _merge_check_run_pages(pages: list[dict]) -> list[dict]:
 # ----- pure: the bounded poll loop ------------------------------------------
 
 
+def _timeout_message(
+    elapsed: float, expected: frozenset[str], missing: frozenset[str], latest: dict[str, dict]
+) -> str:
+    """Why the wait ran out, named precisely. A timeout is a NON-verdict, so the one thing it
+    owes the reader is which of the three ways it happened: an expected check never appeared,
+    a check never finished, or the set of names never stopped growing."""
+    if missing:
+        return (
+            f"timed out after {elapsed:.0f}s: {len(missing)} of {len(expected)} "
+            f"expected check(s) never appeared: {sorted(missing)}"
+        )
+    pending = sorted(name for name, run in latest.items() if run["status"] != "completed")
+    if pending:
+        return (
+            f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not "
+            f"terminal: {pending}"
+        )
+    return (
+        f"timed out after {elapsed:.0f}s: all {len(expected)} expected check(s) were "
+        "terminal but a new check name appeared on the final poll and never stabilized"
+    )
+
+
 def poll_until_terminal(
     expected: frozenset[str],
     fetch_check_runs: Callable[[], list[dict]],
@@ -270,6 +341,8 @@ def poll_until_terminal(
     poll_interval_s: float,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    lifecycle_check: Callable[[], LifecycleOutcome | None] | None = None,
+    inspect_snapshot: Callable[[dict[str, dict]], LifecycleOutcome | None] | None = None,
 ) -> tuple[WaitStatus, dict[str, dict], str]:
     """Poll `fetch_check_runs` until every name in `expected` exists AND is
     terminal, or `timeout_s` elapses. Never returns SUCCESS for a snapshot
@@ -293,17 +366,60 @@ def poll_until_terminal(
     set has stopped growing: SUCCESS requires the same set of observed names
     on two consecutive polls, so a run that registers between polls delays
     success by exactly one more interval instead of being invisible to it.
+
+    `inspect_snapshot` sees every snapshot before the terminal check and may stop the poll
+    early (the fail-fast watcher stops on the first GENUINE failure). It can only end the
+    wait sooner with its own status, never turn a snapshot into SUCCESS.
     """
     start = clock()
     latest: dict[str, dict] = {}
     previous_names: frozenset[str] | None = None
     while True:
+        if lifecycle_check is not None:
+            outcome = lifecycle_check()
+            if outcome is not None:
+                return outcome.status, latest, outcome.message
         latest = _latest_by_name(fetch_check_runs())
+        if inspect_snapshot is not None:
+            outcome = inspect_snapshot(latest)
+            if outcome is not None:
+                return outcome.status, latest, outcome.message
         missing = _missing(expected, latest)
         observed_names = frozenset(latest.keys())
         stable = observed_names == previous_names
-        if not missing and _all_terminal(latest) and stable:
+        # `latest and`: zero check-runs is never a verdict. With a non-empty `expected` it is
+        # already `missing`; the fail-fast watcher polls a first push with no baseline.
+        if latest and not missing and _all_terminal(latest) and stable:
+            if not expected and clock() - start < timeout_s:
+                # An UNKNOWN lower bound, not an empty one. Without a prior push there is
+                # nothing that says which checks this head owes, so "the observed set
+                # stopped growing" is not evidence that they all registered: one early
+                # check, stable for two polls, would end the watch before the shards exist.
+                #
+                # This used to hold only an ALL-PASSING snapshot open. Sol's P2 on #3293: a
+                # first check finishing known-red or ratchet-debt is not passing, so the
+                # snapshot fell straight through to FAILURE and the watch ended on a board
+                # that was two checks wide. A snapshot the inspector did NOT stop on is
+                # exactly one it has not found a reason to end the wait over, so it is held
+                # open too. `inspect_snapshot` still returns on the first GENUINE failure,
+                # which is what keeps fail-fast fast; the deadline is only ever reached by
+                # failures that are already known not to be the agent's.
+                previous_names = observed_names
+                sleep(poll_interval_s)
+                continue
             if _all_passing(latest):
+                if not expected:
+                    # The deadline does not convert the missing baseline into one. Reporting
+                    # SUCCESS for a head whose owed checks were never established is the one
+                    # thing this branch exists to refuse.
+                    return (
+                        WaitStatus.NO_BASELINE,
+                        latest,
+                        f"{len(latest)} check(s) passed and the set stopped growing, but no "
+                        "previous push established which checks this head owes, so nothing "
+                        f"says they all registered; deadline reached after "
+                        f"{clock() - start:.0f}s",
+                    )
                 return (
                     WaitStatus.SUCCESS,
                     latest,
@@ -323,26 +439,5 @@ def poll_until_terminal(
         previous_names = observed_names
         elapsed = clock() - start
         if elapsed >= timeout_s:
-            if missing:
-                message = (
-                    f"timed out after {elapsed:.0f}s: {len(missing)} of "
-                    f"{len(expected)} expected check(s) never appeared: "
-                    f"{sorted(missing)}"
-                )
-            else:
-                pending = sorted(
-                    name for name, run in latest.items() if run["status"] != "completed"
-                )
-                if pending:
-                    message = (
-                        f"timed out after {elapsed:.0f}s: {len(pending)} check(s) "
-                        f"still not terminal: {pending}"
-                    )
-                else:
-                    message = (
-                        f"timed out after {elapsed:.0f}s: all {len(expected)} expected "
-                        "check(s) were terminal but a new check name appeared on the "
-                        "final poll and never stabilized"
-                    )
-            return WaitStatus.TIMEOUT, latest, message
+            return WaitStatus.TIMEOUT, latest, _timeout_message(elapsed, expected, missing, latest)
         sleep(poll_interval_s)

@@ -21,14 +21,18 @@
 mod engine;
 mod engine_log;
 mod launch;
+mod shell_health;
+mod supervisor;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 
 /// Test seam, mirroring the repo's ENGINE_CMD seam: point a packaged build
 /// at an engine that is already running, on any loopback port, without
@@ -53,8 +57,96 @@ const STARTING_WINDOW_H_PT: f64 = 1449.0;
 const ENGINE_LOG: &str = "logs/engine.log";
 const PARENT_FILE: &str = ".engine.parent";
 
-static SIGNAL_RECEIVED: AtomicBool = AtomicBool::new(false);
+// ----- diagnostic flags ----------------------------------------------------
+// `payload/bin/opendj` and `payload/bin/opendj-engine` are argparse programs:
+// `--help`/`-h` prints usage and exits before touching anything else. This
+// shell has no argparse, but an agent probing it with the same flag must get
+// the same contract, not a second GUI instance (issue #2868). Checked before
+// `install_signal_handlers`, the single-instance plugin, or anything that
+// resolves the data dir, so a diagnostic probe truly touches nothing.
+const USAGE: &str = "\
+usage: opendj-desktop [-h] [--version]
+
+Open DJ desktop shell -- boots the bundled engine and opens the app window.
+Run with no arguments to launch normally.
+
+options:
+  -h, --help     show this help message and exit
+  --version      show the shell's version and exit
+";
+
+#[derive(Debug, PartialEq, Eq)]
+enum DiagnosticFlag {
+    Help,
+    Version,
+}
+
+/// Pure so the guard is unit-testable: no argv global, no process exit.
+fn parse_diagnostic_flag<'a>(args: impl Iterator<Item = &'a str>) -> Option<DiagnosticFlag> {
+    for arg in args {
+        match arg {
+            "-h" | "--help" => return Some(DiagnosticFlag::Help),
+            "--version" => return Some(DiagnosticFlag::Version),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Print usage or version for a diagnostic flag and report the process exit
+/// code, or `None` when the caller should proceed to launch the app.
+///
+/// `app_version` MUST come from `tauri.conf.json` (via `Context::package_info`),
+/// not `CARGO_PKG_VERSION`: INSTALL-07 defines `app_version` as the semver the
+/// updater compares, and `Cargo.toml`'s version is a separate, driftable
+/// number (0.1.0 there vs. 0.1.1 in `tauri.conf.json` at time of writing).
+fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>, app_version: &str) -> Option<i32> {
+    match parse_diagnostic_flag(args)? {
+        DiagnosticFlag::Help => {
+            print!("{USAGE}");
+            Some(0)
+        }
+        DiagnosticFlag::Version => {
+            println!("opendj-desktop {app_version}");
+            Some(0)
+        }
+    }
+}
+
+/// 0 means no signal received yet. Set only from the signal handler itself
+/// (an async-signal-safe atomic store), read from the poll thread below,
+/// which does the actual logging and shutdown work outside the signal
+/// context.
+static SIGNAL_RECEIVED: AtomicI32 = AtomicI32::new(0);
 static ON_SHUTDOWN: OnceLock<Mutex<Option<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
+
+/// Name a signal this shell installs a handler for. The handler only ever
+/// delivers SIGTERM or SIGINT, so "unknown" would mean the atomic was
+/// corrupted, not a real third signal.
+fn signal_name(signal: i32) -> &'static str {
+    if signal == libc::SIGTERM {
+        "SIGTERM"
+    } else if signal == libc::SIGINT {
+        "SIGINT"
+    } else {
+        "unknown signal"
+    }
+}
+
+/// Name a `RunEvent::ExitRequested`'s trigger from its `code` field.
+///
+/// `None` is what tauri reports for a quit the platform delivers directly to
+/// the app -- Cmd-Q, the Dock menu, or an Apple Event `quit` such as
+/// `osascript ... to quit` -- because none of those originate as a call this
+/// process made on itself. `Some(_)` is this process asking to exit itself,
+/// which for this shell means the webview's confirmed quit flow calling the
+/// process plugin's `exit()`.
+fn exit_requested_trigger(code: Option<i32>) -> String {
+    match code {
+        None => "apple-event-quit".to_string(),
+        Some(code) => format!("programmatic-exit(code={code})"),
+    }
+}
 
 // ----- build identity -----------------------------------------------------
 // Baked at COMPILE time by the `dmg` recipe. `option_env!` returns None for a
@@ -152,50 +244,7 @@ fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
     }
 }
 
-// ----- supervisor ---------------------------------------------------------
-enum Supervised {
-    Spawned(engine::Engine),
-    Adopted {
-        pid: u32,
-        host: String,
-        port: u16,
-    },
-}
-
-impl Supervised {
-    fn origin(&self) -> String {
-        match self {
-            Self::Spawned(running) => running.origin(),
-            Self::Adopted { host, port, .. } => launch::origin_for_adopt(host, *port),
-        }
-    }
-
-    fn shutdown(&mut self) {
-        match self {
-            Self::Spawned(running) => running.shutdown(),
-            Self::Adopted { pid, .. } => launch::stop_holder_pid(*pid),
-        }
-    }
-}
-
-impl Drop for Supervised {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-/// The engine handle, so exit paths can stop what `setup` started.
-struct Supervisor(Mutex<Option<Supervised>>);
-
-impl Supervisor {
-    fn shutdown(&self) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(mut running) = guard.take() {
-                running.shutdown();
-            }
-        }
-    }
-}
+use supervisor::{start_runtime_supervisor, Supervised, SupervisorPaths, RuntimeSupervisorState};
 
 /// Where the installed app keeps its library.
 ///
@@ -259,6 +308,43 @@ fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
         == rfd::MessageDialogResult::Ok
 }
 
+/// Start or adopt the engine and wait for a healthy origin.
+///
+/// Synchronous, before the window exists, on purpose. A native modal on
+/// macOS must run on the main thread, and the failure path here MUST raise
+/// one: the alternative is the blank window this whole design exists to
+/// eliminate. Waiting costs the measured ~1.5s of a cold boot.
+fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
+    let payload = payload_dir(app)?;
+    let data_dir = app_data_dir(app)?;
+    let log_path = data_dir.join(ENGINE_LOG);
+    let lock_path = launch::lock_path(&data_dir);
+    match launch::inspect_lock(&lock_path, engine::health_ok) {
+        LaunchPlan::Adopt { pid, host, port } => {
+            write_parent_file(&data_dir)?;
+            if !engine::health_ok(port) {
+                return Err(engine::EngineError::new(
+                    "Open DJ could not adopt the running engine.",
+                    format!(
+                        "pid {pid} holds the lock but is not answering health \
+                         at port {port}"
+                    ),
+                ));
+            }
+            Ok(Supervised::Adopted { pid, host, port })
+        }
+        LaunchPlan::StopOrQuit { pid, detail } => {
+            if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                launch::stop_holder_pid(pid);
+                spawn_fresh_engine(&payload, &data_dir, &log_path)
+            } else {
+                Err(engine::EngineError::new("Open DJ could not start.", detail))
+            }
+        }
+        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
+    }
+}
+
 fn spawn_fresh_engine(
     payload: &Path,
     data_dir: &Path,
@@ -310,68 +396,71 @@ fn spawn_fresh_engine(
     }
 }
 
-/// Start or adopt the engine and wait for a healthy origin.
-///
-/// Synchronous, before the window exists, on purpose. A native modal on
-/// macOS must run on the main thread, and the failure path here MUST raise
-/// one: the alternative is the blank window this whole design exists to
-/// eliminate. Waiting costs the measured ~1.5s of a cold boot.
-fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
-    let payload = payload_dir(app)?;
-    let data_dir = app_data_dir(app)?;
-    let log_path = data_dir.join(ENGINE_LOG);
-    let lock_path = launch::lock_path(&data_dir);
-    match launch::inspect_lock(&lock_path, engine::health_ok) {
-        LaunchPlan::Adopt { pid, host, port } => {
-            write_parent_file(&data_dir)?;
-            if !engine::health_ok(port) {
-                return Err(engine::EngineError::new(
-                    "Open DJ could not adopt the running engine.",
-                    format!(
-                        "pid {pid} holds the lock but is not answering health \
-                         at port {port}"
-                    ),
-                ));
-            }
-            Ok(Supervised::Adopted { pid, host, port })
-        }
-        LaunchPlan::StopOrQuit { pid, detail } => {
-            if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
-                launch::stop_holder_pid(pid);
-                spawn_fresh_engine(&payload, &data_dir, &log_path)
-            } else {
-                Err(engine::EngineError::new("Open DJ could not start.", detail))
-            }
-        }
-        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
-    }
-}
-
 use launch::LaunchPlan;
 
 fn install_signal_handlers() {
     let _ = ON_SHUTDOWN.set(Mutex::new(None));
-    extern "C" fn signal_handler(_: i32) {
-        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+    extern "C" fn signal_handler(signal: i32) {
+        // Async-signal-safe: one atomic store, nothing else. All the logging
+        // and shutdown work happens on the poll thread below, never here.
+        SIGNAL_RECEIVED.store(signal, Ordering::SeqCst);
     }
     unsafe {
         libc::signal(libc::SIGTERM, signal_handler as *const () as usize);
         libc::signal(libc::SIGINT, signal_handler as *const () as usize);
     }
     std::thread::spawn(|| {
-        while !SIGNAL_RECEIVED.load(Ordering::SeqCst) {
+        let signal = loop {
+            let received = SIGNAL_RECEIVED.load(Ordering::SeqCst);
+            if received != 0 {
+                break received;
+            }
             std::thread::sleep(Duration::from_millis(50));
-        }
+        };
+        let name = signal_name(signal);
+        engine::append_shell_log("shutdown", &format!("shell exiting: received {name}"));
         if let Some(slot) = ON_SHUTDOWN.get() {
             if let Some(shutdown) = slot.lock().expect("shutdown mutex").as_ref() {
                 shutdown();
             }
         }
+        engine::append_shell_log("shutdown", &format!("shell exit complete: {name}"));
         std::process::exit(0);
     });
 }
 
+/// Second-launch callback for `tauri_plugin_single_instance`: surface the
+/// running instance instead of letting a second launch re-run the launch
+/// plan against the same data dir and `.engine.lock` (issue #2868). The
+/// plugin already killed the second process by the time this runs, so
+/// there is no second `Supervised` to shut down here.
+fn focus_existing_window(app: &AppHandle, _argv: Vec<String>, _cwd: String) {
+    match app.get_webview_window(WINDOW_LABEL) {
+        Some(window) => {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+            engine::append_shell_log(
+                "single-instance",
+                "second launch focused the existing window",
+            );
+        }
+        None => engine::append_shell_log(
+            "WARN",
+            "second launch detected but no existing window to focus",
+        ),
+    }
+}
+
 /// The only place this shell ever gives up, and it does so loudly.
+/// INSTALL-21: delegate quit decisions to the engine-served UI. Rust only blocks
+/// the OS quit and forwards the request; no product logic lives here.
+fn request_quit_from_webview(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.eval("globalThis.__OPENDJ_requestQuit?.()");
+    }
+}
+
 fn fail_visibly(error: &engine::EngineError) -> ! {
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
@@ -384,19 +473,41 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
+    // Generated once and reused for `.build()` below: the macro only reads
+    // `tauri.conf.json` at compile time, so calling it here to read the
+    // version has no side effect (no window, no plugin, no data dir touched).
+    let context = tauri::generate_context!();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let app_version = context.package_info().version.to_string();
+    if let Some(code) = handle_diagnostic_flags(args.iter().map(String::as_str), &app_version) {
+        std::process::exit(code);
+    }
+
     install_signal_handlers();
 
-    // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
-    // debug, so a developer build cannot silently lack the surface a shipped
-    // one has. The plugin owns the whole apply path -- fetch, minisign verify
-    // against `plugins.updater.pubkey`, swap the bundle -- because signature
-    // verification must not be separable from installation. The engine's
-    // /api/v1/update/check answers the same question for agents and for a
-    // browser tab, and reads the SAME endpoint constant; see docs/auto-update.md
-    // for why the check is duplicated rather than shared.
+    // SINGLE-INSTANCE GUARD (issue #2868). Must be the FIRST plugin
+    // registered: the crate's own docs say plugins run in registration
+    // order, and this one has to claim the instance lock before anything
+    // else runs. Without it, a second launch -- an agent probing the
+    // binary, `open -n`, a double-click -- re-runs the whole launch plan in
+    // `start_engine` against the SAME `.engine.lock`, which can then Adopt
+    // the running engine or SIGTERM/SIGKILL it out from under the user's
+    // live session (`launch.rs::stop_holder_pid`). The guard belongs here,
+    // at launch admission, not in the lock logic itself.
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(focus_existing_window))
+        // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
+        // debug, so a developer build cannot silently lack the surface a shipped
+        // one has. The plugin owns the whole apply path -- fetch, minisign verify
+        // against `plugins.updater.pubkey`, swap the bundle -- because signature
+        // verification must not be separable from installation. The engine's
+        // /api/v1/update/check answers the same question for agents and for a
+        // browser tab, and reads the SAME endpoint constant; see docs/auto-update.md
+        // for why the check is duplicated rather than shared.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init());
 
     // DEBUG BUILDS ONLY. The dependency itself is gated on cfg(debug_assertions)
     // in Cargo.toml, so a release build cannot compile this line in at all.
@@ -407,6 +518,19 @@ fn main() {
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     let app = builder
+        .on_window_event(|window, event| {
+            if window.label() != WINDOW_LABEL {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                engine::append_shell_log(
+                    "shutdown",
+                    "window-close requested; delegating to webview quit gate",
+                );
+                request_quit_from_webview(window.app_handle());
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
             let data_dir = app_data_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
@@ -430,16 +554,6 @@ fn main() {
                     Err(failure) => fail_visibly(&failure),
                 },
             };
-            let supervisor = Supervisor(Mutex::new(running));
-            if let Some(slot) = ON_SHUTDOWN.get() {
-                let handle_for_shutdown = handle.clone();
-                *slot.lock().expect("shutdown mutex") = Some(Box::new(move || {
-                    if let Some(state) = handle_for_shutdown.try_state::<Supervisor>() {
-                        state.shutdown();
-                    }
-                }));
-            }
-
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
             // serde_json does the escaping, so neither the origin nor the
@@ -447,6 +561,7 @@ fn main() {
             let script = format!(
                 "globalThis.OPENDJ_ENGINE_ORIGIN = {};\
                  globalThis.OPENDJ_SHELL_BUILD = {};\
+                 globalThis.__OPENDJ_requestQuit = globalThis.__OPENDJ_requestQuit || function () {{}};\
                  globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ || [];\
                  globalThis.__OPENDJ_enqueueShellClientError = function(kind, message, context) {{\
                    globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.push({{\
@@ -479,20 +594,57 @@ fn main() {
                 })
                 .build()?;
 
-            app.manage(supervisor);
+            if let Some(started) = running {
+                let payload = payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
+                let paths = SupervisorPaths {
+                    payload,
+                    data_dir: data_dir.clone(),
+                    log_path: log_path.clone(),
+                    product_name: package.name.clone(),
+                };
+                match start_runtime_supervisor(handle.clone(), started, paths, &data_dir) {
+                    Ok(runtime) => {
+                        if let Some(slot) = ON_SHUTDOWN.get() {
+                            let runtime_for_shutdown = Arc::clone(&runtime);
+                            *slot.lock().expect("shutdown mutex") = Some(Box::new(move || {
+                                runtime_for_shutdown.shutdown();
+                            }));
+                        }
+                        app.manage(RuntimeSupervisorState { supervisor: runtime });
+                    }
+                    Err(failure) => fail_visibly(&failure),
+                }
+            } else if let Some(slot) = ON_SHUTDOWN.get() {
+                *slot.lock().expect("shutdown mutex") = Some(Box::new(|| {}));
+            }
+
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Open DJ desktop shell");
 
     app.run(|handle, event| {
-        // ExitRequested covers Apple Event quit; Exit covers the final teardown.
-        // The kill is a process-group kill so no job the engine spawned is left
-        // holding the data directory's lock.
+        // INSTALL-21: ExitRequested is intercepted and delegated to the web UI.
+        // Shutdown runs only on the final Exit after a confirmed quit.
         match event {
-            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
-                if let Some(supervisor) = handle.try_state::<Supervisor>() {
-                    supervisor.shutdown();
+            RunEvent::ExitRequested { code, api, .. } => {
+                api.prevent_exit();
+                engine::append_shell_log(
+                    "shutdown",
+                    &format!("exit requested: {}", exit_requested_trigger(code)),
+                );
+                request_quit_from_webview(handle);
+            }
+            RunEvent::Exit => {
+                if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
+                    engine::append_shell_log("shutdown", "shell exit: stopping runtime supervisor");
+                    state.supervisor.shutdown();
+                    engine::append_shell_log("shutdown", "shell exit: runtime supervisor stopped");
+                } else {
+                    engine::append_shell_log(
+                        "shutdown",
+                        "shell exit: no runtime supervisor (external engine origin)",
+                    );
                 }
             }
             _ => {}
@@ -544,5 +696,90 @@ mod tests {
             starting_window_size(None),
             (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT)
         );
+    }
+
+    // - if a normal launch (no args, or app-owned args) is read as --help
+    //   then the app never opens -> broken
+    // - if --help is missed because it is not the FIRST argv item then an
+    //   agent's probe still launches a second GUI -> broken (issue #2868)
+    // - if -h and --help are not treated identically then usage depends on
+    //   which spelling an agent happened to pick -> broken
+
+    fn flag_of(args: &[&str]) -> Option<DiagnosticFlag> {
+        parse_diagnostic_flag(args.iter().copied())
+    }
+
+    #[test]
+    fn no_args_means_launch_the_app() {
+        assert_eq!(flag_of(&[]), None);
+    }
+
+    #[test]
+    fn dash_h_is_help() {
+        assert_eq!(flag_of(&["-h"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn double_dash_help_is_help() {
+        assert_eq!(flag_of(&["--help"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn double_dash_version_is_version() {
+        assert_eq!(flag_of(&["--version"]), Some(DiagnosticFlag::Version));
+    }
+
+    #[test]
+    fn help_is_found_even_when_not_the_first_argument() {
+        assert_eq!(flag_of(&["--foo", "--help"]), Some(DiagnosticFlag::Help));
+    }
+
+    #[test]
+    fn an_unrelated_argument_means_launch_the_app() {
+        assert_eq!(flag_of(&["--engine-origin-probe"]), None);
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_reports_exit_zero_for_help() {
+        assert_eq!(handle_diagnostic_flags(["--help"].into_iter(), "0.1.1"), Some(0));
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_reports_exit_zero_for_version() {
+        assert_eq!(handle_diagnostic_flags(["--version"].into_iter(), "0.1.1"), Some(0));
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_returns_none_for_a_normal_launch() {
+        assert_eq!(handle_diagnostic_flags(std::iter::empty(), "0.1.1"), None);
+    }
+
+    // - if SIGTERM and SIGINT are not named distinctly then a reader of the
+    //   shell log cannot tell a script's kill from a terminal Ctrl-C -> broken
+    // - if a code:None exit is not named apple-event-quit then a Cmd-Q, a
+    //   Dock quit and a raw `osascript ... to quit` are indistinguishable
+    //   from this shell asking to exit itself -> broken (issue #2801)
+
+    #[test]
+    fn signal_name_distinguishes_sigterm_from_sigint() {
+        assert_eq!(signal_name(libc::SIGTERM), "SIGTERM");
+        assert_eq!(signal_name(libc::SIGINT), "SIGINT");
+        assert_ne!(signal_name(libc::SIGTERM), signal_name(libc::SIGINT));
+    }
+
+    #[test]
+    fn signal_name_of_an_unhandled_signal_says_so_rather_than_guessing() {
+        assert_eq!(signal_name(libc::SIGKILL), "unknown signal");
+    }
+
+    #[test]
+    fn a_platform_delivered_exit_is_named_apple_event_quit() {
+        assert_eq!(exit_requested_trigger(None), "apple-event-quit");
+    }
+
+    #[test]
+    fn a_self_requested_exit_is_named_programmatic_with_its_code() {
+        assert_eq!(exit_requested_trigger(Some(0)), "programmatic-exit(code=0)");
+        assert_eq!(exit_requested_trigger(Some(1)), "programmatic-exit(code=1)");
     }
 }

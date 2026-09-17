@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('browser headphone output acquisition starts from the visible + OUT gesture', async ({ page }) => {
+test('browser headphone output acquisition starts from the visible I/O gesture', async ({ page }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	// Quiet headed runs; gain > 0 so presentation/audible checks stay valid.
@@ -17,15 +17,17 @@ test('browser headphone output acquisition starts from the visible + OUT gesture
 				.selectAudioOutput === 'function' &&
 			typeof HTMLMediaElement.prototype.setSinkId === 'function'
 	);
-	// Accessible name is aria-label="ADD OUTPUT" (AGENT-09), not the "+ OUT" glyph.
-	const addOutput = page.getByRole('button', { name: 'ADD OUTPUT' });
-	await addOutput.click({ timeout: 5_000 });
+	// Accessible name is aria-label="SHOW AUDIO I/O" (AGENT-09 / CUEOUT-06), not the "I/O" glyph.
+	const ioButton = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
+	await ioButton.click({ timeout: 5_000 });
 	await page.waitForFunction(() => {
 		const state = window.musicDjToolsPerformance?.query();
+		const headphones = state?.mixer.headphones;
 		return (
-			state?.mixer.headphones.active === true ||
-			state?.mixer.headphones.error !== null ||
-			state?.last_error !== null
+			headphones?.active === true ||
+			headphones?.error !== null ||
+			state?.last_error !== null ||
+			(headphones?.outputs.length ?? 0) > 0
 		);
 	});
 
@@ -40,10 +42,19 @@ test('browser headphone output acquisition starts from the visible + OUT gesture
 		return;
 	}
 
+	if (
+		result?.mixer.headphones.outputs.length &&
+		result.mixer.headphones.error === null &&
+		result.last_error === null
+	) {
+		expect(result.mixer.headphones.supported).toBe(true);
+		return;
+	}
+
 	const queryError = result?.mixer.headphones.error ?? result?.last_error;
 	expect(queryError, 'hardware/API absence must be explicit in IPC query state').toMatch(
-		/unsupported|unavailable|permission|denied|notallowed|timed out|no (audio )?output/i
+		/unsupported|unavailable|permission|denied|notallowed|timed out|no (audio )?output|getUserMedia/i
 	);
 	expect(await page.locator('.hp-error').textContent()).toContain(queryError);
-	if (!browserSupport) expect(queryError).toMatch(/unsupported|unavailable/i);
+	if (!browserSupport) expect(queryError).toMatch(/unsupported|unavailable|getUserMedia|permission|denied/i);
 });

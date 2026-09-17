@@ -24,6 +24,7 @@
 	--rule: #2e313d;
 	--accent: #f26b21;
 	--code-bg: #0f1015;
+	--bad: #ff6b6b;
 }
 
 * {
@@ -150,6 +151,32 @@ button {
 
 button:hover {
 	filter: brightness(1.1);
+}
+
+button[disabled] {
+	cursor: progress;
+	filter: none;
+	opacity: 0.55;
+}
+
+/*
+ * Every button says what it did. A button whose action is in flight, or
+ * has failed, must show that here rather than leaving the screen looking
+ * untouched: on a screen the user only reaches when something is already
+ * broken, a silent control reads as a second broken thing.
+ */
+.button-status {
+	color: var(--ink-dim);
+	font-size: 0.9rem;
+}
+
+.button-status[data-tone='working'] {
+	color: var(--ink);
+}
+
+.button-status[data-tone='bad'] {
+	color: var(--bad);
+	font-weight: 600;
 }
 
 .countdown {

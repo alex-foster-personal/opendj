@@ -76,17 +76,19 @@ except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.sol_review") from None
     raise
+from scripts.codex_home import CodexHomeUnavailable, select_codex_home
 from scripts.review_lane import (
     BADGE_COLORS,
     REPO,
     Finding,
     anchorable_lines,
-    diff_of,
     first_group,
     parse_findings,
     pinned_head,
     post_review,
+    reviewable_diff,
     split_by_anchor,
+    unreviewed_note,
     withheld,
 )
 from scripts.review_prompt import SOL_FENCE, build_prompt
@@ -181,6 +183,16 @@ def _seat_argv(seat: str, hostname: str | None = None) -> list[str]:
 def _run_seat(seat: str, prompt: str) -> subprocess.CompletedProcess[str]:
     if _is_local_seat(seat):
         env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
+        # CODEX_HOME is set HERE, deterministically, rather than trusted from
+        # whatever the caller's shell happened to export. A stale ambient
+        # CODEX_HOME pointing at an expired seat used to fail silently into a
+        # 401; this fails explicitly (coverage MISS) or picks a live seat.
+        try:
+            codex_home, weekly_pct = select_codex_home()
+        except CodexHomeUnavailable as exc:
+            raise TriageError(f"coverage MISS: {exc}") from exc
+        env["CODEX_HOME"] = codex_home
+        print(f"[sol-review] local seat: CODEX_HOME={codex_home} ({weekly_pct}% weekly used)")
         return subprocess.run(
             _seat_argv(seat),
             input=prompt,
@@ -290,6 +302,7 @@ def summary_body(
     model: str,
     findings: list[Finding],
     carried: list[Finding],
+    unreviewed: list[str],
 ) -> str:
     counts = {s: sum(1 for f in findings if f.severity == s) for s in sorted(BADGE_COLORS)}
     tally = ", ".join(f"{s} {n}" for s, n in counts.items() if n)
@@ -321,7 +334,8 @@ def summary_body(
             lines += [f"- {f.verdict} {f.severity}: {where} -- {withheld(f.title)}"]
             if f.detail:
                 lines += [f"  {withheld(f.detail)}"]
-    lines += ["", marker(sha, seat, model)]
+    lines += unreviewed_note(unreviewed)
+    lines += ["", marker(sha, seat, model, skipped=frozenset(unreviewed))]
     return "\n".join(lines)
 
 
@@ -337,7 +351,10 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
         )
         return 0
     title = _gh(["pr", "view", pr, "--repo", REPO, "--json", "title", "-q", ".title"]).strip()
-    diff = diff_of(pr)
+    diff, unreviewed = reviewable_diff(pr)
+    skipped = frozenset(unreviewed)
+    if unreviewed:
+        print(f"[sol-review] not reviewed, generated data: {', '.join(unreviewed)}")
     # A REVIEW OF PART OF A DIFF MAY NOT CERTIFY THE WHOLE PUSH. Truncating and
     # saying so in prose still posts a current-head marker, and coverage reads
     # the marker, not the prose -- the same "honest denominator" failure this
@@ -352,7 +369,15 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
         )
     run_id = uuid.uuid4().hex[:12]
     prompt, _ = build_prompt(
-        pr, sha, title, diff, run_id, CFG.MAX_DIFF_BYTES, CFG.MAX_FINDINGS, SOL_FENCE
+        pr,
+        sha,
+        title,
+        diff,
+        run_id,
+        CFG.MAX_DIFF_BYTES,
+        CFG.MAX_FINDINGS,
+        SOL_FENCE,
+        unreviewed,
     )
     output, used, model = review_with_codex(prompt, seat)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)
@@ -365,9 +390,10 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
         print("[sol-review] dry run; nothing posted")
         return 0
     inline, carried = split_by_anchor(findings, anchorable_lines(diff))
-    summary = summary_body(sha, used, model, findings, carried)
+    lane_marker = marker(sha, used, model, skipped=skipped)
+    summary = summary_body(sha, used, model, findings, carried, unreviewed)
     print(f"[sol-review] {len(carried)} finding(s) carried in the summary, none dropped")
-    url = post_review(pr, sha, summary, inline, marker(sha, used, model), "[sol-review]")
+    url = post_review(pr, sha, summary, inline, lane_marker, "[sol-review]")
     print(f"[sol-review] {url}")
     return 0
 

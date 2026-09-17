@@ -10,7 +10,7 @@
  * response throws the backend's explicit {"detail": {code, message}}.
  * Known codes: SMARTLISTS_DB_UNAVAILABLE (503), SMARTLIST_NOT_FOUND (404),
  * SMARTLIST_EVAL_UNAVAILABLE (503), SMARTLIST_RULE_INVALID (500),
- * SMARTLIST_MEMBER_MISSING (500).
+ * SMARTLIST_MEMBER_MISSING (500), SMARTLIST_NAME_CONFLICT (409).
  *
  * CONVERTED onto the generated OpenAPI client (src/lib/api/client.ts).
  * Transport only: the exported types below stay hand-written rather than
@@ -19,7 +19,7 @@
  * keeps the SmartlistRule AST union the rule editor depends on.
  */
 
-import { RbApiError, type StemSummary, type Vocals } from './api-rb';
+import { RbApiError, type CloudTransferWire, type StemSummary, type Vocals } from './api-rb';
 import type { TrackQuality } from './library-types';
 
 import { ApiError, api, unwrap } from '../api/client';
@@ -69,6 +69,10 @@ export interface SmartlistTrackRow {
 	file_exists: boolean;
 	is_streaming: boolean;
 	is_remote?: boolean;
+	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
+	has_remote_copy?: boolean;
+	/** LIBUX-13: present only while this engine process is moving real bytes. */
+	cloud_transfer?: CloudTransferWire | null;
 	spotify_pending: boolean;
 	quality: TrackQuality;
 	play_count: number;
@@ -153,6 +157,75 @@ export async function deleteSmartlist(id: string): Promise<void> {
 		await api.DELETE('/api/v1/smartlists/{smartlist_id}', {
 			params: { path: { smartlist_id: id } }
 		});
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
+}
+
+export async function createSmartlist(body: {
+	name: string;
+	rule: SmartlistRule;
+	order_by?: string;
+}): Promise<SmartlistSummary> {
+	try {
+		const data = await unwrap(
+			api.POST('/api/v1/smartlists', { body })
+		);
+		return data as unknown as SmartlistSummary;
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
+}
+
+export async function getSmartlistWithEtag(
+	id: string
+): Promise<{ summary: SmartlistSummary; etag: string }> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.GET('/api/v1/smartlists/{smartlist_id}', {
+			params: { path: { smartlist_id: id } }
+		}));
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
+	const etag = response.headers.get('etag');
+	if (!etag) {
+		throw new Error(`smartlist ${id}: GET response carries no ETag header`);
+	}
+	return { summary: data as unknown as SmartlistSummary, etag };
+}
+
+export async function updateSmartlist(
+	id: string,
+	body: { rule: SmartlistRule; name?: string; order_by?: string },
+	etag: string
+): Promise<SmartlistSummary> {
+	try {
+		const data = await unwrap(
+			api.PUT('/api/v1/smartlists/{smartlist_id}', {
+				params: { path: { smartlist_id: id }, header: { 'If-Match': etag } },
+				body
+			})
+		);
+		return data as unknown as SmartlistSummary;
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
+}
+
+export async function duplicateSmartlist(
+	id: string,
+	name?: string
+): Promise<SmartlistSummary> {
+	try {
+		const data = await unwrap(
+			api.POST('/api/v1/smartlists/{smartlist_id}/duplicate', {
+				params: { path: { smartlist_id: id } },
+				body: name === undefined ? {} : { name }
+			})
+		);
+		return data as unknown as SmartlistSummary;
 	} catch (error) {
 		_throwSmartlistError(error);
 	}

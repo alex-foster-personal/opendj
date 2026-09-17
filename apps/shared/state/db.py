@@ -32,6 +32,24 @@ _RW_PRAGMAS: tuple[tuple[str, object], ...] = (
     ("busy_timeout", 5000),
 )
 
+# Matches PRAGMA busy_timeout above; passed to sqlite3.connect as well.
+_RW_CONNECT_TIMEOUT_S: float = 5.0
+
+
+class StateStoreBusyError(RuntimeError):
+    """Raised when SQLite cannot acquire the writer lock after busy_timeout."""
+
+
+def is_sqlite_busy(exc: BaseException) -> bool:
+    """True for SQLITE_BUSY / ``database is locked`` :class:`OperationalError`."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code == sqlite3.SQLITE_BUSY:
+        return True
+    message = str(exc).lower()
+    return "database is locked" in message or "database is busy" in message
+
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +82,18 @@ def open_rw(
     reading 3). It is a no-op on a DB with nothing to claim, so an ordinary
     open still mints no identity file and writes no ``machines`` row.
 
+    :func:`apps.shared.state.schema.apply_migrations` runs the v15
+    ``track_fields`` stamp backfill when schema is at least v15 (issue #3136).
+    A durable ``schema_meta_markers`` row (v16, issue #3165) records
+    completion so repeat opens issue only a constant-time marker check.
+
+    At v17 it also runs
+    :func:`apps.shared.state.migrations_v17.repair_hub_changelog_stamps`
+    (issue #3171): on a hub, latest ``hub_changelog`` rows whose stamp
+    disagrees with the live domain row are re-offered at a fresh sequence.
+    Candidate discovery runs before ``BEGIN IMMEDIATE`` and a marker makes
+    later opens constant-time.
+
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
     ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs
@@ -81,7 +111,9 @@ def open_rw(
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
     conn = sqlite3.connect(
-        str(target), isolation_level=None,
+        str(target),
+        timeout=_RW_CONNECT_TIMEOUT_S,
+        isolation_level=None,
         check_same_thread=check_same_thread,
     )
     try:
@@ -213,9 +245,11 @@ def connect_dry_run(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 __all__ = [
+    "StateStoreBusyError",
     "connect_dry_run",
     "connect_ro",
     "connect_rw",
+    "is_sqlite_busy",
     "open_dry_run",
     "open_ro",
     "open_rw",

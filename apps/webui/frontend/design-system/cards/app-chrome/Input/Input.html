@@ -1,0 +1,25 @@
+<!-- @dsCard group="App chrome" name="Input" subtitle="Text input, select, textarea" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Input</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+	textarea { min-height: 64px; resize: vertical; }
+</style>
+</head>
+<body>
+<section class="ds-section">
+	<h2>Form controls</h2>
+	<div class="ds-cells">
+		<label>Playlist name<input type="text" value="Peak hour, Sat" /></label>
+		<label>Source<select><option>rekordbox</option><option>djay</option><option>Serato</option><option>Traktor</option></select></label>
+		<label>Notes<textarea>Warm-up set, keep energy under 7.</textarea></label>
+	</div>
+	<p class="ds-note">Bare <code>input</code>, <code>select</code> and <code>textarea</code> are styled globally: surface fill, border outline, 6 px radius, inherited font. Labels are muted 12 px above the control.</p>
+</section>
+</body>
+</html>

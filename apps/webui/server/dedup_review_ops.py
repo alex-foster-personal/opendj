@@ -18,6 +18,7 @@ from apps.shared import fs_residency
 from apps.shared import paths as dedup_paths
 
 from .backend import BackendError, ConflictError, NotFoundError, StateBackend
+from .dedup_cue_presence import CuePresence, bulk_cue_presence
 from .dedup_decisions import (
     DecisionStore,
     PersistedApply,
@@ -28,6 +29,16 @@ from .dedup_decisions import (
 )
 from .dedup_playlist_rewrite import playlists_to_rewrite, rewrite_items
 from .playlist_store import PlaylistStore
+
+# Fields on CuePresence that, if the losing alias has them and the survivor
+# does not, would be silently discarded by a merge (merge only rewrites
+# playlist membership; it never migrates cue/beatgrid data onto the survivor).
+_CUE_LOSS_FIELDS: tuple[str, ...] = (
+    "cue_count",
+    "hot_cue_count",
+    "loop_count",
+    "has_beatgrid",
+)
 
 
 def http_error(code: int, error: str, message: str) -> HTTPException:
@@ -168,6 +179,7 @@ def hydrate_member(
     path: str,
     is_canonical: bool,
     similarity: float | None,
+    presence: Any,
     member_out_cls: Any,
 ) -> Any:
     track = tracks.get(stable_id)
@@ -183,6 +195,11 @@ def hydrate_member(
         duration_ms=track.duration_ms if track else None,
         rating=track.rating if track else None,
         file_exists=bool(path) and fs_residency.is_materialised(Path(path)),
+        cue_count=presence.cue_count,
+        hot_cue_count=presence.hot_cue_count,
+        loop_count=presence.loop_count,
+        has_beatgrid=presence.has_beatgrid,
+        cue_positions_ms=list(presence.cue_positions_ms),
     )
 
 
@@ -253,6 +270,41 @@ def require_identity(
             "invalid_survivor",
             f"{survivor!r} is not a member of cluster {cluster_id}",
         )
+
+
+def cue_loss_report(member_ids: list[str], survivor: str) -> list[dict[str, Any]]:
+    """Which alias members hold cue/beatgrid data the survivor would not inherit."""
+    presence = bulk_cue_presence(member_ids)
+    empty = CuePresence()
+    survivor_presence = presence.get(survivor, empty)
+    report: list[dict[str, Any]] = []
+    for stable_id in member_ids:
+        if stable_id == survivor:
+            continue
+        alias_presence = presence.get(stable_id, empty)
+        lost_fields = [
+            field
+            for field in _CUE_LOSS_FIELDS
+            if getattr(alias_presence, field) and not getattr(survivor_presence, field)
+        ]
+        if lost_fields:
+            report.append({"stable_id": stable_id, "lost_fields": lost_fields})
+    return report
+
+
+def cue_loss_confirmation_required(cue_loss: list[dict[str, Any]]) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": "DEDUP_CUE_LOSS_REQUIRES_CONFIRMATION",
+            "message": (
+                "merging would discard cue points, hot cues, loops, or a "
+                "beatgrid that the survivor does not have; retry with "
+                "confirm_cue_loss: true to proceed"
+            ),
+            "cue_loss": cue_loss,
+        },
+    )
 
 
 def playlist_name(backend: StateBackend, playlist_id: str) -> str:

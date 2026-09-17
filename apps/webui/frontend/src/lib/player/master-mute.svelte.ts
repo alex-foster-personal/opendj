@@ -1,3 +1,6 @@
+import { api } from '../api/client';
+import { makeDiskWriteChain } from '../rb/disk-write-chain';
+
 /**
  * Opt-in startup master mute: a silence belt for headless multi-browser UI
  * test agents, on top of Chromium's `--mute-audio`.
@@ -22,7 +25,21 @@
  *   outside, where the ES module scope is unreachable (same shape as the
  *   existing `__mdtPerfLog` / `__jobProgressSimulate` bridges).
  *
+ * The user's own mute survives a reload (UXR-01, adversarial UX round 1, Mon 14
+ * Sep 2026): every setMasterMuted call stores the choice in localStorage under
+ * MASTER_MUTE_STORAGE_KEY, and startup mutes when EITHER the URL says `muted=1`
+ * OR the stored value is exactly '1'. Before this, muting and then reloading
+ * brought the audio back unannounced, which is the unsafe direction for a mute.
+ * The stored value only comes from an explicit mute (this profile's button, or
+ * a CLI `master_mute` verb persisted to ui-prefs.json and hydrated), never from
+ * the MCP safety rail: its prepended mute is `persist: false` and skips both
+ * localStorage and disk. A stored unmute can never override `?muted=1`. A mute
+ * that arrives from disk on load sets `masterMuteReason()` so the topbar can
+ * say WHY the page came up muted instead of silencing the maintainer without a word.
+ *
  * Regression lines:
+ * - if a mute made before a reload is lost after it then the page comes back
+ *   audible without the user asking
  * - if `?muted=1` does not drive the master mute gain to exactly 0 then the
  *   headless silence belt is off and a fan-out of agents plays audio out loud
  * - if unmuting does not restore exactly 1 then the mute is lossy and the
@@ -30,6 +47,8 @@
  * - if muting disconnects or bypasses any node then a silent browser stops
  *   exercising the audio path and audio bugs hide until a headed run
  * - if a value other than '1' mutes then a stray query param silences the maintainer
+ * - if a `persist: false` mute writes localStorage or disk then an agent test
+ *   run silences every browser that loads the app next
  */
 
 /** The query parameter that arms the startup mute. Exact match on '1'. */
@@ -49,13 +68,56 @@ export function parseMasterMutedParam(search: string): boolean {
 	return new URLSearchParams(search).get(MASTER_MUTE_PARAM) === '1';
 }
 
-/** The startup value for this document. False under SSR, where there is no
- * location and no audio graph to mute. */
+/** The startup value for this document: the URL belt OR the user's stored
+ * mute. False under SSR, where there is no location and no audio graph. */
 export function startupMasterMuted(): boolean {
 	if (typeof window === 'undefined') return false;
 	const search = window.location?.search;
-	if (typeof search !== 'string') return false;
-	return parseMasterMutedParam(search);
+	const fromUrl = typeof search === 'string' && parseMasterMutedParam(search);
+	return fromUrl || readStoredMasterMuted(_browserStorage());
+}
+
+//-----------------------------------------------------------------------------
+// stored choice
+//-----------------------------------------------------------------------------
+
+/** localStorage key for the user's last mute: exactly '1', or absent. */
+export const MASTER_MUTE_STORAGE_KEY = 'odj.master-muted.v1';
+
+type MuteStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/** Strictly '1', like the query param. Storage that throws (private mode, a
+ * locked-down webview) reads as not stored and says so in the console. */
+export function readStoredMasterMuted(storage: MuteStorage | null): boolean {
+	if (storage === null) return false;
+	try {
+		return storage.getItem(MASTER_MUTE_STORAGE_KEY) === '1';
+	} catch (exc) {
+		console.warn(`master mute: stored choice unreadable, starting audible: ${String(exc)}`);
+		return false;
+	}
+}
+
+/** Store '1' for muted and remove the key for unmuted, so nothing but an
+ * explicit mute can ever read back as one. */
+export function writeStoredMasterMuted(storage: MuteStorage | null, muted: boolean): void {
+	if (storage === null) return;
+	try {
+		if (muted) storage.setItem(MASTER_MUTE_STORAGE_KEY, '1');
+		else storage.removeItem(MASTER_MUTE_STORAGE_KEY);
+	} catch (exc) {
+		console.warn(`master mute: could not store the choice, it will not survive a reload: ${String(exc)}`);
+	}
+}
+
+function _browserStorage(): MuteStorage | null {
+	if (typeof window === 'undefined') return null;
+	try {
+		return window.localStorage ?? null;
+	} catch (exc) {
+		console.warn(`master mute: localStorage unavailable: ${String(exc)}`);
+		return null;
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -86,10 +148,61 @@ export function isMasterMuted(): boolean {
 
 /** Set the mute and push it to the gain node. Value-only: the node keeps every
  * connection it has, so the graph upstream and downstream is untouched. */
-export function setMasterMuted(muted: boolean): void {
+export function setMasterMuted(muted: boolean, options: { persist: boolean } = { persist: true }): void {
 	if (typeof muted !== 'boolean') throw new TypeError('setMasterMuted: muted must be boolean');
+	if (typeof options.persist !== 'boolean') throw new TypeError('setMasterMuted: persist must be boolean');
 	_muted = muted;
+	_reason = null;
 	_applyMasterMute();
+	if (!options.persist) return;
+	writeStoredMasterMuted(_browserStorage(), muted);
+	void persistMasterMutedToDisk(muted);
+}
+
+/** Why the page is muted when the mute did not come from a click in this page,
+ * or null. Cleared by any later setMasterMuted. */
+let _reason = $state<string | null>(null);
+
+export const MASTER_MUTE_DISK_REASON =
+	'Muted on load by the saved setting master_muted=true in ui-prefs.json (set by a CLI master_mute or another browser).';
+
+export function masterMuteReason(): string | null {
+	return _reason;
+}
+
+/** Apply the disk ui-prefs value on hydrate. Disk is authoritative across
+ * profiles: false clears a stale stored mute in this profile, and true mutes
+ * with a visible reason. The disk is not re-written with what was just read. */
+export function hydrateMasterMutedFromDisk(muted: boolean): void {
+	if (typeof muted !== 'boolean') throw new TypeError('hydrateMasterMutedFromDisk: muted must be boolean');
+	const wasMuted = _muted;
+	_lastDiskSynced = muted;
+	setMasterMuted(muted);
+	if (muted && !wasMuted) {
+		_reason = MASTER_MUTE_DISK_REASON;
+		console.warn(`master mute: ${MASTER_MUTE_DISK_REASON}`);
+	}
+}
+
+type MasterMuteDiskPatch = { master_muted: boolean };
+
+async function _putMasterMutedToDisk(patch: MasterMuteDiskPatch): Promise<void> {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if daemon is down */
+	}
+}
+
+const _syncMasterMutedToDisk = makeDiskWriteChain<MasterMuteDiskPatch>(_putMasterMutedToDisk);
+
+let _lastDiskSynced: boolean | null = null;
+
+/** Dual-write master mute to ui-prefs.json (PARITY-11, issue #2918). */
+export function persistMasterMutedToDisk(muted: boolean): Promise<void> {
+	if (_lastDiskSynced === muted) return Promise.resolve();
+	_lastDiskSynced = muted;
+	return _syncMasterMutedToDisk({ master_muted: muted });
 }
 
 function _applyMasterMute(): void {

@@ -2,6 +2,7 @@
  * Disk-backed ui-prefs hydration + PUT merge, split out of prefs.svelte.ts
  * so the reactive singleton stays under the 600-line file-size gate.
  */
+import type { components } from '../api-types';
 import { api, unwrap } from '../api/client';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -10,14 +11,61 @@ import {
 } from './deck-layout-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
+import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
-import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
+import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
+import { writeBootStampMirror } from './gig-stamp-mirror';
+import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
+import {
+	hydrateWheelSensitivityFromDisk,
+	type WheelSensitivityDisk
+} from './wheel-adjust';
+import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
+
+export type TopbarDiskPrefKey =
+	| 'beat_sync_max'
+	| 'auto_play_enabled'
+	| 'auto_play_enforce_order'
+	| 'auto_play_maximize_reach';
+
+export type LibraryDensity = 'compact' | 'cosy';
+
+export type LibraryBrowserDiskPrefKey =
+	| 'hide_broken_links'
+	| 'library_density'
+	| 'next_only_filter'
+	| 'remixes_filter'
+	| 'vocals_filter';
+
+export function setLibraryBrowserDiskPref<K extends LibraryBrowserDiskPrefKey>(
+	uiPrefs: Pick<PrefsHydrateTarget, K>,
+	persist: () => void,
+	sync: (patch: Partial<DiskPrefsPatch>) => void,
+	key: K,
+	next: PrefsHydrateTarget[K]
+): void {
+	uiPrefs[key] = next;
+	persist();
+	void sync({ [key]: next });
+}
+
+export function setTopbarDiskPref(
+	uiPrefs: Pick<PrefsHydrateTarget, TopbarDiskPrefKey>,
+	persist: () => void,
+	sync: (patch: Partial<DiskPrefsPatch>) => void,
+	key: TopbarDiskPrefKey,
+	next: boolean
+): void {
+	uiPrefs[key] = next;
+	persist();
+	void sync({ [key]: next });
+}
 
 export type DiskPrefsPatch = {
 	confirm?: {
@@ -43,11 +91,46 @@ export type DiskPrefsPatch = {
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
 	app_posture?: AppPosturePref;
+	beat_sync_max?: boolean;
+	auto_play_enabled?: boolean;
+	auto_play_enforce_order?: boolean;
+	auto_play_maximize_reach?: boolean;
+	master_muted?: boolean;
+	hide_broken_links?: boolean;
+	library_density?: LibraryDensity;
+	next_only_filter?: boolean;
+	remixes_filter?: boolean;
+	vocals_filter?: boolean;
+	wheel_sensitivity?: WheelSensitivityDisk;
+	midi_enabled?: boolean;
+	app_mode?: DiskAppModePatch;
 };
+
+function _diskPrefsToWirePatch(patch: DiskPrefsPatch): components['schemas']['UiPrefsPatch'] {
+	const { app_mode, wheel_sensitivity, ...rest } = patch;
+	const wire = { ...rest } as components['schemas']['UiPrefsPatch'];
+	if (app_mode !== undefined) {
+		wire.app_mode = {
+			...(app_mode.id !== undefined ? { id: app_mode.id } : {}),
+			...(app_mode.last_gig_at !== undefined ? { last_gig_at: app_mode.last_gig_at } : {})
+		} as components['schemas']['AppModeOut'];
+	}
+	if (
+		wheel_sensitivity !== undefined &&
+		wheel_sensitivity.mouse !== undefined &&
+		wheel_sensitivity.trackpad !== undefined
+	) {
+		wire.wheel_sensitivity = {
+			mouse: wheel_sensitivity.mouse,
+			trackpad: wheel_sensitivity.trackpad
+		};
+	}
+	return wire;
+}
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	try {
-		await api.PUT('/api/v1/ui-prefs', { body: patch });
+		await api.PUT('/api/v1/ui-prefs', { body: _diskPrefsToWirePatch(patch) });
 	} catch {
 		/* localStorage remains authoritative if daemon is down */
 	}
@@ -56,6 +139,9 @@ async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 export function createDiskPrefsSync() {
 	return makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 }
+
+/** Shared ui-prefs PUT queue (issue #1578); one instance for prefs + Gig stamp. */
+export const syncDiskPrefs = createDiskPrefsSync();
 
 export interface PrefsHydrateTarget {
 	confirm: DiskPrefsPatch['confirm'] & Record<string, unknown>;
@@ -78,6 +164,16 @@ export interface PrefsHydrateTarget {
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
 	app_posture: AppPosturePref;
+	app_mode: AppModePrefs['app_mode'];
+	beat_sync_max: boolean;
+	auto_play_enabled: boolean;
+	auto_play_enforce_order: boolean;
+	auto_play_maximize_reach: boolean;
+	hide_broken_links: boolean;
+	library_density: LibraryDensity;
+	next_only_filter: boolean;
+	remixes_filter: boolean;
+	vocals_filter: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -160,7 +256,48 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			) {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
-				applyPrefetchCaps();
+				applyAllCaps();
+			}
+			if (body.app_mode !== undefined) {
+				const diskAppMode = body.app_mode;
+				if (typeof diskAppMode === 'string') {
+					if ((APP_MODE_PREF_IDS as readonly string[]).includes(diskAppMode)) {
+						uiPrefs.app_mode = diskAppMode;
+					}
+				} else if (typeof diskAppMode === 'object' && diskAppMode !== null) {
+					const modeId = diskAppMode.id;
+					if (
+						typeof modeId === 'string' &&
+						(APP_MODE_PREF_IDS as readonly string[]).includes(modeId)
+					) {
+						uiPrefs.app_mode = modeId;
+					}
+					const lastGigAt = diskAppMode.last_gig_at;
+					if (typeof lastGigAt === 'string') {
+						writeBootStampMirror(lastGigAt);
+					}
+				}
+			}
+			for (const key of [
+				'beat_sync_max',
+				'auto_play_enabled',
+				'auto_play_enforce_order',
+				'auto_play_maximize_reach',
+				'hide_broken_links',
+				'next_only_filter',
+				'remixes_filter',
+				'vocals_filter'
+			] as const) {
+				const value = body[key];
+				if (typeof value === 'boolean') uiPrefs[key] = value;
+			}
+			if (body.library_density === 'compact' || body.library_density === 'cosy') {
+				uiPrefs.library_density = body.library_density;
+			}
+			hydrateWheelSensitivityFromDisk(body);
+			hydrateMidiEnabledFromDisk(body);
+			if (typeof body.master_muted === 'boolean') {
+				hydrateMasterMutedFromDisk(body.master_muted);
 			}
 			persist();
 		} catch {

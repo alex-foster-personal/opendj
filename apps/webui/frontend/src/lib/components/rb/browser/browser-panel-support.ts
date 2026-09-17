@@ -3,7 +3,7 @@ export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
 export { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
-export { resolveRowVocals } from '$lib/rb/row-vocals';
+export { resolveRowMarkerAnlz, resolveRowVocals } from '$lib/rb/row-vocals';
 export {
 	isAppropriateNext,
 	resolveSearchFilterFallback,
@@ -12,7 +12,7 @@ export {
 } from '$lib/rb/next-only-filter';
 export { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 export { libraryHealthDot, type LibraryHealthDot } from '$lib/rb/library-health-dots';
-export { completeLibraryUsable } from '$lib/client-telemetry';
+export { completeLibraryUsable, recordOpenToLibraryRows } from '$lib/client-telemetry';
 export { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 export { addToPlaylistToastMessage, appendTracksToPlaylist } from '$lib/rb/add-to-playlist';
 export { removeFromLibrary } from '$lib/rb/track-library';

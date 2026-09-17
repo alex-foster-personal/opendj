@@ -79,12 +79,15 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
+from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.sync_hub import (
+    capabilities,
     client,
     config_cli,
     engine,
@@ -94,14 +97,19 @@ from apps.sync_hub import (
     hosted_config,
     maintenance_enroll,
     maintenance_policy,
+    sync_set,
 )
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.transport import SyncTransportError, classify_transport_failure
 
 #: Exit code for a sync that COMPLETED without verifying agreement (round 5
 #: gate T8). Distinct from 1: a caller must be able to tell "the merge is
 #: wrong or the hub is down" from "rows moved but the check was excluded", and
 #: distinct from 0 because an unmeasured comparison is not a clean one.
 EXIT_INCONCLUSIVE: int = 4
+
+#: Exit code when a sync round is deferred before any hub I/O (CLOUDSYNC-14).
+EXIT_SYNC_DEFERRED: int = 3
 
 #: Exit code for a sync whose PUSH a hosted hub refused on plan grounds while
 #: its pull completed. Distinct from 1 (nothing came in) and from 4 (nothing
@@ -113,12 +121,29 @@ def _open(data_dir: Path) -> sqlite3.Connection:
     return state_db.open_rw(client.state_db_path(data_dir))
 
 
+def _sync_error_message(exc: Exception) -> str:
+    """Map a failed sync to an operator-facing journal line."""
+    if isinstance(exc, SyncTransportError) and exc.code == "SYNC_PROTOCOL":
+        text = str(exc)
+        if capabilities.HASH_PENDING_V1 in text or "hash_pending" in text:
+            return capabilities.hash_pending_upgrade_message()
+    if isinstance(exc, SyncTransportError):
+        classified = classify_transport_failure(str(exc))
+        if classified is not None:
+            return f"{classified.headline}: {exc}"
+    if isinstance(exc, client.SyncDigestMismatch):
+        return str(exc)
+    return str(exc)
+
+
 def sync(
     data_dir: Path,
     hub_url: str,
     *,
     name: str | None = None,
     transport: client.HubTransport | None = None,
+    ui_mirror: Mapping[str, Any] | None = None,
+    force: bool = False,
 ) -> client.SyncResult:
     """Run one spoke round trip against ``hub_url``. The spoke's operator entry.
 
@@ -127,29 +152,35 @@ def sync(
     ``run_sync``'s declared failures (see its docstring) propagate out
     unchanged -- fail fast, no repair.
     """
+    reason = refuse_sync_round(data_dir, ui_mirror, force=force)
+    if reason is not None:
+        raise SyncDeferredError(reason)
     started_at = sync_stamp.canonical_now()
     try:
         result = client.run_sync(
             Path(data_dir), hub_url, transport=transport, name=name
         )
     except Exception as exc:
+        message = _sync_error_message(exc)
         sync_status.write_result(
             Path(data_dir),
             sync_status.SyncResult(
                 finished_at=sync_stamp.canonical_now(),
                 status="error",
-                message=str(exc),
+                message=message,
                 pushed=0,
                 pulled=0,
             ),
         )
         raise
-    sync_status.write_result(Path(data_dir), _journal_entry(result, started_at))
+    sync_status.write_result(
+        Path(data_dir), _journal_entry(result, started_at, data_dir)
+    )
     return result
 
 
 def _journal_entry(
-    result: client.SyncResult, started_at: str
+    result: client.SyncResult, started_at: str, data_dir: Path
 ) -> sync_status.SyncResult:
     """The journal row one COMPLETED ``run_sync`` earns. Round 5 gate T8.
 
@@ -178,17 +209,28 @@ def _journal_entry(
             pulled=result.pulled,
         )
     if result.digest_inconclusive:
+        hub_held = (
+            "unreported"
+            if result.hub_quarantined is None
+            else result.hub_quarantined
+        )
+        conn = _open(data_dir)
+        try:
+            exclusion_summary = sync_set.format_inconclusive_exclusion_summary(
+                conn,
+                result.quarantined_rows,
+                hub_held,
+                hub_quarantined=result.hub_quarantined,
+            )
+        finally:
+            conn.close()
         return sync_status.SyncResult(
             finished_at=sync_stamp.canonical_now(),
             status="inconclusive",
             message=(
                 f"sync started at {started_at} completed, but the digest "
-                f"compare against hub {result.hub_machine_id} EXCLUDED rows "
-                f"on at least one side ({result.quarantined_rows} held here, "
-                f"{'unreported' if result.hub_quarantined is None else result.hub_quarantined}"
-                f" on the hub), so agreement was not verified. Run `python -m "
-                f"apps.shared.state.normalize_stamps --live` on the machine "
-                f"holding the unorderable row, then sync again."
+                f"compare against hub {result.hub_machine_id} "
+                f"{exclusion_summary} Agreement was not verified."
             ),
             pushed=result.pushed,
             pulled=result.pulled,
@@ -272,6 +314,11 @@ def _parser() -> argparse.ArgumentParser:
         "--name",
         default=None,
         help="this machine's display name; defaults to the hostname",
+    )
+    sync_command.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
     subcommands.add_parser(
@@ -385,7 +432,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _report_sync(result: client.SyncResult) -> int:
+def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
     """Print one sync's outcome and return its exit code.
 
     Split out of :func:`main` to keep that function's mccabe count under the
@@ -404,11 +451,19 @@ def _report_sync(result: client.SyncResult) -> int:
         on_hub = (
             "unreported" if result.hub_quarantined is None else result.hub_quarantined
         )
+        conn = _open(data_dir)
+        try:
+            remedy = sync_set.inconclusive_remedy(
+                conn,
+                held_here=result.quarantined_rows,
+                hub_quarantined=result.hub_quarantined,
+            )
+        finally:
+            conn.close()
         print(
-            f"quarantined: {result.quarantined_rows} row(s) held here, "
+            f"excluded: {result.quarantined_rows} row(s) held here, "
             f"{on_hub} on the hub, {result.quarantined_incoming} incoming "
-            f"row(s) refused; repair with `python -m apps.shared.state."
-            f"normalize_stamps --live` on the machine holding them"
+            f"row(s) refused; {remedy}"
         )
     if result.push_refused:
         print(
@@ -577,7 +632,20 @@ def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
     args = _parse_args(argv)
     if args.command == "sync":
-        return _report_sync(sync(args.data_dir, args.hub, name=args.name))
+        try:
+            return _report_sync(
+                sync(
+                    args.data_dir,
+                    args.hub,
+                    name=args.name,
+                    ui_mirror=None,
+                    force=args.force,
+                ),
+                args.data_dir,
+            )
+        except SyncDeferredError as exc:
+            print(f"DEFERRED: {exc.reason}", file=sys.stderr)
+            return EXIT_SYNC_DEFERRED
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
     if args.command == "feedback-pins":
@@ -598,7 +666,9 @@ def main(argv: list[str] | None = None) -> int:
 __all__ = [
     "EXIT_CODE_COMMANDS",
     "EXIT_INCONCLUSIVE",
+    "EXIT_SYNC_DEFERRED",
     "PRINTING_COMMANDS",
+    "SyncDeferredError",
     "main",
     "prune",
     "rotate",

@@ -4,16 +4,24 @@
 
 	let {
 		oncreate,
+		oncreatesmartlist,
 		onrename,
 		deleteNode,
 		onduplicate,
+		onforbidduplicates,
+		onrenamesmartlist,
+		onduplicatesmartlist,
 		onselect,
 		ondeletesmartlist
 	}: {
 		oncreate?: (() => void) | undefined;
+		oncreatesmartlist?: (() => void) | undefined;
 		onrename?: ((node: PlaylistNode) => void) | undefined;
 		deleteNode?: ((node: PlaylistNode) => void) | undefined;
 		onduplicate?: ((node: PlaylistNode) => void) | undefined;
+		onforbidduplicates?: ((node: PlaylistNode) => void) | undefined;
+		onrenamesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
+		onduplicatesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
 		onselect: (node: PlaylistNode) => void;
 		ondeletesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
 	} = $props();
@@ -32,11 +40,18 @@
 	): ContextMenuItem[] {
 		const isSmartlist = kind === 'smartlist';
 		return [
-			{ id: 'new-playlist', label: 'New playlist', run: oncreate }, { id: 'new-folder', label: 'New folder' },
+			{ id: 'new-playlist', label: 'New playlist', run: oncreate },
+			{ id: 'new-smartlist', label: 'New smartlist', run: oncreatesmartlist },
+			{ id: 'new-folder', label: 'New folder' },
 			{
 				id: 'rename',
 				label: 'Rename',
-				run: !isSmartlist && node !== undefined ? () => onrename?.(node) : undefined
+				run:
+					isSmartlist && smartlist !== undefined
+						? () => onrenamesmartlist?.(smartlist)
+						: !isSmartlist && node !== undefined
+							? () => onrename?.(node)
+							: undefined
 			},
 			{
 				id: 'delete',
@@ -52,10 +67,22 @@
 				id: 'duplicate',
 				label: 'Duplicate',
 				run:
-					kind === 'playlist' && node !== undefined
-						? () => onduplicate?.(node)
-						: undefined
+					isSmartlist && smartlist !== undefined
+						? () => onduplicatesmartlist?.(smartlist)
+						: kind === 'playlist' && node !== undefined
+							? () => onduplicate?.(node)
+							: undefined
 			},
+			...(kind === 'playlist' && node !== undefined
+				? [
+						{
+							id: 'forbid-duplicates',
+							label: 'Forbid duplicates',
+							checked: node.forbid_duplicates === true,
+							run: () => onforbidduplicates?.(node)
+						}
+					]
+				: [{ id: 'forbid-duplicates', label: 'Forbid duplicates' }]),
 			{ id: 'export', label: 'Export' }, { id: 'spotify', label: 'Import from Spotify' },
 			{ id: 'offline', label: 'Pin offline' }, { id: 'sort', label: 'Sort by...' },
 			{ id: 'reveal', label: 'Reveal in tree', run: kind === 'playlist' && node !== undefined ? () => onselect(node) : undefined }

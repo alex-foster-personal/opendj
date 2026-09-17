@@ -231,10 +231,9 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
                         "WHERE deleted_at IS NULL ORDER BY name"
                     ).fetchall()
                 ]
-                raise SystemExit(
-                    f"error: unknown playlist {playlist!r}. "
-                    f"Known: {', '.join(names) or '(none)'}"
-                )
+                from apps.vocals.errors import UnknownPlaylistError
+
+                raise UnknownPlaylistError(name=playlist, known=names)
             pl_ids = [r[0] for r in pl_rows]
             member_ids: set[str] = set()
             for chunk in _chunks(pl_ids, _SQL_CHUNK):
@@ -1058,7 +1057,7 @@ def cmd_one(args: argparse.Namespace) -> int:
 
 def cmd_from_stems(args: argparse.Namespace) -> int:
     """CPU backfill: stem bundles -> vocal-cache (no demucs)."""
-    from apps.webui.server.stem_artifacts import (
+    from apps.stems.artifacts import (
         StemArtifactError,
         StemBundleNotFoundError,
         load_stem_bundle,
@@ -1274,8 +1273,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    return int(args.func(args))
+    from apps.vocals.errors import UnknownPlaylistError
+
+    try:
+        args = build_parser().parse_args(argv)
+        return int(args.func(args))
+    except UnknownPlaylistError as exc:
+        raise SystemExit(
+            2,
+            f"error: unknown playlist {exc.name!r}. "
+            f"Known: {', '.join(exc.known) or '(none)'}",
+        )
 
 
 if __name__ == "__main__":

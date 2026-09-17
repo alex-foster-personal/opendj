@@ -25,7 +25,7 @@ Coverage: every table :mod:`apps.shared.state.schema` knows about --
 tables it declares in ``FOREIGN_AUTHORITY_TABLES`` but does not create
 (``pairings``, ``smartlists``, ``play_orders``, ``play_order_entries``,
 ``play_orders_schema_meta``, ``tracks_fts``, ``tracks_frecency``), and
-``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- twenty-two tables in all.
+``schema_meta`` and ``schema_meta_markers`` from ``INFRASTRUCTURE_TABLES`` -- twenty-three tables in all.
 The five fts5 shadow tables in ``FOREIGN_AUTHORITY_TABLES``
 (``tracks_fts_config/_content/_data/_docsize/_idx``) are deliberately NOT
 documented here: :mod:`apps.database.generate_agents_md` excludes them
@@ -193,6 +193,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "origin_device_id": "Writing machine's machine_id; added in v6.",
         "deleted_at": "Tombstone timestamp; added in v6. NULL = live.",
+        "forbid_duplicates": (
+            "When 1, reject extra copies of an already-present stable_id on "
+            ":add and duplicate stable_ids on PUT; default 0 allows repeats."
+        ),
     },
     "playlist_memberships": {
         "item_id": "Stable membership row id; added in v13.",
@@ -476,6 +480,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "version": "Primary key. Schema version this row records as applied.",
         "applied_at": "RFC 3339 UTC timestamp this version was applied.",
     },
+    "schema_meta_markers": {
+        "marker": "Primary key. Durable name of a one-time migration repair.",
+        "applied_at": "RFC 3339 UTC timestamp the repair completed.",
+    },
     "pairings": {
         "from_stable_id": (
             "The track being mixed from. Not FK-enforced from this module "
@@ -493,7 +501,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     "smartlists": {
         "id": "Primary key.",
-        "name": "Smartlist display name. UNIQUE.",
+        "name": "Smartlist display name. UNIQUE among live rows; tombstones rewrite name to free it.",
         "rule": "The rule, as a JSON AST.",
         "rule_schema_version": (
             "Version of the rule AST shape this row was written under, "
@@ -516,6 +524,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "created_at": "First-insert timestamp.",
         "modified_at": "Most recent write timestamp.",
+        "deleted_at": "Tombstone timestamp; NULL means live.",
     },
     "play_orders": {
         "id": "Surrogate AUTOINCREMENT primary key.",

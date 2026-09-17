@@ -1,10 +1,10 @@
 """CloudSync stems push/hydrate bodies for ``python -m apps.lyrics stems``.
 
-``stems push --missing`` delegates to :mod:`scripts.local_stems_to_r2` (work
+``stems push --missing`` delegates to :mod:`apps.stems.r2_migration` (work
 set = local minus R2-at-matching-size, verify by re-listing, journal at
 ``<data_dir>/state/stem-r2-migration.jsonl``). ``stems hydrate`` fetches each
 part by ``files_sha256`` via :func:`apps.cloud.asset_store.fetch_asset`` and
-verifies with :func:`apps.webui.server.stem_artifacts.load_stem_bundle`.
+verifies with :func:`apps.stems.artifacts.load_stem_bundle`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from apps.cloud import asset_store, policy
 from apps.cloud.eviction import HydrationError
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.shared.paths import DATA_DIR
-from apps.webui.server.stem_artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.r2_migration import main as rail_main
 
 STEM_ASSET_KIND = "stem_bundle"
 
@@ -45,8 +46,6 @@ def push_missing(
     ]
     if dry_run:
         argv.append("--dry-run")
-    from scripts.local_stems_to_r2 import main as rail_main
-
     return rail_main(argv)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -197,12 +198,33 @@ def span_to_ledger_rows(
     ]
 
 
+def _infer_json_indent(text: str) -> int:
+    """Return the positive space indent width used by top-level JSON properties."""
+    indents: list[int] = []
+    for line in text.splitlines():
+        match = re.match(r'^( +)"[^"]+"\s*:', line)
+        if match:
+            indents.append(len(match.group(1)))
+    if not indents:
+        raise ValueError(
+            "cannot infer JSON indent from ledger: no indented property lines found"
+        )
+    width = min(indents)
+    if width < 1:
+        raise ValueError(
+            "cannot infer JSON indent from ledger: indent width must be positive"
+        )
+    return width
+
+
 def append_ledger_rows(ledger_path: Path, rows: list[dict[str, Any]]) -> None:
     """Append rows to the KPI ledger without rewriting historical entries."""
-    payload = json.loads(ledger_path.read_text(encoding="utf-8"))
+    original = ledger_path.read_text(encoding="utf-8")
+    indent = _infer_json_indent(original)
+    payload = json.loads(original)
     entries = payload.setdefault("entries", [])
     entries.extend(rows)
     ledger_path.write_text(
-        json.dumps(payload, indent=1, ensure_ascii=False) + "\n",
+        json.dumps(payload, indent=indent, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )

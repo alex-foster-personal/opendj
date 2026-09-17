@@ -134,9 +134,7 @@ def test_an_override_wins_and_says_it_did(tmp_path: Path) -> None:
     assert by_id["example.on_by_default"].overridden is False
 
 
-def test_the_env_var_moves_the_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_env_var_moves_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     elsewhere = tmp_path / "lane" / "flags.json"
     elsewhere.parent.mkdir()
     elsewhere.write_text(json.dumps({"example.on_by_default": False}), "utf-8")
@@ -211,35 +209,32 @@ def test_flag_resolution_performs_no_network_call(
     assert store.snapshot()[0].flag_id == "example.off_by_default"
 
 
-def test_unbuildable_app_modes_are_not_advertised_by_default(tmp_path: Path) -> None:
-    store = load_flags(tmp_path)
-    flag = next(f for f in FLAGS if f.flag_id == "app_mode.show_unbuildable")
-    assert flag.default is False
-    assert flag.sandbox_gated is False
-    assert store.enabled("app_mode.show_unbuildable") is False
-
-
 # ----- PERFMODE-07: per-mode feature-flag table (issue #2041) ------------
 @pytest.mark.requirement("PERFMODE-07")
 def test_mode_feature_flag_table_shape() -> None:
-    assert set(APP_MODE_FEATURE_FLAGS) == set(APP_MODE_IDS) == {
-        "performance",
-        "library-management",
-        "music-player",
-    }
+    """[if] mode-to-flag table omits a mode [then] fail, [else stop]."""
+    assert (
+        set(APP_MODE_FEATURE_FLAGS)
+        == set(APP_MODE_IDS)
+        == {
+            "performance",
+            "library-management",
+            "library",
+            "music-player",
+        }
+    )
     assert APP_MODE_FEATURE_FLAGS["performance"] == {
         "usb.export",
         "local_stems.executor",
     }
     assert APP_MODE_FEATURE_FLAGS["library-management"] == frozenset()
+    assert APP_MODE_FEATURE_FLAGS["library"] == frozenset()
     assert APP_MODE_FEATURE_FLAGS["music-player"] == frozenset()
-    show_unbuildable = "app_mode.show_unbuildable"
-    for mode_id in APP_MODE_IDS:
-        assert show_unbuildable not in APP_MODE_FEATURE_FLAGS[mode_id]
 
 
 @pytest.mark.requirement("PERFMODE-07")
 def test_every_mapped_flag_id_is_declared() -> None:
+    """[if] a mode maps an undeclared flag id [then] the mapping points nowhere, [else stop]."""
     declared = {flag.flag_id for flag in FLAGS}
     for mode_id in APP_MODE_IDS:
         assert APP_MODE_FEATURE_FLAGS[mode_id] <= declared
@@ -247,10 +242,9 @@ def test_every_mapped_flag_id_is_declared() -> None:
 
 @pytest.mark.requirement("PERFMODE-07")
 def test_performance_mode_keeps_current_flag_answers(tmp_path: Path) -> None:
+    """[if] performance answers diverge from enabled() [then] scoping changed them, [else stop]."""
     store = load_flags(tmp_path)
-    assert store.enabled_for_mode("performance", "usb.export") is store.enabled(
-        "usb.export"
-    )
+    assert store.enabled_for_mode("performance", "usb.export") is store.enabled("usb.export")
     assert store.enabled_for_mode("performance", "local_stems.executor") is store.enabled(
         "local_stems.executor"
     )
@@ -258,8 +252,9 @@ def test_performance_mode_keeps_current_flag_answers(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-07")
 def test_unbuilt_modes_read_flags_off(tmp_path: Path) -> None:
+    """[if] unbuilt modes read flags as enabled [then] scoping failed to gate them, [else stop]."""
     store = load_flags(tmp_path)
-    for mode_id in ("library-management", "music-player"):
+    for mode_id in ("library-management", "library", "music-player"):
         for flag_id in ("usb.export", "local_stems.executor"):
             assert store.enabled(flag_id) is True
             assert store.enabled_for_mode(mode_id, flag_id) is False
@@ -267,6 +262,7 @@ def test_unbuilt_modes_read_flags_off(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-07")
 def test_enabled_for_mode_refuses_undeclared_flag(tmp_path: Path) -> None:
+    """[if] enabled_for_mode gets an undeclared flag [then] it raises KeyError, [else stop]."""
     store = load_flags(tmp_path)
     with pytest.raises(KeyError) as excinfo:
         store.enabled_for_mode("performance", "example.never_declared")
@@ -277,14 +273,9 @@ def test_enabled_for_mode_refuses_undeclared_flag(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-07")
 def test_enabled_for_mode_refuses_undeclared_mode(tmp_path: Path) -> None:
+    """[if] enabled_for_mode gets an undeclared mode [then] it raises KeyError, [else stop]."""
     store = load_flags(tmp_path)
     with pytest.raises(KeyError) as excinfo:
         store.enabled_for_mode("not-a-mode", "usb.export")
     assert "not-a-mode" in str(excinfo.value)
 
-
-@pytest.mark.requirement("PERFMODE-07")
-def test_show_unbuildable_stays_process_level_not_mode_scoped(tmp_path: Path) -> None:
-    store = load_flags(tmp_path)
-    assert store.enabled_for_mode("performance", "app_mode.show_unbuildable") is False
-    assert store.enabled("app_mode.show_unbuildable") is False

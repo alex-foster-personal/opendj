@@ -64,6 +64,14 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
         r"scripts\.build_reqs_json\s+--check",
     ),
     (
+        "requirement-marker ratchets, the same suites the nucbox merge gate runs",
+        r"pytest\s+.*tests/test_requirement_markers\.py\s+tests/test_requirement_intent_ratchet\.py\s+tests/quality/test_gate_scope\.py",
+    ),
+    (
+        "dev-server registry launch.json drift",
+        r"launch-json-check",
+    ),
+    (
         "tech debt index PR-head guard",
         r"scripts\.debt_index\s+--check",
     ),

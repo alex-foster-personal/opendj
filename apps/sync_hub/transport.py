@@ -9,18 +9,30 @@ protocol: the test hub is a Starlette ``TestClient``, the real hub is a URL
 over the tailnet, and neither one is a mock of the other. The default
 implementation is stdlib ``urllib`` so importing this costs nothing beyond
 the standard library.
+
+``PUSH_TIMEOUT_S`` is longer than ``DEFAULT_TIMEOUT_S`` because a single push
+batch can take tens of seconds on a large library, and Tailscale serve may
+close idle proxy connections around the same horizon. Hello, pull and digest
+keep the shorter default.
 """
 from __future__ import annotations
 
 import json
+import re
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
-from typing import Any, Protocol
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
 
 API_PREFIX: str = "/api/v1/sync"
 DEFAULT_TIMEOUT_S: float = 30.0
+#: Per ``POST /push`` batch. Longer than hello/digest because one batch can
+#: hold hundreds of rows and hub apply is not instant on a large library.
+PUSH_TIMEOUT_S: float = 120.0
 
 
 class SyncTransportError(RuntimeError):
@@ -51,13 +63,124 @@ def _detail_code(body: str) -> str | None:
     return code if isinstance(code, str) else None
 
 
-def refused(label: str, status_code: int, body: str) -> SyncTransportError:
+def refused(
+    label: str, status_code: int, body: str, *, elapsed_s: float | None = None
+) -> SyncTransportError:
     """The error for a non-2xx answer. Shared by every :class:`HubTransport`."""
+    suffix = f" (after {elapsed_s:.1f}s)" if elapsed_s is not None else ""
     return SyncTransportError(
-        f"{label} -> HTTP {status_code}: {body}",
+        f"{label} -> HTTP {status_code}: {body}{suffix}",
         status_code=status_code,
         code=_detail_code(body),
     )
+
+
+@dataclass(frozen=True)
+class TransportFailure:
+    """Classified transport failure for scheduler backoff and status copy."""
+
+    kind: Literal[
+        "hub_error_5xx",
+        "client_timeout",
+        "proxy_or_hub_timeout",
+        "unreachable",
+    ]
+    elapsed_s: float | None
+    headline: str
+
+
+_ELAPSED_RE = re.compile(r"after (\d+(?:\.\d+)?)s", re.IGNORECASE)
+
+
+def _elapsed_from_message(message: str) -> float | None:
+    match = _ELAPSED_RE.search(message)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def classify_transport_failure(message: str) -> TransportFailure | None:
+    """Return a classified transport failure, or None when not transport-related."""
+    lower = message.lower()
+    if "syncdigestmismatch" in lower:
+        return None
+    elapsed = _elapsed_from_message(message)
+    if "http 502" in lower:
+        if elapsed is not None:
+            return TransportFailure(
+                "proxy_or_hub_timeout",
+                elapsed,
+                f"the hub or proxy closed the connection (502, after {elapsed:.0f}s)",
+            )
+        return TransportFailure(
+            "proxy_or_hub_timeout",
+            None,
+            "the hub or proxy closed the connection (502; may be Tailscale serve or client timeout)",
+        )
+    if re.search(r"http 5\d\d", lower):
+        code = re.search(r"http (\d{3})", lower)
+        status = int(code.group(1)) if code else 500
+        if elapsed is not None:
+            return TransportFailure(
+                "hub_error_5xx",
+                elapsed,
+                f"the hub answered with HTTP {status} (after {elapsed:.0f}s)",
+            )
+        return TransportFailure(
+            "hub_error_5xx",
+            None,
+            f"the hub answered with HTTP {status}",
+        )
+    if "client timeout after" in lower or "timed out" in lower or "timeout" in lower:
+        if elapsed is not None:
+            return TransportFailure(
+                "client_timeout",
+                elapsed,
+                f"the hub did not respond in time (timeout after {elapsed:.0f}s)",
+            )
+        return TransportFailure(
+            "client_timeout",
+            None,
+            "the hub did not respond in time (timeout)",
+        )
+    if (
+        "connection refused" in lower
+        or "failed:" in lower
+        or "name or service not known" in lower
+        or "getaddrinfo" in lower
+    ):
+        if "http " in lower:
+            return None
+        return TransportFailure(
+            "unreachable",
+            elapsed,
+            "could not reach the hub machine",
+        )
+    return None
+
+
+def is_timeout_transport(exc: SyncTransportError) -> bool:
+    text = str(exc).lower()
+    return "client timeout after" in text or "timed out" in text or "timeout" in text
+
+
+def _url_error_is_timeout(exc: urllib.error.URLError) -> bool:
+    reason = exc.reason
+    if isinstance(reason, TimeoutError):
+        return True
+    if isinstance(reason, socket.timeout):
+        return True
+    return "timed out" in str(reason).lower()
+
+
+def is_unreachable(exc: SyncTransportError) -> bool:
+    """True when the hub never answered (connection refused, DNS, timeout)."""
+    return exc.status_code is None
+
+
+def is_hub_server_error(exc: SyncTransportError) -> bool:
+    """True when the hub answered with HTTP 5xx."""
+    return exc.status_code is not None and exc.status_code >= 500
 
 
 # ----- transport -----------------------------------------------------------
@@ -74,7 +197,9 @@ class HubTransport(Protocol):
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """POST JSON to ``path``; return the decoded JSON body."""
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(
+        self, path: str, params: Mapping[str, str | Sequence[str]]
+    ) -> dict[str, Any]:
         """GET ``path`` with query ``params``; return the decoded JSON body."""
 
 
@@ -86,6 +211,7 @@ class HttpTransport:
         base_url: str,
         *,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        push_timeout_s: float = PUSH_TIMEOUT_S,
         bearer: str | None = None,
     ) -> None:
         """``bearer`` is this machine's sync credential
@@ -96,28 +222,46 @@ class HttpTransport:
             raise SyncTransportError("hub_url is empty")
         self._base = base_url.rstrip("/")
         self._timeout_s = timeout_s
+        self._push_timeout_s = push_timeout_s
         self._auth: dict[str, str] = (
             {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
         )
 
-    def _url(self, path: str, params: Mapping[str, str] | None = None) -> str:
+    def _url(
+        self, path: str, params: Mapping[str, str | Sequence[str]] | None = None
+    ) -> str:
         url = f"{self._base}{path}"
         if params:
-            url = f"{url}?{urllib.parse.urlencode(dict(params))}"
+            url = f"{url}?{urllib.parse.urlencode(dict(params), doseq=True)}"
         return url
 
-    def _send(self, request: urllib.request.Request) -> dict[str, Any]:
+    def _send(
+        self, request: urllib.request.Request, *, timeout_s: float | None = None
+    ) -> dict[str, Any]:
+        effective = timeout_s if timeout_s is not None else self._timeout_s
+        started = time.monotonic()
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout_s) as response:
+            with urllib.request.urlopen(request, timeout=effective) as response:
                 body = response.read()
         except urllib.error.HTTPError as exc:
+            elapsed = time.monotonic() - started
             detail = exc.read().decode("utf-8", errors="replace")
             raise refused(
-                f"{request.get_method()} {request.full_url}", exc.code, detail
+                f"{request.get_method()} {request.full_url}",
+                exc.code,
+                detail,
+                elapsed_s=elapsed,
             ) from exc
         except urllib.error.URLError as exc:
+            elapsed = time.monotonic() - started
+            if _url_error_is_timeout(exc):
+                raise SyncTransportError(
+                    f"{request.get_method()} {request.full_url} client timeout "
+                    f"after {elapsed:.1f}s: {exc.reason}"
+                ) from exc
             raise SyncTransportError(
-                f"{request.get_method()} {request.full_url} failed: {exc.reason}"
+                f"{request.get_method()} {request.full_url} failed after "
+                f"{elapsed:.1f}s: {exc.reason}"
             ) from exc
         return _decode(body, request.full_url)
 
@@ -128,9 +272,11 @@ class HttpTransport:
             headers={"Content-Type": "application/json", **self._auth},
             method="POST",
         )
-        return self._send(request)
+        return self._send(request, timeout_s=self._push_timeout_s)
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(
+        self, path: str, params: Mapping[str, str | Sequence[str]]
+    ) -> dict[str, Any]:
         request = urllib.request.Request(
             self._url(path, params), headers=dict(self._auth), method="GET"
         )
@@ -150,8 +296,14 @@ def _decode(body: bytes, url: str) -> dict[str, Any]:
 __all__ = [
     "API_PREFIX",
     "DEFAULT_TIMEOUT_S",
+    "PUSH_TIMEOUT_S",
     "HttpTransport",
     "HubTransport",
     "SyncTransportError",
+    "TransportFailure",
+    "classify_transport_failure",
+    "is_hub_server_error",
+    "is_timeout_transport",
+    "is_unreachable",
     "refused",
 ]

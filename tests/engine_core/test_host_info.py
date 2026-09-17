@@ -33,6 +33,9 @@ def _client(data_dir: Path) -> Iterator[TestClient]:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_read_host_facts_returns_positive_ints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] psutil reports cpu count and ram [then] read_host_facts returns them as ints, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = 8
     psutil.virtual_memory.return_value = MagicMock(total=16 * 1024**3)
@@ -44,6 +47,9 @@ def test_read_host_facts_returns_positive_ints(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_cpu_count_none_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] cpu_count is None [then] read_host_facts raises HostInfoUnavailable, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = None
     monkeypatch.setitem(__import__("sys").modules, "psutil", psutil)
@@ -53,6 +59,9 @@ def test_cpu_count_none_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_virtual_memory_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] virtual_memory raises [then] read_host_facts raises HostInfoUnavailable, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = 4
     psutil.virtual_memory.side_effect = OSError("nope")
@@ -62,9 +71,10 @@ def test_virtual_memory_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.requirement("PERFMODE-01")
-def test_route_200_has_measured_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_route_200_has_measured_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] host facts are readable [then] the route returns 200 with measured fields, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = 10
     psutil.virtual_memory.return_value = MagicMock(total=32 * 1024**3)
@@ -84,6 +94,9 @@ def test_route_200_has_measured_fields(
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_route_503_on_unreadable_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """
+    [if] host facts are unreadable [then] the route returns 503 with the failure, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = None
     monkeypatch.setitem(__import__("sys").modules, "psutil", psutil)
@@ -99,6 +112,9 @@ def test_route_503_on_unreadable_host(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_failure_is_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """
+    [if] the first host-info request fails [then] later requests stay 503, cached, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = None
     monkeypatch.setitem(__import__("sys").modules, "psutil", psutil)
@@ -116,6 +132,9 @@ def test_failure_is_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 def test_cli_main_exit_zero_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """
+    [if] host facts are readable [then] the CLI main() exits 0 and prints them as json, [else stop].
+    """
     psutil = MagicMock()
     psutil.cpu_count.return_value = 4
     psutil.virtual_memory.return_value = MagicMock(total=8 * 1024**3)
@@ -129,6 +148,9 @@ def test_cli_main_exit_zero_json(
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_engine_registers_host_and_perf_tier_before_spa_mount() -> None:
+    """
+    [if] app.py is read [then] host-info and perf-tier register before the spa mount, [else stop].
+    """
     source = (REPO_ROOT / "apps/engine_core/app.py").read_text(encoding="utf-8")
     spa = source.index("_mount_spa(app)")
     assert source.index("add_host_info_route(") < spa

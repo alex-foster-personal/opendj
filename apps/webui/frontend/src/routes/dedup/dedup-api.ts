@@ -105,7 +105,14 @@ function parseMember(value: unknown, context: string) {
 		key: asStringOrNull(object.key, `${context}.key`),
 		duration_ms: asNumberOrNull(object.duration_ms, `${context}.duration_ms`),
 		rating: asNumberOrNull(object.rating, `${context}.rating`),
-		file_exists: asBoolean(object.file_exists, `${context}.file_exists`)
+		file_exists: asBoolean(object.file_exists, `${context}.file_exists`),
+		cue_count: asInteger(object.cue_count, `${context}.cue_count`),
+		hot_cue_count: asInteger(object.hot_cue_count, `${context}.hot_cue_count`),
+		loop_count: asInteger(object.loop_count, `${context}.loop_count`),
+		has_beatgrid: asBoolean(object.has_beatgrid, `${context}.has_beatgrid`),
+		cue_positions_ms: asArray(object.cue_positions_ms, `${context}.cue_positions_ms`).map(
+			(entry, index) => asInteger(entry, `${context}.cue_positions_ms[${index}]`)
+		)
 	};
 }
 
@@ -302,7 +309,7 @@ export async function applyDedupMerge(
 	try {
 		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/apply', {
 			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
-			body: { cluster_key: clusterKey, survivor },
+			body: { cluster_key: clusterKey, survivor, confirm_cue_loss: false },
 			signal: signal ?? null
 		}));
 	} catch (error) {
@@ -325,7 +332,7 @@ export async function undoDedupMerge(
 	try {
 		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/undo', {
 			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
-			body: { cluster_key: clusterKey, survivor },
+			body: { cluster_key: clusterKey, survivor, confirm_cue_loss: false },
 			signal: signal ?? null
 		}));
 	} catch (error) {

@@ -9,9 +9,9 @@
 	// should drop that control's own `title` and keep only `aria-label` -
 	// this component's own `title` prop still reaches screen readers via the
 	// popover's heading and, on slow/no-hover, is unaffected either way.
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
+	import { placeFloating, type Size } from '$lib/ui/clamp-to-viewport';
 
 	const INTERACTIVE_HIDE_DELAY_MS = 150;
 
@@ -25,6 +25,7 @@
 		demo = null,
 		placement = 'auto',
 		showDelayMs = 0,
+		pinOnClick = false,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
@@ -37,8 +38,10 @@
 		action?: Snippet | null;
 		/** Optional mini SVG animation that teaches the control. */
 		demo?: ExplainerDemo | null;
-		/** Prefer above; `auto` flips below when near the top of the viewport. */
-		placement?: 'auto' | 'above' | 'below';
+		/** Prefer above; `auto` flips below when near the top of the viewport.
+		 * `right` sits beside the trigger (flipping left when it would overflow),
+		 * for stacked menus where above/below would cover sibling controls. */
+		placement?: 'auto' | 'above' | 'below' | 'right';
 		/**
 		 * Trailing show debounce in ms. Default 0 = show immediately, which
 		 * preserves every existing caller's current behavior. A caller with a
@@ -47,38 +50,73 @@
 		 * sets its own value and states that reason at the call site.
 		 */
 		showDelayMs?: number;
+		/** Click pins the popover open until Escape or an outside click. Native
+		 * selects in the action slot need this; hover-only would close them. */
+		pinOnClick?: boolean;
 		children: Snippet;
 	} = $props();
 
 	let wrapEl: HTMLSpanElement | undefined = $state();
+	let popEl: HTMLDivElement | undefined = $state();
 	let open = $state(false);
+	let pinned = $state(false);
 	let popStyle = $state('');
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
 
-	function _place(): void {
+	function _estimateSize(): Size {
+		// Tall action menus (the I/O device pickers) must not be estimated as
+		// a 120px tooltip: clamp then paints them over the trigger and the
+		// CUEOUT-06 SHOW AUDIO I/O click hits the overlay.
+		return action !== null ? { width: 280, height: 320 } : { width: 240, height: 120 };
+	}
+
+	function _place(measured: Size | null = null): void {
 		if (!wrapEl) return;
 		const r = wrapEl.getBoundingClientRect();
-		const preferAbove =
-			placement === 'above' || (placement === 'auto' && r.top > 170);
-		const size = { width: 240, height: 120 };
-		const proposedX = r.left + r.width / 2 - size.width / 2;
-		const proposedY = preferAbove ? r.top - size.height - 6 : r.bottom + 6;
-		const box = clampToViewport(
-			proposedX,
-			proposedY,
-			size,
-			{ width: window.innerWidth, height: window.innerHeight }
-		);
+		const size = measured ?? _estimateSize();
+		const viewport = { width: window.innerWidth, height: window.innerHeight };
+		const box =
+			placement === 'right'
+				? placeFloating({
+						trigger: { left: r.left, top: r.top, width: r.width, height: r.height },
+						size,
+						viewport,
+						preferred: 'right',
+						gap: 8
+					})
+				: placeFloating({
+						trigger: {
+							left: r.left + r.width / 2 - size.width / 2,
+							top: r.top,
+							width: size.width,
+							height: r.height
+						},
+						size,
+						viewport,
+						preferred:
+							placement === 'above' || (placement === 'auto' && r.top > 170) ? 'above' : 'below',
+						gap: 6
+					});
 		popStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
-	function _openNow(): void {
+	function _placeFromPop(): void {
+		if (popEl === undefined) return;
+		const width = popEl.offsetWidth;
+		const height = popEl.offsetHeight;
+		if (width <= 0 || height <= 0) return;
+		_place({ width, height });
+	}
+
+	async function _openNow(): Promise<void> {
 		showTimer = undefined;
 		_place();
 		open = true;
+		await tick();
+		_placeFromPop();
 	}
 
 	function _show(): void {
@@ -99,15 +137,42 @@
 		hideTimer = undefined;
 		if (showTimer !== undefined) clearTimeout(showTimer);
 		showTimer = undefined;
+		pinned = false;
 		open = false;
 	}
 
 	function _hide(event: FocusEvent | PointerEvent): void {
+		if (pinned) return;
 		const next = event.relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
 		if (event instanceof PointerEvent && action !== null) {
 			if (hideTimer !== undefined) clearTimeout(hideTimer);
 			hideTimer = setTimeout(_close, INTERACTIVE_HIDE_DELAY_MS);
+			return;
+		}
+		_close();
+	}
+
+	function _pinFromClick(): void {
+		if (!pinOnClick) return;
+		pinned = true;
+		_show();
+	}
+
+	function _onDocumentPointerDown(event: PointerEvent): void {
+		if (!pinned) return;
+		const target = event.target;
+		if (target instanceof Node && wrapEl?.contains(target)) return;
+		if (target instanceof Node && popEl?.contains(target)) return;
+		// Native <select> menus paint outside the DOM. Skip only that case:
+		// a select inside this explainer is focused AND the hit is the page root.
+		const active = document.activeElement;
+		if (
+			active instanceof HTMLSelectElement &&
+			wrapEl?.contains(active) &&
+			target instanceof Element &&
+			(target === document.documentElement || target === document.body)
+		) {
 			return;
 		}
 		_close();
@@ -120,7 +185,26 @@
 		_close();
 	}
 
+	onMount(() => {
+		document.addEventListener('pointerdown', _onDocumentPointerDown, true);
+		return () => document.removeEventListener('pointerdown', _onDocumentPointerDown, true);
+	});
 	onDestroy(_close);
+
+	$effect(() => {
+		if (!open || popEl === undefined) return;
+		_placeFromPop();
+		const ro = new ResizeObserver(() => _placeFromPop());
+		ro.observe(popEl);
+		const onViewport = (): void => _placeFromPop();
+		window.addEventListener('resize', onViewport);
+		window.addEventListener('scroll', onViewport, true);
+		return () => {
+			ro.disconnect();
+			window.removeEventListener('resize', onViewport);
+			window.removeEventListener('scroll', onViewport, true);
+		};
+	});
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -131,12 +215,15 @@
 	onpointerleave={_hide}
 	onfocusin={_show}
 	onfocusout={_hide}
+	onpointerdown={_pinFromClick}
 	onkeydown={_onKeydown}
 >
 	{@render children()}
 	{#if open && hasRich}
 		<div
 			class="pop"
+			class:has-action={action !== null}
+			bind:this={popEl}
 			style={popStyle}
 			role={action === null ? 'tooltip' : 'dialog'}
 			aria-label={action === null ? undefined : title}
@@ -204,6 +291,9 @@
 		line-height: 1.35;
 		pointer-events: auto;
 		text-align: left;
+	}
+	.pop.has-action {
+		max-width: 280px;
 	}
 	.head {
 		margin: 0 0 4px;

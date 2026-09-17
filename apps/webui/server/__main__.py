@@ -17,6 +17,10 @@ import sys
 from pathlib import Path
 
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
+from apps.webui.server.request_guard import (
+    RequestGuardBindRefused,
+    assert_request_guard_bind_allowed,
+)
 from apps.webui.port_config import (
     BACKEND_ENV,
     FRONTEND_ENV,
@@ -80,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     # This daemon mounts /api/v1/sync/* too: same bind rule as the engine.
     try:
         assert_sync_bind_allowed(args.host)
-    except SyncBindRefused as exc:
+        assert_request_guard_bind_allowed(args.host)
+    except (SyncBindRefused, RequestGuardBindRefused) as exc:
         sys.stderr.write(f"[ERROR] {exc}\n")
         return 2
 

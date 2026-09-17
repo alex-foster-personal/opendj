@@ -27,6 +27,12 @@ import { immediateBootScheduler, manualBootScheduler } from './fake-boot-schedul
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://engine.example.test';
+const PERF_TIER_BODY = JSON.stringify({
+	tier: 'STANDARD',
+	source: 'auto',
+	auto_tier: 'STANDARD',
+	override: 'auto'
+});
 
 let appInit;
 let originalFetch;
@@ -73,7 +79,10 @@ function installBrowserGlobals() {
 		// The heartbeat POSTs a JSON body; the machine-pressure poll GETs with
 		// none, so only parse when one was actually sent.
 		if (init?.body !== undefined) posted.push({ url, body: JSON.parse(init.body) });
-		return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+		// The deferred perf-tier fetch needs a real tier: an empty body resolves
+		// the tier to undefined and prefetchTrackCap() throws inside init.
+		const body = String(url).endsWith('/api/v1/perf-tier') ? PERF_TIER_BODY : '{}';
+		return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
 	};
 }
 
@@ -104,10 +113,13 @@ test('the DevTools perf log globals exist after init', () => {
 	stop();
 });
 
-test('init also starts the usage heartbeat', async () => {
+// Teardown is registered before any assertion: a failing assertion that skips
+// stop() leaves the heartbeat and pressure timers alive, and node --test then
+// never exits (the whole unit suite hung on this, Mon 14 Sep 2026).
+test('init also starts the usage heartbeat', async (t) => {
 	const stop = appInit.startAppInstruments(immediateBootScheduler());
+	t.after(stop);
 	await new Promise((resolve) => setImmediate(resolve));
-	stop();
 
 	assert.ok(
 		posted.some((entry) => entry.url === `${API_BASE}/api/v1/telemetry/heartbeat`),
@@ -138,23 +150,27 @@ test('init opens the boot request window and hands its teardown back', () => {
 	assert.equal(stopped.length, 1, 'and closed when the page goes away');
 });
 
-test('the heartbeat and the pressure poll go through the same window, so neither joins the burst', async () => {
+test('the heartbeat and the pressure poll go through the same window, so neither joins the burst', async (t) => {
 	const manual = manualBootScheduler();
 	const stop = appInit.startAppInstruments(manual.scheduler);
+	t.after(stop);
 	await new Promise((resolve) => setImmediate(resolve));
 
 	assert.equal(posted.length, 0, 'nothing may post while the boot window is open');
 	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
 	assert.equal(
 		manual.pending(),
-		3,
-		'the heartbeat, pressure poll, and client samples are all queued, never dropped'
+		4,
+		'the perf-tier fetch, heartbeat, pressure poll, and client samples are all queued, never dropped'
 	);
 
 	manual.release();
 	await new Promise((resolve) => setImmediate(resolve));
-	stop();
 	assert.equal(posted.length, 2);
+	assert.ok(
+		fetchedUrls.some((url) => url.endsWith('/api/v1/perf-tier')),
+		'the perf-tier fetch also waited for the window'
+	);
 	assert.ok(
 		posted.some((entry) => entry.url.includes('/performance/telemetry/client-samples')),
 		'client samples also waited for the boot window'

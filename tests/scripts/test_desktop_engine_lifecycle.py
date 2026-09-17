@@ -16,6 +16,7 @@ LAUNCH_RS = TAURI_CONF.parent / "src/launch.rs"
 
 @pytest.mark.requirement("INSTALL-14")
 def test_spawn_sets_parent_pid_env() -> None:
+    """[if] spawn skips OPENDJ_PARENT_PID [then] parent death goes undetected, [else stop]."""
     engine_rs = ENGINE_RS.read_text(encoding="utf-8")
     assert '"OPENDJ_PARENT_PID"' in engine_rs
     assert ".env(" in engine_rs
@@ -23,6 +24,7 @@ def test_spawn_sets_parent_pid_env() -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_the_shell_inspects_the_lock_before_spawn() -> None:
+    """[if] main.rs spawns before inspecting the lock [then] a stale lock is missed, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     launch_rs = LAUNCH_RS.read_text(encoding="utf-8")
     assert "mod launch" in main_rs
@@ -37,14 +39,52 @@ def test_the_shell_inspects_the_lock_before_spawn() -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_exit_requested_shuts_down_the_engine() -> None:
+    """[if] main.rs skips shutdown on final Exit [then] the child process leaks, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     assert "RunEvent::ExitRequested" in main_rs
     assert "RunEvent::Exit" in main_rs
     assert "supervisor.shutdown()" in main_rs
 
 
+# The arm is matched by what it must BIND, not by its exact field list. A
+# pinned spelling rots the moment the arm gains a field, and a live guard then
+# reads as a missing one.
+_EXIT_REQUESTED_ARM = re.compile(
+    r"RunEvent::ExitRequested\s*\{[^}]*\bapi\b[^}]*\}\s*=>"
+)
+
+
+@pytest.mark.requirement("INSTALL-21")
+def test_exit_requested_prevents_exit_without_shutdown() -> None:
+    """[if] ExitRequested calls shutdown [then] Cmd-Q kills audio before confirm, [else stop]."""
+    main_rs = MAIN_RS.read_text(encoding="utf-8")
+    arm = _EXIT_REQUESTED_ARM.search(main_rs)
+    assert arm is not None, (
+        "no RunEvent::ExitRequested arm binds `api`, so nothing can prevent the exit"
+    )
+    exit_requested_idx = arm.start()
+    exit_idx = main_rs.index("RunEvent::Exit =>")
+    shutdown_idx = main_rs.rindex("supervisor.shutdown()")
+    assert exit_requested_idx < exit_idx
+    assert shutdown_idx > exit_idx
+    before_exit = main_rs[exit_requested_idx:exit_idx]
+    # Positive first: the slice really holds the arm's body. Without it the
+    # absence check below passes on an empty slice and proves nothing.
+    assert "api.prevent_exit()" in before_exit
+    assert "supervisor.shutdown()" not in before_exit
+
+
+@pytest.mark.requirement("INSTALL-21")
+def test_close_requested_delegates_to_webview_hook() -> None:
+    """[if] red-window close bypasses the quit hook [then] quit is immediate, [else stop]."""
+    main_rs = MAIN_RS.read_text(encoding="utf-8")
+    assert "CloseRequested" in main_rs
+    assert "__OPENDJ_requestQuit" in main_rs
+
+
 @pytest.mark.requirement("INSTALL-14")
 def test_adopt_path_still_builds_the_window() -> None:
+    """[if] adopting an engine skips window creation [then] no window opens, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     assert "Adopted" in main_rs or "Adopt" in main_rs
     assert "WebviewWindowBuilder::new" in main_rs
@@ -52,12 +92,14 @@ def test_adopt_path_still_builds_the_window() -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_fail_visibly_still_precedes_window_creation() -> None:
+    """[if] fail_visibly runs after window creation [then] startup errors go silent, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     assert main_rs.index("fail_visibly") < main_rs.index("WebviewWindowBuilder::new")
 
 
 @pytest.mark.requirement("INSTALL-14")
 def test_stop_or_quit_dialog_names_the_holder_pid() -> None:
+    """[if] the stop-or-quit dialog omits the holder pid [then] no one can tell, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     launch_rs = LAUNCH_RS.read_text(encoding="utf-8")
     combined = main_rs + launch_rs

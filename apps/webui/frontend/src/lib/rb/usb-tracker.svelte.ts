@@ -173,8 +173,14 @@ export function usbRowKindLabel(v: UsbVolumeKnown): string {
 	return v.simulated ? `${kind} (simulated)` : kind;
 }
 
-export function openUsbPanel(): void {
+export function openUsbPanel(id?: string): void {
 	usbTracker.panelOpen = true;
+	if (id !== undefined) {
+		const vol = usbTracker.volumes.find((v) => v.id === id);
+		if (vol?.needs_prompt) {
+			usbTracker.promptId = id;
+		}
+	}
 }
 
 export function closeUsbPanel(): void {

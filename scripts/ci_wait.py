@@ -1,5 +1,11 @@
 """Fail-closed CI-wait primitive (issue #1608).
 
+On every poll iteration, also probes the PR's merge/close state via REST
+(`repos/.../pulls/{n}`) and stops immediately when the PR has merged
+(status MERGED, exit 0) or closed without merging (CLOSED_UNMERGED, exit 5),
+instead of polling until timeout while a merged head's check-runs stay stuck
+queued (issue #2832).
+
 `gh pr checks <n> --watch` is not a "CI is done" predicate: right after a
 push, the real Actions check-runs have not registered at the new head yet,
 so the command sees only whatever commit STATUSES already exist (bot review
@@ -170,6 +176,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from scripts.ci_wait_core import (
+    LifecycleOutcome,
     WaitResult,
     WaitStatus,
     _first_baseline,
@@ -177,6 +184,7 @@ from scripts.ci_wait_core import (
     _previous_shas,
     _pull_request_triggered_runs,
     _resolve_head_repo,
+    lifecycle_wait_status,
     poll_until_terminal,
 )
 from scripts.ci_wait_workflows import (
@@ -310,6 +318,30 @@ def _memoized_run_event(repo: str = REPO) -> Callable[[str], str]:
     return get
 
 
+def _pr_lifecycle(pr: str, repo: str = REPO) -> tuple[str, bool]:
+    """The PR object's `state` and `merged` flags from the pulls REST API."""
+    raw = _gh(["api", f"repos/{repo}/pulls/{pr}"])
+    payload = json.loads(raw)
+    state = payload.get("state")
+    merged = payload.get("merged")
+    if state is None or merged is None:
+        raise TriageError(
+            f"gh returned incomplete PR lifecycle for PR {pr} in {repo}: {payload!r}"
+        )
+    return state, bool(merged)
+
+
+def _pr_lifecycle_message(pr: str, head_sha: str, status: WaitStatus) -> str:
+    if status is WaitStatus.MERGED:
+        return (
+            f"PR #{pr} merged while waiting for CI; stopped without requiring "
+            f"terminal check-runs at head {head_sha}"
+        )
+    if status is WaitStatus.CLOSED_UNMERGED:
+        return f"PR #{pr} closed without merge (state=closed, merged=false)"
+    raise TriageError(f"no lifecycle message for status {status!r}")
+
+
 def _pr_changed_files(pr: str, repo: str = REPO) -> list[str]:
     raw = _gh(["pr", "view", pr, "--repo", repo, "--json", "files"])
     files = json.loads(raw).get("files") or []
@@ -378,12 +410,21 @@ def wait_for_checks(
         )
 
     run_event = _memoized_run_event(repo)
+
+    def lifecycle_check() -> LifecycleOutcome | None:
+        state, merged = _pr_lifecycle(pr, repo)
+        terminal = lifecycle_wait_status(state, merged)
+        if terminal is None:
+            return None
+        return LifecycleOutcome(terminal, _pr_lifecycle_message(pr, head_sha, terminal))
+
     start = time.monotonic()
     status, present, message = poll_until_terminal(
         expected,
         lambda: _pull_request_triggered_runs(_check_runs_at_sha(head_sha, repo), run_event),
         timeout_s=timeout_s,
         poll_interval_s=poll_interval_s,
+        lifecycle_check=lifecycle_check,
     )
     return WaitResult(status, head_sha, expected, present, time.monotonic() - start, message)
 
@@ -418,9 +459,11 @@ def main(argv: list[str]) -> int:
         print(f"    {name}: {state}")
     return {
         WaitStatus.SUCCESS: 0,
+        WaitStatus.MERGED: 0,
         WaitStatus.TIMEOUT: 1,
         WaitStatus.NO_BASELINE: 2,
         WaitStatus.FAILURE: 4,
+        WaitStatus.CLOSED_UNMERGED: 5,
     }[result.status]
 
 

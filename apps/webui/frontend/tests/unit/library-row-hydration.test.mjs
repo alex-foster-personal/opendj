@@ -37,7 +37,9 @@ const BROWSER_PANEL = join(SRC, 'lib/components/rb/BrowserPanel.svelte');
 const TRACK_TABLE = join(SRC, 'lib/components/rb/browser/TrackTable.svelte');
 
 /** Every ANLZ fetch entry point. Anything calling these can hit the network. */
-const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'fetchAnlz'];
+// ensureAnlzPrefetch is the shed-gated row-select variant PERFMODE-04 split out
+// of ensureAnlz (2f4981be0); it still starts a fetch, so it is an entry point.
+const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz'];
 
 /**
  * Files allowed to reach an /anlz fetch, and why. Each is O(1) in the number of
@@ -198,6 +200,38 @@ test('only O(1)-per-view call sites can reach an /anlz fetch', () => {
 	);
 });
 
+test('strip markers resolve from memory: playing deck wins, cache fills, a miss stays absent', () => {
+	const asked = [];
+	const paused = { cues: [], phrases: [], tag: 'paused' };
+	const live = { cues: [], phrases: [], tag: 'playing' };
+	const cached = { cues: [], phrases: [], tag: 'cached' };
+	const out = rowVocals.resolveRowMarkerAnlz({
+		rows: [{ stable_id: 'a' }, { stable_id: 'b' }, { stable_id: 'c' }],
+		decks: [
+			{ stable_id: 'a', playing: false, anlz: paused },
+			{ stable_id: 'a', playing: true, anlz: live },
+			{ stable_id: 'a', playing: false, anlz: null }
+		],
+		cachedAnlz: (sid) => {
+			asked.push(sid);
+			return sid === 'b' ? cached : undefined;
+		}
+	});
+	assert.equal(out.a, live, 'a playing deck must win over a paused one');
+	assert.equal(out.b, cached, 'a ready cache entry answers for a row on no deck');
+	assert.equal('c' in out, false, 'a cache miss must stay a miss, not a placeholder');
+	assert.deepEqual(asked, ['b', 'c'], 'the cache is consulted once per row with no deck answer');
+});
+
+test('TrackTable draws strip markers from its markerAnlzById prop', () => {
+	const table = readFileSync(TRACK_TABLE, 'utf8');
+	assert.match(table, /markerAnlz=\{markerAnlzById\[row\.stable_id\] \?\? null\}/);
+	assert.match(panelSource, /\{markerAnlzById\}/, 'BrowserPanel no longer passes resolved markers');
+	const resolverCall = balancedCall(panelSource, 'resolveRowMarkerAnlz(').replace(/\/\/[^\n]*/g, '');
+	assert.ok(resolverCall.includes('getAnlzEntry('), 'the marker resolver no longer reads the cache purely');
+	assert.ok(!resolverCall.includes('ensureAnlz'), 'the marker resolver was handed a FETCHING lookup');
+});
+
 test('the row-rendering path holds no fetch entry point at all', () => {
 	// These render once PER ROW. One ensureAnlz in here is thousands of requests.
 	for (const rel of [
@@ -256,7 +290,9 @@ test('artwork renders from its inline row verdict, not rb-meta hydration', () =>
 });
 
 test('BrowserPanel warms exactly one anlz, on select, and reads the cache purely elsewhere', () => {
-	const calls = [...panelSource.matchAll(/\bensureAnlz\s*\(([^)]*)\)/g)].map((m) => m[1].trim());
+	// PERFMODE-04 (2f4981be0) routes the select warm through ensureAnlzPrefetch,
+	// so both the plain and the shed-gated fetch count toward "exactly one".
+	const calls = [...panelSource.matchAll(/\bensureAnlz(?:Prefetch)?\s*\(([^)]*)\)/g)].map((m) => m[1].trim());
 	assert.deepEqual(
 		calls,
 		['row.stable_id'],

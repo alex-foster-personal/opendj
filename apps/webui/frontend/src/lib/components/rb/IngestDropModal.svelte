@@ -11,16 +11,18 @@
 	 * Rekordbox import, which stays a manual step by design).
 	 */
 	import {
+		decideIngestUpload,
 		getIngestConfig,
 		putIngestConfig,
 		startIngestRefresh,
 		uploadIngestFiles,
 		type IngestConfig,
+		type UploadFileResult,
 		type UploadOut
 	} from '$lib/rb/api-ingest';
+	import { collectDroppedAudioFiles } from '$lib/rb/ingest-drop-files';
+	import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
 	import { pushToast } from '$lib/stores.svelte';
-
-	const AUDIO_RE = /\.(mp3|m4a|aac|wav|aiff?|flac|ogg)$/i;
 
 	let dragDepth = $state(0);
 	let open = $state(false);
@@ -29,6 +31,10 @@
 	let config = $state<IngestConfig | null>(null);
 	let busy = $state(false);
 	let result = $state<UploadOut | null>(null);
+
+	const hasPossibleDups = $derived(
+		result?.results.some((r) => r.verdict === 'possible_duplicate') ?? false
+	);
 
 	function _defaultBatch(): string {
 		const d = new Date();
@@ -59,9 +65,7 @@
 		if (!_isFileDrag(e)) return;
 		e.preventDefault();
 		dragDepth = 0;
-		const dropped = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
-			AUDIO_RE.test(f.name)
-		);
+		const dropped = await collectDroppedAudioFiles(e.dataTransfer!);
 		if (dropped.length === 0) {
 			pushToast('No audio files in that drop', 'error');
 			return;
@@ -86,23 +90,86 @@
 		}
 	}
 
+	async function _maybeStartRefresh(): Promise<void> {
+		if (!result) return;
+		const remaining = result.results.some((r) => r.verdict === 'possible_duplicate');
+		if (remaining) return;
+		const staged = result.results.filter((r) => r.verdict === 'new').length;
+		if (staged > 0) {
+			await startIngestRefresh(result.dest_dir);
+		}
+		await refreshIngestPending();
+	}
+
 	async function stageAndRun(): Promise<void> {
 		busy = true;
 		try {
 			result = await uploadIngestFiles(files, batch);
-			const staged = result.results.filter((r) => !r.skipped_duplicate).length;
-			const dups = result.results.length - staged;
-			pushToast(`staged ${staged}, skipped ${dups} duplicate(s)`, 'info');
-			if (staged > 0) {
-				// Batch-scoped: staged files have no tracks rows yet, so a plain
-				// whole-library refresh would never select them (and could start
-				// unrelated stems/vocals work instead).
-				await startIngestRefresh(result.dest_dir);
-			}
+			const staged = result.results.filter((r) => r.verdict === 'new').length;
+			const skipped = result.results.filter((r) => r.verdict === 'skipped_duplicate').length;
+			const held = result.results.filter((r) => r.verdict === 'possible_duplicate').length;
+			pushToast(`staged ${staged}, held ${held}, skipped ${skipped} duplicate(s)`, 'info');
+			await _maybeStartRefresh();
 		} catch (err) {
 			pushToast(`ingest failed: ${err instanceof Error ? err.message : err}`, 'error');
 		} finally {
 			busy = false;
+		}
+	}
+
+	async function acceptDup(r: UploadFileResult): Promise<void> {
+		if (!result) return;
+		busy = true;
+		try {
+			const decided = await decideIngestUpload({
+				batch: result.batch,
+				filename: r.filename,
+				action: 'accept'
+			});
+			result = {
+				...result,
+				results: result.results.map((row) => (row.filename === r.filename ? decided : row))
+			};
+			await _maybeStartRefresh();
+		} catch (err) {
+			pushToast(`accept failed: ${err instanceof Error ? err.message : err}`, 'error');
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function rejectDup(r: UploadFileResult): Promise<void> {
+		if (!result) return;
+		busy = true;
+		try {
+			const decided = await decideIngestUpload({
+				batch: result.batch,
+				filename: r.filename,
+				action: 'reject'
+			});
+			result = {
+				...result,
+				results: result.results.map((row) => (row.filename === r.filename ? decided : row))
+			};
+			await _maybeStartRefresh();
+		} catch (err) {
+			pushToast(`reject failed: ${err instanceof Error ? err.message : err}`, 'error');
+		} finally {
+			busy = false;
+		}
+	}
+
+	/**
+	 * A floating promise from an event attribute drops its rejection on the
+	 * floor: the drop handler failed silently for a whole release because
+	 * nothing was listening. Report it where the user already looks.
+	 */
+	async function _onDropReported(e: DragEvent): Promise<void> {
+		try {
+			await onDrop(e);
+		} catch (err) {
+			pushToast(`drop failed: ${err instanceof Error ? err.message : err}`, 'error');
+			throw err;
 		}
 	}
 
@@ -121,7 +188,7 @@
 	ondragenter={onDragEnter}
 	ondragover={onDragOver}
 	ondragleave={onDragLeave}
-	ondrop={onDrop}
+	ondrop={(e) => void _onDropReported(e)}
 	onkeydown={onKeydown}
 />
 
@@ -180,23 +247,47 @@
 			{:else}
 				<ul class="m-files">
 					{#each result.results as r (r.filename)}
-						<li class:dup={r.skipped_duplicate}>
+						<li class:dup={r.verdict === 'skipped_duplicate' || r.verdict === 'possible_duplicate'}>
 							{r.filename}
-							{#if r.skipped_duplicate && r.duplicate_of !== null}
+							{#if r.verdict === 'skipped_duplicate' && r.duplicate_of !== null}
 								- duplicate of {r.duplicate_of.title ?? r.duplicate_of.stable_id.slice(0, 8)}
 								({r.duplicate_of.method}{r.duplicate_of.score !== null ? ` ${r.duplicate_of.score}` : ''})
 								- kept the existing track's metadata
-							{:else if r.duplicate_of !== null}
+							{:else if r.verdict === 'possible_duplicate' && r.duplicate_of !== null}
 								- possible dup: {r.duplicate_of.title ?? r.duplicate_of.stable_id.slice(0, 8)}
 								({r.duplicate_of.method}{r.duplicate_of.score !== null ? ` ${r.duplicate_of.score}` : ''})
+								<span class="m-dup-actions">
+									<button
+										type="button"
+										class="m-btn small"
+										data-testid="ingest-dup-accept"
+										disabled={busy}
+										onclick={() => acceptDup(r)}
+									>
+										Accept as new
+									</button>
+									<button
+										type="button"
+										class="m-btn small"
+										data-testid="ingest-dup-reject"
+										disabled={busy}
+										onclick={() => rejectDup(r)}
+									>
+										Skip
+									</button>
+								</span>
 							{/if}
 						</li>
 					{/each}
 				</ul>
 				<div class="m-next">
-					Staged to {result.dest_dir}. Analysis is running (watch the TopBar refresh
-					arrow). Import the folder into Rekordbox, then hit refresh again for
-					stems/vocals.
+					Staged to {result.dest_dir}.
+					{#if hasPossibleDups}
+						Resolve possible duplicates above before analysis runs.
+					{:else}
+						Analysis is running (watch the TopBar refresh arrow). Import the folder into
+						Rekordbox, then hit refresh again for stems/vocals.
+					{/if}
 				</div>
 			{/if}
 
@@ -304,6 +395,11 @@
 	.m-files li.dup {
 		color: #e8973e;
 	}
+	.m-dup-actions {
+		display: inline-flex;
+		gap: 4px;
+		margin-left: 4px;
+	}
 	.m-next {
 		margin-bottom: 10px;
 		color: #9fd8a8;
@@ -321,6 +417,10 @@
 		color: #d7dde3;
 		cursor: pointer;
 		font-size: 12px;
+	}
+	.m-btn.small {
+		padding: 2px 6px;
+		font-size: 10px;
 	}
 	.m-btn.primary {
 		background: #1d4ed8;

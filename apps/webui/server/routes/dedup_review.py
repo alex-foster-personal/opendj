@@ -30,11 +30,14 @@ from ..dedup_decisions import (
     commit_decision_store,
     decision_file_lock,
 )
+from ..dedup_cue_presence import CuePresence, bulk_cue_presence
 from ..dedup_review_ops import (
     cluster_key,
     cluster_member_ids,
     cluster_needs_manual_review,
     conflict,
+    cue_loss_confirmation_required,
+    cue_loss_report,
     decision_store_error,
     dedup_db_path,
     drop_apply_journal,
@@ -100,6 +103,11 @@ class MemberOut(BaseModel):
     duration_ms: int | None
     rating: int | None
     file_exists: bool
+    cue_count: int
+    hot_cue_count: int
+    loop_count: int
+    has_beatgrid: bool
+    cue_positions_ms: list[int]
 
 
 class DecisionOut(BaseModel):
@@ -137,6 +145,7 @@ class ApplyIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     cluster_key: str
     survivor: str
+    confirm_cue_loss: bool = False
 
 
 class DecisionRecordOut(BaseModel):
@@ -242,6 +251,8 @@ def get_dedup_clusters(
         }
     )
     tracks = backend.get_tracks_bulk(stable_ids)
+    cue_presence = bulk_cue_presence(stable_ids)
+    empty_presence = CuePresence()
 
     clusters_out: list[ClusterOut] = []
     for cluster in raw_clusters:
@@ -254,6 +265,7 @@ def get_dedup_clusters(
                 path=cluster["canonical_path"],
                 is_canonical=True,
                 similarity=None,
+                presence=cue_presence.get(cluster["canonical_stable_id"], empty_presence),
                 member_out_cls=MemberOut,
             )
         ]
@@ -264,6 +276,7 @@ def get_dedup_clusters(
                 path=alias["alias_path"],
                 is_canonical=False,
                 similarity=alias["similarity"],
+                presence=cue_presence.get(alias["alias_stable_id"], empty_presence),
                 member_out_cls=MemberOut,
             )
             for alias in cluster["aliases"]
@@ -369,6 +382,10 @@ def post_dedup_apply(
         stale_message="cluster membership changed; refresh before applying a merge",
         read_store=read_store_or_http,
     )
+    if not body.confirm_cue_loss:
+        cue_loss = cue_loss_report(member_ids, body.survivor)
+        if cue_loss:
+            raise cue_loss_confirmation_required(cue_loss)
     with decision_file_lock():
         snap, current_revision = read_store_or_http()
         if if_match != current_revision:

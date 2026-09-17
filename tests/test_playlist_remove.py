@@ -1,4 +1,8 @@
-"""LIBM-21: DELETE /playlists/{id}/items/{item_id} without rewriting membership."""
+"""LIBM-21: DELETE /playlists/{id}/items/{item_id} without rewriting membership.
+
+[if] a playlist item is removed [then] only its row is tombstoned, neighbors stay put, [else stop].
+"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -38,9 +42,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -51,9 +60,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -105,7 +117,8 @@ def _live_item_ids(client: TestClient, pid: str) -> list[str]:
 
 
 def test_remove_one_member_neighbors_untouched(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -190,7 +203,8 @@ def test_smartlist_refused(client: TestClient, db_path: Path) -> None:
 
 
 def test_undo_restores_same_item_id_and_order_key(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -267,9 +281,7 @@ def test_get_detail_carries_item_id(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002", "t-003"])
-    live_rows = [
-        row for row in dump_members(db_path, pid).values() if row[6] is None
-    ]
+    live_rows = [row for row in dump_members(db_path, pid).values() if row[6] is None]
     live_rows.sort(key=lambda r: r[3])
     detail = client.get(f"/api/v1/playlists/{pid}")
     wire_ids = [t["item_id"] for t in detail.json()["tracks"]]

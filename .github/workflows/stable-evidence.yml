@@ -31,6 +31,10 @@ env:
 jobs:
   append:
     name: Append suite result
+    # A cancelled CI/E2E run has no suite result to append: on Mon 14 Sep 2026,
+    # 27 of 27 Stable evidence runs in one hour were cancelled while 39/39
+    # self-hosted runners were busy, burning a runner slot for nothing.
+    if: github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
@@ -86,6 +90,7 @@ jobs:
       # SHA-pinned to the v4 tag commit (matches ci.yml).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
+          persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 

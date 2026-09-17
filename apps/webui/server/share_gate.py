@@ -93,15 +93,6 @@ def configured_share(request: Request) -> ShareConfig:
     return config if isinstance(config, ShareConfig) else ShareConfig.from_environ()
 
 
-def request_host(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-host", "")
-    raw = (forwarded.split(",", 1)[0] or request.headers.get("host") or "")
-    host = raw.strip().lower()
-    if ":" in host and not host.startswith("["):
-        host = host.rsplit(":", 1)[0]
-    return host
-
-
 def presented_token(request: Request) -> str:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
@@ -172,3 +163,6 @@ async def share_gate_middleware(request: Request, call_next) -> Response:
             status_code=403,
         )
     return await call_next(request)
+
+
+from .request_guard import request_host  # noqa: E402

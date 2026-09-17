@@ -285,14 +285,23 @@ def test_a_pull_response_lost_mid_drain_re_pulls_and_converges(
         _sync(spoke_b, faulty, "spoke-b")
     faulty.assert_all_fired()
     partial = _titles(spoke_b)
-    assert len(partial) == PULL_CHUNK_ROWS, (
-        f"the first pull chunk is applied in its own transaction, so exactly "
-        f"{PULL_CHUNK_ROWS} rows should be on B; found {len(partial)}"
+    assert len(partial) == 0, (
+        "_pull_in_chunks buffers every RowChange across the whole drain and "
+        "applies once in a single spoke_apply after has_more is false "
+        "(apps.sync_hub.client_transport_ops docstring: per-chunk apply dies "
+        "on FK, since a child row in an early window can name a parent "
+        "logged in a later one). Losing the 2nd chunk's response raises "
+        "before that final apply ever runs, so nothing this round landed on "
+        f"B, not just the lost chunk; found {len(partial)}"
     )
 
     recovered = _sync(spoke_b, hub, "spoke-b")
-    assert recovered.applied == ROW_COUNT - PULL_CHUNK_ROWS, (
-        "the re-pull must apply exactly the rows the lost chunk would have carried"
+    assert recovered.applied == ROW_COUNT, (
+        "no watermark was written on the faulted round (the exception "
+        "propagates out of _pull_in_chunks before its caller settles "
+        "last_pull_seq), so the recovery sync re-pulls from the original "
+        "floor and must apply every row, not just the ones the lost chunk "
+        "would have carried"
     )
     assert _titles(spoke_b) == _titles(hub_dir) == _titles(spoke_a)
 

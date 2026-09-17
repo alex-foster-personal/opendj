@@ -183,7 +183,7 @@ def stem_bundle(data_dir: Path) -> None:
     import numpy as np
     import soundfile as sf
 
-    from apps.webui.server.stem_artifacts import STEM_PARTS
+    from apps.stems.artifacts import STEM_PARTS
 
     root = data_dir / "configured-stems"
     bundle = root / "hasstem"

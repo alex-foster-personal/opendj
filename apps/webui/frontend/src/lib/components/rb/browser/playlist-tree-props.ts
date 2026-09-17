@@ -15,6 +15,10 @@ export type PlaylistTreeProps = {
 	 * pin was about). */
 	playlistsLoading: boolean;
 	playlistsError: string | null;
+	/** Number of mostly-broken playlists hidden by the Broken filter. Required,
+	 * not optional -- an unwired caller must fail the Svelte type check rather
+	 * than silently omit the notice. */
+	hiddenBrokenPlaylistCount: number;
 	allTracksCount: number | null;
 	allTracksBrokenCount: number | null;
 	allTracksError: string | null;
@@ -42,8 +46,11 @@ export type PlaylistTreeProps = {
 	onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
 	/** Create then return new playlist_id (or null on cancel/fail). */
 	oncreateplaylist?: () => Promise<string | null> | string | null;
+	/** Tree context menu: create a smartlist from /performance (LIBMX-10). */
+	oncreatesmartlist?: () => void;
 	/** Commit in-place rename; empty/cancelled name leaves server name. */
 	onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
+	onforbidduplicates?: (node: PlaylistNode) => void | Promise<void>;
 	ondeleteplaylist?: (node: PlaylistNode) => void;
 	onduplicateplaylist?: (node: PlaylistNode) => void;
 	/**

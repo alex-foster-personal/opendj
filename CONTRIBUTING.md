@@ -58,8 +58,9 @@ pip install --no-build-isolation -r requirements.txt
 python -m pyrekordbox download-key   # one-time: cache master.db decryption key
 ```
 
-`--no-build-isolation` is required because `madmom` needs `cython` and
-`numpy` at setup time but declares no build-requires.
+`--no-build-isolation` is required because `madmom`'s own build-requires ask
+for `numpy>2`, while this venv pins `numpy<2`; building against the ambient
+venv keeps the compiled extensions on the numpy that is actually installed.
 
 ## Running tests and lint
 
@@ -200,7 +201,7 @@ function's docstring: `[if] X [then] Y, [else stop]`. For example,
 Legacy modules in `tests/requirement_intent_allowlist.txt` are temporary and
 the list may only shrink.
 
-- **No U+2014 characters and no U+2013 characters** in any prose we author (code
+- **No U+2014 or U+2013 characters** in any prose we author (code
   comments, docs, commit messages, issue text). Use a period, a comma, a
   colon, or parentheses. The audit trail in `.planning/milestones/`
   tracks this convention across phases.

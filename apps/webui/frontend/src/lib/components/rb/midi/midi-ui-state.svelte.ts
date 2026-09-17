@@ -18,20 +18,20 @@
  *     [if] a second call while pending doesn't throw [then ⛔️] broken
  */
 
-import { initMidi } from '$lib/rb/midi/webmidi.svelte';
-import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
+import { api } from '$lib/api/client';
 import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
+import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
+import { initMidi } from '$lib/rb/midi/webmidi.svelte';
+import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
+import { MIDI_ENABLED_KEY, persistMidiEnabled } from './midi-enabled-choice';
+
+export { MIDI_ENABLED_KEY } from './midi-enabled-choice';
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
 // run or every mapped action lands as "no action handler registered".
 // Both were exported but never called anywhere - wire them here, once.
 let _mapsRegistered = false;
-
-/** localStorage key for the "user enabled MIDI" choice. Set once the user
- * successfully grants access; read on page load to auto-re-request without a
- * second click. Namespaced so it never collides with other app keys. */
-export const MIDI_ENABLED_KEY = 'dj:midi-enabled';
 
 export const midiUi: {
 	panelOpen: boolean;
@@ -73,16 +73,24 @@ export function toggleLogPopoutMinimized(): void {
 
 // --------------------------------------------------- enabled-choice persistence
 
-/** Persist (or clear) the user's MIDI-enabled choice. SSR/Node-safe: no-ops
- * where localStorage is absent, so importing this module server-side or in a
- * unit test never throws. */
-function _persistMidiEnabled(enabled: boolean): void {
-	if (typeof localStorage === 'undefined') return;
-	if (enabled) {
-		localStorage.setItem(MIDI_ENABLED_KEY, '1');
-	} else {
-		localStorage.removeItem(MIDI_ENABLED_KEY);
+// The localStorage half lives in midi-enabled-choice.ts so prefs hydration can
+// apply it without importing this module's MIDI runtime (see that file).
+const _syncMidiEnabledDisk = makeDiskWriteChain(async (patch: { midi_enabled: boolean }) => {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if daemon is down */
 	}
+});
+
+function _syncMidiEnabledToDisk(enabled: boolean): void {
+	void _syncMidiEnabledDisk({ midi_enabled: enabled });
+}
+
+/** Agent parity: set the persisted opt-in without requesting WebMIDI access. */
+export function setMidiEnabledChoice(enabled: boolean): void {
+	persistMidiEnabled(enabled);
+	_syncMidiEnabledToDisk(enabled);
 }
 
 /** True if the user previously enabled MIDI (persisted choice). */
@@ -118,13 +126,15 @@ export async function requestMidiAccess(): Promise<void> {
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
-		_persistMidiEnabled(true);
+		persistMidiEnabled(true);
+		_syncMidiEnabledToDisk(true);
 	} catch (exc) {
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		_persistMidiEnabled(false);
+		persistMidiEnabled(false);
+		_syncMidiEnabledToDisk(false);
 	} finally {
 		midiUi.requestPending = false;
 	}

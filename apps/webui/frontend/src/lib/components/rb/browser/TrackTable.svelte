@@ -48,6 +48,11 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import {
+		previewCue,
+		previewCueRatioFor,
+		stopPreviewCue
+	} from '$lib/player/preview-cue.svelte';
 	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -82,13 +87,10 @@
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 	import { trackCloudView } from './track-cloud-state';
-	import {
-		getAnlzEntry,
-		resolveDisplayedAnlz
-	} from '../wave/anlz-cache.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -140,6 +142,9 @@
 	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
 	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
+	let relocateMenu = $state<{ x: number; y: number; stableId: string; title: string | null } | null>(
+		null
+	);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -227,26 +232,9 @@
 			if (st.playing) return ratio;
 			if (fallback === null) fallback = ratio;
 		}
-		return fallback;
-	}
-
-	/** Marker data for the browser mini-strip, sourced from the exact object
-	 * the main waveform renders. A ready shared-cache entry may outlive a deck
-	 * load and is still real production data; an uncached row stays markerless
-	 * rather than starting one /anlz request per virtual row (LIBUX-12). */
-	function _markerAnlzFor(stableId: string): AnlzData | null {
-		let fallback: AnlzData | null = null;
-		for (const d of DECK_IDS) {
-			const st = deckStates[d];
-			if (st.stable_id !== stableId) continue;
-			const anlz = resolveDisplayedAnlz(st.anlz, stableId);
-			if (anlz === null) continue;
-			if (st.playing) return anlz;
-			fallback ??= anlz;
-		}
-		if (fallback !== null) return fallback;
-		const cached = getAnlzEntry(stableId);
-		return cached?.status === 'ready' ? cached.data : null;
+		// CUEOUT-15: a deck always wins the playhead, because a deck can be on
+		// air and the preview never is. Only a row on no deck shows a preview.
+		return fallback ?? previewCueRatioFor(stableId);
 	}
 
 	function _badgeFor(row: BrowserRow): AnalysisBadge {
@@ -287,9 +275,11 @@
 		selectedOrders,
 		loadedIds,
 		vocalsById,
+		markerAnlzById,
 		sortKey,
 		sortDir,
 		emptyMessage,
+		onemptyretry = undefined,
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
@@ -326,6 +316,7 @@
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
 		onremovefromlibrary = undefined,
+		onrelocated = undefined,
 		onaddtoplaylist = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
@@ -337,9 +328,14 @@
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
 		vocalsById: Record<string, Vocals>;
+		/** Strip marker ANLZ ALREADY in memory (loaded decks / anlz cache),
+		 * resolved by BrowserPanel (LIBUX-12); absent = markerless strip. */
+		markerAnlzById: Record<string, AnlzData>;
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Retry a failed whole-collection search from the empty state. */
+		onemptyretry?: (() => void) | undefined;
 		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
@@ -402,6 +398,9 @@
 		onopeneditmodal?: (kind: TrackEditModalKind) => void;
 		/** Remove selected tracks from the library (files stay on disk). */
 		onremovefromlibrary?: (stableIds: string[]) => void;
+		/** FLOW-07: called after a relocate apply succeeds, so the pane can
+		 * reload and pick up the row's fresh file_exists/broken state. */
+		onrelocated?: (() => void) | undefined;
 		/** Open the add-to-playlist picker for the selected tracks. */
 		onaddtoplaylist?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
@@ -951,7 +950,12 @@
 			artist: row.artist ?? '',
 			count: ids.length
 		});
-		beginTrackDrag(ids);
+		beginTrackDrag(ids, {
+			[row.stable_id]: {
+				file_exists: row.file_exists,
+				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
+			}
+		});
 	}
 
 	function onRowDragEnd(): void {
@@ -1044,6 +1048,9 @@
 		onshowinplaylists={(row, x, y) => {
 			playlistsMenu = { x, y, stableId: row.stable_id };
 		}}
+		onrelocate={(row, x, y) => {
+			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
+		}}
 	/>
 	{#if playlistsMenu !== null}
 		<TrackPlaylistsPopover
@@ -1051,6 +1058,16 @@
 			x={playlistsMenu.x}
 			y={playlistsMenu.y}
 			onclose={() => (playlistsMenu = null)}
+		/>
+	{/if}
+	{#if relocateMenu !== null}
+		<RelocatePopover
+			stableId={relocateMenu.stableId}
+			trackTitle={relocateMenu.title}
+			x={relocateMenu.x}
+			y={relocateMenu.y}
+			onclose={() => (relocateMenu = null)}
+			onrelocated={() => onrelocated?.()}
 		/>
 	{/if}
 	{#if masterFold === 'above'}
@@ -1408,6 +1425,19 @@
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
+					{@const cloudView = trackCloudView({
+						fileExists: row.file_exists,
+						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+						hasRemoteCopy: row.has_remote_copy === true,
+						transfer:
+							row.cloud_transfer === null || row.cloud_transfer === undefined
+								? null
+								: {
+										direction: row.cloud_transfer.direction,
+										bytesTransferred: row.cloud_transfer.bytes_transferred,
+										bytesTotal: row.cloud_transfer.bytes_total
+									}
+					})}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1477,19 +1507,6 @@
 						<!-- CloudSync presence, local availability, and transfer bytes are
 						     separate backend facts; this cell never guesses a percentage. -->
 						<td class="c-cloud">
-							{@const cloudView = trackCloudView({
-								fileExists: row.file_exists,
-								isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
-								hasRemoteCopy: row.has_remote_copy === true,
-								transfer:
-									row.cloud_transfer === null || row.cloud_transfer === undefined
-										? null
-										: {
-												direction: row.cloud_transfer.direction,
-												bytesTransferred: row.cloud_transfer.bytes_transferred,
-												bytesTotal: row.cloud_transfer.bytes_total
-											}
-							})}
 							{#if cloudView.showIcon}
 								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
 									{#if cloudView.kind === 'streaming'}
@@ -1604,10 +1621,12 @@
 							<PreviewStrip
 								strip={row.strip}
 								vocals={vocalsById[row.stable_id] ?? null}
-								markerAnlz={_markerAnlzFor(row.stable_id)}
+								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
+								previewing={previewCue.stable_id === row.stable_id}
+								onstop={stopPreviewCue}
 								stable_id={row.stable_id}
 								enabled={row.lyrics?.has_words === true}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
@@ -1784,7 +1803,12 @@
 			</tbody>
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
-			<div class="empty">{emptyMessage}</div>
+			<div class="empty">
+				{emptyMessage}
+				{#if onemptyretry !== undefined}
+					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
+				{/if}
+			</div>
 		{/if}
 		{#if filterBypassNote !== null}
 			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
@@ -2837,6 +2861,21 @@
 		padding: 24px;
 		text-align: center;
 		color: var(--rb-text-dim);
+	}
+	.empty-retry {
+		display: block;
+		margin: 12px auto 0;
+		color: var(--rb-text);
+		background: var(--rb-surface-2);
+		border: 1px solid var(--rb-border);
+		border-radius: 4px;
+		padding: 6px 12px;
+		font: inherit;
+		cursor: pointer;
+	}
+	.empty-retry:focus-visible {
+		outline: 2px solid var(--rb-accent);
+		outline-offset: 2px;
 	}
 	.filter-bypass-note {
 		margin: 0;

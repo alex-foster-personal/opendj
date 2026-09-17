@@ -7,7 +7,10 @@
 [if] no webview is attached [then ⛔] GET and POST return 503 naming the page.
 [if] a new headphone IPC command lacks an HTTP mirror [then ⛔] the parity
      test goes red.
+
+[if] a headphone control posts over HTTP [then] it reaches the page and mirrors back, [else stop].
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +25,8 @@ from apps.webui.server.app import create_app
 from apps.webui.server.routes.commands import router as commands_router
 from apps.webui.server.routes.performance_headphones import (
     HEADPHONE_IPC_ROUTES,
+)
+from apps.webui.server.routes.performance_headphones import (
     router as headphones_router,
 )
 from apps.webui.server.routes.state import router as state_router
@@ -33,9 +38,21 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     "mix": 0.5,
     "level": 0.5,
     "head_delay_ms": 0,
+    "alignment_mode": "hybrid",
+    "master_delay_ms": 0,
+    "calibration": {
+        "step": "idle",
+        "cue_latency_ms": None,
+        "master_latency_ms": None,
+        "offset_ms": None,
+        "error": None,
+    },
     "selected_output_device_id": None,
+    "selected_master_output_device_id": None,
+    "selected_input_device_id": None,
     "output_mode": "practice",
     "outputs": [],
+    "inputs": [],
     "supported": False,
     "active": False,
     "error": None,
@@ -56,7 +73,16 @@ _HEADPHONE_IPC_PREDICATE = frozenset(
         command_type
         for command_type in command_fields()
         if command_type.startswith("headphone_")
-        or command_type in {"channel_cue", "output_mode", "head_delay_ms"}
+        # CUEOUT-15: preview_* joins at `cueSum`, like channel CUE.
+        or command_type
+        in {
+            "channel_cue",
+            "output_mode",
+            "head_delay_ms",
+            "master_delay_ms",
+            "preview_cue",
+            "preview_stop",
+        }
     }
 )
 
@@ -68,6 +94,9 @@ _IPC_ERROR_FRAGMENTS = (
     "deck must be one of 1, 2, 3, 4; got",
     "must be boolean",
     "device_id must be a non-empty string",
+    # CUEOUT-14 (raised from player/constants.ts, imported by both files).
+    "headphone alignment_mode must be headphones_only, delay_all, or hybrid; got",
+    "master delay must be a finite number within 0..",
 )
 
 
@@ -97,9 +126,7 @@ async def _open_page(
     assert published.status_code == 202
 
 
-def _apply_command(
-    mirror: dict[str, Any], command: dict[str, Any]
-) -> dict[str, Any]:
+def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str, Any]:
     """Mutate mirror the way a real page would after executing a command."""
     changed: dict[str, Any] = {}
     command_type = command["type"]
@@ -112,6 +139,27 @@ def _apply_command(
     elif command_type == "head_delay_ms":
         mirror["mixer"]["headphones"]["head_delay_ms"] = command["value"]
         changed = {"mixer": {"headphones": {"head_delay_ms": command["value"]}}}
+    elif command_type == "headphone_alignment_mode":
+        mirror["mixer"]["headphones"]["alignment_mode"] = command["value"]
+        changed = {"mixer": {"headphones": {"alignment_mode": command["value"]}}}
+    elif command_type == "master_delay_ms":
+        mirror["mixer"]["headphones"]["master_delay_ms"] = command["value"]
+        changed = {"mixer": {"headphones": {"master_delay_ms": command["value"]}}}
+    elif command_type == "headphone_calibrate":
+        calibration = {
+            "step": "applied",
+            "cue_latency_ms": 900,
+            "master_latency_ms": 200,
+            "offset_ms": 700,
+            "error": None,
+        }
+        mirror["mixer"]["headphones"]["calibration"] = calibration
+        mirror["mixer"]["headphones"]["master_delay_ms"] = 700
+        changed = {"mixer": {"headphones": {"calibration": calibration, "master_delay_ms": 700}}}
+    elif command_type == "headphone_calibrate_abort":
+        calibration = dict(_DEFAULT_HEADPHONES["calibration"])
+        mirror["mixer"]["headphones"]["calibration"] = calibration
+        changed = {"mixer": {"headphones": {"calibration": calibration}}}
     elif command_type == "channel_cue":
         deck = str(command["deck"])
         mirror["mixer"]["channels"][deck]["cue_enabled"] = command["enabled"]
@@ -127,21 +175,43 @@ def _apply_command(
         mirror["mixer"]["headphones"]["outputs"] = [
             {"id": "default", "label": "Default"},
         ]
-        changed = {
-            "mixer": {
-                "headphones": {
-                    "outputs": [{"id": "default", "label": "Default"}],
-                },
-            },
-        }
-    elif command_type == "headphone_output_select":
-        mirror["mixer"]["headphones"]["selected_output_device_id"] = command[
-            "device_id"
+        mirror["mixer"]["headphones"]["inputs"] = [
+            {"id": "builtin-mic", "label": "MacBook Pro Microphone"},
         ]
         changed = {
             "mixer": {
                 "headphones": {
+                    "outputs": [{"id": "default", "label": "Default"}],
+                    "inputs": [
+                        {"id": "builtin-mic", "label": "MacBook Pro Microphone"},
+                    ],
+                },
+            },
+        }
+    elif command_type == "headphone_output_select":
+        mirror["mixer"]["headphones"]["selected_output_device_id"] = command["device_id"]
+        changed = {
+            "mixer": {
+                "headphones": {
                     "selected_output_device_id": command["device_id"],
+                },
+            },
+        }
+    elif command_type == "headphone_master_select":
+        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command["device_id"]
+        changed = {
+            "mixer": {
+                "headphones": {
+                    "selected_master_output_device_id": command["device_id"],
+                },
+            },
+        }
+    elif command_type == "headphone_input_select":
+        mirror["mixer"]["headphones"]["selected_input_device_id"] = command["device_id"]
+        changed = {
+            "mixer": {
+                "headphones": {
+                    "selected_input_device_id": command["device_id"],
                 },
             },
         }
@@ -150,8 +220,7 @@ def _apply_command(
 
 async def _fake_page(
     client: AsyncClient,
-    apply: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None]
-    | None = None,
+    apply: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Claim the next order, apply it to the mirror, and complete it."""
     mirror: dict[str, Any] = {
@@ -193,18 +262,23 @@ def test_headphone_command_union_matches_route_table() -> None:
 
 
 def test_performance_headphone_predicate_matches_headphone_command_union() -> None:
-    assert _HEADPHONE_IPC_PREDICATE - _ACQUIRE_EXEMPTION == set(headphone_command_fields())
+    assert set(headphone_command_fields()) == _HEADPHONE_IPC_PREDICATE - _ACQUIRE_EXEMPTION
 
 
 def test_ipc_error_strings_appear_in_performance_ipc_source() -> None:
     root = __import__("pathlib").Path(__file__).resolve().parents[2]
-    ipc_source = (
-        root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
-    ).read_text(encoding="utf-8")
-    headphones_source = (
-        root / "apps/webui/frontend/src/lib/player/headphones.ts"
-    ).read_text(encoding="utf-8")
-    combined = ipc_source + headphones_source
+    ipc_source = (root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts").read_text(
+        encoding="utf-8"
+    )
+    headphones_source = (root / "apps/webui/frontend/src/lib/player/headphones.ts").read_text(
+        encoding="utf-8"
+    )
+    # The mode and delay contracts live in the leaf constants module (CUEOUT-14
+    # moved output_mode there so the alignment policy can import it cycle-free).
+    constants_source = (root / "apps/webui/frontend/src/lib/player/constants.ts").read_text(
+        encoding="utf-8"
+    )
+    combined = ipc_source + headphones_source + constants_source
     assert "assertHeadphoneOutputMode" in ipc_source
     for fragment in _IPC_ERROR_FRAGMENTS:
         assert fragment in combined
@@ -217,9 +291,7 @@ def test_mix_happy_path() -> None:
         ) as client:
             await _open_page(client)
             fake = asyncio.create_task(_fake_page(client))
-            response = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 0.25}
-            )
+            response = await client.post("/api/v1/performance/headphones/mix", json={"value": 0.25})
             command = await fake
             assert command == {"type": "headphone_mix", "value": 0.25}
             assert response.status_code == 200
@@ -237,12 +309,8 @@ def test_mix_out_of_range_is_rejected_without_submitting() -> None:
             transport=ASGITransport(app=_app()), base_url="http://test"
         ) as client:
             await _open_page(client)
-            too_high = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 1.5}
-            )
-            too_low = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": -0.1}
-            )
+            too_high = await client.post("/api/v1/performance/headphones/mix", json={"value": 1.5})
+            too_low = await client.post("/api/v1/performance/headphones/mix", json={"value": -0.1})
             not_finite = await client.post(
                 "/api/v1/performance/headphones/mix", json={"value": None}
             )
@@ -287,9 +355,7 @@ def test_no_page_returns_503() -> None:
             transport=ASGITransport(app=_app()), base_url="http://test"
         ) as client:
             got = await client.get("/api/v1/performance/headphones")
-            posted = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 0.25}
-            )
+            posted = await client.post("/api/v1/performance/headphones/mix", json={"value": 0.25})
         assert got.status_code == 503
         assert "performance page" in got.json()["detail"]
         assert posted.status_code == 503
@@ -321,6 +387,46 @@ def test_no_page_returns_503() -> None:
             {"device_id": "usb-audio-1"},
             {"type": "headphone_output_select", "device_id": "usb-audio-1"},
         ),
+        (
+            "/api/v1/performance/headphones/outputs/master",
+            {"device_id": "speakers"},
+            {"type": "headphone_master_select", "device_id": "speakers"},
+        ),
+        (
+            "/api/v1/performance/headphones/inputs/select",
+            {"device_id": "builtin-mic"},
+            {"type": "headphone_input_select", "device_id": "builtin-mic"},
+        ),
+        (
+            "/api/v1/performance/headphones/alignment-mode",
+            {"value": "delay_all"},
+            {"type": "headphone_alignment_mode", "value": "delay_all"},
+        ),
+        (
+            "/api/v1/performance/headphones/master-delay",
+            {"value": 700},
+            {"type": "master_delay_ms", "value": 700.0},
+        ),
+        (
+            "/api/v1/performance/headphones/calibrate",
+            {},
+            {"type": "headphone_calibrate"},
+        ),
+        (
+            "/api/v1/performance/headphones/calibrate/abort",
+            {},
+            {"type": "headphone_calibrate_abort"},
+        ),
+        (
+            "/api/v1/performance/headphones/preview",
+            {"stable_id": "trk-9", "ratio": 0.25},
+            {"type": "preview_cue", "stable_id": "trk-9", "ratio": 0.25},
+        ),
+        (
+            "/api/v1/performance/headphones/preview/stop",
+            {},
+            {"type": "preview_stop"},
+        ),
     ],
 )
 def test_headphone_post_routes_reach_the_page(
@@ -336,6 +442,76 @@ def test_headphone_post_routes_reach_the_page(
             command = await fake
             assert command == expected_command
             assert response.status_code == 200
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "detail"),
+    [
+        (
+            "/api/v1/performance/headphones/alignment-mode",
+            {"value": "serato"},
+            "headphone alignment_mode must be headphones_only, delay_all, or hybrid; got serato",
+        ),
+        (
+            "/api/v1/performance/headphones/master-delay",
+            {"value": 1501},
+            "master delay must be a finite number within 0..1500, got 1501",
+        ),
+        (
+            "/api/v1/performance/headphones/master-delay",
+            {"value": -1},
+            "master delay must be a finite number within 0..1500, got -1",
+        ),
+        (
+            "/api/v1/performance/headphones/master-delay",
+            {"value": "700"},
+            "master delay must be a finite number within 0..1500, got 700",
+        ),
+    ],
+)
+def test_alignment_bodies_are_rejected_without_submitting(
+    path: str, body: dict[str, Any], detail: str
+) -> None:
+    """CUEOUT-14: a bad mode or an out-of-range room delay never reaches the page."""
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app()), base_url="http://test"
+        ) as client:
+            await _open_page(client)
+            response = await client.post(path, json=body)
+            nxt = await client.get("/api/v1/commands/next")
+        assert response.status_code == 400
+        assert response.json()["detail"] == detail
+        assert nxt.json() is None
+
+    asyncio.run(run())
+
+
+def test_calibrate_mirrors_the_page_calibration_state() -> None:
+    """CUEOUT-14: GET /headphones carries alignment_mode, master_delay_ms and
+    calibration, and a headless calibrate returns the applied state."""
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app()), base_url="http://test"
+        ) as client:
+            await _open_page(client)
+            before = await client.get("/api/v1/performance/headphones")
+            fake = asyncio.create_task(_fake_page(client))
+            response = await client.post("/api/v1/performance/headphones/calibrate")
+            command = await fake
+        assert before.status_code == 200
+        assert before.json()["alignment_mode"] == "hybrid"
+        assert before.json()["master_delay_ms"] == 0
+        assert before.json()["calibration"] == _DEFAULT_HEADPHONES["calibration"]
+        assert command == {"type": "headphone_calibrate"}
+        assert response.status_code == 200
+        assert response.json()["calibration"]["step"] == "applied"
+        assert response.json()["calibration"]["offset_ms"] == 700
+        assert response.json()["master_delay_ms"] == 700
 
     asyncio.run(run())
 
@@ -387,8 +563,7 @@ def test_failed_page_step_returns_400_and_leaves_selection_unchanged() -> None:
                             {
                                 "status": "failed",
                                 "error": (
-                                    "headphone output usb-x is not an enumerated "
-                                    "headphone output"
+                                    "headphone output usb-x is not an enumerated headphone output"
                                 ),
                             }
                         ],

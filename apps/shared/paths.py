@@ -19,6 +19,7 @@ from apps.shared.platform_paths import (
     DATA_DIR,
     DJAY_LIVE_DB,
     HOME,
+    INGEST_INBOX,
     MUSIC_ROOTS,
     PROJECT_ROOT,
     REKORDBOX_LIVE_DB,
@@ -41,11 +42,13 @@ __all__ = [
     "DJAY_LIVE_DB",
     "DJAY_WORKING_DB",
     "HOME",
+    "INGEST_INBOX",
     "MUSIC_ROOTS",
     "PROJECT_ROOT",
     "REKORDBOX_LIVE_DB",
     "REKORDBOX_PLAIN_DB",
     "REKORDBOX_WORKING_DB",
+    "STATE_AUTHORITATIVE_BACKUP_DIR",
     "STATE_DB",
     "STATE_DIR",
     "TAGS_BACKUPS_DIR",
@@ -80,6 +83,7 @@ DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"
 # Always gitignored under ``data/``. Phase 11 (Litestream) may relocate.
 STATE_DIR: Path = DATA_DIR / "state"
 STATE_DB: Path = STATE_DIR / "state.db"
+STATE_AUTHORITATIVE_BACKUP_DIR: Path = DATA_DIR / "backup" / "state-authoritative"
 
 # ----- Phase 7 dedup + tag unification ----------------------------------
 # Fallback SQLite store used when the Phase 5 shared-state DB is not yet

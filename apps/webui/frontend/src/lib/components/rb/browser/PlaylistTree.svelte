@@ -20,14 +20,18 @@
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
+	import RecentlyDeletedFolder from './RecentlyDeletedFolder.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
+	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
+	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
 
 	let {
 		nodes,
 		playlistsLoading,
 		playlistsError,
+		hiddenBrokenPlaylistCount,
 		allTracksCount,
 		allTracksBrokenCount,
 		allTracksError,
@@ -41,9 +45,11 @@
 		onloadtrack,
 		oncreateplaylist,
 		onrenameplaylist,
+		onforbidduplicates,
 		ondeleteplaylist,
 		onduplicateplaylist,
-		ondroptracks
+		ondroptracks,
+		oncreatesmartlist
 	}: PlaylistTreeProps = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
@@ -132,6 +138,10 @@
 		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
 	}
 
+	function _mostlyBrokenTitle(_node: PlaylistNode): string {
+		return 'Fewer than 30% of tracks in this playlist are playable';
+	}
+
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
 	}
@@ -162,7 +172,7 @@
 
 <div class="tree-root">
 	<PlaylistHistoryPanel />
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
 	{#if mode === 'tree'}
 		<button
 			type="button"
@@ -238,17 +248,20 @@
 			{/if}
 		</div>
 		{#if playlistsOpen}
-			{#if nodes.length === 0 && playlistsLoading}
-				<div class="row child rb-inert" data-testid="playlists-loading">Loading playlists...</div>
-			{:else if nodes.length === 0 && playlistsError !== null}
-				<div class="row child rb-inert" title={playlistsError}>Playlist load failed</div>
-			{/if}
+			<PlaylistFolderStates
+				nodeCount={nodes.length}
+				{playlistsLoading}
+				{playlistsError}
+				{hiddenBrokenPlaylistCount}
+				oncreate={oncreateplaylist ? () => void rename.createAndRename() : undefined}
+			/>
 			{#each nodes as node (node.playlist_id)}
 				<div
 					class="row child"
 					data-testid="playlist-row"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
+					title={node.mostly_broken ? _mostlyBrokenTitle(node) : undefined}
 					class:drop-target={dropTargetId === node.playlist_id}
 					class:tint-deck={_tintOf(node) === 'deck'}
 					class:tint-multi={_tintOf(node) === 'multi'}
@@ -281,7 +294,7 @@
 							onblur={() => void rename.commit()}
 						/>
 					{:else}
-						<span class="name" title={node.name}>{node.name}</span>
+						<span class="name" title={node.mostly_broken ? _mostlyBrokenTitle(node) : node.name}>{node.name}</span>
 					{/if}
 					{#if onrenameplaylist}
 						<button
@@ -314,8 +327,15 @@
 					{/if}
 					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 				</div>
+				{#if rename.createdId === node.playlist_id && node.track_count === 0}
+					<div class="row child hint" data-testid="playlist-new-hint">
+						Drag tracks or a folder here to add music
+					</div>
+				{/if}
 			{/each}
+			<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
 		{/if}
+		<RecentlyDeletedFolder />
 		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
 		<MissingTracksFolder
 			brokenCount={allTracksBrokenCount}
@@ -410,6 +430,15 @@
 	}
 	.row.child {
 		padding-left: 22px;
+	}
+	.row.hint {
+		color: var(--rb-text-dim);
+		font-style: italic;
+		cursor: default;
+		pointer-events: none;
+	}
+	.row.hint:hover {
+		background: transparent;
 	}
 	.name {
 		flex: 1;

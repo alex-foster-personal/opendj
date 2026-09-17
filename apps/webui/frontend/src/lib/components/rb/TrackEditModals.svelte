@@ -11,12 +11,14 @@
 		openModal,
 		stableIds,
 		etags,
+		rows,
 		onclose,
 		onapplied
 	}: {
 		openModal: 'bulk-edit' | 'find-replace' | 'mytag' | null;
 		stableIds: string[];
 		etags: Record<string, string>;
+		rows: { stable_id: string; rating: number | null; comments: string | null }[];
 		onclose: () => void;
 		onapplied: () => void;
 	} = $props();
@@ -25,7 +27,7 @@
 {#if openModal === 'find-replace'}
 	<FindReplaceModal {stableIds} {etags} {onclose} {onapplied} />
 {:else if openModal === 'bulk-edit'}
-	<BulkEditModal {stableIds} {etags} {onclose} {onapplied} />
+	<BulkEditModal {stableIds} {etags} {rows} {onclose} {onapplied} />
 {:else if openModal === 'mytag'}
 	<MyTagEditorModal {stableIds} {etags} {onclose} {onapplied} />
 {/if}

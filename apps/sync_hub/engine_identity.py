@@ -178,9 +178,12 @@ def resolve_track_identity(
 
     Fingerprint-tier PKs are already global; this function only fires for a
     different stored PK sharing ``content_hash`` or a normalizable ISRC.
-    Path-tier ``stable_id`` is ignored on purpose.
+    Path-tier ``stable_id`` is ignored on purpose. Rows offered as
+    ``hash_pending`` skip merge-key lookup until a hash arrives (ADR-0068).
     """
     if change.table != "tracks":
+        return IdentityDecision(kind="none")
+    if change.hash_pending:
         return IdentityDecision(kind="none")
     matches = _find_matches(conn, change)
     if not matches:
@@ -504,19 +507,34 @@ def hub_library_size(conn: sqlite3.Connection) -> int:
     )
 
 
+def log_hash_conflict(
+    stable_id: str,
+    incoming_hash: str,
+    stored_hash: str,
+    incoming_stamp: tuple[str, str],
+    stored_stamp: tuple[str, str],
+) -> None:
+    """Log when two pushes disagree on ``content_hash`` for one ``stable_id``."""
+    log.warning(
+        "tracks %s: conflicting content_hash values incoming=%r stored=%r; "
+        "incoming stamp=%s origin=%s stored stamp=%s origin=%s; "
+        "last-writer-wins keeps one row",
+        stable_id,
+        incoming_hash,
+        stored_hash,
+        incoming_stamp[0],
+        incoming_stamp[1],
+        stored_stamp[0],
+        stored_stamp[1],
+    )
+
+
 def assert_identity_ready(conn: sqlite3.Connection) -> None:
     """Refuse to start a sync while inferred-tier rows still lack identity.
 
-    A PK-only merge of those rows duplicates overlapping recordings across
-    independently ingested libraries (CLOUDSYNC-07).
-
-    The named backfill only reaches rows whose audio this machine can still
-    open. It cannot hash a row whose file has been deleted or moved, so a
-    library with missing audio is told to relink FIRST -- otherwise the
-    operator runs the backfill, watches the count not move, and has no next
-    step. Measured on the author's own library, Sat 12 Sep 2026: 8291 rows
-    blocked, 926 of them hashable here and 7364 pointing at converter staging
-    directories that no longer exist.
+    Superseded for hash_pending rows (ADR-0068): they travel to the hub and
+    backfill later. This guard now applies only when a caller explicitly
+    opts out of hash_pending (legacy tests and preflight helpers).
     """
     unsyncable = unsyncable_inferred_pks(conn)
     if not unsyncable:
@@ -541,48 +559,22 @@ def assert_merge_safe(
 ) -> None:
     """Apply :func:`assert_identity_ready`, but only where a merge can happen.
 
-    CLOUDSYNC-07's duplication needs TWO independently ingested libraries: the
-    same recording ingested twice mints two path-tier ``stable_id`` values, and
-    with no ``content_hash`` and no ISRC nothing can collapse them. The
-    preflight's own message says FIRST-SYNC, and two of the three cases it was
-    refusing are not that:
-
-    * **Seeding.** The hub holds no library, so this one arrives under the PKs
-      it already has. Whatever overlap it contains, it contained before the
-      sync -- the hub mirrors it rather than creating it, and refusing
-      prevents no duplicate the local library does not already have.
-    * **Re-syncing.** This spoke has completed a sync against this hub before,
-      so the hub's library is partly its own. Its later pushes are increments
-      to a library it co-owns, not a second library arriving, and the hub-apply
-      collapse is what covers those.
-
-    What is left is the case the guard exists for: a spoke that has NEVER
-    synced here pushing into a library another machine already put there.
-
-    ``hub_library_rows`` is the hub's live ``tracks`` count. Following
-    :mod:`apps.sync_hub.capabilities`, ABSENT IS NEVER YES: ``None`` means the
-    hub is too old to report it, which is not the same as a hub reporting an
-    empty library, so the strict refusal stands.
-
-    A hub RESTORE resets this spoke's watermark, which reads here as a first
-    sync. If that hub still holds a library, the spoke is refused until its
-    rows carry identity -- the conservative side of a rare case, and the same
-    answer the guard gave before this change.
+    ADR-0068: identity-less inferred rows travel as ``hash_pending``, so the
+    old first-sync refusal no longer applies. This helper remains for tests
+    that still exercise the explicit preflight path via
+    :func:`assert_identity_ready`.
     """
-    if hub_library_rows is None:
-        assert_identity_ready(conn)
-        return
-    if hub_library_rows == 0 or not first_sync:
-        return
-    assert_identity_ready(conn)
+    return
 
 
 __all__ = [
     "IdentityDecision",
     "SyncIdentityPreflightError",
+    "_follow_remap",
     "assert_identity_ready",
     "assert_merge_safe",
     "hub_library_size",
+    "log_hash_conflict",
     "names_held_parent",
     "remap_track_children",
     "resolve_track_identity",

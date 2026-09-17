@@ -92,8 +92,10 @@ const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run 
 const runSetupButton = (page: Page) => page.getByRole('button', { name: 'Run setup', exact: true });
 
 /** The route the overlay is drawn over. Spelled once here, and it must match
- * SETUP_HOST_ROUTE in $lib/setup/run-setup. */
-const HOST_ROUTE = /\/performance\/?$/;
+ * SETUP_HOST_ROUTE in $lib/setup/run-setup. The performance route writes its
+ * own deep-link query (`?playlist=all`, performance-deeplink.ts since commit d1d6dcaee)
+ * via replaceState once it boots, so the path is pinned and the query is not. */
+const HOST_ROUTE = /\/performance\/?(?:\?[^#]*)?$/;
 
 /** The three ways forward the detect step must ALWAYS offer. */
 const ESCAPE_LABELS = ['Look again', 'Choose a folder instead', 'Continue without importing'];
@@ -151,7 +153,7 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 }
 
 test.describe('setup entry points', () => {
-	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
+	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page, request }) => {
 		// No rb-meta allowlist here on purpose. This suite's library is entirely
 		// locally imported, so every listing row reports has_rb_mapping false and
 		// the browser issues no rb-meta request at all. The 404 that used to be
@@ -164,6 +166,12 @@ test.describe('setup entry points', () => {
 			errors.push(`${msg.text()} [${msg.location()?.url ?? ''}]`);
 		});
 
+		// BuildIdentity issues this on first navigation; register before goto so
+		// the initial check cannot race past the test.
+		const updateCheckResponsePromise = page.waitForResponse((response) =>
+			response.url().includes('/api/v1/update/check')
+		);
+
 		await gotoShellReady(page, '/');
 		await expect(settingsDialog(page)).toHaveCount(0);
 
@@ -173,35 +181,41 @@ test.describe('setup entry points', () => {
 		await runSetupButton(page).click();
 		await expectWizard(page);
 
-		// The update channel's 502 is EXPECTED, for the same reason and by the
-		// same rule as the 401 above: the endpoint is answering correctly and the
-		// browser logs every non-2xx fetch regardless.
-		//
-		// apps/engine_core/update_channel.py deliberately answers 502 with a named
-		// status rather than a silent "up to date", because a channel that hides
-		// its own outage converts an outage into a false reassurance. Its own
-		// docstring calls a 404 from the release manifest "the expected state of
-		// this channel until the repo or its releases exist", and #655 shipped the
-		// updater with NO workflow that publishes a release. So the manifest 404s,
-		// the engine faults honestly, the UI renders the fault, and three console
-		// errors land here on EVERY run. This is deterministic, not flaky.
-		//
-		// Both sides are individually correct and only the union is red, which is
-		// the same union-defect pattern #678 recorded inside the quality gate:
-		// neither change could observe the other, because neither ran against a
-		// tree containing the other.
-		//
-		// Scoped to this endpoint AND this status, exactly as narrow as the 401
-		// filter: a 502 from any other URL, or any other status from this one,
-		// still fails the gate. This filter must be DELETED once a release
-		// manifest publishes, because a 502 here is a real defect again from that
-		// moment. Burn-down owner is issue #684, not this comment: a cleanup note
-		// with no owner is how GITHUB_REPO_BASE pointed at a dead org for weeks.
-		const isUnpublishedUpdateChannel = (entry: string) =>
-			entry.includes('/api/v1/update/check') && entry.includes('502');
+		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
+			endpoint: string;
+		};
+		const manifestResponse = await request.get(updateCheckBody.endpoint);
+		expect(manifestResponse.status()).toBe(200);
+		const manifest = (await manifestResponse.json()) as {
+			version?: string;
+			platforms?: Record<string, { url?: string; signature?: string }>;
+		};
+		expect(typeof manifest.version).toBe('string');
+		expect((manifest.version ?? '').length).toBeGreaterThan(0);
+		expect(manifest.platforms).toBeTruthy();
+		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
+		expect(typeof darwinEntry?.url).toBe('string');
+		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
+		expect(typeof darwinEntry?.signature).toBe('string');
+		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
 
+		// The USB panel's 503 is a DESIGNED refusal, not a fault, and it is the
+		// one console error this page can legitimately emit on a CI host.
+		// LibraryNav mounts on '/' and polls GET /api/v1/usb/volumes every 5s
+		// (startUsbWatch, added by e474e66a2 LIBMX-13, Sun 13 Sep 2026); that
+		// route answers 503 `unsupported_platform:<os>` on anything that is not
+		// darwin (df1987077, Sun 31 Aug 2026 - it refuses rather than returning
+		// an empty list that would read as "nothing is plugged in"). The CI
+		// runner is Linux, so 503 is the CORRECT answer there and WebKit logs
+		// the refused fetch itself; the app handles it (usbTracker.lastError)
+		// and logs nothing of its own.
+		//
+		// The allowance is deliberately pinned to that one endpoint AND that
+		// one status, so a usb/volumes 500, any other endpoint's failure, and
+		// any app-emitted console error all still fail this assertion.
+		const usbCapabilityRefusal = /status of 503 .*\/api\/v1\/usb\/volumes/;
 		expect(
-			errors.filter((e) => !e.includes('favicon') && !isUnpublishedUpdateChannel(e))
+			errors.filter((e) => !e.includes('favicon') && !usbCapabilityRefusal.test(e))
 		).toEqual([]);
 	});
 
@@ -244,6 +258,24 @@ test.describe('setup entry points', () => {
 		const diagnostics = tabs.getByRole('tab', { name: 'Diagnostics' });
 		await expect(diagnostics).toBeVisible();
 		await expect(diagnostics).toHaveAttribute('aria-selected', 'false');
+		const playground = tabs.getByRole('tab', { name: 'Playground' });
+		await expect(playground).toBeVisible();
+		await expect(playground).toHaveAttribute('aria-selected', 'false');
+	});
+
+	test('the admin Playground tab shows API and SQL consoles', async ({ page }) => {
+		await gotoShellReady(page, '/admin?tab=playground');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'Playground' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		await expect(page.getByRole('heading', { name: 'API console' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'SQL console' })).toBeVisible();
 	});
 
 	test('the admin Diagnostics tab shows diagnostics sections', async ({ page }) => {
@@ -374,6 +406,60 @@ test.describe('setup entry points', () => {
 		await page.keyboard.press(SETTINGS_CHORD);
 		await runSetupButton(page).click();
 		await expectWizard(page);
+	});
+
+	test('the folder path placeholder reads as a hint, not a pre-filled value', async ({
+		page
+	}) => {
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Choose a folder instead', exact: true })
+			.click();
+
+		const folderInput = dialog.getByRole('textbox', { name: 'Folder to import' });
+		await expect(folderInput).toBeVisible();
+		await expect(folderInput).toHaveValue('');
+
+		const placeholderStyle = await folderInput.evaluate((el) => {
+			const style = window.getComputedStyle(el, '::placeholder');
+			return {
+				fontStyle: style.fontStyle,
+				opacity: Number.parseFloat(style.opacity),
+				color: style.color
+			};
+		});
+		expect(placeholderStyle.fontStyle).toBe('italic');
+		expect(placeholderStyle.opacity).toBeLessThan(1);
+
+		const emptyScreenshot = await folderInput.screenshot();
+
+		await folderInput.fill('/Users/you/Music');
+		await folderInput.blur();
+		await expect(folderInput).toHaveValue('/Users/you/Music');
+
+		const typedStyle = await folderInput.evaluate((el) => {
+			const style = window.getComputedStyle(el);
+			return {
+				fontStyle: style.fontStyle,
+				opacity: Number.parseFloat(style.opacity),
+				color: style.color
+			};
+		});
+		expect(typedStyle.fontStyle).not.toBe('italic');
+		expect(typedStyle.opacity).toBe(1);
+
+		// The value lands before the glyphs do. A single screenshot here catches
+		// whatever frame the compositor happened to have up, which on a loaded
+		// runner is still the empty one -- so wait for the typed state to PAINT
+		// differently rather than asserting against one arbitrary frame.
+		await expect
+			.poll(async () => (await folderInput.screenshot()).equals(emptyScreenshot), {
+				message: 'the typed value must render differently from the italic placeholder'
+			})
+			.toBe(false);
 	});
 
 	test('the build identity chip states this app address in its foldout', async ({ page }) => {

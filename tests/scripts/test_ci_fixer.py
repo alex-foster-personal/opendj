@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,12 @@ import pytest
 
 from scripts import ci_fixer, ci_health_core
 from scripts import ci_fixer_core as cf
+from scripts.ci_fixer_pr_diff import (
+    _render_file_diff,
+    _validate_file_records,
+    fetch_pr_diff_with_fallback,
+)
+from scripts.ci_health_core import REPO, PreconditionError
 
 
 def _require_bwrap() -> None:
@@ -270,3 +277,151 @@ def test_finalize_requires_an_active_claim_and_then_dedupes(tmp_path):
     cf.finalize_outcome(outcome, ledger_path)
 
     assert cf.claim_job(job, ledger_path) == "seen"
+
+
+# ----- fetch_pr_diff: normal path and >300-file fallback (issue #2546) ---------------
+
+
+def test_fetch_pr_diff_returns_normal_unified_diff_unchanged(monkeypatch: pytest.MonkeyPatch):
+    calls: list[list[str]] = []
+    expected = "diff --git a/foo.py b/foo.py\n+print('ok')\n"
+
+    def fake_run_gh(args: list[str]) -> str:
+        calls.append(args)
+        return expected
+
+    monkeypatch.setattr(ci_fixer, "_run_gh", fake_run_gh)
+
+    assert ci_fixer.fetch_pr_diff(42) == expected
+    assert calls == [["pr", "diff", "42"]]
+
+
+def test_fetch_pr_diff_reconstructs_context_when_diff_exceeds_file_cap(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[list[str]] = []
+    cap_error = PreconditionError(
+        "gh pr diff 2502 failed with exit 1: HTTP 406: "
+        "the diff exceeded the maximum number of files"
+    )
+
+    records: list[dict[str, object]] = [
+        {
+            "filename": "first.py",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 0,
+            "changes": 1,
+            "patch": "@@ -1 +1 @@\n-old\n+new",
+        },
+        {
+            "filename": "binary.dat",
+            "status": "modified",
+            "additions": 0,
+            "deletions": 0,
+            "changes": 0,
+        },
+    ]
+    records.extend(
+        {
+            "filename": f"file-{index:03d}.py",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 0,
+            "changes": 1,
+            "patch": f"@@ file {index} @@",
+        }
+        for index in range(3, 305)
+    )
+    records.append(
+        {
+            "filename": "last.py",
+            "status": "added",
+            "additions": 3,
+            "deletions": 0,
+            "changes": 3,
+            "patch": "@@ -0,0 +1,3 @@\n+line",
+        }
+    )
+    page_one = records[:200]
+    page_two = records[200:]
+    slurped = json.dumps([page_one, page_two])
+
+    def fake_run_gh(args: list[str]) -> str:
+        calls.append(args)
+        if args[:2] == ["pr", "diff"]:
+            raise cap_error
+        assert args[:2] == ["api", f"repos/{REPO}/pulls/2502/files?per_page=100"]
+        assert args[2:] == ["--paginate", "--slurp"]
+        return slurped
+
+    monkeypatch.setattr(ci_fixer, "_run_gh", fake_run_gh)
+
+    result = ci_fixer.fetch_pr_diff(2502)
+
+    assert calls[0] == ["pr", "diff", "2502"]
+    assert calls[1][0:2] == ["api", f"repos/{REPO}/pulls/2502/files?per_page=100"]
+    assert len(calls) == 2
+    assert "diff --git a/first.py b/first.py" in result
+    assert "@@ -1 +1 @@" in result
+    assert "diff --git a/binary.dat b/binary.dat" in result
+    assert "[patch unavailable from GitHub files API" in result
+    assert "diff --git a/dev/null b/last.py" in result
+    assert "@@ -0,0 +1,3 @@" in result
+    assert result.count("diff --git ") == 305
+
+
+def test_fetch_pr_diff_reraises_non_cap_failures_without_files_api(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[list[str]] = []
+
+    def fake_run_gh(args: list[str]) -> str:
+        calls.append(args)
+        raise PreconditionError("gh pr diff 9 failed with exit 1: HTTP 404: Not Found")
+
+    monkeypatch.setattr(ci_fixer, "_run_gh", fake_run_gh)
+
+    with pytest.raises(PreconditionError, match="HTTP 404"):
+        ci_fixer.fetch_pr_diff(9)
+    assert calls == [["pr", "diff", "9"]]
+
+
+def test_render_file_diff_marks_added_deleted_and_renamed_paths():
+    added = _render_file_diff({"filename": "new.py", "status": "added", "patch": "+x"})
+    deleted = _render_file_diff({"filename": "gone.py", "status": "removed"})
+    renamed = _render_file_diff(
+        {
+            "filename": "new.py",
+            "previous_filename": "old.py",
+            "status": "renamed",
+            "patch": "@@ rename @@",
+        }
+    )
+
+    assert "--- /dev/null" in added
+    assert "+++ b/new.py" in added
+    assert "--- a/gone.py" in deleted
+    assert "+++ /dev/null" in deleted
+    assert "[patch unavailable" in deleted
+    assert "diff --git a/old.py b/new.py" in renamed
+
+
+def test_validate_file_records_rejects_malformed_payload():
+    with pytest.raises(PreconditionError, match="not a list of pages"):
+        _validate_file_records({"filename": "x"}, pr_number=1)
+    with pytest.raises(PreconditionError, match="invalid filename"):
+        _validate_file_records([[{"filename": ""}]], pr_number=1)
+    with pytest.raises(PreconditionError, match="no records"):
+        _validate_file_records([[]], pr_number=1)
+
+
+def test_fetch_pr_diff_with_fallback_uses_injected_runner():
+    seen: list[list[str]] = []
+
+    def runner(args: list[str]) -> str:
+        seen.append(args)
+        return "diff --git a/x b/x\n"
+
+    assert fetch_pr_diff_with_fallback(3, REPO, runner) == "diff --git a/x b/x\n"
+    assert seen == [["pr", "diff", "3"]]

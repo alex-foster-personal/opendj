@@ -4,6 +4,7 @@
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import type TreeContextMenu from './TreeContextMenu.svelte';
+	import { TreeSmartlistRename } from './tree-smartlist-rename.svelte';
 	import { TreeSmartlists } from './tree-smartlists.svelte';
 
 	let {
@@ -19,7 +20,16 @@
 	} = $props();
 
 	const smartlists = new TreeSmartlists(() => onselectsmartlist);
+	const rename = new TreeSmartlistRename(() => smartlists.rows, smartlists);
 	onDestroy(() => smartlists.destroy());
+
+	$effect(() => {
+		rename.checkPending();
+	});
+
+	export async function createAndRename(): Promise<void> {
+		await rename.createAndRename();
+	}
 
 	async function deleteSmartlistUi(sl: { id: string; name: string }): Promise<void> {
 		const skip = uiPrefs.confirm.delete_playlist === false;
@@ -30,6 +40,26 @@
 		} catch (exc) {
 			pushToast(`delete failed: ${String(exc)}`, 'error');
 		}
+	}
+
+	async function duplicateSmartlistUi(sl: SmartlistSummary): Promise<void> {
+		try {
+			const copy = await smartlists.duplicate(sl.id);
+			pushToast(`Duplicated as "${copy.name}"`, 'info');
+			await rename.begin(copy);
+		} catch (exc) {
+			pushToast(`duplicate failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	export function beginRename(sl: { id: string; name: string }): void {
+		const row = smartlists.rows?.find((r) => r.id === sl.id);
+		if (row !== undefined) void rename.begin(row);
+	}
+
+	export function duplicateFromMenu(sl: { id: string; name: string }): void {
+		const row = smartlists.rows?.find((r) => r.id === sl.id);
+		if (row !== undefined) void duplicateSmartlistUi(row);
 	}
 
 	$effect(() => {
@@ -64,7 +94,7 @@
 		</div>
 	{:else if smartlists.rows.length === 0}
 		<div class="row child rb-inert" data-testid="smartlists-empty">
-			<span class="name dim">no smartlists</span>
+			<span class="name dim">no smartlists yet</span>
 		</div>
 	{:else}
 		{#each smartlists.rows as sl (sl.id)}
@@ -90,7 +120,22 @@
 						fill="currentColor"
 					/>
 				</svg>
-				<span class="name" title={sl.rule_summary}>{sl.name}</span>
+				{#if rename.editingId === sl.id}
+					<input
+						bind:this={rename.inputEl}
+						class="rename-input"
+						type="text"
+						value={rename.editDraft}
+						aria-label="Rename smartlist"
+						onclick={(e) => e.stopPropagation()}
+						onmousedown={(e) => e.stopPropagation()}
+						oninput={(e) => (rename.editDraft = e.currentTarget.value)}
+						onkeydown={(e) => rename.onKeydown(e)}
+						onblur={() => void rename.commit()}
+					/>
+				{:else}
+					<span class="name" title={sl.rule_summary}>{sl.name}</span>
+				{/if}
 				<span class="count">{sl.count ?? '--'}</span>
 			</div>
 		{/each}
@@ -126,6 +171,18 @@
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.rename-input {
+		flex: 1;
+		min-width: 0;
+		height: 16px;
+		margin: 0;
+		padding: 0 2px;
+		border: 1px solid var(--rb-accent);
+		background: var(--rb-panel);
+		color: var(--rb-text);
+		font: inherit;
+		outline: none;
 	}
 	.disclosure {
 		flex: none;

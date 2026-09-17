@@ -40,6 +40,8 @@ from apps.sync_hub.protocol import (
     RowChange,
     TableSpec,
 )
+from apps.sync_hub.engine_identity import _child_tables
+from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 
 log = logging.getLogger("apps.sync_hub.engine")
 
@@ -88,6 +90,11 @@ class Offer:
         return len(self.held)
 
     @property
+    def hash_pending(self) -> int:
+        """How many offered rows travel with ``hash_pending: true``."""
+        return sum(1 for row in self.rows if row.hash_pending)
+
+    @property
     def held_seq(self) -> int | None:
         """Lowest changelog seq among the held rows; None when none has one.
 
@@ -102,31 +109,9 @@ class Offer:
         return len(self.rows)
 
 
-def _repair_for(reason: str) -> str:
-    """The operator next step for this hold, not always stamp repair."""
-    if sync_set.IDENTITY_HOLD_REASON in reason:
-        return (
-            "it carries identity (`python -m apps.shared.state."
-            "backfill_content_hash --live` or `/fix-links`)"
-        )
-    if sync_set.IDENTITY_DUP_REASON in reason:
-        return "the LWW survivor of this content identity is offered instead"
-    return (
-        "it is repaired with `python -m apps.shared.state."
-        "normalize_stamps --live`"
-    )
-
-
 def _quarantine(table: str, pk: object, reason: str) -> None:
-    """Log one row's exclusion, naming the cause. Never silent."""
-    log.error(
-        "%s row %s is NOT in the sync set: %s. It will not reach any peer "
-        "until %s; every other row still syncs.",
-        table,
-        pk,
-        reason,
-        _repair_for(reason),
-    )
+    """Record one row's exclusion for pass-scoped aggregation. Never silent."""
+    record_quarantine(table, pk, reason)
 
 
 def _members_for_playlist(
@@ -184,7 +169,15 @@ def _row_change(
     if table == "playlists" and members is None:
         held.hold(table, pk)
         return HeldRow(table=table, pk=pk)
-    return RowChange(table=table, pk=pk, values=values, members=members)
+    raw = dict(zip(columns, row, strict=True))
+    pending = sync_set.is_hash_pending_track(raw, held)
+    return RowChange(
+        table=table,
+        pk=pk,
+        values=values,
+        members=members,
+        hash_pending=pending,
+    )
 
 
 def _rows_for_table(
@@ -337,23 +330,26 @@ def spoke_push(
     push before a single other row was offered, on every sync, forever.
     Quarantine is transitive over the FK graph (see :data:`_PARENT_KEYS`).
     """
-    if watermark is None or watermark.needs_full_offer:
-        changes: list[RowChange] = []
-        held_rows: list[HeldRow] = []
-        held = sync_set.HeldKeys(conn)
-        for spec in SYNC_TABLES:
-            offer = _rows_for_table(conn, spec, held)
-            changes.extend(offer.rows)
-            held_rows.extend(offer.held)
-        return Offer(rows=changes, held=tuple(held_rows))
-    top = local_seq(conn) if ceiling is None else int(ceiling)
-    entries = conn.execute(
-        f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
-        f"WHERE seq > ? AND seq <= ? ORDER BY seq",
-        (watermark.last_push_seq, top),
-    ).fetchall()
-    offer, _skipped = _changelog_rows(conn, entries, changelog=LOCAL_CHANGELOG_TABLE)
-    return offer
+    with quarantine_pass("offer"):
+        if watermark is None or watermark.needs_full_offer:
+            changes: list[RowChange] = []
+            held_rows: list[HeldRow] = []
+            held = sync_set.HeldKeys(conn)
+            for spec in SYNC_TABLES:
+                offer = _rows_for_table(conn, spec, held)
+                changes.extend(offer.rows)
+                held_rows.extend(offer.held)
+            return Offer(rows=changes, held=tuple(held_rows))
+        top = local_seq(conn) if ceiling is None else int(ceiling)
+        entries = conn.execute(
+            f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
+            f"WHERE seq > ? AND seq <= ? ORDER BY seq",
+            (watermark.last_push_seq, top),
+        ).fetchall()
+        offer, _skipped = _changelog_rows(
+            conn, entries, changelog=LOCAL_CHANGELOG_TABLE
+        )
+        return offer
 
 
 def relog_held(
@@ -389,6 +385,32 @@ def relog_held(
     for row in held:
         sync_stamp.stamp_and_log(conn, row.table, row.pk, machine_id)
     return len(held)
+
+
+def still_held_rows(
+    conn: sqlite3.Connection, held: Sequence[HeldRow]
+) -> tuple[HeldRow, ...]:
+    """Rows from an earlier offer that the sync set would still hold back."""
+    if not held:
+        return ()
+    keys = sync_set.HeldKeys(conn)
+    kept: list[HeldRow] = []
+    for item in held:
+        spec = SPEC_BY_TABLE.get(item.table)
+        if spec is None:
+            continue
+        columns = protocol.table_columns(conn, item.table)
+        row = conn.execute(
+            f"SELECT {', '.join(columns)} FROM {item.table} "
+            f"WHERE {_pk_predicate(spec)}",
+            item.pk,
+        ).fetchone()
+        if row is None:
+            continue
+        outcome = _row_change(conn, item.table, columns, spec, row, keys)
+        if isinstance(outcome, HeldRow):
+            kept.append(item)
+    return tuple(kept)
 
 
 # ----- pull ----------------------------------------------------------------
@@ -449,11 +471,140 @@ def hub_changes_since(
     )
 
 
+def hub_track_bundles(
+    conn: sqlite3.Connection, stable_ids: Sequence[str]
+) -> list[RowChange]:
+    """Live ``tracks`` rows plus every child keyed on those stable IDs.
+
+    Used when a spoke learns a hub survivor PK that predates its pull
+    watermark. Returns rows in ``apply_rank`` order for one ``spoke_apply``.
+    """
+    if not stable_ids:
+        return []
+    held = sync_set.HeldKeys(conn)
+    changes: list[RowChange] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for stable_id in stable_ids:
+        track_spec = SPEC_BY_TABLE["tracks"]
+        columns = protocol.table_columns(conn, "tracks")
+        row = conn.execute(
+            f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+        if row is None:
+            continue
+        change = _row_change(conn, "tracks", columns, track_spec, row, held)
+        if isinstance(change, HeldRow):
+            raise SyncApplyError(
+                f"hub cannot offer tracks row {stable_id!r} for identity repair: "
+                f"the row is held back on the hub itself."
+            )
+        key = (change.table, change.pk)
+        if key not in seen:
+            seen.add(key)
+            changes.append(change)
+        for table, _pk in _child_tables(conn):
+            if table == MEMBERSHIP_TABLE:
+                continue
+            child_spec = SPEC_BY_TABLE.get(table)
+            if child_spec is None:
+                continue
+            child_columns = protocol.table_columns(conn, table)
+            cursor = conn.execute(
+                f"SELECT {', '.join(child_columns)} FROM {table} "
+                f"WHERE stable_id = ?",
+                (stable_id,),
+            )
+            for child_row in cursor:
+                child = _row_change(
+                    conn, table, child_columns, child_spec, child_row, held
+                )
+                if isinstance(child, HeldRow):
+                    raise SyncApplyError(
+                        f"hub cannot offer {table} row for identity repair "
+                        f"while child of {stable_id!r} is held on the hub."
+                    )
+                child_key = (child.table, child.pk)
+                if child_key not in seen:
+                    seen.add(child_key)
+                    changes.append(child)
+        playlist_ids = [
+            str(item[0])
+            for item in conn.execute(
+                "SELECT DISTINCT playlist_id FROM playlist_memberships "
+                "WHERE stable_id = ?",
+                (stable_id,),
+            )
+        ]
+        for playlist_id in playlist_ids:
+            playlist_spec = SPEC_BY_TABLE["playlists"]
+            playlist_columns = protocol.table_columns(conn, "playlists")
+            playlist_row = conn.execute(
+                f"SELECT {', '.join(playlist_columns)} FROM playlists "
+                f"WHERE playlist_id = ?",
+                (playlist_id,),
+            ).fetchone()
+            if playlist_row is None:
+                continue
+            playlist_change = _row_change(
+                conn,
+                "playlists",
+                playlist_columns,
+                playlist_spec,
+                playlist_row,
+                held,
+            )
+            if isinstance(playlist_change, HeldRow):
+                raise SyncApplyError(
+                    f"hub cannot offer playlist {playlist_id!r} for identity "
+                    f"repair while it is held on the hub."
+                )
+            playlist_key = (playlist_change.table, playlist_change.pk)
+            if playlist_key not in seen:
+                seen.add(playlist_key)
+                changes.append(playlist_change)
+    changes.sort(
+        key=lambda change: (apply_rank(change.table, source=HUB_CHANGELOG_TABLE), change.pk)
+    )
+    return changes
+
+
+def identity_repair_offer(
+    conn: sqlite3.Connection, stable_id: str
+) -> list[RowChange]:
+    """One-shot offer of a former local survivor for hub reject confirmation.
+
+    Bypasses the normal identity-loser hold for the named PK only. Does not
+    log a changelog entry: the repair push is explicit and bounded to one round.
+    """
+    track_spec = SPEC_BY_TABLE["tracks"]
+    columns = protocol.table_columns(conn, "tracks")
+    row = conn.execute(
+        f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchone()
+    if row is None:
+        return []
+    values = protocol.canonical_row("tracks", columns, row)
+    pk = tuple(str(values[column]) for column in track_spec.pk)
+    return [
+        RowChange(
+            table="tracks",
+            pk=pk,
+            values=values,
+            hash_pending=sync_set.is_hash_pending_track(values),
+        )
+    ]
+
+
 __all__ = [
     "ChangeBatch",
     "HeldRow",
     "Offer",
     "hub_changes_since",
+    "hub_track_bundles",
+    "identity_repair_offer",
     "relog_held",
     "spoke_push",
+    "still_held_rows",
 ]

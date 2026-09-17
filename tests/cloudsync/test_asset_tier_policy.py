@@ -263,6 +263,26 @@ def test_an_unconfigured_machine_raises_rather_than_defaulting(
     assert "sync_policies" in str(excinfo.value)
 
 
+def test_unconfigured_machine_with_local_file_plays_without_policy_row(
+    conn: sqlite3.Connection, tmp_path: Path
+):
+    """Local-only installs without a sync_policies row still play on-disk bytes."""
+    body = b"local body"
+    audio = _write(tmp_path / "music" / "song.flac", body)
+    _seed_track(conn, "t1", content_hash=_sha(body))
+    _seed_machine(conn, "m1")
+    conn.execute(
+        "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+        (str(audio), "t1"),
+    )
+
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache"
+    )
+    assert source.origin == "local"
+    assert source.path == audio
+
+
 def test_an_unknown_asset_kind_raises(conn: sqlite3.Connection):
     _seed_track(conn, "t1")
     _seed_machine(conn, "m1")
@@ -404,4 +424,71 @@ def test_evict_cache_treats_a_missing_dir_as_empty(tmp_path: Path):
 def test_evict_cache_rejects_a_negative_budget(tmp_path: Path):
     with pytest.raises(hydration.HydrationError):
         hydration.evict_cache(tmp_path, budget_mb=-1)
+
+
+@pytest.mark.requirement("CLOUDSYNC-10")
+def test_local_row_marked_unavailable_returns_unavailable_reason(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    tmp_path: Path,
+):
+    missing = tmp_path / "gone.flac"
+    digest = _sha(b"body")
+    _seed_track(conn, "t1", content_hash=digest)
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "stream")
+    _seed_local_location(
+        conn,
+        "t1",
+        missing,
+        available=0,
+        content_hash=digest,
+        machine_id="m1",
+    )
+    source = hydration.resolve_playback_source(
+        conn,
+        "t1",
+        "m1",
+        asset_kind="audio",
+        cache_dir=tmp_path / "cache",
+        cfg=cfg,
+    )
+    assert source.origin == "unavailable"
+    assert source.reason is not None
+    assert "available=0" in source.reason
+    assert str(missing) in source.reason
+
+
+@pytest.mark.requirement("CLOUDSYNC-10")
+def test_eviction_uses_cfg_audio_budget(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from apps.cloud import policy as cloud_policy
+
+    monkeypatch.setattr(cloud_policy, "cache_budget_mb_for", lambda _kind: 1)
+    cache_dir = tmp_path / "cache"
+    for idx in range(3):
+        _cache_entry(cache_dir, bytes([idx]) * 400_000, atime=1_000 + idx)
+    body = b"fresh produce"
+    _seed_track(conn, "t1")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "cached")
+    hydration.apply_policy_after_produce(
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
+        local_path=_write(tmp_path / "out" / "song.flac", body),
+        asset_kind="audio",
+        cache_dir=cache_dir,
+    )
+    remaining = sum(
+        path.stat().st_size for path in cache_dir.rglob("*") if path.is_file()
+    )
+    assert remaining <= 1 * hydration.BYTES_PER_MB
 

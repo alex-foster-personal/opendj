@@ -16,14 +16,24 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 
+from . import policy as cloud_policy
 from . import transfer_status
-from .asset_store import AssetS3Client, object_exists, push_asset
+from .asset_store import (
+    AssetS3Client,
+    AssetStoreError,
+    fetch_asset,
+    fetch_presigned_asset,
+    object_exists,
+    push_asset,
+)
 from .config import CloudConfig
 from .eviction import BYTES_PER_MB, EvictionResult, HydrationError, evict_cache
 from .hydration_core import (
@@ -43,6 +53,148 @@ from .hydration_core import (
 #: The one synced table this module writes. Named rather than repeated so the
 #: ``local_changelog`` entry and the ``INSERT`` can never name two tables.
 _LOCATIONS_TABLE: str = "track_locations"
+
+if TYPE_CHECKING:
+    from apps.engine_core.jobs.store import JobStore
+
+
+# --- download path (hydration fetch + transfer ledger) -----------------------
+
+
+def fetch_asset_for_hydration(
+    cfg: CloudConfig | None,
+    s3: AssetS3Client | None,
+    content_hash: str,
+    dest: Path,
+    *,
+    stable_id: str,
+    bytes_total: int | None = None,
+    pressure_payload: Mapping[str, Any] | None = None,
+    ui_mirror: Mapping[str, Any] | None = None,
+    presigned_url: str | None = None,
+) -> Path:
+    """Download an asset for hydration with transfer_status progress.
+
+    Pool acquisition happens inside :func:`~apps.cloud.asset_store.fetch_asset`
+    or :func:`~apps.cloud.asset_store.fetch_presigned_asset`.
+    """
+    transfer_token = transfer_status.begin_transfer(
+        stable_id, "download", bytes_total=bytes_total
+    )
+    try:
+        if presigned_url is not None:
+            result = fetch_presigned_asset(presigned_url, content_hash, dest)
+        elif cfg is not None and s3 is not None:
+            result = fetch_asset(cfg, s3, content_hash, dest)
+        else:
+            raise HydrationError(
+                "fetch_asset_for_hydration needs cfg and s3 unless presigned_url is set"
+            )
+        if bytes_total is not None:
+            transfer_status.update_transfer(stable_id, transfer_token, bytes_total)
+        return result
+    except AssetStoreError as exc:
+        raise HydrationError(str(exc)) from exc
+    finally:
+        transfer_status.clear_transfer(stable_id, transfer_token)
+
+
+def run_hydrate_job(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    s3: AssetS3Client,
+    *,
+    stable_id: str,
+    asset_kind: str,
+    machine_id: str,
+    data_dir: Path,
+    on_progress: Callable[[float, str], None] | None = None,
+) -> None:
+    """Download one remote asset into the local cache for ``stable_id``."""
+    cache_dir = cloud_policy.artifact_cache_root(data_dir, asset_kind)
+    source = resolve_playback_source(
+        conn,
+        stable_id,
+        machine_id,
+        asset_kind=asset_kind,
+        cache_dir=cache_dir,
+        cfg=cfg,
+    )
+    if source.origin in ("local", "cache"):
+        raise HydrationError(
+            f"{stable_id!r} is already playable from origin {source.origin!r}"
+        )
+    if source.origin == "unavailable":
+        raise HydrationError(source.reason or f"{stable_id!r} is unavailable")
+    if source.origin != "presigned":
+        raise HydrationError(f"unexpected playback origin {source.origin!r}")
+    if source.content_hash is None:
+        raise HydrationError(
+            f"no content_hash for {stable_id!r}; refusing hydration without "
+            "a content-addressed key"
+        )
+    if source.url is None:
+        raise HydrationError(f"presigned origin for {stable_id!r} has no URL")
+
+    dest = cache_path(cache_dir, source.content_hash)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if on_progress is not None:
+        on_progress(0.0, "downloading")
+    if s3 is not None:
+        fetch_asset_for_hydration(
+            cfg,
+            s3,
+            source.content_hash,
+            dest,
+            stable_id=stable_id,
+        )
+    else:
+        fetch_asset_for_hydration(
+            cfg,
+            None,
+            source.content_hash,
+            dest,
+            stable_id=stable_id,
+            presigned_url=source.url,
+        )
+    touch_cache_entry(dest)
+    evict_cache(
+        cloud_policy.artifact_cache_root(data_dir, asset_kind),
+        cloud_policy.cache_budget_mb_for(asset_kind),
+    )
+    if on_progress is not None:
+        on_progress(1.0, "hydrated")
+
+
+def enqueue_hydrate_asset(
+    store: JobStore | None,
+    *,
+    stable_id: str,
+    asset_kind: str,
+    machine_id: str,
+    data_dir: Path,
+) -> dict[str, Any]:
+    """Enqueue a ``cloud.hydrate`` row; fail fast when jobs.db is not mounted."""
+    if store is None:
+        raise HydrationError(
+            "jobs store is not available; cannot enqueue cloud.hydrate"
+        )
+    if not store.db_path.is_file():
+        raise HydrationError(
+            f"jobs database missing at {store.db_path}; refusing to enqueue "
+            "cloud.hydrate without durable jobs.db"
+        )
+    from . import job as cloud_job
+
+    return store.enqueue(
+        cloud_job.JOB_KIND,
+        payload={
+            "stable_id": stable_id,
+            "asset_kind": asset_kind,
+            "machine_id": machine_id,
+            "data_dir": str(data_dir),
+        },
+    )
 
 
 # --- write path (push-then-delete) ------------------------------------------
@@ -264,6 +416,7 @@ def apply_policy_after_produce(
         with sync_stamp.stamped_transaction(conn):
             _mark_local_unavailable(conn, stable_id, source, machine_id, now)
         action = "cached"
+        evict_cache(cache_dir, cloud_policy.cache_budget_mb_for(asset_kind))
     elif policy.mode in ("stream", "excluded"):
         source.unlink()
         with sync_stamp.stamped_transaction(conn):
@@ -295,7 +448,10 @@ __all__ = [
     "ProduceOutcome",
     "apply_policy_after_produce",
     "cache_path",
+    "enqueue_hydrate_asset",
     "evict_cache",
+    "fetch_asset_for_hydration",
+    "run_hydrate_job",
     "resolve_playback_source",
     "resolve_policy",
     "touch_cache_entry",
