@@ -38,7 +38,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from scripts.process_registry_gen import HOSTS, JSON_PATH, collect_host
-from scripts.process_registry_sources import Host, HostResult
+from scripts.process_registry_sources import Host, HostResult, scrub_identities
 
 EXIT_OK = 0
 EXIT_DRIFT = 1
@@ -78,7 +78,10 @@ def check_host(
         # from an actual clean host and would make an outage look like success.
         return HostCheck(host.name, "unknown", [f"host unreachable: {result.error}"])
 
-    live_owned = {u.unit for u in result.units if u.owned}
+    # The registry row was scrubbed on the way into the artifact, so the live name has
+    # to be scrubbed the same way before the two are compared. Both sides call the one
+    # scrubber, which is what stops a scrubbed row reading as STALE forever.
+    live_owned = {scrub_identities(u.unit) for u in result.units if u.owned}
     registered = {u["unit"] for u in registry.get(host.name, [])}
 
     unregistered = sorted(live_owned - registered)
