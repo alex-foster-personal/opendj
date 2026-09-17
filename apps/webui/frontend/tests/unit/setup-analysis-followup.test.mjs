@@ -25,7 +25,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { analysisFollowup } from '../../src/lib/setup/analysis-followup.ts';
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// Bundled through esbuild like every other .ts import under tests/unit: the
+// pinned CI node (22.14.0) has no type stripping, so a bare .ts import throws
+// ERR_UNKNOWN_FILE_EXTENSION there and only passed on runners whose host node
+// shadowed the pinned one.
+const { analysisFollowup } = await loadTypeScriptModule('src/lib/setup/analysis-followup.ts');
 
 function queue(overrides = {}) {
 	return {
