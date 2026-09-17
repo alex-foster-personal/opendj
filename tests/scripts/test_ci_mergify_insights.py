@@ -40,9 +40,11 @@ Regression lines:
     then a permanent scope problem reads like a transient blip
   - if the action stops being pinned to a full commit SHA then a third party
     can change what runs inside this repo's CI without review
-  - if MERGIFY_TOKEN leaves the job env then the `if:` guards cannot fire at
-    all (a secret is not readable from a step condition), so an unprovisioned
-    token and a broken one render identically
+  - if MERGIFY_TOKEN reaches the job env, or any step other than the probe and
+    the upload action, then pytest and every subprocess the suite spawns can
+    read it (Sol P1 on #3256)
+  - if the probe step runs after checkout then repository code runs with the
+    secret in scope
   - if the steps stop gating on the token then every shard of every pull
     request annotates before the secret exists, which is pure noise
 """
@@ -60,6 +62,7 @@ CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 SHARD_JOB = "test"
 PYTEST_STEP_ID = "pytest-shard"
 UPLOAD_STEP_ID = "mergify-insights"
+PROBE_STEP_ID = "mergify-token"
 ACTION_REPO = "mergifyio/gha-mergify-ci"
 
 # A matrix expression has to appear in both filenames and in job_name, or the
@@ -231,23 +234,40 @@ def test_guard_separates_rejected_from_failed_from_unknown() -> None:
     )
 
 
-def test_token_is_on_the_job_so_the_guards_can_fire() -> None:
-    """if the token leaves job env then unconfigured looks like broken."""
-    job_env = _shard_job().get("env", {})
-    assert "MERGIFY_TOKEN" in job_env, (
-        "MERGIFY_TOKEN must stay in the job env. A secret cannot be read "
-        "from a step `if:` condition, and these steps gate on it so that an "
-        "unprovisioned token (this lane is NOT MEASURED, which is honest) "
-        "renders differently from a token that is present and rejected."
+def test_the_token_reaches_only_the_probe_and_the_upload_action() -> None:
+    """if the secret is on the job env or any other step then pytest can read it."""
+    assert "MERGIFY_TOKEN" not in _shard_job().get("env", {}), (
+        "MERGIFY_TOKEN is on the job env again, so pytest and every helper "
+        "subprocess the suite spawns can read and exfiltrate it (Sol P1 on "
+        "#3256). Scope it to the probe step and the upload action only."
     )
-    assert "secrets.MERGIFY_TOKEN" in job_env["MERGIFY_TOKEN"], job_env["MERGIFY_TOKEN"]
+    holders = [
+        step.get("id") or step.get("name")
+        for step in _steps()
+        if "secrets.MERGIFY_TOKEN" in str(step.get("env", {}))
+        or "secrets.MERGIFY_TOKEN" in str(step.get("with", {}))
+    ]
+    assert holders == [PROBE_STEP_ID, UPLOAD_STEP_ID], holders
+
+
+def test_the_probe_runs_before_checkout_and_exports_only_a_boolean() -> None:
+    """if the probe runs after checkout, or exports the value, then broken."""
+    steps = _steps()
+    probe_index = next(i for i, s in enumerate(steps) if s.get("id") == PROBE_STEP_ID)
+    checkout_index = next(
+        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/checkout")
+    )
+    assert probe_index < checkout_index, (probe_index, checkout_index)
+    run = steps[probe_index]["run"]
+    assert "present=true" in run and "present=false" in run, run
+    assert "$MERGIFY_TOKEN" not in run.replace("${MERGIFY_TOKEN:-}", ""), run
 
 
 def test_ci_insights_steps_are_skipped_without_a_token() -> None:
     """if they stop gating then every PR annotates before the secret exists."""
     for step in (_step_by_id(UPLOAD_STEP_ID), _guard_step()):
         condition = step.get("if", "")
-        assert "env.MERGIFY_TOKEN != ''" in condition, (
+        assert "steps.mergify-token.outputs.present == 'true'" in condition, (
             f"Step {step.get('name')!r} no longer skips when the token is "
             "unset. On forks and before the secret is provisioned this would "
             "annotate every shard of every pull request, which is noise on a "
