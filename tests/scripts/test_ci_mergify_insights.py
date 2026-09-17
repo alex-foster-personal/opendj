@@ -467,3 +467,48 @@ def test_a_staging_failure_suppresses_the_upload() -> None:
         "The upload lost always(), so the runs most worth recording -- the "
         "red ones -- stop being uploaded at all."
     )
+
+
+def test_the_stale_report_cleanup_is_mandatory() -> None:
+    """if rm -f can fail silently then a killed pytest uploads the old report."""
+    run = _pytest_run_block()
+    assert "set -e" not in run.split("\n")[0], (
+        "This assumes the script has no errexit; if that changed, the guard "
+        "below should be rewritten rather than left asserting the wrong thing."
+    )
+    line = next(
+        (ln for ln in run.splitlines() if 'rm -f "junit-shard-' in ln), ""
+    )
+    assert line, "The pytest step no longer clears a stale report at all."
+    assert "|| exit 1" in line, (
+        f"The stale-report cleanup is {line.strip()!r}, which cannot fail the "
+        "step. This script has no errexit, so a permission or filesystem "
+        "error leaves the previous run's report in place and pytest starts "
+        "anyway. If that pytest is then killed before writing, staging sees a "
+        "real `failure` outcome, accepts it, and the INHERITED report is "
+        "uploaded as this run's measurement. A shard that cannot guarantee a "
+        "clean slate has no result to give and must refuse to start."
+    )
+
+
+def test_the_prune_cannot_delete_another_shards_staging_directory() -> None:
+    """if the prune globs widely then it deletes a result before its upload."""
+    run = _stage_step()["run"]
+    prune = next((ln for ln in run.splitlines() if "-maxdepth 1" in ln), "")
+    assert prune or "find" in run, "The prune disappeared entirely."
+    # Reconstruct the whole find invocation: it is wrapped across lines.
+    start = run.find("find .")
+    assert start != -1, "No find-based prune in the staging step."
+    invocation = run[start : run.find("\n", run.find("-exec", start))]
+    assert SHARD_EXPR in invocation, (
+        f"The prune {invocation!r} is not scoped to this shard, so it matches "
+        "directories belonging to OTHER shards in a shared workspace. "
+        "Deleting a directory another job has written but not yet uploaded "
+        "turns a real result into a missing artifact -- the same defect this "
+        "change exists to prevent, pointed the other way."
+    )
+    assert "-mmin" in invocation, (
+        f"The prune {invocation!r} carries no obsolescence proof, so it can "
+        "match a directory that is still in flight. A shard's wall budget "
+        "bounds how old an in-flight directory can be; require an age past it."
+    )
