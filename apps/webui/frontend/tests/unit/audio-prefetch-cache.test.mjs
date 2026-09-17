@@ -318,3 +318,78 @@ test('mutation control: an ungated cache is unaffected by setAudioPrefetchShedRe
 	assert.equal(await prefetchAndSettle(cache, 'ungated'), 'ready');
 	assert.equal(requestHits.get('ungated'), 1);
 });
+
+// ------------------------------------------------------ decoded audio share
+
+// CUEOUT-15: a deck load reuses the library preview's decode.
+// - if a deck load gets a buffer decoded at another sample rate then the stretch loader rejects the load - broken
+// - if the share returns something with no provider then a deck load plays nothing - broken
+// - if the share misses a matching previewed track then every previewed load pays the decode again - broken
+
+test('sharedDecodedAudio returns the provided buffer only at a matching sample rate', async () => {
+	const cache = await loadTypeScriptModule('src/lib/rb/audio-prefetch-cache.svelte.ts', {
+		viteApiBase: origin
+	});
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 48_000),
+		null,
+		'if the share returns something with no provider then a deck load plays nothing - broken'
+	);
+	const decoded = { sampleRate: 48_000, length: 10, numberOfChannels: 2 };
+	cache.provideDecodedAudio((stable_id) => (stable_id === 'sid-a' ? decoded : null));
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 48_000),
+		decoded,
+		'if the share misses a matching previewed track then every previewed load pays the decode again - broken'
+	);
+	assert.equal(
+		cache.sharedDecodedAudio('sid-a', 44_100),
+		null,
+		'if a deck load gets a buffer decoded at another sample rate then the stretch loader rejects the load - broken'
+	);
+	assert.equal(cache.sharedDecodedAudio('sid-b', 48_000), null);
+});
+
+test('deckLoadAudio prefers the shared decode, and decodeDeckLoadAudio skips decode only on a matching context', async () => {
+	const cache = await loadTypeScriptModule('src/lib/rb/audio-prefetch-cache.svelte.ts', {
+		viteApiBase: origin
+	});
+	const decoded = { sampleRate: 48_000, length: 10, numberOfChannels: 2 };
+	cache.provideDecodedAudio((stable_id) => (stable_id === 'sid-shared' ? decoded : null));
+	let fetches = 0;
+	const fetchBytes = async () => {
+		fetches += 1;
+		return new ArrayBuffer(8);
+	};
+	let decodes = 0;
+	const ctx = (sampleRate) => ({
+		sampleRate,
+		decodeAudioData: async () => {
+			decodes += 1;
+			return { sampleRate };
+		}
+	});
+
+	const hit = cache.deckLoadAudio('sid-shared', 48_000, fetchBytes);
+	assert.equal(hit.fetchStage, 'decodedShareHit');
+	const hitBytes = await hit.bytes;
+	assert.equal(
+		await cache.decodeDeckLoadAudio(ctx(48_000), 'sid-shared', hit, hitBytes),
+		decoded,
+		'if a previewed track is decoded again on deck load then hover warm saves only the fetch - broken'
+	);
+	assert.equal(fetches + decodes, 0, 'if a shared decode still fetches or decodes then the share is wasted work - broken');
+	assert.deepEqual(hit.stats(hitBytes), { audioBytes: 0, audioPrefetchHit: 0, decodedShareHit: 1 });
+
+	// The context was rebuilt at another rate between choosing and decoding.
+	await cache.decodeDeckLoadAudio(ctx(44_100), 'sid-shared', hit, hitBytes);
+	assert.equal(
+		fetches + decodes,
+		2,
+		'if a rebuilt context at another rate still gets the shared buffer then the stretch loader rejects the load - broken'
+	);
+
+	const cold = cache.deckLoadAudio('sid-cold', 48_000, fetchBytes);
+	assert.equal(cold.fetchStage, 'fetchAudio');
+	assert.equal(cache.deckLoadAudio('sid-shared', null, fetchBytes).fetchStage, 'fetchAudio', 'no context means no share');
+});

@@ -752,8 +752,10 @@ export function dualSinkAssignment(args: {
 	return { masterId: masterStillPresent, cueId, autoPinnedMaster: false };
 }
 
-export function audioContextSinkIdIsSupported(context: { setSinkId?: unknown }): boolean {
-	return typeof context.setSinkId === 'function';
+export function audioContextSinkIdIsSupported(
+	context: AudioContext | { setSinkId?: unknown }
+): boolean {
+	return 'setSinkId' in context && typeof context.setSinkId === 'function';
 }
 
 export function preferredAudioInputDeviceId(
@@ -1126,6 +1128,25 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	return _headphoneNodes;
 }
 
+/**
+ * The cue bus, for a source that is NOT one of the four decks.
+ *
+ * `cueSum` is the single point every output mode already honours: `practice`
+ * blends it into the main path (`wirePracticeBlendIntoMasterPath`),
+ * `two_outputs` sends it only to the monitor sink, and `split_cable` puts it
+ * on the right leg. So anything joined here inherits the whole CUEOUT routing
+ * policy, including CUEOUT-09's rule that the MAIN speaker line is never
+ * interrupted, instead of carrying a second copy of it.
+ *
+ * Returns null rather than building the graph: a caller that is not the engine
+ * has no master bus to hand `ensureHeadphoneGraph`, and "no engine yet" is a
+ * refusal the caller must report, never something to paper over.
+ */
+export function peekCueBus(): { context: AudioContext; cueSum: GainNode } | null {
+	if (_outputContext === null || _headphoneNodes === null) return null;
+	return { context: _outputContext, cueSum: _headphoneNodes.cueSum };
+}
+
 function _createDetachedHeadphoneElement(): HTMLAudioElement {
 	return new Audio();
 }
@@ -1334,7 +1355,7 @@ async function _playChirpTrain(
 ): Promise<void> {
 	signal.throwIfAborted();
 	const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-	buffer.copyToChannel(samples, 0);
+	buffer.copyToChannel(new Float32Array(samples), 0);
 	const src = ctx.createBufferSource();
 	src.buffer = buffer;
 	src.connect(target);
@@ -1353,10 +1374,6 @@ async function _playChirpTrain(
 			src.onended = () => {
 				signal.removeEventListener('abort', onAbort);
 				resolve();
-			};
-			src.onerror = () => {
-				signal.removeEventListener('abort', onAbort);
-				reject(new Error('cue alignment chirp failed to play'));
 			};
 			try {
 				src.start();

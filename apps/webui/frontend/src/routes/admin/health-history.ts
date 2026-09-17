@@ -24,7 +24,8 @@ export function entryFromHealth(data: HealthOut, at: number): HealthHistoryEntry
 		status: data.status,
 		tracks: data.state_db.tracks,
 		playlists: data.state_db.playlists,
-		lockHolder: data.cloud.lock_holder?.holder ?? null,
+		lockHolder:
+			typeof data.cloud.lock_holder?.holder === 'string' ? data.cloud.lock_holder.holder : null,
 		syncthingPeers: data.syncthing?.peers_connected ?? null,
 		syncthingFolder: data.syncthing?.folder_state ?? null,
 		bindHost: data.bind_host

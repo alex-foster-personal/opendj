@@ -18,9 +18,16 @@
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
 	let etag = $state('');
-	let regular = $state('');
-	let min = $state('');
-	let max = $state('');
+	// NUMBERS, not strings. `bind:value` on `<input type="number">` writes a
+	// number (or null when the field is empty), so holding these as strings
+	// meant every keystroke replaced the string with a number and the string
+	// parser below then threw `raw.trim is not a function` out of a $derived.
+	// That killed the range-invalid message and the Save handler, silently:
+	// the popover stayed open with no error shown. svelte-check cannot see
+	// this, because the coercion happens inside the binding.
+	let regular = $state<number | null>(null);
+	let min = $state<number | null>(null);
+	let max = $state<number | null>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let panelEl: HTMLDivElement | undefined = $state();
@@ -44,8 +51,8 @@
 		void placePanel();
 	});
 
-	function _fmt(v: number | null | undefined): string {
-		return v === null || v === undefined ? '' : String(v);
+	function _fmt(v: number | null | undefined): number | null {
+		return v ?? null;
 	}
 
 	async function _load(): Promise<void> {
@@ -65,32 +72,20 @@
 	}
 	void _load();
 
-	function _parseOrNull(raw: string): number | null {
-		const trimmed = raw.trim();
-		if (trimmed === '') return null;
-		const n = Number(trimmed);
-		return Number.isFinite(n) ? n : null;
-	}
-
-	const parsedMin = $derived(_parseOrNull(min));
-	const parsedMax = $derived(_parseOrNull(max));
-	const rangeInvalid = $derived(
-		parsedMin !== null && parsedMax !== null && parsedMin >= parsedMax
-	);
+	const rangeInvalid = $derived(min !== null && max !== null && min >= max);
 
 	async function _save(): Promise<void> {
 		if (rangeInvalid) return;
 		saving = true;
 		saveError = null;
 		try {
-			const parsedRegular = _parseOrNull(regular);
 			// All three unset means "no preference" - the API models that as
 			// tempo_pref: null, not an object of nulls (a non-null object with
 			// no values still shows as a set preference + provenance on reread).
 			const tempoPref =
-				parsedRegular === null && parsedMin === null && parsedMax === null
+				regular === null && min === null && max === null
 					? null
-					: { regular: parsedRegular, min: parsedMin, max: parsedMax };
+					: { regular, min, max };
 			const { etag: fresh } = await patchTrack(stableId, etag, {
 				tempo_pref: tempoPref
 			});
@@ -114,9 +109,9 @@
 	}
 
 	function _clear(): void {
-		regular = '';
-		min = '';
-		max = '';
+		regular = null;
+		min = null;
+		max = null;
 		void _save();
 	}
 

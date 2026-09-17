@@ -347,6 +347,19 @@ class Metric:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class HotspotResult:
+    rows: list[tuple[str, int, int, int]]
+    status: str = "PASS"
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class MeasurementFailure:
+    dimension: str
+    detail: str
+
+
 @dataclass
 class Evaluator:
     name: str
@@ -357,6 +370,16 @@ class Evaluator:
 
 
 # ----- process helpers -----------------------------------------------------
+
+
+def _run_capture(
+    cmd: list[str],
+    cwd: Path = REPO,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
+    """Run a command and retain both streams for explicit UNKNOWN results."""
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def _run(
@@ -371,13 +394,13 @@ def _run(
     `subprocess.run`'s own default. Pass a full replacement dict (built from
     `os.environ`, not a bare override) to strip specific variables.
     """
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
-    if proc.returncode != 0 and not allow_fail:
+    returncode, stdout, stderr = _run_capture(cmd, cwd=cwd, env=env)
+    if returncode != 0 and not allow_fail:
         raise RuntimeError(
-            f"{' '.join(cmd[:4])}... exited {proc.returncode}\n"
-            f"stdout: {proc.stdout[-2000:]}\nstderr: {proc.stderr[-2000:]}"
+            f"{' '.join(cmd[:4])}... exited {returncode}\n"
+            f"stdout: {stdout[-2000:]}\nstderr: {stderr[-2000:]}"
         )
-    return proc.returncode, proc.stdout
+    return returncode, stdout
 
 
 def _uv(
@@ -1267,11 +1290,14 @@ def _eval_sync_drift() -> list[Metric]:
 # ----- hotspots (report only) ----------------------------------------------
 
 
-def _hotspots() -> list[tuple[str, int, int, int]]:
-    """Churn x size. Returns (path, commits, lines, score), worst first."""
-    _, log = _run([
+def _hotspots() -> HotspotResult:
+    """Churn x size, or an explicit UNKNOWN when git cannot measure it."""
+    code, log, stderr = _run_capture([
         "git", "log", f"--since={CFG.CHURN_DAYS}.days", "--name-only", "--pretty=format:",
     ])
+    if code != 0:
+        detail = f"git log ... exited {code}; stderr: {stderr[-2000:]}"
+        return HotspotResult([], "UNKNOWN", detail)
     churn: collections.Counter[str] = collections.Counter(
         line.strip() for line in log.splitlines() if line.strip()
     )
@@ -1285,7 +1311,7 @@ def _hotspots() -> list[tuple[str, int, int, int]]:
         lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
         rows.append((rel, commits, lines, commits * lines))
     rows.sort(key=lambda r: -r[3])
-    return rows[: CFG.HOTSPOT_COUNT]
+    return HotspotResult(rows[: CFG.HOTSPOT_COUNT])
 
 
 def _eval_latency() -> list[Metric]:
@@ -1636,6 +1662,7 @@ def _markdown(
     hotspots: list,
     inherited: frozenset[str] = frozenset(),
     slack: dict[str, float] | None = None,
+    measurement_failures: list[MeasurementFailure] | None = None,
 ) -> str:
     lines = [
         "# Code quality report",
@@ -1669,7 +1696,37 @@ def _markdown(
     ]
     for rel, commits, size, score in hotspots:
         lines.append(f"| `{rel}` | {commits} | {size} | {score} |")
+    if measurement_failures:
+        lines += [
+            "",
+            "## Measurement status",
+            "",
+            "| dimension | status | detail |",
+            "| --------- | ------ | ------ |",
+        ]
+        for failure in measurement_failures:
+            lines.append(f"| `{failure.dimension}` | UNKNOWN | {failure.detail} |")
     return "\n".join(lines) + "\n"
+
+
+def _write_trend_summary(trend_lines: list[str]) -> None:
+    """Append main's non-blocking growth trend to the GitHub Actions job summary.
+
+    No-ops outside CI (GITHUB_STEP_SUMMARY unset) so a local run is not affected.
+    """
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if not summary_file or not trend_lines:
+        return
+    body = "\n".join(f"- {line}" for line in trend_lines)
+    with Path(summary_file).open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n## quality ratchet: main trend report (non-blocking, issue #3246)\n\n"
+            "These plain-ratchet metrics are above their `ops/quality/baseline.json` "
+            "allowance on main. This is a REPORT, not a gate: the enforced check is the "
+            "per-PR delta vs merge-base (see "
+            "docs/decisions/ADR-NEW-quality-ratchet-new-code-gate.md).\n\n"
+            f"{body}\n"
+        )
 
 
 # ----- main ----------------------------------------------------------------
@@ -1805,6 +1862,41 @@ def _select(only: str | None) -> list[Evaluator]:
     return [e for e in EVALUATORS if e.name in wanted]
 
 
+def _classify_regressions(
+    regressions: list[str],
+    check: BaseCheck,
+    baseline: dict[str, float],
+    slack: dict[str, float] | None,
+    main_report_only: bool,
+) -> tuple[int, list[str]]:
+    """Print each regression line; split it into kept-vs-trend-only (issue #3246).
+
+    An inherited metric prints INHERITED in place of REGRESSION and is counted
+    as neither -- it already passed. Everything else prints REGRESSION: a
+    HARD_ZERO gate always counts as kept (a correctness invariant, not a
+    growth-sensitive count), and a plain-ratchet metric counts as kept unless
+    main_report_only downgrades it to a non-blocking trend line. PR runs never
+    pass main_report_only, so this only ever downgrades a main push/schedule
+    run -- see ADR-NEW-quality-ratchet-new-code-gate.md.
+    """
+    regressions_kept = 0
+    trend_only: list[str] = []
+    for line in regressions:
+        key = line.split(":", 1)[0]
+        if key in check.inherited:
+            m, base_value = check.inherited[key]
+            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
+            print(f"[quality] {line1}")
+            print(line2)
+        elif main_report_only and key not in HARD_ZERO:
+            print(f"[quality] REGRESSION        {line}")
+            trend_only.append(line)
+        else:
+            print(f"[quality] REGRESSION        {line}")
+            regressions_kept += 1
+    return regressions_kept, trend_only
+
+
 def _print_ratchet_verdict(
     ratchets: list[str],
     unknown: list[str],
@@ -1813,6 +1905,7 @@ def _print_ratchet_verdict(
     baseline: dict[str, float],
     within_slack: list[str] | None = None,
     slack: dict[str, float] | None = None,
+    main_report_only: bool = False,
 ) -> int:
     """Print the ratchet/regression readout and return the run's exit code.
 
@@ -1831,22 +1924,23 @@ def _print_ratchet_verdict(
         print(f"[quality] NO BASELINE       {line}")
     for line in used_slack:
         print(f"[quality] WITHIN SLACK      {line}")
-    regressions_kept = 0
-    for line in regressions:
-        key = line.split(":", 1)[0]
-        if key in check.inherited:
-            m, base_value = check.inherited[key]
-            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
-            print(f"[quality] {line1}")
-            print(line2)
-        else:
-            regressions_kept += 1
-            print(f"[quality] REGRESSION        {line}")
+    regressions_kept, trend_only = _classify_regressions(
+        regressions, check, baseline, slack, main_report_only
+    )
     for note in check.notes:
         print(f"[quality] base compare: {note}")
+    if main_report_only and trend_only:
+        _write_trend_summary(trend_only)
     if regressions_kept:
         print(f"\n[quality] FAIL: {regressions_kept} metric(s) got worse.")
         return 1
+    if main_report_only and trend_only:
+        print(
+            f"\n[quality] TREND (non-blocking, main push/schedule -- issue #3246): "
+            f"{len(trend_only)} metric(s) above the ops/quality/baseline.json allowance; "
+            "the enforced gate is the per-PR delta vs merge-base, not this absolute count."
+        )
+        return 0
     if check.inherited:
         print(
             f"\n[quality] PASS: {len(check.inherited)} metric(s) over allowance "
@@ -1863,6 +1957,15 @@ def _print_ratchet_verdict(
     return 0
 
 
+def _measurement_exit_code(
+    ratchet_exit_code: int, failures: list[MeasurementFailure]
+) -> int:
+    """Keep measured FAIL dominant; otherwise distinguish UNKNOWN with exit 2."""
+    if ratchet_exit_code == 1:
+        return 1
+    return 2 if failures else ratchet_exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--only", help="comma separated evaluator names")
@@ -1871,6 +1974,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, help="write a markdown report here")
     parser.add_argument("--json", type=Path, help="write raw metrics JSON here")
     parser.add_argument("--list", action="store_true", help="list evaluators and exit")
+    parser.add_argument(
+        "--main-report-only", action="store_true",
+        help="on a main push/schedule CI run, print plain-ratchet regressions "
+             "(baseline.json allowances) as a non-blocking trend report and exit 0; "
+             "HARD_ZERO gates and PR merge-base regressions are unaffected (issue #3246)",
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -1879,17 +1988,27 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     selected = _select(args.only)
-    _preflight(selected)
+    measurement_failures: list[MeasurementFailure] = []
+    try:
+        _preflight(selected)
+    except RuntimeError as exc:
+        measurement_failures.append(MeasurementFailure("preflight", str(exc)))
 
     metrics: list[Metric] = []
     owner_of: dict[str, str] = {}
-    for evaluator in selected:
-        print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
-        measured = evaluator.run()
-        # Record which evaluator owns each metric so an inherited re-measure
-        # can re-run just that evaluator on the merge-base tree (Q-11).
-        owner_of.update({m.key: evaluator.name for m in measured})
-        metrics.extend(measured)
+    if not measurement_failures:
+        for evaluator in selected:
+            print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
+            try:
+                measured = evaluator.run()
+            except RuntimeError as exc:
+                measurement_failures.append(MeasurementFailure(evaluator.name, str(exc)))
+                print(f"[quality] UNKNOWN: {evaluator.name}: {exc}")
+                continue
+            # Record which evaluator owns each metric so an inherited re-measure
+            # can re-run just that evaluator on the merge-base tree (Q-11).
+            owner_of.update({m.key: evaluator.name for m in measured})
+            metrics.extend(measured)
 
     baseline = _load_baseline()
     slack = _load_slack()
@@ -1905,6 +2024,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     hotspots = _hotspots()
+    if hotspots.status == "UNKNOWN":
+        measurement_failures.append(MeasurementFailure("hotspots", hotspots.detail))
+        print(f"[quality] UNKNOWN: hotspots: {hotspots.detail}")
 
     _print_metrics(metrics, baseline, slack)
 
@@ -1917,26 +2039,43 @@ def main(argv: list[str] | None = None) -> int:
             _markdown(
                 metrics,
                 baseline,
-                hotspots,
+                hotspots.rows,
                 inherited=frozenset(check.inherited),
                 slack=slack,
+                measurement_failures=measurement_failures,
             )
         )
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({m.key: m.value for m in metrics}, indent=2) + "\n")
+        payload: dict[str, Any] = {m.key: m.value for m in metrics}
+        if measurement_failures:
+            payload["measurements"] = {
+                failure.dimension: {"status": "UNKNOWN", "error": failure.detail}
+                for failure in measurement_failures
+            }
+        args.json.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"[quality] metrics written to {args.json.resolve()}")
 
     if args.update_baseline:
+        if measurement_failures:
+            print("[quality] baseline not written because measurement is UNKNOWN")
+            return 2
         if len(selected) != len(EVALUATORS):
             raise SystemExit("--update-baseline requires a full run (drop --only)")
         _write_baseline(metrics)
         return 0
 
-    return _print_ratchet_verdict(
-        ratchets, unknown, regressions, check, baseline, within_slack, slack
+    ratchet_exit_code = _print_ratchet_verdict(
+        ratchets, unknown, regressions, check, baseline, within_slack, slack,
+        main_report_only=args.main_report_only,
     )
+    if measurement_failures:
+        print(
+            f"\n[quality] UNKNOWN: {len(measurement_failures)} measurement(s) "
+            "could not be completed (exit 2)."
+        )
+    return _measurement_exit_code(ratchet_exit_code, measurement_failures)
 
 
 if __name__ == "__main__":

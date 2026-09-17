@@ -9,6 +9,7 @@ import {
 	setAutoPlayMaximizeReach,
 	setAutoSyncDestination,
 	setBeatSyncMax,
+	setPreviewBeatSync,
 	setConfirmPref,
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
@@ -38,6 +39,7 @@ import {
 	type LyricsLoadStrategy,
 	type AppPosturePref,
 	type PerfTierPref,
+	type PreviewBeatSync,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
 import {
@@ -51,6 +53,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_broken_links',
 	'library_density',
 	'beat_sync_max',
+	'preview_beat_sync',
 	'auto_play_enabled',
 	'auto_play_enforce_order',
 	'auto_play_maximize_reach',
@@ -148,6 +151,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'preview_beat_sync':
+			return uiPrefs.preview_beat_sync;
 		case 'perf_tier':
 			return uiPrefs.perf_tier;
 		case 'app_posture':
@@ -273,6 +278,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			// control's string into a number, or refuse loudly.
 			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
 			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
+		case 'preview_beat_sync': {
+			if (value !== 'off' && value !== 'tempo') {
+				throw new Error(`preview_beat_sync must be off|tempo, got ${String(value)}`);
+			}
+			setPreviewBeatSync(value as PreviewBeatSync);
 			return;
 		}
 		case 'perf_tier': {

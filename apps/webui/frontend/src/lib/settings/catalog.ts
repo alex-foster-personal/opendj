@@ -4,6 +4,7 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
+import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -11,59 +12,8 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type SettingGroupId =
-	| 'appearance'
-	| 'library'
-	| 'performance'
-	| 'confirmations'
-	| 'sync'
-	| 'cloudsync'
-	| 'advanced'
-	| 'rekordbox'
-	| 'djay';
-
-export interface SettingGroup {
-	id: SettingGroupId;
-	label: string;
-}
-
-export type SettingControl =
-	| { kind: 'boolean' }
-	| { kind: 'enum'; options: ReadonlyArray<{ value: string; label: string }> }
-	| {
-			kind: 'multi_bool';
-			keys: ReadonlyArray<{ id: string; label: string; title: string }>;
-	  }
-	// Pure-navigation entry: searchable pointer to a full route page. The
-	// overlay renders an `<a href>` control and `activateSetting` calls `goto`.
-	| { kind: 'link'; href: string }
-	// A live numeric row: range slider + value readout + a "default" reset.
-	// Bounds come from the module that VALIDATES the value (never a second
-	// literal here), so no slider position can be one the setter refuses.
-	| {
-			kind: 'number';
-			min: number;
-			max: number;
-			step: number;
-			/** What "Reset to default" restores, and the value shown as default. */
-			defaultValue: number;
-			/** Rendered after the readout, e.g. 'x'. */
-			unit: string;
-	  };
-
-export interface SettingDef {
-	id: string;
-	label: string;
-	group: SettingGroupId;
-	keywords: readonly string[];
-	/** Short RHS hover tooltip. */
-	title: string;
-	/** Longer explanation shown on focus/hover. */
-	detail: string;
-	/** false = grayed inert todo (PARITY-TODO). */
-	implemented: boolean;
-	control: SettingControl;
-}
+export type { SettingDef, SettingGroupId } from './catalog-types';
+import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
@@ -169,6 +119,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	PREVIEW_BEAT_SYNC_SETTING,
 	{
 		id: 'perf_tier',
 		label: 'Performance tier',

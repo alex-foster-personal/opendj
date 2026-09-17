@@ -131,7 +131,8 @@ async function _ensureStretchWorkletReadyImpl(
 		throw error;
 	});
 	await ensureStretchContextRunnable(context);
-	await _awaitAddModule(context, factory.moduleUrl);
+	const moduleUrl = factory.moduleUrl ?? stretchWorkletModuleUrl;
+	await _awaitAddModule(context, moduleUrl);
 	return factory;
 }
 

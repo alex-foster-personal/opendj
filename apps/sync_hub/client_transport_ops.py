@@ -332,7 +332,7 @@ def _pull_repair_bundles(
         engine.merge_machines(
             conn, _machines_from(payload, "pull"), caller_id=hub_machine_id
         )
-        return engine.spoke_apply(conn, incoming)
+        return engine.spoke_apply(conn, incoming, repair_bundle=True)
 
     if in_transaction:
         result = _apply()

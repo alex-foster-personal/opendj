@@ -23,6 +23,7 @@ SCALERS: dict[str, dict[str, int | str]] = {
     "LOW": {
         "prefetch_tracks": 2,
         "prefetch_bytes": 24 * MiB,
+        "preview_pcm_bytes": 64 * MiB,
         "anlz_entries": 8,
         "anlz_bytes": 10 * MiB,
         "stem_decode": "mix-only",
@@ -31,6 +32,7 @@ SCALERS: dict[str, dict[str, int | str]] = {
     "STANDARD": {
         "prefetch_tracks": 4,
         "prefetch_bytes": 48 * MiB,
+        "preview_pcm_bytes": 160 * MiB,
         "anlz_entries": 32,
         "anlz_bytes": 40 * MiB,
         "stem_decode": "mix-first",
@@ -39,6 +41,7 @@ SCALERS: dict[str, dict[str, int | str]] = {
     "HIGH": {
         "prefetch_tracks": 6,
         "prefetch_bytes": 96 * MiB,
+        "preview_pcm_bytes": 256 * MiB,
         "anlz_entries": 64,
         "anlz_bytes": 80 * MiB,
         "stem_decode": "eager",

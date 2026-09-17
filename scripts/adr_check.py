@@ -3,7 +3,9 @@
 A PR that touches an architecturally significant path must carry either
 ``ADR: NNNN`` naming a file under ``docs/decisions/``, ``ADR: NEW`` when
 the PR adds ``ADR-NEW-<slug>.md``, or ``ADR: none, because <reason>`` with
-a non-empty reason on the SAME line.
+a non-empty reason on the SAME line. Surrounding markdown backticks,
+asterisks, or underscores on the marker are stripped before the
+none/because matcher runs.
 Independently of any gated path, ``docs/decisions/`` itself must never
 carry two ``ADR-NNNN-*.md`` files sharing a number (issue #2678).
 
@@ -21,7 +23,9 @@ does not: a bare ``ADR: none`` with no ``because`` reason still fails --
 the regex requires ``because`` and a non-whitespace reason on the SAME
 LINE (horizontal whitespace only), so neither a rubber-stamped marker
 nor the next section heading of an ordinary multiline body can silence
-the gate for free. ``gh pr view`` failing prints UNKNOWN and exits 2,
+the gate for free. When a gated path moved but no declaration was
+accepted, the gate distinguishes a missing declaration from a malformed
+one and echoes the first offending ``ADR:`` line. ``gh pr view`` failing prints UNKNOWN and exits 2,
 never a silent pass -- a failed read is not the same as a PR with
 nothing to say. The duplicate-id check runs before the gated-path
 early-return, so it fires on every invocation -- including a docs-only
@@ -72,9 +76,10 @@ GATED_GLOBS: tuple[str, ...] = (
 # Horizontal whitespace only. ``\s`` matches a newline, which is how a
 # marker on its own line followed by ``## Tests`` would count as a reason.
 _NONE_RE = re.compile(
-    r"ADR:[ \t]*none[ \t]*,?[ \t]*because[ \t]+\S",
+    r"[`*_]*ADR:[ \t]*none[ \t]*,?[ \t]*because[`*_]*[ \t]+\S",
     re.IGNORECASE,
 )
+_ADR_LINE_RE = re.compile(r"ADR:", re.IGNORECASE)
 _ID_RE = re.compile(
     r"ADR:[ \t]*(?:ADR-)?(\d{4})\b",
     re.IGNORECASE,
@@ -83,6 +88,9 @@ _NEW_RE = re.compile(
     r"ADR:[ \t]*NEW\b",
     re.IGNORECASE,
 )
+# Markdown emphasis/code markers stripped before the none/because matcher only.
+_MARKDOWN_MARKER_RE = re.compile(r"[`*_]")
+_ADR_CANDIDATE_RE = re.compile(r"ADR:", re.IGNORECASE)
 _ADR_NUMERIC_FILENAME_RE = re.compile(r"ADR-(\d{4})-")
 _ADR_NEW_FILENAME_RE = re.compile(r"ADR-NEW-(.+)\.md$")
 _RENUMBERED_TO_RE = re.compile(
@@ -186,12 +194,26 @@ def stale_renumber_violations(entries: dict[str, bytes]) -> list[str]:
     return violations
 
 
+def normalize_adr_markers(text: str) -> str:
+    """Strip markdown code/emphasis markers before the none/because matcher."""
+    return _MARKDOWN_MARKER_RE.sub("", text or "")
+
+
+def adr_candidate_lines(body: str) -> list[str]:
+    """Raw body lines that look like they carry an ADR declaration."""
+    return [line for line in (body or "").splitlines() if _ADR_CANDIDATE_RE.search(line)]
+
+
 def ids_in_body(body: str) -> list[str]:
     return [match.group(1) for match in _ID_RE.finditer(body or "")]
 
 
 def has_none_because(body: str) -> bool:
-    return bool(_NONE_RE.search(body or ""))
+    return bool(_NONE_RE.search(normalize_adr_markers(body)))
+
+
+def adr_declaration_lines(body: str) -> list[str]:
+    return [line for line in (body or "").splitlines() if _ADR_LINE_RE.search(line)]
 
 
 def has_adr_new(body: str) -> bool:
@@ -245,11 +267,21 @@ def evaluate(
             f"[adr-check] OK -- ADR: none with because-reason (gated paths: {', '.join(hit)})",
         )
 
+    declarations = adr_declaration_lines(body)
+    if declarations:
+        return Verdict(
+            1,
+            "[adr-check] malformed ADR declaration: "
+            + declarations[0]
+            + f" (gated paths: {', '.join(hit)})",
+        )
+
     return Verdict(
         1,
         "[adr-check] gated path(s) "
         + ", ".join(hit)
-        + " with no ADR: <id> and no ADR: none, because <reason> on one line",
+        + " with no ADR declaration found (expected ADR: <id> or "
+        + "ADR: none, because <reason> on one line)",
     )
 
 

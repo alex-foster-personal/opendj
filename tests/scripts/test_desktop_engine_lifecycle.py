@@ -46,17 +46,31 @@ def test_exit_requested_shuts_down_the_engine() -> None:
     assert "supervisor.shutdown()" in main_rs
 
 
+# The arm is matched by what it must BIND, not by its exact field list. A
+# pinned spelling rots the moment the arm gains a field, and a live guard then
+# reads as a missing one.
+_EXIT_REQUESTED_ARM = re.compile(
+    r"RunEvent::ExitRequested\s*\{[^}]*\bapi\b[^}]*\}\s*=>"
+)
+
+
 @pytest.mark.requirement("INSTALL-21")
 def test_exit_requested_prevents_exit_without_shutdown() -> None:
     """[if] ExitRequested calls shutdown [then] Cmd-Q kills audio before confirm, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
-    assert "prevent_exit" in main_rs
-    exit_requested_idx = main_rs.index("RunEvent::ExitRequested { api, .. }")
+    arm = _EXIT_REQUESTED_ARM.search(main_rs)
+    assert arm is not None, (
+        "no RunEvent::ExitRequested arm binds `api`, so nothing can prevent the exit"
+    )
+    exit_requested_idx = arm.start()
     exit_idx = main_rs.index("RunEvent::Exit =>")
     shutdown_idx = main_rs.rindex("supervisor.shutdown()")
     assert exit_requested_idx < exit_idx
     assert shutdown_idx > exit_idx
     before_exit = main_rs[exit_requested_idx:exit_idx]
+    # Positive first: the slice really holds the arm's body. Without it the
+    # absence check below passes on an empty slice and proves nothing.
+    assert "api.prevent_exit()" in before_exit
     assert "supervisor.shutdown()" not in before_exit
 
 
