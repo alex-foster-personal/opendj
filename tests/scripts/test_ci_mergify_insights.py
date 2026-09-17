@@ -362,8 +362,8 @@ def test_a_stale_report_cannot_be_staged_as_this_runs_result() -> None:
             "lane must never produce."
         )
     assert stage["run"].count(stage_dir) == 0, (
-        f"The run block interpolates the directory expression directly rather "
-        f"than reading $STAGE_DIR, so the name is repeated in several places "
+        "The run block interpolates the directory expression directly rather "
+        "than reading $STAGE_DIR, so the name is repeated in several places "
         "and can drift between them."
     )
 
