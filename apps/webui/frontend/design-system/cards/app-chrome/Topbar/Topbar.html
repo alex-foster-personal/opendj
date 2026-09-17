@@ -1,0 +1,28 @@
+<!-- @dsCard group="App chrome" name="Topbar" subtitle="Status topbar and page-wide warning banner" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Topbar</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	body { padding: 0; }
+	.ds-stack > * + * { margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="ds-stack">
+	<div class="topbar">
+		<span>rekordbox</span>
+		<span title="Tracks with resolvable audio: 1186 of 8355 rows">1186 present</span>
+		<span title="Rows whose volume is not mounted: 168">168 awaiting volume</span>
+		<span style="margin-left:auto">engine 8585</span>
+	</div>
+	<div class="banner-warning">Read-only: rekordbox is running. Close it to write cues.</div>
+</div>
+<section class="ds-section" style="padding:16px">
+	<p class="ds-note"><code>.topbar</code>: surface fill, bottom border, muted 0.85 rem text, 0.75 rem gaps. Every count carries a hover <code>title</code> naming its denominator. <code>.banner-warning</code>: full-width, <code>--danger</code> fill, white 600-weight text, for page-wide state only.</p>
+</section>
+</body>
+</html>

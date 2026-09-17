@@ -1,0 +1,149 @@
+/* Card chrome for the Claude Design pane previews. Layout only: every color and
+ * size that matters comes from the shipped tokens (styles.css), never from here. */
+body {
+	margin: 0;
+	padding: 16px;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+	font-size: 13px;
+}
+.ds-section {
+	margin: 0 0 20px;
+}
+.ds-section h2 {
+	margin: 0 0 8px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.4px;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.ds-section h2 code {
+	text-transform: none;
+	letter-spacing: 0;
+}
+.ds-note {
+	margin: 8px 0 0;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.45;
+	max-width: 72ch;
+}
+.ds-sample {
+	margin: 0 0 8px;
+	font-size: 12px;
+	color: var(--muted);
+}
+code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 11px;
+}
+.ds-cells {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	align-items: flex-start;
+}
+.ds-cell {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 120px;
+}
+.ds-cell > small,
+.ds-swatch > small {
+	color: var(--muted);
+	font-size: 10px;
+	line-height: 1.3;
+}
+.ds-swatch-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+	gap: 10px;
+}
+.ds-swatch {
+	display: grid;
+	gap: 3px;
+	padding: 8px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+}
+.ds-swatch-chip {
+	height: 36px;
+	border-radius: 4px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ds-swatch span {
+	font-size: 11px;
+	color: var(--muted);
+}
+.ds-light .ds-swatch {
+	background: #fffdf8;
+	border-color: #b8b0a3;
+	color: #27241f;
+}
+.ds-light .ds-swatch span,
+.ds-light .ds-swatch small {
+	color: #5d574e;
+}
+.ds-light .ds-swatch-chip {
+	border-color: rgba(0, 0, 0, 0.12);
+}
+.ds-perf-frame {
+	padding: 12px;
+	border: 1px solid var(--rb-border, #23282f);
+	border-radius: 4px;
+}
+.ds-row {
+	display: grid;
+	grid-template-columns: 180px 1fr auto;
+	gap: 12px;
+	align-items: center;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--rb-border, var(--border));
+}
+.ds-row > small {
+	grid-column: 1 / -1;
+	color: var(--rb-text-dim, var(--muted));
+	font-size: 10px;
+}
+.ds-bar {
+	height: 10px;
+	background: var(--rb-accent, var(--accent));
+	border-radius: 2px;
+}
+.ds-wordmark {
+	font-family: 'Anybody Wordmark', 'Arial Black', sans-serif;
+	font-weight: 800;
+	font-stretch: 150%;
+	font-size: 44px;
+	letter-spacing: 0.02em;
+	line-height: 1;
+	text-transform: uppercase;
+	color: var(--fg);
+}
+.ds-brand-stage {
+	display: flex;
+	align-items: center;
+	gap: 28px;
+	padding: 32px;
+	background: #050505;
+	border-radius: 8px;
+}
+.ds-brand-mark {
+	width: 96px;
+	height: 96px;
+}
+.ds-brand-mark svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.ds-frame {
+	position: relative;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
