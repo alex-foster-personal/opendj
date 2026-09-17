@@ -180,12 +180,19 @@ def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     found: list[tuple[int, list[str]]] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.List, ast.Tuple)):
+            # The CONSTANT elements, in order, rather than only all-constant
+            # lists: `["node", "--test", *files]` is an ordinary invocation, and
+            # requiring every element to be a literal dropped it entirely, so a
+            # non-TAP call in that form stayed green. Reading the literals keeps
+            # both directions right, because a reporter spelled after the dynamic
+            # part is still seen. A flag that is itself dynamic cannot be read by
+            # any static scan, and is reported as missing rather than assumed.
             parts = [
                 e.value
                 for e in node.elts
                 if isinstance(e, ast.Constant) and isinstance(e.value, str)
             ]
-            if parts and len(parts) == len(node.elts):
+            if parts:
                 found.append((node.lineno, parts))
         elif (
             isinstance(node, ast.Constant)
@@ -473,6 +480,35 @@ def test_a_quoted_argument_does_not_hide_the_call() -> None:
     compliant = _scan("f", 'node --test "tests/unit" --test-reporter=tap')
     assert any(TAP_FLAG in argv for _, _, argv in compliant), (
         "a quoted argument must not cost a compliant call its reporter either"
+    )
+
+
+def test_a_dynamic_argv_element_does_not_hide_the_call(tmp_path: Path) -> None:
+    """`subprocess.run(["node", "--test", *files])` is an ordinary invocation.
+
+    Requiring every element of the list to be a string constant dropped it from
+    the scan entirely, so adding a non-TAP call in that form left the census and
+    the reporter assertion green. Both directions are asserted: the dynamic part
+    must not hide the call, and must not cost a compliant call its reporter
+    either, which is the over-correction that would fail every such invocation.
+    """
+    bare = tmp_path / "bare.py"
+    bare.write_text('subprocess.run(["node", "--test", *files])\n', encoding="utf-8")
+    sites = _node_test_sites_in("f", bare, bare.read_text(encoding="utf-8"))
+    assert sites, "a runner call with a dynamic file list must still be found"
+    assert all(TAP_FLAG not in argv for _, _, argv in sites), (
+        "this call has no reporter and must be reportable as an offender"
+    )
+
+    compliant = tmp_path / "compliant.py"
+    compliant.write_text(
+        'subprocess.run(["node", "--test", *files, "--test-reporter=tap"])\n',
+        encoding="utf-8",
+    )
+    ok = _node_test_sites_in("f", compliant, compliant.read_text(encoding="utf-8"))
+    assert any(TAP_FLAG in argv for _, _, argv in ok), (
+        "a reporter spelled after the dynamic part must still count, or the rule "
+        "rejects every invocation built this way"
     )
 
 
