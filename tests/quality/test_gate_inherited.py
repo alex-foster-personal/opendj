@@ -73,7 +73,7 @@ def _run_gate(
     # #1219 gave metrics a slack band; this suite is about inheritance, so it
     # pins slack to nothing and keeps measuring the bare-allowance behavior.
     monkeypatch.setattr(qg, "_load_slack", dict)
-    monkeypatch.setattr(qg, "_hotspots", list)
+    monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
     monkeypatch.setattr(qg, "_resolve_base", _fail if fail_if_called else lambda: resolve)
     monkeypatch.setattr(
         qg, "_measure_owners_at_base",
