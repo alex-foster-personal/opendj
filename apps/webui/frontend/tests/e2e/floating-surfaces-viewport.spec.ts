@@ -7,8 +7,12 @@ async function assertInsideWindow(
 	page: import('@playwright/test').Page,
 	locator: import('@playwright/test').Locator
 ): Promise<void> {
-	const box = await locator.boundingBox();
-	expect(box, 'surface must have geometry').not.toBeNull();
+	await expect
+		.poll(async () => locator.boundingBox(), {
+			timeout: 5_000,
+			message: 'surface must have geometry'
+		})
+		.not.toBeNull();
 
 	await expect
 		.poll(
