@@ -120,8 +120,8 @@ _HAS_SOXR: bool = _ffmpeg_can_resample()
 _HAS_MADMOM: bool = importlib.util.find_spec("madmom") is not None
 
 
-def _expected_ci_venv_python(repo_root: Path) -> Path | None:
-    """Return this repo's own venv interpreter, or None if it was never provisioned.
+def _expected_ci_venv_root(repo_root: Path) -> Path | None:
+    """Return this repo's own venv root, or None if it was never provisioned.
 
     Scoped deliberately narrow (issue #3486), because a blunt assert here
     would fail every session whose interpreter is legitimately not this
@@ -139,19 +139,26 @@ def _expected_ci_venv_python(repo_root: Path) -> Path | None:
     """
     if not os.environ.get("CI") or os.environ.get("CI_VENV_PROBE_ALLOW_MISMATCH"):
         return None
-    bin_dir = "Scripts" if os.name == "nt" else "bin"
-    python_name = "python.exe" if os.name == "nt" else "python"
-    venv_python = repo_root / ".venv" / bin_dir / python_name
-    return venv_python if venv_python.is_file() else None
+    venv_root = repo_root / ".venv"
+    return venv_root if (venv_root / "pyvenv.cfg").is_file() else None
 
 
 def _log_ci_venv_probe(phase: str) -> None:
     """Record the test interpreter and a non-preloading audio import probe.
 
-    Also fail-fasts, within the narrow scope above, when this session's
-    interpreter is not this repo's own venv -- the trap CLAUDE.md documents:
+    Also fail-fasts, within the narrow scope above, when this session is not
+    running inside this repo's own venv -- the trap CLAUDE.md documents:
     ``uv run`` falls back to a PATH command's own interpreter when the
     command is absent from the project environment.
+
+    Compares ``sys.prefix`` (the active venv root, set from ``pyvenv.cfg``
+    regardless of where the underlying interpreter binary lives), never
+    ``sys.executable``: a POSIX ``uv``-managed venv's ``bin/python`` is a
+    symlink into a base interpreter shared across every venv on the machine
+    (``~/.local/share/uv/python/...``), so a PATH-resolved ``pytest`` running
+    under an unrelated venv on the identical Python build would resolve to
+    that same shared binary and pass a binary-path comparison while still
+    lacking every project dependency (Codex P1 on PR #3487, issue #3486).
     """
     probe = (
         "try:\n"
@@ -179,17 +186,18 @@ def _log_ci_venv_probe(phase: str) -> None:
         flush=True,
     )
     repo_root = Path(__file__).resolve().parents[1]
-    expected = _expected_ci_venv_python(repo_root)
-    if expected is None:
+    expected_root = _expected_ci_venv_root(repo_root)
+    if expected_root is None:
         return
-    actual = Path(sys.executable).resolve()
-    if actual != expected.resolve():
+    actual_root = Path(sys.prefix).resolve()
+    if actual_root != expected_root.resolve():
         raise RuntimeError(
             f"CI_VENV_PROBE phase={phase}: wrong interpreter -- expected this "
-            f"repo's own venv at {str(expected.resolve())!r} but this pytest "
-            f"session is running under {str(actual)!r}. `uv run` falls back to "
-            "a PATH command's own interpreter when the command is absent from "
-            "the project environment (see CLAUDE.md); run `uv sync --extra dev` "
+            f"repo's own venv at {str(expected_root.resolve())!r} (sys.prefix) "
+            f"but this pytest session is running under {str(actual_root)!r} "
+            f"(executable={sys.executable!r}). `uv run` falls back to a PATH "
+            "command's own interpreter when the command is absent from the "
+            "project environment (see CLAUDE.md); run `uv sync --extra dev` "
             "first. If this session is a deliberately isolated, "
             "dependency-free pytest run, set CI_VENV_PROBE_ALLOW_MISMATCH=1 "
             "for it."
