@@ -35,6 +35,15 @@ Requirements (mini-PRD)
 - [if] a tier selects zero tests [then] pytest reports "no tests ran" (exit 5); pair with
   ``scripts.pytest_tier_floor --tier-min-selected`` to make a thin selection fail loud,
   [else stop] ✔︎ ✅ 🎯
+- [if] a test is named in the always-fast list (``ci/fast-tier-always.txt``: a node id, or
+  a file path for every test in it) [then] it is in the fast tier whatever the ledger
+  recorded and out of the slow tier, [else stop] ✔︎ ✅ 🎯
+- [if] an always-fast entry matches no collected test while a tier is selected [then] usage
+  error naming the entry, so the list cannot rot, [else stop] ✔︎ ✅ 🎯
+
+The always-fast list exists because the round 7 miss audit (specs/ci-fail-fast.md, Wed 16
+Sep 2026) found the fast tier caught 9 of 20 pull-request-caused failures, and 8 of the 11
+misses were the same two slow requirement-marker tests.
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ PLUGIN_NAME: str = "fast_tier"
 LINE_PREFIX: str = "[fast-tier]"
 DEFAULT_LEDGER: str = ".test_durations"
 DEFAULT_MAX_SECONDS: float = 0.5
+DEFAULT_ALWAYS: str = "ci/fast-tier-always.txt"
 TIERS: tuple[str, ...] = ("fast", "slow", "all")
 #: Ledger rows that are padding, not tests (see the collect-floor notes in ci.yml).
 PAD_MARKER: str = "_ci_dur_pad"
@@ -75,6 +85,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help=f"the pytest-split durations ledger to read (default {DEFAULT_LEDGER})",
     )
     group.addoption(
+        "--fast-tier-always",
+        default=None,
+        help="tests that are fast-tier whatever the ledger says: one node id or test file "
+        f"path per line, # comments (default {DEFAULT_ALWAYS} when it exists)",
+    )
+    group.addoption(
         "--ledger-coverage-min",
         type=float,
         default=None,
@@ -98,6 +114,23 @@ def _load_ledger(path: Path) -> dict[str, float]:
     return {node: float(seconds) for node, seconds in raw.items() if PAD_MARKER not in node}
 
 
+def _load_always(path: Path, *, explicit: bool) -> frozenset[str]:
+    """Node ids and test file paths forced into the fast tier. The default file may be
+    absent (empty list); a path given on the command line may not."""
+    if not path.is_file():
+        if explicit:
+            raise pytest.UsageError(f"{LINE_PREFIX} always-fast list not found: {path}")
+        return frozenset()
+    entries = (
+        line.split("#", 1)[0].strip() for line in path.read_text(encoding="utf-8").splitlines()
+    )
+    return frozenset(entry for entry in entries if entry)
+
+
+def _always_matches(entry: str, nodeid: str) -> bool:
+    return nodeid == entry or nodeid.startswith(entry + "::")
+
+
 class FastTier:
     """Deselects by recorded duration and measures how much of the collection the ledger names."""
 
@@ -107,11 +140,13 @@ class FastTier:
         max_seconds: float,
         ledger: dict[str, float],
         coverage_min: float | None,
+        always: frozenset[str] = frozenset(),
     ) -> None:
         self.tier = tier
         self.max_seconds = max_seconds
         self.ledger = ledger
         self.coverage_min = coverage_min
+        self.always = always
         self.summary: str = ""
 
     @classmethod
@@ -119,14 +154,24 @@ class FastTier:
         ledger_path = Path(config.getoption("--fast-tier-durations"))
         if not ledger_path.is_absolute():
             ledger_path = Path(config.rootpath) / ledger_path
+        always_option = config.getoption("--fast-tier-always")
+        always_path = Path(always_option or DEFAULT_ALWAYS)
+        if not always_path.is_absolute():
+            always_path = Path(config.rootpath) / always_path
         return cls(
             tier=config.getoption("--fast-tier"),
             max_seconds=config.getoption("--fast-tier-max-seconds"),
             ledger=_load_ledger(ledger_path),
             coverage_min=config.getoption("--ledger-coverage-min"),
+            always=_load_always(always_path, explicit=always_option is not None),
         )
 
+    def _forced(self, nodeid: str) -> bool:
+        return any(_always_matches(entry, nodeid) for entry in self.always)
+
     def _belongs(self, nodeid: str) -> bool:
+        if self.tier in ("fast", "slow") and self._forced(nodeid):
+            return self.tier == "fast"
         recorded = self.ledger.get(nodeid)
         if self.tier == "fast":
             return recorded is None or recorded < self.max_seconds
@@ -148,16 +193,28 @@ class FastTier:
                 "balances unseen tests by a flat average, so shards are balanced by count, "
                 "not time. Regenerate the ledger from a full run before trusting a shard."
             )
+        if self.tier in ("fast", "slow"):
+            stale = sorted(
+                entry
+                for entry in self.always
+                if not any(_always_matches(entry, item.nodeid) for item in items)
+            )
+            if stale:
+                raise pytest.UsageError(
+                    f"{LINE_PREFIX} always-fast entries match no collected test: {stale}. "
+                    "A renamed or deleted test leaves a stale entry; fix the list."
+                )
         keep = [item for item in items if self._belongs(item.nodeid)]
         deselected = [item for item in items if not self._belongs(item.nodeid)]
         unseen = sum(1 for item in keep if item.nodeid not in self.ledger)
+        forced = sum(1 for item in keep if self._forced(item.nodeid))
         if deselected:
             config.hook.pytest_deselected(items=deselected)
             items[:] = keep
         self.summary = (
             f"{LINE_PREFIX} tier={self.tier or 'none'} ceiling={self.max_seconds}s "
             f"selected={len(keep)} of {collected} (unseen included={unseen}) "
-            f"ledger coverage={known}/{collected}={coverage:.1%}"
+            f"ledger coverage={known}/{collected}={coverage:.1%} always-fast={forced}"
         )
 
     def pytest_report_collectionfinish(self) -> list[str]:

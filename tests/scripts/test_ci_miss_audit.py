@@ -238,3 +238,16 @@ def test_an_unreadable_main_job_makes_both_recalls_unknown() -> None:
     )
     assert result.pr_caused == 1
     assert result.plan_recall is None and result.fast_recall is None
+
+
+def test_an_always_fast_entry_makes_a_slow_recorded_test_fast_tier() -> None:
+    """control: the audit reads the same list the tier plugin forces, by node id or by file"""
+    slow = "FAILED tests/library/test_b.py::test_slow"
+    assert tier_of(slow, LEDGER, 0.5) is Tier.SLOW
+    assert (
+        tier_of(slow, LEDGER, 0.5, frozenset({"tests/library/test_b.py::test_slow"})) is Tier.FAST
+    )
+    assert tier_of(slow, LEDGER, 0.5, frozenset({"tests/library/test_b.py"})) is Tier.FAST
+    assert (
+        tier_of(slow, LEDGER, 0.5, frozenset({"tests/library/test_b.py::test_other"})) is Tier.SLOW
+    )

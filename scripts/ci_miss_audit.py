@@ -70,6 +70,7 @@ from scripts.ci_plan import (
 from scripts.review_gh import _gh
 
 LEDGER_PATH = Path(__file__).resolve().parent.parent / ".test_durations"
+ALWAYS_PATH = Path(__file__).resolve().parent.parent / "ci" / "fast-tier-always.txt"
 FAST_CEILING_S = 0.5
 CACHE_DIR = Path.home() / ".cache" / "opendj" / "ci-miss-audit"
 PYTEST_JOBS = INFRA_CLASS_JOBS  # `pytest fast lane` shards and, since 6a, `pytest fast tier` legs
@@ -186,10 +187,18 @@ def selection_of(identity: str, run_plan: Plan) -> Selection:
     return Selection.SELECTED if matches(file_path, run_plan.test_paths) else Selection.MISSED
 
 
-def tier_of(identity: str, ledger: dict[str, float], ceiling: float) -> Tier:
+def tier_of(
+    identity: str,
+    ledger: dict[str, float],
+    ceiling: float,
+    always: frozenset[str] = frozenset(),
+) -> Tier:
+    node = node_id(identity)
+    if any(node == entry or node.startswith(entry + "::") for entry in always):
+        return Tier.FAST  # forced by ci/fast-tier-always.txt, whatever the ledger says
     if "[" in identity and not identity.endswith("]"):
         return Tier.UNKNOWN  # the log parser stopped at whitespace inside the parameter id
-    seconds = ledger.get(node_id(identity))
+    seconds = ledger.get(node)
     if seconds is None:
         return Tier.FAST  # the tier includes every test the ledger has never seen
     return Tier.FAST if seconds < ceiling else Tier.SLOW
@@ -220,6 +229,7 @@ def audit(
     ledger: dict[str, float],
     ceiling: float,
     trunk_unreadable_jobs: int = 0,
+    always: frozenset[str] = frozenset(),
 ) -> Audit:
     result = Audit(trunk_unreadable_jobs=trunk_unreadable_jobs)
     for run in runs:
@@ -259,7 +269,7 @@ def audit(
             for i in caused
             if run_plan is not None and selection_of(i, run_plan) is Selection.MISSED
         )
-        tiers = {i: tier_of(i, ledger, ceiling) for i in caused}
+        tiers = {i: tier_of(i, ledger, ceiling, always) for i in caused}
         fast_missed = tuple(i for i in caused if tiers[i] is Tier.SLOW)
         unknown = tuple(i for i in caused if tiers[i] is Tier.UNKNOWN)
         result.rows.append(
@@ -456,9 +466,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--main-runs", type=int, default=20, help="failed main runs = trunk red")
     parser.add_argument("--ledger", type=Path, default=LEDGER_PATH)
     parser.add_argument("--ceiling", type=float, default=FAST_CEILING_S)
+    parser.add_argument(
+        "--always",
+        type=Path,
+        default=ALWAYS_PATH,
+        help="the always-fast list the tier plugin reads; pass /dev/null to measure without it",
+    )
     args = parser.parse_args(argv)
 
     ledger = json.loads(args.ledger.read_text(encoding="utf-8"))
+    always = frozenset(
+        entry
+        for entry in (
+            line.split("#", 1)[0].strip()
+            for line in args.always.read_text(encoding="utf-8").splitlines()
+        )
+        if entry
+    )
     config = read_config()
     pr_runs = _failed_pr_runs(args.runs)
     runs = collect(pr_runs)
@@ -470,7 +494,9 @@ def main(argv: list[str] | None = None) -> int:
         ledger=ledger,
         ceiling=args.ceiling,
         trunk_unreadable_jobs=trunk_unreadable,
+        always=always,
     )
+    print(f"{LINE} always-fast entries applied: {len(always)} from {args.always}")
     report(result, runs_seen=len(pr_runs))
     if result.fast_recall is None and result.plan_recall is None:
         print(f"{LINE} UNKNOWN: no recall could be measured", file=sys.stderr)
