@@ -65,6 +65,7 @@ def _run(script: str, env_overrides: dict[str, str | None]) -> subprocess.Comple
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
+        check=False,
         text=True,
         timeout=120,
     )
