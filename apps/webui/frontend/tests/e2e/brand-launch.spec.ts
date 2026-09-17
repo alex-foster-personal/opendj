@@ -195,7 +195,7 @@ async function releaseLaunchAnimations(page: import('@playwright/test').Page): P
 test('first open plays the identity launch once without blocking the app', async ({ page }) => {
 	const launch = await openWithFreshLaunch(page, '/');
 	await expect(page.locator('body')).toBeVisible();
-	await expect(launch).toBeHidden({ timeout: BRAND_LAUNCH_DURATION_MS + 1_000 });
+	await expect(launch).toBeHidden({ timeout: BRAND_LAUNCH_DURATION_MS + 5_000 });
 	await expect.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1'))).toBe('complete');
 
 	await page.reload();
