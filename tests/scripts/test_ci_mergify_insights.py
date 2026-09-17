@@ -544,3 +544,38 @@ def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
         "finds nothing or finds an artifact from another attempt, and both "
         "failures are silent on a continue-on-error step."
     )
+
+
+def test_a_transfer_failure_is_not_reported_as_a_missing_report() -> None:
+    """if download failure reads as absence then instrumentation dies silently."""
+    guard = _guard_step()
+    env = guard.get("env", {})
+    assert "DOWNLOAD" in env, (
+        "The guard step does not read the download step's outcome, so a failed "
+        "transfer, a suppressed staging step and a shard that genuinely "
+        "produced no report all arrive as HAS_REPORT=false and are annotated "
+        "identically. Announcing a timeout as the expected cause of an "
+        "absence that was never measured is a green step certifying an "
+        "unmeasured subject."
+    )
+    assert f"steps.{'download'}.outcome" in env["DOWNLOAD"], (
+        f"DOWNLOAD is {env['DOWNLOAD']!r}, which does not read the download "
+        "step's outcome. An expression naming a step that does not exist "
+        "resolves to an empty string, and the guard would then treat every "
+        "run as a transfer failure or none of them, silently either way."
+    )
+    run = guard["run"]
+    # The two states must produce DIFFERENT annotation severities, or reading
+    # them apart in the code buys nothing for the person reading the log.
+    assert "UNMEASURED" in run, (
+        "The guard does not raise a distinct UNMEASURED annotation for a "
+        "failed transfer. A tool that could not measure must say so rather "
+        "than render its failure as a finding."
+    )
+    unmeasured_at = run.find("UNMEASURED")
+    notice_at = run.find("no report (shard")
+    assert unmeasured_at < notice_at, (
+        "The legitimate-absence notice is emitted before the transfer-failure "
+        "check, so it claims the absence is expected without having "
+        "established that anything was actually measured."
+    )
