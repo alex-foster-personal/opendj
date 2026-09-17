@@ -32,29 +32,45 @@ SEARCH_PATHS = (
 )
 
 # The scope is DECLARED rather than discovered, so that a file which cannot be
-# read is a failure instead of a silent skip (Sol P1 on PR #3468). The original
+# read is a failure instead of a silent skip (Sol P1, first round). The original
 # version swallowed UnicodeDecodeError and OSError and carried on, which means
 # an unreadable executable surface read exactly like a clean one -- the same
-# unmeasured-as-green defect this guard exists to prevent. Binary artifacts
-# genuinely live under these roots (.pyc, .m4a), so they are excluded BY NAME
-# here rather than by catching an exception and hoping.
-TEXT_SUFFIXES = frozenset({".py", ".sh", ".yml", ".yaml", ".json", ".mjs", ".mk", ".ts"})
-EXTENSIONLESS_IN_SCOPE = frozenset({"Makefile", "justfile"})
+# unmeasured-as-green defect this guard exists to prevent.
+#
+# The declaration is a DENY list, not an allow list (Sol P2, second round). An
+# allow list of executable suffixes silently omits whatever nobody thought of --
+# .js, .cjs, .bash today, something else tomorrow -- and a new `node --test` in
+# one of those files would be invisible, leave the census unchanged, and never
+# fail this guard. Defaulting to SCAN means a new format is covered the day it
+# appears; a new BINARY format is a hard failure naming the file, which is the
+# fail-closed direction and tells the reader exactly what to declare.
+BINARY_SUFFIXES = frozenset({".pyc", ".m4a"})
+# Prose is text, so it would scan cleanly, but a documented command is not a
+# call site and counting one would put a false entry in the census.
+PROSE_SUFFIXES = frozenset({".md", ".html", ".txt", ".example"})
+UNSCANNED_SUFFIXES = BINARY_SUFFIXES | PROSE_SUFFIXES
+
+# Node spells three different flags `--test*`: `--test`, `--test-reporter=` and
+# `--test-concurrency=`. A plain `--test\b` matches the PREFIX of the other two,
+# so `node --test-reporter=tap x.test.mjs` -- which no longer runs the test
+# runner at all -- still read as a compliant site (Sol P1, second round). Require
+# the flag to END: not followed by a dash, word character or `=`.
+_STANDALONE_TEST = r"--test(?![-\w=])"
 
 # An invocation may be wrapped across lines -- in package.json a `node` and the
 # `--test` that makes it a runner call can sit on adjacent lines -- so the scan
-# runs over the WHOLE text rather than line by line (Sol P2 on PR #3468).
+# runs over the WHOLE text rather than line by line (Sol P2, first round).
 #
 # `node` is matched WITHOUT a leading \b: the Makefile calls `$(FRONTEND_NODE)`,
 # where the preceding `_` is a word character, so a word boundary there skips the
-# site entirely. That is the same silent-skip class as the P1 above, and it is
-# why IGNORECASE alone is not enough.
+# site entirely. That is the same silent-skip class as the P1s, and it is why
+# IGNORECASE alone is not enough.
 #
-# The `--test` half is a LOOKAHEAD so the match consumes only `node`. A consuming
+# The flag half is a LOOKAHEAD so the match consumes only `node`. A consuming
 # regex swallows the following site's `node` inside its own match, and finditer
 # never offers it again -- one real call site disappears for every false one
 # found. Every `node` token therefore gets its own candidacy.
-_INVOCATION = re.compile(r"node(?=[\s\S]{0,80}?--test\b)", re.IGNORECASE)
+_INVOCATION = re.compile(rf"node(?=[\s\S]{{0,80}}?{_STANDALONE_TEST})", re.IGNORECASE)
 _WINDOW = 300
 # A candidate is a real runner call, not prose or a neighbor's overspill, when
 # its own window names a test file or a runner flag.
@@ -62,7 +78,7 @@ _IS_REAL_CALL = re.compile(r"\.test\.mjs|--test-concurrency")
 
 
 def _in_scope(path: Path) -> bool:
-    return path.suffix in TEXT_SUFFIXES or path.name in EXTENSIONLESS_IN_SCOPE
+    return path.suffix not in UNSCANNED_SUFFIXES
 
 
 def _candidate_files() -> list[Path]:
@@ -93,26 +109,36 @@ def _read_or_fail(path: Path) -> str:
     except (UnicodeDecodeError, OSError) as exc:
         raise AssertionError(
             f"cannot scan {_display(path)} ({exc.__class__.__name__}: {exc}). "
-            "An executable surface that cannot be read is unmeasured, not clean; either "
-            "make it readable or exclude it from TEXT_SUFFIXES deliberately."
+            "An executable surface that cannot be read is unmeasured, not clean. If this "
+            "is a new binary format, add its suffix to BINARY_SUFFIXES deliberately; do not "
+            "restore a silent skip."
         ) from exc
+
+
+def _scan_text(label: str, text: str) -> list[tuple[str, int, str]]:
+    """The scan itself, over one blob. Split out so the guards below can be run
+    against a crafted command instead of only against whatever the tree happens
+    to contain today -- a test whose only fixture is the repo can only ever
+    confirm the status quo."""
+    sites: list[tuple[str, int, str]] = []
+    starts = [m.start() for m in _INVOCATION.finditer(text)]
+    for index, start in enumerate(starts):
+        # Stop this window at the NEXT candidate. Without that bound, a
+        # `node` that is not a runner call reads the following line's real
+        # invocation as its own evidence and is counted as a compliant site.
+        next_start = starts[index + 1] if index + 1 < len(starts) else len(text)
+        window = text[start : min(start + _WINDOW, next_start)]
+        if not _IS_REAL_CALL.search(window):
+            continue
+        lineno = text.count("\n", 0, start) + 1
+        sites.append((label, lineno, window))
+    return sites
 
 
 def _node_test_sites() -> list[tuple[str, int, str]]:
     sites: list[tuple[str, int, str]] = []
     for path in _candidate_files():
-        text = _read_or_fail(path)
-        starts = [m.start() for m in _INVOCATION.finditer(text)]
-        for index, start in enumerate(starts):
-            # Stop this window at the NEXT candidate. Without that bound, a
-            # `node` that is not a runner call reads the following line's real
-            # invocation as its own evidence and is counted as a compliant site.
-            next_start = starts[index + 1] if index + 1 < len(starts) else len(text)
-            window = text[start : min(start + _WINDOW, next_start)]
-            if not _IS_REAL_CALL.search(window):
-                continue
-            lineno = text.count("\n", 0, start) + 1
-            sites.append((_display(path), lineno, window))
+        sites.extend(_scan_text(_display(path), _read_or_fail(path)))
     return sites
 
 
@@ -165,6 +191,22 @@ def test_a_site_carries_its_own_evidence_not_the_next_ones() -> None:
         )
 
 
+def test_a_reporter_only_command_is_not_counted_as_a_test_runner_call() -> None:
+    """`--test` is a PREFIX of `--test-reporter` and `--test-concurrency`, so a
+    `--test\\b` match accepted a command that no longer runs the test runner at
+    all and reported it as compliant (Sol P1, second round)."""
+    runner = 'node --test --test-reporter=tap tests/unit/x.test.mjs'
+    reporter_only = 'node --test-reporter=tap tests/unit/x.test.mjs'
+    concurrency_only = 'node --test-concurrency=4 tests/unit/x.test.mjs'
+
+    assert len(_scan_text("fixture", runner)) == 1, "a real runner call must still be found"
+    for text in (reporter_only, concurrency_only):
+        assert _scan_text("fixture", text) == [], (
+            f"{text!r} has no standalone --test flag, so node does not run the test "
+            "runner; counting it certifies a command that cannot fail this guard"
+        )
+
+
 def test_an_unreadable_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
     """Sol P1: the old `except (UnicodeDecodeError, OSError): continue` made an
     unscannable file read exactly like a compliant one. Prove it now raises."""
@@ -177,12 +219,18 @@ def test_an_unreadable_surface_fails_instead_of_being_skipped(tmp_path: Path) ->
 def test_declared_scope_excludes_the_binaries_that_actually_live_here() -> None:
     """Fail-closed must not reject legitimate absence: the repo really does carry
     .pyc and .m4a under these roots, so they are out of scope BY NAME rather than
-    by swallowing an exception."""
+    by swallowing an exception. Everything not named is scanned."""
     for suffix in (".pyc", ".m4a"):
-        assert suffix not in TEXT_SUFFIXES, f"{suffix} is binary and cannot be scanned as text"
+        assert suffix in BINARY_SUFFIXES, f"{suffix} is binary and cannot be scanned as text"
     scanned = _candidate_files()
     assert scanned, "scope resolved to zero files"
-    assert not [p for p in scanned if p.suffix in {".pyc", ".m4a"}]
+    assert not [p for p in scanned if p.suffix in UNSCANNED_SUFFIXES]
+    # A format nobody listed must be SCANNED, never quietly skipped, or a new
+    # call site could land in it and leave the census unmoved.
+    for suffix in (".js", ".cjs", ".bash", ".ps1", ".cmd"):
+        assert _in_scope(Path(f"scripts/whatever{suffix}")), (
+            f"{suffix} is not scanned, so a `node --test` in one would be invisible"
+        )
 
 
 def test_every_node_test_invocation_uses_the_tap_reporter() -> None:
