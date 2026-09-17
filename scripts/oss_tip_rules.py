@@ -182,7 +182,8 @@ ALLOWED_MAILBOXES = frozenset(
 # only the intent behind the string. So they are enumerated rather than shaped.
 # The one shape that IS safe here is the retina-asset domain below, and it is
 # safe for a reason none of those attempts had: it is anchored on a suffix no
-# mailbox can sit behind. Read its comment before adding a second shape.
+# mailbox can sit behind. The systemd unit-type shape after it is the second
+# instance of that argument; read both comments before adding a third.
 ALLOWED_NON_ADDRESSES = frozenset(
     {
         "signalsmith-stretch@1.3.2.patch",  # pnpm patch spec, package.json
@@ -228,6 +229,31 @@ _RETINA_ASSET_EXTENSIONS = (
 )
 _RETINA_ASSET_DOMAIN = re.compile(
     r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE
+)
+
+# The second safe shape, safe for the same reason: a systemd template instance
+# is `<template>@<instance>.<unit type>`, and it parses as a local part at a
+# domain whose last label is the unit type. The unit types are a systemd
+# contract, not something this repo controls, and none of the ones listed is a
+# delegated top-level domain, so no mailbox can sit behind them. `.target` IS
+# delegated (checked against the IANA root zone, Thu 17 Sep 2026) and is left
+# out on purpose: an `x@y.target` is reported, and stays a reviewed line.
+# Surfaced by the fleet process registry (#2542), which records
+# `idd-lane@5.service` for every nucbox lane.
+_SYSTEMD_UNIT_TYPES = (
+    "service",
+    "socket",
+    "device",
+    "mount",
+    "automount",
+    "swap",
+    "path",
+    "timer",
+    "slice",
+    "scope",
+)
+_SYSTEMD_UNIT_DOMAIN = re.compile(
+    r"^[^@\s]+\.(?:" + "|".join(_SYSTEMD_UNIT_TYPES) + r")$", re.IGNORECASE
 )
 
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
@@ -568,6 +594,10 @@ def _is_reportable_mailbox(address: str) -> bool:
     # whole family is covered, rather than on the full string, which needed a
     # new entry for every asset added to the tree.
     if _RETINA_ASSET_DOMAIN.match(domain):
+        return False
+    # A systemd template instance is a unit name, not a mailbox; same test on
+    # the domain, same undelegated-suffix argument, see _SYSTEMD_UNIT_DOMAIN.
+    if _SYSTEMD_UNIT_DOMAIN.match(domain):
         return False
     if address.lower() in ALLOWED_NON_ADDRESSES:
         return False
