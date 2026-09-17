@@ -347,6 +347,19 @@ class Metric:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class HotspotResult:
+    rows: list[tuple[str, int, int, int]]
+    status: str = "PASS"
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class MeasurementFailure:
+    dimension: str
+    detail: str
+
+
 @dataclass
 class Evaluator:
     name: str
@@ -357,6 +370,16 @@ class Evaluator:
 
 
 # ----- process helpers -----------------------------------------------------
+
+
+def _run_capture(
+    cmd: list[str],
+    cwd: Path = REPO,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
+    """Run a command and retain both streams for explicit UNKNOWN results."""
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def _run(
@@ -371,13 +394,13 @@ def _run(
     `subprocess.run`'s own default. Pass a full replacement dict (built from
     `os.environ`, not a bare override) to strip specific variables.
     """
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
-    if proc.returncode != 0 and not allow_fail:
+    returncode, stdout, stderr = _run_capture(cmd, cwd=cwd, env=env)
+    if returncode != 0 and not allow_fail:
         raise RuntimeError(
-            f"{' '.join(cmd[:4])}... exited {proc.returncode}\n"
-            f"stdout: {proc.stdout[-2000:]}\nstderr: {proc.stderr[-2000:]}"
+            f"{' '.join(cmd[:4])}... exited {returncode}\n"
+            f"stdout: {stdout[-2000:]}\nstderr: {stderr[-2000:]}"
         )
-    return proc.returncode, proc.stdout
+    return returncode, stdout
 
 
 def _uv(
@@ -1260,11 +1283,14 @@ def _eval_sync_drift() -> list[Metric]:
 # ----- hotspots (report only) ----------------------------------------------
 
 
-def _hotspots() -> list[tuple[str, int, int, int]]:
-    """Churn x size. Returns (path, commits, lines, score), worst first."""
-    _, log = _run([
+def _hotspots() -> HotspotResult:
+    """Churn x size, or an explicit UNKNOWN when git cannot measure it."""
+    code, log, stderr = _run_capture([
         "git", "log", f"--since={CFG.CHURN_DAYS}.days", "--name-only", "--pretty=format:",
     ])
+    if code != 0:
+        detail = f"git log ... exited {code}; stderr: {stderr[-2000:]}"
+        return HotspotResult([], "UNKNOWN", detail)
     churn: collections.Counter[str] = collections.Counter(
         line.strip() for line in log.splitlines() if line.strip()
     )
@@ -1278,7 +1304,7 @@ def _hotspots() -> list[tuple[str, int, int, int]]:
         lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
         rows.append((rel, commits, lines, commits * lines))
     rows.sort(key=lambda r: -r[3])
-    return rows[: CFG.HOTSPOT_COUNT]
+    return HotspotResult(rows[: CFG.HOTSPOT_COUNT])
 
 
 def _eval_latency() -> list[Metric]:
@@ -1621,6 +1647,7 @@ def _markdown(
     hotspots: list,
     inherited: frozenset[str] = frozenset(),
     slack: dict[str, float] | None = None,
+    measurement_failures: list[MeasurementFailure] | None = None,
 ) -> str:
     lines = [
         "# Code quality report",
@@ -1654,6 +1681,16 @@ def _markdown(
     ]
     for rel, commits, size, score in hotspots:
         lines.append(f"| `{rel}` | {commits} | {size} | {score} |")
+    if measurement_failures:
+        lines += [
+            "",
+            "## Measurement status",
+            "",
+            "| dimension | status | detail |",
+            "| --------- | ------ | ------ |",
+        ]
+        for failure in measurement_failures:
+            lines.append(f"| `{failure.dimension}` | UNKNOWN | {failure.detail} |")
     return "\n".join(lines) + "\n"
 
 
@@ -1848,6 +1885,15 @@ def _print_ratchet_verdict(
     return 0
 
 
+def _measurement_exit_code(
+    ratchet_exit_code: int, failures: list[MeasurementFailure]
+) -> int:
+    """Keep measured FAIL dominant; otherwise distinguish UNKNOWN with exit 2."""
+    if ratchet_exit_code == 1:
+        return 1
+    return 2 if failures else ratchet_exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--only", help="comma separated evaluator names")
@@ -1864,17 +1910,27 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     selected = _select(args.only)
-    _preflight(selected)
+    measurement_failures: list[MeasurementFailure] = []
+    try:
+        _preflight(selected)
+    except RuntimeError as exc:
+        measurement_failures.append(MeasurementFailure("preflight", str(exc)))
 
     metrics: list[Metric] = []
     owner_of: dict[str, str] = {}
-    for evaluator in selected:
-        print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
-        measured = evaluator.run()
-        # Record which evaluator owns each metric so an inherited re-measure
-        # can re-run just that evaluator on the merge-base tree (Q-11).
-        owner_of.update({m.key: evaluator.name for m in measured})
-        metrics.extend(measured)
+    if not measurement_failures:
+        for evaluator in selected:
+            print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
+            try:
+                measured = evaluator.run()
+            except RuntimeError as exc:
+                measurement_failures.append(MeasurementFailure(evaluator.name, str(exc)))
+                print(f"[quality] UNKNOWN: {evaluator.name}: {exc}")
+                continue
+            # Record which evaluator owns each metric so an inherited re-measure
+            # can re-run just that evaluator on the merge-base tree (Q-11).
+            owner_of.update({m.key: evaluator.name for m in measured})
+            metrics.extend(measured)
 
     baseline = _load_baseline()
     slack = _load_slack()
@@ -1890,6 +1946,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     hotspots = _hotspots()
+    if hotspots.status == "UNKNOWN":
+        measurement_failures.append(MeasurementFailure("hotspots", hotspots.detail))
+        print(f"[quality] UNKNOWN: hotspots: {hotspots.detail}")
 
     _print_metrics(metrics, baseline, slack)
 
@@ -1902,26 +1961,42 @@ def main(argv: list[str] | None = None) -> int:
             _markdown(
                 metrics,
                 baseline,
-                hotspots,
+                hotspots.rows,
                 inherited=frozenset(check.inherited),
                 slack=slack,
+                measurement_failures=measurement_failures,
             )
         )
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({m.key: m.value for m in metrics}, indent=2) + "\n")
+        payload: dict[str, Any] = {m.key: m.value for m in metrics}
+        if measurement_failures:
+            payload["measurements"] = {
+                failure.dimension: {"status": "UNKNOWN", "error": failure.detail}
+                for failure in measurement_failures
+            }
+        args.json.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"[quality] metrics written to {args.json.resolve()}")
 
     if args.update_baseline:
+        if measurement_failures:
+            print("[quality] baseline not written because measurement is UNKNOWN")
+            return 2
         if len(selected) != len(EVALUATORS):
             raise SystemExit("--update-baseline requires a full run (drop --only)")
         _write_baseline(metrics)
         return 0
 
-    return _print_ratchet_verdict(
+    ratchet_exit_code = _print_ratchet_verdict(
         ratchets, unknown, regressions, check, baseline, within_slack, slack
     )
+    if measurement_failures:
+        print(
+            f"\n[quality] UNKNOWN: {len(measurement_failures)} measurement(s) "
+            "could not be completed (exit 2)."
+        )
+    return _measurement_exit_code(ratchet_exit_code, measurement_failures)
 
 
 if __name__ == "__main__":
