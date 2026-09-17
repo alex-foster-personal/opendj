@@ -182,7 +182,7 @@ ALLOWED_MAILBOXES = frozenset(
 # only the intent behind the string. So they are enumerated rather than shaped.
 # The one shape that IS safe here is the retina-asset domain below, and it is
 # safe for a reason none of those attempts had: it is anchored on a suffix no
-# mailbox can sit behind. The systemd shape below is the second; no third.
+# mailbox can sit behind. Read its comment before adding a second shape.
 ALLOWED_NON_ADDRESSES = frozenset(
     {
         "signalsmith-stretch@1.3.2.patch",  # pnpm patch spec, package.json
@@ -230,14 +230,14 @@ _RETINA_ASSET_DOMAIN = re.compile(
     r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE
 )
 
-# The second safe shape, for the same reason: a systemd template instance,
-# `<template>@<instance>.<unit type>`, parses as a local part at a domain whose
-# last label is a unit type, and no listed type is a delegated top-level domain.
-# `.target` IS delegated (IANA root zone, Thu 17 Sep 2026) and is left out, so
-# an instance there is reported and stays a reviewed line (#2542 surfaced it).
-_SYSTEMD_UNIT_DOMAIN = re.compile(
-    r"^[^@\s]+\.(?:service|socket|device|mount|automount|swap|path|timer|slice|scope)$",
-    re.IGNORECASE,
+# A systemd UNIT TYPE is not a mail TLD. `systemctl list-timers` renders the unit it
+# activates as `<unit>@<instance>.<type>`, so recording one verbatim reads as an address
+# at `<instance>.<type>` (`idd-lane@5.service`) -- a real shape, which is why it matched.
+# Every label was checked against the IANA root zone on Thu 17 Sep 2026 and is NOT a
+# delegated TLD, so no mailbox can exist behind one. `.target` IS delegated and is absent
+# here for that reason, so a mailbox there is registrable and is still reported.
+_SYSTEMD_UNIT_TYPE_LABELS = frozenset(
+    "service timer socket mount automount path slice scope swap device".split()
 )
 
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
@@ -548,7 +548,8 @@ def _is_placeholder_home(user: str) -> bool:
 
 def _is_reserved_mail_domain(domain: str) -> bool:
     lowered = domain.lower()
-    if lowered.split(".")[-1] in _RESERVED_MAIL_TLDS:
+    # Both are final labels no mailbox can sit at: reserved by policy, or not delegated.
+    if lowered.split(".")[-1] in _RESERVED_MAIL_TLDS | _SYSTEMD_UNIT_TYPE_LABELS:
         return True
     # A host on an ALLOWED tailnet is a fixture by the same construction the
     # tailnet rule uses, and `<user>@<host>` there is an ssh destination rather
@@ -578,9 +579,6 @@ def _is_reportable_mailbox(address: str) -> bool:
     # whole family is covered, rather than on the full string, which needed a
     # new entry for every asset added to the tree.
     if _RETINA_ASSET_DOMAIN.match(domain):
-        return False
-    # A systemd template instance is a unit name, not a mailbox (same argument).
-    if _SYSTEMD_UNIT_DOMAIN.match(domain):
         return False
     if address.lower() in ALLOWED_NON_ADDRESSES:
         return False

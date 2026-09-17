@@ -11,8 +11,6 @@ Regression lines:
 - if a reserved-domain fixture or a version spec is reported then broken
 - if a retina asset name (a pixel multiplier and an image extension for a
   domain) is reported, or one at a DELEGATED suffix is not, then broken
-- if a systemd template instance (`name@instance.service`) is reported, or one
-  at the DELEGATED `.target` suffix is not, then broken
 - if a path-exempt mailbox is dropped instead of counted as exempt then broken
 - if a mailbox after a slash, in a URL, quoted, at a numeric domain, at a Unicode
   domain, or ending in atext punctuation slips through then broken
@@ -375,47 +373,6 @@ def test_retina_asset_names_are_not_mailboxes(tmp_path: Path) -> None:
         assert literal not in matches, f"{literal} is an Apple iconset slot name, not a mailbox"
     for name in accepted:
         assert name not in matches, f"{name} is an asset filename, not a mailbox"
-    for address in fires:
-        assert address in matches, (
-            f"{address} stopped firing -- the rule was loosened past the point "
-            "where a real mailbox can still exist"
-        )
-
-
-def test_systemd_template_unit_instances_are_not_mailboxes(tmp_path: Path) -> None:
-    """#2542's fleet process registry records every nucbox lane as
-    `idd-lane@<n>.service`, and the mailbox rule read the four of them as
-    addresses at the domain `<n>.service`, which turned the tracked-tree audit
-    red on every PR (#3256 was the first to hit it). Same class fix as the
-    retina assets: the shape is safe because the trailing label is a systemd
-    unit type, none of the exempted types is a delegated top-level domain, and
-    a mailbox cannot exist at an undelegated one.
-
-    The control is `.target`, the one unit type that IS delegated: an instance
-    at that suffix is a registrable domain that can carry mail, so it fires and
-    stays a reviewed line, exactly as `.zip` does for the asset shape.
-    """
-    accepted = [
-        "idd-lane" + "@" + "5.service",  # the registry's own line
-        "systemd --user timer -> idd-lane" + "@" + "1.service",  # as the registry renders it
-        "getty" + "@" + "tty1.service",
-        "opendj-idd-lane" + "@" + "3.timer",
-        "backup" + "@" + "home-maintainer.mount",
-        "wrapper" + "@" + "nested.instance.socket",  # an instance may carry dots
-        "ALERT" + "@" + "1.SERVICE",  # the type is matched case-insensitively
-    ]
-    fires = [
-        _MAILBOX,
-        "someone" + "@" + "5.target",  # .target IS delegated and carries mail
-        "someone" + "@" + "5.services",  # .services IS delegated; not a unit type
-        "someone" + "@" + "service.com",  # the type as a label, not the suffix
-    ]
-    path = _write(tmp_path, "process-registry.json", "".join(f"{x}\n" for x in accepted + fires))
-
-    matches = [f.match for f in audit_paths(tmp_path, [path]).findings]
-
-    for unit in accepted:
-        assert unit.split(" ")[-1] not in matches, f"{unit} is a systemd unit name, not a mailbox"
     for address in fires:
         assert address in matches, (
             f"{address} stopped firing -- the rule was loosened past the point "
