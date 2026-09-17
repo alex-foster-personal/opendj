@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import shlex
 from pathlib import Path
@@ -27,13 +28,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Executable surfaces only. specs/ and .planning/ are write-once prose records
 # and are deliberately out of scope.
-SEARCH_PATHS = (
-    "Makefile",
-    "justfile",
-    "apps/webui/frontend/package.json",
-    "scripts",
-    ".github/workflows",
-)
+# Scope is DISCOVERED, not listed. Naming five locations meant a `node --test`
+# added in another app's package file, another root script, or .github/actions
+# was invisible: the census stayed pinned, the offender test stayed green, and
+# nothing failed. A rule cannot go stale the way a list does, so a surface is in
+# scope when its NAME says it carries commands, wherever it lives, or when it
+# sits under a directory whose whole purpose is executable material.
+SURFACE_NAMES = frozenset({"Makefile", "justfile", "package.json"})
+SURFACE_DIRS = ("scripts", ".github")
+# Pruned while walking: vendored or generated trees are not this repository's
+# call sites, and node_modules alone would dominate the walk.
+EXCLUDED_DIRS = frozenset({
+    ".git", ".svelte-kit", ".venv", "build", "data", "dist", "node_modules", "target",
+})
 
 # Scope is a DENY list, not an allow list. An allow list of executable suffixes
 # silently omits whatever nobody thought of -- .js, .cjs, .bash today, something
@@ -103,14 +110,20 @@ def _in_scope(path: Path) -> bool:
 
 
 def _candidate_files() -> list[Path]:
+    """Every command-carrying surface in the repository, discovered by rule."""
     files: list[Path] = []
-    for entry in SEARCH_PATHS:
-        target = REPO_ROOT / entry
-        if target.is_file():
-            files.append(target)
-        elif target.is_dir():
-            files.extend(p for p in target.rglob("*") if p.is_file() and _in_scope(p))
-    return files
+    for root, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDED_DIRS)
+        here = Path(root)
+        rel = here.relative_to(REPO_ROOT)
+        in_surface_dir = rel.parts[:1] and rel.parts[0] in SURFACE_DIRS
+        for name in filenames:
+            path = here / name
+            if not _in_scope(path):
+                continue
+            if name in SURFACE_NAMES or in_surface_dir:
+                files.append(path)
+    return sorted(files)
 
 
 def _display(path: Path) -> str:

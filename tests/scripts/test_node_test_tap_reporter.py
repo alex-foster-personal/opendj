@@ -23,6 +23,7 @@ one when the segment ends at the separator between them.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,8 @@ import pytest
 from scripts.node_test_reporter_scan import (
     _UNPARSED,
     BINARY_SUFFIXES,
+    EXCLUDED_DIRS,
+    REPO_ROOT,
     TAP_FLAG,
     UNSCANNED_SUFFIXES,
     _candidate_files,
@@ -351,6 +354,34 @@ def test_a_composed_argv_expression_is_read_as_one_command(tmp_path: Path) -> No
     # The absorbed literals must not also be counted alone, or the per file
     # census this guard depends on would drift upward on a refactor.
     assert len(sites) == 1, f"one command, not {len(sites)}: {sites}"
+
+
+def test_every_command_surface_git_knows_about_is_in_scope() -> None:
+    """The inventory is derived INDEPENDENTLY, from git rather than from the
+    scanner's own rules, so the two cannot agree by sharing a mistake.
+
+    An earlier version named five locations, which meant a `node --test` added in
+    another app's package file or another root script was invisible while the
+    pinned census and the offender test both stayed green. A list goes stale
+    silently; this fails the day a surface appears outside the rules.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "Makefile", "justfile", "*/Makefile", "*/justfile",
+         "package.json", "*/package.json"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split("\0")
+    expected = {
+        name for name in tracked
+        if name and not any(part in EXCLUDED_DIRS for part in Path(name).parts)
+    }
+    assert expected, "git listed no command surfaces at all, so this proves nothing"
+
+    scanned = {str(p.relative_to(REPO_ROOT)) for p in _candidate_files()}
+    missing = sorted(expected - scanned)
+    assert not missing, (
+        "git tracks these command surfaces but the scanner does not look at them, so a "
+        f"`node --test` added in one would be invisible: {missing}"
+    )
 
 
 def test_an_unparseable_python_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
