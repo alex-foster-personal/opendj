@@ -1,0 +1,44 @@
+<!-- @dsCard group="Performance controls" name="WaveRow" subtitle="43 px waveform rows, primary and secondary decks, finished-track eject" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>WaveRow</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	.rb-waverow { position: relative; height: var(--rb-waverow-h); background: var(--rb-bg); border-bottom: 1px solid var(--rb-border); overflow: hidden; }
+	.rb-waverow.secondary { background: var(--rb-waverow-secondary); }
+	.ds-wave { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 1px; padding: 4px 0; }
+	.ds-wave i { flex: 1; display: block; background: var(--rb-orange); }
+	.ds-wave i.mid { background: var(--rb-wave-mid); }
+	.ds-wave i.high { background: var(--rb-wave-high); }
+	.ds-tick { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--rb-red); }
+	.ds-cue { position: absolute; top: 2px; width: 6px; height: 6px; background: var(--rb-red); }
+	.ds-deck-label { position: absolute; left: 4px; top: 3px; font-size: var(--rb-fs-label); color: var(--rb-text-dim); }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame" style="padding:0">
+	<div class="rb-waverow" title="Deck 1 waveform, 3:42 of 5:10">
+		<div class="ds-wave"><i style="height:30%"></i><i class="mid" style="height:55%"></i><i class="high" style="height:70%"></i><i style="height:40%"></i><i class="mid" style="height:80%"></i><i class="high" style="height:60%"></i><i style="height:35%"></i><i class="mid" style="height:65%"></i><i class="high" style="height:85%"></i><i style="height:45%"></i><i class="mid" style="height:50%"></i><i class="high" style="height:75%"></i><i style="height:30%"></i><i class="mid" style="height:60%"></i><i class="high" style="height:90%"></i><i style="height:40%"></i></div>
+		<span class="ds-cue" style="left:18%"></span><span class="ds-cue" style="left:41%"></span>
+		<span class="ds-tick"></span>
+		<span class="ds-deck-label">1</span>
+	</div>
+	<div class="rb-waverow" title="Deck 2 waveform, finished">
+		<div class="ds-wave"><i style="height:20%"></i><i class="mid" style="height:35%"></i><i class="high" style="height:40%"></i><i style="height:25%"></i><i class="mid" style="height:30%"></i><i class="high" style="height:20%"></i></div>
+		<span class="ds-tick" style="left:calc(100% - 1px)"></span>
+		<span class="ds-deck-label">2</span>
+		<button type="button" class="finished-eject" title="Unload deck 2">EJECT</button>
+	</div>
+	<div class="rb-waverow secondary" title="Deck 3 waveform, empty">
+		<span class="ds-deck-label">3</span>
+	</div>
+	<div class="rb-waverow secondary" title="Deck 4 waveform, empty">
+		<span class="ds-deck-label">4</span>
+	</div>
+</div>
+<p class="ds-note">One <code>.rb-waverow</code> per deck at <code>--rb-waverow-h</code> (43 px). Bands: lows <code>--rb-orange</code>, mids <code>--rb-wave-mid</code>, highs <code>--rb-wave-high</code>; cue markers and the position tick are <code>--rb-red</code>. Decks 3 and 4 use the lighter <code>--rb-waverow-secondary</code> fill so 1 and 2 keep the eye. When the transport settles at silence the <code>.finished-eject</code> chip appears right of center.</p>
+</body>
+</html>
