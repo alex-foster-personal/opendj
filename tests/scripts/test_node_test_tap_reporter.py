@@ -66,6 +66,10 @@ SEPARATORS = frozenset({";", "&&", "||", "|", "&"})
 # calls `$(FRONTEND_NODE)`, and treating parentheses as punctuation would shred
 # that token and lose the site.
 _PUNCTUATION = ";|&"
+#: Marks argv that whitespace splitting produced after shlex refused the
+#: line. Such argv may name a call site but may never certify one. The NUL
+#: keeps it impossible to spell in a real command.
+_UNPARSED = "\x00unparsed"
 
 # A token that invokes node: the bare binary, a path ending in it, or a variable
 # expanding to it. The Makefile calls `$(FRONTEND_NODE)`, so a word-boundary
@@ -93,6 +97,12 @@ def _is_node_token(token: str) -> bool:
     return looks_like_variable and tok.upper().strip("%${}(") .endswith("NODE")
 # Quoted string literals, used to bound commands inside JSON and YAML. Each value
 # is its own command, which is what stops one line's flags reaching another's.
+#: A folded workflow command (`run: >`) joins its lines into one command with
+#: no continuation marker, so a line-oriented scan sees `node` and `--test` as
+#: separate lines and finds no call at all. The repository uses the literal form
+#: (`run: |`) everywhere, so rather than grow a YAML parser this form is REFUSED:
+#: an unsupported command shape must fail rather than read as absent.
+_FOLDED_RUN = re.compile(r"^\s*-?\s*run:\s*>")
 _QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 
@@ -138,15 +148,22 @@ def _tokenize(command: str) -> list[str]:
     """argv for one command string, falling back to whitespace splitting.
 
     shlex raises on an unbalanced quote, which a Makefile recipe or a templated
-    workflow line can legitimately contain. Falling back to `.split()` keeps such
-    a line MEASURED; dropping it would be a silent skip.
+    workflow line can legitimately contain (`echo don't`). Dropping such a line
+    would be a silent skip, so it stays MEASURED.
+
+    But a fallback tokenization must never CERTIFY. Whitespace splitting does not
+    know quoting, so `node --test "unbalanced; echo --test-reporter=tap` yields a
+    bare `--test-reporter=tap` token and the call reads as compliant while node
+    still runs the default reporter, which is the one direction a guard must
+    never fail in. The fallback therefore carries `_UNPARSED`, and compliance
+    requires its absence: a call found this way can be reported, never cleared.
     """
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCTUATION)
         lexer.whitespace_split = True
         return list(lexer)
     except ValueError:
-        return command.split()
+        return [*command.split(), _UNPARSED]
 
 
 def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
@@ -234,6 +251,21 @@ def _commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     if path.suffix == ".py":
         return _python_commands(path, text)
     commands: list[tuple[int, list[str]]] = []
+    if path.suffix in {".yml", ".yaml"}:
+        folded = [
+            lineno
+            for lineno, line in enumerate(text.split("\n"), start=1)
+            if _FOLDED_RUN.match(line)
+        ]
+        if folded:
+            raise AssertionError(
+                f"{_display(path)} uses a folded command scalar at line(s) "
+                f"{', '.join(str(n) for n in folded)}. This scanner reads lines, so a "
+                "folded command would be split across them and found nowhere. Spell it "
+                "as a literal block (`run: |`), which every other command here uses, or "
+                "teach the scanner the folded form. An unsupported shape must not read "
+                "as a file with no `node --test` call."
+            )
     if path.suffix == ".json":
         # A JSON line is `"key": "command",`, so the surrounding syntax would
         # read as tokens: here the quoted string VALUES are the commands. This
@@ -318,13 +350,31 @@ def test_the_scan_finds_the_known_invocations() -> None:
     )
 
 
+def _offenders(
+    sites: list[tuple[str, int, list[str]]],
+) -> list[tuple[str, int, list[str]]]:
+    """Call sites this scanner cannot clear.
+
+    Named once and shared with the fixture tests deliberately: when the fixture
+    test spelled this predicate out again, mutating the real one left the fixture
+    test green, so the check was carrying an assumption nothing verified.
+    """
+    return [s for s in sites if TAP_FLAG not in s[2] or _UNPARSED in s[2]]
+
+
 def test_every_node_test_invocation_uses_the_tap_reporter() -> None:
-    offenders = [s for s in _node_test_sites() if TAP_FLAG not in s[2]]
+    offenders = _offenders(_node_test_sites())
     assert not offenders, (
         "these `node --test` call sites still use the default spec reporter, which "
         "dies with RangeError while printing a large cancellation cascade and hides "
         "the failure entirely:\n"
-        + "\n".join(f"  {label}:{lineno}: {' '.join(argv)}" for label, lineno, argv in offenders)
+        + "\n".join(
+            f"  {label}:{lineno}: "
+            + ' '.join(t for t in argv if t != _UNPARSED)
+            + (" [could not be tokenized; a reporter here cannot be trusted]"
+               if _UNPARSED in argv else "")
+            for label, lineno, argv in offenders
+        )
     )
 
 
@@ -509,6 +559,55 @@ def test_a_dynamic_argv_element_does_not_hide_the_call(tmp_path: Path) -> None:
     assert any(TAP_FLAG in argv for _, _, argv in ok), (
         "a reporter spelled after the dynamic part must still count, or the rule "
         "rejects every invocation built this way"
+    )
+
+
+def test_a_fallback_tokenization_cannot_certify_a_call(tmp_path: Path) -> None:
+    """Whitespace splitting does not know quoting, so it can hand back a bare
+    `--test-reporter=tap` token lifted out of a quoted argument. Detecting the
+    call that way is fine; CLEARING it is not, and clearing is the one direction
+    this guard must never fail in."""
+    command = 'node --test "unbalanced; echo --test-reporter=tap'
+    argv = _tokenize(command)
+    assert _UNPARSED in argv, "a fallback tokenization must mark itself untrusted"
+    assert TAP_FLAG in argv, (
+        "sanity: the bare flag really is present in the fallback tokens, which is "
+        "exactly why its presence cannot be read as compliance"
+    )
+    sites = _scan("f", command)
+    assert sites, "the call must still be FOUND; dropping it would be a silent skip"
+    assert _offenders(sites), (
+        "a call this scanner could not tokenize must not read as compliant"
+    )
+
+    clean = _tokenize("node --test --test-reporter=tap x")
+    assert _UNPARSED not in clean, (
+        "a command that tokenizes cleanly must still be certifiable, or the rule "
+        "rejects every invocation in the repository"
+    )
+
+
+def test_a_folded_workflow_command_is_refused_not_ignored(tmp_path: Path) -> None:
+    """A folded scalar joins its lines with no continuation marker, so a
+    line-oriented scan finds no call at all. Refusing the shape keeps the
+    silent-omission case from existing; the literal form must keep working."""
+    folded = tmp_path / "folded.yml"
+    folded.write_text(
+        "jobs:\n  t:\n    steps:\n      - run: >\n          node\n          --test\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="folded command scalar"):
+        _commands(folded, folded.read_text(encoding="utf-8"))
+
+    literal = tmp_path / "literal.yml"
+    literal.write_text(
+        "jobs:\n  t:\n    steps:\n      - run: |\n          node --test x\n",
+        encoding="utf-8",
+    )
+    sites = _node_test_sites_in("f", literal, literal.read_text(encoding="utf-8"))
+    assert sites, (
+        "the literal block is the form every command in this repository uses and "
+        "must keep scanning, or the refusal above would break the whole workflow scan"
     )
 
 
