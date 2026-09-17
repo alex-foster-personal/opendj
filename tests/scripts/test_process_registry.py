@@ -27,13 +27,24 @@ Regression lines:
     absence must never look like compliance) then broken
   - if a REACHABLE-but-EMPTY host with a registry row expecting units on it
     reads as a clean pass (the same trap, other direction) then broken
+  - if a recorded unit name, command or schedule carrying a real home
+    directory, mailbox or tailnet name reaches the tracked artifact then
+    broken (OSSPUB-01: the artifact is generated and committed)
+  - if scrubbing a value twice differs from scrubbing it once then broken (a
+    regeneration would drift, and a guard regeneration undoes is not a guard)
+  - if the drift check compares an unscrubbed live name against a scrubbed
+    registry row then broken (the row would read STALE forever)
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from scripts.oss_tip_audit import findings_in_text
 from scripts.process_registry_check import EXIT_DRIFT, EXIT_OK, EXIT_UNKNOWN, run_check
+from scripts.process_registry_gen import build_doc, merge_with_previous
 from scripts.process_registry_sources import (
     Host,
     HostResult,
@@ -41,6 +52,7 @@ from scripts.process_registry_sources import (
     ProcessUnit,
     SchedulerKind,
     naming_status,
+    scrub_identities,
 )
 
 pytestmark = pytest.mark.requirement("DEVOPS-14")
@@ -62,6 +74,87 @@ def _unit(
         purpose="test fixture",
         naming=naming_status(scheduler, unit),
     )
+
+
+# --------------------------------------------------------- identity scrub
+
+# Assembled from fragments for the same reason the sibling audit suite does it: the
+# going-public gate scans this file too, so a literal home directory or address here
+# would make the clean-tree assertion unsatisfiable -- which is itself the proof that
+# the gate reads tests.
+_HOME = "/" + "Users" + "/" + "jdoe"
+_MAILBOX = "someone" + "@" + "not-a-real-provider" + ".com"
+_TAILNET = "box" + "." + "some-other-real-looking-tailnet" + ".ts.net"
+_STAMP = "2026-09-17T00:00:00Z"
+
+
+def _unit_carrying_identities() -> ProcessUnit:
+    """A recorded unit whose name and command both carry live-host identities."""
+    return ProcessUnit(
+        host="h1",
+        scheduler=SchedulerKind.LAUNCHD,
+        unit="com.af.backup-" + _MAILBOX,
+        schedule="see plist",
+        state="running",
+        last_exit="0",
+        command=f"launchd -> {_HOME}/Library/LaunchAgents on {_TAILNET}",
+        owned=True,
+        area="test",
+        purpose="test fixture",
+        naming="violation",
+    )
+
+
+def test_a_recorded_identity_never_reaches_the_artifact() -> None:
+    """The registry is GENERATED and COMMITTED, so a real identity in a unit name or
+    command off any queried host lands in the repository and reddens the going-public
+    audit. Scrub at the serialization boundary, which is where a record becomes the
+    artifact, rather than editing the artifact."""
+    text = json.dumps(_unit_carrying_identities().to_json(), indent=2)
+    assert list(findings_in_text("process-registry.json", text)) == []
+    for identity in (_HOME, _MAILBOX, _TAILNET):
+        assert identity not in text
+
+
+def test_scrubbing_twice_is_the_same_as_scrubbing_once() -> None:
+    """A guard that regeneration silently undoes is not a guard. Every placeholder is
+    itself exempt from the rule it replaces, so the second pass has nothing left to do
+    and cannot drift the artifact."""
+    raw = f'{{"unit": "com.af.backup-{_MAILBOX}", "command": "{_HOME}/Library on {_TAILNET}"}}'
+    once = scrub_identities(raw)
+    assert once != raw
+    assert list(findings_in_text("registry.json", once)) == []
+    assert scrub_identities(once) == once
+
+
+def test_a_regeneration_cannot_reintroduce_a_scrubbed_identity() -> None:
+    """The path where this could actually fail is not the live-collection one: when a
+    host goes unreachable `merge_with_previous` carries its WHOLE previous block
+    forward verbatim, so a scrub that lived only in the collector would leave those
+    rows untouched on every later pass. Assert the carried block is unchanged and
+    still carries no finding."""
+    live = [HostResult(host="h1", reachable=True, units=[_unit_carrying_identities()])]
+    first = build_doc(merge_with_previous(live, {}), _STAMP)
+    previous = {h["host"]: h for h in first["hosts"]}
+    again = build_doc(
+        merge_with_previous(
+            [HostResult(host="h1", reachable=False, error="ssh timed out")], previous
+        ),
+        _STAMP,
+    )
+    assert again["hosts"][0]["units"] == first["hosts"][0]["units"]
+    assert list(findings_in_text("process-registry.json", json.dumps(again))) == []
+
+
+def test_a_scrubbed_row_still_matches_its_live_original() -> None:
+    """The drift check compares a live name against a committed row, and only one of
+    those two has been scrubbed. Compare like with like, or every scrubbed row reads
+    STALE forever and the check reports drift on a registry that is correct."""
+    live = [_unit("h1", "com.af.backup-" + _MAILBOX)]
+    row = _unit("h1", "com.af.backup-" + _MAILBOX).to_json()
+    code, checks = run_check([_HOST], {"h1": [row]}, _fake_collector(live))
+    assert code == EXIT_OK
+    assert checks[0].status == "clean"
 
 
 # ------------------------------------------------------------- naming_status
