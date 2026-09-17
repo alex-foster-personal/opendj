@@ -1,0 +1,127 @@
+name: Debt file check
+
+# WHY THIS IS ITS OWN WORKFLOW AND NOT A STEP IN CI
+#
+# Same reason as adr-check.yml and reqs-flip-gate.yml: ci.yml's
+# `pull_request` `paths` filter excludes `**.md` and `.planning/**`, so a PR
+# that touches only `.planning/debt/<pr>.md` schedules NO ci.yml run at all.
+# `tests/scripts/test_debt_index.py` runs `scripts.debt_index` inside the
+# pytest lane, and that lane is exactly what such a PR skips.
+#
+# The consequence was measured, not theorised. Between Mon 14 and Tue 15 Sep
+# 2026 five malformed debt files reached main this way -- 2611.md, 2682.md,
+# 2684.md and 2685.md with no `Branch:` line, 2823.md with no `# PR #<n>`
+# heading. Each one turned debt-index-regen.yml red on main AND step 2 of
+# `just pre-push` (`python -m scripts.debt_index --check`) red for everyone
+# pushing anything, until it was fixed after the fact (811f881d0, #2791,
+# #2834). debt-index-regen.yml's own header says why it was first to see
+# them: post-merge regeneration was the earliest gate that existed.
+#
+# This workflow moves that verdict to where it costs one person 30 seconds
+# instead of blocking every push. It is deliberately NOT a re-include of
+# `.planning/debt/**` in ci.yml's paths filter: that would schedule the whole
+# fast pytest lane for a docs-only PR, which is the ceremony the filter was
+# written to avoid (the maintainer, Fri 28 Aug 2026). `.planning/REQUIREMENTS.md` is
+# re-included there because it is a CI input the lane itself consumes; a debt
+# file is not, and needs only this stdlib check.
+
+on:
+  pull_request:
+    paths:
+      - ".planning/debt/**"
+      - ".planning/TECH-DEBT.md"
+      - ".github/workflows/debt-file-check.yml"
+
+concurrency:
+  group: debt-file-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Self-hosted runners are shared, so this workflow honours the same hygiene
+# contract as every other persistent-workspace workflow (issue #1338).
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  gate:
+    name: debt file check
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Debt file metadata check
+        # No venv, no uv: scripts.debt_index imports only the standard
+        # library, exactly as debt-index-regen.yml relies on post-merge.
+        #
+        # `--check` and NOT `--require-current`: the committed
+        # `.planning/TECH-DEBT.md` is a main-side artifact that a PR never
+        # regenerates (issue #1415), so a branch's own new debt file is
+        # legitimately absent from the index. `--check` tolerates that and
+        # still fails on the malformed metadata this gate exists for.
+        run: |
+          set -euo pipefail
+          python -m scripts.debt_index --check
