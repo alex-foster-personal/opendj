@@ -23,7 +23,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "design-system:build": "node scripts/build-design-system.mjs",
-    "test:design-system": "node --test tests/unit/design-system-bundle.test.mjs"
+    "test:design-system": "node --test --test-reporter=tap tests/unit/design-system-bundle.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",

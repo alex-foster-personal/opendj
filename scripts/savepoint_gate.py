@@ -89,7 +89,7 @@ def _steps() -> list[Step]:
         ),
         Step(
             "frontend-unit",
-            ["node", "--test", "--test-concurrency=1"]
+            ["node", "--test", "--test-reporter=tap", "--test-concurrency=1"]
             + sorted(str(p) for p in (FRONTEND_DIR / "tests" / "unit").glob("*.test.mjs")),
             FRONTEND_DIR,
         ),
