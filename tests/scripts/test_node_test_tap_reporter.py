@@ -166,6 +166,50 @@ def _tokenize(command: str) -> list[str]:
         return [*command.split(), _UNPARSED]
 
 
+def _docstring_ids(tree: ast.AST) -> set[int]:
+    """Ids of every docstring constant, which is prose rather than a call site.
+
+    savepoint_gate.py says `node --test` in a sentence, and a sentence must not
+    read as an invocation.
+    """
+    ids: set[int] = set()
+    holders = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+    for node in ast.walk(tree):
+        if not isinstance(node, holders):
+            continue
+        body = getattr(node, "body", None)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            ids.add(id(body[0].value))
+    return ids
+
+
+def _argv_parts(node: ast.AST, consumed: set[int]) -> list[str] | None:
+    """The constant strings of a possibly concatenated argv expression, in order.
+
+    Returns None when the expression is not argv-shaped. Every list or tuple it
+    absorbs is recorded in `consumed` so the caller does not emit it a second
+    time on its own.
+    """
+    if isinstance(node, (ast.List, ast.Tuple)):
+        consumed.add(id(node))
+        return [
+            e.value for e in node.elts
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _argv_parts(node.left, consumed)
+        right = _argv_parts(node.right, consumed)
+        if left is None and right is None:
+            return None
+        return (left or []) + (right or [])
+    return None
+
+
 def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     """argv lists spelled as Python list/tuple literals of string constants.
 
@@ -182,21 +226,26 @@ def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
             "An unparseable surface must not read as one with no `node --test` call: "
             "that is a silent skip of an executable surface, not a clean result."
         ) from exc
-    docstrings = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        body = getattr(node, "body", None)
-        if (
-            body
-            and isinstance(body[0], ast.Expr)
-            and isinstance(body[0].value, ast.Constant)
-            and isinstance(body[0].value.value, str)
-        ):
-            docstrings.add(id(body[0].value))
+    docstrings = _docstring_ids(tree)
     found: list[tuple[int, list[str]]] = []
+    # An argv expression is read as a WHOLE, because three separate findings here
+    # were three instances of one class: a shape this scanner could not fully read
+    # reported as a file with no call. `["node"] + ["--test", *files]` is the
+    # composed case, where neither literal alone holds both tokens. Concatenation
+    # is flattened, and the inner literals are then not re-emitted on their own,
+    # which would double count the census.
+    consumed: set[int] = set()
+    composed: list[tuple[int, list[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            parts = _argv_parts(node, consumed)
+            if parts is not None and parts:
+                composed.append((node.lineno, parts))
+    found.extend(composed)
     for node in ast.walk(tree):
         if isinstance(node, (ast.List, ast.Tuple)):
+            if id(node) in consumed:
+                continue
             # The CONSTANT elements, in order, rather than only all-constant
             # lists: `["node", "--test", *files]` is an ordinary invocation, and
             # requiring every element to be a literal dropped it entirely, so a
@@ -609,6 +658,36 @@ def test_a_folded_workflow_command_is_refused_not_ignored(tmp_path: Path) -> Non
         "the literal block is the form every command in this repository uses and "
         "must keep scanning, or the refusal above would break the whole workflow scan"
     )
+
+
+def test_a_composed_argv_expression_is_read_as_one_command(tmp_path: Path) -> None:
+    """`subprocess.run(["node"] + ["--test", *files])` is one invocation.
+
+    Inspecting each literal on its own found neither token pair, so the call
+    produced no site at all. This was the third finding in this function and all
+    three were one class: a shape the scanner could not fully read reported as a
+    file holding no call. Concatenation is therefore resolved as a whole.
+    """
+    bare = tmp_path / "composed.py"
+    bare.write_text('subprocess.run(["node"] + ["--test", *files])\n', encoding="utf-8")
+    sites = _node_test_sites_in("f", bare, bare.read_text(encoding="utf-8"))
+    assert sites, "a composed argv must still name the call site"
+    assert _offenders(sites), "it has no reporter, so it must not read as compliant"
+
+    ok = tmp_path / "composed_ok.py"
+    ok.write_text(
+        'subprocess.run(["node", "--test"] + ["--test-reporter=tap"])\n',
+        encoding="utf-8",
+    )
+    ok_sites = _node_test_sites_in("f", ok, ok.read_text(encoding="utf-8"))
+    assert ok_sites and not _offenders(ok_sites), (
+        "a reporter contributed by the other operand must count, or resolving the "
+        "concatenation would fail every compliant call built this way"
+    )
+
+    # The absorbed literals must not also be counted alone, or the per file
+    # census this guard depends on would drift upward on a refactor.
+    assert len(sites) == 1, f"one command, not {len(sites)}: {sites}"
 
 
 def test_an_unparseable_python_surface_fails_instead_of_being_skipped(tmp_path: Path) -> None:
