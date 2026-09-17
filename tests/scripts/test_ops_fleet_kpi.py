@@ -165,6 +165,49 @@ def _run(env: dict[str, str]) -> subprocess.CompletedProcess:
     )
 
 
+def _synthetic_head_sha(pr_number: int) -> str:
+    return f"{pr_number:040x}"
+
+
+def _write_check_runs(fixture: Path, head_sha: str, conclusions: list[str | None]) -> None:
+    runs: list[dict[str, object]] = []
+    for index, conclusion in enumerate(conclusions):
+        run: dict[str, object] = {"name": f"check-{index}", "status": "completed"}
+        if conclusion is not None:
+            run["conclusion"] = conclusion
+        runs.append(run)
+    payload = {"total_count": len(runs), "check_runs": runs}
+    (fixture / "gh" / f"check-runs-{head_sha}.json").write_text(
+        json.dumps(payload) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _hydrate_check_run_fixtures(fixture: Path) -> dict[int, str]:
+    """Assign stable head SHAs and green check rollups for GitHub-clean open PRs."""
+    open_path = fixture / "gh" / "open.json"
+    rows = json.loads(open_path.read_text(encoding="utf-8"))
+    sha_by_pr: dict[int, str] = {}
+    for row in rows:
+        pr_number = int(row["number"])
+        head_sha = _synthetic_head_sha(pr_number)
+        row["headSha"] = head_sha
+        sha_by_pr[pr_number] = head_sha
+        merge_state = str(
+            row.get("mergeableState")
+            or row.get("mergeStateStatus")
+            or row.get("mergeable_state")
+            or ""
+        ).upper()
+        if merge_state == "CLEAN":
+            conclusions: list[str | None] = ["success"]
+            if pr_number == 1101:
+                conclusions = ["success", "neutral", "skipped", None]
+            _write_check_runs(fixture, head_sha, conclusions)
+    open_path.write_text(json.dumps(rows) + "\n", encoding="utf-8")
+    return sha_by_pr
+
+
 def _copy_fixture(tmp_path: Path) -> Path:
     fixture = tmp_path / "fixture"
     shutil.copytree(FIXTURE, fixture)
@@ -176,6 +219,7 @@ def _copy_fixture(tmp_path: Path) -> Path:
         os.utime(report, (NOW - 120, NOW - 120))
     rotation = fixture / "jobs" / "state" / "account-rotation"
     rotation.write_text("ci-infra acct-hot acct-cold\n", encoding="utf-8")
+    _hydrate_check_run_fixtures(fixture)
     return fixture
 
 
@@ -460,6 +504,7 @@ def test_builder_freeze_switches_on_at_fifteen_actionable(tmp_path):
         for i in range(15)
     ]
     (fixture / "gh" / "open.json").write_text(json.dumps(rows))
+    _hydrate_check_run_fixtures(fixture)
 
     proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
     out = proc.stdout
@@ -484,6 +529,7 @@ def test_one_under_the_freeze_threshold_still_builds(tmp_path):
         for i in range(14)
     ]
     (fixture / "gh" / "open.json").write_text(json.dumps(rows))
+    _hydrate_check_run_fixtures(fixture)
 
     out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
     assert "backlog open_prs=14 actionable=14 clean=14" in out
@@ -680,4 +726,100 @@ def test_only_github_clean_actionable_prs_invoke_review_gate(tmp_path):
 
     assert proc.returncode == 0, out
     invoked = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))["invoked"]
+    assert invoked == [1101, 1102, 1108]
+
+
+def test_github_clean_pr_with_failing_check_is_not_clean(tmp_path):
+    """[if] CLEAN PR has FAILURE check [then] clean excludes it, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    sha_by_pr = _hydrate_check_run_fixtures(fixture)
+    head_sha = sha_by_pr[1102]
+    check_path = fixture / "gh" / f"check-runs-{head_sha}.json"
+    checks = json.loads(check_path.read_text(encoding="utf-8"))
+    checks["check_runs"].append(
+        {"name": "quality gate", "status": "completed", "conclusion": "FAILURE"}
+    )
+    checks["total_count"] = len(checks["check_runs"])
+    (fixture / "gh" / f"check-runs-{head_sha}.json").write_text(
+        json.dumps(checks) + "\n",
+        encoding="utf-8",
+    )
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=2" in out
+    assert "actionable=5" in out
+
+
+def test_failure_conclusion_normalization_is_case_insensitive(tmp_path):
+    """[if] lowercase failure conclusion [then] clean excludes it, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    sha_by_pr = _hydrate_check_run_fixtures(fixture)
+    head_sha = sha_by_pr[1108]
+    _write_check_runs(fixture, head_sha, ["success", "failure"])
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=2" in out
+
+
+def test_neutral_skipped_and_null_check_conclusions_still_count_clean(tmp_path):
+    """[if] rollup has neutral skipped null success only [then] clean counts it, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    sha_by_pr = _hydrate_check_run_fixtures(fixture)
+    _write_check_runs(fixture, sha_by_pr[1102], ["success", "neutral", "skipped", None])
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=3" in out
+
+
+def test_check_rollup_read_failure_makes_clean_unmeasurable(tmp_path):
+    """[if] check-rollup cannot be read for a CLEAN actionable PR [then] clean=?, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    sha_by_pr = _hydrate_check_run_fixtures(fixture)
+    (fixture / "gh" / f"check-runs-{sha_by_pr[1101]}.json").unlink()
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=?" in out
+    assert "check-rollup COULD NOT MEASURE for actionable PR #1101" in proc.stderr
+
+
+def test_malformed_check_runs_response_makes_clean_unmeasurable(tmp_path):
+    """[if] check-runs wrapper lacks array or total_count [then] clean=?, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    sha_by_pr = _hydrate_check_run_fixtures(fixture)
+    malformed_path = fixture / "gh" / f"check-runs-{sha_by_pr[1102]}.json"
+    malformed_path.write_text('{"total_count": 1}\n', encoding="utf-8")
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=?" in out
+    assert "check-rollup COULD NOT MEASURE for actionable PR #1102" in proc.stderr
+
+
+def test_only_github_clean_actionable_prs_invoke_check_rollup(tmp_path):
+    """[if] PR not actionable or not CLEAN [then] check-rollup unread, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    check_log = fixture / "check-runs-invoked.jsonl"
+    env = _env(fixture, _home(tmp_path, token_profile=True))
+    env["KPI_CHECK_RUNS_LOG"] = str(check_log)
+
+    proc = _run(env)
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    log_lines = check_log.read_text(encoding="utf-8").splitlines()
+    invoked = [int(line) for line in log_lines if line.strip()]
     assert invoked == [1101, 1102, 1108]
