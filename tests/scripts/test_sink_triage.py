@@ -10,6 +10,8 @@ Regression lines:
   - if one ssh host is unreachable then the other sources still yield records,
     the skip is reported with host and path, and the skipped offsets are unchanged
   - if every source is unreachable then the run raises and writes no kpi file
+  - if a source was reached and every other source failed then the run finishes
+    (skips alone never mean a total outage) and each dead host is logged
   - if kpi reports a skipped source then ops/fleet/lib/sink-triage-kpi.sh prints it
 
 [if] sink fingerprints and thresholds fire [then] triage creates or comments on issues, [else stop].
@@ -21,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,7 +33,6 @@ from scripts.sink_triage import (
     AllSourcesUnreachable,
     FingerprintStats,
     HostSource,
-    RunResult,
     SinkRecord,
     TriageState,
     aggregate,
@@ -38,6 +40,7 @@ from scripts.sink_triage import (
     main,
     marker_for,
     parse_record,
+    read_delta_bytes,
     run_triage,
     threshold_met,
     triage_fingerprint,
@@ -132,7 +135,9 @@ def test_build_e2e_fingerprint_anchor() -> None:
     assert triage_fingerprint("build:E2E", _build_e2e_message()) == "878d8ed91bfc"
 
 
-def _collect_from_jsonl(tmp_path: Path, lines: list[dict[str, object]], name: str = "nucbox") -> list[SinkRecord]:
+def _collect_from_jsonl(
+    tmp_path: Path, lines: list[dict[str, object]], name: str = "nucbox"
+) -> list[SinkRecord]:
     sink = tmp_path / f"{name}-sink.jsonl"
     sink.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
     state = TriageState(offsets={}, run_history={}, last_comment={})
@@ -328,10 +333,7 @@ def test_build_kind_records_are_excluded_from_triage(tmp_path: Path) -> None:
 
 
 def test_build_source_site_without_kind_is_excluded(tmp_path: Path) -> None:
-    records = [
-        _record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}")
-        for i in range(100)
-    ]
+    records = [_record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}") for i in range(100)]
     result = run_triage(
         sources=[],
         state_path=tmp_path / "state.json",
@@ -358,7 +360,7 @@ def test_aggregate_counts_hosts_and_examples() -> None:
     assert len(stats.examples) == 2
 
 
-#----- per-host isolation (issue #3431)
+# ----- per-host isolation (issue #3431)
 
 
 _SSH_SINK = "~/Library/Logs/opendj/error-sink.jsonl"
@@ -395,9 +397,10 @@ def test_unreachable_ssh_source_is_skipped_and_offsets_unchanged(tmp_path: Path)
     stored = {f"air:{_SSH_SINK}": 4096, f"air:{_SSH_TRUNCATIONS}": 512}
     state = TriageState(offsets=dict(stored), run_history={}, last_comment={})
 
-    records, skip = collect_host_records(source, state, fetch_ssh=_unreachable_ssh)
+    records, skip, reached = collect_host_records(source, state, fetch_ssh=_unreachable_ssh)
 
     assert records == []
+    assert reached is False
     assert skip is not None
     assert skip.source == "air"
     assert skip.mode == "ssh"
@@ -414,12 +417,16 @@ def test_reachable_source_still_yields_records_beside_an_unreachable_one(tmp_pat
     good = HostSource(name="nucbox", mode="local", sink_path=str(sink))
     bad = HostSource(name="air", mode="ssh", sink_path=_SSH_SINK)
 
-    good_records, good_skip = collect_host_records(good, state)
-    bad_records, bad_skip = collect_host_records(bad, state, fetch_ssh=_unreachable_ssh)
+    good_records, good_skip, good_reached = collect_host_records(good, state)
+    bad_records, bad_skip, bad_reached = collect_host_records(
+        bad, state, fetch_ssh=_unreachable_ssh
+    )
 
     assert len(good_records) == 1
     assert good_skip is None
+    assert good_reached is True
     assert bad_records == []
+    assert bad_reached is False
     assert bad_skip is not None and bad_skip.source == "air"
     # The healthy host's offset advanced; the dead host's key was never created.
     assert state.offsets[f"nucbox:{sink}"] == sink.stat().st_size
@@ -487,6 +494,60 @@ def test_run_triage_raises_and_writes_no_kpi_when_every_source_is_unreachable(
     assert not kpi_path.exists()
 
 
+def _boom_local_after_first_path(boom_path: Path) -> Callable[[Path, int, int], tuple[bytes, int]]:
+    """A local reader that serves every path except ``boom_path``."""
+
+    def _fetch(path: Path, offset: int, tail_bytes: int) -> tuple[bytes, int]:
+        if path == boom_path:
+            raise OSError(f"cannot read local sink {path}")
+        return read_delta_bytes(path, offset, tail_bytes)
+
+    return _fetch
+
+
+def test_run_triage_continues_when_one_source_was_reached_and_all_others_failed(
+    tmp_path: Path,
+) -> None:
+    """As many skips as sources is not proof that no host was reached.
+
+    nucbox's sink reads fine, its truncations path then fails, and both Macs are
+    offline: three skips over three sources, but the run did reach a host, so it
+    must finish and keep the nucbox rows instead of discarding them (issue #3431).
+    """
+    sink = tmp_path / "opendj-error-sink.jsonl"
+    sink.write_text(_FLOOD_LINE, encoding="utf-8")
+    truncations = tmp_path / "truncations.jsonl"
+    dead_mac = {"sink_path": _SSH_SINK, "truncations_path": _SSH_TRUNCATIONS}
+    sources = [
+        HostSource(
+            name="nucbox",
+            mode="local",
+            sink_path=str(sink),
+            truncations_path=str(truncations),
+        ),
+        HostSource(name="silver", mode="ssh", **dead_mac),
+        HostSource(name="air", mode="ssh", **dead_mac),
+    ]
+    kpi_path = tmp_path / "state" / "sink-triage-kpi.json"
+
+    result = run_triage(
+        sources=sources,
+        state_path=tmp_path / "state" / "sink-triage.json",
+        kpi_path=kpi_path,
+        repo="maintainer/music-dj-tools",
+        dry_run=False,
+        fetch_local=_boom_local_after_first_path(truncations),
+        fetch_ssh=_unreachable_ssh,
+    )
+
+    assert result.fingerprints_seen == 1
+    assert sorted(skip.source for skip in result.skips) == ["air", "nucbox", "silver"]
+    kpi = json.loads(kpi_path.read_text(encoding="utf-8"))
+    assert kpi["fingerprints"] == 1
+    assert len(kpi["skipped_sources"]) == 3
+    assert kpi["skipped_sources"][0]["path"] == str(truncations)
+
+
 def test_main_logs_skipped_hosts_and_exits_zero_on_a_partial_run(tmp_path: Path) -> None:
     sink = tmp_path / "logs" / "opendj-error-sink.jsonl"
     sink.parent.mkdir(parents=True)
@@ -508,8 +569,10 @@ def test_main_exits_nonzero_and_names_every_host_when_all_sources_fail(tmp_path:
 
     assert rc == 1
     log = (tmp_path / "logs" / "sink-triage.log").read_text(encoding="utf-8")
-    assert "sink-triage ERROR" in log
+    # Each dead host is named on its own line BEFORE the aggregate failure: the
+    # abort must not swallow the evidence of what could not be reached.
     for host in ("nucbox", "silver", "air"):
-        assert host in log
+        assert f"sink-triage SKIPPED host={host}" in log
     assert "255" in log
+    assert log.index("sink-triage ERROR") > log.rindex("sink-triage SKIPPED host=")
     assert not (tmp_path / "state" / "sink-triage-kpi.json").exists()
