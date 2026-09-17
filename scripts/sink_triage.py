@@ -24,6 +24,9 @@ MINI-PRD
        [if] one fingerprint reaches 100 events in a single window on any host
             [then] a queue:ready issue is filed within the next hourly tick
             [else stop]
+    R4 Per-host isolation (issue #3431) .......................... done + regression
+       [if] a host is unreachable and another yields records [then] the rest are
+            still triaged and the skip is named [else stop]
 
 -Claude
 """
@@ -37,8 +40,7 @@ import os
 import re
 import subprocess
 import sys
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -65,6 +67,14 @@ class HostSource:
     mode: str
     sink_path: str
     truncations_path: str | None = None
+
+
+@dataclass(frozen=True)
+class SourceSkip:
+    source: str
+    mode: str
+    path: str
+    error: str
 
 
 @dataclass
@@ -127,12 +137,17 @@ class TriageState:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+class AllSourcesUnreachable(RuntimeError):
+    """Every configured source failed; this run reached no host."""
+
+
 @dataclass
 class RunResult:
     new_issues: int = 0
     comments: int = 0
     fingerprints_seen: int = 0
     commands: list[str] = field(default_factory=list)
+    skips: list[SourceSkip] = field(default_factory=list)
 
 
 def utc_now_iso() -> str:
@@ -258,7 +273,15 @@ def collect_host_records(
     state: TriageState,
     fetch_local: Callable[[Path, int, int], tuple[bytes, int]] | None = None,
     fetch_ssh: Callable[[str, str, int, int], tuple[bytes, int]] | None = None,
-) -> list[SinkRecord]:
+) -> tuple[list[SinkRecord], SourceSkip | None]:
+    """Read one source's paths, isolating a host that cannot be reached.
+
+    An unreachable host makes ssh itself exit 255 before the remote-side
+    ``|| echo 0`` in ``ssh_fetch`` can run, so the failure is scoped to THIS
+    source instead of aborting the lane (issue #3431). The failing path's offset
+    is left unwritten -- nothing was consumed, so the next run resumes there --
+    and the source's second path is not retried, so at most one skip.
+    """
     fetch_local = fetch_local or read_delta_bytes
     fetch_ssh = fetch_ssh or ssh_fetch
     records: list[SinkRecord] = []
@@ -267,17 +290,20 @@ def collect_host_records(
             continue
         key = f"{source.name}:{path_str}"
         offset = state.offsets.get(key, 0)
-        if source.mode == "local":
-            data, new_offset = fetch_local(Path(path_str), offset, TAIL_BYTES)
-        else:
-            data, new_offset = fetch_ssh(source.name, path_str, offset, TAIL_BYTES)
+        try:
+            if source.mode == "local":
+                data, new_offset = fetch_local(Path(path_str), offset, TAIL_BYTES)
+            else:
+                data, new_offset = fetch_ssh(source.name, path_str, offset, TAIL_BYTES)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return records, SourceSkip(source.name, source.mode, path_str, str(exc))
         state.offsets[key] = new_offset
         text = data.decode("utf-8", errors="replace")
         for line in text.splitlines():
             rec = parse_record(line, source.name)
             if rec is not None:
                 records.append(rec)
-    return records
+    return records, None
 
 
 def find_open_issue(
@@ -406,9 +432,13 @@ def run_triage(
     records = records_in if records_in is not None else []
     if records_in is None:
         for source in sources:
-            records.extend(
-                collect_host_records(source, state, fetch_local=fetch_local, fetch_ssh=fetch_ssh)
-            )
+            got, skip = collect_host_records(source, state, fetch_local, fetch_ssh)
+            records.extend(got)
+            if skip is not None:
+                result.skips.append(skip)
+        if sources and len(result.skips) == len(sources):
+            detail = "; ".join(f"{s.source} {s.path}: {s.error}" for s in result.skips)
+            raise AllSourcesUnreachable(f"every source failed: {detail}")
     grouped = aggregate(records)
     result.fingerprints_seen = len(grouped)
 
@@ -478,6 +508,7 @@ def run_triage(
                     "last_run": state.last_run,
                     "new_issues": result.new_issues,
                     "fingerprints": result.fingerprints_seen,
+                    "skipped_sources": [asdict(skip) for skip in result.skips],
                 },
                 indent=2,
             )
@@ -518,31 +549,48 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _append_log(log_path: Path, text: str) -> None:
+    prior = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
+    log_path.write_text(prior + text, encoding="utf-8")
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    fetch_local: Callable[[Path, int, int], tuple[bytes, int]] | None = None,
+    fetch_ssh: Callable[[str, str, int, int], tuple[bytes, int]] | None = None,
+) -> int:
     args = parse_args(argv)
     state_path = args.jobs_dir / "state/sink-triage.json"
     kpi_path = args.jobs_dir / "state/sink-triage-kpi.json"
     log_path = args.jobs_dir / "logs/sink-triage.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    sources = default_sources(args.jobs_dir)
     try:
         result = run_triage(
-            sources=default_sources(args.jobs_dir),
+            sources=sources,
             state_path=state_path,
             kpi_path=kpi_path,
             repo=args.repo,
             dry_run=args.dry_run,
+            fetch_local=fetch_local,
+            fetch_ssh=fetch_ssh,
         )
     except Exception as exc:
         line = f"{utc_now_iso()} sink-triage ERROR {exc}\n"
-        log_path.write_text(log_path.read_text(encoding="utf-8") + line if log_path.is_file() else line, encoding="utf-8")
+        _append_log(log_path, line)
         print(line, file=sys.stderr)
         return 1
+    for skip in result.skips:
+        _append_log(log_path, f"{utc_now_iso()} sink-triage SKIPPED host={skip.source} "
+                              f"mode={skip.mode} path={skip.path} error={skip.error}\n")
     summary = (
         f"{utc_now_iso()} sink-triage "
         f"new_issues={result.new_issues} comments={result.comments} "
-        f"fingerprints={result.fingerprints_seen} dry_run={args.dry_run}\n"
+        f"fingerprints={result.fingerprints_seen} dry_run={args.dry_run} "
+        f"skipped={len(result.skips)}/{len(sources)}\n"
     )
-    log_path.write_text(log_path.read_text(encoding="utf-8") + summary if log_path.is_file() else summary, encoding="utf-8")
+    _append_log(log_path, summary)
     for cmd in result.commands:
         print(cmd)
     return 0
