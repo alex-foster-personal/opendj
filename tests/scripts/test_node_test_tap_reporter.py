@@ -69,7 +69,27 @@ _PUNCTUATION = ";|&"
 # A token that invokes node: the bare binary, a path ending in it, or a variable
 # expanding to it. The Makefile calls `$(FRONTEND_NODE)`, so a word-boundary
 # match on `node` would skip that site entirely.
-_NODE_TOKEN = re.compile(r"(^|[^\w.-])node$|^node$|NODE[)}]?$", re.IGNORECASE)
+def _is_node_token(token: str) -> bool:
+    """Does this argv token invoke node?
+
+    Covers the bare binary, a path-qualified one, the Windows `node.exe`
+    spelling (.ps1 and .cmd are declared in scope, so it can appear), and a
+    variable expanding to it -- the Makefile calls `$(FRONTEND_NODE)`, where a
+    word boundary before `node` would skip the site entirely.
+    """
+    tok = token.strip().strip("\"'")
+    tok = tok.rstrip(")}")                      # $(FRONTEND_NODE) -> $(FRONTEND_NODE
+    tok = re.split(r"[\\/]", tok)[-1]            # path or Windows path -> basename
+    if tok.lower().endswith(".exe"):
+        tok = tok[: -len(".exe")]
+    if tok.lower() == "node":
+        return True
+    # A VARIABLE expanding to node, e.g. `$(FRONTEND_NODE)` or `%NODE%`. Gated
+    # on variable syntax: a bare word merely ending in those four letters, such
+    # as `notnode`, is a different program, and accepting it would put a false
+    # entry in the census.
+    looks_like_variable = "$" in tok or "%" in tok or "{" in tok
+    return looks_like_variable and tok.upper().strip("%${}(") .endswith("NODE")
 # Quoted string literals, used to bound commands inside JSON and YAML. Each value
 # is its own command, which is what stops one line's flags reaching another's.
 _QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -172,12 +192,37 @@ def _python_commands(text: str) -> list[tuple[int, list[str]]]:
     return found
 
 
+def _logical_lines(text: str) -> list[tuple[int, str]]:
+    """Physical lines joined on a trailing backslash, keyed by their FIRST line.
+
+    A shell, Make or YAML command may wrap: `node \\` then `--test tests/unit`
+    on the next line. Scanning physical lines drops that invocation from the
+    census entirely while every guard stays green, which is the silent-skip
+    class this file exists to catch.
+    """
+    out: list[tuple[int, str]] = []
+    pending: list[str] = []
+    start = 1
+    for lineno, line in enumerate(text.split("\n"), start=1):
+        if not pending:
+            start = lineno
+        if line.rstrip().endswith("\\"):
+            pending.append(line.rstrip()[:-1])
+            continue
+        pending.append(line)
+        out.append((start, " ".join(pending)))
+        pending = []
+    if pending:
+        out.append((start, " ".join(pending)))
+    return out
+
+
 def _commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
     """Every command in one file, as (line number, argv)."""
     if path.suffix == ".py":
         return _python_commands(text)
     commands: list[tuple[int, list[str]]] = []
-    for lineno, line in enumerate(text.split("\n"), start=1):
+    for lineno, line in _logical_lines(text):
         if line.lstrip().startswith("#"):
             # A whole-line comment is documentation. Only whole-line: an inline
             # `#` can sit inside a quoted argument, and truncating there would
@@ -204,7 +249,7 @@ def _node_test_sites_in(label: str, path: Path, text: str) -> list[tuple[str, in
         (label, lineno, segment)
         for lineno, argv in _commands(path, text)
         for segment in _segments(argv)
-        if TEST_FLAG in segment and any(_NODE_TOKEN.search(tok) for tok in segment)
+        if TEST_FLAG in segment and any(_is_node_token(tok) for tok in segment)
     ]
 
 
@@ -323,6 +368,33 @@ def test_a_flag_belonging_to_a_later_command_is_not_this_ones() -> None:
     assert _scan("f", "node build.mjs --watch && tsc --test") == [], (
         "the --test here is an argument of tsc, in a separate command"
     )
+
+
+def test_a_continued_command_is_still_one_invocation() -> None:
+    """A command wrapped on a trailing backslash was omitted from the census
+    entirely, so a default-reporter call could be added with both guards green
+    (Sol P1, fifth round)."""
+    wrapped = "node \\\n  --test tests/unit\n"
+    found = _scan("f", wrapped)
+    assert len(found) == 1, f"the continued invocation was not found: {found}"
+    assert TAP_FLAG not in found[0][2], "fixture sanity: this form has no reporter"
+    assert found[0][1] == 1, "the site should be reported at the line the command starts on"
+    # Control: a backslash that is NOT a continuation must not glue two
+    # unrelated commands into one.
+    separate = "echo done\nnode --test --test-reporter=tap x.test.mjs\n"
+    assert [n for _, n, _ in _scan("f", separate)] == [2]
+
+
+def test_the_windows_node_exe_spelling_is_recognized() -> None:
+    """.ps1 and .cmd are declared in scope, so `node.exe --test` can appear
+    there and must not be invisible (Sol P2, fifth round)."""
+    for command in (
+        "node.exe --test tests/unit",
+        r"C:\\tools\\node.exe --test tests/unit",
+        "./node --test tests/unit",
+    ):
+        assert _scan("f", command), f"{command!r} invokes node and must be found"
+    assert _scan("f", "notnode --test x") == [], "a token merely ending in `node` text is not node"
 
 
 def test_a_documented_command_is_not_a_call_site(tmp_path: Path) -> None:
