@@ -26,13 +26,38 @@ import argparse
 import fnmatch
 import json
 import sys
+import tomllib
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 MODULE = "module:"
 FIXTURE = "fixture:"
 DIRECTORY = "dir:"
+
+REPO = Path(__file__).resolve().parent.parent
+PYPROJECT = REPO / "pyproject.toml"
+
+
+def _test_roots(pyproject: Path = PYPROJECT) -> tuple[str, ...]:
+    """The directories pytest is configured to collect from, read from `pyproject.toml`.
+
+    Read rather than hardcoded so the selector cannot drift from the collector: a new test
+    root added to `testpaths` is one this selector starts honoring in the same commit. A
+    missing or empty `testpaths` RAISES, because guessing `tests` would silently reinstate
+    the assumption this function exists to remove.
+    """
+    with pyproject.open("rb") as handle:
+        roots = tomllib.load(handle).get("tool", {}).get("pytest", {}).get(
+            "ini_options", {}
+        ).get("testpaths")
+    if not roots:
+        raise SystemExit(f"UNKNOWN: {pyproject} sets no [tool.pytest.ini_options] testpaths")
+    return tuple(str(PurePosixPath(root)) for root in roots)
+
+
+TEST_ROOTS = _test_roots()
 
 
 @dataclass(frozen=True)
@@ -117,9 +142,28 @@ def load_map(records: dict) -> ImpactMap:
 # ----- select -----
 
 
-def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
-    """Test modules the observed traces say a change to `changed` can reach."""
-    selected: set[str] = set()
+def select_modules(
+    impact: ImpactMap,
+    changed: list[str],
+    exists: Callable[[str], bool] = lambda path: (REPO / path).exists(),
+) -> frozenset[str]:
+    """Test modules the observed traces say a change to `changed` can reach.
+
+    A changed test module the map has never seen is selected too. The map can only speak
+    about what it observed, so a test added since it was built is UNKNOWN, and a pull
+    request that adds a test must run it.
+
+    A DELETED one is not, and the check is on the EMITTED set rather than on one branch of
+    it. pytest handed a path that no longer exists errors out instead of running anything, so
+    ANY emitted path that is not on disk fails the job, however it was selected. A diff lists
+    a removed file exactly like an added one, so a pull request whose only change is deleting
+    a test would fail CI on the file it deleted; and the map is built from an older commit,
+    so a module deleted since is still in `impact.modules` and would be emitted even when the
+    diff never mentions it. `exists` is a seam so the rule can be tested without a filesystem.
+    """
+    selected: set[str] = {
+        path for path in changed if _is_test_module(path) and path not in impact.modules
+    }
     fixtures_hit = {
         name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
     }
@@ -137,7 +181,24 @@ def select_modules(impact: ImpactMap, changed: list[str]) -> frozenset[str]:
             or any(_is_under(module, directory) for directory in hit_dirs)
         ):
             selected.add(module)
-    return frozenset(selected)
+    return frozenset(path for path in selected if exists(path))
+
+
+def _is_test_module(path: str) -> bool:
+    """A file pytest would actually collect: inside a configured test root AND named the way
+    pytest names tests.
+
+    The naming half alone is not enough. `scripts/bench/q0-offline/q0_leak_test.py` matches
+    the pattern and is NOT collected, because `pyproject.toml` sets `testpaths = ["tests"]`.
+    Emitted as a test to run, pytest imports its top-level benchmark code and the job fails
+    rather than running a test, so a selector that widened to be safe would break the build.
+    """
+    if not path.endswith(".py"):
+        return False
+    if not any(_is_under(path, root) for root in TEST_ROOTS):
+        return False
+    name = PurePosixPath(path).name
+    return name.startswith("test_") or name.endswith("_test.py")
 
 
 def _is_under(module: str, directory: str) -> bool:

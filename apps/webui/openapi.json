@@ -28412,6 +28412,100 @@
         ]
       }
     },
+    "/api/v1/performance/headphones/preview": {
+      "post": {
+        "description": "CUEOUT-15: play `stable_id` from `ratio` of its length on the cue bus.\n\nThis is the mini-waveform click, driven without a pointer. It loads no\ndeck and moves no transport, so it can be issued while all four decks\nare busy and while one of them is on air.\n\nA preview that could not be heard is a 400 carrying the reason the page\nwould have shown the operator (no audio graph, a dead cue sink, MIX at\nthe master end, GAIN at zero), never a 200 over silence.\n\nOptional `bpm` is the track's own tempo; with the preview tempo-match\nsetting on and a master deck playing, the preview matches that tempo\n(CUEOUT-15 R6). Omit it and the preview plays at the track's own tempo.",
+        "operationId": "post_preview_cue_api_v1_performance_headphones_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "PreviewCueBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Cue-bus state after starting the library preview"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Cue",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/preview/stop": {
+      "post": {
+        "description": "CUEOUT-15: stop the preview and release the decoded track.\n\nIdempotent: stopping when nothing is previewing is a success, because\nthe caller's intent (nothing playing on the preview voice) is satisfied.",
+        "operationId": "post_preview_stop_api_v1_performance_headphones_preview_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "PreviewStopBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Cue-bus state after stopping the library preview"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Stop",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
     "/api/v1/performance/rescue-snapshots": {
       "post": {
         "operationId": "post_rescue_snapshot_api_v1_performance_rescue_snapshots_post",

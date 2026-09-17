@@ -332,7 +332,7 @@ def test_flip_gate_refuses_a_successor_with_no_seat_or_reading(tmp_path):
     """
     fixture = _copy_fixture(tmp_path)
     (fixture / "jobs" / "state" / "account-rotation").write_text(
-        "acct-hot acct-nomeasure\n"
+            "ci-infra acct-hot acct-nomeasure\n"
     )
 
     out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
@@ -351,7 +351,7 @@ def test_flip_gate_refuses_a_successor_that_is_itself_walled(tmp_path):
     the case OPS-23 exists to refuse."""
     fixture = _copy_fixture(tmp_path)
     (fixture / "jobs" / "state" / "account-rotation").write_text(
-        "acct-hot acct-warm\n"  # acct-warm reads 87%, itself >= FIVE_HOUR_DENY_PCT
+            "ci-infra acct-hot acct-warm\n"  # acct-warm reads 87%, itself >= FIVE_HOUR_DENY_PCT
     )
 
     out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
@@ -477,7 +477,7 @@ def test_duplicate_fix_reports_unmeasurable_when_the_closed_pr_read_is_capped(tm
     out = _run(env).stdout
     assert (
         "duplicate-fix superseded_prs_today=unmeasurable prs=[] (closed-PR "
-        "read hit --limit 4 with 4 rows; a capped read is not a full day's "
+        "read hit row cap 4 before reaching 2026-09-04T00:00:00Z; a capped read is not a full day's "
         "count, refusing rather than reporting a truncated number as "
         "measured)" in out
     )

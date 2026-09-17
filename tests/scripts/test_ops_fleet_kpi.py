@@ -103,23 +103,60 @@ def _iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _install_review_triage_stub(home: Path, mapping_file: Path) -> Path:
+    """Hermetic seam for backlog clean's review-triage gate (issue #3380)."""
+    stub = home / "review-triage-stub.sh"
+    stub.write_text(
+        f"""#!/bin/sh
+set -eu
+pr="$1"
+mapfile="{mapping_file}"
+invoked=$(jq -c --arg pr "$pr" '.invoked += [$pr | tonumber]' "$mapfile")
+printf '%s' "$invoked" > "$mapfile"
+rc=$(jq -r --arg pr "$pr" '.[$pr] // .default // 0' "$mapfile")
+exit "$rc"
+""",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
 def _env(fixture: Path, home: Path) -> dict[str, str]:
+    gh_config = home / "gh-config"
+    gh_config.mkdir(exist_ok=True)
+    gh_stub = home / ".local" / "bin" / "gh"
+    gh_stub.parent.mkdir(parents=True, exist_ok=True)
+    gh_stub.write_text(
+        "#!/bin/sh\n"
+        "echo 'unexpected live gh invocation in KPI fixture test' >&2\n"
+        "exit 97\n",
+        encoding="utf-8",
+    )
+    gh_stub.chmod(0o755)
+    review_triage_stub = _install_review_triage_stub(home, fixture / "review-triage.json")
     env = {k: v for k, v in os.environ.items() if not k.startswith("KPI_")}
     env.update(
         {
             "HOME": str(home),
+            "GH_CONFIG_DIR": str(gh_config),
+            "PATH": f"{home}:{env.get('PATH', '')}",
             "KPI_JOBS_DIR": str(fixture / "jobs"),
             "KPI_GH_FIXTURES_DIR": str(fixture / "gh"),
             "KPI_PROBES_DIR": str(fixture / "probes"),
             "KPI_NOW_UNIX": str(NOW),
+            "KPI_REVIEW_TRIAGE_CMD": str(review_triage_stub),
         }
     )
     return env
 
 
 def _run(env: dict[str, str]) -> subprocess.CompletedProcess:
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("UNAVAILABLE: bash is required to run ops/fleet/kpi.sh")
     return subprocess.run(
-        ["bash", str(KPI), str(HOURS)],
+        [bash, str(KPI), str(HOURS)],
         capture_output=True,
         text=True,
         timeout=60,
@@ -137,12 +174,17 @@ def _copy_fixture(tmp_path: Path) -> Path:
     os.utime(fixture / "jobs" / "logs" / "tick-gate.log", (NOW - 120, NOW - 120))
     for report in (fixture / "jobs" / "reports").glob("issue-*.md"):
         os.utime(report, (NOW - 120, NOW - 120))
+    rotation = fixture / "jobs" / "state" / "account-rotation"
+    rotation.write_text("ci-infra acct-hot acct-cold\n", encoding="utf-8")
     return fixture
 
 
 def _home(tmp_path: Path, token_profile: bool) -> Path:
     home = tmp_path / "home"
     home.mkdir()
+    app_state = home / ".local" / "state" / "gh-apps"
+    app_state.mkdir(parents=True)
+    (app_state / "opendj-devops-kpi.token").write_text("fixture-app-token\n", encoding="utf-8")
     if token_profile:
         (home / ".profile").write_text("export CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n")
     return home
@@ -194,7 +236,7 @@ GREEN_LABELS = [
     "workers within cap (4)",
     "actionable PR backlog under builder-freeze threshold 15",
     "host disk GREEN (level=GREEN free=160.17GB rate=0GB/h hours_to_red=999"
-    " ts=2026-09-04T18:28:00.7173594Z; Windows C: per af-disk-watchdog, stale after 15 min)",
+    " ts=2026-09-04T18:28:00.7173594Z source=windows-watchdog; Windows C: per af-disk-watchdog, stale after 15 min)",
     "sink-triage last run within 7200s (hourly timer opendj-sink-triage.timer)",
     _fatal_label(0),
     PROVISIONING_LABEL,
@@ -229,16 +271,16 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
     assert "codex_reviews_per_merged_pr=1.0" in out
 
     # Worker attempts (windowed) and report outcomes.
-    assert "workers attempts_started=2 live_now=2 reports_awaiting_reap done=2 blocked=1" in out
+    assert "workers attempts_started=0 live_now=2 reports_awaiting_reap=0 done=2 blocked=1" in out
 
     # Burn floor and efficiency from the fixture quota.sh.
     assert "burn QUOTA scope=nucbox-local workers_live=2" in out
     assert "efficiency block_cost_per_merge_usd=14.0" in out
 
-    # Backlog split: 9 open rows -> 8 non-draft, 5 actionable, 5 CLEAN. The
+    # Backlog split: 9 open rows -> 8 non-draft, 5 actionable, 3 CLEAN. The
     # three non-actionable ones are the blocked:* PR, the post-v1 PR and the
     # July-era PR; the draft is not even open_prs.
-    assert "backlog open_prs=8 actionable=5 clean=5 soft_target=10 hard_target=15" in out
+    assert "backlog open_prs=8 actionable=5 clean=3 soft_target=10 hard_target=15" in out
 
     # Merge-ownership policy numbers (the maintainer, Thu 4 Sep 2026). Of the 5
     # actionable PRs, 3 are days old (over red), #1108 is 90 minutes old (over
@@ -286,7 +328,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
 
     assert proc.returncode == 0, out
     assert (
-        "ticks lane=merge-even RETIRED (not driven by watchdog.sh; "
+        "ticks lane=merge-even RETIRED (not driven by watchdog.sh, no systemd --user timer found either; "
         "last log 2026-09-02T16:29:22Z)"
     ) in out
     assert "ticks lane=merge-odd ran=0 skipped=0 skip_ratio=ALERT" in out
@@ -596,3 +638,44 @@ def test_script_is_executable_and_syntax_clean():
     """If ops/fleet/kpi.sh loses its shebang or exec bit then broken."""
     assert KPI.exists()
     assert KPI.stat().st_mode & 0o111, f"not executable: {KPI}"
+
+
+def test_github_clean_pr_with_failing_review_gate_is_not_clean(tmp_path):
+    """[if] mergeable_state is CLEAN but review-triage exits 1 [then] clean excludes it, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    mapping = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))
+    mapping["1108"] = 1
+    (fixture / "review-triage.json").write_text(json.dumps(mapping), encoding="utf-8")
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=2" in out
+    assert "actionable=5" in out
+
+
+def test_review_gate_measurement_failure_makes_clean_unmeasurable(tmp_path):
+    """[if] review-triage cannot measure a CLEAN actionable PR [then] clean=?, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    mapping = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))
+    mapping["1102"] = 3
+    (fixture / "review-triage.json").write_text(json.dumps(mapping), encoding="utf-8")
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert "backlog open_prs=8 actionable=5 clean=?" in out
+    assert "review-triage COULD NOT MEASURE for actionable PR #1102" in proc.stderr
+
+
+def test_only_github_clean_actionable_prs_invoke_review_gate(tmp_path):
+    """[if] a PR is not actionable or not GitHub-clean [then] review-triage is not run, [else stop]."""
+    fixture = _copy_fixture(tmp_path)
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    invoked = json.loads((fixture / "review-triage.json").read_text(encoding="utf-8"))["invoked"]
+    assert invoked == [1101, 1102, 1108]

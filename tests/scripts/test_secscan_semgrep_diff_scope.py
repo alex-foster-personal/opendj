@@ -147,3 +147,55 @@ def test_python_diff_counts_positive_with_semgrep(tmp_path: Path) -> None:
     )
     assert rc == 0
     assert int(count) > 0
+
+
+# ----- semgrep's default ignore list (job 104882711482, PR #3362) -------------------------------
+# The real diff-aware scan runs from the repo root and honors that list; naming the changed
+# files as explicit targets forced them past it, so a tests/-only diff counted 1 and scanned 0.
+SHELL_TRUE = "import subprocess\nsubprocess.call({!r}, shell=True)\n"
+
+
+def _repo_with_semgrep_rules(tmp_path: Path) -> tuple[Path, list[str]]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    shutil.copytree(ROOT / "tools" / "semgrep", repo / "tools" / "semgrep")
+    configs = ["p/python", "p/typescript", "p/rust", str(repo / "tools" / "semgrep")]
+    return repo, configs
+
+
+@pytest.mark.skipif(not SEMGREP.exists(), reason="semgrep not installed")
+def test_tests_only_diff_counts_zero_with_semgrep(tmp_path: Path) -> None:
+    """[if] the only changed file is one semgrep ignores by default [then] count 0, [else stop]."""
+    repo, configs = _repo_with_semgrep_rules(tmp_path)
+    (repo / "tests").mkdir()
+    (repo / "tests/test_probe.py").write_text(SHELL_TRUE.format("ls"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "init")
+    base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    (repo / "tests/test_probe.py").write_text(SHELL_TRUE.format("pwd"), encoding="utf-8")
+    _git(repo, "add", "tests/test_probe.py")
+    _git(repo, "commit", "-m", "tests only")
+    rc, count = _scope(repo, base, configs=configs)
+    assert rc == 0
+    assert count == "0", "a tests/-only diff is invisible to the real scan, so scope must be 0"
+
+
+@pytest.mark.skipif(not SEMGREP.exists(), reason="semgrep not installed")
+def test_mixed_diff_counts_only_the_scannable_file(tmp_path: Path) -> None:
+    """[if] one changed file is ignored and one is not [then] count exactly 1, [else stop]."""
+    repo, configs = _repo_with_semgrep_rules(tmp_path)
+    (repo / "tests").mkdir()
+    (repo / "apps").mkdir()
+    (repo / "tests/test_probe.py").write_text(SHELL_TRUE.format("ls"), encoding="utf-8")
+    (repo / "apps/probe.py").write_text(SHELL_TRUE.format("ls"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "init")
+    base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    (repo / "tests/test_probe.py").write_text(SHELL_TRUE.format("pwd"), encoding="utf-8")
+    (repo / "apps/probe.py").write_text(SHELL_TRUE.format("pwd"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "mixed")
+    rc, count = _scope(repo, base, configs=configs)
+    assert rc == 0
+    assert count == "1", "the apps/ file is scannable and the tests/ file is not"

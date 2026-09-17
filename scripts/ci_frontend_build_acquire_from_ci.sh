@@ -46,7 +46,7 @@ fi
 # not a verdict by itself -- the caller decides what to do next from CI's own
 # job state, not from this silence.
 _poll_artifact_id() {
-  # gh exits 4 when unauthenticated (the affected-test canary has no token).
+  # gh exits 4 when unauthenticated (the fast tier job has no token).
   # That is "not published yet", not a crash: leaking gh's code here skipped
   # the refuse-to-build message (head ed73bf4f7, assert 4 == 1).
   local ids
