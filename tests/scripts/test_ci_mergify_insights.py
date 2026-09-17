@@ -368,24 +368,6 @@ def test_a_stale_report_cannot_be_staged_as_this_runs_result() -> None:
     )
 
 
-def test_the_pytest_step_clears_a_stale_report_before_writing_one() -> None:
-    """if the old report survives then an absent result reads as a present one."""
-    run = _pytest_run_block()
-    assert 'rm -f "junit-shard-' in run, (
-        "The pytest step no longer removes a report left by an earlier run on "
-        "this persistent workspace. Clearing the staging directory is not "
-        "enough on its own: if this attempt dies before pytest writes, the "
-        "inherited file is copied and uploaded as this run's result. checkout "
-        "usually cleans it, but staging runs under always() and so also runs "
-        "on the paths where checkout itself failed."
-    )
-    junit = _junitxml_path()
-    assert junit in run.split("rm -f ")[1].split("\n")[0], (
-        f"The rm -f does not name the same path pytest writes ({junit!r}), so "
-        "a stale report under the real name survives untouched."
-    )
-
-
 def test_staging_failure_cannot_redden_the_lane() -> None:
     """if staging is fatal then broken instrumentation fails a green suite."""
     assert _stage_step().get("continue-on-error") is True, (
@@ -469,28 +451,6 @@ def test_a_staging_failure_suppresses_the_upload() -> None:
     )
 
 
-def test_the_stale_report_cleanup_is_mandatory() -> None:
-    """if rm -f can fail silently then a killed pytest uploads the old report."""
-    run = _pytest_run_block()
-    assert "set -e" not in run.split("\n")[0], (
-        "This assumes the script has no errexit; if that changed, the guard "
-        "below should be rewritten rather than left asserting the wrong thing."
-    )
-    line = next(
-        (ln for ln in run.splitlines() if 'rm -f "junit-shard-' in ln), ""
-    )
-    assert line, "The pytest step no longer clears a stale report at all."
-    assert "|| exit 1" in line, (
-        f"The stale-report cleanup is {line.strip()!r}, which cannot fail the "
-        "step. This script has no errexit, so a permission or filesystem "
-        "error leaves the previous run's report in place and pytest starts "
-        "anyway. If that pytest is then killed before writing, staging sees a "
-        "real `failure` outcome, accepts it, and the INHERITED report is "
-        "uploaded as this run's measurement. A shard that cannot guarantee a "
-        "clean slate has no result to give and must refuse to start."
-    )
-
-
 def test_the_prune_cannot_delete_another_shards_staging_directory() -> None:
     """if the prune globs widely then it deletes a result before its upload."""
     run = _stage_step()["run"]
@@ -511,4 +471,76 @@ def test_the_prune_cannot_delete_another_shards_staging_directory() -> None:
         f"The prune {invocation!r} carries no obsolescence proof, so it can "
         "match a directory that is still in flight. A shard's wall budget "
         "bounds how old an in-flight directory can be; require an age past it."
+    )
+
+
+def test_the_junit_report_is_written_where_a_previous_run_cannot_reach() -> None:
+    """if the report lands in the workspace then a stale one can be staged."""
+    # This is the CLASS fix for four rounds of P1s on #3447, each of which was
+    # a different route by which a previous run's report at a fixed workspace
+    # path got treated as current: staging reused a directory, staging ran
+    # when pytest had not, the cleanup could fail silently, and then the
+    # cleanup's own failure produced an outcome the staging gate accepted.
+    # The runner empties RUNNER_TEMP at the start and end of every job, so a
+    # report written there cannot have been left by an earlier run and no
+    # cleanup of ours has to succeed for that to hold.
+    written = _junitxml_path()
+    assert "RUNNER_TEMP" in written, (
+        f"pytest writes its JUnit report to {written!r}, which is not under "
+        "RUNNER_TEMP. A workspace path persists between runs on a self-hosted "
+        "runner, so an earlier run's report can be staged and uploaded as "
+        "this run's measurement. Every guard against that is a guard that has "
+        "to work; RUNNER_TEMP removes the situation instead."
+    )
+    # The staging step must read from the SAME place, or the report it copies
+    # is once again whatever is sitting in the workspace.
+    assert written in _stage_step()["run"], (
+        f"The staging step does not read {written!r}. Writing the report "
+        "somewhere safe and then copying from somewhere else reinstates the "
+        "defect while looking like the fix for it."
+    )
+    # Anchored to the COPY ITSELF, not to the path appearing anywhere in the
+    # step. The first version of this assertion checked that `written` was
+    # present somewhere in the run block, which stayed true when only the `cp`
+    # was pointed back at the workspace -- the `if [ -f ... ]` test above it
+    # still mentioned the safe path. A mutation walked through it.
+    cp_lines = [ln for ln in _stage_step()["run"].splitlines() if "cp " in ln]
+    assert cp_lines, "The staging step no longer copies the report anywhere."
+    for line in cp_lines:
+        assert "RUNNER_TEMP" in line, (
+            f"The staging step copies from {line.strip()!r}, which is not the "
+            "RUNNER_TEMP path pytest writes. Checking that the safe path is "
+            "mentioned SOMEWHERE in the step is not enough: the guard and the "
+            "copy can name different files while the step still reads as "
+            "correct, which is exactly how this assertion failed its own "
+            "mutation test."
+        )
+
+
+def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
+    """if the name repeats across attempts then a re-run reads attempt 1."""
+    # v4 artifacts are immutable by name and a re-run keeps the same run_id,
+    # so a name without run_attempt makes the second attempt's upload fail --
+    # non-fatally, by design -- leaving the isolated job to download attempt
+    # 1's artifact and record it as the current attempt's result.
+    upload = next(
+        st for st in _steps(SHARD_JOB)
+        if str(st.get("uses", "")).startswith("actions/upload-artifact@")
+        and "ci-insights" in str(st.get("with", {}).get("name", ""))
+    )
+    download = next(
+        st for st in _steps(INSIGHTS_JOB)
+        if str(st.get("uses", "")).startswith("actions/download-artifact@")
+    )
+    up_name = upload["with"]["name"]
+    down_name = download["with"]["name"]
+    assert "github.run_attempt" in up_name, (
+        f"The uploaded artifact is named {up_name!r}, which repeats across "
+        "attempts of the same run."
+    )
+    assert up_name == down_name, (
+        f"The upload names {up_name!r} and the download asks for "
+        f"{down_name!r}. They have to be identical or the download either "
+        "finds nothing or finds an artifact from another attempt, and both "
+        "failures are silent on a continue-on-error step."
     )
