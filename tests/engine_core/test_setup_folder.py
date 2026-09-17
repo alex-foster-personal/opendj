@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import struct
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -94,7 +94,7 @@ def unreadable(tmp_path: Path) -> Iterator[Path]:
         blocked.chmod(0o755)
 
 
-def _emit_sink() -> tuple[list[tuple[float, str]], object]:
+def _emit_sink() -> tuple[list[tuple[float, str]], Callable[[float, str], None]]:
     sink: list[tuple[float, str]] = []
 
     def emit(progress: float, message: str) -> None:
@@ -675,7 +675,9 @@ def test_analysis_available_reports_what_this_engine_can_actually_do(
     _sink, emit = _emit_sink()
     outcome = importer.run_folder_import(data_dir, emit=emit, roots=[library])
     assert outcome.analysis_available is installed
-    assert record.read(data_dir).last_import["analysis_available"] is installed
+    last_import = record.read(data_dir).last_import
+    assert last_import is not None
+    assert last_import["analysis_available"] is installed
 
 
 @pytest.mark.requirement("SETUP-14")

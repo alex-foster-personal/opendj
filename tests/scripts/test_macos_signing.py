@@ -537,9 +537,11 @@ def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() ->
     this pins that the stage still reaches both, after the unentitled pass.
     """
     source = SIGN_SCRIPT.read_text()
-    body = source[source.index("cmd_payload() {") : source.index("\n}\n", source.index("cmd_payload() {"))]
+    start = source.index("cmd_payload() {")
+    body = source[start : source.index("\n}\n", start)]
     unentitled = body.index("codesign --force --timestamp --options runtime")
     entitle = body.index('_sign_engine_executables "$payload"')
     smoke = body.index('_prove_signed_engine_can_jit "$payload"')
     assert unentitled < entitle < smoke
-    assert 'ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"' in source
+    entitlements_path = "$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
+    assert f'ENGINE_ENTITLEMENTS="{entitlements_path}"' in source
