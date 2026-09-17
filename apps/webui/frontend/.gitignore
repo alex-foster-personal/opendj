@@ -10,3 +10,6 @@ storybook-static/
 # Playwright artifacts from e2e/savepoint runs
 test-results/
 playwright-report/
+
+# node:test junit reports (uploaded as CI artifacts, never committed)
+junit-unit*.xml
