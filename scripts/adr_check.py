@@ -18,6 +18,12 @@ for the body. Silence is the only thing that fails when a gated path
 moved. An unknown id fails even if a ``none, because`` line is also
 present, so a typo cannot hide behind the escape hatch.
 
+Before any duplicate-id scan the CLI proves ``base`` is an ancestor of
+``HEAD`` (or ``--merge-head`` in ``--merge-base`` mode); stale synthetic
+PR merge refs fail with ``merge ref is stale, update your branch`` instead
+of historical duplicate-id noise. The workflow ``edited`` trigger re-runs
+body declarations; :mod:`scripts.adr_ref_freshness` handles merge refs.
+
 What would satisfy this check without satisfying its intent, and why it
 does not: a bare ``ADR: none`` with no ``because`` reason still fails --
 the regex requires ``because`` and a non-whitespace reason on the SAME
@@ -43,6 +49,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from scripts.adr_ref_freshness import check_ref_freshness, emit_gate_result
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPO = "maintainer/music-dj-tools"
@@ -488,6 +496,41 @@ def current_pr_number(repo_root: Path, repo: str = DEFAULT_REPO) -> int | None:
     return int(number) if number else None
 
 
+def _resolve_changed_paths(
+    args: argparse.Namespace,
+    *,
+    changed: list[str] | None,
+    list_changed,
+    repo_root: Path,
+) -> list[str]:
+    if changed is not None:
+        return changed
+    if args.changed_file:
+        return list(args.changed_file)
+    if args.pr is not None:
+        return pr_files(args.pr, args.repo)
+    if list_changed is not None:
+        return list_changed(args.base, repo_root)
+    return git_changed(args.base, repo_root)
+
+
+def _resolve_body(
+    args: argparse.Namespace,
+    *,
+    body: str | None,
+    fetch,
+    repo_root: Path,
+) -> str:
+    if body is not None:
+        return body
+    if args.body_file:
+        return Path(args.body_file).read_text(encoding="utf-8")
+    pr_number = args.pr if args.pr is not None else current_pr_number(repo_root, args.repo)
+    if pr_number is not None:
+        return fetch(pr_number).get("body") or ""
+    return git_commit_body(args.base, repo_root)
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -512,53 +555,42 @@ def main(
     decisions = Path(args.adr_dir) if args.adr_dir else (adr_dir or DEFAULT_ADR_DIR)
 
     if args.merge_base is not None:
-        try:
-            base_sha = git_rev_parse(args.merge_base, repo_root)
-            head_sha = git_rev_parse(args.merge_head, repo_root)
-            verdict = evaluate_merged_tree(base_sha, head_sha, repo_root)
-        except Exception as exc:
-            print(f"[adr-check] UNKNOWN: merge-tree evaluation failed ({exc})", file=sys.stderr)
-            return 2
-        stream = sys.stdout if verdict.code == 0 else sys.stderr
-        print(verdict.message, file=stream)
-        return verdict.code
+        return _run_merge_base_mode(args, repo_root)
 
     try:
-        if changed is not None:
-            paths = changed
-        elif args.changed_file:
-            paths = list(args.changed_file)
-        elif args.pr is not None:
-            paths = pr_files(args.pr, args.repo)
-        elif list_changed is not None:
-            paths = list_changed(args.base, repo_root)
-        else:
-            paths = git_changed(args.base, repo_root)
+        paths = _resolve_changed_paths(
+            args, changed=changed, list_changed=list_changed, repo_root=repo_root
+        )
     except Exception as exc:
         print(f"[adr-check] UNKNOWN: could not list changed paths ({exc})", file=sys.stderr)
         return 2
 
     try:
-        if body is not None:
-            text = body
-        elif args.body_file:
-            text = Path(args.body_file).read_text(encoding="utf-8")
-        else:
-            pr_number = args.pr
-            if pr_number is None:
-                pr_number = current_pr_number(repo_root, args.repo)
-            if pr_number is not None:
-                text = fetch(pr_number).get("body") or ""
-            else:
-                text = git_commit_body(args.base, repo_root)
+        text = _resolve_body(args, body=body, fetch=fetch, repo_root=repo_root)
     except Exception as exc:
         print(f"[adr-check] UNKNOWN: could not read PR/commit body ({exc})", file=sys.stderr)
         return 2
 
+    freshness = check_ref_freshness(args.base, "HEAD", repo_root)
+    if freshness is not None:
+        return emit_gate_result(freshness.code, freshness.message)
+
     verdict = evaluate(paths, text, decisions)
-    stream = sys.stdout if verdict.code == 0 else sys.stderr
-    print(verdict.message, file=stream)
-    return verdict.code
+    return emit_gate_result(verdict.code, verdict.message)
+
+
+def _run_merge_base_mode(args: argparse.Namespace, repo_root: Path) -> int:
+    freshness = check_ref_freshness(args.merge_base, args.merge_head, repo_root)
+    if freshness is not None:
+        return emit_gate_result(freshness.code, freshness.message)
+    try:
+        base_sha = git_rev_parse(args.merge_base, repo_root)
+        head_sha = git_rev_parse(args.merge_head, repo_root)
+        verdict = evaluate_merged_tree(base_sha, head_sha, repo_root)
+    except Exception as exc:
+        print(f"[adr-check] UNKNOWN: merge-tree evaluation failed ({exc})", file=sys.stderr)
+        return 2
+    return emit_gate_result(verdict.code, verdict.message)
 
 
 if __name__ == "__main__":
