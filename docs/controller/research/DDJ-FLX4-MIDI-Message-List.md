@@ -1,6 +1,6 @@
 # DDJ-FLX4 MIDI Message List (research note)
 
-Recorded Sat 12 Sep 2026 for issue #1855 (theory-first map; hardware adjudication pending Jake's boat, week commencing Mon 14 Sep 2026).
+Recorded Sat 12 Sep 2026 for issue #1855 (theory-first map). Hardware adjudication round 1 ran on the Air, Fri 18 Sep 2026 (see below).
 
 ## Official source
 
@@ -40,3 +40,17 @@ The PDF re-fetched the same day matched the recorded sha256.
 ## Runtime map
 
 `apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts` binds the DDJ-400 P0 analog plus CFX (filter) on deck channels. See the map-availability survey row dated 2026-09-12.
+
+## Hardware adjudication, round 1 (Fri 18 Sep 2026, the Air)
+
+Instrument: `uv run tools/controller-probe/capture.py sniff` (CTRL-02) against the live unit, the maintainer at the deck sweeping roughly half the surface. Evidence: `tools/controller-probe/captures/flx4_observed_wires_2026-09-18.json` (44 distinct wires, 3566 messages).
+
+| Result | Count | Detail |
+| --- | --- | --- |
+| Wires seen that match the vendor sheet exactly | 42 | jog (touch, vinyl on, wheel side), tempo MSB+LSB, pad-mode buttons, sampler pads 1-8, trim/EQ/fader MSB+LSB both decks, crossfader, CH CUE both decks, headphone mix/level, mic level, master level, SMART CFX |
+| Wires seen that contradicted OUR transcription | 2 | CFX knob deck 1 sent `B6 17` / `B6 37` (channel 7). The PDF row 3-5 says channel 7 too; the Sat 12 Sep expected map and runtime map had transcribed it as channel 1/2. Fixed in both, plus the deck 2 twin by the same row. |
+| Wires seen that contradicted the vendor sheet | 0 | |
+| Runtime P0 bindings hardware-confirmed | 13 of 65 | tempo, trim, EQ x3, fader (both decks where swept), crossfader, master, CH CUE x2 |
+| Runtime P0 bindings still inferred from the PDF only | 52 of 65 | play, cue, shift, 4 BEAT/exit, hot cue pads, beat loop pads, browse, load, master cue, deck 2 CFX, deck 2 knobs not swept |
+
+Coverage of the 402-control expected map by section: deck 5/52, mixer 25/55 (27 after the CFX correction), performance 12/272, effect 0/15, browse 0/8. Everything not listed as seen is INFERRED from the vendor PDF, not measured. Round 2 target: transport, hot cue and beat loop pads, browse/load, deck 2, with `capture` (guided) instead of `sniff` so each wire carries a verdict.
