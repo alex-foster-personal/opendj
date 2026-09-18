@@ -85,18 +85,24 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
 
     Idempotent. Every unapplied migration step runs inside its own
     transaction and records a row in ``schema_meta`` on success.
+
+    The version is re-read inside each ``BEGIN IMMEDIATE`` so concurrent
+    boot processes opening the same stale db observe the winner's
+    ``schema_meta`` row before choosing DDL (issue #791).
     """
     _ensure_meta(conn)
-    current = _current_version(conn)
 
-    for step_idx in range(current, SCHEMA_VERSION):
-        statements = MIGRATIONS[step_idx]
-        target_version = step_idx + 1
-        # Use a manual BEGIN -- sqlite3's default transaction handling does
-        # not wrap DDL cleanly unless we're explicit. Safe in isolation:
-        # caller owns the connection.
-        conn.execute("BEGIN")
+    while True:
+        conn.execute("BEGIN IMMEDIATE")
         try:
+            current = _current_version(conn)
+            if current >= SCHEMA_VERSION:
+                conn.execute("COMMIT")
+                break
+
+            step_idx = current
+            statements = MIGRATIONS[step_idx]
+            target_version = step_idx + 1
             for stmt in statements:
                 conn.execute(stmt)
             conn.execute(

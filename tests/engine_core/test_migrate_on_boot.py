@@ -16,15 +16,20 @@ Single-line intent:
   - if a v5-shaped state.db boots through create_app then /api/v1/health
     serves 200 with the v8 schema applied [broken if migration only runs on
     a write path, per the #762 incident]
+  - if concurrent stale-db boots race on the same state.db then all reach the
+    current schema without raw SQLite migration errors [broken if only one
+    of N contenders survives, per issue #791]
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -32,6 +37,7 @@ import pytest
 
 from apps.shared.state import schema as state_schema
 from tests.test_schema_time_travel import _verified_v5_sql
+from tests.webui.pre_v7_state import build_pre_v7_state_db
 
 pytestmark = pytest.mark.requirement("GUARD-09")
 
@@ -242,3 +248,139 @@ def test_boot_aborts_end_to_end_when_migration_cannot_write(
         "a real write failure during migration must not commit; the db "
         "should still be sitting at its pre-failure version"
     )
+
+
+_CONCURRENT_BOOT_WORKER = """
+import json
+import sys
+import time
+from pathlib import Path
+
+gate = Path(sys.argv[1])
+db_path = Path(sys.argv[2])
+
+while not gate.exists():
+    time.sleep(0.005)
+
+from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
+
+backend = make_backend(db_path)
+assert isinstance(backend, SqliteBackend), (
+    f"expected SqliteBackend, got {type(backend).__name__}"
+)
+print(json.dumps({"ok": True}))
+"""
+
+
+def _run_concurrent_make_backend(
+    db_path: Path,
+    *,
+    worker_count: int = 3,
+    timeout_s: float = 180,
+) -> list[subprocess.CompletedProcess[str]]:
+    gate = db_path.parent / "start-gate"
+    if gate.exists():
+        gate.unlink()
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    processes: list[subprocess.Popen[str]] = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CONCURRENT_BOOT_WORKER, str(gate), str(db_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=str(REPO_ROOT),
+        )
+        for _ in range(worker_count)
+    ]
+    try:
+        time.sleep(0.2)
+        gate.touch()
+        results: list[subprocess.CompletedProcess[str]] = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=timeout_s)
+            results.append(
+                subprocess.CompletedProcess(
+                    process.args,
+                    process.returncode,
+                    stdout,
+                    stderr,
+                )
+            )
+        return results
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+        if gate.exists():
+            gate.unlink()
+
+
+def _assert_concurrent_boot_results(
+    results: list[subprocess.CompletedProcess[str]],
+    *,
+    label: str,
+) -> None:
+    for index, result in enumerate(results):
+        assert result.returncode == 0, (
+            f"{label} worker {index} failed (exit {result.returncode})\n"
+            f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-4000:]}"
+        )
+        combined = f"{result.stdout}\n{result.stderr}".lower()
+        assert "duplicate column name" not in combined, (
+            f"{label} worker {index} hit duplicate DDL\nstderr: {result.stderr[-4000:]}"
+        )
+        assert "database is locked" not in combined, (
+            f"{label} worker {index} hit database is locked\nstderr: {result.stderr[-4000:]}"
+        )
+
+
+def _inspect_migrated_db(db_path: Path, *, expected_track_count: int) -> None:
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+        version_rows = conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
+        track_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        conn.close()
+    assert version == state_schema.SCHEMA_VERSION
+    assert version_rows == state_schema.SCHEMA_VERSION
+    assert track_count == expected_track_count
+    assert integrity == "ok"
+
+
+def test_concurrent_make_backend_migrates_stale_db_without_sqlite_race(
+    tmp_path: Path,
+) -> None:
+    """[if] concurrent stale-db boots race on the same state.db [then] all reach the current schema without raw SQLite migration errors, [else stop]."""
+    source = tmp_path / "source-v6.db"
+    build_pre_v7_state_db(source)
+
+    pre_conn = sqlite3.connect(str(source))
+    try:
+        pre_version = pre_conn.execute(
+            "SELECT MAX(version) FROM schema_meta"
+        ).fetchone()[0]
+        expected_track_count = pre_conn.execute(
+            "SELECT COUNT(*) FROM tracks"
+        ).fetchone()[0]
+    finally:
+        pre_conn.close()
+    assert pre_version == 6
+    assert expected_track_count == 1
+
+    shared_db = tmp_path / "shared" / "state.db"
+    shared_db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, shared_db)
+
+    stale_results = _run_concurrent_make_backend(shared_db)
+    _assert_concurrent_boot_results(stale_results, label="stale-db")
+    _inspect_migrated_db(shared_db, expected_track_count=expected_track_count)
+
+    current_results = _run_concurrent_make_backend(shared_db)
+    _assert_concurrent_boot_results(current_results, label="current-db")
