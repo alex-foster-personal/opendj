@@ -24,6 +24,7 @@ import {
 	DECK_LAYOUT_LESS_KEY,
 	DECK_LAYOUT_MORE_KEY
 } from '$lib/components/rb/hotkeys/hotkeys-registry';
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { setDeckLayoutMode, type DeckLayoutMode } from '$lib/rb/prefs.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
@@ -37,9 +38,7 @@ export interface DeckLayoutHotkeyEvent {
 }
 
 function _typingTarget(t: EventTarget | null): boolean {
-	if (typeof HTMLElement === 'undefined' || !(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+	return isTextEntryTarget(t);
 }
 
 function _isModChord(e: DeckLayoutHotkeyEvent, key: string): boolean {

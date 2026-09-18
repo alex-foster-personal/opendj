@@ -26,6 +26,8 @@
  * without the preview engine, an AudioContext or a DOM.
  */
 
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+
 export interface PreviewSpaceStopDeps {
 	isPreviewPlaying: () => boolean;
 	stopPreview: () => void;
@@ -39,27 +41,11 @@ export interface PreviewSpaceStopKeyEvent {
 	stopImmediatePropagation(): void;
 }
 
-const TEXT_INPUT_TYPES = new Set(['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number']);
-const TEXT_ROLES = new Set(['textbox', 'searchbox', 'combobox']);
-
-function _isSpace(e: PreviewSpaceStopKeyEvent): boolean {
+const _isSpace = (e: PreviewSpaceStopKeyEvent): boolean => {
 	return e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
-}
+};
 
-/** True when Space would type a character into the focused element. */
-export function isTextEntryTarget(target: EventTarget | null): boolean {
-	if (target === null || typeof target !== 'object') return false;
-	const el = target as {
-		tagName?: string;
-		isContentEditable?: boolean;
-		type?: string;
-		getAttribute?: (name: string) => string | null;
-	};
-	if (el.isContentEditable === true) return true;
-	if (el.tagName === 'TEXTAREA') return true;
-	if (el.tagName === 'INPUT') return TEXT_INPUT_TYPES.has((el.type ?? '').toLowerCase());
-	return TEXT_ROLES.has(el.getAttribute?.('role') ?? '');
-}
+export { isTextEntryTarget };
 
 export function createPreviewSpaceStop(deps: PreviewSpaceStopDeps): {
 	onKeyDown: (e: PreviewSpaceStopKeyEvent) => void;

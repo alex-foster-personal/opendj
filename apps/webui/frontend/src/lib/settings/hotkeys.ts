@@ -7,6 +7,7 @@ import {
 	SETTINGS_CHORD_CODE,
 	SETTINGS_CHORD_KEY
 } from '$lib/components/rb/hotkeys/hotkeys-registry';
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { closeSettings, isSettingsOpen, openSettings, toggleSettings } from './overlay.svelte';
 
 function _isSettingsChord(e: KeyboardEvent): boolean {
@@ -18,6 +19,7 @@ function _isSettingsChord(e: KeyboardEvent): boolean {
 
 export function installSettingsHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
+		if (isTextEntryTarget(e.target)) return;
 		if (_isSettingsChord(e)) {
 			e.preventDefault();
 			e.stopPropagation();

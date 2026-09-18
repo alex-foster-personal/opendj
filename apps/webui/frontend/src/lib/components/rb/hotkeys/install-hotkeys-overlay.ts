@@ -11,6 +11,7 @@
  * own search box, which is a type-to-filter field, not a reason to
  * swallow the overlay gestures.
  */
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import {
 	beginHotkeysOverlayHold,
@@ -27,9 +28,7 @@ import { HOTKEYS_OVERLAY_HOLD_KEY, HOTKEYS_OVERLAY_TOGGLE_KEY } from './hotkeys-
 const OVERLAY_SEARCH_ATTR = 'data-hotkeys-overlay-search';
 
 function _typingTarget(t: EventTarget | null): boolean {
-	if (!(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+	return isTextEntryTarget(t);
 }
 
 function _isOverlaySearch(t: EventTarget | null): boolean {

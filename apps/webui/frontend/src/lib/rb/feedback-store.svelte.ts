@@ -44,6 +44,7 @@
 
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api } from "../api/client";
+import { writePinsVisible } from "./feedback-pin-visibility";
 import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
@@ -128,7 +129,21 @@ export function toggleFeedbackPanel(): void {
 
 export function armPinPlacement(): void {
   if (feedbackState.availability !== "ok") return;
+  _revealPinsIfHidden();
   feedbackState.placementArmed = true;
+}
+
+function _revealPinsIfHidden(): void {
+  if (typeof window === "undefined") return;
+  try {
+    writePinsVisible(window.localStorage, true);
+  } catch {
+    // storage blocked: still try the in-memory twin below
+  }
+  const twin = (window as unknown as Record<string, unknown>).__mdtPinsVisible as
+    | { set?: (value: boolean) => void }
+    | undefined;
+  twin?.set?.(true);
 }
 
 export function disarmPinPlacement(): void {
