@@ -18,10 +18,10 @@ from apps.sync.usb.pioneer.value_verify import (
     ExpectedTrack,
     FieldStatus,
     load_expected_json,
-    probe_odj_analysis_scalar,
     stick_values_to_jsonable,
     verify_stick_values,
 )
+from apps.sync.usb.pioneer.value_verify_sidecar import probe_odj_analysis_scalar
 from apps.sync.usb.pioneer.reader import read_usb_export, read_anlz_dir, grid_summary_from_anlz
 from tests.fixtures.conftest import resolve_required_fixture
 
