@@ -4,7 +4,7 @@
   "usb": {
     "name": "DDJ-FLX4",
     "vid": "0x2b73",
-    "pid": null
+    "pid": "0x0045"
   },
   "source": {
     "url": "https://downloads.support.alphatheta.com/software_info/dj-controllers/DDJ-FLX4/DDJ-FLX4_MIDI_message_List_E1.pdf",

@@ -17,7 +17,19 @@ The vendor PDF is **not** committed to this repository (manufacturer copyright; 
 
 Runtime map selection uses `nameMatch: 'DDJ-FLX4'` against the WebMIDI port name. macOS Audio MIDI Setup shows `[DDJ-FLX4]`; Bluetooth aliases `DDJ-FLX4_1` through `DDJ-FLX4_16` still contain that substring.
 
-USB VID `0x2b73` (AlphaTheta) is cited from public linux-usb listings. USB PID was not cited in the PDF; record from Jake's boat capture via `system_profiler SPUSBDataType`.
+USB identity, read live from a plugged-in DDJ-FLX4 on the Air, Fri 18 Sep 2026 (`ioreg -p IOUSB -l`):
+
+| Field | Value |
+| --- | --- |
+| idVendor | `0x2b73` (11123, AlphaTheta Corporation) |
+| idProduct | `0x0045` (69) |
+| bcdDevice | `0x0105` (261, firmware 1.05) |
+| USB Product Name | `DDJ-FLX4` |
+| CoreMIDI | 1 entity, 1 source + 1 destination, driver `com.apple.AppleMIDIUSBDriver` |
+| USB audio | 2 in / 4 out, 48 kHz |
+| Universal Device Inquiry (`F0 7E 7F 06 01 F7`) | no reply within 1.5 s |
+
+The PDF re-fetched the same day matched the recorded sha256.
 
 ## Expanded expected map
 
