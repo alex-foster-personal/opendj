@@ -6,7 +6,7 @@ import platform
 import subprocess
 from pathlib import Path
 
-from apps.shared.rekordbox_db import is_streaming_path
+from apps.shared.platform_paths import is_unplayable_path
 
 
 class RevealPathError(Exception):
@@ -20,7 +20,7 @@ class RevealPathError(Exception):
 
 def reveal_track_path(file_path: str | None) -> None:
     """Open the OS file manager on ``file_path`` or raise ``RevealPathError``."""
-    if not file_path or is_streaming_path(file_path):
+    if not file_path or is_unplayable_path(file_path):
         raise RevealPathError("not_a_local_file", "track has no local file path")
     path = Path(file_path)
     if not path.exists():

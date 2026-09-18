@@ -14,8 +14,6 @@ from pydantic import BaseModel, Field
 
 from apps.feature_flags import FlagRefusal
 from apps.shared.rekordbox_writeback import require_writeback_enabled
-from apps.sync.usb.pioneer import export_workflow as workflow
-from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
 from apps.webui.server.routes.usb_gate import usb_export_gate
 
 router = APIRouter(prefix="/usb-export", tags=["usb-export"])
@@ -87,7 +85,7 @@ class ReadbackModel(BaseModel):
     verified: bool
 
 
-def _error(exc: workflow.UsbExportError) -> JSONResponse:
+def _error(exc) -> JSONResponse:
     if exc.code == "platform_unsupported":
         status_code = 503
     elif exc.code.endswith(("_invalid", "_mismatch")):
@@ -126,6 +124,9 @@ def _disabled_response(refusal: FlagRefusal | None) -> JSONResponse:
 
 @router.post("/plan", response_model=PlanModel)
 def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONResponse:
+    from apps.sync.usb.pioneer import export_workflow as workflow
+    from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+
     gate = usb_export_gate(request)
     if not gate.available:
         return _disabled_response(gate.refusal)
@@ -161,6 +162,8 @@ def apply_export(
     gate = usb_export_gate(request)
     if not gate.available:
         return _disabled_response(gate.refusal)
+    from apps.sync.usb.pioneer import export_workflow as workflow
+
     require_writeback_enabled("http.usb-export.apply")
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
@@ -174,6 +177,8 @@ def apply_export(
 def readback_export(
     body: ReadbackRequest, request: Request
 ) -> dict[str, Any] | JSONResponse:
+    from apps.sync.usb.pioneer import export_workflow as workflow
+
     gate = usb_export_gate(request)
     if not gate.available:
         return _disabled_response(gate.refusal)
