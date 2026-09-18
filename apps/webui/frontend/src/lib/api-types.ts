@@ -7931,6 +7931,11 @@ export interface components {
              * @constant
              */
             source: "own";
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {

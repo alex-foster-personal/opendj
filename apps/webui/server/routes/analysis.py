@@ -113,6 +113,7 @@ class FallbackBeatgridOut(BaseModel):
     """
 
     source: Literal["own"]
+    status: Literal["ok"]
     beat_count: int
     beats: List[FallbackBeatOut]
 
@@ -427,7 +428,9 @@ def get_beatgrid_fallback(
         bpm=record.bpm,
         bpm_confidence=record.bpm_confidence,
         anlz_available=anlz_ok,
-        beatgrid=FallbackBeatgridOut(source="own", beat_count=len(beats), beats=beats),
+        beatgrid=FallbackBeatgridOut(
+            source="own", status="ok", beat_count=len(beats), beats=beats
+        ),
     )
 
 
