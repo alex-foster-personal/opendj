@@ -10,8 +10,6 @@
 	 */
 	import { onMount } from 'svelte';
 
-	import { readApiErrorStatus } from '$lib/api/client';
-	import { api } from '$lib/api/client';
 	import { getIdentityBacklog, getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
 	import {
 		getCloudSyncConfig,
@@ -28,6 +26,7 @@
 		STATUS_CHANGED_EVENT,
 		configPutBody,
 		envOverrideNotes,
+		fetchUiMirrorForGate,
 		forceSyncNowRequest,
 		formFromConfig,
 		identityBacklogNote,
@@ -79,19 +78,6 @@
 
 	function message(exc: unknown): string {
 		return exc instanceof Error ? exc.message : String(exc);
-	}
-
-	async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
-		try {
-			const { data } = await api.GET('/api/v1/state/ui-mirror', {});
-			if (data !== undefined && typeof data === 'object') {
-				return data as { decks?: UiMirrorDecks };
-			}
-			return null;
-		} catch (exc) {
-			if (readApiErrorStatus(exc) === 409) return null;
-			return null;
-		}
 	}
 
 	/**

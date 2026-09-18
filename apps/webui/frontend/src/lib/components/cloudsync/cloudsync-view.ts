@@ -14,7 +14,7 @@
  * (or any mode) from an absent row.
  */
 
-import { readApiErrorStatus } from '$lib/api/client';
+import { api, readApiErrorStatus } from '$lib/api/client';
 import {
 	SYNC_MODES,
 	type AssetKind,
@@ -196,6 +196,13 @@ export function relativeTime(value: string | null, nowMs: number = Date.now()): 
 
 export const CHIP_HREF = '/cloudsync';
 
+/** Hover title CTA for the status chip trigger (not the Advanced options link). */
+export const CHIP_QUICK_ACTIONS_CTA = 'Click for quick actions.';
+
+export const ADVANCED_OPTIONS_LABEL = 'Advanced options';
+export const SYNC_NOW_LABEL = 'Sync now';
+export const REFRESH_STATUS_LABEL = 'Refresh status';
+
 export function updateRequiredSummary(updateRequired: CloudSyncUpdateRequired): string {
 	return (
 		`App update required to sync: this machine speaks v${updateRequired.local_wire_version}, ` +
@@ -336,11 +343,11 @@ export function presentCloudSyncResultError(
 export function chipTitle(status: CloudSyncStatus | null, loadError: string | null): string {
 	if (status === null) {
 		return loadError === null
-			? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
-			: 'CloudSync status unavailable. Click to retry details.';
+			? `CloudSync status - still loading from the daemon. ${CHIP_QUICK_ACTIONS_CTA}`
+			: `CloudSync status unavailable. ${CHIP_QUICK_ACTIONS_CTA}`;
 	}
 	const state = chipState(status);
-	const next = 'Click to open CloudSync.';
+	const next = CHIP_QUICK_ACTIONS_CTA;
 	if (state === 'off') {
 		return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
 	}
@@ -387,6 +394,20 @@ export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
 
 export type UiMirrorDeck = { playing?: boolean };
 export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
+
+/** Best-effort ui-mirror read for Gig/playing-deck sync gates (HTTP parity with Status tab). */
+export async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
+	try {
+		const { data } = await api.GET('/api/v1/state/ui-mirror', {});
+		if (data !== undefined && typeof data === 'object') {
+			return data as { decks?: UiMirrorDecks };
+		}
+		return null;
+	} catch (exc) {
+		if (readApiErrorStatus(exc) === 409) return null;
+		return null;
+	}
+}
 
 export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
 	if (uiMirror === null) return false;

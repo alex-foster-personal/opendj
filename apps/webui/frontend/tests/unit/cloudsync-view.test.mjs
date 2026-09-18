@@ -282,7 +282,7 @@ test('a non-409 error gets a safe failure summary', () => {
 
 // requirement: CSSTATUS-04
 // [if] the chip is in error [then] chipTitle uses the safe summary plus the CloudSync link CTA, [else stop]
-test('chipTitle uses the safe error summary plus Click to open CloudSync', () => {
+test('chipTitle uses the safe error summary plus the quick-actions CTA', () => {
 	const live = { configured: true, running: true, enabled: true };
 	const raw = 'POST http://internal-hub.example/api/v1/sync -> HTTP 409: busy';
 	const title = view.chipTitle(
@@ -290,7 +290,7 @@ test('chipTitle uses the safe error summary plus Click to open CloudSync', () =>
 		null
 	);
 	assert.match(title, /CloudSync conflict:/);
-	assert.match(title, /Click to open CloudSync\./);
+	assert.match(title, /Click for quick actions\./);
 	assert.doesNotMatch(title, /HTTP 409/);
 	assert.doesNotMatch(title, /internal-hub/);
 });
@@ -326,12 +326,13 @@ test('chip state helpers still return the existing off/syncing/ok/error/inconclu
 	);
 });
 
-test('chipTitle names the state and links to /cloudsync', () => {
-	/** if the tooltip CTA still points at the old popover then broken */
+test('chipTitle names the state and points at quick actions', () => {
+	/** if the tooltip CTA still points at the old recent-results popover then broken */
 	assert.equal(view.CHIP_HREF, '/cloudsync');
+	assert.equal(view.CHIP_QUICK_ACTIONS_CTA, 'Click for quick actions.');
 	const offTitle = view.chipTitle(status(), null);
 	assert.match(offTitle, /CloudSync is off/);
-	assert.match(offTitle, /Click to open CloudSync\./);
+	assert.match(offTitle, /Click for quick actions\./);
 	assert.doesNotMatch(offTitle, /Click to open recent results\./);
 	const live = { configured: true, running: true, enabled: true };
 	const originalNow = Date.now;
@@ -346,7 +347,7 @@ test('chipTitle names the state and links to /cloudsync', () => {
 			null
 		);
 		assert.match(okTitle, /CloudSync last succeeded 12m ago/);
-		assert.match(okTitle, /Click to open CloudSync\./);
+		assert.match(okTitle, /Click for quick actions\./);
 	} finally {
 		Date.now = originalNow;
 	}
@@ -395,6 +396,29 @@ test('forceSyncNowRequest posts force true and ignores gate', () => {
 		kind: 'post',
 		body: { hub_url: 'http://hub:8686', name: 'silver', force: true }
 	});
+});
+
+// requirement: CSUI-02
+// [if] a deck is playing [then] ordinary sync is refused and force sync still posts, [else stop]
+test('quick-action labels and gate helpers stay shared with the status tab', () => {
+	assert.equal(view.SYNC_NOW_LABEL, 'Sync now');
+	assert.equal(view.REFRESH_STATUS_LABEL, 'Refresh status');
+	assert.equal(view.ADVANCED_OPTIONS_LABEL, 'Advanced options');
+	const playingGate = {
+		appPosture: 'prep',
+		uiMirror: { decks: { '1': { playing: true } } }
+	};
+	const ordinary = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true }),
+		playingGate
+	);
+	assert.equal(ordinary.kind, 'refuse');
+	assert.match(ordinary.reason, /deck_playing/);
+	const forced = view.forceSyncNowRequest(
+		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true })
+	);
+	assert.equal(forced.kind, 'post');
+	assert.equal(forced.body.force, true);
 });
 
 test('the config form mirrors the backend validator', () => {
