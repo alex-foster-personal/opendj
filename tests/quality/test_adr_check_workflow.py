@@ -84,3 +84,22 @@ def test_ci_yml_does_not_also_run_the_gate() -> None:
         "ci.yml is path-filtered; a second copy there would make a docs PR's "
         "absent check look like this gate had run"
     )
+
+
+def test_checkout_fetches_full_history_for_ancestry_guard() -> None:
+    """Issue #3513: origin/main must be current enough for merge-base --is-ancestor."""
+    steps = next(iter(_doc(GATE).get("jobs", {}).values())).get("steps") or []
+    checkout = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict) and "uses" in step and "checkout" in step["uses"]
+        ),
+        None,
+    )
+    assert checkout is not None, f"{GATE.name} has no actions/checkout step"
+    with_block = checkout.get("with") or {}
+    assert with_block.get("fetch-depth") == 0, (
+        "adr-check needs full history so the ancestry guard can compare HEAD "
+        "against a current origin/main"
+    )
