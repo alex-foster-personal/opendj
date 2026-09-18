@@ -27,8 +27,9 @@
  * TWO DECKS, NOT FOUR: nothing here addresses deck 3/4.
  *
  * FLX4 vs DDJ-400: no 4 BEAT long-press row ([PDF] 1-7 is 4 BEAT/EXIT only
- * at note 0x4D). CFX (filter) is per-deck CC 23/24 on channels 1/2
- * ([PDF] 3-5), not channel 7.
+ * at note 0x4D). CFX (filter) is per-deck CC 23/24 on the GLOBAL mixer
+ * channel 7 ([PDF] 3-5, hardware-confirmed Fri 18 Sep 2026), like the
+ * DDJ-400, NOT on the deck channels as this file first transcribed it.
  *
  * OUT OF CONTRACT (hints only): jog, BEAT SYNC (#1777), LOOP IN/OUT,
  * Beat FX, SMART CFX/FADER, MIC LEVEL, Android MONO/STEREO, pad-mode
@@ -55,6 +56,8 @@ export const FLX4_PAD_OFF = 0x00;
 
 // This map only ever binds DECKS (1 and 2, the FLX4's two physical channels).
 const CFX_CC: Record<(typeof DECKS)[number], number> = { 1: 0x17, 2: 0x18 };
+/** [PDF] MIDI channel assignment: BROWSER + global mixer (incl. CFX) -> channel 7. */
+const MIXER_GLOBAL_CH = 7;
 
 function _deckBindings(deck: DeckId): MidiBinding[] {
 	const ch = pioneerDeckChannel(deck);
@@ -85,8 +88,10 @@ function _mixerBindings(deck: (typeof DECKS)[number]): MidiBinding[] {
 		{ source: pioneerCc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
 		// [PDF] 3-7 CH FADER: CC 19 MSB.
 		{ source: pioneerCc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } },
-		// [PDF] 3-5 CFX: CC 23 deck 1 / CC 24 deck 2 on deck channels.
-		{ source: pioneerCc(ch, CFX_CC[deck]), action: { type: 'mixer_channel', deck, target: 'filter' } },
+		// [PDF] 3-5 CFX: CC 23 deck 1 / CC 24 deck 2 on the global mixer channel 7,
+		// NOT the deck channel. Hardware-confirmed Fri 18 Sep 2026 (live sniff sent
+		// B6 17/37 for deck 1); the first transcription had ch 1/2 and never fired.
+		{ source: pioneerCc(MIXER_GLOBAL_CH, CFX_CC[deck]), action: { type: 'mixer_channel', deck, target: 'filter' } },
 		// [PDF] 3-6 CH CUE: note 84 (0x54).
 		{ source: pioneerNote(ch, 0x54), action: { type: 'channel_cue', deck } }
 	];

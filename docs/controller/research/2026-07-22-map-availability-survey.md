@@ -71,5 +71,5 @@ See the subagent transcript for the complete 36-row table with links; key rows:
 | sha256 | `e03ac376ebaa2d461c1a2c832c3c182e3579c893a1531944ebac1b5ce620388f` |
 | Expected map | `tools/controller-probe/flx4_expected_map.json` (control_count = 402) |
 | Runtime map | `apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts` (bindings.length = 65) |
-| Status | Theory-first complete; hardware adjudication pending Jake's boat, week commencing Mon 14 Sep 2026 |
+| Status | Hardware adjudication round 1 done Fri 18 Sep 2026 on the Air: 42 wires confirmed, CFX channel corrected (ch 7), 52 of 65 runtime bindings still PDF-inferred. Details: `DDJ-FLX4-MIDI-Message-List.md`. |
 | Out of band | HID jog screen / meters; beat-sync (#1777) |

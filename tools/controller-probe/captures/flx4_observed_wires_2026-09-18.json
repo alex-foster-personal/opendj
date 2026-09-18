@@ -1,0 +1,362 @@
+{
+ "device": "DDJ-FLX4",
+ "firmware": "1.05 (bcdDevice 0x0105)",
+ "captured_utc": "2026-09-18T03:03:08Z to 2026-09-18T03:06:07Z",
+ "host": "the Air, CoreMIDI via python-rtmidi, tools/controller-probe/capture.py sniff",
+ "operator_note": "the maintainer swept roughly half the surface: jog, tempo, pad-mode buttons, sampler pads, trim/EQ/faders/crossfader, CH CUE, headphone/mic/master knobs, CFX deck 1, SMART CFX. Transport, hot cue and beat loop pads, loops, browse, load, effects and most of deck 2 were not exercised.",
+ "distinct_wires": 44,
+ "wires": {
+  "97/52": {
+   "n": 2,
+   "label": "deck1_sampler_pad5 (SAMPLER pad 5)",
+   "first_utc": "2026-09-18T03:03:08.450+00:00",
+   "last_utc": "2026-09-18T03:03:08.622+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/48": {
+   "n": 2,
+   "label": "deck1_sampler_pad1 (SAMPLER pad 1)",
+   "first_utc": "2026-09-18T03:03:08.736+00:00",
+   "last_utc": "2026-09-18T03:03:08.852+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/53": {
+   "n": 2,
+   "label": "deck1_sampler_pad6 (SAMPLER pad 6)",
+   "first_utc": "2026-09-18T03:03:09.599+00:00",
+   "last_utc": "2026-09-18T03:03:09.819+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/49": {
+   "n": 2,
+   "label": "deck1_sampler_pad2 (SAMPLER pad 2)",
+   "first_utc": "2026-09-18T03:03:09.757+00:00",
+   "last_utc": "2026-09-18T03:03:09.941+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/54": {
+   "n": 2,
+   "label": "deck1_sampler_pad7 (SAMPLER pad 7)",
+   "first_utc": "2026-09-18T03:03:10.183+00:00",
+   "last_utc": "2026-09-18T03:03:10.403+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/50": {
+   "n": 2,
+   "label": "deck1_sampler_pad3 (SAMPLER pad 3)",
+   "first_utc": "2026-09-18T03:03:10.285+00:00",
+   "last_utc": "2026-09-18T03:03:10.437+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/55": {
+   "n": 2,
+   "label": "deck1_sampler_pad8 (SAMPLER pad 8)",
+   "first_utc": "2026-09-18T03:03:10.706+00:00",
+   "last_utc": "2026-09-18T03:03:10.906+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "97/51": {
+   "n": 2,
+   "label": "deck1_sampler_pad4 (SAMPLER pad 4)",
+   "first_utc": "2026-09-18T03:03:10.816+00:00",
+   "last_utc": "2026-09-18T03:03:10.956+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "90/27": {
+   "n": 2,
+   "label": "deck1_hot_cue_mode (HOT CUE MODE)",
+   "first_utc": "2026-09-18T03:03:11.397+00:00",
+   "last_utc": "2026-09-18T03:03:11.565+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "90/30": {
+   "n": 2,
+   "label": "deck1_pad_fx1_mode (PAD FX 1 MODE)",
+   "first_utc": "2026-09-18T03:03:11.746+00:00",
+   "last_utc": "2026-09-18T03:03:11.914+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "90/32": {
+   "n": 2,
+   "label": "deck1_beat_jump_mode (BEAT JUMP MODE)",
+   "first_utc": "2026-09-18T03:03:12.091+00:00",
+   "last_utc": "2026-09-18T03:03:12.251+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "90/34": {
+   "n": 2,
+   "label": "deck1_sampler_mode (SAMPLER MODE)",
+   "first_utc": "2026-09-18T03:03:12.484+00:00",
+   "last_utc": "2026-09-18T03:03:12.640+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/0": {
+   "n": 58,
+   "label": "deck1_tempo_msb (TEMPO MSB)",
+   "first_utc": "2026-09-18T03:03:13.292+00:00",
+   "last_utc": "2026-09-18T03:03:14.174+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/32": {
+   "n": 58,
+   "label": "deck1_tempo_lsb (TEMPO LSB)",
+   "first_utc": "2026-09-18T03:03:13.292+00:00",
+   "last_utc": "2026-09-18T03:03:14.174+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/33": {
+   "n": 275,
+   "label": "deck1_jog_wheel (JOG DIAL wheel side)",
+   "first_utc": "2026-09-18T03:03:15.081+00:00",
+   "last_utc": "2026-09-18T03:03:16.999+00:00",
+   "value_min": 62,
+   "value_max": 66
+  },
+  "90/54": {
+   "n": 4,
+   "label": "deck1_jog_touch (JOG DIAL touch)",
+   "first_utc": "2026-09-18T03:03:15.084+00:00",
+   "last_utc": "2026-09-18T03:03:16.988+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/34": {
+   "n": 107,
+   "label": "deck1_jog_vinyl_on (JOG DIAL vinyl on)",
+   "first_utc": "2026-09-18T03:03:15.087+00:00",
+   "last_utc": "2026-09-18T03:03:16.961+00:00",
+   "value_min": 63,
+   "value_max": 65
+  },
+  "B6/13": {
+   "n": 63,
+   "label": "headphone_level_msb (HEADPHONE LEVEL MSB)",
+   "first_utc": "2026-09-18T03:03:17.874+00:00",
+   "last_utc": "2026-09-18T03:03:18.702+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/45": {
+   "n": 63,
+   "label": "headphone_level_lsb (HEADPHONE LEVEL LSB)",
+   "first_utc": "2026-09-18T03:03:17.874+00:00",
+   "last_utc": "2026-09-18T03:03:18.702+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/12": {
+   "n": 64,
+   "label": "headphone_mix_msb (HEADPHONE MIX MSB)",
+   "first_utc": "2026-09-18T03:03:19.819+00:00",
+   "last_utc": "2026-09-18T03:03:20.728+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/44": {
+   "n": 64,
+   "label": "headphone_mix_lsb (HEADPHONE MIX LSB)",
+   "first_utc": "2026-09-18T03:03:19.819+00:00",
+   "last_utc": "2026-09-18T03:03:20.728+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "96/0": {
+   "n": 2,
+   "label": "smart_cfx (SMART CFX)",
+   "first_utc": "2026-09-18T03:03:21.227+00:00",
+   "last_utc": "2026-09-18T03:03:21.411+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/5": {
+   "n": 78,
+   "label": "mic_level_msb (MIC LEVEL MSB)",
+   "first_utc": "2026-09-18T03:03:21.772+00:00",
+   "last_utc": "2026-09-18T03:03:26.776+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/37": {
+   "n": 78,
+   "label": "mic_level_lsb (MIC LEVEL LSB)",
+   "first_utc": "2026-09-18T03:03:21.772+00:00",
+   "last_utc": "2026-09-18T03:03:26.776+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/23": {
+   "n": 64,
+   "label": "deck1_cfx_msb (CFX MSB) - was UNMAPPED at capture time because the expected map had ch 1; PDF 3-5 says ch 7",
+   "first_utc": "2026-09-18T03:03:24.163+00:00",
+   "last_utc": "2026-09-18T03:03:25.603+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/55": {
+   "n": 64,
+   "label": "deck1_cfx_lsb (CFX LSB) - same correction",
+   "first_utc": "2026-09-18T03:03:24.163+00:00",
+   "last_utc": "2026-09-18T03:03:25.603+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/15": {
+   "n": 57,
+   "label": "deck1_eq_low_msb (EQ LOW MSB)",
+   "first_utc": "2026-09-18T03:03:26.358+00:00",
+   "last_utc": "2026-09-18T03:03:27.573+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/47": {
+   "n": 57,
+   "label": "deck1_eq_low_lsb (EQ LOW LSB)",
+   "first_utc": "2026-09-18T03:03:26.358+00:00",
+   "last_utc": "2026-09-18T03:03:27.573+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/11": {
+   "n": 64,
+   "label": "deck1_eq_mid_msb (EQ MID MSB)",
+   "first_utc": "2026-09-18T03:03:28.193+00:00",
+   "last_utc": "2026-09-18T03:03:29.453+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/43": {
+   "n": 64,
+   "label": "deck1_eq_mid_lsb (EQ MID LSB)",
+   "first_utc": "2026-09-18T03:03:28.193+00:00",
+   "last_utc": "2026-09-18T03:03:29.453+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/7": {
+   "n": 50,
+   "label": "deck1_eq_hi_msb (EQ HI MSB)",
+   "first_utc": "2026-09-18T03:03:29.902+00:00",
+   "last_utc": "2026-09-18T03:03:30.649+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/39": {
+   "n": 50,
+   "label": "deck1_eq_hi_lsb (EQ HI LSB)",
+   "first_utc": "2026-09-18T03:03:29.902+00:00",
+   "last_utc": "2026-09-18T03:03:30.649+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/4": {
+   "n": 67,
+   "label": "deck1_trim_msb (TRIM MSB)",
+   "first_utc": "2026-09-18T03:03:31.278+00:00",
+   "last_utc": "2026-09-18T03:03:32.259+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/36": {
+   "n": 67,
+   "label": "deck1_trim_lsb (TRIM LSB)",
+   "first_utc": "2026-09-18T03:03:31.278+00:00",
+   "last_utc": "2026-09-18T03:03:32.259+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "90/84": {
+   "n": 2,
+   "label": "deck1_ch_cue (CH CUE)",
+   "first_utc": "2026-09-18T03:03:33.455+00:00",
+   "last_utc": "2026-09-18T03:03:33.591+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/19": {
+   "n": 123,
+   "label": "deck1_ch_fader_msb (CH FADER MSB)",
+   "first_utc": "2026-09-18T03:03:33.913+00:00",
+   "last_utc": "2026-09-18T03:03:34.569+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B0/51": {
+   "n": 123,
+   "label": "deck1_ch_fader_lsb (CH FADER LSB)",
+   "first_utc": "2026-09-18T03:03:33.913+00:00",
+   "last_utc": "2026-09-18T03:03:34.569+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "91/84": {
+   "n": 2,
+   "label": "deck2_ch_cue (CH CUE)",
+   "first_utc": "2026-09-18T03:03:35.135+00:00",
+   "last_utc": "2026-09-18T03:03:35.319+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B1/19": {
+   "n": 109,
+   "label": "deck2_ch_fader_msb (CH FADER MSB)",
+   "first_utc": "2026-09-18T03:03:35.593+00:00",
+   "last_utc": "2026-09-18T03:03:36.164+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B1/51": {
+   "n": 109,
+   "label": "deck2_ch_fader_lsb (CH FADER LSB)",
+   "first_utc": "2026-09-18T03:03:35.593+00:00",
+   "last_utc": "2026-09-18T03:03:36.164+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/31": {
+   "n": 667,
+   "label": "crossfader_msb (CROSSFADER MSB)",
+   "first_utc": "2026-09-18T03:03:36.956+00:00",
+   "last_utc": "2026-09-18T03:03:39.028+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/63": {
+   "n": 667,
+   "label": "crossfader_lsb (CROSSFADER LSB)",
+   "first_utc": "2026-09-18T03:03:36.956+00:00",
+   "last_utc": "2026-09-18T03:03:39.028+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/8": {
+   "n": 111,
+   "label": "master_level_msb (MASTER LEVEL MSB)",
+   "first_utc": "2026-09-18T03:06:05.095+00:00",
+   "last_utc": "2026-09-18T03:06:06.507+00:00",
+   "value_min": 0,
+   "value_max": 127
+  },
+  "B6/40": {
+   "n": 111,
+   "label": "master_level_lsb (MASTER LEVEL LSB)",
+   "first_utc": "2026-09-18T03:06:05.096+00:00",
+   "last_utc": "2026-09-18T03:06:06.507+00:00",
+   "value_min": 0,
+   "value_max": 127
+  }
+ }
+}
