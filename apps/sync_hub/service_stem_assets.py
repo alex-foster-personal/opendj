@@ -1,4 +1,4 @@
-"""Hub endpoints that mint presigned stem bundle reads (ADR-0025).
+"""Hub endpoints that mint presigned stem bundle reads (ADR-0051).
 
 Mounted under ``/api/v1/sync/stems/*``. The hub holds R2 credentials; spokes
 receive only short-lived GET URLs and content digests, never bucket keys.
