@@ -4,6 +4,10 @@
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import {
+		stepHeadphoneMix,
+		type HeadphoneMixDirection
+	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
@@ -28,6 +32,14 @@
 
 	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate }: Props =
 		$props();
+
+	let mixStepDirection: HeadphoneMixDirection = 1;
+
+	function handleMixSingleClick(): void {
+		const stepped = stepHeadphoneMix(state.mix, mixStepDirection);
+		mixStepDirection = stepped.direction;
+		onmix(stepped.value);
+	}
 
 	/** CUEOUT-14: live only in two outputs with a selected cue sink; the label is not consulted. */
 	const calibrateEnabled = $derived(
@@ -148,6 +160,7 @@
 			accessibleLabel="Headphone CUE to MASTER mix"
 			value={state.mix}
 			onchange={onmix}
+			onsingleclick={handleMixSingleClick}
 			resetValue={0}
 			accentColor={headphoneMixAccent(state.mix)}
 		/>

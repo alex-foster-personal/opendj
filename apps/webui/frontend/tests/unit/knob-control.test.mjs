@@ -435,6 +435,20 @@ test('every rendered knob carries a registry id', () => {
 	}
 });
 
+test('only the headphone MIX knob opts into delayed single-click stepping', () => {
+	const headphone = readFileSync(`${MIXER}/HeadphoneCluster.svelte`, 'utf8');
+	const channel = readFileSync(`${MIXER}/ChannelStrip.svelte`, 'utf8');
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+
+	assert.match(headphone, /onsingleclick=\{handleMixSingleClick\}/);
+	assert.match(headphone, /stepHeadphoneMix/);
+	assert.doesNotMatch(channel, /onsingleclick=/);
+	assert.match(knob, /createDeferredClickGuard/);
+	assert.match(knob, /handleDblClick/);
+	assert.match(knob, /setKnobFromDrag/);
+	assert.match(knob, /pointerMoved/);
+});
+
 test('knob ids are unique across the whole mixer', () => {
 	// Two dials sharing an id would silently drive each other.
 	const roles = ['trim', 'high', 'mid', 'low', 'filter'];
