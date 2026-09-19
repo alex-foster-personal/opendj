@@ -148,7 +148,7 @@ def live_run(
     djay_db_path: Path,
     only_tracks: set[str] | None = None,
     flag_ok: bool = False,
-    prefer: str = "newest",
+    _prefer: str = "newest",
 ) -> int:
     # Note: rb_db_path and djay_db_path are REQUIRED (no defaults). The
     # previous signature defaulted to the WORKING-copy paths, which meant a

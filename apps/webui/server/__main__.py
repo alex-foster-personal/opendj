@@ -17,10 +17,6 @@ import sys
 from pathlib import Path
 
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
-from apps.webui.server.request_guard import (
-    RequestGuardBindRefused,
-    assert_request_guard_bind_allowed,
-)
 from apps.webui.port_config import (
     BACKEND_ENV,
     FRONTEND_ENV,
@@ -31,6 +27,10 @@ from apps.webui.port_config import (
 )
 from apps.webui.port_config import (
     WEBUI_ENV_FILE as DEFAULT_WEBUI_ENV_FILE,
+)
+from apps.webui.server.request_guard import (
+    RequestGuardBindRefused,
+    assert_request_guard_bind_allowed,
 )
 
 WEBUI_ENV_FILE = DEFAULT_WEBUI_ENV_FILE

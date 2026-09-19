@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .feedback import _dir, _load, _save

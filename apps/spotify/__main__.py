@@ -146,15 +146,19 @@ def _cmd_import(args: argparse.Namespace) -> int:
         return EXIT_API_ERROR
 
     try:
+        from apps.spotify.importer import ImportOptions
+
         run = run_import(
             playlist_id,
             client=client,
-            live=args.live,
-            force=args.force,
-            use_cache=not args.no_cache,
-            max_tracks=max_tracks,
-            out_root=args.out_dir,
-            progress=lambda msg: print(f"[spotify] {msg}"),
+            options=ImportOptions(
+                live=args.live,
+                force=args.force,
+                use_cache=not args.no_cache,
+                max_tracks=max_tracks,
+                out_root=args.out_dir,
+                progress=lambda msg: print(f"[spotify] {msg}"),
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: import failed: {exc}", file=sys.stderr)

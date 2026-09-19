@@ -184,7 +184,7 @@ def test_duplicate_allowed_add(client: TestClient, db_path: Path) -> None:
 @pytest.mark.requirement("LIBM-21")
 def test_tombstoned_remove(client: TestClient, db_path: Path) -> None:
     """[if] items:remove targets one item id [then] only that row is tombstoned, [else stop]."""
-    pid, etag = _seed_500_playlist(client, db_path)
+    pid, _etag = _seed_500_playlist(client, db_path)
     live = _ordered_live(db_path, pid)
     target = live[10]
     neighbors = {live[9], live[11]}
@@ -195,11 +195,11 @@ def test_tombstoned_remove(client: TestClient, db_path: Path) -> None:
     )
     assert r.status_code == 200, r.text
     after_dump = _dump_all(db_path, pid)
-    tombstoned = [row for row in after_dump if row[0] == target[0]][0]
+    tombstoned = next(row for row in after_dump if row[0] == target[0])
     assert tombstoned[6] is not None
     for row in after_dump:
         if row[0] in {n[0] for n in neighbors}:
-            assert row == [r for r in before_dump if r[0] == row[0]][0]
+            assert row == next(r for r in before_dump if r[0] == row[0])
     r404 = client.post(
         f"/api/v1/playlists/{pid}/items:remove",
         json={"item_ids": ["no-such-item"]},
@@ -246,7 +246,7 @@ def test_slice_move(client: TestClient, db_path: Path) -> None:
 @pytest.mark.requirement("LIBM-26")
 def test_bulk_cap(client: TestClient, db_path: Path) -> None:
     """[if] add or remove exceeds 1000 ids [then] the batch is rejected, [else stop]."""
-    pid, etag = _seed_500_playlist(client, db_path)
+    pid, _etag = _seed_500_playlist(client, db_path)
     before = _dump_all(db_path, pid)
     over = EXTRA_IDS[:1001]
     r_over = client.post(
@@ -300,14 +300,14 @@ def test_rename_then_add_no_precondition(client: TestClient, db_path: Path) -> N
 @pytest.mark.requirement("LIBM-08")
 def test_readd_after_remove(client: TestClient, db_path: Path) -> None:
     """[if] a removed track is re-added [then] a new item id is issued, [else stop]."""
-    pid, etag = _seed_500_playlist(client, db_path)
+    pid, _etag = _seed_500_playlist(client, db_path)
     live = _ordered_live(db_path, pid)
     target = live[0]
     r_rm = client.delete(f"/api/v1/playlists/{pid}/items/{target[0]}")
     assert r_rm.status_code == 200, r_rm.text
-    tombstone = [
+    tombstone = next(
         row for row in _dump_all(db_path, pid) if row[0] == target[0]
-    ][0]
+    )
     assert tombstone[6] is not None
     r_add = client.post(
         f"/api/v1/playlists/{pid}/items:add",

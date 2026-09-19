@@ -165,7 +165,7 @@ def test_omitted_position_appends_after_last(client: TestClient, db_path: Path) 
     )
     assert r.status_code == 200, r.text
     after = dump_members(db_path, pid)
-    new_row = [row for row in after if row[1] == "t-003"][0]
+    new_row = next(row for row in after if row[1] == "t-003")
     assert new_row[3] > last_key
 
 
@@ -175,7 +175,7 @@ def test_already_member_creates_second_row(client: TestClient, db_path: Path) ->
     pid = body["playlist_id"]
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002"])
     before = dump_members(db_path, pid)
-    original_t001 = [row for row in before if row[1] == "t-001"][0]
+    original_t001 = next(row for row in before if row[1] == "t-001")
     r = client.post(
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-001"]},

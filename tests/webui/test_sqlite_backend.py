@@ -14,10 +14,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -48,7 +48,7 @@ ISO = "2026-04-17T10:00:00.000000Z"
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 @pytest.fixture(autouse=True)

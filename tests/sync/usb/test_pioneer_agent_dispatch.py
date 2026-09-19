@@ -178,7 +178,7 @@ def test_capture_window_falls_back_to_display_when_no_match(
         )
     monkeypatch.setattr(aa, "get_display_geometry", _fake_geom)
 
-    png, meta = aa.capture_window(
+    _png, meta = aa.capture_window(
         "rekordbox", downsample_width=100, _raw_bytes=_tiny_png()
     )
     assert meta["capture_mode"] == "display"
@@ -198,7 +198,7 @@ def test_capture_window_uses_injected_window_metadata(
         "bounds": {"x": 100.0, "y": 50.0, "w": 8.0, "h": 4.0},
         "layer": 0,
     }
-    png, meta = capture_window(
+    _png, meta = capture_window(
         "rekordbox", downsample_width=100,
         _raw_bytes=_tiny_png(), _injected_window=window,
     )

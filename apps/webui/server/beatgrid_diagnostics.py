@@ -26,7 +26,8 @@ this is a deliberate duplication of one small pure function.
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 BeatgridIssueSeverity = Literal["warning", "error"]
 
@@ -41,20 +42,10 @@ ERROR_DISAGREEMENT_BPM: float = 5.0
 MAX_RUN: int = 6
 
 
-def detect_beatgrid_issue(
+def _interval_metrics(
     beats: Sequence[Mapping[str, Any]],
-) -> Optional[dict[str, Any]]:
-    """Worst ISOLATED field-vs-interval BPM disagreement in the grid.
-
-    Returns None when every beat's field bpm is within tolerance of its own
-    interval, every disagreement is part of a longer sustained drift, or the
-    grid is too short to have an interval at all - all real "nothing to
-    flag" states, never a guessed issue.
-    """
+) -> tuple[int, list[float], list[float]]:
     interval_count = len(beats) - 1
-    if interval_count < 1:
-        return None
-
     interval_bpms: list[float] = [float("nan")] * interval_count
     disagreements: list[float] = [0.0] * interval_count
     for i in range(interval_count):
@@ -64,28 +55,48 @@ def detect_beatgrid_issue(
         interval_bpm = 60.0 / dt
         interval_bpms[i] = interval_bpm
         disagreements[i] = float(beats[i]["bpm"]) - interval_bpm
+    return interval_count, interval_bpms, disagreements
 
-    def direction(i: int) -> int:
-        d = disagreements[i]
-        if abs(d) <= WARN_DISAGREEMENT_BPM:
-            return 0
-        return 1 if d > 0 else -1
 
-    def run_length(i: int) -> int:
-        dir_ = direction(i)
-        start = i
-        while start > 0 and direction(start - 1) == dir_:
-            start -= 1
-        end = i
-        while end < interval_count - 1 and direction(end + 1) == dir_:
-            end += 1
-        return end - start + 1
+def _beat_direction(disagreements: list[float], i: int) -> int:
+    d = disagreements[i]
+    if abs(d) <= WARN_DISAGREEMENT_BPM:
+        return 0
+    return 1 if d > 0 else -1
 
-    worst: Optional[dict[str, Any]] = None
+
+def _direction_run_length(
+    disagreements: list[float], interval_count: int, i: int,
+) -> int:
+    dir_ = _beat_direction(disagreements, i)
+    start = i
+    while start > 0 and _beat_direction(disagreements, start - 1) == dir_:
+        start -= 1
+    end = i
+    while end < interval_count - 1 and _beat_direction(disagreements, end + 1) == dir_:
+        end += 1
+    return end - start + 1
+
+
+def detect_beatgrid_issue(
+    beats: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Worst ISOLATED field-vs-interval BPM disagreement in the grid.
+
+    Returns None when every beat's field bpm is within tolerance of its own
+    interval, every disagreement is part of a longer sustained drift, or the
+    grid is too short to have an interval at all - all real "nothing to
+    flag" states, never a guessed issue.
+    """
+    interval_count, interval_bpms, disagreements = _interval_metrics(beats)
+    if interval_count < 1:
+        return None
+
+    worst: dict[str, Any] | None = None
     for i in range(interval_count):
-        if direction(i) == 0:
+        if _beat_direction(disagreements, i) == 0:
             continue
-        if run_length(i) > MAX_RUN:
+        if _direction_run_length(disagreements, interval_count, i) > MAX_RUN:
             continue
         disagreement_bpm = abs(disagreements[i])
         if worst is not None and disagreement_bpm <= worst["disagreement_bpm"]:

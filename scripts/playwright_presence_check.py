@@ -36,6 +36,34 @@ def _last_status(test: dict[str, Any]) -> str | None:
     return status if isinstance(status, str) else None
 
 
+def _spec_test_rows(
+    spec: dict[str, Any],
+    file_label: str,
+    project_name: str,
+) -> list[tuple[str, str, str, str | None]]:
+    spec_file = spec.get("file") or file_label
+    spec_title = spec.get("title") or ""
+    if not isinstance(spec_file, str):
+        spec_file = file_label
+    if not isinstance(spec_title, str):
+        spec_title = ""
+    tests = spec.get("tests")
+    if not isinstance(tests, list):
+        return []
+    rows: list[tuple[str, str, str, str | None]] = []
+    for test in tests:
+        if not isinstance(test, dict):
+            continue
+        project = test.get("projectName") or project_name or "?"
+        title = test.get("title") or spec_title or "?"
+        if not isinstance(project, str):
+            project = "?"
+        if not isinstance(title, str):
+            title = "?"
+        rows.append((project, spec_file, title, _last_status(test)))
+    return rows
+
+
 def _walk_suites(
     suites: list[Any],
     *,
@@ -63,25 +91,7 @@ def _walk_suites(
         for spec in specs:
             if not isinstance(spec, dict):
                 continue
-            spec_file = spec.get("file") or file_label
-            spec_title = spec.get("title") or ""
-            if not isinstance(spec_file, str):
-                spec_file = file_label
-            if not isinstance(spec_title, str):
-                spec_title = ""
-            tests = spec.get("tests")
-            if not isinstance(tests, list):
-                continue
-            for test in tests:
-                if not isinstance(test, dict):
-                    continue
-                project = test.get("projectName") or project_name or "?"
-                title = test.get("title") or spec_title or "?"
-                if not isinstance(project, str):
-                    project = "?"
-                if not isinstance(title, str):
-                    title = "?"
-                rows.append((project, spec_file, title, _last_status(test)))
+            rows.extend(_spec_test_rows(spec, file_label, project_name))
     return rows
 
 

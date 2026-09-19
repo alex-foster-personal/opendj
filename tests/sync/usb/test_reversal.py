@@ -9,6 +9,7 @@ from apps.sync.usb.copy import CopyResult
 from apps.sync.usb.diff import Op
 from apps.sync.usb.reversal import ReversalLog, verify_syntax
 
+
 def _op(kind: str, dst: Path, src: Path | None = None) -> Op:
     return Op(
         kind=kind,

@@ -12,10 +12,11 @@ from __future__ import annotations
 import re
 import subprocess
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.review_claude import CLAUDE, CLAUDE_LOGINS, CLAUDE_MARKER
-from scripts.review_gh import TriageError, _SHA_IN_BACKTICKS, _STATUS_COMPLETED
+from scripts.review_gh import _SHA_IN_BACKTICKS, _STATUS_COMPLETED, TriageError
 from scripts.review_lane import diff_of, evidence_skipped_paths_ok
 from scripts.review_sol import SOL, SOL_LOGINS, SOL_MARKER, _normalize_login
 
@@ -228,31 +229,36 @@ def sort_candidates_newest_first(root: Path, head_sha: str, candidates: tuple[st
     return tuple(sorted(ancestors, key=lambda sha: _commits_since(root, sha, head_sha)))
 
 
+@dataclass(frozen=True)
+class ReviewCarryInputs:
+    checks: list[dict]
+    evidence: dict
+    reviews: list[dict]
+    inline: list[dict]
+    issue_comments: list[dict]
+    repo_root: Path
+    expected_reviewers: tuple[str, ...]
+    classify_reviewer: Callable
+
+
 def verdicts_with_carry(
     pr: str,
     head_sha: str,
-    checks: list[dict],
-    evidence: dict,
-    reviews: list[dict],
-    inline: list[dict],
-    issue_comments: list[dict],
-    repo_root: Path,
-    expected_reviewers: tuple[str, ...],
-    classify_reviewer,
+    inputs: ReviewCarryInputs,
 ):
     """Classify each reviewer at head, then try debt-only carry on MISS rows."""
     from scripts.review_coverage import ReviewerVerdict
 
     pr_diff = diff_of(pr)
     verdicts = []
-    for name in expected_reviewers:
-        verdict = classify_reviewer(name, checks, evidence.get(name))
-        row = evidence.get(name)
+    for name in inputs.expected_reviewers:
+        verdict = inputs.classify_reviewer(name, inputs.checks, inputs.evidence.get(name))
+        row = inputs.evidence.get(name)
         if verdict.reviewed and row and (reason := evidence_skipped_paths_ok(name, row.bodies, pr_diff)):
             verdict = ReviewerVerdict(name, False, reason)
         if not verdict.reviewed:
             carried = try_carry_verdict(
-                name, pr, head_sha, reviews, inline, issue_comments, repo_root
+                name, pr, head_sha, inputs.reviews, inputs.inline, inputs.issue_comments, inputs.repo_root
             )
             if carried is not None:
                 verdict = carried

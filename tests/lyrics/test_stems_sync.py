@@ -120,7 +120,7 @@ def test_hydrate_fetches_by_hash_and_passes_strict_loader(
         (bundle_dir / "manifest.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    for part, rel in manifest["files"].items():
+    for _part, rel in manifest["files"].items():
         _seed_s3_object(fake_s3, cfg, bundle_dir / rel)
 
     use_cloud_mode(monkeypatch)

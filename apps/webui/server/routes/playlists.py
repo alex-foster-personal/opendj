@@ -43,7 +43,7 @@ ORDER BY p.deleted_at DESC, p.playlist_id
 
 @router.get("", response_model=list[PlaylistSummary])
 def list_playlists(
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[PlaylistSummary]:
     playlists = backend.list_playlists()
     # Rekordbox playlists carry the user's custom tree order (djmdPlaylist
@@ -97,7 +97,7 @@ def list_playlists(
 )
 def list_deleted_playlists(
     request: Request,
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[DeletedPlaylistOut]:
     db_path = Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
     if not db_path.is_file():
@@ -131,14 +131,14 @@ def list_deleted_playlists(
 def get_playlist(
     playlist_id: str,
     response: Response,
-    available: AvailableFilter = Query(
+    available: AvailableFilter = Query(  # noqa: B008  # FastAPI DI
         "all",
         description=(
             "Filter the hydrated `tracks` rows on file_exists disk truth "
             "(FR-1 agent parity). `items` always stays the full membership."
         ),
     ),
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> PlaylistDetail:
     pl = backend.get_playlist(playlist_id)
     # add-remove-reorder-tracks: the write side's PUT .../tracks requires
@@ -186,7 +186,7 @@ def get_playlist(
 @router.get("/{playlist_id}/rb-djay-diff")
 def get_playlist_rb_djay_diff(
     playlist_id: str,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> dict:
     """Return saved playlist-plan diff buckets for one playlist when computed."""
     pl = backend.get_playlist(playlist_id)

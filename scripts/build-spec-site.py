@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cmd = ["mkdocs", "serve"] if args.serve else ["mkdocs", "build", "--strict"]
     print(f"[build-spec-site] running: {' '.join(cmd)}  (cwd={REPO_ROOT})")
-    result = subprocess.run(cmd, cwd=REPO_ROOT)
+    result = subprocess.run(cmd, cwd=REPO_ROOT, check=False)
     return result.returncode
 
 

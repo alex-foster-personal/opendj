@@ -8,10 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from apps.opendj_cli import EXIT_FAILED
-from apps.opendj_cli import install_cli
+from apps.opendj_cli import EXIT_FAILED, install_cli
 from apps.opendj_cli.__main__ import main
-from apps.opendj_cli.helptext import LIST_VERBS_FOOTER, LIBRARY_EPILOG
+from apps.opendj_cli.helptext import LIBRARY_EPILOG, LIST_VERBS_FOOTER
 
 
 def _payload_tree(tmp_path: Path) -> tuple[Path, Path]:
@@ -37,7 +36,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_install_cli_creates_symlink(home: Path, tmp_path: Path) -> None:
-    payload, bundled = _payload_tree(tmp_path)
+    _payload, bundled = _payload_tree(tmp_path)
     target = home / ".local" / "bin" / "opendj"
     assert install_cli.run([], as_json=False, bundled=bundled, target=target) == 0
     assert target.is_symlink()
@@ -45,7 +44,7 @@ def test_install_cli_creates_symlink(home: Path, tmp_path: Path) -> None:
 
 
 def test_install_cli_is_idempotent(home: Path, tmp_path: Path) -> None:
-    payload, bundled = _payload_tree(tmp_path)
+    _payload, bundled = _payload_tree(tmp_path)
     target = home / ".local" / "bin" / "opendj"
     assert install_cli.run([], as_json=False, bundled=bundled, target=target) == 0
     assert install_cli.run([], as_json=False, bundled=bundled, target=target) == 0
@@ -53,7 +52,7 @@ def test_install_cli_is_idempotent(home: Path, tmp_path: Path) -> None:
 
 
 def test_install_cli_refuses_wrong_existing_symlink(home: Path, tmp_path: Path) -> None:
-    payload, bundled = _payload_tree(tmp_path)
+    _payload, bundled = _payload_tree(tmp_path)
     other = tmp_path / "other" / "opendj"
     other.parent.mkdir(parents=True)
     other.write_text("#!/bin/sh\n", encoding="utf-8")

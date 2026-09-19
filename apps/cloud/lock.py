@@ -33,9 +33,10 @@ import json
 import os
 import signal
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
 
 from .config import CloudConfig
 
@@ -69,7 +70,7 @@ class LockHolder:
     version: int
 
     def is_expired(self, now: datetime | None = None) -> bool:
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         return now >= self.expires_at
 
     def to_json(self) -> str:
@@ -109,14 +110,14 @@ class AcquireResult:
 def _isoformat(dt: datetime) -> str:
     """UTC isoformat ending in 'Z' (Litestream-friendly)."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _parse_iso(raw: str) -> datetime:
     if raw.endswith("Z"):
         raw = raw[:-1] + "+00:00"
-    return datetime.fromisoformat(raw).astimezone(timezone.utc)
+    return datetime.fromisoformat(raw).astimezone(UTC)
 
 
 # --- S3 client protocol -------------------------------------------------
@@ -237,7 +238,7 @@ class Lock:
         self.cfg = cfg
         self.s3 = s3
         self.ttl_seconds = ttl_seconds
-        self._now = now_fn or (lambda: datetime.now(timezone.utc))
+        self._now = now_fn or (lambda: datetime.now(UTC))
         self._held: tuple[LockHolder, str] | None = None  # (holder, etag)
         self._mutex = threading.Lock()
 

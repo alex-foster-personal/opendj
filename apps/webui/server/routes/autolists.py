@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.smartlists.autolist_groups import (
-    AutolistSelectionError,
     GROUP_IDS,
+    AutolistSelectionError,
     buckets_with_counts,
     compact_index_rows,
     selection_to_rule,

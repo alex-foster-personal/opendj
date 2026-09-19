@@ -96,6 +96,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from apps.cloud.r2_keys import R2_KEY_TEMPLATE, asset_object_key
+from apps.stems.inventory import REPO_ROOT
 from scripts.b2_journal import (
     journal_new_mappings,
     journaled_mappings,
@@ -103,7 +104,6 @@ from scripts.b2_journal import (
     swapped_during_upload,
 )
 from scripts.b2store import SSH_HOST, SSH_OPTS, STORE_ROOT
-from apps.stems.inventory import REPO_ROOT
 
 R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_ACCOUNT_ID",

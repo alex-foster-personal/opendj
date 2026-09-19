@@ -46,7 +46,7 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Dual-mode: run by path (`uv run scripts/bench/kpi_append.py`), sys.path[0] is
@@ -190,7 +190,7 @@ def main() -> None:
             provenance[key] = "derived" if value is not None else "not-derivable"
 
     snapshot = {
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "label": args.label,
         "values": values,
         "provenance": provenance,

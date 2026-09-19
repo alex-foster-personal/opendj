@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 _logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def _load_phase12(
         played_at = (
             datetime.fromisoformat(r[5])
             if isinstance(r[5], str)
-            else datetime.now(timezone.utc)
+            else datetime.now(UTC)
         )
         out.append(
             PlayedTrack(
@@ -105,7 +105,7 @@ def load_session_context(
     they return empty lists and log at INFO the first time a fallback
     happens.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if source == "manual":
         return SessionContext(

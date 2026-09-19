@@ -61,6 +61,7 @@ def _lsof_writers(drive_root: Path) -> list[str]:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return []

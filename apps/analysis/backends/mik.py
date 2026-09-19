@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,7 @@ class MikBackend:
             capture_output=True,
             text=True,
             timeout=_TIMEOUT_S,
+            check=False,
         )
         if result.returncode != 0:
             # The tool ran; it rejected this file. That is per-file, unlike a
@@ -72,7 +73,7 @@ class MikBackend:
             stable_id=stable_id,
             backend=cls.name,
             backend_version=data.get("version", cls.version),
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=float(data.get("duration_s", 0.0)),
             sample_rate=int(data.get("sample_rate", 44100)),
             bpm=float(data.get("bpm", 0.0)),

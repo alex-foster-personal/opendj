@@ -46,9 +46,9 @@ import enum
 import json
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 from rich.console import Console
 from rich.table import Table

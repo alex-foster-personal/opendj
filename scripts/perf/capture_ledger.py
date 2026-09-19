@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -71,35 +72,39 @@ def _span_is_scorable(span: dict[str, Any]) -> tuple[bool, str | None]:
     return True, None
 
 
+@dataclass(frozen=True)
+class _LedgerRowCtx:
+    sha: str
+    machine: str
+    capture_date: date
+    note: str
+    status: str | None = None
+    measured: bool | None = None
+
+
 def _base_row(
-    *,
     kpi: str,
     value: float | None,
     unit: str,
-    sha: str,
-    machine: str,
-    capture_date: date,
-    note: str,
-    status: str | None = None,
-    measured: bool | None = None,
+    ctx: _LedgerRowCtx,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
-        "date": capture_date.isoformat(),
+        "date": ctx.capture_date.isoformat(),
         "round": ROUND,
         "kpi": kpi,
         "value": value,
         "unit": unit,
-        "machine": machine,
+        "machine": ctx.machine,
         "source": SOURCE,
         "method": METHOD,
-        "sha": sha,
+        "sha": ctx.sha,
         "capture_id": CAPTURE_ID,
-        "note": note,
+        "note": ctx.note,
     }
-    if status is not None:
-        row["status"] = status
-    if measured is not None:
-        row["measured"] = measured
+    if ctx.status is not None:
+        row["status"] = ctx.status
+    if ctx.measured is not None:
+        row["measured"] = ctx.measured
     return row
 
 
@@ -114,59 +119,33 @@ def span_to_ledger_rows(
     """Convert a client-events perf-span into scored and context ledger rows."""
     if span is None:
         withheld_reason = reason or "missing library-usable mark"
-        note = f"UNKNOWN: {withheld_reason}"
+        ctx = _LedgerRowCtx(
+            sha=sha,
+            machine=machine,
+            capture_date=capture_date,
+            note=f"UNKNOWN: {withheld_reason}",
+            status="withheld",
+            measured=False,
+        )
         return [
-            _base_row(
-                kpi="login_submit_to_library_usable_s",
-                value=None,
-                unit="s",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            ),
-            _base_row(
-                kpi="login_full_wall_s",
-                value=None,
-                unit="s",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            ),
+            _base_row("login_submit_to_library_usable_s", None, "s", ctx),
+            _base_row("login_full_wall_s", None, "s", ctx),
         ]
 
     ok, span_reason = _span_is_scorable(span)
     if not ok:
         withheld_reason = reason or span_reason or "span failed validation"
-        note = f"UNKNOWN: {withheld_reason}"
+        ctx = _LedgerRowCtx(
+            sha=sha,
+            machine=machine,
+            capture_date=capture_date,
+            note=f"UNKNOWN: {withheld_reason}",
+            status="withheld",
+            measured=False,
+        )
         return [
-            _base_row(
-                kpi="login_submit_to_library_usable_s",
-                value=None,
-                unit="s",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            ),
-            _base_row(
-                kpi="login_full_wall_s",
-                value=None,
-                unit="s",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            ),
+            _base_row("login_submit_to_library_usable_s", None, "s", ctx),
+            _base_row("login_full_wall_s", None, "s", ctx),
         ]
 
     stages = span["stages"]
@@ -176,25 +155,18 @@ def span_to_ledger_rows(
         "browser capture against running engine; duration_ms is in-app "
         "(pre_navigate + post_navigate); full_wall is context and includes Google"
     )
+    scored_ctx = _LedgerRowCtx(
+        sha=sha, machine=machine, capture_date=capture_date, note=provenance_note,
+    )
+    wall_ctx = _LedgerRowCtx(
+        sha=sha,
+        machine=machine,
+        capture_date=capture_date,
+        note="context only; includes Google consent wait; does not score S13",
+    )
     return [
-        _base_row(
-            kpi="login_submit_to_library_usable_s",
-            value=duration_ms / 1000.0,
-            unit="s",
-            sha=sha,
-            machine=machine,
-            capture_date=capture_date,
-            note=provenance_note,
-        ),
-        _base_row(
-            kpi="login_full_wall_s",
-            value=full_wall_ms / 1000.0,
-            unit="s",
-            sha=sha,
-            machine=machine,
-            capture_date=capture_date,
-            note="context only; includes Google consent wait; does not score S13",
-        ),
+        _base_row("login_submit_to_library_usable_s", duration_ms / 1000.0, "s", scored_ctx),
+        _base_row("login_full_wall_s", full_wall_ms / 1000.0, "s", wall_ctx),
     ]
 
 

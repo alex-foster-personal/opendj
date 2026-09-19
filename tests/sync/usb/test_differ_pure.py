@@ -446,7 +446,7 @@ def test_render_matrix_markdown_formats_signs_and_status() -> None:
             reason="boom",
         ),
     ]
-    when = _dt.datetime(2026, 4, 17, 5, 0, tzinfo=_dt.timezone.utc)
+    when = _dt.datetime(2026, 4, 17, 5, 0, tzinfo=_dt.UTC)
     md = differ.render_matrix_markdown(rows, now=when)
     assert "Generated: 2026-04-17T05:00:00+00:00" in md
     assert "| `f1` | identity" in md

@@ -60,6 +60,10 @@ from .errors import (
 )
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
+from .request_guard import (
+    host_allowlist_middleware,
+    origin_guard_middleware,
+)
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -101,7 +105,6 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
-from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -113,16 +116,17 @@ from .routes import progress as progress_routes
 from .routes import quality as quality_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
-from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import rb_djay_sync as rb_djay_sync_routes
+from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
+from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
-from .routes import shell as shell_routes
 from .routes import share as share_routes
+from .routes import shell as shell_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import sql_playground as sql_playground_routes
@@ -139,11 +143,6 @@ from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
-from .request_guard import (
-    host_allowlist_middleware,
-    install_request_guard,
-    origin_guard_middleware,
-)
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 

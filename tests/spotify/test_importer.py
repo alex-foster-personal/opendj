@@ -9,7 +9,7 @@ import pytest
 
 from apps.shared.state import schema as state_schema
 from apps.spotify.client import SpotifyClient
-from apps.spotify.importer import run_import
+from apps.spotify.importer import ImportOptions, run_import
 
 from .fake_spotipy import FakeSpotipy, make_meta, make_track
 
@@ -45,9 +45,14 @@ def test_run_import_dry_run(tmp_path: Path, state_db_path: Path) -> None:
     )
     client = SpotifyClient(fake, cache_dir=tmp_path / "cache")
     run = run_import(
-        "pl123", client=client, live=False,
-        state_db_path=state_db_path, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "pl123",
+        client=client,
+        options=ImportOptions(
+            live=False,
+            state_db_path=state_db_path,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
     assert run.live is False
     assert run.write_summary is None
@@ -69,9 +74,14 @@ def test_run_import_live_writes_state(tmp_path: Path, state_db_path: Path) -> No
     )
     client = SpotifyClient(fake, cache_dir=tmp_path / "cache")
     run = run_import(
-        "pl123", client=client, live=True,
-        state_db_path=state_db_path, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "pl123",
+        client=client,
+        options=ImportOptions(
+            live=True,
+            state_db_path=state_db_path,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
     assert run.live is True
     assert run.write_summary is not None
@@ -133,9 +143,14 @@ def test_duplicate_local_copies_hydrate_once_without_pending_purchase(
     client = SpotifyClient(fake, cache_dir=tmp_path / "cache")
 
     first = run_import(
-        "owned", client=client, live=True,
-        state_db_path=state_db_path, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "owned",
+        client=client,
+        options=ImportOptions(
+            live=True,
+            state_db_path=state_db_path,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
 
     conn = sqlite3.connect(state_db_path)
@@ -154,9 +169,14 @@ def test_duplicate_local_copies_hydrate_once_without_pending_purchase(
     acquire_md_after_first = first.reports.to_acquire_md.read_text(encoding="utf-8")
 
     second = run_import(
-        "owned", client=client, live=True,
-        state_db_path=state_db_path, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "owned",
+        client=client,
+        options=ImportOptions(
+            live=True,
+            state_db_path=state_db_path,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
     conn = sqlite3.connect(state_db_path)
     state_after_second = (
@@ -193,9 +213,15 @@ def test_max_tracks_caps(tmp_path: Path, state_db_path: Path) -> None:
     )
     client = SpotifyClient(fake, cache_dir=tmp_path / "cache")
     run = run_import(
-        "pl123", client=client, live=False, max_tracks=3,
-        state_db_path=state_db_path, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "pl123",
+        client=client,
+        options=ImportOptions(
+            live=False,
+            max_tracks=3,
+            state_db_path=state_db_path,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
     assert len(run.result.pairs) == 3
 
@@ -214,8 +240,13 @@ def test_missing_state_db_degrades(
     )
     client = SpotifyClient(fake, cache_dir=tmp_path / "cache")
     run = run_import(
-        "pl123", client=client, live=False,
-        state_db_path=missing, out_root=tmp_path / "out",
-        include_timestamp=False,
+        "pl123",
+        client=client,
+        options=ImportOptions(
+            live=False,
+            state_db_path=missing,
+            out_root=tmp_path / "out",
+            include_timestamp=False,
+        ),
     )
     assert len(run.result.unmatched) == 1

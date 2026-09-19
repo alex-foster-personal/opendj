@@ -28,7 +28,6 @@ from apps.sync_hub import (
     sync_set,
     wire_version,
 )
-from apps.sync_hub.transport import API_PREFIX, HttpTransport
 from apps.sync_hub.engine_identity import _follow_remap
 from apps.sync_hub.engine_identity_map import (
     REMAP_TABLE,
@@ -37,22 +36,23 @@ from apps.sync_hub.engine_identity_map import (
     load_identity_remap,
     record_identity_remap,
 )
+from apps.sync_hub.transport import API_PREFIX, HttpTransport
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _DEV_B,
     _T0,
-    _TestClientTransport,
     _insert_playlist,
     _set_members,
+    _TestClientTransport,
 )
 from tests.cloudsync.test_track_identity_collapse import (
     _HASH_A,
     _hub_app,
+    _incoming_track,
     _insert_field,
     _insert_identified_track,
     _insert_location,
     _insert_vendor,
-    _incoming_track,
     _open_hub,
     _track_ids,
     _values,

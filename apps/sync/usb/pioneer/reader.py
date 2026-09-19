@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from kaitaistruct import KaitaiStream
 from pyrekordbox.anlz import AnlzFile, walk_anlz_paths

@@ -3,8 +3,6 @@
 import json
 from datetime import UTC, datetime
 
-import pytest
-
 from scripts.ci_cost_billing import (
     MAX_BILLING_API_CALLS,
     build_billing_ledger,

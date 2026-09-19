@@ -14,9 +14,9 @@ drives the loop.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from apps.sync.djay_monitor import DjayNowPlaying, HistoryItem
 
@@ -62,7 +62,7 @@ class DjaySource:
         return mapping.get(int(item.deck_number), str(item.deck_number))
 
     def _rel_ts(self) -> float:
-        delta = datetime.now(timezone.utc) - self.session_started_at
+        delta = datetime.now(UTC) - self.session_started_at
         return max(0.0, delta.total_seconds())
 
     def _emit(self, event: Event) -> None:
@@ -78,7 +78,7 @@ class DjaySource:
 
     def _handle_track(self, item: HistoryItem) -> None:
         deck = self._deck_label(item)
-        wall = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        wall = datetime.now(UTC).isoformat(timespec="milliseconds")
         ts = self._rel_ts()
         stable_id = item.uuid or None
         base_value = {
@@ -142,7 +142,7 @@ class DjaySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(timezone.utc).isoformat(
+                    wall_clock=datetime.now(UTC).isoformat(
                         timespec="milliseconds"
                     ),
                     action="source_error",
@@ -155,7 +155,7 @@ class DjaySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(timezone.utc).isoformat(
+                    wall_clock=datetime.now(UTC).isoformat(
                         timespec="milliseconds"
                     ),
                     action="source_error",

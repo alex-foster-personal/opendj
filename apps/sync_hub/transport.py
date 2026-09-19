@@ -99,49 +99,56 @@ def _elapsed_from_message(message: str) -> float | None:
     return float(match.group(1))
 
 
+def _timed_transport_failure(
+    kind: str,
+    elapsed: float | None,
+    *,
+    with_elapsed: str,
+    without_elapsed: str,
+) -> TransportFailure:
+    if elapsed is not None:
+        return TransportFailure(kind, elapsed, with_elapsed.format(elapsed=elapsed))
+    return TransportFailure(kind, None, without_elapsed)
+
+
+def _classify_http_failure(lower: str, elapsed: float | None) -> TransportFailure | None:
+    if "http 502" in lower:
+        return _timed_transport_failure(
+            "proxy_or_hub_timeout",
+            elapsed,
+            with_elapsed="the hub or proxy closed the connection (502, after {elapsed:.0f}s)",
+            without_elapsed=(
+                "the hub or proxy closed the connection "
+                "(502; may be Tailscale serve or client timeout)"
+            ),
+        )
+    if re.search(r"http 5\d\d", lower):
+        code = re.search(r"http (\d{3})", lower)
+        status = int(code.group(1)) if code else 500
+        return _timed_transport_failure(
+            "hub_error_5xx",
+            elapsed,
+            with_elapsed=f"the hub answered with HTTP {status} (after {{elapsed:.0f}}s)",
+            without_elapsed=f"the hub answered with HTTP {status}",
+        )
+    return None
+
+
 def classify_transport_failure(message: str) -> TransportFailure | None:
     """Return a classified transport failure, or None when not transport-related."""
     lower = message.lower()
     if "syncdigestmismatch" in lower:
         return None
     elapsed = _elapsed_from_message(message)
-    if "http 502" in lower:
-        if elapsed is not None:
-            return TransportFailure(
-                "proxy_or_hub_timeout",
-                elapsed,
-                f"the hub or proxy closed the connection (502, after {elapsed:.0f}s)",
-            )
-        return TransportFailure(
-            "proxy_or_hub_timeout",
-            None,
-            "the hub or proxy closed the connection (502; may be Tailscale serve or client timeout)",
-        )
-    if re.search(r"http 5\d\d", lower):
-        code = re.search(r"http (\d{3})", lower)
-        status = int(code.group(1)) if code else 500
-        if elapsed is not None:
-            return TransportFailure(
-                "hub_error_5xx",
-                elapsed,
-                f"the hub answered with HTTP {status} (after {elapsed:.0f}s)",
-            )
-        return TransportFailure(
-            "hub_error_5xx",
-            None,
-            f"the hub answered with HTTP {status}",
-        )
+    http_failure = _classify_http_failure(lower, elapsed)
+    if http_failure is not None:
+        return http_failure
     if "client timeout after" in lower or "timed out" in lower or "timeout" in lower:
-        if elapsed is not None:
-            return TransportFailure(
-                "client_timeout",
-                elapsed,
-                f"the hub did not respond in time (timeout after {elapsed:.0f}s)",
-            )
-        return TransportFailure(
+        return _timed_transport_failure(
             "client_timeout",
-            None,
-            "the hub did not respond in time (timeout)",
+            elapsed,
+            with_elapsed="the hub did not respond in time (timeout after {elapsed:.0f}s)",
+            without_elapsed="the hub did not respond in time (timeout)",
         )
     if (
         "connection refused" in lower

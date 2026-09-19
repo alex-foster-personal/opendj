@@ -41,10 +41,11 @@ import json
 import logging
 import sqlite3
 import threading
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator, Optional, Sequence
+from typing import Any
 
 from apps.analysis.selection import EffectiveField
 from apps.shared.state import db as _state_db
@@ -125,7 +126,7 @@ def read_tracks_schema_version(path: Path) -> tuple[bool, int]:
         conn.close()
 
 
-def _stale_tracks_schema_version(path: Path) -> Optional[int]:
+def _stale_tracks_schema_version(path: Path) -> int | None:
     """Return the on-disk ``schema_meta`` version iff migration was skipped.
 
     ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
@@ -215,7 +216,7 @@ def _parse_rfc3339(ts: str) -> datetime:
     raw = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
     dt = datetime.fromisoformat(raw)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -254,7 +255,7 @@ def _row_to_track(
 
     ``fields`` maps ``field_name -> (value, source, confidence, modified_at)``.
     """
-    artist: Optional[str] = None
+    artist: str | None = None
     artists_json = row["artists_json"]
     if artists_json:
         try:
@@ -466,7 +467,7 @@ class SqliteBackend:
         self,
         state_db_path: str | Path,
         *,
-        fallback: Optional[InMemoryBackend] = None,
+        fallback: InMemoryBackend | None = None,
     ) -> None:
         self._path = Path(state_db_path)
         # Skip the check for a path that does not exist yet (or whose parent
@@ -864,7 +865,7 @@ class SqliteBackend:
 
                 writes = [
                     _field_writes(current, update.patch)
-                    for current, update in zip(current_rows, updates)
+                    for current, update in zip(current_rows, updates, strict=False)
                 ]
                 file_paths: list[str | None] = []
                 for update in updates:
@@ -875,12 +876,12 @@ class SqliteBackend:
                     if not isinstance(file_path, str) or not file_path:
                         raise BackendError("file_path must be a non-empty string")
                     file_paths.append(file_path)
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(UTC).isoformat()
                 if mutation_guard is not None:
                     mutation_guard()
                 with StateWriter(conn, actor="webui") as writer:
                     for current, update, field_writes, file_path in zip(
-                        current_rows, updates, writes, file_paths,
+                        current_rows, updates, writes, file_paths, strict=False,
                     ):
                         for field_name, value in field_writes.items():
                             writer.set_field(
@@ -973,16 +974,16 @@ class SqliteBackend:
                 ]
 
                 conflicts: list[dict[str, str]] = []
-                for track, update in zip(members, updates):
+                for track, update in zip(members, updates, strict=False):
                     current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
                     if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                         conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
                 if conflicts:
                     raise BatchConflictError(conflicts)
 
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(UTC).isoformat()
                 with StateWriter(conn, actor="webui") as writer:
-                    for track, update in zip(members, updates):
+                    for track, update in zip(members, updates, strict=False):
                         for field_name, value in _field_writes(track, update.patch).items():
                             writer.set_field(
                                 update.stable_id, field_name, value,

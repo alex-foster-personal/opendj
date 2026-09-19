@@ -40,9 +40,10 @@ import json
 import os
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 SCHEMA: int = 1
 LOG_DIR: str = "farm-logs"  # under data/state/
@@ -388,7 +389,7 @@ def snapshot_text(state: FarmState, usd_per_s: float) -> str:
     return "\n".join(lines)
 
 
-def latest_log(data_dir: Path) -> Optional[Path]:
+def latest_log(data_dir: Path) -> Path | None:
     """Most recently modified run log, or None. Lets a dashboard or an agent
     attach to "the run that is happening" without being told the run id."""
     directory = data_dir / "state" / LOG_DIR
