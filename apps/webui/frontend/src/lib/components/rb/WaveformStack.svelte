@@ -26,7 +26,7 @@
 	.rb-wavestack {
 		grid-area: wavestack;
 		display: grid;
-		grid-template-rows: repeat(4, var(--rb-waverow-h));
+		grid-template-rows: repeat(4, minmax(var(--rb-waverow-h), auto));
 		border-bottom: 1px solid var(--rb-border);
 		min-width: 0;
 		transition: grid-template-rows var(--rb-deck-layout-duration, 200ms) ease;
@@ -39,7 +39,7 @@
 	 * `1fr` row actually picks up the difference. Rows 1/2 (decks 1/2) are
 	 * untouched. */
 	.rb-wavestack.less {
-		grid-template-rows: var(--rb-waverow-h) var(--rb-waverow-h) 0px 0px;
+		grid-template-rows: minmax(var(--rb-waverow-h), auto) minmax(var(--rb-waverow-h), auto) 0px 0px;
 	}
 	.rb-wavestack.less :global([data-deck='3']),
 	.rb-wavestack.less :global([data-deck='4']) {

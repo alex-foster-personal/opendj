@@ -1099,6 +1099,26 @@ export async function fetchStemJob(job_id: string): Promise<StemJob> {
 	return _fetchJson<StemJob>(`/api/v1/stems/jobs/${encodeURIComponent(job_id)}`);
 }
 
+export interface StemWaveformEnvelope {
+	schema: number;
+	stable_id: string;
+	part: string;
+	layout: string;
+	points: number;
+	envelope: number[];
+}
+
+/** GET /tracks/{stable_id}/stems/{part}/waveform - server mono peak envelope. */
+export async function fetchStemWaveform(stable_id: string, part: string): Promise<StemWaveformEnvelope> {
+	const data = await _fetchJson<StemWaveformEnvelope>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/stems/${encodeURIComponent(part)}/waveform`
+	);
+	if (!Array.isArray(data.envelope) || data.envelope.length === 0) {
+		throw new Error(`stem waveform ${stable_id}/${part}: empty envelope`);
+	}
+	return data;
+}
+
 // --------------------------------------------- vocal analysis trigger (PARITY-08)
 
 export interface VocalsAnalyzeResult {

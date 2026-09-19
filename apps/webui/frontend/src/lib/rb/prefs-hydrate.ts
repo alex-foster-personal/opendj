@@ -78,6 +78,7 @@ export type DiskPrefsPatch = {
 	auto_sync?: AutoSyncPrefs;
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
+	show_stems?: boolean;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -150,6 +151,7 @@ export interface PrefsHydrateTarget {
 	auto_sync: AutoSyncPrefs;
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
+	show_stems: boolean;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
@@ -220,6 +222,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			}
 			if (typeof body.show_agent_pins === 'boolean') {
 				uiPrefs.show_agent_pins = body.show_agent_pins;
+			}
+			if (typeof body.show_stems === 'boolean') {
+				uiPrefs.show_stems = body.show_stems;
 			}
 			if (typeof body.jog_radial_waveform === 'boolean') {
 				uiPrefs.jog_radial_waveform = body.jog_radial_waveform;

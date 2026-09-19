@@ -62,7 +62,10 @@
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
 	import LyricLanes from './LyricLanes.svelte';
+	import StemWaveStack from './StemWaveStack.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -202,6 +205,8 @@
 		else return null; // rekordbox: the blue bars speak for themselves
 	});
 
+	const showStems = $derived(uiPrefs.show_stems);
+
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
 	let cssW = $state(0);
@@ -243,6 +248,13 @@
 	function _paintPositionMs(): number {
 		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
 	}
+
+	const stemScrollPx = $derived(
+		paintScrollPx(_paintPositionMs(), deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch)
+	);
+	const stemRowExtraPx = $derived(
+		showStems && deck.stable_id !== null ? STEM_WAVE_ROW_MAX * STEM_WAVE_ROW_PX : 0
+	);
 
 	$effect(() => {
 		const el = canvasEl;
@@ -469,6 +481,7 @@
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
 	data-deck={deckId} data-wave-surface="row"
+	style={`--rb-waverow-stem-extra: ${stemRowExtraPx}px`}
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
@@ -480,56 +493,59 @@
 	}}
 >
 	<WaveGutter {deck} {deckId} {barsLabel} />
-	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
-		{#if finished}
-			<button
-				class="finished-eject"
-				title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
-				onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
-			>
-				⏏ {deck.title ?? 'Track'} - deck {deckId}
-			</button>
-		{/if}
-		{#if clockUntrusted}
-			<span
-				class="clock-stalled"
-				title="The audio device stopped reporting where playback is. The waveform is
+	<div class="wave-col">
+		<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+			{#if finished}
+				<button
+					class="finished-eject"
+					title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
+					onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
+				>
+					⏏ {deck.title ?? 'Track'} - deck {deckId}
+				</button>
+			{/if}
+			{#if clockUntrusted}
+				<span
+					class="clock-stalled"
+					title="The audio device stopped reporting where playback is. The waveform is
 estimated from the render clock and may run ahead of what you hear."
-			>
-				CLOCK
-			</span>
-		{/if}
-		<canvas
-			bind:this={canvasEl}
-			role="slider"
-			aria-label="deck {deckId} waveform seek"
-			aria-valuemin={0}
-			aria-valuemax={deck.duration_ms ?? 0}
-			aria-valuenow={Math.round(deck.position_ms)}
-			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
-			tabindex="-1"
-			data-hotkey-pointer-only
-			onpointerdown={onPointerDown}
-			onpointermove={onPointerMove}
-			onpointerup={onPointerUp}
-			onpointercancel={onPointerCancel}
-			onlostpointercapture={onLostPointerCapture}
-		></canvas>
-		<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
-		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
-			<span class="anlz-state" title={anlzErrorCode}>
-				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
-			</span>
-		{:else if deck.stable_id !== null && localDecodeFailure !== null && beatgridFallback === null}
-			<span class="anlz-state" title={localDecodeFailure}>NOT DECODED</span>
-		{:else if beatgridFallback !== null}
-			<span
-				class="anlz-state"
-				title="no rekordbox ANLZ - beatgrid from apps.analysis (fallback, never invented)"
-			>
-				BPM {beatgridFallback.bpm.toFixed(1)} (fallback)
-			</span>
-		{/if}
+				>
+					CLOCK
+				</span>
+			{/if}
+			<canvas
+				bind:this={canvasEl}
+				role="slider"
+				aria-label="deck {deckId} waveform seek"
+				aria-valuemin={0}
+				aria-valuemax={deck.duration_ms ?? 0}
+				aria-valuenow={Math.round(deck.position_ms)}
+				aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
+				tabindex="-1"
+				data-hotkey-pointer-only
+				onpointerdown={onPointerDown}
+				onpointermove={onPointerMove}
+				onpointerup={onPointerUp}
+				onpointercancel={onPointerCancel}
+				onlostpointercapture={onLostPointerCapture}
+			></canvas>
+			<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
+			{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
+				<span class="anlz-state" title={anlzErrorCode}>
+					{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
+				</span>
+			{:else if deck.stable_id !== null && localDecodeFailure !== null && beatgridFallback === null}
+				<span class="anlz-state" title={localDecodeFailure}>NOT DECODED</span>
+			{:else if beatgridFallback !== null}
+				<span
+					class="anlz-state"
+					title="no rekordbox ANLZ - beatgrid from apps.analysis (fallback, never invented)"
+				>
+					BPM {beatgridFallback.bpm.toFixed(1)} (fallback)
+				</span>
+			{/if}
+		</div>
+		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} />
 	</div>
 </div>
 
@@ -552,13 +568,19 @@ estimated from the render clock and may run ahead of what you hear."
 	}
 	.rb-waverow {
 		display: flex;
-		height: var(--rb-waverow-h);
+		height: calc(var(--rb-waverow-h) + var(--rb-waverow-stem-extra, 0px));
 		background: var(--rb-bg);
 		/* Strong channel separator so beat lines can be compared across rows. */
 		border-bottom: 2px solid #3d4652;
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
+	}
+	.wave-col {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
 	}
 	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
 	   mixer's translucent panel-raised mix, because the canvas is opaque. */
@@ -574,7 +596,8 @@ estimated from the render clock and may run ahead of what you hear."
 	}
 	.canvas-wrap {
 		position: relative;
-		flex: 1;
+		flex: 1 1 var(--rb-waverow-h);
+		min-height: var(--rb-waverow-h);
 		min-width: 0;
 	}
 	canvas {

@@ -153,7 +153,7 @@ test('perf-root reserves at least the sum of the real library-chrome floors', ()
 
 	const reserveMatch = firstMatch(
 		pageSource,
-		/calc\(100vh - var\(--rb-topbar-h\) - 4 \* var\(--rb-waverow-h\) - (\d+)px\)/,
+		/100vh - var\(--rb-topbar-h\) -\s*4 \* \(var\(--rb-waverow-h\) \+ var\(--rb-stemwave-stack-extra, 0px\)\) -\s*(\d+)px/,
 		"perf-root's deck-area ceiling reservation"
 	);
 	const reservedPx = Number(reserveMatch[1]);
@@ -372,7 +372,7 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	function wavestackRows(block, label) {
 		const m = firstMatch(
 			block,
-			/calc\((\d+)\s*\*\s*var\(--rb-waverow-h\)\)/,
+			/calc\((\d+)\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)\)/,
 			`a wavestack row count in ${label}`
 		);
 		return Number(m[1]);
@@ -472,7 +472,7 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	const { requiredLibraryPx, bottomBarPx } = computeRequiredLibraryPx();
 	const lessCeilingReserveMatch = firstMatch(
 		lessBlock,
-		/calc\(100vh - var\(--rb-topbar-h\) - 2 \* var\(--rb-waverow-h\) - (\d+)px\)/,
+		/100vh - var\(--rb-topbar-h\) -\s*2 \* \(var\(--rb-waverow-h\) \+ var\(--rb-stemwave-stack-extra, 0px\)\) -\s*(\d+)px/,
 		"LESS mode's deck-area ceiling reservation"
 	);
 	const lessCeilingReservePx = Number(lessCeilingReserveMatch[1]);

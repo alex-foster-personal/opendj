@@ -20,6 +20,8 @@ export const SCALERS: Record<
 		preview_pcm_bytes: number;
 		anlz_entries: number;
 		anlz_bytes: number;
+		stem_waveform_entries: number;
+		stem_waveform_bytes: number;
 		stem_decode: 'mix-only' | 'mix-first' | 'eager';
 		worker_divisor: number;
 	}
@@ -30,6 +32,8 @@ export const SCALERS: Record<
 		preview_pcm_bytes: 64 * MiB,
 		anlz_entries: 8,
 		anlz_bytes: 10 * MiB,
+		stem_waveform_entries: 12,
+		stem_waveform_bytes: 128 * MiB,
 		stem_decode: 'mix-only',
 		worker_divisor: 2
 	},
@@ -39,6 +43,8 @@ export const SCALERS: Record<
 		preview_pcm_bytes: 160 * MiB,
 		anlz_entries: 32,
 		anlz_bytes: 40 * MiB,
+		stem_waveform_entries: 24,
+		stem_waveform_bytes: 256 * MiB,
 		stem_decode: 'mix-first',
 		worker_divisor: 1
 	},
@@ -48,6 +54,8 @@ export const SCALERS: Record<
 		preview_pcm_bytes: 256 * MiB,
 		anlz_entries: 64,
 		anlz_bytes: 80 * MiB,
+		stem_waveform_entries: 36,
+		stem_waveform_bytes: 512 * MiB,
 		stem_decode: 'eager',
 		worker_divisor: 1
 	}
@@ -107,6 +115,14 @@ export function anlzEntryCap(): number {
 
 export function anlzByteCap(): number {
 	return activeScalers().anlz_bytes;
+}
+
+export function stemWaveformEntryCap(): number {
+	return activeScalers().stem_waveform_entries;
+}
+
+export function stemWaveformByteCap(): number {
+	return activeScalers().stem_waveform_bytes;
 }
 
 export function stemDecodeEagerness(): 'mix-only' | 'mix-first' | 'eager' {

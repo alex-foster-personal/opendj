@@ -196,6 +196,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'show_stems',
+		label: 'Stem mini-waveforms',
+		group: 'performance',
+		keywords: ['stem', 'stems', 'mini', 'waveform', 'wavestack', 'demucs', 'vocals'],
+		title: 'Show per-stem mini-waveforms under deck waveforms',
+		detail:
+			'When on, each loaded deck paints one mini-waveform row per stem control (VOCAL, INST, DRUMS) using server peak envelopes. Default off. Same path as the show_stems performance command.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
 		group: 'performance',

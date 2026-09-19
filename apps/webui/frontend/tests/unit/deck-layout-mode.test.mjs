@@ -101,10 +101,13 @@ test('Mixer collapses only strips 3/4 (STRIP_ORDER columns 0 and 3) in LESS, exp
 test('WaveformStack collapses only wave rows 3/4 in LESS, reclaiming the row height', () => {
 	const source = readFileSync(WAVESTACK, 'utf8');
 
-	assert.match(source, /grid-template-rows:\s*repeat\(4,\s*var\(--rb-waverow-h\)\)/);
 	assert.match(
 		source,
-		/\.rb-wavestack\.less\s*\{[^}]*grid-template-rows:\s*var\(--rb-waverow-h\) var\(--rb-waverow-h\) 0(?:px)? 0(?:px)?;/s
+		/grid-template-rows:\s*repeat\(4,\s*minmax\(var\(--rb-waverow-h\),\s*auto\)\)/
+	);
+	assert.match(
+		source,
+		/\.rb-wavestack\.less\s*\{[^}]*grid-template-rows:\s*minmax\(var\(--rb-waverow-h\),\s*auto\) minmax\(var\(--rb-waverow-h\),\s*auto\) 0(?:px)? 0(?:px)?;/s
 	);
 	assert.match(source, /var\(--rb-deck-layout-duration,\s*200ms\)/);
 	assert.match(source, /uiPrefs\.deck_layout === 'less'/);
