@@ -29,11 +29,11 @@ from fastapi import FastAPI
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
+from apps.shared.sync_runtime_gates import DEFER_REASON_PRESSURE_SHED, refuse_sync_round
 from apps.sync_hub import client, maintenance, service
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import heartbeat as sync_heartbeat
 from apps.sync_hub import scheduler as sync_scheduler
-from apps.shared.sync_runtime_gates import DEFER_REASON_PRESSURE_SHED, refuse_sync_round
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.scheduler_owed import clear_scheduler_owed, scheduler_owed
 from tests.cloudsync.conftest import free_port

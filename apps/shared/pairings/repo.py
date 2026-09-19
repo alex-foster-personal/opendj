@@ -10,8 +10,8 @@ contention with the ingesters is absorbed silently.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
-from typing import Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 from .models import DIRECTIONS, SOURCES, PairingEdge
 from .schema_sql import ensure_phase08_tables
@@ -26,7 +26,7 @@ class PairingsError(ValueError):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso(value: str) -> datetime:

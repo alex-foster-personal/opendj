@@ -1,7 +1,7 @@
 """PLAY IT sort action router tests (play-it-sort-action)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from apps.webui.server.etag import compute_etag
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def test_solve_happy_path(client: TestClient, seed_backend: InMemoryBackend) -> None:
@@ -51,7 +51,7 @@ def test_solve_order_is_deterministic(client: TestClient) -> None:
 def test_solve_preserves_duplicate_membership_occurrences() -> None:
     """PLAY IT output is directly reusable by membership replacement unchanged."""
     backend = InMemoryBackend()
-    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc))
+    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
     for stable_id in ("a", "b"):
         backend.seed_track(Track(
             stable_id=stable_id, title=stable_id, artist=stable_id.upper(),
@@ -101,7 +101,7 @@ def test_solve_insufficient_data_is_422(client: TestClient) -> None:
 
 def test_solve_insufficient_data_missing_bpm() -> None:
     backend = InMemoryBackend()
-    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc))
+    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
     for i in range(20):
         bpm = None if i < 2 else 120.0 + i
         backend.seed_track(Track(
@@ -124,7 +124,7 @@ def test_solve_insufficient_data_missing_bpm() -> None:
 
 def test_solve_empty_playlist_returns_empty_order() -> None:
     backend = InMemoryBackend()
-    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc))
+    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
     backend.seed_playlist(Playlist(
         playlist_id="pl-empty", name="Empty",
         items=[], created_at=base, updated_at=base,

@@ -124,7 +124,7 @@ def _raise_conflict(exc: BatchConflictError) -> None:
 
 
 @router.get("", response_model=MyTagListOut)
-def list_mytags(backend: StateBackend = Depends(get_read_state)) -> MyTagListOut:
+def list_mytags(backend: StateBackend = Depends(get_read_state)) -> MyTagListOut:  # noqa: B008  # FastAPI DI
     counts: dict[str, int] = {}
     tracks = _all_tracks(backend)
     for track in tracks:
@@ -137,7 +137,7 @@ def list_mytags(backend: StateBackend = Depends(get_read_state)) -> MyTagListOut
 
 
 @router.post("/assign", response_model=MyTagAssignOut)
-def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write_state)) -> MyTagAssignOut:
+def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write_state)) -> MyTagAssignOut:  # noqa: B008  # FastAPI DI
     missing = [stable_id for stable_id in body.stable_ids if stable_id not in body.expected_etags]
     if missing:
         raise HTTPException(status_code=422, detail={"error": "missing_expected_etag", "stable_ids": missing})
@@ -204,7 +204,7 @@ def _sweep_tag(
         },
     },
 )
-def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
+def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
     tracks_updated = _sweep_tag(
         backend, body.old_name, body.new_name,
         expected_catalog_revision=body.expected_catalog_revision,
@@ -225,7 +225,7 @@ def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_
         },
     },
 )
-def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
+def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
     tracks_updated = _sweep_tag(
         backend, body.name, None,
         expected_catalog_revision=body.expected_catalog_revision,

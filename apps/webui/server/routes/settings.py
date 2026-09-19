@@ -11,7 +11,7 @@ Anything the running process cannot actually introspect is reported with
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ from starlette.routing import Mount
 from apps.adapters.rekordbox import config as rb_config
 from apps.engine_core.host_info import HOST_INFO_STATE_ATTR
 from apps.shared.paths import DATA_DIR, STATE_DIR
-from apps.shared.perf_tier import HostFacts, resolve_tier, read_override_from_prefs
+from apps.shared.perf_tier import HostFacts, read_override_from_prefs, resolve_tier
 from apps.webui.server.frontend_build import frontend_build_dir
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -35,7 +35,7 @@ class SettingItem(BaseModel):
     key: str
     value: Any = None
     tbd: bool = False
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class SettingsGroup(BaseModel):
@@ -49,7 +49,7 @@ class SettingsOut(BaseModel):
 
 # ----- helpers -----------------------------------------------------------
 
-def _cors_middleware(request: Request) -> Optional[dict[str, Any]]:
+def _cors_middleware(request: Request) -> dict[str, Any] | None:
     """Pull the live CORSMiddleware kwargs off the app, if it was added.
 
     ``app.user_middleware`` holds each registered ``Middleware(cls, **kwargs)``

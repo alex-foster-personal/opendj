@@ -20,9 +20,9 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared import paths
 from apps.shared.fingerprints import Fingerprint, FingerprintCache, compare

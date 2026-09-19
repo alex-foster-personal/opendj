@@ -182,7 +182,7 @@ class FingerprintCache:
             return (0.0, "")
 
     def compare(
-        self, a: Path | None, b: Path | None, *, threshold: float = DEFAULT_FP_THRESHOLD
+        self, a: Path | None, b: Path | None, *, _threshold: float = DEFAULT_FP_THRESHOLD
     ) -> float | None:
         """Return similarity (0..1) for two audio files, or None if absent.
 

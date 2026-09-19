@@ -17,7 +17,7 @@ DURATION_MS = 180_000  # a 3-minute track
 
 def _bytes_for(kbps: float, duration_ms: int = DURATION_MS) -> int:
     """Exact byte count that yields `kbps` effective bitrate."""
-    return int(round(kbps * 1000 * (duration_ms / 1000) / 8))
+    return round(kbps * 1000 * (duration_ms / 1000) / 8)
 
 
 def _write(tmp_path: Path, name: str, size: int) -> str:

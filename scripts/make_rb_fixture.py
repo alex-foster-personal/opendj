@@ -39,8 +39,8 @@ import csv
 import shutil
 import sqlite3
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared import paths, rekordbox_db
 

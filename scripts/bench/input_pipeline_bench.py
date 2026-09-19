@@ -59,9 +59,10 @@ import json
 import random
 import sqlite3
 import time
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 from apps.vocals.prefetch import (
     DEFAULT_DEPTH,
@@ -482,7 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.data_dir is not None:
         data_dir = args.data_dir

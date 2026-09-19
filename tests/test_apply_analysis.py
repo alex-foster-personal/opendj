@@ -119,7 +119,7 @@ def test_camelot_round_trip_for_all_keys():
     from apps.shared.djay_db import _DJAY_KEY_IDX_TO_STD
     from apps.shared.harmonic import key_to_camelot
 
-    for idx, std in _DJAY_KEY_IDX_TO_STD.items():
+    for _idx, std in _DJAY_KEY_IDX_TO_STD.items():
         camelot = str(key_to_camelot(std))
         back = _camelot_to_djay_key_idx(camelot)
         assert back is not None

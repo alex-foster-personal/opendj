@@ -7,8 +7,8 @@ import urllib.error
 import pytest
 
 from apps.sync_hub.transport import (
-    HttpTransport,
     PUSH_TIMEOUT_S,
+    HttpTransport,
     SyncTransportError,
     classify_transport_failure,
 )

@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Any, Callable, Literal, Protocol, Sequence
+from typing import Any, Literal, Protocol
 
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
 
@@ -47,7 +48,7 @@ MAX_LIMIT: int = 1000
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 @dataclass

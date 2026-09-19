@@ -118,7 +118,7 @@ def _run_forever(recorder: record_mod.Recorder) -> None:
     """Block until SIGTERM/SIGINT, running poll threads in the background."""
     recorder.start_threads()
 
-    def _handler(signum: int, frame: Any) -> None:  # pragma: no cover
+    def _handler(signum: int, _frame: Any) -> None:  # pragma: no cover
         print(f"\nreceived signal {signum}; shutting down")
         record_mod.stop(recorder)
         raise SystemExit(0)

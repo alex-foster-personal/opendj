@@ -36,6 +36,7 @@ from typing import Any
 from . import sync_stamp as _sync_stamp
 from .events import EventBus, FakeEventBus
 from .types import Event
+from .writer_availability import _AvailabilityWriterMixin
 from .writer_common import (
     _default_clock,
     _iso,
@@ -43,7 +44,6 @@ from .writer_common import (
     immediate_transaction,
     next_playlist_revision,
 )
-from .writer_availability import _AvailabilityWriterMixin
 from .writer_playlists import _PlaylistWriterMixin
 from .writer_tracks import _TrackWriterMixin
 

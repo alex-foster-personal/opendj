@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -246,7 +246,7 @@ class LibrosaBackend:
             stable_id=stable_id,
             backend=cls.name,
             backend_version=cls._version(),
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=duration_s,
             sample_rate=int(sr),
             bpm=float(bpm),

@@ -24,14 +24,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
-from fastapi import HTTPException
-
 from apps.webui.server import auth as auth_mod
 from apps.webui.server.app import create_app
-from apps.webui.server.routes import auth as auth_routes
 from apps.webui.server.auth import (
     SESSION_COOKIE_NAME,
     AuthConfigError,
@@ -45,6 +43,7 @@ from apps.webui.server.auth import (
     hash_session_token,
     identity_from_token_response,
 )
+from apps.webui.server.routes import auth as auth_routes
 
 FAKE_CONFIG = GoogleOAuthConfig(
     client_id="test-client.apps.googleusercontent.com",

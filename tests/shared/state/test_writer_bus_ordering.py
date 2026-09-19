@@ -10,7 +10,7 @@ This test injects a bus whose ``publish`` always raises and asserts
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -42,7 +42,7 @@ def test_set_field_rolls_back_when_bus_publish_fails(
     state_conn: sqlite3.Connection,
 ) -> None:
     bus = _ExplodingBus()
-    t0 = datetime(2026, 2, 2, 9, 0, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 2, 2, 9, 0, 0, tzinfo=UTC)
     writer = StateWriter(state_conn, bus=bus, clock=lambda: t0, actor="unit-test")
 
     # Seed a parent tracks row so the FK on track_fields is satisfied.

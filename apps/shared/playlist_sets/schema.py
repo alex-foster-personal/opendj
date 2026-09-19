@@ -7,7 +7,7 @@ Migrated independently via ``playlist_sets_schema_meta``.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SCHEMA_VERSION: int = 1
 
@@ -87,7 +87,7 @@ def apply_playlist_set_migrations(conn: sqlite3.Connection) -> int:
             conn.execute(
                 "INSERT INTO playlist_sets_schema_meta(version, applied_at) "
                 "VALUES (?, ?)",
-                (target_version, datetime.now(timezone.utc).isoformat()),
+                (target_version, datetime.now(UTC).isoformat()),
             )
             if not in_txn:
                 conn.execute("COMMIT")

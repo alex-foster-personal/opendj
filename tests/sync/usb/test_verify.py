@@ -10,8 +10,7 @@ import pytest
 
 from apps.sync.usb import apply as apply_mod
 from apps.sync.usb import verify as verify_mod
-from apps.sync.usb.profile import load_from_string
-from apps.sync.usb.verify import FileStatus, plan_from_verify, verify_drive
+from apps.sync.usb.pioneer.reader import grid_summary_from_anlz, read_anlz_dir, read_usb_export
 from apps.sync.usb.pioneer.value_verify import (
     DENOMINATOR_LABEL,
     ExpectedGrid,
@@ -22,7 +21,8 @@ from apps.sync.usb.pioneer.value_verify import (
     verify_stick_values,
 )
 from apps.sync.usb.pioneer.value_verify_sidecar import probe_odj_analysis_scalar
-from apps.sync.usb.pioneer.reader import read_usb_export, read_anlz_dir, grid_summary_from_anlz
+from apps.sync.usb.profile import load_from_string
+from apps.sync.usb.verify import FileStatus, plan_from_verify, verify_drive
 from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox

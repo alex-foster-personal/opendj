@@ -12,8 +12,9 @@ the ``dry_run: true`` branch.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from apps.voice.context import VoiceContext
 from apps.voice.grammar import Intent
@@ -102,7 +103,7 @@ def handle_read_bpm(intent: Intent, ctx: VoiceContext) -> Response:
     if bpm is None:
         _speak(ctx, "bpm unknown")
         return Response(reply="bpm_unknown", published=False)
-    rounded = int(round(float(bpm)))
+    rounded = round(float(bpm))
     eid = _publish(
         ctx,
         "READ_BPM",

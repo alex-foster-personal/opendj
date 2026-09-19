@@ -27,13 +27,13 @@ import apps.webui.server.routes.stems as stems_module
 from apps.cloud import stem_index
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
-from apps.cloud.stem_source import DirectR2Source
 from apps.cloud.stem_index import (
     INDEX_OBJECT_KEY,
     local_index_cache_path,
     publish_index,
     save_cached_index,
 )
+from apps.cloud.stem_source import DirectR2Source
 from apps.webui.server.routes.stems import router
 from apps.webui.server.routes.stems_assets import router as stems_assets_router
 from tests.cloudsync.conftest import InMemoryAssetS3

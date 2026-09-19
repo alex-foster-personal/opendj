@@ -107,7 +107,7 @@ def parse_audio_devices(stderr_text: str) -> list[tuple[int, str]]:
 def detect_input_device(
     name: str = DEFAULT_DEVICE_NAME,
     *,
-    runner: "subprocess._Popen | None" = None,
+    _runner: "subprocess._Popen | None" = None,
 ) -> int | None:
     """Return the numeric index of the named audio device or ``None``.
 

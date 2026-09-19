@@ -22,7 +22,7 @@ import json
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -54,7 +54,7 @@ def norm(s: str) -> str:
 
 def main() -> None:
     by_rank = {r["rank"]: r for r in (json.loads(l) for l in JSONL.read_text().splitlines() if l.strip())}
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     con = sqlite3.connect(DB, timeout=15)
     con.execute("PRAGMA busy_timeout=15000;")
     n_bpm = n_key = 0

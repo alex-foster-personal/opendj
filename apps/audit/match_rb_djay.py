@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from rich.console import Console
 from rich.table import Table

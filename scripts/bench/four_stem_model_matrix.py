@@ -55,7 +55,7 @@ import json
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -231,7 +231,7 @@ def main() -> None:
                     handle.write(json.dumps({
                         "track": track, "model": model, "device": args.device,
                         "infer_s": round(infer_s, 2), "si_sdr": scores,
-                        "measured_at": datetime.now(timezone.utc).isoformat(
+                        "measured_at": datetime.now(UTC).isoformat(
                             timespec="seconds")}) + "\n")
             print("      " + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS), flush=True)
 
@@ -250,7 +250,7 @@ def main() -> None:
         "device": args.device,
         "hardware": platform.platform(),
         "n_tracks": len(cube),
-        "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "gate": {t: flags[t] for t in cube},
         "mixture_floor_si_sdr": floors,
         "si_sdr": cube,

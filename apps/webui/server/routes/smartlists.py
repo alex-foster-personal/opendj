@@ -43,9 +43,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Iterator
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
@@ -196,8 +197,8 @@ def _row_to_model(row: tuple) -> SmartlistRow:
         order_by=row[5],
         last_evaluated_at=_parse(row[6]),
         last_materialized_track_ids=json.loads(row[7]) if row[7] else [],
-        created_at=_parse(row[8]) or datetime.fromtimestamp(0, timezone.utc),
-        modified_at=_parse(row[9]) or datetime.fromtimestamp(0, timezone.utc),
+        created_at=_parse(row[8]) or datetime.fromtimestamp(0, UTC),
+        modified_at=_parse(row[9]) or datetime.fromtimestamp(0, UTC),
         _raw_rule_json=row[2],
     )
 
@@ -283,7 +284,7 @@ def list_smartlists(
         False,
         description="Live-evaluate each smartlist membership count.",
     ),
-    conn: sqlite3.Connection = Depends(get_smartlists_conn),
+    conn: sqlite3.Connection = Depends(get_smartlists_conn),  # noqa: B008  # FastAPI DI
 ) -> list[SmartlistSummary]:
     if not _table_exists(conn, "smartlists"):
         return []
@@ -343,7 +344,7 @@ def create_smartlist(
 def get_smartlist(
     smartlist_id: str,
     response: Response,
-    conn: sqlite3.Connection = Depends(get_smartlists_conn),
+    conn: sqlite3.Connection = Depends(get_smartlists_conn),  # noqa: B008  # FastAPI DI
 ) -> SmartlistSummary:
     row = _fetch_smartlist(conn, smartlist_id)
     response.headers["ETag"] = _etag(smartlist_revision(row))
@@ -361,8 +362,8 @@ def update_smartlist(
     body: SmartlistUpdateIn,
     request: Request,
     response: Response,
-    _backend: StateBackend = Depends(get_write_state),
-    conn: sqlite3.Connection = Depends(get_smartlists_write_conn),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    conn: sqlite3.Connection = Depends(get_smartlists_write_conn),  # noqa: B008  # FastAPI DI
 ) -> SmartlistSummary | Response:
     if_match = request.headers.get("If-Match")
     if if_match is None:
@@ -462,8 +463,8 @@ def get_smartlist_tracks(
         None, ge=1, le=10000,
         description="Cap the evaluated membership (evaluator LIMIT).",
     ),
-    conn: sqlite3.Connection = Depends(get_smartlists_conn),
-    backend: StateBackend = Depends(get_read_state),
+    conn: sqlite3.Connection = Depends(get_smartlists_conn),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> SmartlistTracks:
     row = _fetch_smartlist(conn, smartlist_id)
     try:

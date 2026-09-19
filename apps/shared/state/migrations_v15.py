@@ -21,8 +21,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from . import machine_identity
-from . import sync_stamp
+from . import machine_identity, sync_stamp
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 _TRACK_FIELDS: str = "track_fields"
@@ -229,6 +228,21 @@ def _apply_track_fields_stamp_backfill(
     return touched
 
 
+def _finalize_empty_backfill(conn: sqlite3.Connection, *, transactional: bool) -> int:
+    if not _marker_table_exists(conn):
+        return 0
+    if transactional:
+        with sync_stamp.stamped_transaction(conn):
+            if _backfill_marker_present(conn):
+                return 0
+            _write_backfill_marker(conn)
+    elif _backfill_marker_present(conn):
+        return 0
+    else:
+        _write_backfill_marker(conn)
+    return 0
+
+
 def backfill_track_fields_stamps(
     conn: sqlite3.Connection,
     *,
@@ -252,18 +266,7 @@ def backfill_track_fields_stamps(
     candidates = _select_backfill_candidates(conn, changelog_table)
 
     if not candidates:
-        if not _marker_table_exists(conn):
-            return 0
-        if transactional:
-            with sync_stamp.stamped_transaction(conn):
-                if _backfill_marker_present(conn):
-                    return 0
-                _write_backfill_marker(conn)
-        else:
-            if _backfill_marker_present(conn):
-                return 0
-            _write_backfill_marker(conn)
-        return 0
+        return _finalize_empty_backfill(conn, transactional=transactional)
 
     if transactional:
         with sync_stamp.stamped_transaction(conn):

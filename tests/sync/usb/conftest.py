@@ -12,8 +12,8 @@ No real USB is ever required. We fabricate:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 

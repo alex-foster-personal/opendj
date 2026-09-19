@@ -17,9 +17,9 @@ hot path is testable in-memory. Live-DB export opens the TSAF reader via
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.open_dj import SCHEMA_VERSION
 from apps.open_dj.adapters._base import ExportResult

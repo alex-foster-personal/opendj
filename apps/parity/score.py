@@ -121,6 +121,81 @@ def _waveform_notes(figure: LaneFigure) -> str:
     return "; ".join(parts)
 
 
+def _phrase_notes(figure: LaneFigure) -> str:
+    if figure.scored_n > 0:
+        return (
+            f"boundary F@0.5s {figure.boundary_f_0_5:.3f} of {figure.scored_n} scored; "
+            f"F@3.0s {figure.boundary_f_3_0:.3f}; kind acc {figure.label_acc:.3f}. "
+            "Reporting bands, not a threshold. Denominator is PSSI-present tracks "
+            "in this fixture, never the beatgrid pool."
+        )
+    if figure.denominator_n == 0:
+        missing = figure.ungradable.get("missing_pssi", 0)
+        return (
+            f"no PSSI in this fixture; missing_pssi {missing}. "
+            "Phrase denominator is PSSI-present tracks, never the beatgrid pool."
+        )
+    return (
+        f"no own phrase analysis on {figure.no_own_n} PSSI-present tracks. "
+        "Native phrase producer is v2; reporting the wait, not a miss."
+    )
+
+
+def _figure_notes(figure: LaneFigure) -> str:
+    notes = figure.reason or figure.owner or ""
+    lane = figure.lane
+    if lane == "bpm" and figure.within_0_1_n is not None:
+        notes = (
+            f"within 0.1 BPM {figure.within_0_1_n}/{figure.scored_n}; "
+            f"within 1.0 BPM {figure.within_1_0_n}/{figure.scored_n}; "
+            f"octave {len(figure.octave_ids)}. Reporting bands, not a threshold."
+        )
+    elif lane == "key" and figure.mirex_mean is not None:
+        related = figure.related_n if figure.related_n is not None else 0
+        notes = (
+            f"MIREX mean {figure.mirex_mean:.3f} of {figure.scored_n} scored; "
+            f"related {related}; failed_own {figure.failed_own_n}. "
+            "Reuses analysis_bench key weighted_score."
+        )
+    elif lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
+        notes = _waveform_notes(figure)
+    elif lane == "phrase" and figure.status == "scored":
+        notes = _phrase_notes(figure)
+    elif lane == "cues_db" and figure.status == "scored":
+        matched = figure.details.get("matched_cues_n", 0)
+        rb_cues = figure.details.get("rb_cues_n", 0)
+        own_only = figure.details.get("own_only_cues_n", 0)
+        conflicts = figure.details.get("conflicts_n", 0)
+        notes = (
+            f"20 ms grain, not a threshold. "
+            f"matched {matched}/{rb_cues} rb cues; "
+            f"own-only {own_only}; conflicts {conflicts}. "
+            f"exact {figure.exact_n}/{figure.scored_n} scored; "
+            f"no_own {figure.no_own_n}."
+        )
+    elif lane == "cues_anlz" and figure.status == "scored":
+        pcob_n = figure.details.get("pcob_n", 0)
+        pco2_n = figure.details.get("pco2_n", 0)
+        unreadable = figure.ungradable.get("unreadable_ext", 0)
+        ext_note = f" ({unreadable} unreadable_ext)" if unreadable else ""
+        notes = (
+            f"PCOB {pcob_n}; PCO2 {pco2_n}{ext_note}. "
+            f"20 ms grain, not a threshold. "
+            f"exact {figure.exact_n}/{figure.scored_n} scored."
+        )
+    elif lane == "vocal" and figure.iou_mean is not None:
+        notes = (
+            f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
+            f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
+        )
+    elif lane == "vocal" and figure.status == "scored":
+        notes = (
+            f"mean IoU - of {figure.scored_n} scored; "
+            f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
+        )
+    return notes
+
+
 def render_report(report: ParityReport, *, round_n: int | None = None) -> str:
     """Markdown a later session can resume from. Never says 'at parity'."""
     label = round_n if round_n is not None else report.round
@@ -138,74 +213,7 @@ def render_report(report: ParityReport, *, round_n: int | None = None) -> str:
     for figure in report.figures:
         ungradable_n = sum(figure.ungradable.values())
         exact = "-" if figure.exact_n is None else str(figure.exact_n)
-        notes = figure.reason or figure.owner or ""
-        if figure.lane == "bpm" and figure.within_0_1_n is not None:
-            notes = (
-                f"within 0.1 BPM {figure.within_0_1_n}/{figure.scored_n}; "
-                f"within 1.0 BPM {figure.within_1_0_n}/{figure.scored_n}; "
-                f"octave {len(figure.octave_ids)}. Reporting bands, not a threshold."
-            )
-        if figure.lane == "key" and figure.mirex_mean is not None:
-            related = figure.related_n if figure.related_n is not None else 0
-            notes = (
-                f"MIREX mean {figure.mirex_mean:.3f} of {figure.scored_n} scored; "
-                f"related {related}; failed_own {figure.failed_own_n}. "
-                "Reuses analysis_bench key weighted_score."
-            )
-        if figure.lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
-            notes = _waveform_notes(figure)
-        if figure.lane == "phrase" and figure.status == "scored":
-            if figure.scored_n > 0:
-                notes = (
-                    f"boundary F@0.5s {figure.boundary_f_0_5:.3f} of {figure.scored_n} scored; "
-                    f"F@3.0s {figure.boundary_f_3_0:.3f}; kind acc {figure.label_acc:.3f}. "
-                    "Reporting bands, not a threshold. Denominator is PSSI-present tracks "
-                    "in this fixture, never the beatgrid pool."
-                )
-            elif figure.denominator_n == 0:
-                missing = figure.ungradable.get("missing_pssi", 0)
-                notes = (
-                    f"no PSSI in this fixture; missing_pssi {missing}. "
-                    "Phrase denominator is PSSI-present tracks, never the beatgrid pool."
-                )
-            else:
-                notes = (
-                    f"no own phrase analysis on {figure.no_own_n} PSSI-present tracks. "
-                    "Native phrase producer is v2; reporting the wait, not a miss."
-                )
-        if figure.lane == "cues_db" and figure.status == "scored":
-            matched = figure.details.get("matched_cues_n", 0)
-            rb_cues = figure.details.get("rb_cues_n", 0)
-            own_only = figure.details.get("own_only_cues_n", 0)
-            conflicts = figure.details.get("conflicts_n", 0)
-            notes = (
-                f"20 ms grain, not a threshold. "
-                f"matched {matched}/{rb_cues} rb cues; "
-                f"own-only {own_only}; conflicts {conflicts}. "
-                f"exact {figure.exact_n}/{figure.scored_n} scored; "
-                f"no_own {figure.no_own_n}."
-            )
-        if figure.lane == "cues_anlz" and figure.status == "scored":
-            pcob_n = figure.details.get("pcob_n", 0)
-            pco2_n = figure.details.get("pco2_n", 0)
-            unreadable = figure.ungradable.get("unreadable_ext", 0)
-            ext_note = f" ({unreadable} unreadable_ext)" if unreadable else ""
-            notes = (
-                f"PCOB {pcob_n}; PCO2 {pco2_n}{ext_note}. "
-                f"20 ms grain, not a threshold. "
-                f"exact {figure.exact_n}/{figure.scored_n} scored."
-            )
-        if figure.lane == "vocal":
-            if figure.iou_mean is not None:
-                notes = (
-                    f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
-                    f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
-                )
-            elif figure.status == "scored":
-                notes = (
-                    f"mean IoU - of {figure.scored_n} scored; "
-                    f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
-                )
+        notes = _figure_notes(figure)
         lines.append(
             f"| {figure.lane} | {figure.status} | {figure.denominator_n} | "
             f"{figure.denominator_name} | {figure.scored_n} | {exact} | "

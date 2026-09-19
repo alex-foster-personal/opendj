@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ def _rec(sid: str = "a", *, bpm: float = 120.0) -> AnalysisRecord:
         stable_id=sid,
         backend="librosa+madmom",
         backend_version="test-1.0",
-        analyzed_at=datetime(2026, 4, 17, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=60.0,
         sample_rate=44100,
         bpm=bpm, bpm_confidence=0.9,

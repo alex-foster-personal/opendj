@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from apps.adapters.rekordbox import config as rb_config
-from apps.dedup import schema as dedup_schema
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter

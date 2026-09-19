@@ -227,7 +227,7 @@ def _scan_plain_engine_log(
     path: Path,
     since: datetime,
     until: datetime,
-    state: _ScanState,
+    _state: _ScanState,
 ) -> list[ErrorEvent]:
     events: list[ErrorEvent] = []
     try:

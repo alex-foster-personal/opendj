@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ def _rec(**overrides) -> AnalysisRecord:
         stable_id="sid",
         backend="librosa+madmom",
         backend_version="test-1",
-        analyzed_at=datetime(2026, 4, 17, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=180.0,
         sample_rate=44100,
         bpm=120.0, bpm_confidence=0.9,

@@ -210,7 +210,7 @@ class TestConfidence:
 
         # Even though cheap>=3 blocks fp, we bypass by forcing via a negative
         # cheap signal; easier to assert analytically.
-        confidence, signals = score_pair(rb, dj, fingerprint_fn=fp_hit)
+        confidence, _signals = score_pair(rb, dj, fingerprint_fn=fp_hit)
         # Because isrc+filename_exact+duration fire (cheap>=3) fingerprint is
         # NOT invoked, so signals sum to 0.35+0.20+0.15 = 0.70 (ID3 depends on
         # file contents which is empty -> won't fire).

@@ -113,7 +113,7 @@ def test_inferred_different_mtime_different_id() -> None:
 
 @pytest.mark.requirement("META-03")
 def test_isrc_wins_when_present_even_with_fingerprint() -> None:
-    digest, tier = stable_id_for(
+    _digest, tier = stable_id_for(
         isrc="USRC17607839",
         fingerprint="AQAA",
         duration_ms=1000,
