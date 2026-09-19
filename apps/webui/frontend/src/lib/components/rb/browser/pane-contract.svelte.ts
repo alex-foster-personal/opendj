@@ -66,9 +66,11 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	etag: string;
 	comments: string | null;
 	duration_ms: number | null;
-	/** Inline genre (playlist rows only, contract 4); null = not
-	 * provided inline -> fall back to lazily fetched rb_meta. */
+	/** Inline genre when the listing or playlist row carries it; null =
+	 * fall back to lazily fetched rb_meta. */
 	genre: string | null;
+	/** Explains an empty genre cell (missing tags extra, no file tag, etc.). */
+	genre_reason?: string | null;
 	/** Disk truth from the bulk server-side stat pass (contract 1/4). */
 	file_exists: boolean;
 	/** Venue-rung quality, inline on every row from the SAME stat pass.

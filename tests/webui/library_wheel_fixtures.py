@@ -16,17 +16,29 @@ GENRES = {
 }
 
 
-def _make_state_db(path: Path, *, tracks: list[dict], memberships: list[dict],
-                    playlists: list[dict], vendor_ids: dict[str, str]) -> None:
+def _make_state_db(
+    path: Path,
+    *,
+    tracks: list[dict],
+    memberships: list[dict],
+    playlists: list[dict],
+    vendor_ids: dict[str, str],
+    track_fields: list[dict] | None = None,
+) -> None:
     conn = sqlite3.connect(str(path))
     try:
         apply_migrations(conn)
         for t in tracks:
             conn.execute(
                 "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
-                "created_at, updated_at) VALUES (?, 'inferred', ?, ?, '2026-01-01T00:00:00Z', "
-                "'2026-01-01T00:00:00Z')",
-                (t["stable_id"], t["title"], json.dumps(t.get("artists", []))),
+                "file_path, created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?, "
+                "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                (
+                    t["stable_id"],
+                    t["title"],
+                    json.dumps(t.get("artists", [])),
+                    t.get("file_path"),
+                ),
             )
         for stable_id, vendor_id in vendor_ids.items():
             conn.execute(
@@ -46,6 +58,19 @@ def _make_state_db(path: Path, *, tracks: list[dict], memberships: list[dict],
                 "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
                 "VALUES (?, ?, ?)",
                 (m["playlist_id"], m["stable_id"], i),
+            )
+        for field in track_fields or []:
+            conn.execute(
+                "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
+                "confidence, modified_at, deleted_at) "
+                "VALUES (?, ?, ?, ?, 0.7, '2026-01-01T00:00:00Z', ?)",
+                (
+                    field["stable_id"],
+                    field["field_name"],
+                    field["value_json"],
+                    field.get("source", "inferred"),
+                    field.get("deleted_at"),
+                ),
             )
         conn.commit()
     finally:
@@ -116,3 +141,32 @@ def wheel_dbs(tmp_path: Path) -> tuple[Path, Path]:
         ],
     )
     return state_db, master_db
+
+
+@pytest.fixture
+def state_only_wheel_db(tmp_path: Path) -> Path:
+    """One unmapped folder-imported track with a House GENRE tag; no master.plain.db."""
+    state_db = tmp_path / "state.db"
+    tracks = [
+        {
+            "stable_id": "t-local-house",
+            "title": "Folder House",
+            "artists": ["Local Artist"],
+            "file_path": "/music/folder-house.mp3",
+        },
+    ]
+    _make_state_db(
+        state_db,
+        tracks=tracks,
+        memberships=[],
+        playlists=[],
+        vendor_ids={},
+        track_fields=[
+            {
+                "stable_id": "t-local-house",
+                "field_name": "genre",
+                "value_json": '"House"',
+            },
+        ],
+    )
+    return state_db

@@ -15207,6 +15207,17 @@
             ],
             "title": "Genre"
           },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -18227,6 +18238,28 @@
             ],
             "title": "File Path"
           },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -18906,6 +18939,17 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
