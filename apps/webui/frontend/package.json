@@ -19,6 +19,7 @@
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
     "test:e2e:performance:smoke": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_SMOKE=1 playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-smoke --max-failures=1 --reporter=list",
     "test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
+    "test:e2e:performance:autoplay-proof": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_AUTOPLAY=0 PERFORMANCE_E2E_AUDIO_ACTIVATION=auto playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-autoplay-proof --reporter=list",
     "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts && node scripts/compact-headphone-api-types.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
