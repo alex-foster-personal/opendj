@@ -108,6 +108,41 @@ def _onset_strength_at_beats(
     return strengths
 
 
+def _bar_phase_accent_scores(strengths: np.ndarray) -> list[float]:
+    """Accent/other onset-strength ratio for each candidate 4/4 phase."""
+    scores: list[float] = []
+    for phase in range(4):
+        accent = strengths[np.arange(len(strengths)) % 4 == phase]
+        other = strengths[np.arange(len(strengths)) % 4 != phase]
+        if accent.size < 2 or other.size < 4:
+            scores.append(0.0)
+            continue
+        accent_mean = float(np.mean(accent))
+        other_mean = float(np.mean(other))
+        if other_mean <= 1e-9:
+            scores.append(0.0)
+            continue
+        scores.append(accent_mean / other_mean)
+    return scores
+
+
+def _confident_bar_phase(
+    scores: list[float],
+    *,
+    min_accent_ratio: float,
+    min_phase_margin: float,
+) -> int | None:
+    """Return the winning 4/4 phase, or None when the accent is too weak."""
+    if not scores or max(scores) < min_accent_ratio:
+        return None
+    ranked = sorted(enumerate(scores), key=lambda item: item[1], reverse=True)
+    best_phase, best_score = ranked[0]
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+    if best_score <= 0 or (best_score - second_score) / best_score < min_phase_margin:
+        return None
+    return best_phase
+
+
 def estimate_downbeats_from_beats(
     beats_s: list[float],
     beat_onset_strengths: list[float],
@@ -136,27 +171,12 @@ def estimate_downbeats_from_beats(
     if not np.any(strengths > 0):
         return [], False
 
-    scores: list[float] = []
-    for phase in range(4):
-        accent = strengths[np.arange(len(strengths)) % 4 == phase]
-        other = strengths[np.arange(len(strengths)) % 4 != phase]
-        if accent.size < 2 or other.size < 4:
-            scores.append(0.0)
-            continue
-        accent_mean = float(np.mean(accent))
-        other_mean = float(np.mean(other))
-        if other_mean <= 1e-9:
-            scores.append(0.0)
-            continue
-        scores.append(accent_mean / other_mean)
-
-    if not scores or max(scores) < min_accent_ratio:
-        return [], False
-
-    ranked = sorted(enumerate(scores), key=lambda item: item[1], reverse=True)
-    best_phase, best_score = ranked[0]
-    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
-    if best_score <= 0 or (best_score - second_score) / best_score < min_phase_margin:
+    best_phase = _confident_bar_phase(
+        _bar_phase_accent_scores(strengths),
+        min_accent_ratio=min_accent_ratio,
+        min_phase_margin=min_phase_margin,
+    )
+    if best_phase is None:
         return [], False
 
     downbeats = [

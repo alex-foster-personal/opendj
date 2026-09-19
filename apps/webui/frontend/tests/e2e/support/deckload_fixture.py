@@ -116,6 +116,7 @@ import wave
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import fetch_records
@@ -568,13 +569,12 @@ def _stable_ids_in_track_order(
     return ordered
 
 
-def _run_librosa_analysis(
-    data_dir: Path,
+def _pairs_for_generated_tracks(
     rows: list[tuple[str, str | None, str | None]],
     tracks: tuple[FixtureTrack, ...],
     label: str,
-) -> None:
-    """Run the production librosa analyzer and fail closed on missing downbeats."""
+) -> list[list[str]]:
+    """Map ingested rows onto generated audio files, in a pairs-json shape."""
     by_filename = {track.filename: track for track in tracks}
     pairs: list[list[str]] = []
     for stable_id, _title, file_path in rows:
@@ -589,7 +589,82 @@ def _run_librosa_analysis(
             f"[ERROR] {label} could not map every generated track to an ingested row "
             f"(expected {len(tracks)}, got {len(pairs)})"
         )
+    return pairs
 
+
+def _assert_measured_downbeats(
+    stored: list[dict[str, Any]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Fail closed when a fixture row is missing a measured bar phase."""
+    if len(stored) != len(tracks):
+        raise SystemExit(
+            f"[ERROR] {label} wrote {len(stored)} librosa row(s) for {len(tracks)} track(s)"
+        )
+    for row in stored:
+        record = AnalysisRecord.from_json(row["record_json"])
+        if not record.downbeats_s:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} has no measured downbeats"
+            )
+        if record.downbeats_s != sorted(record.downbeats_s):
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} downbeats are not increasing"
+            )
+        if record.duration_s and record.downbeats_s[-1] > record.duration_s:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} downbeats exceed duration"
+            )
+        if record.features_blob.get("downbeat_tracking") is not True:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} did not establish bar phase"
+            )
+
+
+def _sid_for_filename(
+    rows: list[tuple[str, str | None, str | None]], filename: str
+) -> str:
+    return next(
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path is not None and Path(file_path).name == filename
+    )
+
+
+def _assert_fixture_bpms(
+    rows: list[tuple[str, str | None, str | None]],
+    stored: list[dict[str, Any]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """The fold and master tracks must measure near their generated tempos."""
+    by_filename = {track.filename: track for track in tracks}
+    by_stable_id = {
+        row["stable_id"]: AnalysisRecord.from_json(row["record_json"]) for row in stored
+    }
+    fold_track = by_filename[PERFORMANCE_FOLD_TRACK.filename]
+    master_track = by_filename[FIXTURE_TRACKS[0].filename]
+    fold_bpm = by_stable_id[_sid_for_filename(rows, PERFORMANCE_FOLD_TRACK.filename)].bpm
+    master_bpm = by_stable_id[_sid_for_filename(rows, FIXTURE_TRACKS[0].filename)].bpm
+    if abs(fold_bpm - fold_track.bpm) > 4.0:
+        raise SystemExit(
+            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, expected near {fold_track.bpm}"
+        )
+    if abs(master_bpm - master_track.bpm) > 4.0:
+        raise SystemExit(
+            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, expected near {master_track.bpm}"
+        )
+
+
+def _run_librosa_analysis(
+    data_dir: Path,
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Run the production librosa analyzer and fail closed on missing downbeats."""
+    pairs = _pairs_for_generated_tracks(rows, tracks, label)
     pairs_path = data_dir / "analysis-pairs.json"
     pairs_path.write_text(json.dumps(pairs, indent=2) + "\n", encoding="utf-8")
     env = dict(os.environ)
@@ -621,53 +696,8 @@ def _run_librosa_analysis(
     state_db_path = data_dir / "state" / "state.db"
     stable_ids = [stable_id for stable_id, _title, file_path in rows if file_path]
     stored = fetch_records(stable_ids=stable_ids, backend="librosa", db_path=state_db_path)
-    if len(stored) != len(tracks):
-        raise SystemExit(
-            f"[ERROR] {label} wrote {len(stored)} librosa row(s) for {len(tracks)} track(s)"
-        )
-
-    for row in stored:
-        record = AnalysisRecord.from_json(row["record_json"])
-        if not record.downbeats_s:
-            raise SystemExit(
-                f"[ERROR] {label} track {record.stable_id} has no measured downbeats"
-            )
-        if record.downbeats_s != sorted(record.downbeats_s):
-            raise SystemExit(
-                f"[ERROR] {label} track {record.stable_id} downbeats are not increasing"
-            )
-        if record.duration_s and record.downbeats_s[-1] > record.duration_s:
-            raise SystemExit(
-                f"[ERROR] {label} track {record.stable_id} downbeats exceed duration"
-            )
-        if record.features_blob.get("downbeat_tracking") is not True:
-            raise SystemExit(
-                f"[ERROR] {label} track {record.stable_id} did not establish bar phase"
-            )
-
-    by_stable_id = {row["stable_id"]: AnalysisRecord.from_json(row["record_json"]) for row in stored}
-    fold_track = by_filename[PERFORMANCE_FOLD_TRACK.filename]
-    master_track = by_filename[FIXTURE_TRACKS[0].filename]
-    fold_sid = next(
-        stable_id
-        for stable_id, _title, file_path in rows
-        if file_path is not None and Path(file_path).name == PERFORMANCE_FOLD_TRACK.filename
-    )
-    master_sid = next(
-        stable_id
-        for stable_id, _title, file_path in rows
-        if file_path is not None and Path(file_path).name == FIXTURE_TRACKS[0].filename
-    )
-    fold_bpm = by_stable_id[fold_sid].bpm
-    master_bpm = by_stable_id[master_sid].bpm
-    if abs(fold_bpm - fold_track.bpm) > 4.0:
-        raise SystemExit(
-            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, expected near {fold_track.bpm}"
-        )
-    if abs(master_bpm - master_track.bpm) > 4.0:
-        raise SystemExit(
-            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, expected near {master_track.bpm}"
-        )
+    _assert_measured_downbeats(stored, tracks, label)
+    _assert_fixture_bpms(rows, stored, tracks, label)
 
 
 def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
