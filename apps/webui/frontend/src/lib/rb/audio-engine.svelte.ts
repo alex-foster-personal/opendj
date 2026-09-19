@@ -624,6 +624,13 @@ export function peekDeckMeterReading(deck: DeckId): MeterReading {
 	return readMeterTap(tap, meterClockMs());
 }
 
+/** Test seam: live channel-fader gain after setFader, null when the graph is absent. */
+export function peekDeckFaderGain(deck: DeckId): number | null {
+	const nodes = _rt[deck].nodes;
+	if (nodes === null) return null;
+	return nodes.fader.gain.value;
+}
+
 /** Master output level. The tap, the silent fallback and the "what does red
  * mean here" contract all live in meter-tap.ts; the engine supplies only the
  * clock, so the barrel stays the one import edge a meter component needs. */
