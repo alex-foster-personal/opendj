@@ -21,6 +21,7 @@
 		isKnobLinked,
 		isKnobSelected,
 		linkedPartnerId,
+		pointerTravelIsDrag,
 		readKnobValue,
 		registerKnob,
 		setKnobAbsolute,
@@ -124,7 +125,8 @@
 	});
 
 	function handlePointerDown(e: PointerEvent): void {
-		if (!live) return;
+		// Right and middle clicks belong to the context menu, not the dial.
+		if (!live || e.button !== 0) return;
 		// Shift = select for the global wheel; Alt = arm/complete a link pair.
 		// Neither starts a drag, so a modifier click never also turns the dial.
 		if (e.shiftKey) {
@@ -152,7 +154,11 @@
 
 	function handlePointerMove(e: PointerEvent): void {
 		if (!dragging || !live) return;
-		pointerMoved = true;
+		if (!pointerMoved) {
+			// Jitter inside the slop stays a click; the dial does not move until it is a drag.
+			if (!pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY)) return;
+			pointerMoved = true;
+		}
 		const dy = dragStartY - e.clientY; // up = clockwise = increase
 		const dx = e.clientX - dragStartX; // right = increase, far less sensitive
 		const target =
