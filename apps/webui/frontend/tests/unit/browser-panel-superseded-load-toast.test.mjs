@@ -45,7 +45,7 @@ before(async () => {
 /** Builds the real `_loadPane`, evaluated straight from BrowserPanel.svelte,
  * with its closure-captured helpers supplied as factory arguments so it can
  * run outside the component. */
-function makeLoadPane({ fetchPlaylistRows, pushToast }) {
+function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
 	const source = readFileSync(PANEL, 'utf8');
 	const start = source.indexOf('\tasync function _loadPane(');
 	const end = source.indexOf('\n\t/** Reconstructs the minimal PlaylistNode', start);
@@ -68,9 +68,18 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 		'panes',
 		'setLastPlaylist',
 		'fillAllTracksPane',
+		'fillPlaylistPane',
+		'PLAYLIST_FIRST_PAGE',
+		'listPlaylistTracksPage',
+		'recordPlaylistSwitchFirstRowsMs',
+		'recordOpenToLibraryRows',
+		'completeLibraryUsable',
+		'recordLibraryLoadTiming',
+		'_fetchSmartlistRows',
+		'fetchMissingTrackRows',
 		'allTracksNonBrokenCount',
-		'_fetchPlaylistRows',
 		'pushToast',
+		'_rowFromPlaylistWire',
 		`${functionSource}\nreturn _loadPane;`
 	);
 	return factory(
@@ -81,9 +90,24 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 		() => {
 			throw new Error('fillAllTracksPane must not be called (node.kind is "playlist")');
 		},
+		fillPlaylistPaneImpl,
+		100,
+		async () => {
+			throw new Error('listPlaylistTracksPage must not be called when fillPlaylistPane is stubbed');
+		},
+		() => {},
+		() => {},
+		() => {},
+		() => {},
+		async () => {
+			throw new Error('_fetchSmartlistRows must not be called');
+		},
+		async () => {
+			throw new Error('fetchMissingTrackRows must not be called');
+		},
 		0,
-		fetchPlaylistRows,
-		pushToast
+		pushToast,
+		(wire, order) => ({ ...wire, order })
 	);
 }
 
@@ -96,7 +120,7 @@ test('a load failure that lost the race to a newer load pushes no toast', async 
 	const toasts = [];
 	let rejectFirst;
 	const loadPane = makeLoadPane({
-		fetchPlaylistRows: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
+		fillPlaylistPaneImpl: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 
@@ -118,7 +142,7 @@ test('control: a genuine, non-superseded load failure still toasts', async () =>
 	const p = contract.createPaneStore();
 	const toasts = [];
 	const loadPane = makeLoadPane({
-		fetchPlaylistRows: () => Promise.reject(new Error('network exploded')),
+		fillPlaylistPaneImpl: () => Promise.reject(new Error('network exploded')),
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 

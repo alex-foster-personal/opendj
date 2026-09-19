@@ -12937,6 +12937,39 @@
         "title": "PlaylistSummary",
         "type": "object"
       },
+      "PlaylistTracksPage": {
+        "description": "Paginated playlist membership slice (PERF-UI-05, issue #3530).\n\nHydrated rows in membership order for ``[offset:offset+limit]`` only.\nAgent parity: ``GET /api/v1/playlists/{playlist_id}/tracks``.",
+        "properties": {
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks",
+          "total"
+        ],
+        "title": "PlaylistTracksPage",
+        "type": "object"
+      },
       "PlaylistWriteOut": {
         "properties": {
           "created_at": {
@@ -28840,6 +28873,24 @@
     "/api/v1/playlists": {
       "get": {
         "operationId": "list_playlists_api_v1_playlists_get",
+        "parameters": [
+          {
+            "description": "When ``skip``, omit the bulk available_count pass and return ``available_count=-1`` per row for fast tree paint (PERF-UI-05).",
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "When ``skip``, omit the bulk available_count pass and return ``available_count=-1`` per row for fast tree paint (PERF-UI-05).",
+              "enum": [
+                "all",
+                "skip"
+              ],
+              "title": "Availability",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -28854,6 +28905,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Playlists",
@@ -29648,6 +29709,70 @@
       }
     },
     "/api/v1/playlists/{playlist_id}/tracks": {
+      "get": {
+        "description": "Paginated hydrated membership slice for first-page library paint.\n\nAgent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.\nFull detail remains on ``GET /playlists/{playlist_id}``.",
+        "operationId": "list_playlist_tracks_api_v1_playlists__playlist_id__tracks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistTracksPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Playlist Tracks",
+        "tags": [
+          "playlists"
+        ]
+      },
       "put": {
         "operationId": "replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put",
         "parameters": [

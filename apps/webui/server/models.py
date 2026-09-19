@@ -253,6 +253,8 @@ class PlaylistSummary(BaseModel):
     track_count: int
     # Members whose audio file exists on disk (FR-1 item 4): lets the tree
     # hide all-broken playlists and render "29 (3 broken)" style counts.
+    # ``-1`` means skipped (``GET /playlists?availability=skip``) for fast
+    # tree paint; clients must not treat it as zero playable.
     available_count: int
     updated_at: str
     # Rekordbox tree position (flattened djmdPlaylist ParentID/Seq walk).
@@ -337,6 +339,18 @@ class PlaylistDetail(BaseModel):
     # THIS list only, never `items`.
     tracks: list[TrackRowOut]
     diff: PlaylistDiff
+
+
+class PlaylistTracksPage(BaseModel):
+    """Paginated playlist membership slice (PERF-UI-05, issue #3530).
+
+    Hydrated rows in membership order for ``[offset:offset+limit]`` only.
+    Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks``.
+    """
+
+    tracks: list[TrackRowOut]
+    total: int
+    next_offset: int | None = None
 
 
 class PairingOut(BaseModel):
