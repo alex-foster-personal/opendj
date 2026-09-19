@@ -11636,8 +11636,13 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
             /** Has Rb Mapping */
@@ -12776,7 +12781,8 @@ export interface components {
          *     preview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per
          *     column (null = no ANLZ analysis). preview_max: per-track max band value
          *     for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
-         *     file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+         *     file_availability: typed disk-truth lane including AVAILABILITY_PENDING.
+         *     file_exists: present/absent only; null while availability is pending.
          *     quality: venue rung from apps.shared.audio_quality (same stat pass, so
          *     no extra cost per row); venue/rank are null when it cannot be measured.
          *     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
@@ -12813,8 +12819,13 @@ export interface components {
             energy_reason: string;
             /** Energy Source */
             energy_source: "mik" | null;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
             /** Has Rb Mapping */
@@ -13026,8 +13037,13 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
             /** Has Rb Mapping */

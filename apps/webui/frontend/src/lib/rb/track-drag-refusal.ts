@@ -13,8 +13,16 @@
  * give the same answer in the same words, rather than one path being mute.
  */
 
+export type FileAvailabilityStatus =
+	| 'present'
+	| 'absent'
+	| 'AVAILABILITY_PENDING'
+	| 'streaming'
+	| 'awaiting_volume';
+
 export interface DraggableRow {
-	file_exists: boolean;
+	file_exists: boolean | null;
+	file_availability?: FileAvailabilityStatus | null;
 	/** null = not known to be streaming. The row model uses `boolean | null`,
 	 * and the rest of the code tests `=== true`, so null is treated as "not
 	 * streaming" here too rather than as a third state. */
@@ -34,6 +42,11 @@ export function trackDragRefusal(row: DraggableRow): string | null {
 	if (row.is_streaming === true) {
 		return 'streaming track - deck load not implemented (see PARITY-TODO)';
 	}
-	if (!row.file_exists) return 'cannot load: audio file missing on disk (broken link)';
+	if (row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null) {
+		return 'cannot load: availability still checking (wait for disk probe)';
+	}
+	if (row.file_exists === false) {
+		return 'cannot load: audio file missing on disk (broken link)';
+	}
 	return null;
 }
