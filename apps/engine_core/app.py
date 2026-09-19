@@ -292,7 +292,7 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # standalone webui daemon; without it the installed app queued jobs
         # that stayed pending forever.
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
-        # STEM-31 / ADR-0025: on-demand stem hydration (ADR-0024). Armed is not
+        # STEM-31 / ADR-0051: on-demand stem hydration (ADR-0024). Armed is not
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,
     )

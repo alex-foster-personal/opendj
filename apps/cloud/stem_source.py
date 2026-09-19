@@ -1,4 +1,4 @@
-"""Stem hydration sources: direct R2 credentials or hub-presigned URLs (ADR-0025).
+"""Stem hydration sources: direct R2 credentials or hub-presigned URLs (ADR-0051).
 
 The installed app has no Doppler and must not hold R2 bucket keys. When
 CloudSync is configured it hydrates through short-lived presigned GET URLs
