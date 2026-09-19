@@ -7,4 +7,4 @@
  * unrelated copy of analysisSourceState that this test could never set.
  */
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
-export { analysisSourceState } from '$lib/rb/analysis-source.svelte';
+export { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';

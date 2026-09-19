@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.requirement("PARITY-10")
 def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Path) -> None:
+    """[if] rescue-playback fixture audio is analyzed [then] librosa downbeats land in state.db, [else stop]."""
     data_dir = tmp_path / "fixture-data"
     rows = build_rescue_playback(data_dir)
     assert len(rows) == len(RESCUE_PLAYBACK_TRACKS)
