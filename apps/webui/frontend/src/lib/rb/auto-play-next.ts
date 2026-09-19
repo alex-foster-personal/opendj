@@ -1,6 +1,10 @@
 /**
  * AutoPlay Next: early next-track transition trigger (pin fc60002b81a8).
  *
+ * PLAY-11 (issue #3532): transition loops must be downbeat-aligned
+ * beat_loop engagements with guaranteed release on completion, abort, and
+ * outgoing-deck unload so the fader never strands.
+ *
  * Its own file/featurette, deliberately simple and imperfect - no PSSI
  * phrase-kind mapping exists yet (see anlz-types.ts AnlzPhrase), so "the
  * first drop" is APPROXIMATED as a fixed beat count from where the incoming
@@ -23,7 +27,14 @@
  *     [then] planAutoPlayNextCut returns that beat's position in ms
  */
 
+import { exactBeatLoopRangeMs } from '$lib/player/transport/loops';
 import type { AnlzBeat, AnlzWaveform } from '$lib/rb/anlz-types';
+
+/** Poll-side watchdog: release and disarm if bass never enters within this span. */
+export const AUTO_PLAY_NEXT_MAX_LOOP_MS = 120_000;
+
+const AUTO_PLAY_NEXT_BEAT_LOOP_SPAN = 8;
+const ONE_SAMPLE_MS_48K = (1 / 48_000) * 1000;
 
 /** Tunables - all config, no hidden defaults baked into the math. */
 export interface AutoPlayNextConfig {
@@ -93,6 +104,18 @@ function _profile(
 	return [low, mid, high];
 }
 
+function _downbeatAlignedLoopFits(
+	beats: readonly AnlzBeat[],
+	startBeatIdx: number,
+	beatSpan: number
+): boolean {
+	let snappedStart = startBeatIdx;
+	while (snappedStart < beats.length && beats[snappedStart].n !== 1) {
+		snappedStart += 1;
+	}
+	return snappedStart + beatSpan < beats.length && beats[snappedStart].n === 1;
+}
+
 /** Cosine similarity of two 3-vectors, 0..1 (profiles are non-negative energy). */
 function _similarity(a: readonly [number, number, number], b: readonly [number, number, number]): number {
 	const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -123,11 +146,41 @@ export function findRepetitiveLoopWindow(
 		const later = _profile(waveform, beats, laterStart, beatSpan, durationSec);
 		const earlier = _profile(waveform, beats, earlierStart, beatSpan, durationSec);
 		if (later === null || earlier === null) continue;
-		if (_similarity(later, earlier) >= config.similarityThreshold) {
+		if (
+			_similarity(later, earlier) >= config.similarityThreshold &&
+			_downbeatAlignedLoopFits(beats, laterStart, beatSpan)
+		) {
 			return { startBeatIdx: laterStart, endBeatIdx: laterStart + beatSpan };
 		}
 	}
 	return null;
+}
+
+/** Given a repetitive window, return beat_loop args anchored on a PQTZ downbeat,
+ * or null when no downbeat-aligned 8-beat span fits the grid and duration. */
+export function planAutoPlayNextBeatLoop(
+	beats: readonly AnlzBeat[],
+	window: { startBeatIdx: number; endBeatIdx: number },
+	durationSec: number
+): { beats: number; start_ms: number } | null {
+	_assertBeats(beats);
+	const beatSpan = window.endBeatIdx - window.startBeatIdx;
+	if (beatSpan !== AUTO_PLAY_NEXT_BEAT_LOOP_SPAN) return null;
+	let snappedStart = window.startBeatIdx;
+	while (snappedStart < beats.length && beats[snappedStart].n !== 1) {
+		snappedStart += 1;
+	}
+	if (snappedStart + beatSpan > beats.length) return null;
+	if (beats[snappedStart].n !== 1) return null;
+	const startMs = beats[snappedStart].t * 1000;
+	try {
+		const range = exactBeatLoopRangeMs(beats, startMs, beatSpan, startMs);
+		if (range.out_ms > durationSec * 1000) return null;
+		if (Math.abs(range.in_ms - startMs) > ONE_SAMPLE_MS_48K) return null;
+		return { beats: beatSpan, start_ms: range.in_ms };
+	} catch {
+		return null;
+	}
 }
 
 /** Beat-index range -> ms range, using the grid's own beat timestamps
