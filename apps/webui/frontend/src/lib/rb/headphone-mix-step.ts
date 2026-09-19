@@ -52,3 +52,18 @@ export function stepHeadphoneMix(
 
 	return { value: nextValue, direction: nextDirection };
 }
+
+/**
+ * The direction to step from next. A step's new direction only counts once
+ * MIX actually reached the value it asked for: a rejected command (a preset
+ * owning the controls, say) leaves MIX where it was, and adopting the
+ * rejected step's reversal there would skip a position on the next click.
+ */
+export function committedMixDirection(
+	committed: HeadphoneMixDirection,
+	lastRequest: HeadphoneMixStepResult | null,
+	currentValue: number
+): HeadphoneMixDirection {
+	if (lastRequest === null) return committed;
+	return Math.abs(currentValue - lastRequest.value) < MIX_ENDPOINT_EPSILON ? lastRequest.direction : committed;
+}

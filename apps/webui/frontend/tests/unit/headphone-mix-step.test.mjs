@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import { createDeferredClickGuard } from '../../src/lib/rb/deferred-click.ts';
 import {
 	HEADPHONE_MIX_STEP,
+	committedMixDirection,
 	stepHeadphoneMix
 } from '../../src/lib/rb/headphone-mix-step.ts';
 
@@ -97,4 +98,22 @@ test('a second schedule replaces the first pending single-click', () => {
 	const [, onlyPending] = [...pending.entries()][0];
 	onlyPending.callback();
 	assert.deepEqual(fired, ['second']);
+});
+
+test('a rejected MIX click does not flip the remembered direction', () => {
+	// From 2/3 moving up: the click asks for 1 and would reverse to down.
+	const request = stepHeadphoneMix(2 * THIRD, 1);
+	assert.deepEqual(request, { value: 1, direction: -1 });
+	// The command is rejected, so MIX is still 2/3 at the next click.
+	const direction = committedMixDirection(1, request, 2 * THIRD);
+	assert.equal(direction, 1,
+		'if a rejected click still reverses the direction then the next accepted click jumps to 1/3 instead of 1 - broken');
+	assert.equal(stepHeadphoneMix(2 * THIRD, direction).value, 1);
+});
+
+test('an accepted MIX click commits its direction', () => {
+	const request = stepHeadphoneMix(2 * THIRD, 1);
+	assert.equal(committedMixDirection(1, request, 1), -1,
+		'if an accepted step at the top does not reverse then MIX sticks at 1 - broken');
+	assert.equal(committedMixDirection(-1, null, THIRD), -1, 'no pending request keeps the committed direction');
 });
