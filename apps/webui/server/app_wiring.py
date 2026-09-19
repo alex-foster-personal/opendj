@@ -373,7 +373,7 @@ def _install_armed_stem_hydration(
 
 
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
-    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
+    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0051),
     or leave it unset.
 
     Unset is a legitimate machine state, not a failure: local mode, or a
