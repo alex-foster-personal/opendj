@@ -1,4 +1,7 @@
-"""Regression tests for the analysis-backed performance rescue fixture (#1735)."""
+"""Regression tests for the analysis-backed performance rescue fixture (#1735).
+
+[if] rescue-playback audio is analyzed [then] librosa downbeats land in state.db, [else stop].
+"""
 from __future__ import annotations
 
 import json
@@ -18,10 +21,11 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+pytestmark = pytest.mark.requirement("PARITY-10")
 
-@pytest.mark.requirement("PARITY-10")
+
 def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Path) -> None:
-    """[if] rescue-playback fixture audio is analyzed [then] librosa downbeats land in state.db, [else stop]."""
+    """Measured librosa downbeats from rescue-playback audio must persist in state.db."""
     data_dir = tmp_path / "fixture-data"
     rows = build_rescue_playback(data_dir)
     assert len(rows) == len(RESCUE_PLAYBACK_TRACKS)

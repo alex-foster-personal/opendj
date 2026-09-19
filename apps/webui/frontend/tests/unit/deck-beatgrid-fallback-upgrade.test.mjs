@@ -165,7 +165,7 @@ before(async () => {
 });
 
 /** The /anlz payload a locally imported track really gets: valid, and empty. */
-function emptyAnlz() {
+function emptyAnlz(stateHarness = upgrade) {
 	const bands = { length: 0, low: [], mid: [], high: [] };
 	return {
 		stable_id: SID,
@@ -178,7 +178,7 @@ function emptyAnlz() {
 		// production route reads it at request time, keeps this fixture honest
 		// for the pre-publish source-revalidation check in beatgrid-upgrade.ts
 		// (discussion_r3976638762 P1 BLOCKING).
-		beatgrid_source: upgrade.analysisSourceState.features.beatgrid,
+		beatgrid_source: stateHarness.analysisSourceState.features.beatgrid,
 		cues: [],
 		phrases: [],
 		vocals: { status: 'not_analyzed' }
@@ -933,7 +933,10 @@ test('the lazy beatgrid upgrade module resolves when a deck first uses it (issue
 		{ viteApiBase: API_BASE }
 	);
 	lazyUpgrade.analysisSourceState.features.beatgrid = 'own';
-	const st = { anlz: { ...emptyAnlz(), beatgrid: { beat_count: 0, beats: [] } }, anlz_error: null };
+	const st = {
+		anlz: { ...emptyAnlz(lazyUpgrade), beatgrid: { beat_count: 0, beats: [] } },
+		anlz_error: null
+	};
 	await lazyUpgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
 	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS, 'the first lazy call runs the unchanged upgrade API');
 });
