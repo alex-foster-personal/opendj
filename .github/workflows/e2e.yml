@@ -1102,6 +1102,10 @@ jobs:
         # own design, not something this workflow introduces.
         run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts
 
+      - name: Extended - midi maps resync
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright test --config tests/e2e/playwright.midi-maps-resync.config.ts
+
       - name: Extended - hot-cue mapping gate, real backend + fixture library
         working-directory: apps/webui/frontend
         # Guards the user-facing safety property from #736/#804 that an empty

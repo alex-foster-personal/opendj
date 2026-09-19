@@ -157,6 +157,37 @@ def test_ui_prefs_put_publishes_ui_prefs(prefs_client, hub) -> None:
     ]
 
 
+def test_midi_map_put_and_delete_publish_midi_maps(prefs_client, hub) -> None:
+    """kind is 'midi_maps' (plural), matching LIBRARY_KINDS in
+    events-bus.ts - the frontend's allowlist drops any kind it does not
+    recognize, so a singular/plural mismatch here is a silent no-op there."""
+    doc = {
+        "schemaVersion": 1,
+        "id": "test-device",
+        "vendor": "TestCo",
+        "model": "TestDevice 1",
+        "nameMatch": "TestDevice",
+        "bindings": [
+            {
+                "source": {"ch": 1, "kind": "note", "id": 11},
+                "action": {"type": "deck_play_toggle", "deck": 1},
+                "provenance": {"tier": "learned", "cite": "learn wizard", "verified": True},
+            }
+        ],
+    }
+    put = prefs_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert put.status_code == 200
+    assert hub.events == [
+        ("library.changed", {"kind": "midi_maps", "ids": ["test-device"]})
+    ]
+
+    deleted = prefs_client.delete("/api/v1/midi/maps/test-device")
+    assert deleted.status_code == 204
+    assert hub.events[1] == (
+        "library.changed", {"kind": "midi_maps", "ids": ["test-device"]}
+    )
+
+
 def test_no_hub_registered_is_a_silent_no_op(client, seed_backend) -> None:
     """Legacy boots have no WS server, so publish() delivers to nobody."""
     set_hub(None)
