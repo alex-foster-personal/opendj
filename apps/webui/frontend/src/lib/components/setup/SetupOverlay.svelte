@@ -954,6 +954,16 @@
 										iCloud placeholders were skipped rather than downloaded.
 									</p>
 								{/if}
+								{#if lastImport.files_rejected_unplayable > 0}
+									<p class="warning">
+										<span
+											title="Allowlisted files that are not playable audio. They were skipped and never became library tracks."
+										>
+											{lastImport.files_rejected_unplayable}
+										</span>
+										file(s) were skipped because they are not playable audio.
+									</p>
+								{/if}
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
 										macOS blocked {importDenied.join(', ')}, so the counts above
