@@ -13,8 +13,12 @@ from typing import Any
 
 from apps.adapters.rekordbox.models import RbContent
 
-from .own_beatgrid_overlay import _own_beatgrid_block, _own_beatgrid_lane_result
-from .own_beatgrid_overlay import _set_dynamic_tempo_hint, _state_conn_ro
+from .own_beatgrid_overlay import (
+    _own_beatgrid_block,
+    _own_beatgrid_lane_result,
+    _set_dynamic_tempo_hint,
+    _state_conn_ro,
+)
 
 
 def vendor_analysis_path_absent(content: RbContent) -> bool:

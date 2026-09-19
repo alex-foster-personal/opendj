@@ -159,8 +159,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts import quality_latency
-    from scripts import shell_construct_lint
+    from scripts import quality_latency, shell_construct_lint
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None

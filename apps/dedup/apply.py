@@ -281,16 +281,21 @@ def _verify_rewrites(
     return bad
 
 
+@dataclass
+class DedupApplyPaths:
+    dedup_db_path: Path | None = None
+    rb_db_path: Path | None = None
+    plan_csv: Path | None = None
+    plan_md: Path | None = None
+    backup_dir: Path | None = None
+
+
 def run_apply(
     *,
-    dedup_db_path: Path | None = None,
-    rb_db_path: Path | None = None,
+    apply_paths: DedupApplyPaths | None = None,
     cluster_ids: set[int] | None = None,
-    plan_csv: Path | None = None,
-    plan_md: Path | None = None,
     live: bool = False,
     confirm_fn=None,
-    backup_dir: Path | None = None,
     allow_rb_running: bool = False,
 ) -> dict:
     if live:
@@ -300,11 +305,12 @@ def run_apply(
         # refusal. Refusing here means the one-way gate answers before any
         # handle exists, whatever ``--rb-db`` was aimed at.
         require_writeback_enabled("module.dedup.apply")
-    dedup_db = dedup_db_path or paths.DEDUP_FALLBACK_DB
-    rb_db = rb_db_path or paths.REKORDBOX_WORKING_DB
-    plan_csv = plan_csv or paths.DEDUP_REWRITE_PLAN_CSV
-    plan_md = plan_md or paths.DEDUP_REWRITE_SUMMARY_MD
-    backup_dir = backup_dir or (paths.DEDUP_DIR / "backups")
+    cfg = apply_paths or DedupApplyPaths()
+    dedup_db = cfg.dedup_db_path or paths.DEDUP_FALLBACK_DB
+    rb_db = cfg.rb_db_path or paths.REKORDBOX_WORKING_DB
+    plan_csv = cfg.plan_csv or paths.DEDUP_REWRITE_PLAN_CSV
+    plan_md = cfg.plan_md or paths.DEDUP_REWRITE_SUMMARY_MD
+    backup_dir = cfg.backup_dir or (paths.DEDUP_DIR / "backups")
 
     conn = dedup_schema.ensure_schema(dedup_db)
     try:
@@ -422,11 +428,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     res = run_apply(
-        dedup_db_path=args.db,
-        rb_db_path=args.rb_db,
+        apply_paths=DedupApplyPaths(
+            dedup_db_path=args.db,
+            rb_db_path=args.rb_db,
+            plan_csv=args.plan_csv,
+            plan_md=args.plan_md,
+        ),
         cluster_ids=cluster_ids,
-        plan_csv=args.plan_csv,
-        plan_md=args.plan_md,
         live=args.live,
     )
     print(

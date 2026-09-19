@@ -552,10 +552,10 @@ def assert_identity_ready(conn: sqlite3.Connection) -> None:
 
 
 def assert_merge_safe(
-    conn: sqlite3.Connection,
+    _conn: sqlite3.Connection,
     *,
-    hub_library_rows: int | None,
-    first_sync: bool,
+    _hub_library_rows: int | None,
+    _first_sync: bool,
 ) -> None:
     """Apply :func:`assert_identity_ready`, but only where a merge can happen.
 

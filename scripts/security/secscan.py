@@ -348,6 +348,46 @@ def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
     return 0
 
 
+def _semgrep_rules_gate(
+    args: argparse.Namespace,
+    doc: dict,
+    errors: list[dict],
+    results: list[dict],
+) -> int | None:
+    rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
+    if rules is None:
+        return None
+    scanned = len(doc.get("paths", {}).get("scanned", []))
+    print(f"semgrep loaded {rules} rules, scanned {scanned} files")
+    expected = args.expected_scannable
+    if expected is not None and expected > 0:
+        if rules == 0:
+            detail = (
+                "and scanned 0: the changed paths may all be on semgrep's default "
+                "ignore list; rerun with --verbose for paths.skipped"
+                if scanned == 0
+                else f"while scanning {scanned} file(s): the rule set failed to load"
+            )
+            return _unknown(
+                f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
+            )
+        if scanned == 0:
+            if not errors and not results:
+                _emit(args, args.title, [], 0)
+                return 0
+            return _unknown(
+                f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
+                f"and scanned {scanned} files"
+            )
+    if rules < args.min_rules:
+        return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
+    if scanned < args.min_files:
+        return _unknown(
+            f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
+        )
+    return None
+
+
 def cmd_semgrep_summary(args: argparse.Namespace) -> int:
     try:
         doc = _load_json(Path(args.json))
@@ -360,40 +400,10 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
             f"[ERROR] semgrep: {err.get('type')} {str(err.get('message', ''))[:200]}",
             file=sys.stderr,
         )
-    rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
     results = doc.get("results", [])
-    if rules is not None:
-        scanned = len(doc.get("paths", {}).get("scanned", []))
-        print(f"semgrep loaded {rules} rules, scanned {scanned} files")
-        expected = args.expected_scannable
-        if expected is not None and expected > 0:
-            if rules == 0:
-                # semgrep reports per-rule timings only for files it scanned, so
-                # 0 rules with 0 scanned is an ignored-out diff, not a rule-load
-                # failure. Both stay UNKNOWN; only the reason differs.
-                detail = (
-                    "and scanned 0: the changed paths may all be on semgrep's default "
-                    "ignore list; rerun with --verbose for paths.skipped"
-                    if scanned == 0
-                    else f"while scanning {scanned} file(s): the rule set failed to load"
-                )
-                return _unknown(
-                    f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
-                )
-            if scanned == 0:
-                if not errors and not results:
-                    _emit(args, args.title, [], 0)
-                    return 0
-                return _unknown(
-                    f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
-                    f"and scanned {scanned} files"
-                )
-        if rules < args.min_rules:
-            return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
-        if scanned < args.min_files:
-            return _unknown(
-                f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
-            )
+    gate = _semgrep_rules_gate(args, doc, errors, results)
+    if gate is not None:
+        return gate
     fired = Counter(r["check_id"].rsplit(".", 1)[-1] for r in results)
     silent = [rule for rule in args.require_rule if fired[rule] == 0]
     if silent:

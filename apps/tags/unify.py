@@ -17,7 +17,7 @@ scoring per source follows the CONTEXT D4 table:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from apps.shared.tag_writer import TagRead, UnifiedTags
@@ -139,7 +139,7 @@ def unify(
 
     Deterministic: same input -> same output (including attempts log).
     """
-    now_iso = (now or datetime.now(timezone.utc)).isoformat()
+    now_iso = (now or datetime.now(UTC)).isoformat()
     src_lookup: dict[str, TagRead | None] = {
         "rb": sources.rb,
         "mik": sources.mik,

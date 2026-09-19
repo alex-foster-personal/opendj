@@ -394,7 +394,7 @@ async def post_headphone_calibrate_abort(request: Request) -> HeadphoneStateOut:
 )
 async def post_headphone_outputs_refresh(
     request: Request,
-    body: Annotated[dict[str, Any] | None, Body(title="HeadphoneOutputsRefreshBody")] = None,
+    _body: Annotated[dict[str, Any] | None, Body(title="HeadphoneOutputsRefreshBody")] = None,
 ) -> HeadphoneStateOut:
     _require_page(request)
     return await _submit_headphone_command(

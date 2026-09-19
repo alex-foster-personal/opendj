@@ -196,31 +196,16 @@ def _print_summary(rows: list[HealRow]) -> None:
     console.print(f"[dim]{MACHINE_PATHS_WARNING}[/dim]")
 
 
-def apply_unique(
-    rows: list[HealRow],
-    *,
-    i_understand: bool,
-) -> int:
-    """Live-write FolderPath for ready_unique rows via reconcile.apply rails."""
-    unique = [r for r in rows if r.status == "ready_unique" and r.candidate_path]
-    if not unique:
-        console.print("[yellow]No ready_unique rows to apply.[/yellow]")
-        return 0
-    if not i_understand:
-        console.print(
-            "[red]Refusing apply without --i-understand-the-risks.[/red]"
-        )
-        return 2
-
+def _build_heal_updates(unique: list[HealRow]) -> tuple[list[reconcile_apply.Update], int]:
     updates: list[reconcile_apply.Update] = []
     for r in unique:
         twin = Path(r.candidate_path)
         if icloud_zone.is_icloud_zone(twin):
             console.print(f"[red]Refuse zone candidate {twin}[/red]")
-            return 2
+            return [], 2
         if not fs_residency.is_materialised(twin):
             console.print(f"[red]Refuse non-materialised candidate {twin}[/red]")
-            return 2
+            return [], 2
         updates.append(
             reconcile_apply.Update(
                 id=r.id,
@@ -233,7 +218,10 @@ def apply_unique(
                 triple_validated=True,
             )
         )
+    return updates, 0
 
+
+def _commit_heal_updates(updates: list[reconcile_apply.Update]) -> int:
     reconcile_apply._print_preview(updates, "iCloud heal --apply-unique")
     if reconcile_apply._rekordbox_running():
         console.print("[red]Rekordbox is running; quit it first.[/red]")
@@ -259,6 +247,28 @@ def apply_unique(
         f"[green]Applied {len(updates)} FolderPath heal(s). Backup: {backup}[/green]"
     )
     return 0
+
+
+def apply_unique(
+    rows: list[HealRow],
+    *,
+    i_understand: bool,
+) -> int:
+    """Live-write FolderPath for ready_unique rows via reconcile.apply rails."""
+    unique = [r for r in rows if r.status == "ready_unique" and r.candidate_path]
+    if not unique:
+        console.print("[yellow]No ready_unique rows to apply.[/yellow]")
+        return 0
+    if not i_understand:
+        console.print(
+            "[red]Refusing apply without --i-understand-the-risks.[/red]"
+        )
+        return 2
+
+    updates, code = _build_heal_updates(unique)
+    if code:
+        return code
+    return _commit_heal_updates(updates)
 
 
 def _build_parser() -> argparse.ArgumentParser:

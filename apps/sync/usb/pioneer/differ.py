@@ -54,9 +54,10 @@ import json
 import shutil
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 __all__ = [
     "OneLibraryTableStats",
@@ -1023,7 +1024,7 @@ def render_matrix_markdown(rows: list[MatrixRow], *, now: _dt.datetime | None = 
     # Emit RFC3339-ish UTC without the bare 'Z' suffix (the timezone
     # is already carried as '+00:00' thanks to the tz-aware now()).
     when = (
-        (now or _dt.datetime.now(_dt.timezone.utc))
+        (now or _dt.datetime.now(_dt.UTC))
         .replace(microsecond=0)
         .isoformat()
     )

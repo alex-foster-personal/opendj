@@ -115,6 +115,7 @@ def verify_syntax(path: Path) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
     except FileNotFoundError:
         return False, "bash not available"

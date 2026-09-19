@@ -6538,6 +6538,11 @@
             "title": "Files Dataless",
             "type": "integer"
           },
+          "files_rejected_unplayable": {
+            "default": 0,
+            "title": "Files Rejected Unplayable",
+            "type": "integer"
+          },
           "files_seen": {
             "title": "Files Seen",
             "type": "integer"

@@ -17,7 +17,8 @@ Backend selection:
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -34,7 +35,7 @@ def get_backend(request: Request) -> StateBackend:
 _LOCK_PROBE_FAILED = "__lock_probe_failed__"
 
 
-def get_lock_status(request: Request) -> Optional[dict[str, Any]]:
+def get_lock_status(request: Request) -> dict[str, Any] | None:
     fn: Callable[[], Any] | None = getattr(request.app.state, "lock_status_fn", None)
     if fn is None:
         return None
@@ -48,14 +49,14 @@ def get_lock_status(request: Request) -> Optional[dict[str, Any]]:
         return {"holder": _LOCK_PROBE_FAILED, "error": "lock_probe_failed"}
 
 
-def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:
+def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:  # noqa: B008  # FastAPI DI
     return backend
 
 
 def get_write_state(
     request: Request,
-    backend: StateBackend = Depends(get_backend),
-    lock_status: Optional[dict[str, Any]] = Depends(get_lock_status),
+    backend: StateBackend = Depends(get_backend),  # noqa: B008  # FastAPI DI
+    lock_status: dict[str, Any] | None = Depends(get_lock_status),  # noqa: B008  # FastAPI DI
 ) -> StateBackend:
     local_host = getattr(request.app.state, "hostname", "localhost")
     if lock_status and lock_status.get("holder") == _LOCK_PROBE_FAILED:

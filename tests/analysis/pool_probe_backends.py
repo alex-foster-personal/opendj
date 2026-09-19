@@ -14,7 +14,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.analysis.record import AnalysisRecord
@@ -66,7 +66,7 @@ class ProbeBackend:
             stable_id=stable_id,
             backend=cls.name,
             backend_version=cls.version,
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=1.0,
             sample_rate=44100,
             bpm=120.0,
@@ -155,7 +155,7 @@ class WarmupOrderBackend:
             stable_id=stable_id,
             backend=cls.name,
             backend_version=cls.version,
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=1.0,
             sample_rate=44100,
             bpm=120.0,

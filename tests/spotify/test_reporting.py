@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -34,8 +35,8 @@ def _src(sid, title="Title", isrc="USABC2500001") -> SpotifyTrack:
 
 @pytest.mark.requirement("CAT-01")
 def test_build_report_dir_uses_timestamp(tmp_path: Path) -> None:
-    from datetime import datetime, timezone
-    ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+    from datetime import datetime
+    ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
     paths = build_report_dir("pl123", root=tmp_path, timestamp=ts)
     assert paths.root.name == "import-pl123-20260417T120000Z"
 

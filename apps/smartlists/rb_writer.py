@@ -43,9 +43,10 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, ContextManager
+from typing import Any, ContextManager
 from uuid import uuid4
 
 from sqlalchemy import create_engine

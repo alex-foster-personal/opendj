@@ -21,7 +21,7 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ----------------------------------------------------- running-process gate
@@ -88,7 +88,7 @@ def backup_file(target: Path, backup_dir: Path) -> BackupRecord:
     backup_dir = Path(backup_dir)
     backup_dir.mkdir(parents=True, exist_ok=True)
     path_key = hashlib.sha256(str(target).encode("utf-8")).hexdigest()[:16]
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_path = backup_dir / f"{path_key}.{timestamp}.bak"
     shutil.copy2(target, backup_path)
     return BackupRecord(

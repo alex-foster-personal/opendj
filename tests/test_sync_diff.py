@@ -95,7 +95,7 @@ def test_summarise_counts_per_field():
 
 
 def test_rating_zero_rule_visible_in_diff():
-    ans, ratings = build_analysis_diff({}, {}, {"1": 0}, {"a": 3}, [("1", "a")])
+    _ans, ratings = build_analysis_diff({}, {}, {"1": 0}, {"a": 3}, [("1", "a")])
     assert any(r.resolution == "accept_djay" and r.field == "rating" for r in ratings)
 
 

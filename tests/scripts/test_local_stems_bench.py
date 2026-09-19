@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from scripts.bench.local.fixtures import EXPECTED_TRACKS, SOURCE_VERSION
 from scripts.bench.local.run_local_stems_benchmark import (
     AUDIBILITY_DB,
     _fixture_provenance,
     _parse_candidate_json,
     output_parity,
 )
-from scripts.bench.local.fixtures import EXPECTED_TRACKS, SOURCE_VERSION
 
 
 def test_parse_candidate_json_reads_the_final_machine_record():

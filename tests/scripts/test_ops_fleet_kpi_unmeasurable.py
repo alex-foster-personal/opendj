@@ -30,17 +30,17 @@ import stat
 
 import pytest
 
+from tests.platform_capabilities import posix_permission_denial_supported
 from tests.scripts.test_ops_fleet_kpi import (
     NOW,
     _copy_fixture,
     _env,
     _fatal_label,
-    _iso,
     _health,
     _home,
+    _iso,
     _run,
 )
-from tests.platform_capabilities import posix_permission_denial_supported
 
 #: chmod cannot create an unreadable file for UID 0, which is how CI runs here: root
 #: still satisfies -r, so the test would assert against a fixture whose stated

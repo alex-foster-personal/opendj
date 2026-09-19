@@ -39,8 +39,9 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Literal
+from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -303,7 +304,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
         return None
     if record.duration_s <= 0:
         raise _invalid_record(record.stable_id, f"duration_s={record.duration_s}")
-    for a, b in zip(downbeats, downbeats[1:]):
+    for a, b in zip(downbeats, downbeats[1:], strict=False):
         if b <= a:
             raise _invalid_record(
                 record.stable_id, f"downbeats_s not strictly increasing ({a} -> {b})"
@@ -313,7 +314,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
     from .analysis_fallback_beats import fallback_emit, fallback_tail_beats
 
     # Bars between consecutive measured downbeats.
-    for start, end in zip(downbeats, downbeats[1:]):
+    for start, end in zip(downbeats, downbeats[1:], strict=False):
         bar_s = end - start
         if bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
             raise _invalid_record(
@@ -334,7 +335,7 @@ def get_auto_cues(
     backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> AutoCuesOut:
     """PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
 
@@ -375,7 +376,7 @@ def get_beatgrid_fallback(
     backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> BeatgridFallbackOut:
     """Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.
 

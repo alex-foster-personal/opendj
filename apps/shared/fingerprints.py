@@ -27,9 +27,9 @@ from __future__ import annotations
 import base64
 import sqlite3
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 # pyacoustid import is lazy so the module can be imported even when the
 # package is missing (useful for test environments that stub it out). The

@@ -202,7 +202,7 @@ def _print_track_table(run: TrackRun, pseudo: dict[str, float | None]) -> None:
         f"{'rung':<8}{'params':<34}{'sep_s':>8}{'SI-SDR vs TRUE':>16}{'pseudo SI-SDR':>15}"
     )
     print("-" * 96)
-    for rung, result in zip(LADDER, run.results):
+    for rung, result in zip(LADDER, run.results, strict=False):
         truth = run.sisdr_by_rung[rung.id]
         pseudo_value = pseudo.get(rung.id, "missing")
         if pseudo_value is None:
@@ -228,8 +228,8 @@ def _family_verdict(runs: list[TrackRun]) -> None:
     for run in runs:
         plain_scores = [run.sisdr_by_rung[r.id] for r in plain]
         ft_scores = [run.sisdr_by_rung[r.id] for r in finetuned]
-        plain_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results) if r.model == "htdemucs") / len(plain)
-        ft_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results) if r.model == "htdemucs_ft") / len(finetuned)
+        plain_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs") / len(plain)
+        ft_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs_ft") / len(finetuned)
         print(
             f"{run.title}\n"
             f"  htdemucs    (rungs 3-6):  best {max(plain_scores):6.2f} dB  "
@@ -268,7 +268,7 @@ def _write_manifest(runs: list[TrackRun], pseudo: dict[str, float | None]) -> No
                     "si_sdr": run.sisdr_by_rung[rung.id],
                     "si_sdr_pseudo": pseudo.get(rung.id),
                 }
-                for rung, result in zip(LADDER, run.results)
+                for rung, result in zip(LADDER, run.results, strict=False)
             ],
         }
 

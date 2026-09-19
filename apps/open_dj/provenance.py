@@ -6,7 +6,7 @@ while ``canon`` is purely syntactic.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 ProvenanceSource = Literal[
@@ -53,14 +53,14 @@ def wrap(
 
 def _format_timestamp(modified_at: datetime | str | None) -> str:
     if modified_at is None:
-        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now = datetime.now(UTC).replace(microsecond=0)
         return now.isoformat().replace("+00:00", "Z")
     if isinstance(modified_at, str):
         return modified_at
     # datetime
     dt = modified_at
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace(
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )

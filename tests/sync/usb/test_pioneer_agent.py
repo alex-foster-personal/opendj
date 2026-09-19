@@ -9,7 +9,6 @@ Requirement: CAT-06 -- Rekordbox 7 USB export automation prototype.
 from __future__ import annotations
 
 import io
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -45,11 +44,9 @@ if not _IS_DARWIN:  # pragma: no cover
 from PIL import Image  # noqa: E402
 
 from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
-    Actuator,
     DisplayGeometry,
     Trace,
     _translate_key_combo,
-    ensure_frontmost,
     scaled_to_points,
     take_screenshot,
 )

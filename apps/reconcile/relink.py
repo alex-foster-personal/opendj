@@ -69,9 +69,10 @@ import os
 import shutil
 import sqlite3
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal, Sequence
+from typing import Literal
 
 from rich.console import Console
 from rich.table import Table
@@ -303,7 +304,7 @@ def reject_unsafe(
 
 
 def _now_iso() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
 
 
 def log_path_for(out_dir: Path, *, live: bool, stamp: str | None = None) -> Path:
@@ -370,7 +371,7 @@ def _read_track(conn: sqlite3.Connection, stable_id: str) -> dict[str, object] |
         (stable_id,),
     )
     row = cur.fetchone()
-    return None if row is None else dict(zip(TRACK_COLUMNS, row))
+    return None if row is None else dict(zip(TRACK_COLUMNS, row, strict=False))
 
 
 def update_file_path(

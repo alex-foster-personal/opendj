@@ -8234,6 +8234,11 @@ export interface components {
             analysis_detail: string;
             /** Files Dataless */
             files_dataless: number;
+            /**
+             * Files Rejected Unplayable
+             * @default 0
+             */
+            files_rejected_unplayable: number;
             /** Files Seen */
             files_seen: number;
             /** Files Without Tags */

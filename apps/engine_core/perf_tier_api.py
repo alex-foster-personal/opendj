@@ -8,7 +8,11 @@ from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from apps.engine_core.host_info import HOST_INFO_STATE_ATTR, CODE_HOST_INFO_UNAVAILABLE, HostIdentity
+from apps.engine_core.host_info import (
+    CODE_HOST_INFO_UNAVAILABLE,
+    HOST_INFO_STATE_ATTR,
+    HostIdentity,
+)
 from apps.shared.perf_tier import (
     HostFacts,
     HostInfoUnavailable,

@@ -792,7 +792,9 @@ def run_via_ssh(
         )
     print(f"[OK] hop ssh {ssh_host} -> {remote_name}")
     command = remote_run_command() if remote_command is None else remote_command
-    hopped = subprocess.run(ssh_agentbox_argv(command, ssh_host=ssh_host))
+    hopped = subprocess.run(
+        ssh_agentbox_argv(command, ssh_host=ssh_host), check=False
+    )
     if hopped.returncode != 0:
         raise PortConfigError(f"remote run-agentbox exited {hopped.returncode}")
     return 0

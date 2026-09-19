@@ -34,22 +34,16 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.cloud import job as cloud_job
 from apps.engine_core.account.api import (
     account_router,
     entitlements_router,
     flags_router,
 )
-from apps.engine_core.availability_api import add_availability_routes
-from apps.engine_core.rescue_api import add_rescue_routes
-from apps.engine_core.library_availability import (
-    LibraryAvailabilityWorker,
-    attach_library_changed_probe,
-)
-from apps.engine_core.assistant.api import router as assistant_router
-from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
-from apps.engine_core.host_info import add_host_info_route
 from apps.engine_core.app_posture_api import add_app_posture_route
-from apps.engine_core.perf_tier_api import add_perf_tier_route
+from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.availability_api import add_availability_routes
+from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -58,6 +52,7 @@ from apps.engine_core.config import (
     prepare_layout,
 )
 from apps.engine_core.contract import compute_contract_rev
+from apps.engine_core.host_info import add_host_info_route
 from apps.engine_core.jobs.api import router as jobs_router
 from apps.engine_core.jobs.runner import (
     JobRunner,
@@ -66,7 +61,13 @@ from apps.engine_core.jobs.runner import (
     register_worker,
 )
 from apps.engine_core.jobs.store import JobStore
+from apps.engine_core.library_availability import (
+    LibraryAvailabilityWorker,
+    attach_library_changed_probe,
+)
 from apps.engine_core.lock import EngineLock
+from apps.engine_core.perf_tier_api import add_perf_tier_route
+from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
@@ -75,8 +76,6 @@ from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
-from apps.webui.server.request_guard import assert_request_guard_bind_allowed
-from apps.cloud import job as cloud_job
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
@@ -91,6 +90,7 @@ from apps.webui.server.cloud_sync import probe_syncthing_status
 from apps.webui.server.deps import get_read_state
 from apps.webui.server.frontend_build import frontend_build_dir
 from apps.webui.server.models import HealthOut
+from apps.webui.server.request_guard import assert_request_guard_bind_allowed
 from apps.webui.server.routes.health import health as legacy_health
 from apps.webui.server.sqlite_backend import make_backend
 
@@ -292,7 +292,7 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # standalone webui daemon; without it the installed app queued jobs
         # that stayed pending forever.
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
-        # STEM-31 / ADR-0025: on-demand stem hydration (ADR-0024). Armed is not
+        # STEM-31 / ADR-0051: on-demand stem hydration (ADR-0024). Armed is not
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,
     )
