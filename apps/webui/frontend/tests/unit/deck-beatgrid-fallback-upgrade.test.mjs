@@ -927,6 +927,12 @@ test('the deferred resync call site threads the same load-token check into after
 });
 
 test('the lazy beatgrid upgrade module resolves when a deck first uses it (issue #920)', async () => {
+	const lazySource = readFrontendSource('src/lib/player/beatgrid-lazy.ts');
+	assert.match(
+		lazySource,
+		/import\('\$lib\/player\/beatgrid-upgrade'\)/,
+		'beatgrid-lazy.ts must still defer-load beatgrid-upgrade for route bundle splitting'
+	);
 	stubDaemon();
 	const lazyUpgrade = await loadTypeScriptModule(
 		'tests/unit/fixtures/beatgrid-lazy-analysis-source-entry.ts',
