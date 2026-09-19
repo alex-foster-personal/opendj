@@ -466,6 +466,8 @@ test('the Knob classifies drags by travel and only steps on a primary click', ()
 	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
 	assert.match(knob, /pointerTravelIsDrag\(/,
 		'if Knob.svelte marks any pointermove as a drag then jitter swallows the MIX click - broken');
+	assert.match(knob, /onsingleclick !== undefined && insideSlop/,
+		'if the click slop applies to every knob then 1-4 px fine adjustments on EQ and GAIN are discarded - broken');
 	assert.match(knob, /e\.button !== 0/,
 		'if a right or middle click starts a gesture then a context-menu click steps MIX - broken');
 });

@@ -155,8 +155,10 @@
 	function handlePointerMove(e: PointerEvent): void {
 		if (!dragging || !live) return;
 		if (!pointerMoved) {
-			// Jitter inside the slop stays a click; the dial does not move until it is a drag.
-			if (!pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY)) return;
+			// Only a knob with a click action has a click to protect: jitter inside the
+			// slop stays that click. Every other knob keeps moving from the first pixel.
+			const insideSlop = !pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY);
+			if (onsingleclick !== undefined && insideSlop) return;
 			pointerMoved = true;
 		}
 		const dy = dragStartY - e.clientY; // up = clockwise = increase
