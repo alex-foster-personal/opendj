@@ -109,6 +109,7 @@ export default defineConfig({
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
 		'**/lyrics-words.spec.ts', // playwright.lyrics-words.config.ts (real backend, words fixture)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
+		'**/midi-maps-resync.spec.ts', // playwright.midi-maps-resync.config.ts (engine + real WS)
 		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)

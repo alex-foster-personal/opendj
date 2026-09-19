@@ -98,6 +98,7 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lifecycle as lifecycle_routes
+from .routes import midi_maps as midi_maps_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
@@ -556,6 +557,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         preflight_routes.router,
         settings_routes.router,
         settings_ai_routes.router,
+        midi_maps_routes.router,
         state_routes.router,
         commands_routes.router,
         shell_routes.router,
