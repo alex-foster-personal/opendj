@@ -3424,7 +3424,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Playlist Tracks
+         * @description Paginated hydrated membership slice for first-page library paint.
+         *
+         *     Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.
+         *     Full detail remains on ``GET /playlists/{playlist_id}``.
+         */
+        get: operations["list_playlist_tracks_api_v1_playlists__playlist_id__tracks_get"];
         /** Replace Playlist Tracks */
         put: operations["replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put"];
         post?: never;
@@ -10728,6 +10735,21 @@ export interface components {
             updated_at: string;
             /** Vendor */
             vendor: string;
+        };
+        /**
+         * PlaylistTracksPage
+         * @description Paginated playlist membership slice (PERF-UI-05, issue #3530).
+         *
+         *     Hydrated rows in membership order for ``[offset:offset+limit]`` only.
+         *     Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks``.
+         */
+        PlaylistTracksPage: {
+            /** Next Offset */
+            next_offset?: number | null;
+            /** Total */
+            total: number;
+            /** Tracks */
+            tracks: components["schemas"]["TrackRowOut"][];
         };
         /** PlaylistWriteOut */
         PlaylistWriteOut: {
@@ -19356,7 +19378,10 @@ export interface operations {
     };
     list_playlists_api_v1_playlists_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description When ``skip``, omit the bulk available_count pass and return ``available_count=-1`` per row for fast tree paint (PERF-UI-05). */
+                availability?: "all" | "skip";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -19370,6 +19395,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -19859,6 +19893,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistSetRunResultOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_playlist_tracks_api_v1_playlists__playlist_id__tracks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistTracksPage"];
                 };
             };
             /** @description Validation Error */
