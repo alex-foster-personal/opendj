@@ -474,6 +474,23 @@ def test_status_renders_a_folder_outcome_as_a_folder_outcome(
     assert last["tracks_without_analysis"] == 3
 
 
+def test_folder_import_reports_unplayable_files_in_last_import(
+    client: TestClient, data_dir: Path, tmp_path: Path
+) -> None:
+    """[if] valid wav and zero-byte wav [then] one track and rejected counter [else stop]."""
+    root = tmp_path / "mixed"
+    root.mkdir()
+    _write_wav(root / "valid.wav")
+    (root / "zero-bytes.wav").write_bytes(b"")
+    _sink, emit = _emit_sink()
+    outcome = importer.run_folder_import(data_dir, emit=emit, roots=[root])
+    assert outcome.tracks_written == 1
+    assert outcome.files_rejected_unplayable >= 1
+    last = client.get(f"{API}/status").json()["last_import"]
+    assert last["files_rejected_unplayable"] >= 1
+    assert last["tracks_written"] == 1
+
+
 def test_permissions_reports_every_probed_root(client: TestClient) -> None:
     body = client.get(f"{API}/permissions").json()
     assert isinstance(body["all_readable"], bool)
