@@ -408,45 +408,12 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
 });
 
-// ---------------------------------------------------- glue lifecycle (pump)
+// ---------------------------------------------------- glue lifecycle
 
-// Regression, Sat 29 Aug 2026: the channel-meter pump used to be a bare
-// setInterval started at attach time. That is a real host timer, so with no
-// controller plugged in it kept the event loop alive for the whole session -
-// tests/unit/midi-panel.test.mjs passed all 21 subtests and then timed out at
-// the FILE level, and in the browser it burned 30 Hz forever once MIDI was
-// enabled (midi-ui-state calls attachMidiGlue and discards its teardown).
-//
-// This reads glue._meterPumpArmedForTests() - production-owned observable
-// state, exported for exactly this purpose - rather than replacing
-// globalThis.setInterval/clearInterval. The repo's fail-closed test contract
-// prohibits monkeypatching the host runtime (AGENTS.md), and a replaced
-// setInterval only proves a call was MADE, not that the pump is armed (or
-// not) for the right reason.
-//
-// This file's vite.ssrLoadModule harness compiles every .svelte.ts module in
-// SSR mode (confirmed empirically: a minimal $effect.root probe never runs
-// its effect body here, sync or after a flushSync/tick, because SSR Svelte
-// has no DOM to schedule against). _syncMeterPump only runs from inside that
-// $effect, so a hotplug-arms-the-pump case cannot be driven through the real
-// reactive path in THIS harness; midi-hotplug.test.mjs already exercises the
-// underlying plug/unplug -> midiState.devices machinery this effect reads,
-// and an e2e/manual pass is what actually proves the pump arms in a browser.
-//
-//   if attachMidiGlue starts a timer with no meter-capable device connected
-//   then broken (midi-panel.test.mjs will hang again)
-test('attachMidiGlue starts no meter pump while no device is connected', () => {
-	webmidi._resetMidiForTests();
-	const detach = glue.attachMidiGlue();
-	assert.equal(
-		glue._meterPumpArmedForTests(),
-		false,
-		'no timer may be armed with an empty device list'
-	);
-	detach();
-	assert.equal(glue._meterPumpArmedForTests(), false, 'detach must leave the pump disarmed');
-	webmidi._resetMidiForTests();
-});
+// Meter pump regression guard intentionally absent on main (issue #3670):
+// host-driven VU meter CC output is planned (controller-onboarding.md,
+// unlanded bdf50f0e) but not implemented. Restoring the deleted test would
+// require building the pump, not restoring coverage. Track there, not here.
 
 // Regression, PR #509 review thread r3913374758 ("Reattach MIDI glue after
 // returning to performance"): detachMidiGlueForRouteUnmount() only ever
