@@ -130,7 +130,9 @@ def _seed_library(data_dir: Path, audio_path: Path) -> None:
 
     verify_conn = state_db.open_ro(state_db_path)
     try:
-        row_count = verify_conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        row_count = verify_conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
+        ).fetchone()[0]
     finally:
         verify_conn.close()
     if row_count != TRACK_COUNT:
