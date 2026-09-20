@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+/** Hold Gig or Trackify steady state for PERFMODE-15 mode ratio capture (issue #2701). */
+
+import { createInterface } from "node:readline";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+
+async function loadChromium() {
+  const resolver = createRequire(path.join(process.cwd(), "package.json"));
+  const entry = resolver.resolve("@playwright/test");
+  const mod = await import(pathToFileURL(entry).href);
+  const { chromium } = mod.default ?? mod;
+  if (!chromium) throw new Error("@playwright/test has no chromium export");
+  return chromium;
+}
+
+const chromium = await loadChromium();
+
+const { values } = parseArgs({
+  options: {
+    frontend: { type: "string" },
+    mode: { type: "string" },
+  },
+});
+
+const frontend = values.frontend?.replace(/\/$/, "");
+const mode = values.mode;
+
+if (!frontend || (mode !== "gig-trackify" && mode !== "trackify-leak")) {
+  console.error(
+    "usage: node mode_ratio_browser.mjs --frontend <origin> --mode <gig-trackify|trackify-leak>"
+  );
+  process.exit(1);
+}
+
+function waitForLine() {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin });
+    rl.once("line", () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
+
+async function waitForPerformanceIpc(page) {
+  await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
+    timeout: 120_000,
+  });
+}
+
+async function waitForTrackifyIpc(page) {
+  await page.waitForFunction(() => window.musicDjToolsTrackify?.version === 1, undefined, {
+    timeout: 120_000,
+  });
+}
+
+async function waitForQueueIdle(page) {
+  await page.waitForFunction(
+    () => {
+      const ipc = window.musicDjToolsPerformance;
+      if (ipc === undefined) return false;
+      const state = ipc.query();
+      return state.command_pending === false && state.command_queued === 0;
+    },
+    undefined,
+    { timeout: 120_000 }
+  );
+}
+
+async function loadGigSteadyState(page) {
+  await page.goto(`${frontend}/performance?muted=1`, { waitUntil: "domcontentloaded" });
+  await waitForPerformanceIpc(page);
+  const stableIds = await page.evaluate(async () => {
+    const response = await fetch("/api/v1/tracks?limit=4");
+    if (!response.ok) throw new Error(`tracks list failed (${response.status})`);
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (items.length < 4) throw new Error(`need at least 4 tracks, got ${items.length}`);
+    return items.slice(0, 4).map((row) => row.stable_id);
+  });
+  for (let deck = 1; deck <= 4; deck += 1) {
+    const stableId = stableIds[deck - 1];
+    await page.evaluate(
+      ({ deckId, stable_id }) => {
+        const ipc = window.musicDjToolsPerformance;
+        if (ipc === undefined) throw new Error("performance IPC is not installed");
+        return ipc.dispatch({ type: "load", deck: deckId, stable_id });
+      },
+      { deckId: deck, stable_id: stableId }
+    );
+    await waitForQueueIdle(page);
+    await page.evaluate(
+      ({ deckId }) => {
+        const ipc = window.musicDjToolsPerformance;
+        if (ipc === undefined) throw new Error("performance IPC is not installed");
+        return ipc.dispatch({ type: "play", deck: deckId, playing: true });
+      },
+      { deckId: deck }
+    );
+    await waitForQueueIdle(page);
+  }
+  await page.waitForTimeout(5_000);
+}
+
+async function openTrackify(page) {
+  const picker = page.locator("details.mode-picker");
+  await picker.locator('summary[aria-label="Choose app mode"]').click();
+  await picker.locator("a.mode-card").filter({ hasText: "Trackify" }).click();
+  await page.waitForURL((url) => url.pathname === "/music-player", { timeout: 60_000 });
+  await waitForTrackifyIpc(page);
+  await page.waitForTimeout(5_000);
+}
+
+const browser = await chromium.launch({ headless: true });
+try {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  if (mode === "gig-trackify") {
+    await loadGigSteadyState(page);
+    console.log("GIG_READY");
+    await waitForLine();
+    await openTrackify(page);
+    console.log("TRACKIFY_READY");
+    await waitForLine();
+  } else {
+    await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
+    await waitForTrackifyIpc(page);
+    await page.waitForTimeout(5_000);
+    console.log("TRACKIFY_READY");
+    await waitForLine();
+  }
+  console.log("DONE");
+} finally {
+  await browser.close();
+}
