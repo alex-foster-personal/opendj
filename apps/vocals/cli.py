@@ -113,6 +113,8 @@ _WINDOWS: bool = os.name == "nt"
 WORKER_SCRIPT: Path = (
     Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
 )
+PACKAGED_WORKER_SCRIPT_ENV: str = "MDT_VOCAL_WORKER_SCRIPT"
+PACKAGED_WORKER_PYTHON_ENV: str = "MDT_VOCAL_WORKER_PYTHON"
 _SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 
 CATEGORY_PVDI = "pvdi"
@@ -424,11 +426,12 @@ def order_todo(
 
 def _worker_command(audio_path: Path) -> list[str]:
     device = os.environ.get("MDT_VOCAL_WORKER_DEVICE", "auto")
-    override_python = os.environ.get("MDT_VOCAL_WORKER_PYTHON")
+    worker_script = Path(os.environ.get(PACKAGED_WORKER_SCRIPT_ENV, WORKER_SCRIPT))
+    override_python = os.environ.get(PACKAGED_WORKER_PYTHON_ENV)
     if override_python:
         return [
             override_python,
-            str(WORKER_SCRIPT),
+            str(worker_script),
             "--device",
             device,
             str(audio_path),
@@ -438,7 +441,7 @@ def _worker_command(audio_path: Path) -> list[str]:
         "run",
         "--no-sync",
         "--script",
-        str(WORKER_SCRIPT),
+        str(worker_script),
         "--device",
         device,
         str(audio_path),
@@ -515,13 +518,20 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
         process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         process_kwargs["start_new_session"] = True
-    proc = subprocess.Popen(
-        _worker_command(audio_path),
-        stdout=subprocess.PIPE,
-        stdin=subprocess.DEVNULL,
-        text=True,
-        **process_kwargs,
-    )
+    try:
+        proc = subprocess.Popen(
+            _worker_command(audio_path),
+            stdout=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            **process_kwargs,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Vocal separation is unavailable because the bundled audio runtime "
+            "could not be started. Reinstall Open DJ from a complete dmg and "
+            "try again."
+        ) from exc
     try:
         stdout, _ = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:

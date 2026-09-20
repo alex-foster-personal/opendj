@@ -352,6 +352,12 @@ soundfile==0.13.1
     #   music-dj-tools
 scikit-learn==1.9.0
     # via librosa
+demucs==4.0.1
+    # via music-dj-tools
+torch==2.5.1
+    # via music-dj-tools
+torchaudio==2.5.1
+    # via music-dj-tools
 """
 
 
@@ -383,6 +389,9 @@ def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
         "scipy",
         "soundfile",
         "scikit-learn",
+        "demucs",
+        "torch",
+        "torchaudio",
     }
 
 
