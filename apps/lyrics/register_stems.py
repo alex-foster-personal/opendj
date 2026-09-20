@@ -158,6 +158,18 @@ class RegisterPairStorage:
     conn: sqlite3.Connection | None = None
 
 
+def _storage_for_register_pair(
+    storage: RegisterPairStorage | None,
+    root: Path | None,
+) -> RegisterPairStorage:
+    """Accept ``storage=`` or legacy ``root=``, never both."""
+    if storage is not None and root is not None:
+        raise TypeError("register_pair accepts storage= or root=, not both")
+    if storage is not None:
+        return storage
+    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
+
+
 def register_pair(
     *,
     stable_id: str,
@@ -173,11 +185,7 @@ def register_pair(
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
-    if storage is not None and root is not None:
-        raise TypeError("register_pair accepts storage= or root=, not both")
-    if storage is None:
-        storage = RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
-    store = storage
+    store = _storage_for_register_pair(storage, root)
     root = store.root
     s3 = store.s3
     cfg = store.cfg
