@@ -434,9 +434,17 @@ def live_writeback(
 def run_undo(
     preimage_path: Path,
     *,
-    rb_db_path: Path,  # noqa: ARG001 - part of the keyword call contract; 17c7e99da renamed it to _rb_db_path to silence this rule and broke `apply_analysis --undo` with a TypeError
+    rb_db_path: Path,  # noqa: ARG001 - see below
     rb_conn: sqlite3.Connection,
 ) -> int:
+    """Undo a write-back from its preimage, verifying every restored field.
+
+    ``rb_db_path`` is unused in the body and is still part of the signature:
+    it is the keyword the one caller passes. 17c7e99da renamed it to
+    ``_rb_db_path`` to silence ARG001 without touching that caller, which made
+    ``apply_analysis --undo`` raise ``TypeError: run_undo() got an unexpected
+    keyword argument 'rb_db_path'``. Silence the rule, keep the contract.
+    """
     from apps.sync.analysis_writeback_pqtz import restore_pqtz_dat, snapshot_pqtz_dat
     from apps.sync.safety import assert_target_not_running
 
