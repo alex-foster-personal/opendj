@@ -90,3 +90,14 @@ export async function collectDroppedAudioFiles(dt: DataTransfer): Promise<File[]
 	}
 	return Array.from(dt.files ?? []).filter((f) => isAudioName(f.name));
 }
+
+/** First top-level directory name from a Finder folder drop, or null for flat files. */
+export function collectDroppedFolderName(dt: DataTransfer): string | null {
+	const items = dt.items;
+	if (!items || items.length === 0) return null;
+	for (const item of items) {
+		const entry = entryFromItem(item);
+		if (entry?.isDirectory) return entry.name;
+	}
+	return null;
+}
