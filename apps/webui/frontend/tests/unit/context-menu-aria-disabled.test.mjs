@@ -134,7 +134,8 @@ test('source: arrow keys are ignored after focus leaves the menu', () => {
 	const itemLookup = keydown.indexOf('const items = menuItems();');
 	assert.notEqual(itemLookup, -1);
 	const beforeItemLookup = keydown.slice(0, itemLookup);
-	assert.match(beforeItemLookup, /menu === null|!menu\.contains\(document\.activeElement\)/);
+	assert.match(beforeItemLookup, /menu === null/);
+	assert.match(beforeItemLookup, /!menu\.contains\(document\.activeElement\)/);
 });
 
 test('source: CSS dims via aria-disabled, not button:disabled', () => {
