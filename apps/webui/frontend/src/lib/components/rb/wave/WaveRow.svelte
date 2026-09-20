@@ -501,6 +501,7 @@ estimated from the render clock and may run ahead of what you hear."
 		{/if}
 		<canvas
 			bind:this={canvasEl}
+			data-testid={`deck-waveform-canvas-${deckId}`}
 			role="slider"
 			aria-label="deck {deckId} waveform seek"
 			aria-valuemin={0}
