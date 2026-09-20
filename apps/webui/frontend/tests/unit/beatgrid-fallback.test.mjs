@@ -214,6 +214,32 @@ test('withFallbackBeatgrid swaps the grid, restamps the source, and returns a ne
 	assert.equal(anlz.beatgrid_source, 'rekordbox');
 });
 
+test('withFallbackBeatgrid lands a trusted own grid when /beatgrid-fallback carries status ok', () => {
+	const anlz = {
+		...anlzWithBeats([]),
+		local_waveform: { status: 'decoded' }
+	};
+	const fallback = {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa',
+		backend_version: 'test',
+		bpm: 128,
+		bpm_confidence: 0.9,
+		anlz_available: false,
+		beatgrid: { source: 'own', status: 'ok', beat_count: 2, beats: REAL_GRID }
+	};
+	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
+	assert.equal(gridFeatures.hasTrustedBeatGrid(merged), true);
+	assert.equal(
+		gridFeatures.effectiveBeatSync({
+			beat_sync_enabled: true,
+			anlz: merged
+		}),
+		true
+	);
+});
+
 test('withFallbackBeatgrid refuses to overwrite a real ANLZ grid', () => {
 	const anlz = anlzWithBeats(REAL_GRID);
 	const fallback = {

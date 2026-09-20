@@ -6314,10 +6314,16 @@
             "const": "own",
             "title": "Source",
             "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
           "source",
+          "status",
           "beat_count",
           "beats"
         ],

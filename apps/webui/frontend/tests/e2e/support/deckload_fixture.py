@@ -19,9 +19,10 @@ What that honestly leaves OUT is named rather than faked: these tracks have no
 rekordbox vendor mapping, so ``/anlz`` serves a payload whose beatgrid, cues
 and phrases are all empty. Since Tue 1 Sep 2026 its WAVEFORM is not: those
 peaks come from our own ffmpeg decode of the fixture audio (PARITY-08), so a
-lane drawn here describes the real tone. The only in-repo beatgrid producer
-for arbitrary audio is ``apps.analysis`` (librosa+madmom), which is
-deliberately absent from the repo venv, so nothing here invents a grid.
+lane drawn here describes the real tone. The performance rescue path
+(``--seed-rescue-playback``) runs the production ``apps.analysis`` librosa
+backend over the generated accented audio and serves measured downbeats through
+``/beatgrid-fallback``; it never writes a synthetic grid.
 
 SPECTRAL LANDMARK. The tempo, key and master-tempo tests assert the effect on
 the AUDIO, read back through the app's own post-processor AnalyserNode. That
@@ -115,11 +116,10 @@ import wave
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from apps.analysis.lanes import LaneResult
-from apps.analysis.pcm_fingerprint import canonical_decode_fingerprint
 from apps.analysis.record import AnalysisRecord
-from apps.analysis.store import open_conn as open_analysis_conn, upsert_record
+from apps.analysis.store import fetch_records
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 
@@ -127,7 +127,7 @@ REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 3
+FIXTURE_REVISION: int = 5
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -145,6 +145,9 @@ TONE_PEAK: float = 0.50
 PULSE_HZ: float = 100.0
 PULSE_MS: float = 40.0
 PULSE_PEAK: float = 0.35
+#: First beat of each four-beat bar is louder so librosa can establish bar phase.
+BAR_DOWNBEAT_PULSE_MULTIPLIER: float = 5.0
+BAR_ORDINARY_PULSE_MULTIPLIER: float = 0.55
 
 #: The band the suite searches for the dominant bin. Wide enough to hold the
 #: tone under any range this suite drives (-1 semitone to +16% is 1888..2320 Hz),
@@ -193,6 +196,17 @@ AUTOPLAY_CHAIN_CAMELOT_KEY: str = "8A"
 AUTOPLAY_CHAIN_PLAYLIST_ID: str = "e2e-fixture-autoplay-chain"
 AUTOPLAY_CHAIN_PLAYLIST_NAME: str = "E2E AutoPlay Chain"
 
+#: --seed-rescue-playback only. A 64 BPM fold pair for the 128 BPM master so
+#: BAR Beat Sync can exercise a real half-tempo lock in the hermetic lane.
+PERFORMANCE_FOLD_TRACK: FixtureTrack = FixtureTrack(
+    filename="webkit-fixture-d-64bpm-fold.wav", bpm=64.0, seconds=60.0
+)
+RESCUE_PLAYBACK_TRACKS: tuple[FixtureTrack, ...] = (
+    *FIXTURE_TRACKS,
+    AUTOPLAY_CHAIN_TRACK,
+    PERFORMANCE_FOLD_TRACK,
+)
+
 #: --seed-autoplay-hunt only. Six tracks, own filenames, kept out of
 #: FIXTURE_TRACKS so the 5 other e2e gates sharing this builder never see a
 #: 6-track library. Alternate 128 / 124 BPM so tempo/sync have a ratio
@@ -236,13 +250,20 @@ def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
     beat_period_samples = SAMPLE_RATE_HZ * 60.0 / track.bpm
     peak = float(2**15 - 1)
     tone_step = 2.0 * math.pi * TONE_HZ / SAMPLE_RATE_HZ
-    pulse_step = 2.0 * math.pi * PULSE_HZ / SAMPLE_RATE_HZ
     samples = array.array("h")
     for n in range(frame_count):
         value = TONE_PEAK * math.sin(tone_step * n)
         env = _pulse_envelope(n, beat_period_samples)
         if env > 0.0:
-            value += PULSE_PEAK * env * math.sin(pulse_step * n)
+            beat_index = int(n / beat_period_samples)
+            if beat_index % 4 == 0:
+                pulse_peak = PULSE_PEAK * BAR_DOWNBEAT_PULSE_MULTIPLIER
+                pulse_hz = PULSE_HZ * 1.8
+            else:
+                pulse_peak = PULSE_PEAK * BAR_ORDINARY_PULSE_MULTIPLIER
+                pulse_hz = PULSE_HZ
+            pulse_step = 2.0 * math.pi * pulse_hz / SAMPLE_RATE_HZ
+            value += pulse_peak * env * math.sin(pulse_step * n)
         sample = int(max(-1.0, min(1.0, value)) * peak)
         samples.append(sample)
         samples.append(sample)
@@ -548,131 +569,190 @@ def _stable_ids_in_track_order(
     return ordered
 
 
-def _constant_beatgrid_payload(bpm: float, grid_span_s: float) -> dict[str, object]:
-    """A constant-tempo grid over ``grid_span_s`` of audio at ``bpm``.
-
-    Every key the beatgrid lane contract requires is written here
-    (``apps/analysis/lane_payloads.py::_validate_beatgrid``): ``bpm``,
-    ``bpm_confidence``, ``octave_reason`` and ``first_downbeat_s`` as well as
-    the beats themselves. They are not decoration for the validator -- the
-    deck reads the projected ``bpm`` and the downbeat, so a payload without
-    them is one the app could not consume.
-
-    The grid stops at the last beat that fits INSIDE the audio. An earlier
-    version appended a final beat pinned to ``grid_span_s`` itself, which put
-    one beat at an interval that contradicted the constant tempo the rest of
-    the grid declares.
-    """
-    interval = 60.0 / bpm
-    beats: list[dict[str, object]] = []
-    n = 1
-    index = 0
-    while index * interval <= grid_span_s:
-        beats.append({"t": round(index * interval, 5), "n": n, "bpm": bpm})
-        n = 1 if n == 4 else n + 1
-        index += 1
-    if len(beats) < 2:
+def _pairs_for_generated_tracks(
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> list[list[str]]:
+    """Map ingested rows onto generated audio files, in a pairs-json shape."""
+    by_filename = {track.filename: track for track in tracks}
+    pairs: list[list[str]] = []
+    for stable_id, _title, file_path in rows:
+        if not file_path:
+            raise SystemExit(f"[ERROR] {label} row {stable_id!r} has no file_path")
+        audio_path = Path(file_path)
+        if audio_path.name not in by_filename:
+            continue
+        pairs.append([stable_id, str(audio_path)])
+    if len(pairs) != len(tracks):
         raise SystemExit(
-            f"[ERROR] a {grid_span_s}s grid at {bpm} bpm holds {len(beats)} beat(s); "
-            "the deck requires at least 2"
+            f"[ERROR] {label} could not map every generated track to an ingested row "
+            f"(expected {len(tracks)}, got {len(pairs)})"
         )
-    return {
-        "beats": beats,
-        "bpm": bpm,
-        # The grid is CONSTRUCTED at this tempo rather than estimated from the
-        # audio, so there is nothing to be uncertain about and no octave rule
-        # fired. `octave_reason` is a free-form short string naming the rule
-        # (`apps/analysis_beatgrid/bpm.py`); borrowing one of the estimator's
-        # own reasons here would claim an estimate that never ran.
-        "bpm_confidence": 1.0,
-        "octave_reason": "fixture_declared_bpm",
-        "first_downbeat_s": 0.0,
-        "beat_count": len(beats),
-        "static_grid_untrusted": False,
-        "tempo_changes": [],
-    }
+    return pairs
 
 
-def _seed_own_beatgrids(state_db_path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
-    """Write one own_beatgrid record per fixture row, describing its OWN audio.
-
-    Three things here are read from the file the row points at rather than
-    asserted as constants, because an own record that disagrees with its
-    audio is a fixture that measures something the app would never serve:
-
-    * ``decode_fingerprint`` is the canonical sha256 of this file decoded at
-      the pinned parameters (``apps/analysis/pcm_fingerprint.py``). The v1
-      record contract checks that field for SHAPE, so a placeholder string is
-      refused at ``upsert`` -- and the staleness comparison the field exists
-      for (``apps/analysis/depends_on.py``) is meaningless without it.
-    * ``bpm`` and the grid come from the track's own declared tempo, so the
-      124 bpm fixture no longer carries a 128 bpm grid.
-    * ``duration_s`` is the track's own length, so the grid cannot outlive
-      the audio.
-    """
-    # A datetime, not its ISO string: `AnalysisRecord.to_json` reads `.tzinfo`.
-    now = datetime.now(UTC)
-    by_filename = {track.filename: track for track in (*FIXTURE_TRACKS, AUTOPLAY_CHAIN_TRACK)}
-    # `apps.analysis.store` owns the `analysis` table and the shared-state
-    # migration ladder does not run its DDL, so a plain `state_db.open_rw`
-    # here reaches `upsert_record` with no table to write to. `open_conn`
-    # is the store's own idempotent door: state migrations first, then the
-    # analysis-domain DDL, exactly as the engine does at serve time.
-    conn = open_analysis_conn(state_db_path)
-    try:
-        for stable_id, _title, file_path in rows:
-            if not file_path:
-                raise SystemExit(
-                    f"[ERROR] rescue-playback row {stable_id!r} has no file_path, so its "
-                    "beatgrid record cannot describe any audio"
-                )
-            audio_path = Path(file_path)
-            if not audio_path.is_file():
-                raise SystemExit(
-                    f"[ERROR] rescue-playback row {stable_id!r} points at {file_path!r}, "
-                    "which is not a file"
-                )
-            track = by_filename.get(audio_path.name)
-            if track is None:
-                raise SystemExit(
-                    f"[ERROR] rescue-playback row {stable_id!r} has audio {audio_path.name!r}, "
-                    f"which is not one of {sorted(by_filename)}"
-                )
-            record = AnalysisRecord(
-                stable_id=stable_id,
-                backend="own_beatgrid.inapp",
-                backend_version="1.0.0",
-                analyzed_at=now,
-                duration_s=track.seconds,
-                sample_rate=SAMPLE_RATE_HZ,
-                bpm=track.bpm,
-                bpm_confidence=1.0,
-                key_camelot="8A",
-                key_openkey="1m",
-                key_confidence=1.0,
-                energy=6,
-                energy_source="inferred",
-                producer="inapp",
-                producer_version="1.0.0",
-                uses_model=False,
-                model_sha256=None,
-                decode_fingerprint=f"sha256:{canonical_decode_fingerprint(audio_path)}",
-                lanes={
-                    "beatgrid": LaneResult(
-                        status="ok",
-                        payload=_constant_beatgrid_payload(track.bpm, track.seconds),
-                    )
-                },
+def _assert_measured_downbeats(
+    stored: list[dict[str, Any]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Fail closed when a fixture row is missing a measured bar phase."""
+    if len(stored) != len(tracks):
+        raise SystemExit(
+            f"[ERROR] {label} wrote {len(stored)} librosa row(s) for {len(tracks)} track(s)"
+        )
+    for row in stored:
+        record = AnalysisRecord.from_json(row["record_json"])
+        if not record.downbeats_s:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} has no measured downbeats"
             )
-            upsert_record(record, conn=conn, cascade=False, version_bump=False)
-    finally:
-        conn.close()
+        if record.downbeats_s != sorted(record.downbeats_s):
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} downbeats are not increasing"
+            )
+        if record.duration_s and record.downbeats_s[-1] > record.duration_s:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} downbeats exceed duration"
+            )
+        if record.features_blob.get("downbeat_tracking") is not True:
+            raise SystemExit(
+                f"[ERROR] {label} track {record.stable_id} did not establish bar phase"
+            )
+
+
+def _sid_for_filename(
+    rows: list[tuple[str, str | None, str | None]], filename: str
+) -> str:
+    return next(
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path is not None and Path(file_path).name == filename
+    )
+
+
+def _assert_fixture_bpms(
+    rows: list[tuple[str, str | None, str | None]],
+    stored: list[dict[str, Any]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """The fold and master tracks must measure near their generated tempos."""
+    by_filename = {track.filename: track for track in tracks}
+    by_stable_id = {
+        row["stable_id"]: AnalysisRecord.from_json(row["record_json"]) for row in stored
+    }
+    fold_track = by_filename[PERFORMANCE_FOLD_TRACK.filename]
+    master_track = by_filename[FIXTURE_TRACKS[0].filename]
+    fold_bpm = by_stable_id[_sid_for_filename(rows, PERFORMANCE_FOLD_TRACK.filename)].bpm
+    master_bpm = by_stable_id[_sid_for_filename(rows, FIXTURE_TRACKS[0].filename)].bpm
+    if abs(fold_bpm - fold_track.bpm) > 4.0:
+        raise SystemExit(
+            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, "
+            f"expected near {fold_track.bpm}"
+        )
+    if abs(master_bpm - master_track.bpm) > 4.0:
+        raise SystemExit(
+            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, "
+            f"expected near {master_track.bpm}"
+        )
+
+
+def _run_librosa_analysis(
+    data_dir: Path,
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Run the production librosa analyzer and fail closed on missing downbeats."""
+    pairs = _pairs_for_generated_tracks(rows, tracks, label)
+    pairs_path = data_dir / "analysis-pairs.json"
+    pairs_path.write_text(json.dumps(pairs, indent=2) + "\n", encoding="utf-8")
+    env = dict(os.environ)
+    env["MDT_DATA_DIR"] = str(data_dir)
+    env.pop("WEB_CONCURRENCY", None)
+    command = [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "apps.analysis.run",
+        "--pairs-json",
+        str(pairs_path),
+        "--backend",
+        "librosa",
+    ]
+    result = subprocess.run(
+        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise SystemExit(
+            f"[ERROR] {label} librosa analysis failed with exit code {result.returncode}"
+        )
+    pairs_path.unlink(missing_ok=True)
+
+    state_db_path = data_dir / "state" / "state.db"
+    stable_ids = [stable_id for stable_id, _title, file_path in rows if file_path]
+    stored = fetch_records(stable_ids=stable_ids, backend="librosa", db_path=state_db_path)
+    _assert_measured_downbeats(stored, tracks, label)
+    _assert_fixture_bpms(rows, stored, tracks, label)
 
 
 def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
-    """Extend the autoplay-chain library with own beatgrid records for rescue e2e."""
-    rows = build_autoplay_chain(data_dir)
-    _seed_own_beatgrids(data_dir / "state" / "state.db", rows)
+    """Build an analysis-backed performance rescue library for Beat Sync e2e."""
+    _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
+    audio_dir = data_dir / AUDIO_SUBDIR
+    files = ensure_audio(audio_dir, RESCUE_PLAYBACK_TRACKS)
+    state_db_path = data_dir / "state" / "state.db"
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "rescue-playback")
+    _seed_playlists(state_db_path, rows)
+
+    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
+    by_filename = {track.filename: track for track in RESCUE_PLAYBACK_TRACKS}
+    generated = [
+        by_filename[Path(file_path).name]
+        for _stable_id, _title, file_path in rows
+        if file_path is not None and Path(file_path).name in by_filename
+    ]
+    now = datetime.now(UTC).isoformat()
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    bpm_by_stable_id = {
+        stable_id: track.bpm
+        for (stable_id, _title, file_path), track in zip(rows, generated, strict=True)
+        if file_path is not None and Path(file_path).name == track.filename
+    }
+    if len(bpm_by_stable_id) != len(rows):
+        raise SystemExit(
+            "[ERROR] rescue-playback could not match every ingested row to its generated file"
+        )
+    try:
+        for stable_id in stable_ids:
+            writer.set_field(
+                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                source="manual", modified_at=now, confidence=1.0,
+            )
+            writer.set_field(
+                stable_id, "key", AUTOPLAY_CHAIN_CAMELOT_KEY,
+                source="manual", modified_at=now, confidence=1.0,
+            )
+        writer.insert_playlist(
+            playlist_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
+            name=AUTOPLAY_CHAIN_PLAYLIST_NAME,
+            vendor="fixture",
+            vendor_pl_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, stable_ids)
+    finally:
+        writer.close()
+        conn.close()
+
+    _run_librosa_analysis(data_dir, rows, RESCUE_PLAYBACK_TRACKS, "rescue-playback")
     return rows
 
 
@@ -830,8 +910,9 @@ def main(argv: list[str] | None = None) -> int:
         "--seed-rescue-playback",
         action="store_true",
         help=(
-            "autoplay-chain library plus own beatgrid records for rescue "
-            "playback e2e (performance suite only)"
+            "autoplay-chain library plus a 64 bpm fold track, analyzed through "
+            "the production librosa backend for rescue playback e2e "
+            "(performance suite only)"
         ),
     )
     parser.add_argument(
