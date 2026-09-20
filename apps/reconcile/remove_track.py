@@ -44,7 +44,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import text
 
-from apps.shared import paths
+from apps.shared import paths, rekordbox_db
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 console = Console(width=120)
@@ -118,20 +118,16 @@ class Footprint:
 def _open_db(db_path: Path):
     """Open a Rekordbox DB via pyrekordbox.
 
-    For the live DB we leave ``unlock`` at its default (True). For plain
-    SQLite fixtures used in tests, callers pass ``unlock=False`` via the
-    working-path resolution; we infer that by checking the sqlite header
-    — a plain file starts with ``SQLite format 3``.
+    An encrypted DB goes through SQLCipher; a plain one must not, or
+    SQLCipher reads ciphertext where the header is and reports "file is not
+    a database". The header decides, via the one check in
+    :func:`apps.shared.rekordbox_db.is_plain_sqlite`.
     """
     from pyrekordbox import Rekordbox6Database
 
-    # Peek at the header so we pass unlock=False for plain fixtures.
-    try:
-        header = db_path.read_bytes()[:16]
-    except OSError:
-        header = b""
-    is_plain = header.startswith(b"SQLite format 3")
-    return Rekordbox6Database(path=str(db_path), unlock=not is_plain)
+    return Rekordbox6Database(
+        path=str(db_path), unlock=not rekordbox_db.is_plain_sqlite(db_path)
+    )
 
 
 def _resolve_db_path(override: Path | None, *, live: bool) -> Path:
@@ -544,14 +540,9 @@ def _insert_row(con, table: str, row: dict) -> int:
 
 
 def main() -> int:
-    # Detect plain SQLite fixtures (no SQLCipher) by header byte check.
-    try:
-        with open(LIVE_DB, "rb") as fh:
-            header = fh.read(16)
-    except OSError:
-        header = b""
-    is_plain = header.startswith(b"SQLite format 3")
-    db = Rekordbox6Database(path=LIVE_DB, unlock=not is_plain)
+    db = Rekordbox6Database(
+        path=LIVE_DB, unlock=not rekordbox_db.is_plain_sqlite(Path(LIVE_DB))
+    )
     try:
         total = 0
         with db.engine.begin() as con:
