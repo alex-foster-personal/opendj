@@ -25,7 +25,6 @@ from apps.engine_core.config import (
     EngineBootError,
     EngineConfig,
     apply_env_contract,
-    assert_no_progress_ledger,
     assert_single_worker,
     build_config,
     prepare_layout,
@@ -177,7 +176,6 @@ def _preflight(cfg: EngineConfig, *, workers: int) -> None:
             f"--data-dir {cfg.data_dir} does not exist. Create it first; the "
             "engine only creates what it owns (state/, jobs.db, .engine.lock)."
         )
-    assert_no_progress_ledger(cfg.data_dir)
     apply_env_contract(cfg)
     apply_bundled_oauth(os.environ)
     prepare_layout(cfg)
