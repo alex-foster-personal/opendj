@@ -91,22 +91,26 @@ def _survives_an_upstream_failure(step: dict) -> bool:
 
 
 def test_the_probe_finds_the_suite_steps() -> None:
-    """if the probe stops matching suite steps then every guard assertion below passes over nothing"""
+    """if the probe stops matching suite steps then the guard assertions pass over nothing"""
     gate, nightly = _suite_steps("gate"), _suite_steps(NIGHTLY_JOB)
     assert len(gate) >= 8, f"gate suite steps: {[s.get('name') for s in gate]}"
     assert len(nightly) >= 8, f"nightly suite steps: {[s.get('name') for s in nightly]}"
 
 
 def test_the_guard_probe_can_answer_no() -> None:
-    """if the guard probe returns true for an unguarded step then it cannot detect the defect"""
-    assert _survives_an_upstream_failure({}) is False, "a step with no `if` runs on the default success()"
-    assert _survives_an_upstream_failure({"if": "success()"}) is False, "success() is the failing default"
-    assert _survives_an_upstream_failure({"if": "${{ !cancelled() }}"}) is True, "the guard itself must read true"
-    assert _survives_an_upstream_failure({"if": "always() && !cancelled()"}) is True, "always() alone outlives a cancel"
+    """if the guard probe is true for an unguarded step then it cannot see the defect"""
+    cases = (
+        ({}, False),  # no `if` at all: the default success() condition
+        ({"if": "success()"}, False),  # spelled out, same meaning
+        ({"if": "${{ !cancelled() }}"}, True),  # the repo's guard
+        ({"if": "always() && !cancelled()"}, True),  # always() alone outlives a cancel
+    )
+    for step, expected in cases:
+        assert _survives_an_upstream_failure(step) is expected, step
 
 
 def test_the_four_never_run_suites_are_wired_into_the_nightly_job() -> None:
-    """if a step is deleted rather than guarded then the guard assertions below are vacuously green"""
+    """if a step is deleted rather than guarded then the assertions below are vacuous"""
     runs = "\n".join(step.get("run") or "" for step in _suite_steps(NIGHTLY_JOB))
     absent = [config for config in NEVER_RUN_SUITES if config not in runs]
     assert not absent, f"nightly job no longer runs these configs anywhere: {absent}"
