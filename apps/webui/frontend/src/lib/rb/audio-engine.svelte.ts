@@ -492,16 +492,10 @@ interface _DeckRuntime {
 	audioBuffer: AudioBuffer | null;
 	/** Library-listed track duration; decoded buffer duration lives in deck state. */
 	metadataDurationMs: number | null;
-	/**
-	 * True from the moment a re-anchor tempo ramp begins until its last step
-	 * is registered. Each ramp step's own revision briefly becomes "presented"
-	 * as soon as real playback reaches it, well before later steps finish
-	 * their own worklet round-trip - without this override, transport_pending
-	 * would flicker false mid-ramp (revision temporarily settled) and let a
-	 * caller read/measure position while the rate is still transitioning. See
-	 * `_scheduleReanchoredFollower` / `_continueTempoRamp`.
-	 */
-	reanchorRampActive: boolean;
+	/** Monotonic token; superseding transport/sync commands bump this deck's generation. */
+	reanchorOperationGeneration: number;
+	/** When set, equals the generation of the ramp that owns `transport_pending`. */
+	reanchorRampOwnerGeneration: number | null;
 	/**
 	 * LAZY-STEMS. A fully built AlignedStemDeckProcessor waiting for the deck to
 	 * be replaceable, held here because the engine forbids swapping a deck's
@@ -544,7 +538,8 @@ function _emptyRuntime(): _DeckRuntime {
 		keySyncBaselineSemitones: null,
 		audioBuffer: null,
 		metadataDurationMs: null,
-		reanchorRampActive: false,
+		reanchorOperationGeneration: 0,
+		reanchorRampOwnerGeneration: null,
 		pendingStemUpgrade: null
 	};
 }
@@ -1204,6 +1199,36 @@ function _syncOwnsFollowerTempo(deck: DeckId): boolean {
 	return syncMayWriteTempo(deck, effectiveBeatSync(deckStates[deck]), _masterDeck);
 }
 
+function _reanchorRampPending(rt: _DeckRuntime): boolean {
+	return (
+		rt.reanchorRampOwnerGeneration !== null &&
+		rt.reanchorRampOwnerGeneration === rt.reanchorOperationGeneration
+	);
+}
+
+function _bumpReanchorOperation(deck: DeckId): number {
+	const rt = _rt[deck];
+	const previous = rt.reanchorOperationGeneration;
+	rt.reanchorOperationGeneration = previous + 1;
+	if (rt.reanchorRampOwnerGeneration !== null && rt.reanchorRampOwnerGeneration <= previous) {
+		rt.reanchorRampOwnerGeneration = null;
+	}
+	return rt.reanchorOperationGeneration;
+}
+
+function _reanchorOperationIsCurrent(deck: DeckId, generation: number): boolean {
+	return _rt[deck].reanchorOperationGeneration === generation;
+}
+
+function _claimReanchorRampOwner(deck: DeckId, generation: number): void {
+	_rt[deck].reanchorRampOwnerGeneration = generation;
+}
+
+function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {
+	const rt = _rt[deck];
+	if (rt.reanchorRampOwnerGeneration === generation) rt.reanchorRampOwnerGeneration = null;
+}
+
 function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: boolean): void {
 	void wasAudible;
 	void audible;
@@ -1308,7 +1333,8 @@ async function _scheduleDeck(
 	masterTempoEnabled?: boolean,
 	loop?: LoopState | null,
 	keyShiftSemitones?: number,
-	pressT0Ms?: number
+	pressT0Ms?: number,
+	reanchorGeneration?: number
 ): Promise<number> {
 	const scheduleSession = _engineSession;
 	const isCurrent = (): boolean => scheduleSession === _engineSession;
@@ -1352,7 +1378,8 @@ async function _scheduleDeck(
 			masterTempoEnabled,
 			loop,
 			keyShiftSemitones,
-			pressT0Ms
+			pressT0Ms,
+			reanchorGeneration
 		);
 	} catch (error) {
 		// Reconcile the optimistic write to the STANDING intent, not to the value
@@ -1406,7 +1433,8 @@ async function _scheduleDeckSerial(
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {
 	const scheduleSession = _engineSession;
 	const isCurrent = (): boolean => scheduleSession === _engineSession;
@@ -1483,6 +1511,12 @@ async function _scheduleDeckSerial(
 	if (rt.processor !== processor) {
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
+	if (
+		reanchorGeneration !== undefined &&
+		!_reanchorOperationIsCurrent(deck, reanchorGeneration)
+	) {
+		return scheduledInputSec;
+	}
 	recordPerfTiming(row.kind, scheduleStages, deck, row.labels);
 	// LATENCY-03: rt.latencySec is a snapshot taken once at load, but Signalsmith
 	// re-reads both latency terms from WASM at the end of every configure() and
@@ -1520,7 +1554,7 @@ async function _scheduleDeckSerial(
 	});
 	st.transport_pending =
 		rt.presentation.presented_revision !== rt.presentation.desired_revision ||
-		rt.reanchorRampActive;
+		_reanchorRampPending(rt);
 	_commitPendingIfDue(deck);
 	_ensureRaf();
 	return scheduledInputSec;
@@ -1883,7 +1917,7 @@ function _publishPresentedTransport(
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
 	st.audible = observation.audible;
-	st.transport_pending = observation.transport_pending || rt.reanchorRampActive;
+	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
 		rt.presentation,
 		outputTimestamp.contextTime
@@ -2021,7 +2055,8 @@ function _clearLoadedTrackState(st: DeckState): void {
 	_rt[st.deck_id].slipAnchor = null;
 	_rt[st.deck_id].slipTempoBoundaries = [];
 	_rt[st.deck_id].keySyncBaselineSemitones = null;
-	_rt[st.deck_id].reanchorRampActive = false;
+	_rt[st.deck_id].reanchorOperationGeneration = 0;
+	_rt[st.deck_id].reanchorRampOwnerGeneration = null;
 	st.hot_cues = [];
 	st.has_rb_mapping = true;
 	st.anlz = null;
@@ -2155,8 +2190,27 @@ interface _SyncOptions {
  * plain schedule with no buffer/lead-in, or where the mix buffer bypasses stems/pitch under Master Tempo.
  */
 // `_scheduleDeck` for a sync path: explicit tempo/masterTempo (not `_schedulePress`'s "keep"), no loop/key, active always true.
-function _scheduleSyncDeck(deck: DeckId, when: number, inputSec: number, tempoRatio: number, masterTempoEnabled: boolean, pressT0Ms?: number): Promise<number> {
-	return _scheduleDeck(deck, when, inputSec, true, tempoRatio, masterTempoEnabled, undefined, undefined, pressT0Ms);
+function _scheduleSyncDeck(
+	deck: DeckId,
+	when: number,
+	inputSec: number,
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	pressT0Ms?: number,
+	reanchorGeneration?: number
+): Promise<number> {
+	return _scheduleDeck(
+		deck,
+		when,
+		inputSec,
+		true,
+		tempoRatio,
+		masterTempoEnabled,
+		undefined,
+		undefined,
+		pressT0Ms,
+		reanchorGeneration
+	);
 }
 
 async function _scheduleFollowerBackwardBlend(
@@ -2277,9 +2331,9 @@ async function _scheduleFollowerBackwardBlend(
  * A later master update must not observe an intermediate desired revision
  * while this follower's own schedule tail is still registering its ramp.
  *
- * `rt.reanchorRampActive` holds `transport_pending` true for this deck across
- * the whole ramp. Each step's own schedule revision becomes "presented" as
- * soon as real playback reaches it - which can happen before the *next*
+ * `reanchorRampOwnerGeneration` holds `transport_pending` true for this deck
+ * across the whole ramp. Each step's own schedule revision becomes "presented"
+ * as soon as real playback reaches it - which can happen before the *next*
  * step's own worklet round-trip finishes registering - so without this
  * override a caller polling `!transport_pending` could catch that gap and
  * read/measure position while the rate is still mid-transition.
@@ -2298,32 +2352,39 @@ async function _scheduleReanchoredFollower(
 	}
 	const fromTempoRatio = _tempoAt(deck, syncAt);
 	const { startPositionSec, steps: ramp } = planPhaseCompensatedReanchor(inputSec, fromTempoRatio, toTempoRatio);
-	const rt = _rt[deck];
-	rt.reanchorRampActive = true;
+	const generation = _bumpReanchorOperation(deck);
+	_claimReanchorRampOwner(deck, generation);
 	let scheduledInputSec: number;
 	try {
-		scheduledInputSec = await _scheduleSyncDeck(deck, syncAt, startPositionSec, ramp[0].tempoRatio, masterTempoEnabled, pressT0Ms);
+		scheduledInputSec = await _scheduleSyncDeck(
+			deck,
+			syncAt,
+			startPositionSec,
+			ramp[0].tempoRatio,
+			masterTempoEnabled,
+			pressT0Ms,
+			generation
+		);
 	} catch (error) {
-		rt.reanchorRampActive = false;
+		_releaseReanchorRampOwner(deck, generation);
 		throw error;
 	}
-	await _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled);
+	await _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled, generation);
 	return scheduledInputSec;
 }
 
 /** Remaining tail of an awaited re-anchor ramp. Position is deliberately left to
  * `_projectPositionAt` (the same projection every other tempo-only mutation
  * here uses) rather than re-stated from the plan, since only the rate is
- * changing at each step. Always clears `rt.reanchorRampActive` on the way
- * out, success or not - a superseded/abandoned ramp must not leave this
- * deck's `transport_pending` stuck true forever. */
+ * changing at each step. Owner-aware finalization clears `transport_pending`
+ * only for the generation that claimed it. */
 async function _continueTempoRamp(
 	deck: DeckId,
 	syncAt: number,
 	remainingSteps: readonly TempoRampStep[],
-	masterTempoEnabled: boolean
+	masterTempoEnabled: boolean,
+	generation: number
 ): Promise<void> {
-	const rt = _rt[deck];
 	try {
 		for (const step of remainingSteps) {
 			// Re-read ownership before EVERY step, never once at plan time. The
@@ -2333,18 +2394,23 @@ async function _continueTempoRamp(
 			// changing with both toggles off". Stop, do not fight the operator.
 			// #1112 made this tail awaited and its failures loud; ownership is
 			// the orthogonal half, so the schedule below stays exactly as it is.
-			if (!_syncOwnsFollowerTempo(deck)) return;
+			if (!_reanchorOperationIsCurrent(deck, generation) || !_syncOwnsFollowerTempo(deck)) return;
 			await _scheduleDeck(
 				deck,
 				syncAt + step.offsetSec,
 				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
 				true,
 				step.tempoRatio,
-				masterTempoEnabled
+				masterTempoEnabled,
+				undefined,
+				undefined,
+				undefined,
+				generation
 			);
+			if (!_reanchorOperationIsCurrent(deck, generation)) return;
 		}
 	} finally {
-		rt.reanchorRampActive = false;
+		_releaseReanchorRampOwner(deck, generation);
 	}
 }
 
@@ -3301,6 +3367,7 @@ class RbAudioEngine implements AudioEngine {
 			this.clearQuantizedLaunch(deck);
 			const { st, rt } = _requireLoaded(deck, 'pause');
 			if (!rt.desiredActive) return; // already paused is a valid state
+			_bumpReanchorOperation(deck);
 			if (_ctx === null) throw new Error('pause: audio graph not initialised');
 			// Unrefusable by construction: with no grid the memory cue lands on the
 			// exact pause point instead of a snapped one. A deck that cannot be
@@ -3807,6 +3874,7 @@ class RbAudioEngine implements AudioEngine {
 		const st = deckStates[deck];
 		st.beat_sync_enabled = enabled;
 		if (!enabled) {
+			_bumpReanchorOperation(deck);
 			st.sync_error = null;
 			// An explicit opt-out retires this deck's pending-follower records
 			// too. Without this, a deck marked pending against a gridless
@@ -4075,6 +4143,7 @@ class RbAudioEngine implements AudioEngine {
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])
 		);
+		if (previousMaster !== deck) _bumpReanchorOperation(deck);
 		_assignMaster(deck, 'manual');
 		try {
 			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
