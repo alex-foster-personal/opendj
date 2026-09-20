@@ -1,0 +1,43 @@
+name: Main control
+
+# Issue #3582: this is the current-main instrument. It runs every six hours,
+# dispatches ci.yml against the current main tip, and measures how old the
+# newest open PR base behind main is. A stale metric is a failed job and is
+# therefore alertable through the normal Actions failure notifications.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: main-control
+  cancel-in-progress: false
+
+jobs:
+  dispatch-fast-tier:
+    name: Dispatch fast tier on current main
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    steps:
+      - name: Dispatch CI against main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  measure-base-freshness:
+    name: Measure open PR base freshness
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Measure newest stale base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/pr_base_freshness.py --max-age-hours 12
