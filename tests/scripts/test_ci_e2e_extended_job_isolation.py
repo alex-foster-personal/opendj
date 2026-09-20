@@ -32,6 +32,8 @@ Regression lines:
     it, so a failure ships with no trace
   - if two e2e Playwright steps name the SAME ``--output`` dir then the second
     run clears the first's traces exactly as if neither had set one
+  - if a step's ``--output`` dir sits outside ``test-results/`` then the
+    end-of-job upload never ships it, so the trace exists and reaches nobody
   - if the nightly job stops wiring one of the four never-run configs then this
     file's guard assertions pass vacuously over a suite that no longer runs
 """
@@ -134,19 +136,26 @@ def test_every_e2e_suite_step_writes_to_its_own_output_dir() -> None:
     owner: dict[str, str] = {}
     missing: list[str] = []
     reused: list[str] = []
+    unreachable: list[str] = []
     for job in ("gate", NIGHTLY_JOB):
         for step in _suite_steps(job):
             where = f"{job}/{step.get('name')}"
             dirs = OUTPUT_DIR.findall(step.get("run") or "")
-            if len(dirs) != 1:
-                missing.append(f"{where}: {dirs}")
+            if not dirs:
+                missing.append(where)
                 continue
-            if dirs[0] in owner:
-                reused.append(f"{dirs[0]}: {owner[dirs[0]]} and {where}")
-                continue
-            owner[dirs[0]] = where
+            for one in dirs:
+                if one in owner:
+                    reused.append(f"{one}: {owner[one]} and {where}")
+                    continue
+                owner[one] = where
+                # The end-of-job upload globs apps/webui/frontend/test-results/**,
+                # so an output dir outside it is written and then never shipped.
+                if not one.startswith("test-results/"):
+                    unreachable.append(f"{where}: {one}")
     assert not missing, (
-        "Playwright steps that do not name exactly one --output dir, so they write into the "
-        f"shared default test-results/ and a later step clears them: {missing}"
+        "Playwright steps with no --output dir, so they write into the shared default "
+        f"test-results/ and a later step clears them: {missing}"
     )
     assert not reused, f"one --output dir claimed by two steps: {reused}"
+    assert not unreachable, f"output dirs outside the uploaded test-results/ tree: {unreachable}"
