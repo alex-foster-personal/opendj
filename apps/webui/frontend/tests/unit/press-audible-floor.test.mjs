@@ -663,6 +663,28 @@ test('a hot-cue jump against an already-playing synced follower carries the pres
 		/return _scheduleDeck\([^;]*\bpressT0Ms\b[^;]*\);/.test(syncDeck),
 		'_scheduleSyncDeck must spend the stamp it was given, not just receive it'
 	);
+	// ...and in the press slot specifically. Both parameters take a number, so
+	// `undefined, pressT0Ms` would send the stamp as reanchorGeneration, drop
+	// it from the press slot, and leave the assertion above green with nothing
+	// type checking would catch (P2 r4055758675). Pinned RELATIVE to the
+	// generation argument rather than by absolute position, so #3653's next
+	// equivalent -- another argument appended -- does not read as a regression.
+	const forwarded = syncDeck.slice(
+		syncDeck.indexOf('_scheduleDeck('),
+		syncDeck.indexOf(');', syncDeck.indexOf('_scheduleDeck('))
+	);
+	const pressAt = forwarded.indexOf('pressT0Ms');
+	const generationAt = forwarded.indexOf('reanchorGeneration');
+	assert.ok(
+		generationAt >= 0,
+		'reanchorGeneration must still be forwarded for this ordering guard to mean anything'
+	);
+	assert.ok(
+		pressAt >= 0 && pressAt < generationAt,
+		'the press stamp must occupy the press slot, ahead of reanchorGeneration, ' +
+			'not be swapped into the generation slot: ' +
+			forwarded.replace(/\s+/g, ' ')
+	);
 	// NEGATIVE CONTROL: 'master-max' fills reanchorDecks with the OTHER
 	// followers, never the pressed master - a re-anchored bystander must not
 	// inherit the operator's press just because it shares the same sync call.

@@ -136,3 +136,48 @@ def test_the_scanner_itself_finds_a_planted_breakage(tmp_path: Path) -> None:
         "if the scanner does not report a planted, known-broken pair then the "
         "repo-wide test above is protecting nothing - broken, got: " + repr(stranded)
     )
+
+
+def test_the_production_roots_actually_point_at_code() -> None:
+    """[if] the configured roots are empty or absent [then ⛔️] broken.
+
+    The canary above proves the scanner still works. It cannot prove the
+    scanner is still being POINTED anywhere, because it supplies its own roots.
+    Emptying `DEF_ROOTS` or `CALL_ROOTS` leaves the repo-wide test green on a
+    walk over nothing and leaves the canary green too, which was measured
+    directly (P2 r4055667602): both globals set to `()` and both tests passed.
+
+    So assert the configuration itself, and assert it has reach: a root that
+    exists but holds no Python is the same silent nothing as a missing one.
+    """
+    for label, roots in (("DEF_ROOTS", DEF_ROOTS), ("CALL_ROOTS", CALL_ROOTS)):
+        assert roots, f"{label} is empty, so the scan walks nothing - broken"
+        for root in roots:
+            assert root.is_dir(), f"{label} entry {root} is not a directory - broken"
+            assert next(root.rglob("*.py"), None) is not None, (
+                f"{label} entry {root} contains no Python, so it contributes "
+                "nothing to the scan - broken"
+            )
+    assert REPO / "apps" in DEF_ROOTS, (
+        "DEF_ROOTS no longer covers apps/, where the public signatures this "
+        "test exists for live - broken"
+    )
+
+
+def test_the_repo_wide_scan_reaches_a_known_underscored_signature() -> None:
+    """[if] the walk finds no underscored parameter at all [then ⛔️] broken.
+
+    The strongest available statement that the scan has reach, short of
+    planting a breakage in production code. `_stranded_callers` reports only
+    stranded PAIRS, and a clean repo correctly reports none -- so "zero" is
+    both the healthy answer and the answer a scan over nothing gives. The
+    underscored definitions it collects on the way are not zero, and must not
+    be: 17c7e99da alone left ten of them in `apps/`.
+    """
+    underscored = _underscored_params(DEF_ROOTS)
+
+    assert underscored, (
+        "the walk over apps/ found no leading-underscore parameter anywhere. "
+        "Either the roots stopped resolving or the AST shape changed; either "
+        "way the repo-wide test above is scanning nothing - broken"
+    )
