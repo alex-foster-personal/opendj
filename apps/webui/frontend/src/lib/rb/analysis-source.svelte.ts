@@ -20,7 +20,7 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { api, readApiErrorCode, readApiErrorStatus, unwrap } from '../api/client';
+import { ApiError, api, readApiErrorCode, readApiErrorStatus, unwrap } from '../api';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,
@@ -418,7 +418,11 @@ async function _rollBackFailedSwitch(
 		}
 		await unwrap(api.PUT('/api/v1/analysis/source', { body: rollbackBody }));
 	} catch (exc) {
-		if (readApiErrorStatus(exc) === 409 || readApiErrorCode(exc) === 'toggle_changed') {
+		if (
+			(exc instanceof ApiError && exc.status === 409) ||
+			readApiErrorStatus(exc) === 409 ||
+			readApiErrorCode(exc) === 'toggle_changed'
+		) {
 			console.error(
 				`[analysis-source] switch of ${lane} failed, but the daemon no longer holds ` +
 					`the '${attemptedToggle}' this switch itself set - someone else changed it ` +
