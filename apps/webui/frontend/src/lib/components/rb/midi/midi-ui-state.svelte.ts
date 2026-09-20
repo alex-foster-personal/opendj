@@ -47,8 +47,6 @@ import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 import { MIDI_ENABLED_KEY, persistMidiEnabled } from './midi-enabled-choice';
 
-export { MIDI_ENABLED_KEY } from './midi-enabled-choice';
-
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
 // run or every mapped action lands as "no action handler registered".
@@ -191,8 +189,7 @@ export async function requestMidiAccess(): Promise<void> {
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
-		persistMidiEnabled(true);
-		_syncMidiEnabledToDisk(true);
+		setMidiEnabledChoice(true);
 		// Controllers onboarded in the app live in the daemon, not the bundle.
 		// Loaded AFTER initMidi and in its own catch on purpose: a daemon that
 		// cannot serve them must not cost the user the builtin maps mid-set.
@@ -226,8 +223,7 @@ export async function requestMidiAccess(): Promise<void> {
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		persistMidiEnabled(false);
-		_syncMidiEnabledToDisk(false);
+		setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}

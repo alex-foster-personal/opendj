@@ -24,6 +24,7 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 let vite;
 let fmt; // midi-format.ts (pure)
 let uiState; // midi-ui-state.svelte.ts (rune module)
+let enabledChoice; // midi-enabled-choice.ts (the persisted opt-in, runtime-free)
 let webmidi; // webmidi.svelte.ts (for permission state assertions)
 let flx10; // ddj-flx10.ts (real map, for best-guess-hint transcription check)
 
@@ -42,6 +43,11 @@ before(async () => {
 	});
 	fmt = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-format.ts');
 	uiState = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
+	// The key lives in midi-enabled-choice.ts, which is its only home: prefs
+	// hydration reads it there without dragging in this module's MIDI runtime.
+	enabledChoice = await vite.ssrLoadModule(
+		'/src/lib/components/rb/midi/midi-enabled-choice.ts'
+	);
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 });
@@ -230,9 +236,9 @@ test('log pop-out open/close/minimize toggles are self-consistent', () => {
 test('midiEnabledPersisted reflects the localStorage flag', () => {
 	_installLocalStorage();
 	assert.equal(uiState.midiEnabledPersisted(), false);
-	globalThis.localStorage.setItem(uiState.MIDI_ENABLED_KEY, '1');
+	globalThis.localStorage.setItem(enabledChoice.MIDI_ENABLED_KEY, '1');
 	assert.equal(uiState.midiEnabledPersisted(), true);
-	globalThis.localStorage.removeItem(uiState.MIDI_ENABLED_KEY);
+	globalThis.localStorage.removeItem(enabledChoice.MIDI_ENABLED_KEY);
 	assert.equal(uiState.midiEnabledPersisted(), false);
 	_uninstallLocalStorage();
 });
@@ -245,7 +251,7 @@ test('midiEnabledPersisted is false (no throw) when localStorage is absent', () 
 test('a failed requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
 	// Simulate "user enabled MIDI before", then a reload where access fails
 	// (Node has no WebMIDI): the choice must be forgotten so we do not re-nag.
-	_installLocalStorage({ [uiState.MIDI_ENABLED_KEY]: '1' });
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	assert.equal(uiState.midiEnabledPersisted(), true);
 	await uiState.requestMidiAccess();
 	assert.notEqual(uiState.midiUi.lastError, null); // failed loudly
@@ -265,7 +271,7 @@ test('maybeAutoEnableMidi is a no-op when the user never opted in', async () => 
 test('maybeAutoEnableMidi re-runs the request when the choice was persisted', async () => {
 	// Persisted opt-in -> auto path calls requestMidiAccess, which fails loudly
 	// in Node (no WebMIDI) and clears the flag: proves the wire actually fired.
-	_installLocalStorage({ [uiState.MIDI_ENABLED_KEY]: '1' });
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	uiState.midiUi.lastError = null;
 	await uiState.maybeAutoEnableMidi();
 	assert.notEqual(uiState.midiUi.lastError, null);
