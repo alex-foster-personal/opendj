@@ -8,6 +8,8 @@ Never purge on absence. Real temp dirs, no mocked filesystem.
 from __future__ import annotations
 
 import json
+import struct
+import wave
 from pathlib import Path
 
 import pytest
@@ -29,8 +31,34 @@ pytestmark = pytest.mark.requirement("LIBM-41")
 
 
 def _mp3(folder: Path, name: str) -> Path:
+    """A file that EXISTS. Not playable audio, and it does not need to be.
+
+    The availability and index-disk paths below only walk the filesystem, so a
+    stub is the honest fixture there: nothing decodes it.
+    """
     path = folder / name
     path.write_bytes(b"ID3" + b"\x00" * 64)
+    return path
+
+
+def _playable_wav(folder: Path, name: str, seconds: float = 0.05) -> Path:
+    """A REAL wav, for the paths that import through folder ingest.
+
+    `c608101aa` (issue #780) added `probe_playable_audio` to folder import, and
+    it checks the file's magic against its extension -- a stub named `.mp3`
+    with no mp3 frame header is now rejected before any row is inserted, so the
+    two ingest tests below counted 0 tracks where they assert 2 and 1. The
+    fixtures had to become playable, which is what this file's own header
+    ("Real temp dirs, no mocked filesystem") already asked for. Wav because the
+    standard library can write one; there is no stdlib mp3 encoder.
+    """
+    path = folder / name
+    frames = int(44100 * seconds)
+    with wave.open(str(path), "w") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(struct.pack("<" + "h" * frames, *([0] * frames)))
     return path
 
 
@@ -105,8 +133,8 @@ def test_ingest_folder_empty_after_populate_refuses_and_keeps_rows(
 ) -> None:
     root = tmp_path / "lib"
     root.mkdir()
-    _mp3(root, "one.mp3")
-    _mp3(root, "two.mp3")
+    _playable_wav(root, "one.wav")
+    _playable_wav(root, "two.wav")
     conn = state_db.open_rw(tmp_path / "state.db")
     writer = StateWriter(conn, actor="test")
     try:
@@ -135,7 +163,7 @@ def test_ingest_folder_allow_mass_missing_writes_nothing_on_empty(
     """Override is a refusal bypass, not a purge. Ingest never tombstones."""
     root = tmp_path / "lib"
     root.mkdir()
-    _mp3(root, "one.mp3")
+    _playable_wav(root, "one.wav")
     conn = state_db.open_rw(tmp_path / "state.db")
     writer = StateWriter(conn, actor="test")
     try:
