@@ -99,7 +99,7 @@ def test_the_probe_finds_the_suite_steps() -> None:
 
 def test_the_guard_probe_can_answer_no() -> None:
     """if the guard probe is true for an unguarded step then it cannot see the defect"""
-    cases = (
+    cases: tuple[tuple[dict[str, object], bool], ...] = (
         ({}, False),  # no `if` at all: the default success() condition
         ({"if": "success()"}, False),  # spelled out, same meaning
         ({"if": "${{ !cancelled() }}"}, True),  # the repo's guard
