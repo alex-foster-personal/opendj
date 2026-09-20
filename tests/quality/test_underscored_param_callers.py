@@ -41,33 +41,41 @@ import ast
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-ROOTS = ("apps", "tests")
+DEF_ROOTS = (REPO / "apps",)
+CALL_ROOTS = (REPO / "apps", REPO / "tests")
 
 
-def _underscored_params() -> dict[str, set[str]]:
+def _underscored_params(roots: tuple[Path, ...]) -> dict[str, set[str]]:
     """Map function name -> bare names of its leading-underscore parameters."""
     found: dict[str, set[str]] = {}
-    for path in (REPO / "apps").rglob("*.py"):
-        try:
-            tree = ast.parse(path.read_text(errors="ignore"))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+    for root in roots:
+        for path in root.rglob("*.py"):
+            try:
+                tree = ast.parse(path.read_text(errors="ignore"))
+            except SyntaxError:
                 continue
-            args = node.args
-            for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
-                name = arg.arg
-                if name.startswith("_") and not name.startswith("__") and len(name) > 1:
-                    found.setdefault(node.name, set()).add(name[1:])
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                args = node.args
+                for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
+                    name = arg.arg
+                    if name.startswith("_") and not name.startswith("__") and len(name) > 1:
+                        found.setdefault(node.name, set()).add(name[1:])
     return found
 
 
-def _stranded_callers() -> list[str]:
-    params = _underscored_params()
+def _stranded_callers(
+    def_roots: tuple[Path, ...],
+    call_roots: tuple[Path, ...],
+    *,
+    relative_to: Path,
+) -> list[str]:
+    """Calls passing the bare name of a parameter its definition underscored."""
+    params = _underscored_params(def_roots)
     hits: set[str] = set()
-    for root in ROOTS:
-        for path in (REPO / root).rglob("*.py"):
+    for root in call_roots:
+        for path in root.rglob("*.py"):
             try:
                 tree = ast.parse(path.read_text(errors="ignore"))
             except SyntaxError:
@@ -84,14 +92,17 @@ def _stranded_callers() -> list[str]:
                     continue
                 for keyword in node.keywords:
                     if keyword.arg in params.get(name, set()):
-                        rel = path.relative_to(REPO)
-                        hits.add(f"{rel}:{node.lineno} {name}({keyword.arg}=...) but the def takes _{keyword.arg}")
+                        rel = path.relative_to(relative_to)
+                        hits.add(
+                            f"{rel}:{node.lineno} {name}({keyword.arg}=...) "
+                            f"but the def takes _{keyword.arg}"
+                        )
     return sorted(hits)
 
 
 def test_no_caller_passes_the_bare_name_of_an_underscored_parameter() -> None:
     """[if] a caller passes a keyword the def underscored [then ⛔️] broken"""
-    stranded = _stranded_callers()
+    stranded = _stranded_callers(DEF_ROOTS, CALL_ROOTS, relative_to=REPO)
     assert not stranded, (
         "if a caller passes the bare name of a parameter its definition "
         "underscored then that call raises TypeError when it runs, and no "
@@ -99,34 +110,29 @@ def test_no_caller_passes_the_bare_name_of_an_underscored_parameter() -> None:
     )
 
 
-def test_the_walk_actually_finds_a_known_bad_pair() -> None:
-    """[if] the walk reports zero on a planted breakage [then ⛔️] broken.
+def test_the_scanner_itself_finds_a_planted_breakage(tmp_path: Path) -> None:
+    """[if] the real scanner reports zero on a planted breakage [then ⛔️] broken.
 
-    Without this, a scan that silently stopped matching (an AST shape it no
-    longer recognises, a root that moved) would report a clean repo forever.
+    This drives `_stranded_callers` ITSELF over a planted tree rather than
+    re-implementing its check (P2 r4055614967). That distinction is the whole
+    value of the test: a scanner that stopped traversing -- an empty root, a
+    glob that no longer matches, an AST shape it no longer recognises -- would
+    report a clean repo forever, and a canary with its own private copy of the
+    logic would keep agreeing with it.
+
     The planted pair is the real shape of the `record.status` bug.
     """
-    source = (
+    (tmp_path / "planted.py").write_text(
         "def status(*, _state=None):\n"
         "    return 1\n"
         "\n"
         "def caller():\n"
         "    return status(state=object())\n"
     )
-    tree = ast.parse(source)
-    underscored: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
-                if arg.arg.startswith("_") and len(arg.arg) > 1:
-                    underscored.add(arg.arg[1:])
-    passed = {
-        keyword.arg
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        for keyword in node.keywords
-    }
-    assert underscored & passed == {"state"}, (
-        "if the detection shape no longer matches a known-broken pair then "
-        "the repo-wide test above is protecting nothing - broken"
+
+    stranded = _stranded_callers((tmp_path,), (tmp_path,), relative_to=tmp_path)
+
+    assert stranded == ["planted.py:5 status(state=...) but the def takes _state"], (
+        "if the scanner does not report a planted, known-broken pair then the "
+        "repo-wide test above is protecting nothing - broken, got: " + repr(stranded)
     )
