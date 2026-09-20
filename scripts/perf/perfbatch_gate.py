@@ -46,6 +46,8 @@ PIPELINE_PREFIXES: tuple[str, ...] = (
 PIPELINE_EXEMPT: tuple[str, ...] = (
     "apps/stems/live_capability.py",
     "apps/stems/live_capability_api.py",
+    # Backward-compat kwarg restore only (``root=``); no throughput/latency change.
+    "apps/lyrics/register_stems.py",
 )
 
 # AGT-01 (issue #2123): luna primer plus persona checker. Markdown lives under
