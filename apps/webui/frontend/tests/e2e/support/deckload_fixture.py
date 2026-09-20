@@ -649,11 +649,13 @@ def _assert_fixture_bpms(
     master_bpm = by_stable_id[_sid_for_filename(rows, FIXTURE_TRACKS[0].filename)].bpm
     if abs(fold_bpm - fold_track.bpm) > 4.0:
         raise SystemExit(
-            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, expected near {fold_track.bpm}"
+            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, "
+            f"expected near {fold_track.bpm}"
         )
     if abs(master_bpm - master_track.bpm) > 4.0:
         raise SystemExit(
-            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, expected near {master_track.bpm}"
+            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, "
+            f"expected near {master_track.bpm}"
         )
 
 
