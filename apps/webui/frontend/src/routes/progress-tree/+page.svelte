@@ -10,10 +10,9 @@
 	 * Errors are loud (daemon down renders a banner, stale data stays up,
 	 * never a blank page).
 	 *
-	 * The ledger is a LEGACY-DAEMON surface: apps/engine_core/app.py drops the
-	 * progress router. Served by the engine, this route renders one inert panel
-	 * and issues NOTHING -- no first load, no refresh timer, no visibility
-	 * refetch. It used to retry a 404 every 30 seconds instead.
+	 * Capability-gated: when the daemon is not identified yet, this route
+	 * renders one inert panel and issues nothing -- no first load, no refresh
+	 * timer, no visibility refetch.
 	 */
 	import { onMount, tick } from 'svelte';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
