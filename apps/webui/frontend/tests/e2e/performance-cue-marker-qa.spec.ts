@@ -53,7 +53,9 @@ async function _findCueTrack(request: APIRequestContext): Promise<CueTrack | nul
 		for (const row of rows.items) {
 			if (!row.file_exists) continue;
 			const response = await request.get(`${API_BASE}/api/v1/tracks/${row.stable_id}/anlz`);
-			if (!response.ok()) continue;
+			if (!response.ok()) {
+				throw new Error(`ANLZ lookup failed for ${row.stable_id}: HTTP ${response.status()}`);
+			}
 			const anlz = (await response.json()) as AnlzPayload;
 			const redCue = anlz.cues.find((cue) => cue.kind === 'memory');
 			const letterCue = anlz.cues.find((cue) => cue.slot !== null && !cue.is_loop);
@@ -95,7 +97,9 @@ function _expectedCueXRatio(cueMs: number, seekMs: number): number {
 }
 
 test('cue-laden track renders red waveform triangles and strip cue letters', async ({ page, request }, testInfo: TestInfo) => {
-	test.skip(IS_GENERATED_FIXTURE, 'generated fixture has no rekordbox ANLZ cues; run in real-library mode');
+	if (IS_GENERATED_FIXTURE) {
+		throw new Error('cue-marker-qa.real-library.spec.ts requires PERFORMANCE_E2E_FIXTURE=0 and a real library');
+	}
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	const track = await _findCueTrack(request);
