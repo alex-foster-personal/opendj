@@ -237,25 +237,15 @@ export function validateProgressResponse(raw: unknown): ProgressResponse {
 }
 
 /**
- * The fan-out ledger is a LEGACY-DAEMON surface, not an engine one.
+ * Typed GET for the fan-out ledger.
  *
- * `apps/engine_core/app.py` drops the progress router outright (the rebuild's
- * "no decoy ledger" rule: ledger writes go to the shared daemon only), so
- * `/api/v1/progress` is absent from the engine's OpenAPI document, and
- * therefore from the generated `paths` in `api-types.ts`, which has described
- * the engine since T5. This route still has to type its one GET, so it
- * declares that single path itself and views the shared client through it:
- * same instance, same base URL, same throwing middleware, only the path table
- * differs. The body stays `unknown` because `validateProgressResponse` below
- * is the real contract check, field by field.
+ * Progress routes were absent from the engine OpenAPI document until issue
+ * #2408; this route kept a local path declaration so the shared client could
+ * still type its one GET. After OpenAPI regen includes `/api/v1/progress`,
+ * consider deleting `LedgerPaths` and calling `api.GET` directly.
  *
- * Consequence worth stating plainly: this GET 404s when the SPA is served by
- * the engine. That is true today and was true before the contract switch --
- * the switch only stopped the types from hiding it. It is now also GATED: the
- * capability probe knows which daemon is serving, so `fetchProgress` refuses
- * before the request rather than discovering it again every 30 seconds. If the
- * ledger UI is retired from the rebuilt app, delete this declaration with the
- * route.
+ * Gated by the capability probe: `fetchProgress` refuses before the request
+ * when the daemon is not yet identified.
  */
 type LedgerPaths = {
 	'/api/v1/progress': {
