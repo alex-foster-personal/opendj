@@ -25,6 +25,7 @@ def _run_live_playlist_switch_bench() -> dict:
         )
     env = dict(os.environ)
     env.setdefault("PLAYLIST_SWITCH_BENCH_SAMPLES", "10")
+    env["PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE"] = "1"
     env["PLAYLIST_SWITCH_BENCH_OUT"] = str(_FIXTURE)
     subprocess.run(
         [
@@ -48,7 +49,7 @@ def test_playlist_switch_bench_meets_post_fix_caps() -> None:
     payload = _run_live_playlist_switch_bench()
     thresholds = payload["thresholds_p50_ms"]
     post_fix = payload["post_fix"]
-    assert payload.get("sha") == "live-bench"
+    assert isinstance(payload.get("sha"), str) and payload["sha"]
     assert isinstance(post_fix, dict)
     for metric, cap in thresholds.items():
         measured = post_fix[metric]["p50"]

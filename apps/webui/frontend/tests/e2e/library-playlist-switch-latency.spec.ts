@@ -6,7 +6,7 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	PLAYLIST_SWITCH_BENCH_ORIGIN,
@@ -20,10 +20,21 @@ import {
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const PLAYLIST_NAME = 'Perf 1k';
 
+const COMMITTED_FIXTURE_PATH = join(
+	FRONTEND_ROOT,
+	'tests',
+	'fixtures',
+	'library-playlist-switch-bench.json'
+);
+const DEFAULT_OUT_PATH = join(
+	FRONTEND_ROOT,
+	'test-results',
+	'library-playlist-switch-bench.json'
+);
+const OUT_PATH = resolve(process.env.PLAYLIST_SWITCH_BENCH_OUT ?? DEFAULT_OUT_PATH);
+const COMMITTED_RESOLVED = resolve(COMMITTED_FIXTURE_PATH);
+
 const SAMPLES = Number(process.env.PLAYLIST_SWITCH_BENCH_SAMPLES ?? 20);
-const OUT_PATH =
-	process.env.PLAYLIST_SWITCH_BENCH_OUT ??
-	join(FRONTEND_ROOT, 'tests', 'fixtures', 'library-playlist-switch-bench.json');
 
 interface PerfRingRow {
 	kind: string;
@@ -250,6 +261,16 @@ test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 		origin: PLAYLIST_SWITCH_BENCH_ORIGIN,
 		samples
 	};
+	if (
+		OUT_PATH === COMMITTED_RESOLVED &&
+		process.env.PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE !== '1'
+	) {
+		throw new Error(
+			`Refusing to write playlist-switch bench results to committed fixture ${COMMITTED_FIXTURE_PATH}. ` +
+				`Set PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE=1 to refresh the committed snapshot, ` +
+				`or omit PLAYLIST_SWITCH_BENCH_OUT to use the default gitignored path: ${DEFAULT_OUT_PATH}`
+		);
+	}
 	mkdirSync(dirname(OUT_PATH), { recursive: true });
 	writeFileSync(OUT_PATH, `${JSON.stringify(payload, null, 2)}\n`);
 
