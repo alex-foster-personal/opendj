@@ -77,6 +77,8 @@
 			return;
 		}
 
+		if (menu === null || !menu.contains(document.activeElement)) return;
+
 		const items = menuItems();
 		if (items.length === 0) return;
 
