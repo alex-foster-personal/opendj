@@ -49,6 +49,8 @@ Regression lines:
   - if the 9 data health lines cannot be flipped by their own fixture inputs
     then broken (the red-fixture run proves each verdict is driven by the
     input it names, not by ambient machine state)
+  - if a diagnostic pgrep argv embeds residents-watchdog.sh then the health
+    line stays PASS, else stop
   - if a launcher refusal or a provisioning fault counts on the FLEET FATAL line then
     broken (issue #1670: they have lines of their own, and the fleet line had no
     reachable green while they shared it). The split's own cases live in
@@ -443,6 +445,37 @@ def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
     # Unflipped: the backlog fixture still holds 5 actionable, under the
     # builder-freeze threshold of 15.
     assert verdicts["actionable PR backlog under builder-freeze threshold 15"] == "PASS"
+
+
+def _residents_watchdog_is_real_executor(args: str) -> bool:
+    """Mirror _m_no_residents live-branch argv classification (issue #3664)."""
+    if not args:
+        return False
+    if "pgrep" in args and "residents-watchdog" in args:
+        return False
+    if "grep" in args and "residents-watchdog" in args:
+        return False
+    return "residents-watchdog.sh" in args
+
+
+def test_no_residents_ignores_pgrep_self_match():
+    """If a diagnostic pgrep argv embeds residents-watchdog.sh then the health
+    line stays PASS, else stop."""
+    diagnostic = [
+        "pgrep -af residents-watchdog.sh",
+        "/usr/bin/bash -c pgrep -af residents-watchdog.sh",
+        "grep residents-watchdog /proc/*/cmdline",
+        "bash -O extglob -c ... pgrep -af residents-watchdog.sh ...",
+    ]
+    real = [
+        "bash /home/dev/jobs/residents-watchdog.sh",
+        "/home/dev/jobs/residents-watchdog.sh",
+        "bash -x ~/jobs/residents-watchdog.sh loop",
+    ]
+    for argv in diagnostic:
+        assert not _residents_watchdog_is_real_executor(argv), argv
+    for argv in real:
+        assert _residents_watchdog_is_real_executor(argv), argv
 
 
 def test_untimestamped_fatal_is_counted_but_never_windowed(tmp_path):
