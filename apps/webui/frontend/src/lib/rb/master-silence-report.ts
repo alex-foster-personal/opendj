@@ -204,7 +204,8 @@ export function noteMasterSilence(
  */
 function _noteOutputDeviceLiveness(playing: boolean, masterRms: number, tMs: number): void {
 	const outputLatencyDead =
-		audioOutputHealth.snapshot?.verdict === 'dead' || audioOutputHealth.snapshot?.verdict === 'dead-escalated';
+		audioOutputHealth.snapshot?.browser?.verdict === 'dead' ||
+		audioOutputHealth.snapshot?.browser?.verdict === 'dead-escalated';
 	_deviceLivenessState = foldDeviceLivenessSample(_deviceLivenessState, {
 		playing,
 		masterRms,
@@ -243,7 +244,7 @@ export function masterSilenceState(): {
 	verdict: SilenceVerdict;
 	at_ms: number | null;
 } {
-	const outputStalled = audioOutputHealth.snapshot?.verdict === 'stalled';
+	const outputStalled = audioOutputHealth.snapshot?.browser?.verdict === 'stalled';
 	if (
 		outputStalled &&
 		_lastMasterRms !== null &&

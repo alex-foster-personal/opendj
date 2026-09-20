@@ -10,10 +10,22 @@
  * quote a stale device from a closed context.
  */
 import type { AudioOutputSnapshot } from './audio-output-liveness';
+import type {
+	CombinedOutputHealthVerdict,
+	DeviceDeliverySnapshot
+} from './device-output-delivering';
 
-export const audioOutputHealth = $state<{ snapshot: AudioOutputSnapshot | null }>({ snapshot: null });
+export interface AudioOutputHealthSnapshot {
+	browser: AudioOutputSnapshot | null;
+	device: DeviceDeliverySnapshot | null;
+	combined_verdict: CombinedOutputHealthVerdict;
+}
 
-export function setAudioOutputHealth(snapshot: AudioOutputSnapshot): void {
+export const audioOutputHealth = $state<{ snapshot: AudioOutputHealthSnapshot | null }>({
+	snapshot: null
+});
+
+export function setAudioOutputHealth(snapshot: AudioOutputHealthSnapshot): void {
 	audioOutputHealth.snapshot = snapshot;
 }
 

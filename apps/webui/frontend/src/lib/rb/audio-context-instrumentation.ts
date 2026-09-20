@@ -27,7 +27,15 @@ import {
 	type OutputStallRecoveryHandle
 } from '$lib/rb/audio-output-stall-recovery';
 import { clearAudioOutputHealth, setAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import {
+	defaultDeviceProbeEffects,
+	installDeviceOutputProbe,
+	type DeviceOutputProbeHandle
+} from '$lib/rb/device-output-probe';
+import { registerDeviceOutputProbe } from '$lib/rb/device-output-probe-control';
+import { isMasterMuted } from '$lib/player/master-mute.svelte';
+import { masterSilenceState } from '$lib/rb/master-silence-report';
+import { recordPerfEvent, recordPerfTiming, subscribePerfEvents } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	flushWorkletAckWindow,
@@ -186,6 +194,9 @@ export function armXrunSentinel(ctx: AudioContext): void {
 let _outputRebind: OutputRebindHandle | null = null;
 let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
 let _outputStallRecovery: OutputStallRecoveryHandle | null = null;
+let _deviceOutputProbe: DeviceOutputProbeHandle | null = null;
+let _browserLivenessSnapshot: AudioOutputSnapshot | null = null;
+let _lastBrowserLivenessVerdict: AudioOutputSnapshot['verdict'] | null = null;
 let _watchdogDetach: (() => void) | null = null;
 let _recoveryEdgesDetach: (() => void) | null = null;
 
@@ -252,6 +263,11 @@ export function disarmContextInstrumentation(): void {
 	_outputLiveness?.uninstall();
 	_outputLiveness = null;
 	_outputStallRecovery = null;
+	_deviceOutputProbe?.uninstall();
+	registerDeviceOutputProbe(null);
+	_deviceOutputProbe = null;
+	_browserLivenessSnapshot = null;
+	_lastBrowserLivenessVerdict = null;
 	// Same identity-scoped teardown as the two above. The watchdog's recovery
 	// listener sits on a module-level fan-out, so one left behind by a route
 	// unmount answers every later device change by resuming a CLOSED context.
@@ -357,6 +373,36 @@ export function armAudioContextWatchdog(
 	// A context can be `running`, advancing, and rendering into a dead device
 	// (Wed 2 Sep 2026 18:33: no sound, every other signal green). The only
 	// device-level tell the browser gives is outputLatency staying 0.
+	_deviceOutputProbe?.uninstall();
+	_deviceOutputProbe = installDeviceOutputProbe(
+		() => _browserLivenessSnapshot,
+		isAnyDeckPlaying,
+		() => isMasterMuted(),
+		() => masterSilenceState().rms ?? 0,
+		{
+			...defaultDeviceProbeEffects(),
+			setInterval: (fn, ms) => setInterval(fn, ms),
+			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+			setTimeout: (fn, ms) => setTimeout(fn, ms),
+			clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+			now: () => performance.now(),
+			onUpdate: (merged) => setAudioOutputHealth(merged),
+			onToast: (message) => pushToast(message, 'error'),
+			addDeviceChangeListener: (fn) => {
+				const media =
+					typeof navigator !== 'undefined' && navigator.mediaDevices
+						? navigator.mediaDevices
+						: null;
+				media?.addEventListener('devicechange', fn);
+				return () => media?.removeEventListener('devicechange', fn);
+			},
+			subscribePerfEvents: (fn) =>
+				subscribePerfEvents((event) => {
+					fn(event.kind, event.message);
+				})
+		}
+	);
+	registerDeviceOutputProbe(_deviceOutputProbe);
 	_outputLiveness?.uninstall();
 	_outputLiveness = installOutputLiveness(
 		ctx,
@@ -369,7 +415,18 @@ export function armAudioContextWatchdog(
 			recoverOutput: () => {
 				void _outputStallRecovery?.recover();
 			},
-			onSnapshot: (snapshot) => setAudioOutputHealth(snapshot)
+			onSnapshot: (snapshot) => {
+				_browserLivenessSnapshot = snapshot;
+				const verdict = snapshot.verdict;
+				if (
+					(verdict === 'dead' || verdict === 'dead-escalated') &&
+					_lastBrowserLivenessVerdict !== verdict
+				) {
+					_deviceOutputProbe?.requestProbe('browser-liveness-dead');
+				}
+				_lastBrowserLivenessVerdict = verdict;
+				_deviceOutputProbe?.republish();
+			}
 		},
 		isAnyDeckPlaying
 	);

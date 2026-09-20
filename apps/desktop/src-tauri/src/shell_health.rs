@@ -12,6 +12,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const HEALTH_PATH: &str = "/api/v1/health";
 const RELAUNCH_PATH: &str = "/api/v1/relaunch";
+const OUTPUT_HEALTH_PATH: &str = crate::output_health::OUTPUT_HEALTH_PATH;
+const SWITCH_OUTPUT_PATH: &str = crate::output_health::SWITCH_OUTPUT_PATH;
 const SHELL_LOCK_FILE: &str = ".engine.shell.json";
 const READ_TIMEOUT: Duration = Duration::from_millis(750);
 
@@ -169,6 +171,20 @@ fn handle_connection(
             &mut stream,
             200,
             &serde_json::to_string(&body).unwrap_or_else(|_| "{}".into()),
+        );
+    }
+    if method == "GET" && path == OUTPUT_HEALTH_PATH {
+        return write_json_response(
+            &mut stream,
+            200,
+            &crate::output_health::probe_output_health_json(),
+        );
+    }
+    if method == "POST" && path == SWITCH_OUTPUT_PATH {
+        return write_json_response(
+            &mut stream,
+            200,
+            &crate::output_health::switch_output_json(),
         );
     }
     write_json_response(&mut stream, 404, r#"{"status":"not_found"}"#)

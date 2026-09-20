@@ -89,6 +89,8 @@ _STATUS_COMMAND = "status"
 _OPEN_COMMAND = "open"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
+_AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
+_AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
@@ -714,6 +716,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             from apps.opendj_cli import track_cli
 
             return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+        if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
+            from apps.opendj_cli import audio_output_health_cli
+
+            return audio_output_health_cli.run_health(rest, as_json=args.json, lock=args.lock)
+        if head == _AUDIO_SWITCH_OUTPUT_COMMAND:
+            from apps.opendj_cli import audio_output_health_cli
+
+            return audio_output_health_cli.run_switch_output(
+                rest, as_json=args.json, lock=args.lock
+            )
         orders, over = _plan(args, head, rest)
         return _dispatch(args, resolve_verified_origin(args.lock), orders, over)
     except InvocationError as error:

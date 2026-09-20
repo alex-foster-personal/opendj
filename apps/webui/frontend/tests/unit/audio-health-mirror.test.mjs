@@ -29,7 +29,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const NOW = 1_000_000;
 
-function snap(verdict, latencyMs = 12.5) {
+function browser(verdict, latencyMs = 12.5) {
 	return {
 		state: 'running',
 		output_latency_ms: latencyMs,
@@ -37,6 +37,38 @@ function snap(verdict, latencyMs = 12.5) {
 		sink_id: '',
 		output_context_time_s: 1,
 		verdict
+	};
+}
+
+function snap(combined, browserVerdict = combined === 'ok' ? 'ok' : combined, latencyMs = 12.5) {
+	const device =
+		combined === 'unknown'
+			? {
+					device_delivering: null,
+					verdict: 'unknown',
+					reason: 'no probe',
+					default_device_name: null,
+					default_device_uid: null,
+					io_cycles_advanced: null,
+					hal_overload_recent: null,
+					probe_available: false,
+					checked_at: '2026-09-20T00:00:00.000Z'
+				}
+			: {
+					device_delivering: combined === 'ok',
+					verdict: combined === 'ok' ? 'ok' : 'not_delivering',
+					reason: combined === 'not_delivering' ? 'stuck' : null,
+					default_device_name: 'Speakers',
+					default_device_uid: 'uid',
+					io_cycles_advanced: combined === 'ok',
+					hal_overload_recent: false,
+					probe_available: true,
+					checked_at: '2026-09-20T00:00:00.000Z'
+				};
+	return {
+		browser: browser(browserVerdict, latencyMs),
+		device,
+		combined_verdict: combined
 	};
 }
 
@@ -60,9 +92,22 @@ describe('buildAudioHealthMirror', () => {
 		build = mod.buildAudioHealthMirror;
 	});
 
+	it('mirrors the device probe block verbatim (issue #923)', () => {
+		const merged = snap('not_delivering', 'ok', 192);
+		const out = build({
+			snapshot: merged,
+			rms: 0.3,
+			rmsAgeMs: 50,
+			silenceVerdict: 'ok',
+			events: [],
+			nowMs: NOW
+		});
+		assert.deepEqual(out.device, merged.device);
+	});
+
 	it('keeps a fault that fired long past the toast lifetime', () => {
 		const out = build({
-			snapshot: snap('dead', 0),
+			snapshot: snap('not_delivering', 'dead', 0),
 			rms: 0,
 			rmsAgeMs: 100,
 			silenceVerdict: 'silent-while-playing',
@@ -86,7 +131,7 @@ describe('buildAudioHealthMirror', () => {
 
 	it('marks a stale meter not fresh even when its value looks loud', () => {
 		const out = build({
-			snapshot: snap('dead', 0),
+			snapshot: snap('not_delivering', 'dead', 0),
 			rms: 0.47,
 			rmsAgeMs: 30_000,
 			silenceVerdict: 'ok', events: [], nowMs: NOW
@@ -105,7 +150,7 @@ describe('buildAudioHealthMirror', () => {
 		assert.equal(out.display.cssClass, 'ok');
 		assert.equal(out.meter.fresh, true);
 		assert.equal(out.recent_faults.length, 0);
-		assert.equal(out.output.verdict, 'ok');
+		assert.equal(out.output.combined_verdict, 'ok');
 	});
 
 	it('treats an UNKNOWN meter age as not fresh', () => {
@@ -153,7 +198,7 @@ describe('buildAudioHealthMirror', () => {
 		// satisfies "no false faults" perfectly and publishes an empty timeline
 		// through an outage.
 		const out = build({
-			snapshot: snap('dead', 0), rms: 0, rmsAgeMs: 50, silenceVerdict: 'silent-while-playing',
+			snapshot: snap('not_delivering', 'dead', 0), rms: 0, rmsAgeMs: 50, silenceVerdict: 'silent-while-playing',
 			events: [
 				evt('audio-output-alive', 4000, 'output is back', 'info'),
 				evt('audio-output-dead', 3000, 'rendering into a dead output', 'error'),

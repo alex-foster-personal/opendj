@@ -151,7 +151,11 @@ honest bit: the connection was accepted, or it was not.
 its engine child every 5 s. A dead or zombie engine is reaped, shell-side
 `GET /api/v1/health` on the loopback port in `.engine.shell.json` reports
 `engine: dead`, the title bar shows `engine dead`, and the webview returns to
-the bootstrap fatal view instead of spinning on a dead port. Within 30 s the
+the bootstrap fatal view instead of spinning on a dead port. The same loopback
+server also exposes `GET /api/v1/audio/output-health` (macOS CoreAudio delivery
+probe) and `POST /api/v1/audio/switch-output` (cycle default output away and
+back). The engine proxies both at `/api/v1/audio/*` for agents and the
+performance UI. Off macOS they return `verdict: unknown` honestly. Within 30 s the
 shell either restarts on a fresh port (logging
 `engine restarted after exit code N` with a UTC timestamp) or shows fatal with
 Relaunch. When restart fails because the data-dir mount has under 1 GiB free,

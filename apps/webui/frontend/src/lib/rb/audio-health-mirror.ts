@@ -27,8 +27,9 @@
  * the thing worth testing is the decision, and a decision observable only by
  * waiting out a real timer is one nobody can test on a thrashing laptop.
  */
-import type { AudioOutputSnapshot } from './audio-output-liveness';
+import type { AudioOutputHealthSnapshot } from './audio-output-health.svelte';
 import { describeAudioOutputHealth, type AudioOutputHealthDisplay } from './audio-output-health-display';
+import type { DeviceDeliverySnapshot } from './device-output-delivering';
 import { audioHealthFaultSeverity, type PerfEvent } from './perf-event-log';
 import type { SilenceVerdict } from './silence-watchdog';
 
@@ -70,8 +71,10 @@ export interface AudioHealthFault {
 }
 
 export interface AudioHealthMirror {
-	/** The liveness reading behind the on-screen bar, or null when unbuilt. */
-	output: AudioOutputSnapshot | null;
+	/** The merged liveness reading behind the on-screen bar, or null when unbuilt. */
+	output: AudioOutputHealthSnapshot | null;
+	/** OS probe verdict mirrored verbatim for agent parity (issue #923). */
+	device: DeviceDeliverySnapshot | null;
 	/** Exactly the class and hover text the human sees, so the two cannot disagree. */
 	display: AudioOutputHealthDisplay;
 	meter: { rms: number | null; age_ms: number | null; fresh: boolean };
@@ -80,7 +83,7 @@ export interface AudioHealthMirror {
 }
 
 export interface AudioHealthInput {
-	snapshot: AudioOutputSnapshot | null;
+	snapshot: AudioOutputHealthSnapshot | null;
 	rms: number | null;
 	rmsAgeMs: number | null;
 	silenceVerdict: SilenceVerdict;
@@ -114,6 +117,7 @@ export function buildAudioHealthMirror(input: AudioHealthInput): AudioHealthMirr
 
 	return {
 		output: snapshot,
+		device: snapshot?.device ?? null,
 		display: describeAudioOutputHealth(snapshot),
 		meter: {
 			rms,

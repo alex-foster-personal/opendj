@@ -14,7 +14,7 @@ import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-function snap(verdict, latencyMs = 0) {
+function browser(verdict, latencyMs = 0) {
 	return {
 		state: 'running',
 		output_latency_ms: latencyMs,
@@ -22,6 +22,24 @@ function snap(verdict, latencyMs = 0) {
 		sink_id: '',
 		output_context_time_s: 1,
 		verdict
+	};
+}
+
+function snap(combined, browserVerdict = 'ok', latencyMs = 192) {
+	return {
+		browser: browser(browserVerdict, latencyMs),
+		device: {
+			device_delivering: combined === 'ok',
+			verdict: combined === 'ok' ? 'ok' : combined === 'not_delivering' ? 'not_delivering' : 'unknown',
+			reason: combined === 'not_delivering' ? 'device stuck' : combined === 'unknown' ? 'no probe' : null,
+			default_device_name: 'Speakers',
+			default_device_uid: 'uid',
+			io_cycles_advanced: combined === 'ok',
+			hal_overload_recent: false,
+			probe_available: combined !== 'unknown',
+			checked_at: '2026-09-20T00:00:00.000Z'
+		},
+		combined_verdict: combined
 	};
 }
 
@@ -38,35 +56,28 @@ describe('describeAudioOutputHealth', () => {
 	});
 
 	it('idle => dark, no error language', () => {
-		const d = mod.describeAudioOutputHealth(snap('idle'));
+		const d = mod.describeAudioOutputHealth(snap('idle', 'idle'));
 		assert.equal(d.cssClass, 'idle');
 		assert.ok(!/broken/i.test(d.title));
 	});
 
 	it('ok => accent colour, title states the measured latency', () => {
-		const d = mod.describeAudioOutputHealth(snap('ok', 192));
+		const d = mod.describeAudioOutputHealth(snap('ok', 'ok', 192));
 		assert.equal(d.cssClass, 'ok');
 		assert.ok(d.title.includes('192'), 'title should quote the measured latency');
 	});
 
-	it('dead => red, broken explainer, no reload instruction yet', () => {
-		const d = mod.describeAudioOutputHealth(snap('dead'));
+	it('not_delivering => red, broken explainer and toast', () => {
+		const d = mod.describeAudioOutputHealth(snap('not_delivering', 'ok', 192));
 		assert.equal(d.cssClass, 'dead');
 		assert.ok(/broken/i.test(d.title));
-		assert.ok(!/reload/i.test(d.title));
+		assert.ok(d.toast);
 	});
 
-	it('dead-escalated => red, adds the reload instruction', () => {
-		const d = mod.describeAudioOutputHealth(snap('dead-escalated'));
-		assert.equal(d.cssClass, 'dead');
-		assert.ok(/reload/i.test(d.title));
-	});
-
-	it('stalled => red, names frozen output position and recovery', () => {
-		const d = mod.describeAudioOutputHealth(snap('stalled'));
-		assert.equal(d.cssClass, 'dead');
-		assert.ok(/output position stopped advancing/i.test(d.title));
-		assert.ok(/recovery is running/i.test(d.title));
-		assert.ok(!/\bOK\b/.test(d.title));
+	it('unknown => dim bar, reason in title', () => {
+		const d = mod.describeAudioOutputHealth(snap('unknown', 'ok', 192));
+		assert.equal(d.cssClass, 'unknown');
+		assert.ok(/unknown/i.test(d.title));
+		assert.ok(/no probe/i.test(d.title));
 	});
 });
