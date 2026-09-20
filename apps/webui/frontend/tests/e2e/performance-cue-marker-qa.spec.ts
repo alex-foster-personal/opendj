@@ -23,6 +23,7 @@ interface Cue {
 	name: string | null;
 	slot: string | null;
 	is_loop: boolean;
+	out_ms: number | null;
 }
 
 interface AnlzPayload {
@@ -109,7 +110,7 @@ test('cue-laden track renders red waveform triangles and strip cue letters', asy
 	await _dispatch(page, { type: 'load', deck: 1, stable_id: track.stable_id });
 	const redCue = track.cues.find((cue) => cue.kind === 'memory');
 	if (redCue === undefined) throw new Error('cue track lost its discovered memory cue');
-	const letterCues = track.cues.filter((cue) => cue.slot !== null && !cue.is_loop);
+	const letterCues = track.cues.filter((cue) => cue.slot !== null && !(cue.is_loop && cue.out_ms !== null));
 	await expect(page.locator('[data-testid="deck-cue-letter-1"]')).toHaveCount(
 		letterCues.length
 	);
