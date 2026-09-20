@@ -92,6 +92,7 @@
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
+	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -135,6 +136,7 @@
 	);
 
 	function _selectAppMode(modeId: (typeof APP_MODES)[number]['id']): void {
+		if (modeId === 'library') markLibraryModeExit();
 		setAppMode(modeId);
 	}
 

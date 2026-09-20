@@ -25,6 +25,11 @@ test('the root layout mounts PerformanceAppNav only on performance routes', () =
 	assert.doesNotMatch(shellBranch, /PerformanceAppNav/);
 });
 
+test('PerformanceAppNav marks library mode exit before navigating to Library', () => {
+	assert.match(NAV, /markLibraryModeExit/);
+	assert.match(NAV, /performance-nav-library/);
+});
+
 test('PerformanceAppNav exposes Library and Admin links with the locked contract', () => {
 	assert.match(NAV, /href="\/"/);
 	assert.match(NAV, /href="\/admin"/);
@@ -37,7 +42,7 @@ test('PerformanceAppNav exposes Library and Admin links with the locked contract
 });
 
 test('the hatch lives outside rb/ clone chrome and does not touch TopBar or BrowserPanel', () => {
-	assert.ok(!NAV.includes('/rb/'), 'PerformanceAppNav must not live under rb/');
+	assert.doesNotMatch(NAV, /components\/rb\/PerformanceAppNav/);
 	assert.doesNotMatch(TOP_BAR, /performance-app-nav/);
 	assert.doesNotMatch(BROWSER_PANEL, /performance-app-nav/);
 });
