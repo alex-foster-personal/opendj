@@ -20,8 +20,8 @@ import pytest
 
 from apps.analysis import selection
 from apps.shared import paths
+from apps.sync.analysis_csv_live import _camelot_to_djay_key_idx
 from apps.sync.apply_analysis import (
-    _camelot_to_djay_key_idx,
     _csv_resolution_summary,
     _live_djay_db_path,
     _live_rb_db_path,
