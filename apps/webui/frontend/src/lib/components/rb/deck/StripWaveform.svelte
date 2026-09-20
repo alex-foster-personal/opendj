@@ -259,8 +259,10 @@
 			></span>
 		{/each}
 
-		{#each deck.hot_cues.filter((hc) => !(hc.is_loop && hc.out_ms !== null)) as hc (hc.slot)}
-			<span class="cue-letter" data-testid={`deck-cue-letter-${deck.deck_id}`} data-cue-slot={hc.slot} style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+		{#each deck.hot_cues as hc (hc.slot)}
+			{#if !(hc.is_loop && hc.out_ms !== null)}
+				<span class="cue-letter" data-testid={`deck-cue-letter-${deck.deck_id}`} data-cue-slot={hc.slot} style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+			{/if}
 		{/each}
 
 		{#if loopCue !== null}

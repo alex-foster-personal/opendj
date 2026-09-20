@@ -6,11 +6,6 @@ export interface DeferredClickScheduler {
 	cancel: (handle: number) => void;
 }
 
-const defaultScheduler: DeferredClickScheduler = {
-	schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
-	cancel: (handle) => window.clearTimeout(handle)
-};
-
 export interface DeferredClickGuard {
 	schedule: (callback: () => void) => void;
 	cancel: () => void;
@@ -19,29 +14,33 @@ export interface DeferredClickGuard {
 
 /** Delay a single-click callback so a double-click can cancel it first. */
 export function createDeferredClickGuard(
-	scheduler: DeferredClickScheduler = defaultScheduler,
+	scheduler?: DeferredClickScheduler,
 	delayMs = KNOB_SINGLE_CLICK_DELAY_MS
 ): DeferredClickGuard {
+	const resolvedScheduler = scheduler ?? {
+		schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+		cancel: (handle) => window.clearTimeout(handle)
+	};
 	let pending: number | null = null;
 
 	return {
 		schedule(callback) {
 			if (pending !== null) {
-				scheduler.cancel(pending);
+				resolvedScheduler.cancel(pending);
 			}
-			pending = scheduler.schedule(() => {
+			pending = resolvedScheduler.schedule(() => {
 				pending = null;
 				callback();
 			}, delayMs);
 		},
 		cancel() {
 			if (pending === null) return;
-			scheduler.cancel(pending);
+			resolvedScheduler.cancel(pending);
 			pending = null;
 		},
 		dispose() {
 			if (pending === null) return;
-			scheduler.cancel(pending);
+			resolvedScheduler.cancel(pending);
 			pending = null;
 		}
 	};

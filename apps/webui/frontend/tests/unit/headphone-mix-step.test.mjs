@@ -19,15 +19,6 @@ before(async () => {
 	committedMixDirection = headphoneMix.committedMixDirection;
 	stepHeadphoneMix = headphoneMix.stepHeadphoneMix;
 
-	// deferred-click.ts builds its default scheduler at module init; stub window
-	// before bundling so Node unit tests do not throw ReferenceError.
-	if (globalThis.window === undefined) {
-		globalThis.window = {
-			setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-			clearTimeout: (handle) => clearTimeout(handle)
-		};
-	}
-
 	const deferredClick = await loadTypeScriptModule('src/lib/rb/deferred-click.ts');
 	createDeferredClickGuard = deferredClick.createDeferredClickGuard;
 });
