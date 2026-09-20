@@ -435,6 +435,43 @@ test('every rendered knob carries a registry id', () => {
 	}
 });
 
+test('only the headphone MIX knob opts into delayed single-click stepping', () => {
+	const headphone = readFileSync(`${MIXER}/HeadphoneCluster.svelte`, 'utf8');
+	const channel = readFileSync(`${MIXER}/ChannelStrip.svelte`, 'utf8');
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+
+	assert.match(headphone, /onsingleclick=\{handleMixSingleClick\}/);
+	assert.match(headphone, /stepHeadphoneMix/);
+	assert.doesNotMatch(channel, /onsingleclick=/);
+	assert.match(knob, /createDeferredClickGuard/);
+	assert.match(knob, /handleDblClick/);
+	assert.match(knob, /setKnobFromDrag/);
+	assert.match(knob, /pointerMoved/);
+});
+
+test('pointer jitter inside the click slop is a click, travel past it is a drag', () => {
+	const slop = knobs.KNOB_CFG.clickSlopPx;
+	assert.ok(slop >= 2 && slop <= 8, `click slop ${slop}px is outside a sane 2..8px band`);
+	assert.equal(knobs.pointerTravelIsDrag(0, 0), false,
+		'if a pointermove with no travel counts as a drag then a still click never steps MIX - broken');
+	assert.equal(knobs.pointerTravelIsDrag(1, -1), false,
+		'if one pixel of mouse or touch jitter counts as a drag then the 1/3 step is lost - broken');
+	assert.equal(knobs.pointerTravelIsDrag(slop, 0), false);
+	assert.equal(knobs.pointerTravelIsDrag(0, slop + 1), true,
+		'if travel past the slop is still a click then a short drag also fires the step - broken');
+	assert.equal(knobs.pointerTravelIsDrag(-(slop + 1), 0), true);
+});
+
+test('the Knob classifies drags by travel and only steps on a primary click', () => {
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+	assert.match(knob, /pointerTravelIsDrag\(/,
+		'if Knob.svelte marks any pointermove as a drag then jitter swallows the MIX click - broken');
+	assert.match(knob, /onsingleclick !== undefined && insideSlop/,
+		'if the click slop applies to every knob then 1-4 px fine adjustments on EQ and GAIN are discarded - broken');
+	assert.match(knob, /e\.button !== 0/,
+		'if a right or middle click starts a gesture then a context-menu click steps MIX - broken');
+});
+
 test('knob ids are unique across the whole mixer', () => {
 	// Two dials sharing an id would silently drive each other.
 	const roles = ['trim', 'high', 'mid', 'low', 'filter'];

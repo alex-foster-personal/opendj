@@ -20,6 +20,9 @@ export const KNOB_CFG = {
 	scrollStep: 0.028,
 	/** Arrow-key nudge. */
 	keyStep: 0.02,
+	/** Pointer travel (px, per axis) a press may wobble and still be a click.
+	 * Mouse jitter and touch contact motion both emit pointermove with no intent. */
+	clickSlopPx: 4,
 	/**
 	 * Extra boost applied to the *rising* side of a linked pair, as a
 	 * fraction of |delta|. Keeps bass energy from dipping while the cut/boost
@@ -27,6 +30,11 @@ export const KNOB_CFG = {
 	 */
 	linkStagger: 0.18
 } as const;
+
+/** True once a press has travelled past the click slop on either axis. */
+export function pointerTravelIsDrag(dx: number, dy: number): boolean {
+	return Math.abs(dx) > KNOB_CFG.clickSlopPx || Math.abs(dy) > KNOB_CFG.clickSlopPx;
+}
 
 // ----- types -----
 
