@@ -139,7 +139,7 @@ class DirectR2Source:
         return stem_index.refresh_error(data_dir)
 
     def bundle_remote_size(
-        self, file_hashes: dict[str, str], *, _stable_id: str
+        self, file_hashes: dict[str, str], *, stable_id: str
     ) -> int | None:
         total = 0
         for digest in file_hashes.values():

@@ -167,12 +167,17 @@ def register_pair(
     model_version: str,
     source_path: str,
     storage: RegisterPairStorage | None = None,
+    root: Path | None = None,
 ) -> Path:
     """Write ONE canonical roformer2 bundle and verify it with the strict
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
-    store = storage or RegisterPairStorage()
+    if storage is not None and root is not None:
+        raise TypeError("register_pair accepts storage= or root=, not both")
+    if storage is None:
+        storage = RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
+    store = storage
     root = store.root
     s3 = store.s3
     cfg = store.cfg
