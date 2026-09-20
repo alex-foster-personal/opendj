@@ -58,6 +58,7 @@ from apps.engine_core.setup.schemas import (
     SetupStatusOut,
     StemsSetupOut,
     StemTierOut,
+    normalize_setup_folder_path,
 )
 
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -359,7 +360,8 @@ def detect_folder(
     """
     from apps.shared import fs_access
 
-    target = Path(path).expanduser()
+    canon = normalize_setup_folder_path(path)
+    target = Path(canon)
     probe = fs_access.probe_readable(target)
     audio = 0
     placeholders = 0
@@ -371,7 +373,7 @@ def detect_folder(
         audio = len(found)
         sample = [str(entry.path) for entry in found[:SCAN_SAMPLE_SIZE]]
     return FolderScanOut(
-        path=str(target),
+        path=canon,
         exists=probe.exists,
         readable=probe.readable,
         denied=probe.denied,

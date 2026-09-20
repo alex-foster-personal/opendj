@@ -24,6 +24,9 @@
  *   ✔︎ 🎯 every load path records the server's message on failure and leaves
  *     the previous data alone.
  *     [if] a failed refresh blanks an already-rendered detection [then ⛔️] broken
+ *   ✔︎ 🎯 beginFolderImport() posts every validated non-empty folder row, not
+ *     only the first.
+ *     [if] two importable rows exist [then] folders[] has both [else ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -35,6 +38,7 @@ import {
 	getFolderCandidates,
 	getSetupStatus,
 	isFatalBlocker,
+	normalizeSetupFolderPath,
 	scanFolder,
 	setDismissed,
 	setupRefusal,
@@ -73,6 +77,17 @@ export type ImportSource = 'rekordbox' | 'folder';
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
 
 const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
+
+/** One folder path row on the first-run folder-import step. */
+export type FolderRow = {
+	id: string;
+	path: string;
+	scan: FolderScan | null;
+};
+
+function _newFolderRow(): FolderRow {
+	return { id: crypto.randomUUID(), path: '', scan: null };
+}
 
 // ------------------------------------------------------------- pure rules
 
@@ -160,8 +175,22 @@ export function fatalBlockers(detection: RekordboxDetection | null): string[] {
 export interface AdvanceContext {
 	source: ImportSource;
 	detection: RekordboxDetection | null;
-	folderScan: FolderScan | null;
+	folderRows: FolderRow[];
 	job: Job | null;
+}
+
+/** Non-empty folder rows that passed check and are importable, normalized and deduped. */
+export function importableFolderPathsFromRows(rows: FolderRow[]): string[] {
+	const paths: string[] = [];
+	const seen = new Set<string>();
+	for (const row of rows) {
+		if (row.path.trim() === '' || !folderIsImportable(row.scan)) continue;
+		const canon = normalizeSetupFolderPath(row.path);
+		if (seen.has(canon)) continue;
+		seen.add(canon);
+		paths.push(canon);
+	}
+	return paths;
 }
 
 /**
@@ -177,12 +206,28 @@ export interface AdvanceContext {
  */
 export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
 	if (step === 'detect' && ctx.source === 'folder') {
-		if (ctx.folderScan === null) return 'no folder has been checked yet';
-		if (ctx.folderScan.denied) {
-			return 'macOS is blocking that folder; grant access and check again';
+		const nonEmpty = ctx.folderRows.filter((row) => row.path.trim() !== '');
+		const anyChecked = ctx.folderRows.some((row) => row.scan !== null);
+		if (!anyChecked) return 'no folder has been checked yet';
+
+		for (const row of nonEmpty) {
+			if (row.scan === null) return `check ${row.path.trim()} first`;
+			if (row.scan.denied) {
+				return 'macOS is blocking that folder; grant access and check again';
+			}
+			if (!folderIsImportable(row.scan)) {
+				return `nothing importable in ${row.scan.path}`;
+			}
 		}
-		if (!folderIsImportable(ctx.folderScan)) {
-			return `nothing importable in ${ctx.folderScan.path}`;
+
+		const importable = importableFolderPathsFromRows(ctx.folderRows);
+		if (importable.length === 0) return 'no folder has been checked yet';
+
+		const normalized = nonEmpty
+			.filter((row) => folderIsImportable(row.scan))
+			.map((row) => normalizeSetupFolderPath(row.path));
+		if (new Set(normalized).size !== normalized.length) {
+			return 'remove duplicate folder paths before importing';
 		}
 		return null;
 	}
@@ -224,9 +269,8 @@ class SetupWizard {
 	source = $state<ImportSource>('rekordbox');
 	status = $state<SetupStatus | null>(null);
 	detection = $state<RekordboxDetection | null>(null);
-	/** The folder the operator typed, and what the daemon found in it. */
-	folderPath = $state('');
-	folderScan = $state<FolderScan | null>(null);
+	/** Folder-import rows: path input plus the daemon scan for that path. */
+	folderRows = $state<FolderRow[]>([_newFolderRow()]);
 	/** The id of the job this wizard started. The row itself lives in
 	 * jobsStore; duplicating it here would give the UI two truths. */
 	jobId = $state<string | null>(null);
@@ -269,7 +313,7 @@ class SetupWizard {
 		const why = backRefusal(this.step, {
 			source: this.source,
 			detection: this.detection,
-			folderScan: this.folderScan,
+			folderRows: this.folderRows,
 			job
 		});
 		if (why !== null) {
@@ -372,8 +416,28 @@ class SetupWizard {
 	useSource(source: ImportSource): void {
 		this.source = source;
 		this.error = null;
-		if (source === 'rekordbox') this.folderScan = null;
-		if (source === 'folder') void this.loadFolderCandidates();
+		if (source === 'rekordbox') this.resetFolderRows();
+		if (source === 'folder') {
+			this.resetFolderRows();
+			void this.loadFolderCandidates();
+		}
+	}
+
+	resetFolderRows(): void {
+		this.folderRows = [_newFolderRow()];
+	}
+
+	addFolderRow(): void {
+		this.folderRows = [...this.folderRows, _newFolderRow()];
+	}
+
+	removeFolderRow(id: string): void {
+		if (this.folderRows.length <= 1) return;
+		this.folderRows = this.folderRows.filter((row) => row.id !== id);
+	}
+
+	importableFolderPaths(): string[] {
+		return importableFolderPathsFromRows(this.folderRows);
 	}
 
 	/** Load existing music folders worth suggesting. Fires once per wizard-open. */
@@ -403,28 +467,44 @@ class SetupWizard {
 		}
 	}
 
-	/** Look inside the typed folder. Never imports anything. */
-	async checkFolder(path: string): Promise<void> {
+	/** Look inside the typed folder row. Never imports anything. */
+	async checkFolderRow(id: string): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
 			return;
 		}
-		const trimmed = path.trim();
+		const row = this.folderRows.find((entry) => entry.id === id);
+		if (row === undefined) return;
+		const trimmed = row.path.trim();
 		if (trimmed === '') {
 			this.error = 'type a folder path first';
 			return;
 		}
+		const normalized = normalizeSetupFolderPath(trimmed);
 		this.busy = true;
 		try {
-			this.folderPath = trimmed;
-			this.folderScan = await scanFolder(trimmed);
+			const scan = await scanFolder(normalized);
+			this.folderRows = this.folderRows.map((entry) =>
+				entry.id === id ? { ...entry, path: normalized, scan } : entry
+			);
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/** Fill the first empty row, or the last row when every row has a path. */
+	applyFolderSuggestion(path: string): void {
+		const empty = this.folderRows.find((row) => row.path.trim() === '');
+		const target = empty ?? this.folderRows[this.folderRows.length - 1];
+		if (target === undefined) return;
+		this.folderRows = this.folderRows.map((row) =>
+			row.id === target.id ? { ...row, path, scan: null } : row
+		);
+		void this.checkFolderRow(target.id);
 	}
 
 	/** Enqueue the folder import, advancing only once the server accepted it. */
@@ -434,13 +514,14 @@ class SetupWizard {
 			this.error = refusal;
 			return;
 		}
-		if (!folderIsImportable(this.folderScan)) {
-			this.error = 'check a folder with audio files in it first';
+		const folders = this.importableFolderPaths();
+		if (folders.length === 0) {
+			this.error = 'check at least one folder with audio files in it';
 			return;
 		}
 		this.busy = true;
 		try {
-			const job = await startFolderImport({ folders: [this.folderPath] });
+			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
 			this.error = null;
 			this.goTo('progress');
@@ -528,8 +609,7 @@ class SetupWizard {
 		this.source = 'rekordbox';
 		this.status = null;
 		this.detection = null;
-		this.folderPath = '';
-		this.folderScan = null;
+		this.resetFolderRows();
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;

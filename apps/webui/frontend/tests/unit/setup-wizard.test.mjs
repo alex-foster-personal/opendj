@@ -103,6 +103,14 @@ function folderScan(overrides = {}) {
 	};
 }
 
+function folderRow(path, scan = null, id = 'row-1') {
+	return { id, path, scan };
+}
+
+function emptyFolderRows() {
+	return [folderRow('', null)];
+}
+
 function job(overrides = {}) {
 	return {
 		id: 'job-setup-1',
@@ -181,7 +189,7 @@ test('next and previous clamp at both ends rather than falling off', () => {
 });
 
 test('detect refuses Next until detection has answered', () => {
-	const ctx = { source: 'rekordbox', detection: null, folderScan: null, job: null };
+	const ctx = { source: 'rekordbox', detection: null, folderRows: emptyFolderRows(), job: null };
 	assert.match(mod.advanceRefusal('detect', ctx), /has not answered/);
 });
 
@@ -189,7 +197,7 @@ test('a fatal blocker refuses Next and names itself', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
-		folderScan: null,
+		folderRows: emptyFolderRows(),
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /rekordbox_not_found/);
@@ -201,7 +209,7 @@ test('a missing share dir warns but does NOT block the import', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_share_missing'] }),
-		folderScan: null,
+		folderRows: emptyFolderRows(),
 		job: null
 	};
 	assert.equal(mod.advanceRefusal('detect', ctx), null);
@@ -214,7 +222,7 @@ test('a rekordbox blocker never blocks the FOLDER branch', () => {
 	const ctx = {
 		source: 'folder',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
-		folderScan: folderScan(),
+		folderRows: [folderRow('/Users/dj/Music', folderScan())],
 		job: null
 	};
 	assert.equal(mod.advanceRefusal('detect', ctx), null);
@@ -224,7 +232,12 @@ test('the folder branch refuses a denied folder and says to grant access', () =>
 	const ctx = {
 		source: 'folder',
 		detection: null,
-		folderScan: folderScan({ denied: true, readable: false, audio_files: 0 }),
+		folderRows: [
+			folderRow(
+				'/Users/dj/Music',
+				folderScan({ denied: true, readable: false, audio_files: 0 })
+			)
+		],
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /blocking that folder/);
@@ -234,14 +247,40 @@ test('the folder branch refuses a readable folder with nothing in it', () => {
 	const ctx = {
 		source: 'folder',
 		detection: null,
-		folderScan: folderScan({ audio_files: 0 }),
+		folderRows: [folderRow('/Users/dj/Music', folderScan({ audio_files: 0 }))],
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /nothing importable/);
 });
 
+test('the folder branch allows one importable row and one empty row', () => {
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: [
+			folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+			folderRow('', null, 'row-2')
+		],
+		job: null
+	};
+	assert.equal(mod.advanceRefusal('detect', ctx), null);
+});
+
+test('the folder branch refuses a non-empty row that was not checked', () => {
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: [
+			folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+			folderRow('/Users/dj/Other', null, 'row-2')
+		],
+		job: null
+	};
+	assert.match(mod.advanceRefusal('detect', ctx), /check \/Users\/dj\/Other first/);
+});
+
 test('progress refuses Next while the import is still live', () => {
-	const ctx = { source: 'rekordbox', detection: detection(), folderScan: null };
+	const ctx = { source: 'rekordbox', detection: detection(), folderRows: emptyFolderRows() };
 	assert.match(
 		mod.advanceRefusal('progress', { ...ctx, job: job({ status: 'running' }) }),
 		/is running/
@@ -411,22 +450,24 @@ test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async
 	assert.deepEqual(body, { refresh_decrypt: true });
 });
 
-test('checkFolder scans without importing, and carries the path as a query', async () => {
+test('checkFolderRow scans without importing, and carries the path as a query', async () => {
 	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+	wizard.folderRows = [folderRow('  /Users/dj/Music  ')];
 
-	await wizard.checkFolder('  /Users/dj/Music  ');
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 
 	const url = new URL(requests[0].url);
 	assert.equal(url.pathname, '/api/v1/setup/detect/folder');
 	assert.equal(url.searchParams.get('path'), '/Users/dj/Music');
 	assert.equal(requests[0].method, 'GET');
-	assert.equal(wizard.folderScan.audio_files, 12);
-	assert.equal(wizard.folderPath, '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/Music');
 });
 
-test('checkFolder refuses an empty path without issuing a request', async () => {
+test('checkFolderRow refuses an empty path without issuing a request', async () => {
 	routeFetch({});
-	await wizard.checkFolder('   ');
+	wizard.folderRows = [folderRow('   ')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	assert.equal(requests.length, 0);
 	assert.match(wizard.error, /type a folder path/);
 });
@@ -448,11 +489,41 @@ test('beginFolderImport posts the folder and advances', async () => {
 		}
 	});
 
-	await wizard.checkFolder('/Users/dj/Music');
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	await wizard.beginFolderImport();
 
 	assert.deepEqual(body, { folders: ['/Users/dj/Music'] });
 	assert.equal(wizard.step, 'progress');
+});
+
+test('beginFolderImport posts every validated folder row', async () => {
+	let body;
+	routeFetch({
+		'/api/v1/setup/detect/folder': (request, url) => {
+			const path = url.searchParams.get('path');
+			return jsonResponse(
+				folderScan({
+					path,
+					sample: [`${path}/a.wav`]
+				})
+			);
+		},
+		'/api/v1/setup/import/folder': async (request) => {
+			body = await request.clone().json();
+			return jsonResponse(job({ kind: 'setup.import-rekordbox' }), 202);
+		}
+	});
+
+	wizard.folderRows = [
+		folderRow('/Users/dj/Music', null, 'row-1'),
+		folderRow('/Users/dj/Other', null, 'row-2')
+	];
+	await wizard.checkFolderRow('row-1');
+	await wizard.checkFolderRow('row-2');
+	await wizard.beginFolderImport();
+
+	assert.deepEqual(body, { folders: ['/Users/dj/Music', '/Users/dj/Other'] });
 });
 
 test('a 403 on the folder import keeps the grant instructions verbatim', async () => {
@@ -470,7 +541,8 @@ test('a 403 on the folder import keeps the grant instructions verbatim', async (
 			)
 	});
 
-	await wizard.checkFolder('/Users/dj/Music');
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	await wizard.beginFolderImport();
 
 	assert.match(wizard.error, /Open System Settings/);
@@ -555,6 +627,11 @@ test('folderIsImportable needs a readable folder with something in it', () => {
 	assert.equal(mod.folderIsImportable(folderScan()), true);
 });
 
+test('normalizeSetupFolderPath strips a trailing slash but preserves root', () => {
+	assert.equal(mod.normalizeSetupFolderPath('/Users/dj/Music/'), '/Users/dj/Music');
+	assert.equal(mod.normalizeSetupFolderPath('/'), '/');
+});
+
 // ------------------------------------------------------------- capability gate
 
 test('a legacy daemon issues NO setup request and says why', async () => {
@@ -564,7 +641,8 @@ test('a legacy daemon issues NO setup request and says why', async () => {
 	try {
 		await wizard.load();
 		await wizard.redetect();
-		await wizard.checkFolder('/Users/dj/Music');
+		wizard.folderRows = [folderRow('/Users/dj/Music')];
+		await wizard.checkFolderRow(wizard.folderRows[0].id);
 		await wizard.beginImport();
 		await wizard.beginFolderImport();
 		await wizard.skip();
