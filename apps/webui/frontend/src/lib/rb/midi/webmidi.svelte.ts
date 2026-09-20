@@ -592,6 +592,13 @@ export function getDeviceMap(deviceId: string): DeviceMap | null {
 	return _resolved.get(deviceId)?.map ?? null;
 }
 
+/** TEST-ONLY: is a handler currently registered? Lets the glue's teardown
+ * be asserted on the state webmidi actually holds, rather than only on the
+ * absence of a throw from a later attach. */
+export function _actionHandlerRegisteredForTests(): boolean {
+	return _actionHandler !== null;
+}
+
 /** TEST-ONLY: reset all module state between unit tests. */
 export function _resetMidiForTests(): void {
 	for (const dev of _resolved.values()) dev.input.onmidimessage = null;

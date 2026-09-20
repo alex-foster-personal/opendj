@@ -13,6 +13,7 @@
 //   if mixer_global master 0.5 doesn't hit mixerState.master then broken
 //   if eq action without band doesn't throw then broken
 //   if ledTriggerActive(deck_loaded) is true on an empty deck then broken
+//   if the glue teardown leaves the action handler registered then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -488,5 +489,42 @@ test('unregisterDeviceMap removes one tier and reveals the map it shadowed', () 
 test('unregisterDeviceMap returns false rather than pretending it removed one', () => {
 	webmidi._resetMidiForTests();
 	assert.equal(webmidi.unregisterDeviceMap('NeverRegistered', 'installed'), false);
+	webmidi._resetMidiForTests();
+});
+
+// A MIDI-enabled user who leaves /performance and comes back is the whole
+// point of these two: detachMidiGlueForRouteUnmount() drops the glue, and
+// the next requestMidiAccess() re-attaches. unregisterActionHandler()'s own
+// docstring says the teardown calls it, and for a while nothing did, so the
+// second attach hit registerActionHandler()'s already-registered throw. That
+// throw surfaces inside requestMidiAccess()'s catch, which also runs
+// setMidiEnabledChoice(false) -- so the remount did not merely fail, it
+// silently forgot the user's MIDI opt-in and mapped controls stayed dead
+// until a full page reload.
+test('the glue teardown releases the action handler, not just its own latch', () => {
+	webmidi._resetMidiForTests();
+	const detach = glue.attachMidiGlue();
+	// Asserted on BOTH sides on purpose: against the post-detach check alone,
+	// an accessor stubbed to a flat false passes while proving nothing.
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		true,
+		'attach must register a handler for the teardown assertion below to mean anything'
+	);
+	detach();
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		false,
+		'teardown must release the handler webmidi holds, or the next attach throws'
+	);
+	webmidi._resetMidiForTests();
+});
+
+test('attachMidiGlue can reattach after a detach, as a route remount does', () => {
+	webmidi._resetMidiForTests();
+	glue.attachMidiGlue()();
+	assert.doesNotThrow(() => {
+		glue.attachMidiGlue()();
+	}, 'returning to /performance must re-attach rather than throw');
 	webmidi._resetMidiForTests();
 });
