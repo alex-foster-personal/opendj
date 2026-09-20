@@ -1,5 +1,7 @@
 name: Main control
 
+# Supersedes: no prior current-main control cadence existed; this workflow
+# becomes the single scheduled current-main control surface.
 # Issue #3582: this is the current-main instrument. It runs every six hours,
 # dispatches ci.yml against the current main tip, and measures how old the
 # newest open PR base behind main is. A stale metric is a failed job and is

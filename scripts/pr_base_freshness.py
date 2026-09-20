@@ -1,5 +1,8 @@
 """Measure and alert on open PRs whose ``main`` base is behind trunk.
 
+Supersedes: no prior open-PR base freshness command existed; this command is
+the sole measurement implementation used by ``main-control.yml``.
+
 Mini-PRD:
 * ✔︎ A six-hour control run measures only open PRs based on ``main``.
 * ✔︎ The metric is the age of the newest base commit that is behind ``main``;
