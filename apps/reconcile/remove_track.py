@@ -540,8 +540,20 @@ def _insert_row(con, table: str, row: dict) -> int:
 
 
 def main() -> int:
+    # Inlined on purpose. This script is self-contained by contract: it is the
+    # fallback you run when the app is not importable, so it must not reach
+    # into apps.shared.rekordbox_db for the header check the rest of the repo
+    # shares. Prefix match rather than the full 16-byte magic, because a
+    # backslash escape here would have to survive being written out through
+    # this template and is one interpretation away from silently never
+    # matching. No other format begins with these fifteen bytes.
+    try:
+        with open(LIVE_DB, "rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        header = b""
     db = Rekordbox6Database(
-        path=LIVE_DB, unlock=not rekordbox_db.is_plain_sqlite(Path(LIVE_DB))
+        path=LIVE_DB, unlock=not header.startswith(b"SQLite format 3")
     )
     try:
         total = 0
