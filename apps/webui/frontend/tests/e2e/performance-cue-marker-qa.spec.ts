@@ -53,7 +53,7 @@ async function _findCueTrack(request: APIRequestContext): Promise<CueTrack | nul
 }
 
 async function _redPixelCount(page: Page): Promise<number> {
-	return page.locator('[data-testid="deck-waveform-canvas-1"]').evaluate((node) => {
+	return page.locator('[data-wave-surface="row"][data-deck="1"] canvas').evaluate((node) => {
 		const canvas = node as HTMLCanvasElement;
 		const ctx = canvas.getContext('2d');
 		if (ctx === null) throw new Error('cue QA could not read waveform canvas pixels');
