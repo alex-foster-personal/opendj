@@ -434,7 +434,7 @@ def live_writeback(
 def run_undo(
     preimage_path: Path,
     *,
-    _rb_db_path: Path,
+    rb_db_path: Path,  # noqa: ARG001 - part of the keyword call contract; 17c7e99da renamed it to _rb_db_path to silence this rule and broke `apply_analysis --undo` with a TypeError
     rb_conn: sqlite3.Connection,
 ) -> int:
     from apps.sync.analysis_writeback_pqtz import restore_pqtz_dat, snapshot_pqtz_dat
