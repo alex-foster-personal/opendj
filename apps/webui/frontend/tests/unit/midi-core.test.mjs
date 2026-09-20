@@ -416,6 +416,17 @@ test('headphone_mix while master_cue latched updates saved restore mix only', as
 	_restoreCueGlueState();
 });
 
+// -------------------------------------------- tiered registry (installed maps)
+
+// A controller onboarded at runtime has to be able to override a built-in map
+// without editing the bundle, and to be removed again without a page reload.
+// Precedence is TIERED, not array-order: installed always beats builtin, so
+// resolution does not depend on which module happened to register first.
+// Design: specs/controller-onboarding.md section 3.3.
+//
+//   if an installed map loses to a builtin on the same port name then broken
+//   if unregisterDeviceMap leaves the map resolvable then broken
+//   if unregisterDeviceMap reports a removal for a nameMatch nobody registered
 //     then broken (a silent no-op hides a bad uninstall)
 
 const _testMap = (vendor, nameMatch, note) => ({
