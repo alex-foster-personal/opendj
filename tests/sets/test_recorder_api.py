@@ -149,3 +149,39 @@ def test_router_shutdown_settles_owned_recorder(tmp_path: Path):
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()
     assert (session_dir / "manifest.json").exists()
+
+
+def test_recorder_status_route_answers_when_idle(recorder_client):
+    """[if] GET /api/sets/recorder 500s on an idle engine [then ⛔️] broken.
+
+    This route is the one the performance page polls, so a 500 here is not a
+    quiet corner: it failed every e2e browser test in the repo. The break was
+    a keyword-only parameter renamed for a lint rule (`state` -> `_state` in
+    `record.status`, commit 17c7e99da) while all four call sites in
+    `recorder_service.py` kept passing `state=`. Nothing in the suite called
+    this route, so a TypeError on every request shipped to main.
+    """
+    client, _service = recorder_client
+
+    response = client.get("/api/sets/recorder")
+
+    assert response.status_code == 200, (
+        "if the idle recorder status route does not answer 200 then the "
+        f"performance page polls a 500 - broken. Got {response.status_code}: "
+        f"{response.text[:300]}"
+    )
+    body = response.json()
+    assert body["active"] is False, (
+        "if an engine with no recorder reports active then the UI offers a "
+        "stop button for a session that does not exist - broken"
+    )
+
+
+def test_record_status_still_takes_its_public_state_keyword():
+    """[if] record.status rejects `state=` [then ⛔️] broken.
+
+    The route test above catches this through the HTTP layer; this one names
+    the contract directly, so the failure message points at the signature
+    instead of at a 500.
+    """
+    record_mod.status(sets_root=None, state=SetsState(db_path=Path("/nonexistent.db")))

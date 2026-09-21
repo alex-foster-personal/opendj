@@ -639,16 +639,18 @@ def _default_source_factories(
 def status(
     *,
     sets_root: Path | None = None,
-    state: SetsState | None = None,
+    state: SetsState | None = None,  # noqa: ARG001 - see below
 ) -> dict[str, Any]:
     """Return a summary of any active session (pid file present).
 
-    ``state`` is accepted by keyword from every caller (recorder_service, the
-    CLI, the availability tests); the pid-file scan does not consult it.
-    Renaming it to ``_state`` (17c7e99d) turned GET /api/v1/sets/recorder/status
-    into a 500 on every e2e run.
+    ``state`` is unread here: the answer comes from the pid file on disk, not
+    from the sets DB. It stays in the signature under its public name because
+    every caller in ``apps/sets/recorder_service.py`` passes it by keyword.
+    Commit 17c7e99da renamed it to ``_state`` to satisfy ARG001, which turned
+    ``GET /api/v1/sets/recorder/status`` into a 500 on every request -- and
+    since the performance page polls that route, it failed every e2e browser
+    test in the repo.
     """
-    del state
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
     if not root.exists():
         return {"active": False}

@@ -13,11 +13,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-	engineBlockAfter,
-	readFrontendSource,
-	SCHEDULE_DECK_SERIAL_ANCHOR
-} from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource } from './engine-source.mjs';
 
 const AUDIO_ENGINE = 'src/lib/rb/audio-engine.svelte.ts';
 
@@ -68,7 +64,7 @@ test('the ramp tail checks generation before and after each schedule await', () 
 });
 
 test('post-await schedule ack is guarded by re-anchor generation', () => {
-	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
+	const body = engineBlockAfter('async function _scheduleDeckSerial(\n\tdeck: DeckId,\n\twhen: number,\n\tinputSec: number | ((effectiveWhen: number) => number),\n\tactive: boolean,\n\ttempoRatio: number | undefined,\n\tmasterTempoEnabled: boolean | undefined,\n\tloop: LoopState | null | undefined,\n\tkeyShiftSemitones: number | undefined,\n\tpressT0Ms: number | undefined,\n\treanchorGeneration?: number\n): Promise<number> {');
 	assert.match(
 		body,
 		/reanchorGeneration !== undefined[\s\S]*_reanchorOperationIsCurrent\(deck, reanchorGeneration\)[\s\S]*recordPerfTiming/

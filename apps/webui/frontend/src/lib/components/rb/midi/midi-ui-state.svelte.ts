@@ -45,7 +45,11 @@ import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
-import { onMidiEnabledHydrated } from '$lib/components/rb/midi/midi-enabled-choice';
+import {
+	MIDI_ENABLED_KEY,
+	onMidiEnabledHydrated,
+	persistMidiEnabled
+} from './midi-enabled-choice';
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -82,11 +86,6 @@ function _reloadInstalledMapsAfterLibraryChange(): void {
 // Kept here (rather than a module-scoped teardown inside action-glue itself)
 // because this is the one call site that attaches it.
 let _detachMidiGlue: (() => void) | null = null;
-
-/** localStorage key for the "user enabled MIDI" choice. Set once the user
- * successfully grants access; read on page load to auto-re-request without a
- * second click. Namespaced so it never collides with other app keys. */
-export const MIDI_ENABLED_KEY = 'dj:midi-enabled';
 
 export const midiUi: {
 	panelOpen: boolean;
@@ -133,23 +132,13 @@ export function toggleLogPopoutMinimized(): void {
 
 // --------------------------------------------------- enabled-choice persistence
 
-/** Persist (or clear) the user's MIDI-enabled choice. SSR/Node-safe: no-ops
- * where localStorage is absent, so importing this module server-side or in a
- * unit test never throws. */
-function _persistMidiEnabled(enabled: boolean): void {
-	if (typeof localStorage === 'undefined') return;
-	if (enabled) {
-		localStorage.setItem(MIDI_ENABLED_KEY, '1');
-	} else {
-		localStorage.removeItem(MIDI_ENABLED_KEY);
-	}
-}
-
+// The localStorage half lives in midi-enabled-choice.ts so prefs hydration can
+// apply it without importing this module's MIDI runtime (see that file).
 const _syncMidiEnabledDisk = makeDiskWriteChain(async (patch: { midi_enabled: boolean }) => {
 	try {
 		await api.PUT('/api/v1/ui-prefs', { body: patch });
 	} catch {
-		/* localStorage remains authoritative if the daemon is down */
+		/* localStorage remains authoritative if daemon is down */
 	}
 });
 
@@ -157,13 +146,9 @@ function _syncMidiEnabledToDisk(enabled: boolean): void {
 	void _syncMidiEnabledDisk({ midi_enabled: enabled });
 }
 
-/** Record the user's MIDI-enabled choice: localStorage first (this page),
- * then PUT `midi_enabled` to /api/v1/ui-prefs so prefs-hydrate can replay
- * the opt-in on another browser (issue #2854). The disk half never existed
- * before Mon 21 Sep 2026: hydrateMidiEnabledFromDisk read a key nothing
- * wrote, so the pref could not become true from the UI. */
+/** Agent parity: set the persisted opt-in without requesting WebMIDI access. */
 export function setMidiEnabledChoice(enabled: boolean): void {
-	_persistMidiEnabled(enabled);
+	persistMidiEnabled(enabled);
 	_syncMidiEnabledToDisk(enabled);
 }
 

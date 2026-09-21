@@ -148,7 +148,7 @@ def live_run(
     djay_db_path: Path,
     only_tracks: set[str] | None = None,
     flag_ok: bool = False,
-    prefer: str = "newest",
+    prefer: str = "newest",  # noqa: ARG001 - retained for keyword callers
 ) -> int:
     # Note: rb_db_path and djay_db_path are REQUIRED (no defaults). The
     # previous signature defaulted to the WORKING-copy paths, which meant a
@@ -156,11 +156,6 @@ def live_run(
     # _live_djay_db_path would silently operate on the working copy even
     # when the user asked for --live. That was issue #1 (Phase 2 [I1]).
     # Keeping these required turns the footgun into an immediate TypeError.
-    # ``prefer`` is the CLI's --prefer choice, accepted by keyword from main().
-    # The live path applies the diff rows as computed upstream and has never
-    # consulted it here; it stays in the signature because renaming it to
-    # ``_prefer`` (17c7e99d) made main()'s keyword call a TypeError.
-    del prefer
     targets_rb: list[tuple[str, int]] = []
     targets_djay: list[tuple[str, int]] = []
 

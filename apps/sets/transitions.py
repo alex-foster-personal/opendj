@@ -151,7 +151,7 @@ def find_transitions(
 def compute_features(
     transition: Transition,
     *,
-    outgoing_load: Event | None,
+    outgoing_load: Event | None,  # noqa: ARG001 - kept for its keyword callers
     incoming_load: Event | None,
     outgoing_last: Event | None,
     prev_change_ts: float | None,
@@ -162,7 +162,6 @@ def compute_features(
     signature; do not rename keys without also updating the classifier's
     ``FEATURE_COLUMNS`` list.
     """
-    del outgoing_load  # keyword contract kept for the classifier and its tests; unused here
     t_change = transition.t_change_s
     incoming_t = incoming_load.timestamp_s if incoming_load is not None else t_change
     outgoing_end = outgoing_last.timestamp_s if outgoing_last is not None else t_change

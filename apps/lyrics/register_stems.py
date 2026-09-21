@@ -161,26 +161,16 @@ class RegisterPairStorage:
 def _storage_for_register_pair(
     storage: RegisterPairStorage | None,
     root: Path | None,
-    s3: AssetS3Client | None = None,
-    cfg: CloudConfig | None = None,
-    conn: sqlite3.Connection | None = None,
 ) -> RegisterPairStorage:
-    """Accept ``storage=`` or the legacy ``root=``/``s3=``/``cfg=``/``conn=``
-    keywords, never both. The keyword form is the public contract the CLI,
-    ``batch.py`` and the stems-sync tests call; the dataclass is the bundled
-    form. Trunk broke Sat 19 Sep 2026 when a lint pay-down (17c7e99d) dropped
-    the keywords without migrating callers -- three shards failed on it."""
-    legacy = (root, s3, cfg, conn)
-    if storage is not None and any(value is not None for value in legacy):
-        raise TypeError(
-            "register_pair accepts storage= or the root=/s3=/cfg=/conn= keywords, not both"
-        )
+    """Accept ``storage=`` or legacy ``root=``, never both."""
+    if storage is not None and root is not None:
+        raise TypeError("register_pair accepts storage= or root=, not both")
     if storage is not None:
         return storage
-    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn)
+    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
 
 
-def register_pair(  # noqa: PLR0913 - keyword contract, see docstring
+def register_pair(
     *,
     stable_id: str,
     vocals: Path,
@@ -198,7 +188,16 @@ def register_pair(  # noqa: PLR0913 - keyword contract, see docstring
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
-    store = _storage_for_register_pair(storage, root, s3, cfg, conn)
+    if any(value is not None for value in (root, s3, cfg, conn)):
+        if storage is not None:
+            raise TypeError(
+                "register_pair accepts storage= or legacy storage keywords, not both"
+            )
+        store = RegisterPairStorage(
+            root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
+        )
+    else:
+        store = _storage_for_register_pair(storage, root)
     root = store.root
     s3 = store.s3
     cfg = store.cfg

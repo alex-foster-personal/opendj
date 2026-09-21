@@ -4,11 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import {
-	engineBlockAfter,
-	SCHEDULE_DECK_ANCHOR,
-	SCHEDULE_DECK_SERIAL_ANCHOR
-} from './engine-source.mjs';
+import { engineBlockAfter } from './engine-source.mjs';
 
 /**
  * LATENCY-01 visual feedback: the control reflects the input on the NEXT frame
@@ -46,6 +42,19 @@ import {
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+
+const SCHEDULE_DECK_ANCHOR = `async function _scheduleDeck(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	tempoRatio?: number,
+	masterTempoEnabled?: boolean,
+	loop?: LoopState | null,
+	keyShiftSemitones?: number,
+	pressT0Ms?: number,
+	reanchorGeneration?: number
+): Promise<number> {`;
 
 /** Component source, positively located: a guard that cannot find its file must
  * fail rather than assert against ''. */
@@ -112,7 +121,18 @@ test('a rejected schedule reconciles the optimistic write to the standing intent
 });
 
 test('the post-ack write stays as the reconcile-to-truth', () => {
-	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
+	const body = engineBlockAfter(`async function _scheduleDeckSerial(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	tempoRatio: number | undefined,
+	masterTempoEnabled: boolean | undefined,
+	loop: LoopState | null | undefined,
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
+): Promise<number> {`);
 	assert.ok(
 		body.includes('rt.desiredActive'),
 		'the optimistic write is a prediction; the post-ack write is what makes it true, and ' +
@@ -222,7 +242,18 @@ test('LATENCY-02 TransportCluster keeps pending off disabled and shows armed cou
 });
 
 test('the live latency re-read never sits on the transport path', () => {
-	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
+	const body = engineBlockAfter(`async function _scheduleDeckSerial(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	tempoRatio: number | undefined,
+	masterTempoEnabled: boolean | undefined,
+	loop: LoopState | null | undefined,
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
+): Promise<number> {`);
 	assert.ok(
 		body.includes('void _observeLiveProcessorLatency(deck, processor);'),
 		'the re-read must be fire-and-forget; awaiting a MessagePort round trip here would ' +

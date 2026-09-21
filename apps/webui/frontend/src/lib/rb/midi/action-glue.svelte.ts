@@ -38,12 +38,13 @@
 
 import { pushToast } from '$lib/stores.svelte';
 import { deckStates, engine, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
-import { dispatchPerformanceCommand, type PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
 	midiState,
-	registerActionHandler, unregisterActionHandler,
-	sendLed
+	registerActionHandler,
+	sendLed,
+	unregisterActionHandler
 } from '$lib/rb/midi/webmidi.svelte';
 import type { LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -103,20 +104,6 @@ function _continuous01(value: MidiInputValue): number {
 	return value.value01;
 }
 
-/** A controller press is a UI event boundary, like a DOM press: the
- * dispatcher persists the deck alert and toast BEFORE it rejects (a preset
- * lock, a stale session, an empty deck), so the rejection is consumed here
- * the way runPerformanceCommandFromUi consumes it for clicks. Left as a bare
- * `void dispatch(...)`, every rejected press was an unhandledRejection: the
- * preset-lock unit tests leaked exactly those after they ended. Not the
- * `FromUi` helper itself, because that one starts a press clock on entry and
- * a trim or master knob carries no press stamp by design (class-a guard). */
-function _dispatch(command: PerformanceCommand, pressT0Ms?: number): void {
-	void dispatchPerformanceCommand(command, pressT0Ms).catch(() => {
-		// persisted by the dispatcher before it threw
-	});
-}
-
 /** Glue-local overlay while MASTER CUE is engaged (no IPC command). */
 let _masterCue: { savedMix: number } | null = null;
 
@@ -128,14 +115,14 @@ export function _resetMasterCueForTests(): void {
 function _engageMasterCue(): void {
 	if (_masterCue !== null) return;
 	_masterCue = { savedMix: mixerState.headphones.mix };
-	_dispatch({ type: 'headphone_mix', value: 1 });
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value: 1 });
 }
 
 function _disengageMasterCue(): void {
 	if (_masterCue === null) return;
 	const savedMix = _masterCue.savedMix;
 	_masterCue = null;
-	_dispatch({ type: 'headphone_mix', value: savedMix });
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value: savedMix });
 }
 
 function _dispatchHeadphoneMix(value: number): void {
@@ -143,7 +130,7 @@ function _dispatchHeadphoneMix(value: number): void {
 		_masterCue.savedMix = value;
 		return;
 	}
-	_dispatch({ type: 'headphone_mix', value });
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value });
 }
 
 // ----------------------------------------------------------- REBASE ADAPTERS
@@ -153,7 +140,7 @@ function _dispatchHeadphoneMix(value: number): void {
 
 /** REBASE ADAPTER: play/pause toggle command for one deck. */
 function _cmdPlayToggle(deck: DeckId, pressT0Ms?: number): void {
-	_dispatch(
+	void dispatchPerformanceCommand(
 		{ type: 'play', deck, playing: !deckStates[deck].playing },
 		pressT0Ms
 	);
@@ -161,7 +148,7 @@ function _cmdPlayToggle(deck: DeckId, pressT0Ms?: number): void {
 
 /** REBASE ADAPTER: physical CUE button command for one deck. */
 function _cmdPressCue(deck: DeckId, pressT0Ms?: number): void {
-	_dispatch({ type: 'cue', deck }, pressT0Ms);
+	void dispatchPerformanceCommand({ type: 'cue', deck }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
@@ -169,17 +156,17 @@ function _cmdPressCue(deck: DeckId, pressT0Ms?: number): void {
  * honour BeatSyncMax and arm for the deck's own next downbeat. pressT0Ms is
  * the MIDI receipt stamp, same contract as _cmdPlayToggle/_cmdPressCue. */
 function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {
-	_dispatch({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
+	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: engage an auto/beat loop from the current position. */
 function _cmdBeatLoop(deck: DeckId, beats: number): void {
-	_dispatch({ type: 'beat_loop', deck, beats });
+	void dispatchPerformanceCommand({ type: 'beat_loop', deck, beats });
 }
 
 /** REBASE ADAPTER: disengage the active loop. */
 function _cmdLoopExit(deck: DeckId): void {
-	_dispatch({ type: 'loop', deck, loop: null });
+	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
 }
 
 // ------------------------------------------------------------ action switch
@@ -232,19 +219,19 @@ export function handleMidiAction(
 		case 'mixer_channel': {
 			const v = _continuous01(value);
 			if (action.target === 'trim') {
-				_dispatch({ type: 'trim', deck: action.deck, value: v });
+				void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
 			} else if (action.target === 'eq') {
 				if (action.band === undefined) {
 					throw new Error('mixer_channel eq action requires band (device map bug)');
 				}
-				_dispatch(
+				void dispatchPerformanceCommand(
 					{ type: 'eq', deck: action.deck, band: action.band, value: v },
 					pressT0Ms
 				);
 			} else if (action.target === 'fader') {
-				_dispatch({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
+				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
-				_dispatch({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
+				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);
@@ -254,9 +241,9 @@ export function handleMidiAction(
 		case 'mixer_global': {
 			const v = _continuous01(value);
 			if (action.target === 'crossfader') {
-				_dispatch({ type: 'crossfader', value: v }, pressT0Ms);
+				void dispatchPerformanceCommand({ type: 'crossfader', value: v }, pressT0Ms);
 			} else if (action.target === 'master') {
-				_dispatch({ type: 'master_volume', value: v });
+				void dispatchPerformanceCommand({ type: 'master_volume', value: v });
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_global target: ${_exhaustive}`);
@@ -265,7 +252,7 @@ export function handleMidiAction(
 		}
 		case 'channel_cue': {
 			if (!_pressed(value)) return;
-			_dispatch({
+			void dispatchPerformanceCommand({
 				type: 'channel_cue',
 				deck: action.deck,
 				enabled: !mixerState.channels[action.deck].cue_enabled
@@ -277,7 +264,7 @@ export function handleMidiAction(
 			return;
 		}
 		case 'headphone_level': {
-			_dispatch({
+			void dispatchPerformanceCommand({
 				type: 'headphone_level',
 				value: _continuous01(value)
 			});
@@ -300,7 +287,7 @@ export function handleMidiAction(
 		case 'deck_pitch': {
 			const v = _continuous01(value);
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
-			_dispatch({
+			void dispatchPerformanceCommand({
 				type: 'tempo', deck: action.deck, ratio: pitchRatioFromFader(v, pitchRanges[action.deck])
 			});
 			return;
@@ -401,6 +388,13 @@ export function attachMidiGlue(): () => void {
 	});
 	return () => {
 		stopLeds();
+		// Release the handler webmidi holds, not just this module's latch.
+		// registerActionHandler() throws while one is registered, so leaving it
+		// behind made the next attach (a /performance remount) throw from
+		// inside requestMidiAccess(), whose catch also calls
+		// setMidiEnabledChoice(false) -- losing the user's MIDI opt-in on the
+		// way out. unregisterActionHandler()'s docstring already said the
+		// teardown calls it; only the call was missing.
 		unregisterActionHandler();
 		_attached = false;
 	};
