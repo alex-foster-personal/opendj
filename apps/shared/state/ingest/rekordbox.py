@@ -343,14 +343,16 @@ def ingest_rb(
                 ]
                 writer.set_playlist_memberships(pl_id, member_sids)
 
+            tracks_seen = (
+                report.tracks_inserted
+                + report.tracks_updated
+                + report.tracks_unchanged
+            )
             writer.register_adapter(
                 "rekordbox",
                 last_run_at=now_fn().isoformat(),
                 last_ok=True,
-                notes=(
-                    f"tracks={report.tracks_inserted + report.tracks_updated + report.tracks_unchanged} "
-                    f"dry_run={dry_run}"
-                ),
+                notes=f"tracks={tracks_seen} dry_run={dry_run}",
             )
 
             if dry_run:

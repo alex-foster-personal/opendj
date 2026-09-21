@@ -1,6 +1,6 @@
 """Folder ingest must not load pyrekordbox at import time.
 
-[if] the no-rekordbox folder ingest module is imported in a clean process [then] pyrekordbox is absent from sys.modules, [else stop].
+[if] folder ingest is imported in a clean process [then] pyrekordbox stays unloaded, [else stop].
 
 Regression one-liners:
   - if importing folder ingest loads pyrekordbox then the onboarding path lies
@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_folder_ingest_import_does_not_load_pyrekordbox() -> None:
-    """[if] folder ingest imports in a clean subprocess [then] pyrekordbox stays unloaded, [else stop]."""
+    """[if] folder ingest is imported fresh [then] pyrekordbox stays unloaded, [else stop]."""
     probe = textwrap.dedent(
         """
             import sys

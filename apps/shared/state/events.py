@@ -133,4 +133,4 @@ class _DryRunSilentBus:
         return None
 
 
-__all__ = ["EventBus", "FakeEventBus", "Callback"]
+__all__ = ["Callback", "EventBus", "FakeEventBus"]
