@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,12 @@ _BENCH_CONFIG = "tests/e2e/playwright.playlist-switch-latency.config.ts"
 _BUILD_INDEX = _FRONTEND / "build" / "index.html"
 
 
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _run_live_playlist_switch_bench() -> dict:
     """Run the Playwright bench and return the measured payload JSON."""
     if not _BUILD_INDEX.is_file():
@@ -24,6 +31,12 @@ def _run_live_playlist_switch_bench() -> dict:
             check=True,
         )
     env = dict(os.environ)
+    # agentbox-14 and agentbox-15 share one host, so two shards (or a leaked
+    # engine from an earlier run) can both want the config's default 8701:
+    # "http://127.0.0.1:8701/api/v1/health is already used" on main at
+    # 2f0b917e (Mon 21 Sep 2026). An ephemeral port is never in the config's
+    # RESERVED_PORTS table, which tops out below 10000.
+    env.setdefault("PLAYLIST_SWITCH_BENCH_PORT", str(_free_port()))
     env.setdefault("PLAYLIST_SWITCH_BENCH_SAMPLES", "10")
     env["PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE"] = "1"
     env["PLAYLIST_SWITCH_BENCH_OUT"] = str(_FIXTURE)

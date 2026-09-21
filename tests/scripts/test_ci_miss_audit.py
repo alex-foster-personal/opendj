@@ -6,15 +6,19 @@ Single-line intents:
   - if a test the ledger recorded over the ceiling reads as fast tier then broken
   - if a test main also broke in the window is counted against the plan then broken
   - if zero runs measured yields a recall number instead of UNKNOWN then broken
+  - if a run listing whose newest run is days old is audited as the current window then broken
 
 [if] a PR broke a test [then] the audit says whether the plan and fast tier ran it, [else stop].
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from scripts.ci_miss_audit import (
+    MAX_WINDOW_AGE,
     RunFailure,
     Selection,
     Tier,
@@ -22,6 +26,7 @@ from scripts.ci_miss_audit import (
     changes_from_compare,
     node_id,
     selection_of,
+    stale_window_reason,
     tier_of,
 )
 from scripts.ci_plan import Change, Config, Plan, Scope, Verdict
@@ -251,3 +256,32 @@ def test_an_always_fast_entry_makes_a_slow_recorded_test_fast_tier() -> None:
     assert (
         tier_of(slow, LEDGER, 0.5, frozenset({"tests/library/test_b.py::test_other"})) is Tier.SLOW
     )
+
+
+# ----- window recency -----
+# Mon 21 Sep 2026: the runs listing answered with early-September runs for one call and
+# current ones fifteen minutes later; the audit printed 48 / 48 over the stale window.
+
+NOW = datetime(2026, 9, 21, 15, 0, tzinfo=UTC)
+
+
+def _runs(*ages: timedelta) -> list[dict]:
+    return [{"created_at": (NOW - age).strftime("%Y-%m-%dT%H:%M:%SZ")} for age in ages]
+
+
+def test_a_listing_whose_newest_run_is_older_than_the_limit_is_refused_by_name() -> None:
+    reason = stale_window_reason(_runs(timedelta(days=12), timedelta(days=13)), now=NOW)
+    assert reason is not None and "2026-09-09" in reason
+
+
+def test_a_listing_with_a_recent_run_is_accepted() -> None:
+    assert stale_window_reason(_runs(timedelta(hours=1), timedelta(days=12)), now=NOW) is None
+
+
+def test_the_limit_is_exact_at_its_boundary() -> None:
+    assert stale_window_reason(_runs(MAX_WINDOW_AGE), now=NOW) is None
+    assert stale_window_reason(_runs(MAX_WINDOW_AGE + timedelta(seconds=1)), now=NOW)
+
+
+def test_an_empty_listing_is_refused_not_read_as_a_quiet_week() -> None:
+    assert stale_window_reason([], now=NOW) == "the listing returned no runs"
