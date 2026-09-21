@@ -110,3 +110,64 @@ The suite drives both directions of every gate: the claim that must land and
 the claim that must be refused, the fleet that reads `ok` and the fleet that
 must never read `ok`. Both guards were mutated on purpose and their tests went
 red, which is the only evidence that they bite.
+
+## Remote endpoint (AGENT-17)
+
+The same nine tools, served over MCP streamable-HTTP so claude.ai can reach
+them as a custom connector. Hosted on **agentbox**, not nucbox: nucbox is the
+thing being observed, and the skill documents that its WSL VM "stops without
+warning and takes every agent with it" -- an observer that dies for the same
+reason it has news is no observer.
+
+```
+claude.ai  ->  Cloudflare Access  ->  cloudflared  ->  127.0.0.1:8765
+```
+
+```bash
+python -m apps.fleet_mcp --http          # or the unit below
+```
+
+### It refuses rather than degrades
+
+- **Loopback only.** Any other bind is refused by name. `0.0.0.0` is the
+  specific mistake a copied recipe makes, and on a box with a public IP it
+  would publish a write-capable MCP endpoint with no door in front of it. No
+  correct Cloudflare configuration can take that back afterwards.
+- **Unset configuration does not start.** Team, audience and email allowlist
+  are all required; an empty allowlist is a configuration error, never
+  "allow everyone".
+- **The JWT is verified here too**, not only by `cloudflared`. Signature
+  against the team's JWKS, plus audience, issuer and expiry. `share_gate.py`
+  checks header PRESENCE and leans on the tunnel, which is a fair trade for a
+  read-mostly library share; this endpoint can open `queue:ready` issues the
+  dispatcher builds unattended, and any local process can set an unsigned
+  header. A tunnel config that lost `originRequest.access.required` would
+  serve it naked; verifying closes that.
+- **The signed claim is the identity.** `cf-access-authenticated-user-email`
+  is unsigned and treated as a hint only.
+- **An unreachable JWKS refuses the request.** An unverifiable signature is
+  not a valid one.
+- **`/healthz` answers without a token** and reports liveness only -- no queue
+  state, no nucbox state.
+
+### Deploying
+
+| Piece | Path |
+|---|---|
+| systemd unit | `ops/fleet/units/dispatch-mcp.service` |
+| service environment | `ops/fleet/dispatch-mcp/dispatch-mcp.env.sample` -> `/etc/music-dj-tools/dispatch-mcp.env`, root-owned, `0600` |
+| tunnel config | `ops/fleet/dispatch-mcp/cloudflared.sample.yml` |
+
+Never put these values in a worktree `.env`: that file is reserved for the two
+web UI ports (`apps/agentbox/CLOUDFLARE_ACCESS.md`).
+
+The unit sets `RestartPreventExitStatus=2` on purpose. Exit 2 is "refusing to
+serve" -- a misconfiguration -- and restarting forever would hide the reason.
+
+### What it does not solve
+
+Writes are attributed to one machine account, so the queue cannot tell which
+human queued an item from a phone; the Access log correlates it by email and
+timestamp. And a stolen Access session can queue work the dispatcher builds
+unattended: the mitigations are the email allowlist and a short Access session
+duration, both set in Cloudflare, not here.
