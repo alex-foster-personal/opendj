@@ -26,6 +26,7 @@
 	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
+	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
 
 	let {
 		nodes,
@@ -269,6 +270,8 @@
 					tabindex="0"
 					draggable="true"
 					use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
+					onpointerenter={() => prefetchPlaylistFirstPage(node.playlist_id)}
+					onpointerdown={() => prefetchPlaylistFirstPage(node.playlist_id)}
 					onclick={() => onselect(node)}
 					onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
 					oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}

@@ -71,6 +71,38 @@ def test_list_playlist_tracks_second_page(monkeypatch, tmp_path: Path):
 
 
 @pytest.mark.requirement("PERF-UI-05")
+def test_list_playlist_tracks_first_page_is_fast(monkeypatch, tmp_path: Path):
+    """[if] warmed offset-0 limit-30 GET [then] under 0.5s, [else stop]."""
+    _stub_rb_vendor(monkeypatch)
+    backend = InMemoryBackend()
+    playlist_id = _seed_1k_playlist(backend, tmp_path)
+    app = create_app(
+        backend=backend, bind_host="127.0.0.1", hostname="test-host",
+        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+    )
+    with TestClient(app) as c:
+        warm = c.get(
+            f"/api/v1/playlists/{playlist_id}/tracks",
+            params={"limit": 30, "offset": 0},
+        )
+        assert warm.status_code == 200
+        t0 = time.perf_counter()
+        r = c.get(
+            f"/api/v1/playlists/{playlist_id}/tracks",
+            params={"limit": 30, "offset": 0},
+        )
+        elapsed = time.perf_counter() - t0
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1000
+    assert len(body["tracks"]) == 30
+    assert elapsed < 0.5, (
+        f"warmed playlist tracks page took {elapsed:.3f}s; "
+        "first-page slice must stay under 0.5s once TestClient startup is paid"
+    )
+
+
+@pytest.mark.requirement("PERF-UI-05")
 def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
     """[if] availability=skip [then] no get_file_paths_bulk and -1 counts, [else stop]."""
     _stub_rb_vendor(monkeypatch)

@@ -24,7 +24,6 @@
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
-		listPlaylistTracksPage,
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
@@ -139,6 +138,11 @@
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
+	import {
+		fetchPlaylistFirstPage,
+		prefetchPlaylistFirstPage,
+		prefetchPlaylistTreeIntent
+	} from '$lib/rb/library-playlist-page-prefetch';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
@@ -1050,6 +1054,16 @@
 		}
 	}
 
+	function _prefetchPlaylistTreeIntent(
+		nodes: Array<{ playlist_id: string; kind?: string }>
+	): void {
+		prefetchPlaylistTreeIntent(
+			nodes
+				.filter((node) => node.kind !== 'folder' && node.kind !== 'taglist')
+				.map((node) => node.playlist_id)
+		);
+	}
+
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
@@ -1108,6 +1122,11 @@
 				bootValue: lists,
 				currentValue: playlists
 			});
+			_prefetchPlaylistTreeIntent(lists);
+			const rememberedPlaylist = uiPrefs.last_playlist;
+			if (rememberedPlaylist !== null && rememberedPlaylist.kind === 'playlist') {
+				prefetchPlaylistFirstPage(rememberedPlaylist.playlist_id, PLAYLIST_FIRST_PAGE);
+			}
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
 			recordPlaylistTreeReadyMs(
@@ -1843,6 +1862,7 @@
 				return;
 			}
 			if (node.kind === 'all_tracks') {
+				_prefetchPlaylistTreeIntent(treeNodes);
 				const switchStartedAt = performance.now();
 				await fillAllTracksPane({
 					pane: p,
@@ -1887,16 +1907,14 @@
 					seq,
 					pageSize: PLAYLIST_FIRST_PAGE,
 					fetchPage: (offset) =>
-						listPlaylistTracksPage(node.playlist_id, {
-							limit: PLAYLIST_FIRST_PAGE,
-							offset
-						}),
+						fetchPlaylistFirstPage(node.playlist_id, offset, PLAYLIST_FIRST_PAGE),
 					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
 					progressTotal: node.track_count,
-					onFirstPaint: () => {
+					onFirstPaint: (decomposition) => {
 						recordPlaylistSwitchFirstRowsMs(
 							'playlist',
-							performance.now() - switchStartedAt
+							performance.now() - switchStartedAt,
+							decomposition
 						);
 						recordOpenToLibraryRows({ source: 'playlist' });
 						completeLibraryUsable({ source: 'playlist' });
