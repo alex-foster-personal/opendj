@@ -118,6 +118,38 @@ function _countOccurrences(text, needle) {
 // anchored extraction
 //-----------------------------------------------------------------------------
 
+// Update here when `_scheduleDeck` signature changes; LATENCY-01 visual-feedback
+// guards import this.
+export const SCHEDULE_DECK_ANCHOR =
+  "async function _scheduleDeck(\n" +
+  "\tdeck: DeckId,\n" +
+  "\twhen: number,\n" +
+  "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
+  "\tactive: boolean,\n" +
+  "\ttempoRatio?: number,\n" +
+  "\tmasterTempoEnabled?: boolean,\n" +
+  "\tloop?: LoopState | null,\n" +
+  "\tkeyShiftSemitones?: number,\n" +
+  "\tpressT0Ms?: number,\n" +
+  "\treanchorGeneration?: number\n" +
+  "): Promise<number> {";
+
+// Update here when `_scheduleDeckSerial` signature changes; stale-reanchor-ramp
+// and LATENCY-03 guards import this.
+export const SCHEDULE_DECK_SERIAL_ANCHOR =
+  "async function _scheduleDeckSerial(\n" +
+  "\tdeck: DeckId,\n" +
+  "\twhen: number,\n" +
+  "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
+  "\tactive: boolean,\n" +
+  "\ttempoRatio: number | undefined,\n" +
+  "\tmasterTempoEnabled: boolean | undefined,\n" +
+  "\tloop: LoopState | null | undefined,\n" +
+  "\tkeyShiftSemitones: number | undefined,\n" +
+  "\tpressT0Ms: number | undefined,\n" +
+  "\treanchorGeneration?: number\n" +
+  "): Promise<number> {";
+
 /**
  * The body of the block opened by `anchor`, brace-matched to its close.
  *

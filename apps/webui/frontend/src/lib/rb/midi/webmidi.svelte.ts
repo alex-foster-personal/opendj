@@ -133,8 +133,9 @@ export interface RegisteredDeviceMap {
 
 const _deviceMaps: RegisteredDeviceMap[] = [];
 const _resolved: Map<string, _ResolvedDevice> = new Map();
-let _actionHandler: ((action: MidiAction, value: MidiInputValue, deviceId: string) => void) | null =
-	null;
+let _actionHandler:
+	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms?: number) => void)
+	| null = null;
 
 // LED queue: deviceId -> (`${ch}:${note}` -> velocity), flushed on a timer.
 const _ledQueues: Map<string, Map<string, number>> = new Map();
@@ -280,7 +281,7 @@ function _emit(
 		return;
 	}
 	try {
-		_actionHandler(binding.action, value, device.input.id);
+		_actionHandler(binding.action, value, device.input.id, log.ts);
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
 		// still propagates (no silent swallow).
@@ -455,7 +456,7 @@ export function resolveMapForPort(portName: string): DeviceMap | null {
 /** Register THE action handler (the glue layer). Exactly one; a second
  * registration is a wiring bug and throws. */
 export function registerActionHandler(
-	handler: (action: MidiAction, value: MidiInputValue, deviceId: string) => void
+	handler: (action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms?: number) => void
 ): void {
 	if (_actionHandler !== null) {
 		throw new Error('registerActionHandler: a handler is already registered');
