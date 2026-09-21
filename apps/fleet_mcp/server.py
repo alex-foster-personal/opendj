@@ -186,6 +186,7 @@ def create_server(runner: Runner = run) -> MCPServer:  # noqa: C901  # one tool 
     def ledger_claim(
         node_id: str,
         branch: str,
+        commit_sha: str,
         worktree: str | None = None,
         pr: str | None = None,
         note: str | None = None,
@@ -195,10 +196,20 @@ def create_server(runner: Runner = run) -> MCPServer:  # noqa: C901  # one tool 
         Does the read-ETag-PATCH dance for you. Refuses a node another agent
         holds under a live 3h lease unless takeover is enabled and you pass a
         note saying why.
+
+        ``commit_sha`` must be a commit the server can resolve -- pass the SHA
+        your branch starts from. Claiming moves the node's status, and the
+        progress route requires a commit to cite for that; a claim without one
+        is refused here rather than sent to be 422'd.
         """
         try:
             return ledger.claim(
-                node_id, branch=branch, worktree=worktree, pr=pr, note=note
+                node_id,
+                branch=branch,
+                commit_sha=commit_sha,
+                worktree=worktree,
+                pr=pr,
+                note=note,
             )
         except ValueError as error:
             raise _usage(str(error)) from error

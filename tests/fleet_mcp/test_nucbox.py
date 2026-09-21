@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from apps.fleet_mcp import nucbox
-from apps.fleet_mcp.runner import UNKNOWN
+from apps.fleet_mcp.runner import UNKNOWN, Completed
 from tests.fleet_mcp.conftest import fake_runner, unknown_runner
 
 
@@ -103,6 +103,78 @@ def test_health_reports_ok_only_when_every_probe_measured():
     document = nucbox.health(runner=fake_runner(stdout="PRESSURE ok"))
     assert document["status"] == "ok"
     assert "unmeasured" not in document
+
+
+@pytest.mark.requirement("AGENT-16")
+def test_a_dead_watchdog_is_not_an_ok_spawn_gate():
+    """[if] a gate probe RAN and failed [then] health refuses ok, [else stop]
+
+    The fail-open this exists for: `systemctl --user is-active` exits nonzero
+    for an INACTIVE watchdog, which the ssh layer reports as `error`, not
+    UNKNOWN. Keying the aggregate on UNKNOWN alone published `ok` for a dead
+    watchdog and would have sent callers to spawn into an unhealthy fleet
+    (Codex P1, #3735). Absence of UNKNOWN is not presence of health.
+    """
+
+    def runner(argv, *, timeout):
+        remote = argv[-1]
+        if "is-active" in remote:
+            return Completed(tuple(argv), 3, "inactive", "")
+        if remote == "tmux ls":
+            return Completed(tuple(argv), 0, "job-1801: 1 windows", "")
+        return Completed(tuple(argv), 0, "PRESSURE ok", "")
+
+    document = nucbox.health(runner=runner)
+    assert document["status"] == "error"
+    assert document["failed"] == ["watchdog"]
+    assert "the spawn gate is not ok" in document["reason"]
+    # The pressure probe really did read ok; the refusal comes from the
+    # watchdog, not from a probe that failed to measure.
+    assert document["probes"]["pressure"]["status"] == "ok"
+    assert "unmeasured" not in document
+
+
+@pytest.mark.requirement("AGENT-16")
+def test_a_failed_worker_probe_is_not_an_ok_spawn_gate():
+    """[if] the worker probe errors for an unrecognized reason [then] not ok, [else stop]
+
+    Same class as the watchdog case, other probe: `tmux ls` failing for
+    anything but the known no-server line is a failed measurement of the
+    workers, and must not ride pressure's ok to an overall pass.
+    """
+
+    def runner(argv, *, timeout):
+        remote = argv[-1]
+        if remote == "tmux ls":
+            return Completed(tuple(argv), 1, "", "error connecting to /tmp/tmux-1000/default")
+        if "is-active" in remote:
+            return Completed(tuple(argv), 0, "active", "")
+        return Completed(tuple(argv), 0, "PRESSURE ok", "")
+
+    document = nucbox.health(runner=runner)
+    assert document["status"] == "error"
+    assert document["failed"] == ["workers"]
+
+
+@pytest.mark.requirement("AGENT-16")
+def test_no_server_running_is_still_a_measured_zero_and_stays_ok():
+    """[if] tmux reports no server [then] that is zero workers, not a failure, [else stop]
+
+    The control that keeps the rule above from over-correcting: an empty tmux
+    is the normal idle fleet, and must still reach ok.
+    """
+
+    def runner(argv, *, timeout):
+        remote = argv[-1]
+        if remote == "tmux ls":
+            return Completed(tuple(argv), 1, "", "no server running on /tmp/tmux-1000/default")
+        if "is-active" in remote:
+            return Completed(tuple(argv), 0, "active", "")
+        return Completed(tuple(argv), 0, "PRESSURE ok", "")
+
+    document = nucbox.health(runner=runner)
+    assert document["status"] == "ok"
+    assert document["probes"]["workers"]["live_workers"] == 0
 
 
 @pytest.mark.requirement("AGENT-16")

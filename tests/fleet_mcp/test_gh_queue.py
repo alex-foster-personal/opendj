@@ -48,12 +48,58 @@ def test_list_items_marks_titles_untrusted():
 
 
 @pytest.mark.requirement("AGENT-15")
-def test_priority_filter_is_applied_to_the_rows():
-    """[if] priorities are named [then] only rows carrying those labels survive, [else stop]"""
-    document = gh_queue.list_items(
-        priorities=("p1",), runner=fake_runner(stdout=json.dumps(_ROWS))
-    )
-    assert [row["number"] for row in document["items"]] == [1801]
+def test_priority_filter_is_asked_of_gh_not_applied_after_the_limit():
+    """[if] priorities are named [then] gh is asked for them, [else stop]
+
+    Filtering after the fetch made ``--limit`` mean "this many issues of any
+    priority", so 20 newer p1s could hide an older ready p0 and the call
+    returned an empty list with ``truncated: false`` (Codex P2, #3735). The
+    label has to reach gh for the limit to mean what the caller asked for.
+    """
+    runner = recording_runner(stdout=json.dumps(_ROWS))
+    gh_queue.list_items(states=("ready",), priorities=("p1",), runner=runner)
+    assert len(runner.calls) == 1
+    argv = runner.calls[0]
+    assert "queue:ready" in argv
+    assert "queue:p1" in argv
+
+
+@pytest.mark.requirement("AGENT-15")
+def test_each_state_priority_pair_is_its_own_query():
+    """[if] several priorities are named [then] each gets its own bounded query, [else stop]"""
+    runner = recording_runner(stdout=json.dumps([]))
+    gh_queue.list_items(states=("ready",), priorities=("p0", "p1"), runner=runner)
+    assert len(runner.calls) == 2
+    assert {"queue:p0", "queue:p1"} == {
+        label for argv in runner.calls for label in argv if label.startswith("queue:p")
+    }
+
+
+@pytest.mark.requirement("AGENT-15")
+def test_done_work_is_looked_for_past_open_issues():
+    """[if] the done state is asked for [then] closed issues are in scope, [else stop]
+
+    The completed-work sweep CLOSES the issue and applies queue:done, so a
+    query pinned to --state open made the advertised done view permanently
+    empty (Codex P2, #3735).
+    """
+    runner = recording_runner(stdout=json.dumps([]))
+    gh_queue.list_items(states=("done",), runner=runner)
+    argv = runner.calls[0]
+    assert argv[argv.index("--state") + 1] == "all"
+
+
+@pytest.mark.requirement("AGENT-15")
+def test_open_states_are_still_scoped_to_open_issues():
+    """[if] the state is a live one [then] the query stays on open issues, [else stop]
+
+    Control for the case above: widening every query to closed issues would
+    resurrect long-finished work into the ready queue.
+    """
+    runner = recording_runner(stdout=json.dumps([]))
+    gh_queue.list_items(states=("ready",), runner=runner)
+    argv = runner.calls[0]
+    assert argv[argv.index("--state") + 1] == "open"
 
 
 @pytest.mark.requirement("AGENT-16")

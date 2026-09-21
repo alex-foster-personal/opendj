@@ -39,6 +39,17 @@ PROBES: dict[str, str] = {
 #: Probes whose one-line output is the fleet's spawn gate.
 HEALTH_PROBES: tuple[str, ...] = ("pressure", "watchdog", "workers")
 
+#: The statuses that count as a HEALTHY measurement for each gate probe. The
+#: aggregate says "ok" only when every probe lands in its own set, so a status
+#: nobody anticipated fails closed rather than passing silently.
+#: ``pressure`` keeps "high" here because a high-pressure reading is a working
+#: probe reporting a closed gate, which `health` surfaces as its own verdict.
+HEALTHY_STATUSES: dict[str, frozenset[str]] = {
+    "pressure": frozenset({"ok", "high"}),
+    "watchdog": frozenset({"measured"}),
+    "workers": frozenset({"measured"}),
+}
+
 _SSH_BASE = (
     "ssh",
     "-o",
@@ -135,11 +146,28 @@ def probe(name: str, *, runner: Runner = run) -> dict[str, Any]:
 
 
 def health(*, runner: Runner = run) -> dict[str, Any]:
-    """Aggregate the spawn-gate probes without inventing an overall verdict."""
+    """Aggregate the spawn-gate probes without inventing an overall verdict.
+
+    [if] every gate probe reports one of its own HEALTHY statuses [then] the
+    aggregate may say so, [else stop] -- an unmeasured probe reports UNKNOWN and
+    a probe that ran and FAILED reports ``error``. Both refuse "ok".
+    """
     probes = {name: probe(name, runner=runner) for name in HEALTH_PROBES}
-    unknown = [name for name, document in probes.items() if document["status"] == UNKNOWN]
-    if unknown:
+    unmeasured = [name for name, document in probes.items() if document["status"] == UNKNOWN]
+    # Presence of a healthy measurement, not absence of UNKNOWN. `systemctl
+    # is-active` exits nonzero for an INACTIVE watchdog, which _ssh reports as
+    # `error`; keying the gate on UNKNOWN alone published `ok` for a dead
+    # watchdog and sent callers to spawn into an unhealthy fleet (Codex P1,
+    # #3735). Anything not affirmatively healthy is not health.
+    failed = [
+        name
+        for name, document in probes.items()
+        if document["status"] != UNKNOWN and document["status"] not in HEALTHY_STATUSES[name]
+    ]
+    if unmeasured:
         overall = UNKNOWN
+    elif failed:
+        overall = "error"
     elif probes["pressure"]["status"] == "high":
         overall = "high"
     else:
@@ -150,10 +178,15 @@ def health(*, runner: Runner = run) -> dict[str, Any]:
         "probes": probes,
         "owner_repo": "maintainer/nucbox-jobs",
     }
-    if unknown:
-        document["unmeasured"] = unknown
+    if unmeasured:
+        document["unmeasured"] = unmeasured
         document["reason"] = (
-            f"{', '.join(unknown)} could not be measured; no health verdict is claimed"
+            f"{', '.join(unmeasured)} could not be measured; no health verdict is claimed"
+        )
+    if failed:
+        document["failed"] = failed
+        document["reason"] = (
+            f"{', '.join(failed)} ran and reported a failure; the spawn gate is not ok"
         )
     return document
 

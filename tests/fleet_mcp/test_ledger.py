@@ -18,6 +18,11 @@ from apps.fleet_mcp.config import ENABLE_TAKEOVER_ENV
 
 _ETAG = '"abc123"'
 
+#: Any resolvable-looking sha: these tests exercise the lease branching, and
+#: the transport is a stand-in, so the value is never resolved. The REAL
+#: contract is covered against the real route in test_ledger_contract.py.
+_SHA = "0" * 40
+
 
 def _stamp(hours_ago: float) -> str:
     return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat().replace("+00:00", "Z")
@@ -51,6 +56,7 @@ def test_claim_of_an_unheld_node_patches_with_the_etag():
     document = ledger.claim(
         "perf-01",
         branch="af--deck-load",
+        commit_sha=_SHA,
         worktree="../music-dj-tools-wt-deck-load",
         client=_client(node, sent=sent),
     )
@@ -61,9 +67,18 @@ def test_claim_of_an_unheld_node_patches_with_the_etag():
     assert body["status"] == "building"
     assert body["build"] == {
         "branch": "af--deck-load",
-        "state": "building",
+        # "active", not "building": build.state describes the WORK and the route
+        # only accepts active|idle|blocked|hanging. "building" is the NODE's
+        # status and was rejected outright (#3735).
+        "state": "active",
         "worktree": "../music-dj-tools-wt-deck-load",
     }
+    # The route refuses a status change that cites no commit, so the claim must
+    # carry one or it never lands. Covered against the real route in
+    # test_ledger_contract.py; asserted here so the payload shape cannot drift.
+    assert body["commits_append"] == [
+        {"sha": _SHA, "note": "claimed for af--deck-load"}
+    ]
 
 
 @pytest.mark.requirement("AGENT-16")
@@ -75,7 +90,13 @@ def test_claim_refuses_a_node_under_a_live_lease():
         "build": {"branch": "af--someone-else", "updated": _stamp(0.5)},
     }
     with pytest.raises(ledger.LedgerFailure) as caught:
-        ledger.claim("perf-01", branch="af--mine", worktree="wt", client=_client(node))
+        ledger.claim(
+            "perf-01",
+            branch="af--mine",
+            commit_sha=_SHA,
+            worktree="wt",
+            client=_client(node),
+        )
     document = caught.value.document
     assert document["error"] == "claim_held"
     assert "af--someone-else" in document["message"]
@@ -94,7 +115,13 @@ def test_a_stale_lease_is_claimable_without_takeover():
         "status": "building",
         "build": {"branch": "af--abandoned", "updated": _stamp(ledger.LEASE_HOURS + 1)},
     }
-    document = ledger.claim("perf-01", branch="af--mine", worktree="wt", client=_client(node))
+    document = ledger.claim(
+            "perf-01",
+            branch="af--mine",
+            commit_sha=_SHA,
+            worktree="wt",
+            client=_client(node),
+        )
     assert document["claimed"] is True
     assert document["took_over"] is False
 
@@ -113,7 +140,13 @@ def test_takeover_env_alone_does_not_permit_a_silent_takeover(monkeypatch):
         "build": {"branch": "af--live", "updated": _stamp(0.1)},
     }
     with pytest.raises(ledger.LedgerFailure) as caught:
-        ledger.claim("perf-01", branch="af--mine", worktree="wt", client=_client(node))
+        ledger.claim(
+            "perf-01",
+            branch="af--mine",
+            commit_sha=_SHA,
+            worktree="wt",
+            client=_client(node),
+        )
     assert caught.value.document["error"] == "claim_held"
 
 
@@ -129,6 +162,7 @@ def test_explained_takeover_is_allowed_and_flagged(monkeypatch):
     document = ledger.claim(
         "perf-01",
         branch="af--mine",
+        commit_sha=_SHA,
         worktree="wt",
         note="worker job-1801 died with the WSL restart at 09:12Z",
         client=_client(node),
@@ -146,7 +180,13 @@ def test_unstamped_lease_counts_as_live():
     """
     node = {"id": "perf-01", "status": "building", "build": {"branch": "af--live"}}
     with pytest.raises(ledger.LedgerFailure) as caught:
-        ledger.claim("perf-01", branch="af--mine", worktree="wt", client=_client(node))
+        ledger.claim(
+            "perf-01",
+            branch="af--mine",
+            commit_sha=_SHA,
+            worktree="wt",
+            client=_client(node),
+        )
     assert caught.value.document["error"] == "claim_held"
     assert caught.value.document["lease_age_hours"] is None
 
@@ -157,7 +197,11 @@ def test_a_stale_etag_is_reported_as_retryable():
     node = {"id": "perf-01", "status": "missing"}
     with pytest.raises(ledger.LedgerFailure) as caught:
         ledger.claim(
-            "perf-01", branch="af--mine", worktree="wt", client=_client(node, patch_status=412)
+            "perf-01",
+            branch="af--mine",
+            commit_sha=_SHA,
+            worktree="wt",
+            client=_client(node, patch_status=412),
         )
     assert caught.value.document["error"] == "etag_stale"
 
@@ -167,7 +211,7 @@ def test_claim_requires_somewhere_for_the_work_to_live():
     """[if] neither worktree nor pr is given [then] the claim is refused, [else stop]"""
     node = {"id": "perf-01", "status": "missing"}
     with pytest.raises(ValueError, match="worktree or pr"):
-        ledger.claim("perf-01", branch="af--mine", client=_client(node))
+        ledger.claim("perf-01", branch="af--mine", commit_sha=_SHA, client=_client(node))
 
 
 @pytest.mark.requirement("AGENT-15")

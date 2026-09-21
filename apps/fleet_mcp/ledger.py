@@ -30,6 +30,14 @@ from apps.fleet_mcp.runner import UNKNOWN
 LEASE_HOURS = 3.0
 _PROGRESS_PATH = "/api/v1/progress"
 
+#: ``build.state`` values the progress route accepts (its own ``BuildState``
+#: Literal, apps/webui/server/routes/progress.py). A fresh claim is "active".
+#: This is NOT the node's ``status``: "building" is a status and was the
+#: default here, which the route rejected outright -- a defect the always-200
+#: test transport hid exactly as it hid the missing commits_append (#3735).
+BUILD_STATES: tuple[str, ...] = ("active", "idle", "blocked", "hanging")
+DEFAULT_BUILD_STATE = "active"
+
 
 class LedgerFailure(RuntimeError):
     """The ledger could not be read, or the write was refused."""
@@ -198,12 +206,35 @@ def _claim_conflict(node_id: str, node: dict[str, Any], age: float | None) -> Le
     )
 
 
-def _require_claim_inputs(branch: str, worktree: str | None, pr: str | None) -> None:
-    """Refuse a claim that records neither a branch nor a place for the work."""
+def _require_claim_inputs(
+    branch: str, worktree: str | None, pr: str | None, commit_sha: str, state: str
+) -> None:
+    """Refuse a claim the progress route would reject, before sending it.
+
+    [if] the claim names a branch, a place for the work and a commit to cite
+    [then] it is worth sending, [else stop] with the reason here rather than a
+    422 from the server.
+    """
     if not branch.strip():
         raise ValueError("branch must not be empty: the claim records where the work lands")
     if worktree is None and pr is None:
         raise ValueError("pass worktree or pr: a claim must say where the work is")
+    # The route refuses every status change into `building` that cites no
+    # commit: only `missing` and `spiked` are exempt, because they carry no
+    # code (apps/webui/server/routes/progress.py, _STATUSES_WITHOUT_COMMITS).
+    # A claim without one is a guaranteed 422, so it fails here with the
+    # reason instead of at the server (Codex P1, #3735).
+    if not commit_sha.strip():
+        raise ValueError(
+            "commit_sha must not be empty: claiming a node moves its status, and the "
+            "progress route requires a resolvable commit to cite for any status change "
+            "except missing/spiked. Pass the SHA your branch starts from."
+        )
+    if state not in BUILD_STATES:
+        raise ValueError(
+            f"state must be one of {', '.join(BUILD_STATES)} (got {state!r}); "
+            "build.state describes the WORK, not the node's status"
+        )
 
 
 def _claim_payload(
@@ -213,14 +244,25 @@ def _claim_payload(
     worktree: str | None,
     pr: str | None,
     note: str | None,
+    commit_sha: str,
 ) -> dict[str, Any]:
-    """The PATCH body the ledger-as-lock convention expects."""
+    """The PATCH body the ledger-as-lock convention and the route both expect.
+
+    ``commits_append`` is not optional decoration: the route rejects a status
+    change into ``building`` without it. The SHA is the base the claimed work
+    starts from, which is the provenance a claim can honestly cite before any
+    of the work exists.
+    """
     build: dict[str, Any] = {"branch": branch, "state": state}
     if worktree is not None:
         build["worktree"] = worktree
     if pr is not None:
         build["pr"] = pr
-    payload: dict[str, Any] = {"status": "building", "build": build}
+    payload: dict[str, Any] = {
+        "status": "building",
+        "build": build,
+        "commits_append": [{"sha": commit_sha, "note": f"claimed for {branch}"}],
+    }
     if note:
         payload["note"] = note
     return payload
@@ -271,10 +313,11 @@ def claim(
     node_id: str,
     *,
     branch: str,
+    commit_sha: str,
     worktree: str | None = None,
     pr: str | None = None,
     note: str | None = None,
-    state: str = "building",
+    state: str = DEFAULT_BUILD_STATE,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Claim a ledger node as the ledger-as-lock convention requires.
@@ -283,7 +326,7 @@ def claim(
     ``DISPATCH_MCP_ENABLE_TAKEOVER=1`` is set AND a note is supplied, because
     a silent takeover is the one outcome the lock exists to prevent.
     """
-    _require_claim_inputs(branch, worktree, pr)
+    _require_claim_inputs(branch, worktree, pr, commit_sha, state)
     origin = base_url()
     with _client(client) as session:
         tree, etag = _snapshot(session, origin)
@@ -293,7 +336,12 @@ def claim(
         if live_claim and not (takeover_enabled() and note):
             raise _claim_conflict(node_id, node, age)
         payload = _claim_payload(
-            branch=branch, state=state, worktree=worktree, pr=pr, note=note
+            branch=branch,
+            state=state,
+            worktree=worktree,
+            pr=pr,
+            note=note,
+            commit_sha=commit_sha,
         )
         try:
             response = session.patch(

@@ -40,7 +40,7 @@ worktree's environment").
 | `fleet_health` | read | The live spawn gate on nucbox: pressure, watchdog liveness, live workers. |
 | `dispatcher_log` | read | Tail of `~/jobs/logs/dispatcher.log`. |
 | `ledger_read` | read | The fan-out ledger: one node, or every node in a status. |
-| `ledger_claim` | write | Claim a node before building it, ETag handling included. |
+| `ledger_claim` | write | Claim a node before building it, ETag handling included. Needs the commit your branch starts from. |
 
 ## What it will not do, and why
 
@@ -95,6 +95,22 @@ under a live 3h lease. A stale lease is claimable; a live one needs
 `DISPATCH_MCP_ENABLE_TAKEOVER=1` **and** a note saying why. The environment
 variable alone does not unlock it -- it only makes an explained takeover
 possible.
+
+Claiming moves the node's status, and the progress route refuses any status
+change that cites no commit (only `missing` and `spiked` are exempt, because
+they carry no code). So `ledger_claim` takes a `commit_sha` -- pass the commit
+your branch starts from -- and sends it as `commits_append`. A claim without
+one is refused here, with the reason, rather than sent for the route to reject
+with a 422. `build.state` is the state of the WORK (`active`, the default, or
+`idle|blocked|hanging`), not the node's status; the route accepts only those
+four.
+
+Both of those were found by the review on #3735: the original claim sent
+`status: building` with no commit and `build.state: "building"`, and BOTH would
+have been rejected by the real endpoint. The tests substituted a transport that
+answered 200, so nothing in the suite could see it. `tests/fleet_mcp/
+test_ledger_contract.py` now drives the claim against the real FastAPI route,
+which is the only thing that could have caught either.
 
 `ledger_read` and `ledger_claim` go through this worktree's own backend
 (`just webui-ports`), so an unstarted daemon reports `ledger_unknown` with the
