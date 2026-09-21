@@ -57,7 +57,7 @@ def base_url() -> str:
             }
         ) from error
     try:
-        port = resolve_backend_port()
+        port = resolve_backend_port(None)
     except Exception as error:  # port_config raises several types
         raise LedgerFailure(
             {
@@ -177,7 +177,8 @@ def read(
 
 
 def _claim_conflict(node_id: str, node: dict[str, Any], age: float | None) -> LedgerFailure:
-    build = node.get("build") if isinstance(node.get("build"), dict) else {}
+    raw_build = node.get("build")
+    build: dict[str, Any] = raw_build if isinstance(raw_build, dict) else {}
     return LedgerFailure(
         {
             "error": "claim_held",
@@ -197,56 +198,45 @@ def _claim_conflict(node_id: str, node: dict[str, Any], age: float | None) -> Le
     )
 
 
-def claim(
-    node_id: str,
-    *,
-    branch: str,
-    worktree: str | None = None,
-    pr: str | None = None,
-    note: str | None = None,
-    state: str = "building",
-    client: httpx.Client | None = None,
-) -> dict[str, Any]:
-    """Claim a ledger node as the ledger-as-lock convention requires.
-
-    Refuses a node another agent holds under a live lease unless
-    ``DISPATCH_MCP_ENABLE_TAKEOVER=1`` is set AND a note is supplied, because
-    a silent takeover is the one outcome the lock exists to prevent.
-    """
+def _require_claim_inputs(branch: str, worktree: str | None, pr: str | None) -> None:
+    """Refuse a claim that records neither a branch nor a place for the work."""
     if not branch.strip():
         raise ValueError("branch must not be empty: the claim records where the work lands")
     if worktree is None and pr is None:
         raise ValueError("pass worktree or pr: a claim must say where the work is")
-    origin = base_url()
-    with _client(client) as session:
-        tree, etag = _snapshot(session, origin)
-        node = next((item for item in _nodes(tree) if item.get("id") == node_id), None)
-        if node is None:
-            raise LedgerFailure(
-                {"error": "node_not_found", "message": f"no ledger node with id {node_id!r}"}
-            )
-        age = _lease_age_hours(node)
-        live_claim = node.get("status") == "building" and (age is None or age < LEASE_HOURS)
-        if live_claim and not (takeover_enabled() and note):
-            raise _claim_conflict(node_id, node, age)
 
-        build: dict[str, Any] = {"branch": branch, "state": state}
-        if worktree is not None:
-            build["worktree"] = worktree
-        if pr is not None:
-            build["pr"] = pr
-        payload: dict[str, Any] = {"status": "building", "build": build}
-        if note:
-            payload["note"] = note
-        try:
-            response = session.patch(
-                f"{origin}{_PROGRESS_PATH}/nodes/{node_id}",
-                json=payload,
-                headers={"If-Match": etag},
-            )
-        except httpx.TransportError as error:
-            raise _unreachable(origin, error) from error
 
+def _claim_payload(
+    *,
+    branch: str,
+    state: str,
+    worktree: str | None,
+    pr: str | None,
+    note: str | None,
+) -> dict[str, Any]:
+    """The PATCH body the ledger-as-lock convention expects."""
+    build: dict[str, Any] = {"branch": branch, "state": state}
+    if worktree is not None:
+        build["worktree"] = worktree
+    if pr is not None:
+        build["pr"] = pr
+    payload: dict[str, Any] = {"status": "building", "build": build}
+    if note:
+        payload["note"] = note
+    return payload
+
+
+def _held_live(node: dict[str, Any], age: float | None) -> bool:
+    """Whether this node is building under a lease that has not lapsed.
+
+    An UNSTAMPED lease counts as live. An unmeasured lease is not an expired
+    one, and failing open here would make an unstamped claim stealable.
+    """
+    return node.get("status") == "building" and (age is None or age < LEASE_HOURS)
+
+
+def _claimed_node(response: httpx.Response) -> dict[str, Any]:
+    """The claim's result, or the failure its status code names."""
     if response.status_code == 412:
         raise LedgerFailure(
             {
@@ -264,9 +254,59 @@ def claim(
             }
         )
     document = response.json()
+    node = document.get("node", {})
+    return node if isinstance(node, dict) else {}
+
+
+def _find_node(tree: dict[str, Any], node_id: str) -> dict[str, Any]:
+    for item in _nodes(tree):
+        if item.get("id") == node_id:
+            return item
+    raise LedgerFailure(
+        {"error": "node_not_found", "message": f"no ledger node with id {node_id!r}"}
+    )
+
+
+def claim(
+    node_id: str,
+    *,
+    branch: str,
+    worktree: str | None = None,
+    pr: str | None = None,
+    note: str | None = None,
+    state: str = "building",
+    client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Claim a ledger node as the ledger-as-lock convention requires.
+
+    Refuses a node another agent holds under a live lease unless
+    ``DISPATCH_MCP_ENABLE_TAKEOVER=1`` is set AND a note is supplied, because
+    a silent takeover is the one outcome the lock exists to prevent.
+    """
+    _require_claim_inputs(branch, worktree, pr)
+    origin = base_url()
+    with _client(client) as session:
+        tree, etag = _snapshot(session, origin)
+        node = _find_node(tree, node_id)
+        age = _lease_age_hours(node)
+        live_claim = _held_live(node, age)
+        if live_claim and not (takeover_enabled() and note):
+            raise _claim_conflict(node_id, node, age)
+        payload = _claim_payload(
+            branch=branch, state=state, worktree=worktree, pr=pr, note=note
+        )
+        try:
+            response = session.patch(
+                f"{origin}{_PROGRESS_PATH}/nodes/{node_id}",
+                json=payload,
+                headers={"If-Match": etag},
+            )
+        except httpx.TransportError as error:
+            raise _unreachable(origin, error) from error
+
     return {
         "claimed": True,
         "node_id": node_id,
-        "took_over": bool(live_claim),
-        "node": document.get("node", {}),
+        "took_over": live_claim,
+        "node": _claimed_node(response),
     }

@@ -28,8 +28,8 @@ from apps.fleet_mcp.config import (
     QUEUE_STATES,
     takeover_enabled,
 )
-from apps.fleet_mcp.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.fleet_mcp.runner import Runner, run
+from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 _MUTATING = ToolAnnotations(read_only_hint=False)
