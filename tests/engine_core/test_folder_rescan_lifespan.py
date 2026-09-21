@@ -9,8 +9,7 @@ this uses the SAME ``FolderRescanCfg.INITIAL_DELAY_S`` (20s) that ships to
 users, so the real bounded interval this PR documents is what the test
 waits on.
 
-  - [if] a folder import is on record when the engine boots [then] a new
-    file dropped in afterward appears with no restart, [else stop].
+  - [if] a folder lands after boot [then] it appears live with no restart, [else stop].
 """
 from __future__ import annotations
 
