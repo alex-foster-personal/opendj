@@ -199,8 +199,8 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.playlist-switch-latency.config.ts",
-        "process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8701",
-        8701,
+        "process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8713",
+        8713,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.hotcue-mapping-gate.config.ts",

@@ -18,7 +18,7 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 export const PLAYLIST_SWITCH_BENCH_PORT = Number(
-	process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8701
+	process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8713
 );
 
 const RESERVED_PORTS: readonly number[] = [
@@ -94,7 +94,12 @@ export default defineConfig({
 			MDT_DATA_DIR: FIXTURE_DATA_DIR,
 			MDT_LIBRARY_MODE: 'local',
 			WEB_CONCURRENCY: '',
-			HOME: SANDBOX_HOME
+			HOME: SANDBOX_HOME,
+			// The fixture builder runs by path, so its own directory (not cwd) is
+			// sys.path[0]; the CI shard venv is filled with `uv pip install -r
+			// requirements.txt` and never installs the project, so `apps` is only
+			// importable with the repository root on PYTHONPATH (#3741).
+			PYTHONPATH: REPOSITORY_ROOT
 		}
 	},
 	use: {
