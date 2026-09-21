@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from apps.analysis import canonical, selection
 from apps.analysis.record import AnalysisRecord
-from apps.shared import platform_paths
+from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -357,9 +357,9 @@ def get_track_anlz(
     request: Request,
     stable_id: str,
     points: int = Query(
-        38400,
-        ge=100,
-        le=38400,
+        runtime_policy.ANLZ_POINTS_DEFAULT,
+        ge=runtime_policy.ANLZ_POINTS_MIN,
+        le=runtime_policy.ANLZ_POINTS_MAX,
         description="Max length of each waveform band array after downsampling",
     ),
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI

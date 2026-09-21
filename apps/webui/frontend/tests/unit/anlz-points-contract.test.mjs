@@ -16,37 +16,52 @@ import { test } from 'node:test';
 
 const API_RB = fileURLToPath(new URL('../../src/lib/rb/api-rb.ts', import.meta.url));
 const RB_ASSETS = fileURLToPath(new URL('../../../server/routes/rb_assets.py', import.meta.url));
+const RUNTIME_POLICY = fileURLToPath(
+	new URL('../../../../shared/runtime_policy.py', import.meta.url)
+);
 
 /** The `points` default baked into the frontend's own /anlz client. */
 function frontendDefaultPoints() {
 	const source = readFileSync(API_RB, 'utf8');
-	const match = source.match(/export async function fetchAnlz\([^)]*?points\s*=\s*(\d+)/s);
-	if (match === null) {
+	if (!source.includes('points = defaultAnlzPoints()')) {
 		throw new Error(
-			`could not read the fetchAnlz points default from ${API_RB}. If it moved to a ` +
-				'named constant, update this test to read the constant - do not delete the check.'
+			`fetchAnlz must default to defaultAnlzPoints() in ${API_RB}. ` +
+				'If the default moved, update this test - do not delete the check.'
 		);
+	}
+	const pointsModule = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/runtime-policy-points.ts', import.meta.url)),
+		'utf8'
+	);
+	const match = pointsModule.match(/let _anlzPointsDefault = (\d+)/);
+	if (match === null) {
+		throw new Error('could not read shipped anlz_points_default from runtime-policy-points.ts');
 	}
 	return Number(match[1]);
 }
 
-/** The FastAPI Query(default, ge=..., le=...) bounds on GET /{sid}/anlz. */
+/** Backend policy constants and the FastAPI Query wiring on GET /{sid}/anlz. */
 function backendPointsBounds() {
-	const source = readFileSync(RB_ASSETS, 'utf8');
-	const route = source.match(/@router\.get\("\/\{stable_id\}\/anlz"\)[\s\S]{0,600}?\)\s*->/);
+	const policySource = readFileSync(RUNTIME_POLICY, 'utf8');
+	const defaultMatch = policySource.match(/^_DEFAULT_ANLZ_POINTS_DEFAULT\s*=\s*(\d+)/m);
+	const minMatch = policySource.match(/^_DEFAULT_ANLZ_POINTS_MIN\s*=\s*(\d+)/m);
+	const maxMatch = policySource.match(/^_DEFAULT_ANLZ_POINTS_MAX\s*=\s*(\d+)/m);
+	if (defaultMatch === null || minMatch === null || maxMatch === null) {
+		throw new Error(`could not read ANLZ_POINTS_* defaults from ${RUNTIME_POLICY}`);
+	}
+	const assets = readFileSync(RB_ASSETS, 'utf8');
+	const route = assets.match(/@router\.get\("\/\{stable_id\}\/anlz"\)[\s\S]{0,600}?\)\s*->/);
 	if (route === null) {
 		throw new Error(`could not locate the /anlz route declaration in ${RB_ASSETS}`);
 	}
-	const query = route[0].match(
-		/points:\s*int\s*=\s*Query\(\s*(\d+),\s*ge=(\d+),\s*le=(\d+)/
-	);
-	if (query === null) {
-		throw new Error(
-			`could not read Query(default, ge=, le=) for points in ${RB_ASSETS}. If the bound ` +
-				'moved, update this test to read it - do not delete the check.'
-		);
+	if (!route[0].includes('runtime_policy.ANLZ_POINTS_DEFAULT')) {
+		throw new Error('/anlz route must reference runtime_policy.ANLZ_POINTS_* bounds');
 	}
-	return { default: Number(query[1]), ge: Number(query[2]), le: Number(query[3]) };
+	return {
+		default: Number(defaultMatch[1]),
+		ge: Number(minMatch[1]),
+		le: Number(maxMatch[1])
+	};
 }
 
 test('frontend anlz points default sits inside the backend Query bounds', () => {

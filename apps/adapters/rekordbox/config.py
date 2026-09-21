@@ -107,7 +107,8 @@ LOCAL_WAVEFORM_CACHE_SCHEMA: int = 2
 # lapses (30 s keeps "file restored by reconcile" visible quickly).
 # The cache holds materialised st_size (None = missing or stub), so the
 # SAME pass that answers file_exists also feeds audio_quality.classify.
-FILE_EXISTS_TTL_S: float = 30.0
+from apps.shared.runtime_policy import FILE_EXISTS_TTL_S  # noqa: E402
+
 _FILE_EXISTS_LOCK = threading.Lock()
 _FILE_EXISTS_CACHE: dict[str, tuple[float, int | None]] = {}
 

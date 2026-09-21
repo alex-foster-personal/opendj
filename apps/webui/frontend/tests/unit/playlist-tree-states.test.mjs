@@ -117,9 +117,19 @@ test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows
 	assert.match(treeSource, /class:broken=\{node\.mostly_broken\}/);
 	assert.match(
 		treeSource,
-		/title=\{node\.mostly_broken \? _mostlyBrokenTitle\(node\) : undefined\}/
+		/title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : undefined\}/
 	);
-	assert.match(treeSource, /Fewer than 30% of tracks in this playlist are playable/);
+	assert.match(treeSource, /formatMostlyBrokenTooltip\(\)/);
+	const policy = readFileSync(
+		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(policy, /Fewer than \$\{_mostlyBrokenPercent\(\)\}% of tracks in this playlist are playable/);
+	assert.match(
+		policy,
+		/Math\.round\(runtimePolicy\.hide_broken_playlist_min_available_ratio \* 100\)/,
+		'tooltip percent must be min-available ratio (30 at shipped default 0.3), not broken fraction'
+	);
 });
 
 test('all hidden: shows hidden count and not genuine-empty copy', () => {
