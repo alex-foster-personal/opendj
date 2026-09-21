@@ -19,11 +19,16 @@
  * of the engine scrubber's path rule, and carry `origin=browser-sdk` so
  * they are told apart from the engine-forwarded copy.
  *
- * NEVER WHILE A DECK IS LIVE. The same rule as error reporting: a poll reads
- * the live-transport probe and stops the replay while any deck is playing or
- * audible, restarting it after two idle ticks. `stop()` flushes the segment
- * recorded so far, so the one send a mix can trigger is at its very start,
- * never during it.
+ * NEVER WHILE A DECK IS LIVE. The same rule as error reporting, enforced on
+ * three paths: (1) a live-transport WATCHER (a rune effect on the deck
+ * state, wired by app-init) stops the replay in the same microtask that
+ * flips a deck to playing or audible, before any timer-driven flush can
+ * run; (2) the stop DISCARDS the buffered tail (`forceFlush: false`) rather
+ * than flushing it, so nothing recorded up to that instant leaves either;
+ * (3) the loader SDK's own error capture returns null from `beforeSend`
+ * while live, so a browser exception mid-set is dropped, not sent around
+ * the engine's `any_deck_live` gate. A 2 s poll is the fallback for a page
+ * without the watcher and restarts the replay after two idle ticks.
  */
 
 import { api } from './api/client';
@@ -45,7 +50,8 @@ export const REPLAY_IDLE_TICKS_TO_RESTART = 2;
 // ----- the loader SDK surface this module touches -----------------------------
 interface LoaderReplay {
 	start(): void;
-	stop(): Promise<void> | void;
+	/** `forceFlush: false` discards the buffered segment instead of sending it. */
+	stop(options?: { forceFlush?: boolean }): Promise<void> | void;
 }
 
 interface LoaderSentry {
@@ -112,10 +118,18 @@ export interface ReplayDeps {
 	loadScript?: (url: string) => void;
 	/** Interval seam; production is window.setInterval. Returns the cancel. */
 	every?: (ms: number, fn: () => void) => () => void;
+	/**
+	 * Live-transport watcher: calls back the moment the live read changes,
+	 * before any timer can run. Production passes `watchLiveTransport`
+	 * (live-transport-watch.svelte.ts); a page without it falls back to the
+	 * poll alone. Returns the unsubscribe.
+	 */
+	watchLive?: (onChange: (live: boolean) => void) => () => void;
 }
 
 let replayArmed = false;
 let stopReplayPoll: (() => void) | null = null;
+let stopLiveWatch: (() => void) | null = null;
 
 function injectScript(url: string): void {
 	if (typeof document === 'undefined') return;
@@ -147,6 +161,16 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 	const loadScript = deps.loadScript ?? injectScript;
 	let recording = true;
 	let idleTicks = 0;
+	// Stop and DISCARD: `forceFlush: false` drops the segment buffered since
+	// the last periodic flush instead of sending it, so once a deck is live
+	// nothing leaves, not even the seconds recorded up to this instant.
+	const stopNow = (): void => {
+		const replay = window.Sentry?.getReplay();
+		if (replay === undefined || !recording) return;
+		recording = false;
+		idleTicks = 0;
+		void replay.stop({ forceFlush: false });
+	};
 
 	window.sentryOnLoad = (): void => {
 		const Sentry = window.Sentry;
@@ -164,7 +188,10 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 					blockAllMedia: true
 				})
 			],
-			beforeSend: (event: ScrubbableEvent) => scrubEvent(event),
+			// The loader SDK captures browser exceptions on its own; while a
+			// deck is live they are dropped here, the same answer the engine
+			// gives a forwarded error whose `any_deck_live` is true.
+			beforeSend: (event: ScrubbableEvent) => (deps.isLive() ? null : scrubEvent(event)),
 			beforeBreadcrumb: (crumb: { message?: unknown; data?: unknown }) => {
 				if (typeof crumb.message === 'string') crumb.message = redactPaths(crumb.message);
 				delete crumb.data;
@@ -172,17 +199,19 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 			}
 		});
 		Sentry.setTag('origin', 'browser-sdk');
-		// Recording may already have begun by the time the first poll runs;
-		// a set that is live at load time stops it on that first tick.
+		// The watcher is the stop path that matters: it fires in the microtask
+		// that flips a deck live, ahead of any flush timer. Recording may also
+		// already be live at load time; the first poll tick covers that.
+		if (deps.watchLive !== undefined) {
+			stopLiveWatch = deps.watchLive((live) => {
+				if (live) stopNow();
+			});
+		}
 		stopReplayPoll = every(REPLAY_LIVE_POLL_MS, () => {
 			const replay = window.Sentry?.getReplay();
 			if (replay === undefined) return;
 			if (deps.isLive()) {
-				idleTicks = 0;
-				if (recording) {
-					recording = false;
-					void replay.stop();
-				}
+				stopNow();
 				return;
 			}
 			if (recording) return;
@@ -274,6 +303,8 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 		setCurrentConsent(null);
 		stopReplayPoll?.();
 		stopReplayPoll = null;
+		stopLiveWatch?.();
+		stopLiveWatch = null;
 		replayArmed = false;
 		bootDeps = null;
 		if (typeof window !== 'undefined') delete window.sentryOnLoad;

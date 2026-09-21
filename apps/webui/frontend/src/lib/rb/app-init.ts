@@ -119,8 +119,16 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	// dialog) to the library page's bundle budget.
 	let stopTelemetryConsent: (() => void) | null = null;
 	scheduler.defer('telemetry-consent:fetch', () =>
-		import('$lib/telemetry-consent').then((consent) => {
-			stopTelemetryConsent = consent.bootTelemetryConsent({ isLive: anyDeckPlaying });
+		Promise.all([
+			import('$lib/telemetry-consent'),
+			import('$lib/rb/live-transport-watch.svelte')
+		]).then(([consent, watch]) => {
+			stopTelemetryConsent = consent.bootTelemetryConsent({
+				isLive: anyDeckPlaying,
+				// Stops a replay in the microtask a deck goes live, ahead of any
+				// flush timer; the poll inside is only the fallback.
+				watchLive: watch.watchLiveTransport
+			});
 		})
 	);
 	const stopBootScheduler = scheduler.start();

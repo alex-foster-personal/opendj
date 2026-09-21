@@ -179,11 +179,14 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
         stack=payload.stack,
         url=payload.url,
         user_agent=payload.user_agent,
-        context={"kind": payload.kind, "client_event_id": payload.client_event_id,
+        # The page's free-form context goes in FIRST so the typed fields win:
+        # `any_deck_live` is what the live-set gate reads, and a context key
+        # of the same name must not be able to overwrite it (Codex, #3737).
+        context={**payload.context,
+                 "kind": payload.kind, "client_event_id": payload.client_event_id,
                  "secure_context": payload.secure_context,
                  "audio_worklet_available": payload.audio_worklet_available,
-                 "any_deck_live": payload.any_deck_live,
-                 **payload.context},
+                 "any_deck_live": payload.any_deck_live},
     )
     return ClientErrorOut(event_id=event_id, stored=stored)
 

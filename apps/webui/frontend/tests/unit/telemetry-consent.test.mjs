@@ -70,13 +70,14 @@ function manualScheduler() {
 
 /** A fake loader SDK: records init options and exposes a controllable replay. */
 function fakeSentry() {
-	const calls = { init: [], tags: [], starts: 0, stops: 0 };
+	const calls = { init: [], tags: [], starts: 0, stops: 0, stopOptions: [] };
 	const replay = {
 		start: () => {
 			calls.starts += 1;
 		},
-		stop: () => {
+		stop: (options) => {
 			calls.stops += 1;
+			calls.stopOptions.push(options ?? null);
 		}
 	};
 	return {
@@ -153,9 +154,10 @@ test('accepting records the current terms version and then loads the loader, mas
 	const scheduler = manualScheduler();
 	const loaded = [];
 	const ticks = [];
+	let live = false;
 	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
-		isLive: () => false,
+		isLive: () => live,
 		showDialog: async () => () => {},
 		fetchConsent: async () => consentBody(),
 		loadScript: (url) => loaded.push(url),
@@ -194,6 +196,58 @@ test('accepting records the current terms version and then loads the loader, mas
 	assert.deepEqual(replay.options, { maskAllText: true, maskAllInputs: true, blockAllMedia: true });
 	assert.deepEqual(fake.calls.tags, [['origin', 'browser-sdk']]);
 	assert.equal(ticks.length, 1, 'the live gate poll is armed');
+	// The loader SDK's own error capture: scrubbed when idle, DROPPED while a
+	// deck is live (the engine's any_deck_live gate cannot see these events).
+	const idle = options.beforeSend({ message: 'decode failed /Users/dev/Music/x.mp3', tags: {} });
+	assert.equal(idle.message, 'decode failed <path.mp3>');
+	assert.equal(idle.tags.origin, 'browser-sdk');
+	live = true;
+	assert.equal(options.beforeSend({ message: 'mid-set' }), null, 'nothing leaves while live');
+	live = false;
+});
+
+test('the live watcher stops the replay at once and discards the tail, ahead of any poll', async () => {
+	const scheduler = manualScheduler();
+	let live = false;
+	let notify = null;
+	let tick;
+	stopBoot = consent.bootTelemetryConsent({
+		scheduler,
+		isLive: () => live,
+		fetchConsent: async () => consentBody({ decision: 'accepted', terms_version: '2026-09-21' }),
+		loadScript: () => {},
+		every: (_ms, fn) => {
+			tick = fn;
+			return () => {};
+		},
+		watchLive: (onChange) => {
+			notify = onChange;
+			return () => {
+				notify = null;
+			};
+		}
+	});
+	await scheduler.release();
+	const fake = fakeSentry();
+	globalThis.window.Sentry = fake.sdk;
+	globalThis.window.sentryOnLoad();
+	assert.equal(typeof notify, 'function', 'the watcher is armed at init');
+
+	live = true;
+	notify(true);
+	assert.equal(fake.calls.stops, 1, 'stopped in the watcher callback, no poll needed');
+	assert.deepEqual(fake.calls.stopOptions, [{ forceFlush: false }], 'the buffered tail is discarded, not flushed');
+	tick();
+	assert.equal(fake.calls.stops, 1, 'the poll does not stop it a second time');
+
+	live = false;
+	notify(false);
+	tick();
+	tick();
+	assert.equal(fake.calls.starts, 1, 'restarts after two idle ticks');
+	stopBoot();
+	stopBoot = null;
+	assert.equal(notify, null, 'teardown unsubscribes the watcher');
 });
 
 test('the live gate stops the replay while a deck plays and restarts after two idle ticks', async () => {
@@ -221,6 +275,7 @@ test('the live gate stops the replay while a deck plays and restarts after two i
 	tick();
 	tick();
 	assert.equal(fake.calls.stops, 1, 'live: stopped once, not once per tick');
+	assert.deepEqual(fake.calls.stopOptions, [{ forceFlush: false }], 'the poll path discards too');
 	assert.equal(fake.calls.starts, 0);
 	live = false;
 	tick();

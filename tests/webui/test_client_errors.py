@@ -209,3 +209,44 @@ def test_any_deck_live_is_accepted_stored_and_forwarded(
     daily = next(tmp_path.glob("webui-client-errors-*.log"))
     rows = [json.loads(line) for line in daily.read_text().splitlines()]
     assert [row["any_deck_live"] for row in rows] == [True, None]
+
+
+def test_free_form_context_cannot_override_the_typed_live_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the page's free-form context carries any_deck_live [then] the typed
+    top-level flag is what reaches the forward, [else stop].
+
+    The context dict is untrusted page data merged into the same mapping the
+    live-set gate reads. Codex (#3737): with the context spread LAST, a body
+    of `any_deck_live: true` plus `context: {"any_deck_live": false}` was
+    forwarded as idle and sent mid-set. The typed fields now win.
+    """
+    forwarded: list[dict[str, object]] = []
+
+    def record_forward(**kwargs: object) -> None:
+        context = kwargs.get("context")
+        assert isinstance(context, dict)
+        forwarded.append(dict(context))
+
+    monkeypatch.setattr(
+        "apps.webui.server.routes.client_errors.capture_browser_error", record_forward
+    )
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    body = {
+        **_payload(),
+        "any_deck_live": True,
+        "context": {"any_deck_live": False, "kind": "spoofed", "deck": "1"},
+    }
+    with TestClient(app, base_url=_LOOPBACK) as client:
+        response = client.post("/api/v1/client-errors", json=body)
+    assert response.status_code == 202, response.text
+    assert forwarded[0]["any_deck_live"] is True
+    assert forwarded[0]["kind"] == _payload()["kind"]
+    # Non-reserved context keys still ride along.
+    assert forwarded[0]["deck"] == "1"
