@@ -7,6 +7,8 @@ a 600 s test timeout plus a 240 s webServer timeout). On PR #3732 at ac3ed20d (M
 the whole shard at 34% progress. The pytest lanes install no frontend node_modules and no
 browsers, so they are the wrong host whatever the duration.
 
+[if] the bench is collected by a pytest lane, or run by no lane [then] broken, [else stop].
+
 Regression lines:
   - if either pytest lane in ci.yml stops ignoring the bench file then broken
   - if the e2e extended job stops running the bench, or runs it without the
@@ -49,14 +51,12 @@ def test_both_pytest_lanes_ignore_the_bench() -> None:
 
 
 def test_the_bench_file_still_exists_and_is_collected_nowhere_else_in_ci() -> None:
-    """[if] the ignore outlives the file, or the file is renamed [then] the pin is stale and
-    the ignore silently matches nothing, [else stop]."""
+    """[if] the bench file is renamed or gone [then] the ignore matches nothing, [else stop]."""
     assert (REPO / BENCH).is_file(), f"{BENCH} is gone; drop the ignore and this pin"
 
 
 def test_the_e2e_extended_job_runs_the_bench_guarded() -> None:
-    """[if] the extended job drops the bench step or its guard [then] the PERF-UI-05 gate
-    runs nowhere, [else stop]."""
+    """[if] the extended job loses the bench step or guard [then] it runs nowhere, [else stop]"""
     steps = [s for s in _steps(E2E, "extended") if BENCH in (s.get("run") or "")]
     assert len(steps) == 1, f"expected exactly one extended step running {BENCH}, got {len(steps)}"
     step = steps[0]
