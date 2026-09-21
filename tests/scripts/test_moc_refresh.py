@@ -188,7 +188,7 @@ def test_fixture_moc_all_three_cases_in_one_file(tmp_path: Path) -> None:
 
     rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
 
-    by_status = {}
+    by_status: dict[str, list[mod.Row]] = {}
     for r in rows:
         by_status.setdefault(r.status, []).append(r)
 
