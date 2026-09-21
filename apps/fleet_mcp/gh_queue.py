@@ -134,7 +134,12 @@ def list_items(
     # "this many MATCHING issues". Filtering after the fetch let 20 newer p1s
     # hide an older ready p0 and return an empty list with truncated: false
     # (Codex P2, #3735).
-    priority_labels = [queue_label("priority", value) for value in priorities] or [None]
+    # None is the "no priority filter" arm, so the element type is explicit:
+    # inferred from the comprehension alone this reads as list[str] and the
+    # fallback does not fit.
+    priority_labels: list[str | None] = [
+        queue_label("priority", value) for value in priorities
+    ] or [None]
     seen: dict[int, dict[str, Any]] = {}
     for state in states:
         label = queue_label("state", state)
