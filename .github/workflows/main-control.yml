@@ -12,6 +12,9 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
 
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
 permissions:
   actions: write
   contents: read
@@ -29,12 +32,66 @@ jobs:
       - name: Dispatch CI against main
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main
+        # `-f tier=fast`: only the fast tier. Without the input every control
+        # run also launched the full lane (five shards, contracts, frontend,
+        # quality) four times a day; see the `workflow_dispatch` block in ci.yml.
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f tier=fast
 
   measure-base-freshness:
     name: Measure open PR base freshness
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # Full history so origin/main is current enough for the ancestry guard
+      # (issue #3513). edited below re-runs body declarations; ancestry catches
+      # stale synthetic merge refs that predate trunk ADR fixes.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0

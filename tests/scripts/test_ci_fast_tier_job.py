@@ -72,9 +72,18 @@ def test_fast_job_prefers_its_own_pool_then_the_shard_chain() -> None:
 
 
 def test_fast_job_is_pull_request_only_with_four_legs() -> None:
-    """if the fast job runs on push then a trunk push can cancel its own verdict"""
+    """if the fast job runs on push then a trunk push can cancel its own verdict
+
+    A `workflow_dispatch` is the one other admitted event: main-control.yml
+    dispatches the tier on main every six hours (tests/quality/
+    test_main_control_workflow.py pins the input that keeps the full lane out).
+    """
     job = _jobs()["fast"]
-    assert job["if"] == "github.event_name == 'pull_request'"
+    assert job["if"] == (
+        "github.event_name == 'pull_request' || "
+        "(github.event_name == 'workflow_dispatch' && "
+        "(github.ref == 'refs/heads/main' || inputs.tier == 'fast'))"
+    )
     assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"
 

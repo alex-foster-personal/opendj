@@ -33,8 +33,13 @@ class Measurement:
     pr_count: int
     newest_base_oid: str | None
     newest_base_age_hours: int | None
-    max_main_commits_ahead: int
+    #: The PR whose stale base is the NEWEST (the alert's subject) and ITS gap.
     affected_pr: int | None
+    affected_pr_commits_ahead: int
+    #: The largest gap in the stale set and the PR that carries it: a
+    #: different PR from affected_pr whenever an older base is further behind.
+    max_main_commits_ahead: int
+    max_gap_pr: int | None
 
 
 def measure(
@@ -62,21 +67,37 @@ def measure(
             stale.append((committed_at, number, oid, commits_ahead))
 
     if not stale:
-        return Measurement(0, None, None, 0, None)
+        return Measurement(
+            pr_count=0,
+            newest_base_oid=None,
+            newest_base_age_hours=None,
+            affected_pr=None,
+            affected_pr_commits_ahead=0,
+            max_main_commits_ahead=0,
+            max_gap_pr=None,
+        )
 
     newest, pr_number, oid, commits_ahead = max(stale, key=lambda row: row[0])
-    age_hours = int(
-        (now.astimezone(UTC) - newest.astimezone(UTC)).total_seconds() // 3600
+    age_hours = int((now.astimezone(UTC) - newest.astimezone(UTC)).total_seconds() // 3600)
+    # Kept as a pair so the printed gap is never attributed to the wrong PR:
+    # the newest stale base and the widest gap are usually different PRs.
+    _, max_gap_pr, _, max_gap = max(stale, key=lambda row: row[3])
+    return Measurement(
+        pr_count=len(stale),
+        newest_base_oid=oid,
+        newest_base_age_hours=age_hours,
+        affected_pr=pr_number,
+        affected_pr_commits_ahead=commits_ahead,
+        max_main_commits_ahead=max_gap,
+        max_gap_pr=max_gap_pr,
     )
-    return Measurement(len(stale), oid, age_hours, max(row[3] for row in stale), pr_number)
 
 
 def _run(*command: str) -> str:
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(
-            f"command failed ({result.returncode}): {' '.join(command)}\n"
-            f"{result.stderr.strip()}"
+            f"command failed ({result.returncode}): {' '.join(command)}\n{result.stderr.strip()}"
         )
     return result.stdout
 
@@ -128,8 +149,10 @@ def main() -> int:
         f"stale_main_bases={result.pr_count} "
         f"newest_base={result.newest_base_oid} "
         f"newest_base_age_hours={result.newest_base_age_hours} "
+        f"affected_pr={result.affected_pr} "
+        f"affected_pr_commits_ahead={result.affected_pr_commits_ahead} "
         f"max_main_commits_ahead={result.max_main_commits_ahead} "
-        f"affected_pr={result.affected_pr}"
+        f"max_gap_pr={result.max_gap_pr}"
     )
     if result.newest_base_age_hours is None:
         raise RuntimeError("stale PR count was non-zero without an age")
