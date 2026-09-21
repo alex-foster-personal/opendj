@@ -1,4 +1,10 @@
-"""Playlist switch latency regression gate (PERF-UI-05, issue #3530)."""
+"""Playlist switch latency regression gate (PERF-UI-05, issue #3530).
+
+Runs in the e2e workflow's ``extended`` job (frontend build, node_modules and a chromium
+present), never in the ci.yml pytest lanes, which ignore this file: it is a full Playwright
+bench with a 600 s test timeout and a 240 s webServer timeout, and it ate a whole shard's
+1380 s budget on PR #3732. ``tests/scripts/test_ci_playlist_bench_lane.py`` pins the lane.
+"""
 from __future__ import annotations
 
 import json
