@@ -24,10 +24,12 @@ THREE STATES, NEVER A SILENT ONE
 ``OPENDJ_TELEMETRY`` is tri-state on purpose, because "off" and "off because
 the DSN was missing" are different faults and only one of them is acceptable.
 
-- unset      -> OFF. A payload build (installed, shipped to a tester) and a
-                repo checkout both stay off until a consent UX exists. Fleet
-                test builds set OPENDJ_TELEMETRY=1. A DSN in the environment
-                is not consent.
+- unset      -> the build decides. A PACKAGED build (a dmg) ships its DSN
+                in the payload (OBS-04) and is ON: installing the app is the
+                consent, and the tester can turn it off by creating
+                ``telemetry-opt-out`` in the engine data directory. A repo
+                CHECKOUT is OFF; a DSN in a developer's .env is not consent,
+                and fleet test builds opt in with OPENDJ_TELEMETRY=1.
 - 1/true/on  -> ON, and a missing DSN is a HARD ERROR at startup. Somebody
                 asked for telemetry by name; starting without it would mean
                 the errors they were waiting on never arrive and nothing ever
@@ -39,7 +41,9 @@ the DSN was missing" are different faults and only one of them is acceptable.
 A shipped build whose DSN is absent is the one case that does NOT raise: the
 tester did not ask for telemetry, and bricking their app to report that the
 developer forgot a build variable would be a worse failure than the one it
-reports. It logs loudly and stays off. That asymmetry is deliberate.
+reports. It logs loudly and stays off. That asymmetry is deliberate. (The
+payload build now fails without a DSN, so this is a damaged install, not a
+build that was ever shipped this way.)
 
 WHAT LEAVES THE MACHINE
 
@@ -67,8 +71,8 @@ Requirements:
   the variable to set. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Telemetry disabled leaves ``sentry_sdk`` unimported.
   -> :func:`init_telemetry`
-- ✔︎ ✅ 🎯 A repo checkout and a payload build both default OFF.
-  -> :func:`decide_telemetry`
+- ✔︎ ✅ 🎯 A repo checkout defaults OFF; a payload build with a bundled DSN
+  defaults ON and honors the opt-out marker. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Track titles and library paths never reach an event payload.
   -> :func:`scrub_event`
 - ✔︎ ✅ 🎯 Events carry the build sha as the release and dev/ship as the
@@ -243,6 +247,8 @@ def decide_telemetry(
     *,
     build_source: str | None,
     release: str | None,
+    bundled_dsn: str | None = None,
+    opt_out: str | None = None,
 ) -> TelemetryDecision:
     """Resolve the three states into one decision. Never guesses.
 
@@ -250,9 +256,15 @@ def decide_telemetry(
     ("payload" for an installed build, "repo" for a checkout). None means the
     build could not describe itself, which is treated as a checkout: a build
     that cannot say what it is has no business reporting under a release.
+
+    ``bundled_dsn`` is the DSN a packaged build carries in its payload
+    (:mod:`apps.shared.telemetry.bundled`); ``opt_out`` is the reason a
+    tester's opt-out marker gives when it exists. Both are plain values so
+    this function reads no files: the entry point resolves them.
     """
     environment = _environment(environ, build_source)
-    dsn = (environ.get(DSN_ENV) or "").strip()
+    env_dsn = (environ.get(DSN_ENV) or "").strip()
+    dsn = env_dsn or (bundled_dsn or "").strip()
     explicit = _flag(environ.get(TELEMETRY_ENV))
     # Parsed before the on/off branch so a typo fails loud on every boot,
     # not only on the one where telemetry happens to be on.
@@ -268,10 +280,11 @@ def decide_telemetry(
     if explicit is True:
         if not dsn:
             raise TelemetryConfigError(
-                f"{TELEMETRY_ENV} is on but {DSN_ENV} is empty or unset, so "
-                "no error would ever reach Sentry and nothing downstream "
-                f"would report that. Set {DSN_ENV} to the Open DJ backend "
-                f"DSN, or unset {TELEMETRY_ENV} to let the build decide."
+                f"{TELEMETRY_ENV} is on but {DSN_ENV} is empty or unset and no "
+                "DSN is bundled, so no error would ever reach Sentry and "
+                f"nothing downstream would report that. Set {DSN_ENV} to the "
+                f"Open DJ backend DSN, or unset {TELEMETRY_ENV} to let the "
+                "build decide."
             )
         return TelemetryDecision(
             enabled=True,
@@ -283,17 +296,48 @@ def decide_telemetry(
             traces_sample_rate=traces_sample_rate,
         )
 
-    # Unset: default OFF everywhere until a consent UX exists (OBS-01).
-    # Fleet test builds set OPENDJ_TELEMETRY=1. A DSN is not consent.
-    return TelemetryDecision(
-        enabled=False,
-        environment=environment,
-        reason=(
-            "telemetry defaults to off; a "
+    # Unset, and the tester said no with the marker file. Checked after the
+    # explicit flag on purpose: an operator who sets OPENDJ_TELEMETRY=1 on a
+    # fleet build is asking by name and the marker is not theirs to honor;
+    # an unset flag on a tester's Mac is exactly whom the marker exists for.
+    if opt_out:
+        return TelemetryDecision(
+            enabled=False,
+            environment=environment,
+            reason=f"telemetry opted out: {opt_out}",
+        )
+
+    # Unset on a PACKAGED build with a DSN to hand: ON (OBS-04). Installing
+    # the dmg is the consent; the marker above is the way out.
+    if build_source == "payload" and dsn:
+        origin = "bundled DSN" if not env_dsn else f"{DSN_ENV} in the environment"
+        return TelemetryDecision(
+            enabled=True,
+            environment=environment,
+            reason=(
+                f"packaged build ships telemetry ({origin}); create "
+                f"'telemetry-opt-out' in the data directory or set "
+                f"{TELEMETRY_ENV}=0 to turn it off"
+            ),
+            dsn=dsn,
+            release=release,
+            traces_sample_rate=traces_sample_rate,
+        )
+
+    # Unset on a checkout (or a packaged build with no DSN): OFF. A DSN in a
+    # developer's .env is not consent; fleet test builds set OPENDJ_TELEMETRY=1.
+    if build_source == "payload":
+        reason = (
+            f"packaged build carries no DSN: neither {DSN_ENV} nor a bundled "
+            "telemetry.json; this install was damaged or built before OBS-04"
+        )
+    else:
+        reason = (
+            "telemetry defaults to off in a checkout; a "
             f"{DSN_ENV} in the environment is not consent. set "
             f"{TELEMETRY_ENV}=1 to opt in"
-        ),
-    )
+        )
+    return TelemetryDecision(enabled=False, environment=environment, reason=reason)
 
 
 # ----- init ---------------------------------------------------------------

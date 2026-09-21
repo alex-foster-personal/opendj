@@ -181,7 +181,7 @@ def _preflight(cfg: EngineConfig, *, workers: int) -> None:
     prepare_layout(cfg)
 
 
-def _telemetry_decision():
+def _telemetry_decision(data_dir: Path | None = None):
     """Ask the build what it is, then decide whether to report errors.
 
     This glue lives here rather than in apps.shared.telemetry because that
@@ -200,6 +200,11 @@ def _telemetry_decision():
     )
     from apps.shared import platform_paths
     from apps.shared.telemetry import decide_telemetry
+    from apps.shared.telemetry.bundled import (
+        BundledTelemetryError,
+        load_bundled_telemetry,
+        opt_out_reason,
+    )
 
     try:
         info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
@@ -213,7 +218,22 @@ def _telemetry_decision():
             file=sys.stderr,
         )
         source, release = None, None
-    return decide_telemetry(os.environ, build_source=source, release=release)
+    # The dmg's own DSN (OBS-04). A launcher that names a file the engine
+    # cannot read is a damaged install: loud, and treated as "no bundle" so
+    # the tester's app still runs. The payload build verified the file, so
+    # this never describes a build that shipped.
+    try:
+        bundled = load_bundled_telemetry(os.environ)
+    except BundledTelemetryError as exc:
+        print(f"[ERROR] bundled telemetry unreadable: {exc}", file=sys.stderr)
+        bundled = None
+    return decide_telemetry(
+        os.environ,
+        build_source=source,
+        release=release,
+        bundled_dsn=bundled.dsn if bundled is not None else None,
+        opt_out=opt_out_reason(data_dir),
+    )
 
 
 def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> int:
@@ -254,7 +274,7 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         # route handlers as they are registered, so a later init would leave
         # every route already built and silently uninstrumented.
         try:
-            init_telemetry(_telemetry_decision())
+            init_telemetry(_telemetry_decision(cfg.data_dir))
         except TelemetryConfigError as exc:
             # Asked for by name and undeliverable. Refusing here is the whole
             # point: booting anyway would mean the errors somebody is waiting
