@@ -335,6 +335,13 @@ test('channel_cue press toggles cue_enabled; release is ignored', async () => {
 	_restoreCueGlueState();
 });
 
+// ---------------------------------------------------- glue lifecycle
+
+// Meter pump regression guard intentionally absent on main (issue #3670):
+// host-driven VU meter CC output is planned (controller-onboarding.md,
+// unlanded bdf50f0e) but not implemented. Restoring the deleted test would
+// require building the pump, not restoring coverage. Track there, not here.
+
 test('headphone_mix and headphone_level dispatch through the performance command bus', async () => {
 	_restoreCueGlueState();
 	glue.handleMidiAction(

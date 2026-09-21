@@ -130,12 +130,6 @@ def _seed_library(data_dir: Path, audio_path: Path) -> None:
 
     verify_conn = state_db.open_ro(state_db_path)
     try:
-        # `deleted_at IS NULL` because TRACK_COUNT is a count of LIVE tracks:
-        # this fixture writes none, so the filter changes nothing today, and it
-        # keeps the check honest if one is ever soft-deleted here. It also keeps
-        # this read out of `_ALLOWED_UNFILTERED_READS`
-        # (tests/cloudsync/test_soft_delete_read_guard.py), which is for reads
-        # that MUST see tombstones. This one must not.
         row_count = verify_conn.execute(
             "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
         ).fetchone()[0]

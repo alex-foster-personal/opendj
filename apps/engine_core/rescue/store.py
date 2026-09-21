@@ -54,7 +54,7 @@ class RescueStore:
     def list_entries(
         self,
         *,
-        now_ms: int,  # noqa: ARG002 - kept for its keyword callers
+        now_ms: int,  # noqa: ARG002 - retained for the caller's keyword contract
     ) -> list[RescueRingEntry]:
         index = read_index(self._data_dir)
         rows: list[RescueRingEntry] = []

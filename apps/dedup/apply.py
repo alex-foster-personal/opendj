@@ -293,6 +293,7 @@ class DedupApplyPaths:
 def run_apply(
     *,
     apply_paths: DedupApplyPaths | None = None,
+    backup_dir: Path | None = None,
     cluster_ids: set[int] | None = None,
     live: bool = False,
     confirm_fn=None,
@@ -306,6 +307,14 @@ def run_apply(
         # handle exists, whatever ``--rb-db`` was aimed at.
         require_writeback_enabled("module.dedup.apply")
     cfg = apply_paths or DedupApplyPaths()
+    if backup_dir is not None:
+        cfg = DedupApplyPaths(
+            dedup_db_path=cfg.dedup_db_path,
+            rb_db_path=cfg.rb_db_path,
+            plan_csv=cfg.plan_csv,
+            plan_md=cfg.plan_md,
+            backup_dir=backup_dir,
+        )
     dedup_db = cfg.dedup_db_path or paths.DEDUP_FALLBACK_DB
     rb_db = cfg.rb_db_path or paths.REKORDBOX_WORKING_DB
     plan_csv = cfg.plan_csv or paths.DEDUP_REWRITE_PLAN_CSV

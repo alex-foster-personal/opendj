@@ -3630,6 +3630,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description Full parsed tree + ledger-file git provenance + per-area rollups.
+         */
+        get: operations["get_progress_api_v1_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/progress/nodes/{node_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Progress Node
+         * @description Guarded partial update of one node; atomic YAML rewrite, no git commit.
+         */
+        patch: operations["patch_progress_node_api_v1_progress_nodes__node_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/progress/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress Schema
+         * @description Agent-discoverable node schema, allowed statuses, and PATCH rules.
+         */
+        get: operations["get_progress_schema_api_v1_progress_schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/queues/{kind}": {
         parameters: {
             query?: never;
@@ -6850,6 +6910,25 @@ export interface components {
             source: "payload" | "repo";
         };
         /**
+         * BuildPatchIn
+         * @description Partial 'build' object; only supplied fields are merged (see PATCH_RULES).
+         *
+         *     'updated' is never accepted from the client -- the server always stamps
+         *     it on any build PATCH, so there is no ambiguity about who wrote it.
+         */
+        BuildPatchIn: {
+            /** Branch */
+            branch?: string | null;
+            /** Pr */
+            pr?: string | null;
+            /** Stage */
+            stage?: string | null;
+            /** State */
+            state?: ("active" | "idle" | "blocked" | "hanging") | null;
+            /** Worktree */
+            worktree?: string | null;
+        };
+        /**
          * BuildStampOut
          * @description Provenance of the build that recorded a piece of feedback.
          *
@@ -6865,6 +6944,23 @@ export interface components {
             git_sha?: string | null;
             /** Source */
             source?: string | null;
+        };
+        /**
+         * BuildableIn
+         * @description Buildability classification; both fields required, replaces wholesale.
+         *
+         *     tier says WHERE the node's iterative build loop can run (cloud/hybrid/
+         *     local); reason is a one-line justification grounded in what the node
+         *     touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+         */
+        BuildableIn: {
+            /** Reason */
+            reason: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "cloud" | "hybrid" | "local";
         };
         /** BulkEditIn */
         BulkEditIn: {
@@ -7464,6 +7560,13 @@ export interface components {
             status?: string | null;
             /** Text */
             text?: string;
+        };
+        /** CommitIn */
+        CommitIn: {
+            /** Note */
+            note: string;
+            /** Sha */
+            sha: string;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -8163,6 +8266,11 @@ export interface components {
              * @constant
              */
             source: "own";
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -9393,6 +9501,18 @@ export interface components {
             ok: boolean;
         };
         /**
+         * LinksPatchIn
+         * @description Partial 'links' object; each supplied key REPLACES that key's list.
+         */
+        LinksPatchIn: {
+            /** Issues */
+            issues?: string[] | null;
+            /** Refs */
+            refs?: string[] | null;
+            /** Specs */
+            specs?: string[] | null;
+        };
+        /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
          */
@@ -10224,6 +10344,30 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** NodePatch */
+        NodePatch: {
+            build?: components["schemas"]["BuildPatchIn"] | null;
+            buildable?: components["schemas"]["BuildableIn"] | null;
+            /** Commits Append */
+            commits_append?: components["schemas"]["CommitIn"][] | null;
+            links?: components["schemas"]["LinksPatchIn"] | null;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status?: ("missing" | "spiked" | "building" | "partial" | "built" | "verified" | "merged" | "user-finalized" | "working") | null;
+            /** Tests Append */
+            tests_append?: string[] | null;
+            verified?: components["schemas"]["VerifiedIn"] | null;
+        };
+        /** NodePatchOut */
+        NodePatchOut: {
+            /** Meta Updated */
+            meta_updated: string;
+            /** Node */
+            node: {
+                [key: string]: unknown;
+            };
         };
         /** OpsErrorBody */
         OpsErrorBody: {
@@ -13923,6 +14067,13 @@ export interface components {
             target_path?: string | null;
             /** Vendor */
             vendor: string;
+        };
+        /** VerifiedIn */
+        VerifiedIn: {
+            /** By */
+            by: string;
+            /** Method */
+            method: string;
         };
         /** VocalsAnalyzeIn */
         VocalsAnalyzeIn: {
@@ -20723,6 +20874,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreflightOut"];
+                };
+            };
+        };
+    };
+    get_progress_api_v1_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    patch_progress_node_api_v1_progress_nodes__node_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodePatchOut"];
+                };
+            };
+            /** @description If-Match is stale; refresh the ledger before retrying */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match header is required for every progress write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Writes are disabled because the cloud lock is unavailable or held by a peer */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_progress_schema_api_v1_progress_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

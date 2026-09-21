@@ -186,7 +186,7 @@ class FingerprintCache:
         a: Path | None,
         b: Path | None,
         *,
-        threshold: float = DEFAULT_FP_THRESHOLD,  # noqa: ARG002 - kept for its keyword callers
+        threshold: float = DEFAULT_FP_THRESHOLD,  # noqa: ARG002 - keyword contract
     ) -> float | None:
         """Return similarity (0..1) for two audio files, or None if absent.
 

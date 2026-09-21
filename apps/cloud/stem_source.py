@@ -142,7 +142,7 @@ class DirectR2Source:
         self,
         file_hashes: dict[str, str],
         *,
-        stable_id: str,  # noqa: ARG002 - kept for its keyword callers
+        stable_id: str,  # noqa: ARG002 - callers pass stable_id=; size is hash-keyed
     ) -> int | None:
         total = 0
         for digest in file_hashes.values():

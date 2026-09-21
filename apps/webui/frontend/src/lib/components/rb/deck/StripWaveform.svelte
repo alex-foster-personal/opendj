@@ -261,7 +261,7 @@
 
 		{#each deck.hot_cues as hc (hc.slot)}
 			{#if !(hc.is_loop && hc.out_ms !== null)}
-				<span class="cue-letter" style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+				<span class="cue-letter" data-testid={`deck-cue-letter-${deck.deck_id}`} data-cue-slot={hc.slot} style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
 			{/if}
 		{/each}
 

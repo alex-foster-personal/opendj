@@ -268,25 +268,7 @@ def _identify(
         report.files_rejected_unplayable += 1
         return None
     metadata = audio_files.read_metadata(entry.path)
-    # "Without tags" means the file carried no tag FIELDS, not that the read
-    # failed. `read_metadata` returns None only when mutagen is absent or the
-    # container is unreadable; with mutagen installed a valid untagged wav
-    # comes back as an AudioMetadata whose tag fields are all None but whose
-    # `duration_s` and `sample_rate` are real. Counting only the None case
-    # made this number mean "mutagen could not read it", so the same import
-    # reported 1 without mutagen and 0 with it -- and the two tests that
-    # assert the two agree (`test_valid_untagged_wav_imports_without_rejection`
-    # and its `requires_mutagen` twin) both failed once collection got far
-    # enough to run them.
-    if metadata is None or not any(
-        (
-            metadata.title,
-            metadata.artist,
-            metadata.album,
-            metadata.genre,
-            metadata.comment,
-        )
-    ):
+    if not _has_file_tags(metadata):
         report.files_without_tags += 1
     duration_ms = (
         int(metadata.duration_s * 1000)
@@ -306,6 +288,22 @@ def _identify(
         report.tracks_skipped += 1
         return None
     return stable_id, tier, duration_ms, metadata
+
+
+def _has_file_tags(metadata: audio_files.AudioMetadata | None) -> bool:
+    """True when mutagen (or a stub) supplied a user-facing tag, not just duration."""
+    if metadata is None:
+        return False
+    return any(
+        bool(value)
+        for value in (
+            metadata.title,
+            metadata.artist,
+            metadata.album,
+            metadata.genre,
+            metadata.comment,
+        )
+    )
 
 
 def _title(

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "capture_version": "2026-09-12",
+  "capture_version": "2026-09-18",
   "files": {
     "beatgrid-fallback-unmapped-captured.json": {
-      "bytes": 18247,
-      "sha256": "6d9116b8b395cbbc4d1e97392399036fe413caad671aa6f2036fdbe5ef48ddb2"
+      "bytes": 18449,
+      "sha256": "421fb18d668506cb3b28a7db85f72398fb2a422baca150f46392d0b43a843993"
     }
   }
 }

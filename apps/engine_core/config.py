@@ -26,11 +26,6 @@ CONCURRENCY_ENV: str = "WEB_CONCURRENCY"
 # SqliteBackend whenever state.db exists.
 DEFAULT_STATE_BACKEND: str = "sqlite"
 
-# The decoy-ledger guard: the engine refuses to serve a data dir that still
-# carries the fan-out ledger.
-PROGRESS_LEDGER_NAME: str = "progress-tree.yaml"
-
-
 class EngineBootError(RuntimeError):
     """Refusal to boot. The message always names the offending condition."""
 
@@ -101,20 +96,6 @@ def assert_single_worker(
         )
 
 
-def assert_no_progress_ledger(data_dir: Path) -> None:
-    """Refuse to serve a data dir that still holds the fan-out ledger.
-
-    Top-level check only: a recursive scan of a real library data dir costs
-    unbounded IO at boot, and the ledger has exactly one canonical location.
-    """
-    ledger = data_dir / PROGRESS_LEDGER_NAME
-    if ledger.exists():
-        raise EngineBootError(
-            f"{ledger} exists; the engine does not serve the fan-out ledger. "
-            "Point --data-dir elsewhere or remove the file."
-        )
-
-
 def apply_env_contract(
     cfg: EngineConfig, *, environ: MutableMapping[str, str] | None = None
 ) -> None:
@@ -161,12 +142,10 @@ __all__ = [
     "DATA_DIR_ENV",
     "DEFAULT_STATE_BACKEND",
     "ENGINE_VERSION",
-    "PROGRESS_LEDGER_NAME",
     "STATE_BACKEND_ENV",
     "EngineBootError",
     "EngineConfig",
     "apply_env_contract",
-    "assert_no_progress_ledger",
     "assert_single_worker",
     "build_config",
     "prepare_layout",
