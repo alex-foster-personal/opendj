@@ -292,21 +292,30 @@ def _state_db_problem(state_db: Path) -> str | None:
 
     The engine boots happily on a 0-byte file (it migrates it into a fresh,
     empty library), reports healthy, and the nightly then measures nothing
-    and exits 0. That is a false green: an empty file is not the operator's
-    library. Refuse before boot so the run records ``engine_unavailable``
-    instead of a clean ledger with no rows.
+    and exits 0. That is a false green: neither an empty file nor a library
+    with no tracks is the operator's library. Refuse before boot so the run
+    records ``engine_unavailable`` instead of a clean ledger with no rows.
     """
     if not state_db.is_file():
         return f"missing state database: {state_db}"
     try:
         with state_db.open("rb") as handle:
             header = handle.read(16)
-        with sqlite3.connect(state_db) as connection:
+        with sqlite3.connect(f"file:{state_db}?mode=ro", uri=True) as connection:
             connection.execute("PRAGMA schema_version").fetchone()
+            if header != b"SQLite format 3\x00":
+                return f"state database is not a SQLite file: {state_db}"
+            try:
+                (track_rows,) = connection.execute("SELECT COUNT(*) FROM tracks").fetchone()
+            except sqlite3.OperationalError:
+                return f"state database has no tracks table: {state_db}"
     except (OSError, sqlite3.DatabaseError):
         return f"state database is not a SQLite file: {state_db}"
-    if header != b"SQLite format 3\x00":
-        return f"state database is not a SQLite file: {state_db}"
+    # A migrated-but-empty library parses fine and boots fine; measuring it
+    # yields only unmeasured rows and a clean exit (Devin P2 on PR #3726).
+    # The denominator has to be a library with tracks in it.
+    if track_rows == 0:
+        return f"state database has no tracks: {state_db}"
     return None
 
 

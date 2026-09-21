@@ -45,6 +45,7 @@ import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
+import { onMidiEnabledHydrated } from '$lib/components/rb/midi/midi-enabled-choice';
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -181,6 +182,14 @@ export async function maybeAutoEnableMidi(): Promise<void> {
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
 }
+
+// The prefs GET lands after TopBar's mount-time maybeAutoEnableMidi() more
+// often than not, so a choice that lives only on disk needs this second run.
+// maybeAutoEnableMidi() is idempotent: it re-reads the persisted key and
+// declines while a request is pending.
+onMidiEnabledHydrated((enabled) => {
+	if (enabled) void maybeAutoEnableMidi();
+});
 
 /** Request WebMIDI access via the core runtime. The catch is NOT silent
  * handling: the error lands in midiUi.lastError (rendered red in the panel)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import plistlib
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -186,6 +187,34 @@ def test_nightly_starts_real_engine_and_stops_it(
     assert any(row.get("kpi") == "packaged_deck_load_total_ms" for row in entries)
     assert not _listening(port)
     assert (state_dir / SCRATCH_ENGINE_LOG_NAME).is_file()
+
+
+def test_nightly_refuses_a_library_with_no_tracks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] state.db has an empty tracks table [then] nightly refuses before boot, [else stop]."""
+    port = _free_port()
+    data_dir = tmp_path / "library"
+    (data_dir / "state").mkdir(parents=True)
+    with sqlite3.connect(data_dir / "state" / "state.db") as connection:
+        connection.execute("CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)")
+    (data_dir / "progress-tree.yaml").write_text("nodes: []\n", encoding="utf-8")
+    state_dir = _nightly_env(
+        monkeypatch,
+        tmp_path,
+        MDT_PERF_KPI_DATA_DIR=str(data_dir),
+        MDT_PERF_KPI_SCRATCH_PORT=str(port),
+    )
+    config = load_config()
+
+    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    captured = capsys.readouterr()
+
+    assert code != 0
+    assert "has no tracks" in captured.err
+    assert "engine_unavailable" in _history_events(state_dir)
+    assert _ledger_entries(tmp_path) == []
+    assert not _listening(port)
 
 
 def test_nightly_fails_fast_when_engine_exits_before_healthy(
