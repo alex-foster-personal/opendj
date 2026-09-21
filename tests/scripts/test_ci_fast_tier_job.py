@@ -81,8 +81,7 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
     job = _jobs()["fast"]
     assert job["if"] == (
         "github.event_name == 'pull_request' || "
-        "(github.event_name == 'workflow_dispatch' && "
-        "(github.ref == 'refs/heads/main' || inputs.tier == 'fast'))"
+        "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast')"
     )
     assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"

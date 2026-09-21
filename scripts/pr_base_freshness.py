@@ -23,7 +23,7 @@ import json
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,10 @@ class Measurement:
 
     pr_count: int
     newest_base_oid: str | None
+    #: Exact age of the newest stale base; the threshold compares THIS, never
+    #: the whole-hour figure below, which is for display and floors 12 h 59 min
+    #: to 12.
+    newest_base_age: timedelta | None
     newest_base_age_hours: int | None
     #: The PR whose stale base is the NEWEST (the alert's subject) and ITS gap.
     affected_pr: int | None
@@ -70,6 +74,7 @@ def measure(
         return Measurement(
             pr_count=0,
             newest_base_oid=None,
+            newest_base_age=None,
             newest_base_age_hours=None,
             affected_pr=None,
             affected_pr_commits_ahead=0,
@@ -78,19 +83,31 @@ def measure(
         )
 
     newest, pr_number, oid, commits_ahead = max(stale, key=lambda row: row[0])
-    age_hours = int((now.astimezone(UTC) - newest.astimezone(UTC)).total_seconds() // 3600)
+    age = now.astimezone(UTC) - newest.astimezone(UTC)
+    age_hours = int(age.total_seconds() // 3600)
     # Kept as a pair so the printed gap is never attributed to the wrong PR:
     # the newest stale base and the widest gap are usually different PRs.
     _, max_gap_pr, _, max_gap = max(stale, key=lambda row: row[3])
     return Measurement(
         pr_count=len(stale),
         newest_base_oid=oid,
+        newest_base_age=age,
         newest_base_age_hours=age_hours,
         affected_pr=pr_number,
         affected_pr_commits_ahead=commits_ahead,
         max_main_commits_ahead=max_gap,
         max_gap_pr=max_gap_pr,
     )
+
+
+def exceeds_threshold(result: Measurement, *, max_age_hours: int) -> bool:
+    """True when the newest stale base is older than the threshold, compared on
+    the exact age: 12 h 01 min exceeds a 12 h threshold although it prints as 12."""
+    if result.pr_count == 0:
+        return False
+    if result.newest_base_age is None:
+        raise RuntimeError("stale PR count was non-zero without an age")
+    return result.newest_base_age > timedelta(hours=max_age_hours)
 
 
 def _run(*command: str) -> str:
@@ -154,9 +171,7 @@ def main() -> int:
         f"max_main_commits_ahead={result.max_main_commits_ahead} "
         f"max_gap_pr={result.max_gap_pr}"
     )
-    if result.newest_base_age_hours is None:
-        raise RuntimeError("stale PR count was non-zero without an age")
-    if result.newest_base_age_hours > args.max_age_hours:
+    if exceeds_threshold(result, max_age_hours=args.max_age_hours):
         print(
             f"::error::newest open PR base is {result.newest_base_age_hours}h behind main "
             f"(threshold {args.max_age_hours}h)"
