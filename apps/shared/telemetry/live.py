@@ -68,7 +68,7 @@ def transport_is_live() -> bool:
         return False
     try:
         return bool(_GATE.probe())
-    except Exception:  # noqa: BLE001 - any probe fault reads as "not live", by design
+    except Exception:  # any probe fault reads as "not live", by design
         if not _GATE.failed_logged:
             _GATE.failed_logged = True
             log.warning("live-transport probe raised; treating the set as not live", exc_info=True)

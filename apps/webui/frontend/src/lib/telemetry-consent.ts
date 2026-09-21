@@ -27,43 +27,20 @@
  */
 
 import { api } from './api/client';
-import type { components } from './api-types';
 import type { BootScheduler } from './rb/boot-scheduler';
+import {
+	currentConsent,
+	setConsentDialogOpen,
+	setCurrentConsent,
+	type ConsentOut
+} from './telemetry-consent-state';
 
-export type ConsentOut = components['schemas']['ConsentOut'];
 export type ConsentDecision = 'accepted' | 'declined';
 
 /** Seconds between live-transport polls while a replay is armed. */
 export const REPLAY_LIVE_POLL_MS = 2000;
 /** Idle polls before a stopped replay restarts: one covers a stop still ringing out. */
 export const REPLAY_IDLE_TICKS_TO_RESTART = 2;
-
-// ----- the dialog's open state (framework-free, like quit-gate-state) ---------
-let dialogOpen = false;
-let current: ConsentOut | null = null;
-const openListeners = new Set<() => void>();
-
-function setDialogOpen(next: boolean): void {
-	if (dialogOpen === next) return;
-	dialogOpen = next;
-	for (const listener of openListeners) listener();
-}
-
-export function isConsentDialogOpen(): boolean {
-	return dialogOpen;
-}
-
-export function subscribeConsentDialogOpen(listener: () => void): () => void {
-	openListeners.add(listener);
-	return () => {
-		openListeners.delete(listener);
-	};
-}
-
-/** The last answer from the engine, for the dialog to read the terms version. */
-export function currentConsent(): ConsentOut | null {
-	return current;
-}
 
 // ----- the loader SDK surface this module touches -----------------------------
 interface LoaderReplay {
@@ -234,14 +211,20 @@ let unmountDialog: (() => void) | null = null;
 /**
  * Mount the dialog component on demand. It is imported here, not in the
  * root layout, so the component is fetched only for a tester who has not
- * answered yet and never joins the first-paint bundle.
+ * answered yet and never joins the first-paint bundle. The answer function
+ * goes in as a prop: the overlay reads its state from
+ * telemetry-consent-state and never imports this module, which would close
+ * an import cycle with the dynamic import above.
  */
 async function mountDialog(): Promise<() => void> {
 	const [{ mount, unmount }, { default: Overlay }] = await Promise.all([
 		import('svelte'),
 		import('$lib/components/telemetry/TelemetryConsentOverlay.svelte')
 	]);
-	const instance = mount(Overlay, { target: document.body });
+	const instance = mount(Overlay, {
+		target: document.body,
+		props: { answer: (decision: ConsentDecision) => answerConsent(decision) }
+	});
 	return () => void unmount(instance);
 }
 
@@ -269,7 +252,7 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 	const run = async (): Promise<void> => {
 		const consent = await fetcher();
 		if (bootDeps !== deps) return; // torn down while the request was in flight
-		current = consent;
+		setCurrentConsent(consent);
 		if (consent.decision === 'accepted') {
 			startReplay(consent, deps);
 			return;
@@ -277,7 +260,7 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 		if (!shouldAsk(consent)) return;
 		unmountDialog = await (deps.showDialog ?? mountDialog)();
 		if (bootDeps !== deps) return;
-		setDialogOpen(true);
+		setConsentDialogOpen(true);
 	};
 	// app-init already runs this inside a deferred boot task (and imports this
 	// module there), so the default is to fetch now; a caller that has not
@@ -285,10 +268,10 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 	if (deps.scheduler !== undefined) deps.scheduler.defer('telemetry-consent:fetch', run);
 	else void run();
 	return () => {
-		setDialogOpen(false);
+		setConsentDialogOpen(false);
 		unmountDialog?.();
 		unmountDialog = null;
-		current = null;
+		setCurrentConsent(null);
 		stopReplayPoll?.();
 		stopReplayPoll = null;
 		replayArmed = false;
@@ -302,11 +285,11 @@ export async function answerConsent(
 	decision: ConsentDecision,
 	put: (body: { decision: ConsentDecision; terms_version: string }) => Promise<ConsentOut> = putConsent
 ): Promise<ConsentOut> {
-	const terms_version = current?.terms_current_version;
+	const terms_version = currentConsent()?.terms_current_version;
 	if (!terms_version) throw new Error('telemetry consent: no terms version loaded');
 	const consent = await put({ decision, terms_version });
-	current = consent;
-	setDialogOpen(false);
+	setCurrentConsent(consent);
+	setConsentDialogOpen(false);
 	if (consent.decision === 'accepted' && bootDeps !== null) startReplay(consent, bootDeps);
 	return consent;
 }

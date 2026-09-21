@@ -6,11 +6,19 @@
 	 * either changes materially.
 	 */
 	import {
-		answerConsent,
 		currentConsent,
 		isConsentDialogOpen,
 		subscribeConsentDialogOpen
-	} from '$lib/telemetry-consent';
+	} from '$lib/telemetry-consent-state';
+
+	interface Props {
+		/** Records the answer with the engine; `answerConsent` in production.
+		 * A prop rather than an import so this component never imports the
+		 * module that mounts it (that pair would be an import cycle). */
+		answer: (decision: 'accepted' | 'declined') => Promise<unknown>;
+	}
+
+	let { answer: recordAnswer }: Props = $props();
 
 	let open = $state(false);
 	let busy = $state(false);
@@ -31,7 +39,7 @@
 		busy = true;
 		failure = null;
 		try {
-			await answerConsent(decision);
+			await recordAnswer(decision);
 		} catch (error) {
 			failure = error instanceof Error ? error.message : String(error);
 		} finally {

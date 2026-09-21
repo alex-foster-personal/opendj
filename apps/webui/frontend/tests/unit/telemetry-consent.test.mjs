@@ -93,7 +93,9 @@ function fakeSentry() {
 before(async () => {
 	originalFetch = globalThis.fetch;
 	installBrowserGlobals();
-	consent = await loadTypeScriptModule('src/lib/telemetry-consent.ts', { viteApiBase: API_BASE });
+	consent = await loadTypeScriptModule('tests/unit/fixtures/telemetry-consent-entry.ts', {
+		viteApiBase: API_BASE
+	});
 });
 
 afterEach(() => {
