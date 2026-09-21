@@ -6,6 +6,8 @@
  */
 import { expect, type Page, test } from '@playwright/test';
 
+import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
+
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
 const PREFLIGHT_PASS = {
@@ -157,7 +159,13 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 	await page.route('**/api/sets/recorder', (route) =>
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
-	await page.route('**/api/v1/playlists', (route) => route.fulfill({ json: [USER_MISSING_PLAYLIST] }));
+	await stubPlaylistsRoute(page, (route) => {
+		const fast = route.request().url().includes('availability=skip');
+		const playlist = fast
+			? { ...USER_MISSING_PLAYLIST, available_count: -1 }
+			: USER_MISSING_PLAYLIST;
+		return route.fulfill({ json: [playlist] });
+	});
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [], next_cursor: null } })
 	);
