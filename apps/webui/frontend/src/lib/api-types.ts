@@ -7077,6 +7077,8 @@ export interface components {
         };
         /** ClientErrorIn */
         ClientErrorIn: {
+            /** Any Deck Live */
+            any_deck_live?: boolean | null;
             /** Audio Worklet Available */
             audio_worklet_available: boolean;
             /** Client Event Id */

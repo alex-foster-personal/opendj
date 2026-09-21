@@ -33,7 +33,39 @@ interface ClientErrorPayload {
 	user_agent: string;
 	secure_context: boolean;
 	audio_worklet_available: boolean;
+	/**
+	 * Was any deck playing or audible when this error fired? The engine holds
+	 * the Sentry forward (never the local log) while this is true, which is
+	 * the "never send while a deck is live" rule of the error-reporting
+	 * policy. `null` means no transport probe is registered yet (the audio
+	 * engine has not booted), so the engine falls back to its own UI-mirror
+	 * read rather than trusting a default.
+	 */
+	any_deck_live: boolean | null;
 	context: ClientErrorContext;
+}
+
+/**
+ * The page's cheapest "is the set live" read, registered by app-init once the
+ * audio engine module is loaded. Not imported here: this module runs from
+ * hooks.client.ts on every boot, and pulling audio-engine.svelte.ts into
+ * that path would load the whole graph before the first paint.
+ */
+let liveTransportProbe: (() => boolean) | null = null;
+
+export function setLiveTransportProbe(probe: (() => boolean) | null): void {
+	liveTransportProbe = probe;
+}
+
+function readAnyDeckLive(): boolean | null {
+	if (liveTransportProbe === null) return null;
+	try {
+		return liveTransportProbe() === true;
+	} catch {
+		// A probe that throws is unknown, not "not live": let the engine fall
+		// back to its mirror rather than send on the strength of a failure.
+		return null;
+	}
 }
 
 interface PendingShellError {
@@ -273,6 +305,7 @@ export function reportClientError(
 		user_agent: truncate(typeof navigator === 'undefined' ? '' : navigator.userAgent, 2048),
 		secure_context: window.isSecureContext === true,
 		audio_worklet_available: typeof AudioWorkletNode !== 'undefined',
+		any_deck_live: readAnyDeckLive(),
 		context: Object.fromEntries(
 			Object.entries(context)
 				.slice(0, 32)

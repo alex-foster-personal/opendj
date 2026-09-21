@@ -265,6 +265,17 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         app = create_app(cfg, lock=lock)
         if machine_name is not None:
             app.state.sync_hub_machine_name = machine_name
+        # The live-set gate for ENGINE exceptions (browser errors carry their
+        # own flag): the page publishes its deck transport to app.state once a
+        # second, and telemetry holds events local while it says a deck is
+        # playing or audible. Registered whether telemetry is on or off, so
+        # the probe is exercised on every boot rather than only the reporting
+        # ones. Cheap: one attribute read per captured event, never per request.
+        from apps.shared.telemetry import mirror_transport_live, set_live_transport_probe
+
+        set_live_transport_probe(
+            lambda: mirror_transport_live(getattr(app.state, "ui_mirror", None))
+        )
         print(
             f"[OK] opendj engine {ENGINE_VERSION} boot_id={lock.boot_id} "
             f"contract_rev={app.state.contract_rev} "

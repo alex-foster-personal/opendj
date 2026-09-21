@@ -201,6 +201,19 @@ test('startAppInstruments arms the background demand shed', () => {
 	assert.match(source, /startBackgroundDemandShed/);
 });
 
+test('startAppInstruments registers the live-transport probe for client errors', () => {
+	// if startAppInstruments stops registering anyDeckPlaying as the probe then
+	// every client error carries any_deck_live: null and the engine's
+	// "never send to Sentry while a deck is live" rule falls back to the
+	// mirror read alone, which is stale for up to a second.
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /setLiveTransportProbe\(anyDeckPlaying\)/);
+	assert.match(source, /setLiveTransportProbe\(null\)/, 'teardown must clear the probe');
+});
+
 test('startAppInstruments wires silence dropout recovery', () => {
 	const source = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),

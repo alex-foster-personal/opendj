@@ -51,6 +51,11 @@ class ClientErrorIn(BaseModel):
     user_agent: str = Field(max_length=2048)
     secure_context: bool
     audio_worklet_available: bool
+    #: The page's own transport read at the moment the error fired: True when
+    #: any deck was playing or audible. It gates the Sentry forward (never the
+    #: local log). None is a client that predates the field, which falls back
+    #: to the engine's UI-mirror probe. See apps/shared/telemetry/live.py.
+    any_deck_live: bool | None = None
     context: dict[str, ContextValue] = Field(default_factory=dict, max_length=32)
 
     @field_validator("context")
@@ -177,6 +182,7 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
         context={"kind": payload.kind, "client_event_id": payload.client_event_id,
                  "secure_context": payload.secure_context,
                  "audio_worklet_available": payload.audio_worklet_available,
+                 "any_deck_live": payload.any_deck_live,
                  **payload.context},
     )
     return ClientErrorOut(event_id=event_id, stored=stored)

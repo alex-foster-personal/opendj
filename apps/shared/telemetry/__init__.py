@@ -6,7 +6,18 @@ Open DJ is going out to testers. When their engine throws, the alternative to
 this module is asking a human to find a log file and paste it back, which is
 exactly the attention cost the build-identity readout was built to remove.
 Sentry is the runtime exception firehose; nothing else about it is in scope.
-Errors only: no traces, no profiling, no session replay, no performance data.
+Errors by default: no profiling, no session replay, no logs, no metrics.
+Request tracing is OFF unless an operator sets ``SENTRY_TRACES_SAMPLE_RATE``
+(see below); it then passes the same scrubber and the same live-set gate.
+
+NEVER WHILE A DECK IS LIVE
+
+The reporting policy says never send while any deck is playing or audible.
+:mod:`apps.shared.telemetry.live` is that rule: a browser error carries the
+page's own ``any_deck_live`` flag, an engine exception asks the registered
+probe (the UI mirror), and either answer of "live" keeps the event in the
+local sink instead of sending it. Nothing is lost locally; Sentry just does
+not see faults that fired mid-mix until the local logs are read.
 
 THREE STATES, NEVER A SILENT ONE
 
@@ -88,6 +99,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
+from apps.shared.telemetry.live import (
+    MIRROR_LIVE_MAX_AGE_S,
+    mirror_transport_live,
+    set_live_transport_probe,
+    transport_is_live,
+)
 from apps.shared.telemetry.scrub import (
     ALLOWED_CONTEXT_KEYS,
     FILTERED,
@@ -98,6 +115,26 @@ from apps.shared.telemetry.scrub import (
 )
 
 log = logging.getLogger(__name__)
+
+#: Fraction of requests that become a Sentry transaction. Unset or ``0``
+#: means errors only, which is the default and the only mode a packaged
+#: build has run in. Any value in (0, 1] turns request tracing on for this
+#: process; the transactions pass :func:`_before_send_transaction`, which is
+#: the same scrub and the same live-set gate as an error. Read under the
+#: name the SDK documents so an operator who knows Sentry can find it.
+TRACES_SAMPLE_RATE_ENV: str = "SENTRY_TRACES_SAMPLE_RATE"
+
+
+class _LiveGateCounter:
+    """Events the live-set gate kept local this process. Read by tests."""
+
+    __slots__ = ("suppressed",)
+
+    def __init__(self) -> None:
+        self.suppressed: int = 0
+
+
+LIVE_GATE = _LiveGateCounter()
 
 #: Tri-state switch. Unset means "let the build decide" (see module docstring).
 TELEMETRY_ENV: str = "OPENDJ_TELEMETRY"
@@ -137,12 +174,18 @@ class TelemetryDecision:
     #: name gets an exception, a shipped default gets a loud log. Branching on
     #: this rather than on ``reason`` keeps that rule out of a message string.
     explicit: bool = False
+    #: 0.0 is errors only. See :data:`TRACES_SAMPLE_RATE_ENV`.
+    traces_sample_rate: float = 0.0
 
     def __post_init__(self) -> None:
         if self.enabled and not self.dsn:
             raise ValueError(
                 "an enabled TelemetryDecision must carry a DSN; construct it "
                 "through decide_telemetry, which enforces that invariant"
+            )
+        if not 0.0 <= self.traces_sample_rate <= 1.0:
+            raise ValueError(
+                f"traces_sample_rate must be within [0, 1], got {self.traces_sample_rate!r}"
             )
 
 
@@ -178,6 +221,23 @@ def _environment(environ: Mapping[str, str], build_source: str | None) -> Enviro
     return cast(Environment, raw)
 
 
+def _traces_sample_rate(environ: Mapping[str, str]) -> float:
+    """SENTRY_TRACES_SAMPLE_RATE parsed and range-checked; unset or blank is 0."""
+    raw = (environ.get(TRACES_SAMPLE_RATE_ENV) or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        rate = float(raw)
+    except ValueError:
+        rate = float("nan")
+    if not 0.0 <= rate <= 1.0:
+        raise TelemetryConfigError(
+            f"{TRACES_SAMPLE_RATE_ENV}={raw!r} is not a number in [0, 1]. Use 0 "
+            "(or unset it) for errors only, or a fraction of requests to trace."
+        )
+    return rate
+
+
 def decide_telemetry(
     environ: Mapping[str, str],
     *,
@@ -194,6 +254,9 @@ def decide_telemetry(
     environment = _environment(environ, build_source)
     dsn = (environ.get(DSN_ENV) or "").strip()
     explicit = _flag(environ.get(TELEMETRY_ENV))
+    # Parsed before the on/off branch so a typo fails loud on every boot,
+    # not only on the one where telemetry happens to be on.
+    traces_sample_rate = _traces_sample_rate(environ)
 
     if explicit is False:
         return TelemetryDecision(
@@ -217,6 +280,7 @@ def decide_telemetry(
             dsn=dsn,
             release=release,
             explicit=True,
+            traces_sample_rate=traces_sample_rate,
         )
 
     # Unset: default OFF everywhere until a consent UX exists (OBS-01).
@@ -280,8 +344,10 @@ def init_telemetry(
         environment=decision.environment,
         release=decision.release,
         transport=transport,
-        # Errors only. Every one of these is a deliberate zero.
-        traces_sample_rate=0.0,
+        # Errors only unless SENTRY_TRACES_SAMPLE_RATE opts this process into
+        # request tracing. Profiling stays a deliberate zero.
+        traces_sample_rate=decision.traces_sample_rate,
+        before_send_transaction=_before_send_transaction,
         profiles_sample_rate=0.0,
         # The privacy switches. include_local_variables is the important one:
         # frame locals are where a track title would otherwise ride along.
@@ -300,18 +366,43 @@ def init_telemetry(
         ],
     )
     log.info(
-        "telemetry on (environment=%s, release=%s, %s)",
+        "telemetry on (environment=%s, release=%s, traces_sample_rate=%s, %s)",
         decision.environment,
         decision.release or "unstamped",
+        decision.traces_sample_rate,
         decision.reason,
     )
     return True
 
 
+def _keep_local_while_live(what: str) -> bool:
+    """True, counted and logged once per process, when a deck is live right now."""
+    if not transport_is_live():
+        return False
+    if LIVE_GATE.suppressed == 0:
+        log.info(
+            "live-set gate: a deck is playing, so this %s and any that follow "
+            "stay in the local sink until transport stops",
+            what,
+        )
+    LIVE_GATE.suppressed += 1
+    return True
+
+
+def reset_live_gate_for_tests() -> None:
+    LIVE_GATE.suppressed = 0
+    set_live_transport_probe(None)
+
+
 def _before_send(
     event: dict[str, Any], hint: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
-    """Stamp error id / host / sha, spend the quota budget, then run the privacy scrub."""
+    """Stamp error id / host / sha, hold while live, spend the budget, then scrub.
+
+    Order matters. The sink row is written FIRST so the local record is
+    complete whatever happens next; the live-set gate runs BEFORE the budget
+    so a mid-mix fault does not spend quota on an event that is not sent.
+    """
     from apps.shared.telemetry.budget import SENTRY_BUDGET
     from apps.shared.telemetry.sink import enrich_sentry_event, event_error_id
 
@@ -319,9 +410,30 @@ def _before_send(
         enrich_sentry_event(event, hint)
     except Exception:
         log.warning("error-sink enrich failed", exc_info=True)
+    # A forwarded browser error already passed the gate in capture_browser_error
+    # on the page's own flag, which outranks the engine's mirror read; asking
+    # the probe again here would let a stale "playing" mirror overrule it.
+    from_browser = (event.get("tags") or {}).get("origin") == "browser"
+    if not from_browser and _keep_local_while_live("error"):
+        return None
     if not SENTRY_BUDGET.admit(event_error_id(event) or "eid-unidentified"):
         return None
-    return scrub_event(event, hint)
+    return cast("dict[str, Any] | None", scrub_event(event, hint))
+
+
+def _before_send_transaction(
+    event: dict[str, Any], hint: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Tracing only: same live-set gate, same scrub. No sink row, no budget.
+
+    A transaction is not an error, so it mints no error id and writes no
+    JSONL; and the SDK's own sample rate already bounds how many there are.
+    What it must not do is add work to a live set or carry a library path in
+    a span, hence the gate and the scrub.
+    """
+    if _keep_local_while_live("transaction"):
+        return None
+    return cast("dict[str, Any] | None", scrub_event(event, hint))
 
 
 # ----- browser errors -----------------------------------------------------
@@ -333,6 +445,7 @@ BROWSER_CONTEXT_FIELDS: tuple[str, ...] = (
     "client_event_id",
     "secure_context",
     "audio_worklet_available",
+    "any_deck_live",
 )
 
 
@@ -365,8 +478,15 @@ def capture_browser_error(
 
     Returns the Sentry event id, or None when telemetry is off (the common
     case, and not a failure), when the error is a perf-event console mirror,
-    or when the quota budget refused it. Never raises: reporting an error
-    must not become one.
+    when a deck is live, or when the quota budget refused it. Never raises:
+    reporting an error must not become one.
+
+    THE LIVE-SET GATE. ``context["any_deck_live"]`` is the page's own read
+    of its transport at the moment the error fired, and it is authoritative
+    when it is a bool: True keeps the event local, False sends it whatever
+    the engine's mirror says. Only a client that did not send the field
+    (None) falls back to the engine-side probe. The local sink row above
+    is written either way.
     """
     from apps.shared.telemetry.budget import is_dev_tooling_console, is_perf_console_mirror
     from apps.shared.telemetry.sink import (
@@ -385,6 +505,10 @@ def capture_browser_error(
         return None
     client = _client()
     if client is None:
+        return None
+    any_deck_live = context.get("any_deck_live")
+    if any_deck_live is True or (any_deck_live is None and transport_is_live()):
+        LIVE_GATE.suppressed += 1
         return None
     try:
         import sentry_sdk
@@ -443,14 +567,21 @@ __all__ = [
     "ENVIRONMENTS",
     "ENVIRONMENT_ENV",
     "FILTERED",
+    "LIVE_GATE",
+    "MIRROR_LIVE_MAX_AGE_S",
     "REDACTED",
     "SDK_CONTEXT_BLOCKS",
     "TELEMETRY_ENV",
+    "TRACES_SAMPLE_RATE_ENV",
     "TelemetryConfigError",
     "TelemetryDecision",
     "capture_browser_error",
     "decide_telemetry",
     "init_telemetry",
+    "mirror_transport_live",
+    "reset_live_gate_for_tests",
     "scrub_event",
     "scrub_string",
+    "set_live_transport_probe",
+    "transport_is_live",
 ]

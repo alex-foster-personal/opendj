@@ -25,6 +25,7 @@ import {
 	resumeCloudsyncSchedulerOwedJob
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
+import { setLiveTransportProbe } from '$lib/client-error-reporting';
 import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
@@ -101,6 +102,11 @@ let _xrunsAtPrevious = 0;
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
+	// Every client error from here on carries the page's own transport read,
+	// so the engine can hold the Sentry forward while a deck is live. Wired
+	// here rather than in client-error-reporting because that module boots
+	// before the audio engine and must not import it.
+	setLiveTransportProbe(anyDeckPlaying);
 	if (uiPrefs.perf_tier !== 'auto') {
 		applyExplicitPerfTierPref(uiPrefs.perf_tier);
 	}
@@ -161,6 +167,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	});
 
 	return () => {
+		setLiveTransportProbe(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);

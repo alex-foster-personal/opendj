@@ -3070,6 +3070,17 @@
       },
       "ClientErrorIn": {
         "properties": {
+          "any_deck_live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Any Deck Live"
+          },
           "audio_worklet_available": {
             "title": "Audio Worklet Available",
             "type": "boolean"
