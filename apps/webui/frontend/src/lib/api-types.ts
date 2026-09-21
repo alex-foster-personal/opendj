@@ -5027,6 +5027,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/telemetry/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Consent */
+        get: operations["get_consent_api_v1_telemetry_consent_get"];
+        /** Put Consent */
+        put: operations["put_consent_api_v1_telemetry_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/telemetry/heartbeat": {
         parameters: {
             query?: never;
@@ -7077,6 +7095,8 @@ export interface components {
         };
         /** ClientErrorIn */
         ClientErrorIn: {
+            /** Any Deck Live */
+            any_deck_live?: boolean | null;
             /** Audio Worklet Available */
             audio_worklet_available: boolean;
             /** Client Event Id */
@@ -7583,6 +7603,45 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
+        };
+        /** ConsentIn */
+        ConsentIn: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "declined";
+            /** Terms Version */
+            terms_version: string;
+        };
+        /** ConsentOut */
+        ConsentOut: {
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "undecided" | "accepted" | "declined";
+            /** Environment */
+            environment: string | null;
+            /** Release */
+            release: string | null;
+            /** Replay Loader Url */
+            replay_loader_url: string | null;
+            /**
+             * Replay On Error Sample Rate
+             * @default 1
+             */
+            replay_on_error_sample_rate: number;
+            /** Replay Session Sample Rate */
+            replay_session_sample_rate: number;
+            /** Telemetry Active */
+            telemetry_active: boolean;
+            /** Terms Current Version */
+            terms_current_version: string;
+            /** Terms Version */
+            terms_version: string | null;
         };
         /** CopilotTrackOut */
         CopilotTrackOut: {
@@ -23451,6 +23510,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageClientsOut"];
+                };
+            };
+        };
+    };
+    get_consent_api_v1_telemetry_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+        };
+    };
+    put_consent_api_v1_telemetry_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
