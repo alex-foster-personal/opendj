@@ -20,10 +20,20 @@ import sys
 import wave
 from pathlib import Path
 
-from apps.shared.state import db as state_db
-from apps.shared.state.writer import StateWriter
-
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
+# The bench's webServer runs this file BY PATH (`uv run --no-sync python
+# apps/.../playlist_switch_fixture.py`), so sys.path[0] is this directory,
+# not the repository root, and CI's isolated venv deliberately does not
+# install the project (ci.yml, "Provision isolated Python test environment":
+# a fresh interpreter must import from the tree). Without this line the
+# engine's webServer died on `ModuleNotFoundError: No module named 'apps'`
+# on every shard that reached the bench (run 35613556818, Mon 21 Sep 2026).
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from apps.shared.state import db as state_db  # noqa: E402
+from apps.shared.state.writer import StateWriter  # noqa: E402
+
 FIXTURE_REVISION: int = 1
 REVISION_MARKER: str = "playlist-switch-fixture-revision.txt"
 TRACK_COUNT: int = 1000
@@ -130,7 +140,9 @@ def _seed_library(data_dir: Path, audio_path: Path) -> None:
 
     verify_conn = state_db.open_ro(state_db_path)
     try:
-        row_count = verify_conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        row_count = verify_conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
+        ).fetchone()[0]
     finally:
         verify_conn.close()
     if row_count != TRACK_COUNT:

@@ -18,7 +18,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from apps.shared import platform_paths
+from apps.shared import platform_paths, rekordbox_db
 from apps.shared.fs_access import (  # re-exported: ONE access probe in the tree
     GRANT_INSTRUCTIONS,
     AccessProbe,
@@ -59,7 +59,8 @@ STATE_DB_NAME: str = "state.db"
 #: not, because its first page is ciphertext -- which is exactly how the
 #: importer tells "already decrypted" from "still needs the key" without
 #: guessing from the filename.
-SQLITE_MAGIC: bytes = b"SQLite format 3\x00"
+# Re-exported: the header check lives beside the decrypt routine it mirrors.
+SQLITE_MAGIC = rekordbox_db.SQLITE_MAGIC
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,15 +139,12 @@ def probe(path: Path) -> FileProbe:
 def is_plain_sqlite(path: Path) -> bool:
     """True iff ``path`` opens as an unencrypted SQLite file.
 
-    Header-only, 16 bytes read. An encrypted rekordbox DB has ciphertext
-    where the magic belongs, so this separates "ready to ingest" from
-    "still needs the key" on evidence rather than on the file's name.
+    Kept as this module's public name because callers and ``__all__`` already
+    use it; the implementation is :func:`apps.shared.rekordbox_db.is_plain_sqlite`,
+    so "ready to ingest" and "open without SQLCipher" can never answer
+    differently.
     """
-    try:
-        with path.open("rb") as handle:
-            return handle.read(len(SQLITE_MAGIC)) == SQLITE_MAGIC
-    except OSError:
-        return False
+    return rekordbox_db.is_plain_sqlite(path)
 
 
 def key_status() -> tuple[bool, str]:

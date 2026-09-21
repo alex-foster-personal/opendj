@@ -6,9 +6,9 @@
  *
  *   legacy (apps/webui/server/app.py) -- serves /api/v1/progress (the fan-out
  *     ledger). Has NO jobs API and NO /api/v1/events socket.
- *   engine (apps/engine_core/app.py) -- DROPS the progress router outright,
- *     re-owns /api/v1/health, and ADDS /api/v1/jobs* plus the /api/v1/events
- *     WebSocket hub.
+ *   engine (apps/engine_core/app.py) -- serves the same progress router, re-owns
+ *     /api/v1/health, and ADDS /api/v1/jobs* plus the /api/v1/events WebSocket
+ *     hub.
  *
  * Without this module each surface finds that out the expensive way: the jobs
  * drawer 404s on a legacy boot, the events bus reconnects forever against a
@@ -61,8 +61,6 @@ const ENGINE_HEALTH_FIELDS = ['contract_rev', 'engine_version', 'boot_id'] as co
  * not served by the daemon behind this page, which is a different fact and
  * deserves a different sentence. */
 const JOBS_MISSING = 'jobs API not offered by this daemon (no /api/v1/jobs on a legacy boot)';
-const PROGRESS_MISSING =
-	'progress ledger not offered by this daemon (the engine drops /api/v1/progress)';
 const EVENTS_MISSING = 'event bus not offered by this daemon (no /api/v1/events on a legacy boot)';
 const UNIDENTIFIED = 'daemon not identified yet: GET /api/v1/health has not answered';
 
@@ -128,9 +126,9 @@ class CapabilityStore {
 		return this.flavor === 'engine';
 	}
 
-	/** GET /api/v1/progress, the fan-out ledger. Legacy only. */
+	/** GET /api/v1/progress, the fan-out ledger. Engine and legacy both serve it. */
 	get progressLedger(): boolean {
-		return this.flavor === 'legacy';
+		return this.flavor === 'engine' || this.flavor === 'legacy';
 	}
 
 	/**
@@ -227,8 +225,8 @@ export function jobsRefusal(): string | null {
 
 /** Why the progress ledger surface is inert, or null when it is offered. */
 export function progressRefusal(): string | null {
-	if (capabilities.flavor === 'legacy') return null;
-	return capabilities.flavor === 'engine' ? PROGRESS_MISSING : UNIDENTIFIED;
+	if (capabilities.flavor === 'engine' || capabilities.flavor === 'legacy') return null;
+	return UNIDENTIFIED;
 }
 
 /** Why the events bus is not connected, or null when it is offered. */

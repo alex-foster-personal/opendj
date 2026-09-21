@@ -209,7 +209,8 @@ test('the engine turns the stamp into a delta at the same clock read it reports'
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {`);
 
 	const clockAt = body.indexOf('const scheduleContextTime = _ctx.currentTime;');

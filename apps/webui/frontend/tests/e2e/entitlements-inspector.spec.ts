@@ -20,8 +20,15 @@ test('admin entitlements inspector lists capabilities and live refusals', async 
 	const refusals = panel.getByTestId('inspector-active-refusals');
 	await expect(resolved.getByText('jobs')).toBeVisible();
 	await expect(resolved.getByText('progressLedger')).toBeVisible();
-	await expect(refusals.getByText('progressLedger')).toBeVisible();
-	await expect(refusals.getByText('progress ledger not offered by this daemon')).toBeVisible();
+	await expect(refusals.getByText('progressLedger')).toHaveCount(0);
+	// "Offered" is rendered by the inspector as the row's title sentence and the
+	// absence of a refusal span; the `progress ledger: offered` line lives on the
+	// Diagnostics tab, which this page is not on (admin opens on the KPI tab).
+	const ledgerRow = resolved.locator('.row', { hasText: 'progressLedger' });
+	await expect(ledgerRow).toHaveCount(1);
+	await expect(ledgerRow.locator('.value')).toHaveText('true');
+	await expect(ledgerRow.locator('.refusal')).toHaveCount(0);
+	await expect(ledgerRow).toHaveAttribute('title', 'progressLedger: true. Offered.');
 	await expect(panel.locator('.fatal')).toHaveCount(0);
 	await expect(page.locator('#lyrics-generator')).toBeVisible();
 });

@@ -1045,16 +1045,32 @@ jobs:
             --floor 41 \
             test-results/webkit-full/results.json
 
+      # -- EVERY step below is guarded `if: ${{ !cancelled() }}` ---------------
+      # The step above is red BY DESIGN: it is the no-grep webkit run whose
+      # whole purpose is keeping the tests quarantined under #637/#680 visible.
+      # A GitHub Actions step defaults to `if: success()`, so that one red
+      # stepped over every step after it, and on both nightly runs that had
+      # ever happened desktop setup, play analytics, stretch artifact, stems
+      # progress and midi-map resync were SKIPPED (issue #913). None of those
+      # configs is referenced anywhere else in CI, so those suites had never
+      # executed there at all. The `gate` job above already guards every one of
+      # its playwright steps for the same reason; this job simply never got the
+      # guard. `!cancelled()` rather than `always()`: a cancelled run must still
+      # stop, or a killed runner keeps booting suites with no one watching.
+      # tests/scripts/test_ci_e2e_extended_job_isolation.py holds both this and
+      # the per-step `--output` rule below.
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend
         # Fixed loopback port (see the vite/playwright config it names) on a
         # host that runs up to eight e2e jobs at once: hold the per-suite host
         # lock so a second copy of this step WAITS instead of dying on
         # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" desktop-setup \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5216 9473 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
+            pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts \
+            --output test-results/desktop-setup
 
       - name: Extended - play analytics
         working-directory: apps/webui/frontend
@@ -1063,10 +1079,12 @@ jobs:
         # host that runs up to eight e2e jobs at once: hold the per-suite host
         # lock so a second copy of this step WAITS instead of dying on
         # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+            pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts \
+            --output test-results/play-analytics
 
       - name: Extended - library wheel
         working-directory: apps/webui/frontend
@@ -1081,7 +1099,8 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-wheel \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9428 5228 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts
+            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts \
+            --output test-results/library-wheel
 
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend
@@ -1089,10 +1108,12 @@ jobs:
         # host that runs up to eight e2e jobs at once: hold the per-suite host
         # lock so a second copy of this step WAITS instead of dying on
         # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" stretch-artifact \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5311 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
+            pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts \
+            --output test-results/stretch-artifact
 
       - name: Extended - stems progress
         working-directory: apps/webui/frontend
@@ -1100,11 +1121,29 @@ jobs:
         # Modal GPU call replaced by the repo's own in-tree double at
         # tests.stems.modal_separator_double. That substitution is the suite's
         # own design, not something this workflow introduces.
-        run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts
+        if: ${{ !cancelled() }}
+        run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts --output test-results/stems-progress
 
       - name: Extended - midi maps resync
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright test --config tests/e2e/playwright.midi-maps-resync.config.ts
+        if: ${{ !cancelled() }}
+        run: pnpm exec playwright test --config tests/e2e/playwright.midi-maps-resync.config.ts --output test-results/midi-maps-resync
+
+      - name: Extended - playlist switch bench (PERF-UI-05 pytest gate)
+        # tests/perf/test_library_playlist_switch_bench.py is a pytest test
+        # that drives `pnpm exec playwright test` over the playlist-switch
+        # latency config against a real engine and asserts the measured p50s
+        # against the committed caps. It needs the frontend build, node_modules
+        # and a chromium this job already has, and it is ignored by both
+        # pytest lanes in ci.yml (a 600 s test timeout plus a 240 s webServer
+        # timeout ate a whole shard's 1380 s budget on #3732). An ephemeral
+        # port is chosen per run inside the test, so no host lock is needed.
+        # tests/scripts/test_ci_playlist_bench_lane.py pins this step.
+        if: ${{ !cancelled() }}
+        run: |
+          .venv/bin/pytest -q -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-playlist-switch-bench" \
+            tests/perf/test_library_playlist_switch_bench.py
 
       - name: Extended - hot-cue mapping gate, real backend + fixture library
         working-directory: apps/webui/frontend
