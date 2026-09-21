@@ -1,4 +1,10 @@
-"""Playlist switch latency regression gate (PERF-UI-05, issue #3530)."""
+"""Playlist switch latency regression gate (PERF-UI-05, issue #3530).
+
+Runs in the e2e workflow's ``extended`` job (frontend build, node_modules and a chromium
+present), never in the ci.yml pytest lanes, which ignore this file: it is a full Playwright
+bench with a 600 s test timeout and a 240 s webServer timeout, and it ate a whole shard's
+1380 s budget on PR #3732. ``tests/scripts/test_ci_playlist_bench_lane.py`` pins the lane.
+"""
 from __future__ import annotations
 
 import json
@@ -32,10 +38,13 @@ def _run_live_playlist_switch_bench() -> dict:
         )
     env = dict(os.environ)
     # agentbox-14 and agentbox-15 share one host, so two shards (or a leaked
-    # engine from an earlier run) can both want the config's default 8701:
+    # engine from an earlier run) can both want the config's default port:
     # "http://127.0.0.1:8701/api/v1/health is already used" on main at
     # 2f0b917e (Mon 21 Sep 2026). An ephemeral port is never in the config's
-    # RESERVED_PORTS table, which tops out below 10000.
+    # RESERVED_PORTS table, which tops out below 10000. The config default
+    # itself moved 8701 -> 8713 (issue #3729) for operators running the bench
+    # by hand, since agentbox holds 8701 for opendj-release@rb-parity (#3448);
+    # the per-run port here is what keeps concurrent shards apart.
     env.setdefault("PLAYLIST_SWITCH_BENCH_PORT", str(_free_port()))
     env.setdefault("PLAYLIST_SWITCH_BENCH_SAMPLES", "10")
     env["PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE"] = "1"
@@ -57,6 +66,7 @@ def _run_live_playlist_switch_bench() -> dict:
 
 
 @pytest.mark.requirement("PERF-UI-05")
+@pytest.mark.slow  # full Playwright bench: never in the CI fast tier (scripts/pytest_fast_tier.py)
 def test_playlist_switch_bench_meets_post_fix_caps() -> None:
     """[if] live bench p50 exceeds caps [then] gate fails, [else stop]."""
     payload = _run_live_playlist_switch_bench()
