@@ -6,17 +6,30 @@ Open DJ is going out to testers. When their engine throws, the alternative to
 this module is asking a human to find a log file and paste it back, which is
 exactly the attention cost the build-identity readout was built to remove.
 Sentry is the runtime exception firehose; nothing else about it is in scope.
-Errors only: no traces, no profiling, no session replay, no performance data.
+Errors by default: no profiling, no session replay, no logs, no metrics.
+Request tracing is OFF unless an operator sets ``SENTRY_TRACES_SAMPLE_RATE``
+(see below); it then passes the same scrubber and the same live-set gate.
+
+NEVER WHILE A DECK IS LIVE
+
+The reporting policy says never send while any deck is playing or audible.
+:mod:`apps.shared.telemetry.live` is that rule: a browser error carries the
+page's own ``any_deck_live`` flag, an engine exception asks the registered
+probe (the UI mirror), and either answer of "live" keeps the event in the
+local sink instead of sending it. Nothing is lost locally; Sentry just does
+not see faults that fired mid-mix until the local logs are read.
 
 THREE STATES, NEVER A SILENT ONE
 
 ``OPENDJ_TELEMETRY`` is tri-state on purpose, because "off" and "off because
 the DSN was missing" are different faults and only one of them is acceptable.
 
-- unset      -> OFF. A payload build (installed, shipped to a tester) and a
-                repo checkout both stay off until a consent UX exists. Fleet
-                test builds set OPENDJ_TELEMETRY=1. A DSN in the environment
-                is not consent.
+- unset      -> the build decides. A PACKAGED build (a dmg) ships its DSN
+                in the payload (OBS-04) and is ON: installing the app is the
+                consent, and the tester can turn it off by creating
+                ``telemetry-opt-out`` in the engine data directory. A repo
+                CHECKOUT is OFF; a DSN in a developer's .env is not consent,
+                and fleet test builds opt in with OPENDJ_TELEMETRY=1.
 - 1/true/on  -> ON, and a missing DSN is a HARD ERROR at startup. Somebody
                 asked for telemetry by name; starting without it would mean
                 the errors they were waiting on never arrive and nothing ever
@@ -28,7 +41,9 @@ the DSN was missing" are different faults and only one of them is acceptable.
 A shipped build whose DSN is absent is the one case that does NOT raise: the
 tester did not ask for telemetry, and bricking their app to report that the
 developer forgot a build variable would be a worse failure than the one it
-reports. It logs loudly and stays off. That asymmetry is deliberate.
+reports. It logs loudly and stays off. That asymmetry is deliberate. (The
+payload build now fails without a DSN, so this is a damaged install, not a
+build that was ever shipped this way.)
 
 WHAT LEAVES THE MACHINE
 
@@ -56,8 +71,8 @@ Requirements:
   the variable to set. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Telemetry disabled leaves ``sentry_sdk`` unimported.
   -> :func:`init_telemetry`
-- ✔︎ ✅ 🎯 A repo checkout and a payload build both default OFF.
-  -> :func:`decide_telemetry`
+- ✔︎ ✅ 🎯 A repo checkout defaults OFF; a payload build with a bundled DSN
+  defaults ON and honors the opt-out marker. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Track titles and library paths never reach an event payload.
   -> :func:`scrub_event`
 - ✔︎ ✅ 🎯 Events carry the build sha as the release and dev/ship as the
@@ -85,9 +100,28 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Literal, cast, get_args
+from typing import Any, cast
 
+from apps.shared.telemetry.consent import (
+    configure_consent_gate,
+    held_for_consent,
+)
+from apps.shared.telemetry.decision import (
+    DSN_ENV,
+    ENVIRONMENT_ENV,
+    ENVIRONMENTS,
+    TELEMETRY_ENV,
+    TRACES_SAMPLE_RATE_ENV,
+    TelemetryConfigError,
+    TelemetryDecision,
+    decide_telemetry,
+)
+from apps.shared.telemetry.live import (
+    MIRROR_LIVE_MAX_AGE_S,
+    mirror_transport_live,
+    set_live_transport_probe,
+    transport_is_live,
+)
 from apps.shared.telemetry.scrub import (
     ALLOWED_CONTEXT_KEYS,
     FILTERED,
@@ -99,144 +133,41 @@ from apps.shared.telemetry.scrub import (
 
 log = logging.getLogger(__name__)
 
-#: Tri-state switch. Unset means "let the build decide" (see module docstring).
-TELEMETRY_ENV: str = "OPENDJ_TELEMETRY"
+class _LiveGateCounter:
+    """Events the live-set gate kept local this process. Read by tests."""
 
-#: Read under the name the Sentry SDK itself documents, so an operator who
-#: knows Sentry does not have to learn a private spelling. The value lives in
-#: the gitignored root .env, and in Doppler general/dev_personal as
-#: OPENDJ_SENTRY_DSN_BACKEND.
-DSN_ENV: str = "SENTRY_DSN"
+    __slots__ = ("suppressed",)
 
-#: Sentry's own variable name too. afmac's opendj-preview sets it to
-#: "preview"; until Mon 14 Sep 2026 init passed environment= explicitly and
-#: silently overrode it to "dev", so preview traffic was mislabeled.
-ENVIRONMENT_ENV: str = "SENTRY_ENVIRONMENT"
-
-TRUTHY: frozenset[str] = frozenset({"1", "true", "yes", "on"})
-FALSEY: frozenset[str] = frozenset({"0", "false", "no", "off"})
-
-Environment = Literal["dev", "preview", "fleet", "ship"]
-ENVIRONMENTS: frozenset[str] = frozenset(get_args(Environment))
-
-class TelemetryConfigError(RuntimeError):
-    """Telemetry was asked for by name and cannot be delivered."""
+    def __init__(self) -> None:
+        self.suppressed: int = 0
 
 
-@dataclass(frozen=True)
-class TelemetryDecision:
-    """What was decided, and the reason, so a log line can state both."""
-
-    enabled: bool
-    environment: Environment
-    reason: str
-    dsn: str | None = None
-    release: str | None = None
-    #: True only when an operator set OPENDJ_TELEMETRY on by hand. It decides
-    #: how hard a downstream fault lands: somebody who asked for telemetry by
-    #: name gets an exception, a shipped default gets a loud log. Branching on
-    #: this rather than on ``reason`` keeps that rule out of a message string.
-    explicit: bool = False
-
-    def __post_init__(self) -> None:
-        if self.enabled and not self.dsn:
-            raise ValueError(
-                "an enabled TelemetryDecision must carry a DSN; construct it "
-                "through decide_telemetry, which enforces that invariant"
-            )
+LIVE_GATE = _LiveGateCounter()
 
 
-# ----- decision -----------------------------------------------------------
-def _flag(raw: str | None) -> bool | None:
-    """True / False when the operator was explicit, None when they were not."""
-    if raw is None:
-        return None
-    value = raw.strip().lower()
-    if value == "":
-        return None
-    if value in TRUTHY:
-        return True
-    if value in FALSEY:
-        return False
-    raise TelemetryConfigError(
-        f"{TELEMETRY_ENV}={raw!r} is not a recognized flag. Use one of "
-        f"{sorted(TRUTHY)} to enable or {sorted(FALSEY)} to disable, or "
-        "unset it to let the build decide."
-    )
+class _LastDecision:
+    """The decision init_telemetry ran with, for routes that report it."""
+
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value: TelemetryDecision | None = None
 
 
-def _environment(environ: Mapping[str, str], build_source: str | None) -> Environment:
-    """SENTRY_ENVIRONMENT when set (and known), else ship for a payload, dev otherwise."""
-    raw = (environ.get(ENVIRONMENT_ENV) or "").strip()
-    if not raw:
-        return "ship" if build_source == "payload" else "dev"
-    if raw not in ENVIRONMENTS:
-        raise TelemetryConfigError(
-            f"{ENVIRONMENT_ENV}={raw!r} is not one of {sorted(ENVIRONMENTS)}. "
-            "Unset it to let the build decide."
-        )
-    return cast(Environment, raw)
-
-
-def decide_telemetry(
-    environ: Mapping[str, str],
-    *,
-    build_source: str | None,
-    release: str | None,
-) -> TelemetryDecision:
-    """Resolve the three states into one decision. Never guesses.
-
-    ``build_source`` is the ``source`` field of the resolved build identity
-    ("payload" for an installed build, "repo" for a checkout). None means the
-    build could not describe itself, which is treated as a checkout: a build
-    that cannot say what it is has no business reporting under a release.
-    """
-    environment = _environment(environ, build_source)
-    dsn = (environ.get(DSN_ENV) or "").strip()
-    explicit = _flag(environ.get(TELEMETRY_ENV))
-
-    if explicit is False:
-        return TelemetryDecision(
-            enabled=False,
-            environment=environment,
-            reason=f"{TELEMETRY_ENV} is set to off",
-        )
-
-    if explicit is True:
-        if not dsn:
-            raise TelemetryConfigError(
-                f"{TELEMETRY_ENV} is on but {DSN_ENV} is empty or unset, so "
-                "no error would ever reach Sentry and nothing downstream "
-                f"would report that. Set {DSN_ENV} to the Open DJ backend "
-                f"DSN, or unset {TELEMETRY_ENV} to let the build decide."
-            )
-        return TelemetryDecision(
-            enabled=True,
-            environment=environment,
-            reason=f"{TELEMETRY_ENV} is set to on",
-            dsn=dsn,
-            release=release,
-            explicit=True,
-        )
-
-    # Unset: default OFF everywhere until a consent UX exists (OBS-01).
-    # Fleet test builds set OPENDJ_TELEMETRY=1. A DSN is not consent.
-    return TelemetryDecision(
-        enabled=False,
-        environment=environment,
-        reason=(
-            "telemetry defaults to off; a "
-            f"{DSN_ENV} in the environment is not consent. set "
-            f"{TELEMETRY_ENV}=1 to opt in"
-        ),
-    )
-
+LAST_DECISION = _LastDecision()
 
 # ----- init ---------------------------------------------------------------
 def init_telemetry(
-    decision: TelemetryDecision, *, transport: Any | None = None
+    decision: TelemetryDecision,
+    *,
+    transport: Any | None = None,
+    consent_granted: bool = False,
 ) -> bool:
     """Initialize the SDK for an enabled decision. Returns whether it ran.
+
+    ``consent_granted`` is what the consent file said at boot (OBS-05). It
+    matters only for a build that turned itself on: an explicit enable is an
+    operator asking by name and is never held for consent.
 
     ``sentry_sdk`` is imported HERE and nowhere else in the module, so a
     disabled decision leaves it absent from ``sys.modules`` and the "off
@@ -250,9 +181,11 @@ def init_telemetry(
     assert on a captured envelope without a live send. Production passes
     None and gets the SDK's own HTTP transport.
     """
+    LAST_DECISION.value = decision
     if not decision.enabled:
         log.info("telemetry off (%s)", decision.reason)
         return False
+    configure_consent_gate(required=not decision.explicit, granted=consent_granted)
 
     try:
         import sentry_sdk
@@ -280,8 +213,10 @@ def init_telemetry(
         environment=decision.environment,
         release=decision.release,
         transport=transport,
-        # Errors only. Every one of these is a deliberate zero.
-        traces_sample_rate=0.0,
+        # Errors only unless SENTRY_TRACES_SAMPLE_RATE opts this process into
+        # request tracing. Profiling stays a deliberate zero.
+        traces_sample_rate=decision.traces_sample_rate,
+        before_send_transaction=_before_send_transaction,
         profiles_sample_rate=0.0,
         # The privacy switches. include_local_variables is the important one:
         # frame locals are where a track title would otherwise ride along.
@@ -300,18 +235,44 @@ def init_telemetry(
         ],
     )
     log.info(
-        "telemetry on (environment=%s, release=%s, %s)",
+        "telemetry on (environment=%s, release=%s, traces_sample_rate=%s, consent=%s, %s)",
         decision.environment,
         decision.release or "unstamped",
+        decision.traces_sample_rate,
+        "not required" if decision.explicit else ("granted" if consent_granted else "held"),
         decision.reason,
     )
     return True
 
 
+def _keep_local_while_live(what: str) -> bool:
+    """True, counted and logged once per process, when a deck is live right now."""
+    if not transport_is_live():
+        return False
+    if LIVE_GATE.suppressed == 0:
+        log.info(
+            "live-set gate: a deck is playing, so this %s and any that follow "
+            "stay in the local sink until transport stops",
+            what,
+        )
+    LIVE_GATE.suppressed += 1
+    return True
+
+
+def reset_live_gate_for_tests() -> None:
+    LIVE_GATE.suppressed = 0
+    set_live_transport_probe(None)
+
+
 def _before_send(
     event: dict[str, Any], hint: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
-    """Stamp error id / host / sha, spend the quota budget, then run the privacy scrub."""
+    """Stamp error id / host / sha, hold while live, spend the budget, then scrub.
+
+    Order matters. The sink row is written FIRST so the local record is
+    complete whatever happens next; the live-set gate runs BEFORE the budget
+    so a mid-mix fault does not spend quota on an event that is not sent.
+    """
     from apps.shared.telemetry.budget import SENTRY_BUDGET
     from apps.shared.telemetry.sink import enrich_sentry_event, event_error_id
 
@@ -319,9 +280,32 @@ def _before_send(
         enrich_sentry_event(event, hint)
     except Exception:
         log.warning("error-sink enrich failed", exc_info=True)
+    # A forwarded browser error already passed the gate in capture_browser_error
+    # on the page's own flag, which outranks the engine's mirror read; asking
+    # the probe again here would let a stale "playing" mirror overrule it.
+    if held_for_consent():
+        return None
+    from_browser = (event.get("tags") or {}).get("origin") == "browser"
+    if not from_browser and _keep_local_while_live("error"):
+        return None
     if not SENTRY_BUDGET.admit(event_error_id(event) or "eid-unidentified"):
         return None
-    return scrub_event(event, hint)
+    return cast("dict[str, Any] | None", scrub_event(event, hint))
+
+
+def _before_send_transaction(
+    event: dict[str, Any], hint: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Tracing only: same live-set gate, same scrub. No sink row, no budget.
+
+    A transaction is not an error, so it mints no error id and writes no
+    JSONL; and the SDK's own sample rate already bounds how many there are.
+    What it must not do is add work to a live set or carry a library path in
+    a span, hence the gate and the scrub.
+    """
+    if held_for_consent() or _keep_local_while_live("transaction"):
+        return None
+    return cast("dict[str, Any] | None", scrub_event(event, hint))
 
 
 # ----- browser errors -----------------------------------------------------
@@ -333,7 +317,16 @@ BROWSER_CONTEXT_FIELDS: tuple[str, ...] = (
     "client_event_id",
     "secure_context",
     "audio_worklet_available",
+    "any_deck_live",
 )
+
+
+def _browser_error_held(context: Mapping[str, Any]) -> bool:
+    """The live-set gate for a browser error: the page's flag outranks the mirror."""
+    any_deck_live = context.get("any_deck_live")
+    if any_deck_live is True:
+        return True
+    return any_deck_live is None and transport_is_live()
 
 
 def capture_browser_error(
@@ -365,8 +358,15 @@ def capture_browser_error(
 
     Returns the Sentry event id, or None when telemetry is off (the common
     case, and not a failure), when the error is a perf-event console mirror,
-    or when the quota budget refused it. Never raises: reporting an error
-    must not become one.
+    when consent is not granted, when a deck is live, or when the quota
+    budget refused it. Never raises: reporting an error must not become one.
+
+    THE LIVE-SET GATE. ``context["any_deck_live"]`` is the page's own read
+    of its transport at the moment the error fired, and it is authoritative
+    when it is a bool: True keeps the event local, False sends it whatever
+    the engine's mirror says. Only a client that did not send the field
+    (None) falls back to the engine-side probe. The local sink row above
+    is written either way.
     """
     from apps.shared.telemetry.budget import is_dev_tooling_console, is_perf_console_mirror
     from apps.shared.telemetry.sink import (
@@ -383,8 +383,10 @@ def capture_browser_error(
     )
     if is_perf_console_mirror(kind, message) or is_dev_tooling_console(kind, message):
         return None
-    client = _client()
-    if client is None:
+    if _client() is None or held_for_consent():
+        return None
+    if _browser_error_held(context):
+        LIVE_GATE.suppressed += 1
         return None
     try:
         import sentry_sdk
@@ -402,11 +404,7 @@ def capture_browser_error(
                 {
                     "user_agent": user_agent,
                     "url": url,
-                    **{
-                        key: context[key]
-                        for key in BROWSER_CONTEXT_FIELDS
-                        if key in context
-                    },
+                    **{key: context[key] for key in BROWSER_CONTEXT_FIELDS if key in context},
                 },
             )
             for key, value in context.items():
@@ -433,7 +431,11 @@ def _client() -> Any | None:
     import sentry_sdk
 
     client = sentry_sdk.get_client()
-    return client if client is not None and client.is_active() else None
+    # is_active() alone is true for the SDK's own no-DSN placeholder client
+    # (what `sentry_sdk.init(dsn=None)` leaves behind), which can send nothing.
+    if client is None or not client.is_active() or not client.dsn:
+        return None
+    return client
 
 
 __all__ = [
@@ -443,14 +445,22 @@ __all__ = [
     "ENVIRONMENTS",
     "ENVIRONMENT_ENV",
     "FILTERED",
+    "LAST_DECISION",
+    "LIVE_GATE",
+    "MIRROR_LIVE_MAX_AGE_S",
     "REDACTED",
     "SDK_CONTEXT_BLOCKS",
     "TELEMETRY_ENV",
+    "TRACES_SAMPLE_RATE_ENV",
     "TelemetryConfigError",
     "TelemetryDecision",
     "capture_browser_error",
     "decide_telemetry",
     "init_telemetry",
+    "mirror_transport_live",
+    "reset_live_gate_for_tests",
     "scrub_event",
     "scrub_string",
+    "set_live_transport_probe",
+    "transport_is_live",
 ]

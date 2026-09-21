@@ -1129,6 +1129,22 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm exec playwright test --config tests/e2e/playwright.midi-maps-resync.config.ts --output test-results/midi-maps-resync
 
+      - name: Extended - playlist switch bench (PERF-UI-05 pytest gate)
+        # tests/perf/test_library_playlist_switch_bench.py is a pytest test
+        # that drives `pnpm exec playwright test` over the playlist-switch
+        # latency config against a real engine and asserts the measured p50s
+        # against the committed caps. It needs the frontend build, node_modules
+        # and a chromium this job already has, and it is ignored by both
+        # pytest lanes in ci.yml (a 600 s test timeout plus a 240 s webServer
+        # timeout ate a whole shard's 1380 s budget on #3732). An ephemeral
+        # port is chosen per run inside the test, so no host lock is needed.
+        # tests/scripts/test_ci_playlist_bench_lane.py pins this step.
+        if: ${{ !cancelled() }}
+        run: |
+          .venv/bin/pytest -q -p no:cacheprovider \
+            --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-playlist-switch-bench" \
+            tests/perf/test_library_playlist_switch_bench.py
+
       - name: Extended - hot-cue mapping gate, real backend + fixture library
         working-directory: apps/webui/frontend
         # Guards the user-facing safety property from #736/#804 that an empty

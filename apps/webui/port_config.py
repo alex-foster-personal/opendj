@@ -129,7 +129,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
         8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
-        8701,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
+        8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT

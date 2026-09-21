@@ -3070,6 +3070,17 @@
       },
       "ClientErrorIn": {
         "properties": {
+          "any_deck_live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Any Deck Live"
+          },
           "audio_worklet_available": {
             "title": "Audio Worklet Available",
             "type": "boolean"
@@ -4654,6 +4665,128 @@
           "path"
         ],
         "title": "ConfigOut",
+        "type": "object"
+      },
+      "ConsentIn": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "declined"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "terms_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Terms Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "terms_version"
+        ],
+        "title": "ConsentIn",
+        "type": "object"
+      },
+      "ConsentOut": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decision": {
+            "enum": [
+              "undecided",
+              "accepted",
+              "declined"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release"
+          },
+          "replay_loader_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Loader Url"
+          },
+          "replay_on_error_sample_rate": {
+            "default": 1.0,
+            "title": "Replay On Error Sample Rate",
+            "type": "number"
+          },
+          "replay_session_sample_rate": {
+            "title": "Replay Session Sample Rate",
+            "type": "number"
+          },
+          "telemetry_active": {
+            "title": "Telemetry Active",
+            "type": "boolean"
+          },
+          "terms_current_version": {
+            "title": "Terms Current Version",
+            "type": "string"
+          },
+          "terms_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Version"
+          }
+        },
+        "required": [
+          "decision",
+          "terms_version",
+          "terms_current_version",
+          "decided_at",
+          "telemetry_active",
+          "environment",
+          "release",
+          "replay_loader_url",
+          "replay_session_sample_rate"
+        ],
+        "title": "ConsentOut",
         "type": "object"
       },
       "CopilotTrackOut": {
@@ -34928,6 +35061,66 @@
           }
         },
         "summary": "List Clients",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/consent": {
+      "get": {
+        "operationId": "get_consent_api_v1_telemetry_consent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Consent",
+        "tags": [
+          "telemetry"
+        ]
+      },
+      "put": {
+        "operationId": "put_consent_api_v1_telemetry_consent_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Consent",
         "tags": [
           "telemetry"
         ]

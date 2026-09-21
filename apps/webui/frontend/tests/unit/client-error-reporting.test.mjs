@@ -116,6 +116,45 @@ test('reportClientError POSTs payload fields to client-errors', async () => {
 	}, 'drain');
 });
 
+test('any_deck_live carries the registered transport probe, null without one', async () => {
+	// The engine holds the Sentry forward while this is true (the "never send
+	// while a deck is live" rule). Three cases, each of which must be
+	// distinguishable on the wire: no probe (null: the engine falls back to
+	// its mirror), a probe saying live (true), a probe that throws (null, not
+	// false: unknown must not read as "safe to send").
+	const bodies = [];
+	globalThis.fetch = async (input) => {
+		bodies.push(await input.clone().json());
+		return new Response(JSON.stringify({ event_id: 'e-live', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+
+	reporting.setLiveTransportProbe(null);
+	reporting.reportClientError(new Error('no-probe'), { source: 'live-a' }, 'ui-error');
+	await waitFor(() => bodies.length === 1, 'the no-probe POST');
+	assert.equal(bodies[0].any_deck_live, null);
+
+	reporting.setLiveTransportProbe(() => true);
+	reporting.reportClientError(new Error('live-probe'), { source: 'live-b' }, 'ui-error');
+	await waitFor(() => bodies.length === 2, 'the live-probe POST');
+	assert.equal(bodies[1].any_deck_live, true);
+
+	reporting.setLiveTransportProbe(() => false);
+	reporting.reportClientError(new Error('idle-probe'), { source: 'live-c' }, 'ui-error');
+	await waitFor(() => bodies.length === 3, 'the idle-probe POST');
+	assert.equal(bodies[2].any_deck_live, false);
+
+	reporting.setLiveTransportProbe(() => {
+		throw new Error('probe exploded');
+	});
+	reporting.reportClientError(new Error('throwing-probe'), { source: 'live-d' }, 'ui-error');
+	await waitFor(() => bodies.length === 4, 'the throwing-probe POST');
+	assert.equal(bodies[3].any_deck_live, null);
+	reporting.setLiveTransportProbe(null);
+});
+
 test('a non-2xx response leaves the item queued', async () => {
 	let posts = 0;
 	globalThis.fetch = async () => {
