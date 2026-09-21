@@ -10,6 +10,9 @@ from pathlib import Path
 
 _FIG_RE = re.compile(r"\[([BDEFMP]\d{1,2}|[1-9]-\d{1,2}|[a-z][a-z0-9_]{1,40})\]")
 
+# Modifier twins a layout may join. Order matters only for output.
+TWIN_KEYS = ("shift_name", "mode_name", "shift_mode_name")
+
 
 def figs_in_midi(midi: dict) -> set[str]:
     out: set[str] = set()
@@ -51,13 +54,23 @@ def main(device_dir: Path) -> int:
 
     bad_shift: list[str] = []
     bad_midi: list[str] = []
+    declared_layers = set(layout.get("layers") or ["base", "shift"])
     for c in layout["controls"]:
         m = c["midi"]
         if m["name"] not in names:
             bad_midi.append(f"{c['fig']}:{m['name']}")
-        sn = m.get("shift_name")
-        if sn and sn not in names:
-            bad_shift.append(f"{c['fig']}:{sn}")
+        # Every modifier twin the layout joins (shift_name, mode_name,
+        # shift_mode_name, ...) must resolve to a midi.json row, and its layer
+        # must be declared, so a vendor MODE layer is checked like SHIFT is.
+        for key in TWIN_KEYS:
+            tn = m.get(key)
+            if not tn:
+                continue
+            layer = key[: -len("_name")]
+            if tn not in names:
+                bad_shift.append(f"{c['fig']}:{key}={tn}")
+            elif layer not in declared_layers:
+                bad_shift.append(f"{c['fig']}:{key} but layer '{layer}' not declared")
 
     print(f"device={layout.get('device')} midi_figs={len(midi_figs)} layout_figs={len(layout_figs)}")
     print(f"missing_in_layout={len(missing)} extra_in_layout={len(extra)} bad_midi={len(bad_midi)} bad_shift={len(bad_shift)}")
@@ -68,7 +81,7 @@ def main(device_dir: Path) -> int:
     if bad_midi:
         print("BAD_MIDI_NAME:", ", ".join(bad_midi))
     if bad_shift:
-        print("BAD_SHIFT_NAME:", ", ".join(bad_shift))
+        print("BAD_TWIN_NAME:", ", ".join(bad_shift))
 
     ok = not missing and not extra and not bad_midi and not bad_shift
     print("PASS" if ok else "FAIL")
