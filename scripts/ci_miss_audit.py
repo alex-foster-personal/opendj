@@ -30,6 +30,8 @@ MINI-PRD
        ✔︎ ✅ 🎯
     R6 [if] a GitHub compare status is not one this module maps [then] ValueError, never a
        guessed diff letter [else stop] ✔︎ ✅ 🎯
+    R7 [if] either run listing is empty or its newest run is older than MAX_WINDOW_AGE
+       [then] exit 3 naming the window, never a recall over a stale page [else stop] ✔︎ ✅ 🎯
 
 Usage:
     python -m scripts.ci_miss_audit --runs 30 --main-runs 20
@@ -44,6 +46,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -72,6 +75,10 @@ from scripts.review_gh import _gh
 LEDGER_PATH = Path(__file__).resolve().parent.parent / ".test_durations"
 ALWAYS_PATH = Path(__file__).resolve().parent.parent / "ci" / "fast-tier-always.txt"
 FAST_CEILING_S = 0.5
+# The runs listing has served a days-old page (Mon 21 Sep 2026: early-September runs, then
+# current ones fifteen minutes later), and nothing downstream can tell. Failed pull request
+# runs arrive every few hours on this fleet, so a newest run older than this is a bad page.
+MAX_WINDOW_AGE = timedelta(hours=48)
 CACHE_DIR = Path.home() / ".cache" / "opendj" / "ci-miss-audit"
 PYTEST_JOBS = INFRA_CLASS_JOBS  # `pytest fast lane` shards and, since 6a, `pytest fast tier` legs
 _COMPARE_LETTERS = {
@@ -299,6 +306,23 @@ def _cached_log(job_id: int) -> str:
     return log
 
 
+def stale_window_reason(
+    runs: list[dict], *, now: datetime, max_age: timedelta = MAX_WINDOW_AGE
+) -> str | None:
+    """Why a run listing cannot be the current window, or None when it can."""
+    if not runs:
+        return "the listing returned no runs"
+    newest = max(datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) for r in runs)
+    if now - newest > max_age:
+        return f"newest run {newest:%Y-%m-%dT%H:%MZ} is older than {max_age} (stale page?)"
+    return None
+
+
+def _window(runs: list[dict]) -> str:
+    stamps = sorted(r["created_at"] for r in runs)
+    return f"{stamps[0]} .. {stamps[-1]}" if stamps else "empty"
+
+
 def _failed_pr_runs(limit: int) -> list[dict]:
     payload = _json(
         f"repos/{REPO}/actions/workflows/ci.yml/runs?event=pull_request&status=failure&per_page={limit}"
@@ -485,8 +509,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     config = read_config()
     pr_runs = _failed_pr_runs(args.runs)
+    main_runs = _failed_main_runs(args.main_runs)
+    now = datetime.now(UTC)
+    for label, listed in (("pull_request", pr_runs), ("main", main_runs)):
+        print(f"{LINE} {label} window: {_window(listed)} ({len(listed)} runs)", file=sys.stderr)
+        if reason := stale_window_reason(listed, now=now):
+            print(f"{LINE} UNKNOWN: {label} listing refused: {reason}", file=sys.stderr)
+            return 3
     runs = collect(pr_runs)
-    trunk_red, trunk_unreadable = trunk_red_in_window(_failed_main_runs(args.main_runs))
+    trunk_red, trunk_unreadable = trunk_red_in_window(main_runs)
     result = audit(
         runs,
         trunk_red=trunk_red,
