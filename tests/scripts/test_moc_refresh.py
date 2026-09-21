@@ -168,6 +168,97 @@ def test_threshold_line_out_of_bounds_reports_missing(tmp_path: Path) -> None:
     assert "out of bounds" in rows[0].detail
 
 
+# --- root-level citations (no `/` in the path) ------------------------------
+
+
+def _write_root_file(repo_root: Path, name: str, n_lines: int = 4) -> None:
+    repo_root.mkdir(parents=True, exist_ok=True)
+    (repo_root / name).write_text(
+        "\n".join(f"# {name} line {i}" for i in range(1, n_lines + 1)) + "\n", encoding="utf-8"
+    )
+
+
+def test_root_level_line_citation_is_checked(tmp_path: Path) -> None:
+    """`AGENTS.md:2-3` and `justfile:1` are citations; the checker must see them.
+
+    Before this guard the path pattern required a `/`, so a root file could be
+    deleted or cited out of bounds and the run still printed OK without even
+    listing the citation (Codex P2 on PR #3719).
+    """
+    repo_root = _write_repo(tmp_path, source_line="WIDGET_MAX = 10")
+    _write_root_file(repo_root, "AGENTS.md")
+    _write_root_file(repo_root, "justfile")
+    _write_moc(
+        repo_root, "Rules: `AGENTS.md:2-3`. Recipes: `justfile:1`, and `justfile` overall.\n"
+    )
+
+    rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
+
+    assert drift_count == 0
+    assert sorted(r.citation for r in rows) == ["`AGENTS.md:2-3`", "`justfile:1`", "`justfile`"]
+    assert all(r.status == mod.OK for r in rows)
+
+
+def test_root_level_citation_mutation_present_vs_missing(tmp_path: Path) -> None:
+    """Same citation text; delete the root file -> MISSING, not a silent OK."""
+    citation_moc = "Rules: `AGENTS.md:2-3`.\n"
+
+    repo_present = _write_repo(tmp_path / "a", source_line="WIDGET_MAX = 10")
+    _write_root_file(repo_present, "AGENTS.md")
+    _write_moc(repo_present, citation_moc)
+    rows_present, drift_present = mod.run(repo_present, repo_present / "docs" / "moc")
+
+    repo_missing = _write_repo(tmp_path / "b", source_line="WIDGET_MAX = 10")
+    _write_moc(repo_missing, citation_moc)
+    rows_missing, drift_missing = mod.run(repo_missing, repo_missing / "docs" / "moc")
+
+    assert (drift_present, rows_present[0].status) == (0, mod.OK)
+    assert (drift_missing, rows_missing[0].status) == (1, mod.MISSING)
+
+
+def test_root_level_line_out_of_bounds_reports_missing(tmp_path: Path) -> None:
+    repo_root = _write_repo(tmp_path, source_line="WIDGET_MAX = 10")
+    _write_root_file(repo_root, "justfile", n_lines=4)
+    _write_moc(repo_root, "Recipes: `justfile:3-999`.\n")
+
+    rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
+
+    assert drift_count == 1
+    assert rows[0].status == mod.MISSING
+    assert "out of bounds" in rows[0].detail
+
+
+def test_bare_basenames_and_host_ports_are_not_root_citations(tmp_path: Path) -> None:
+    """The negative control for the widening: prose that LOOKS root-level.
+
+    None of these exist at the fixture root, so if any were treated as a
+    citation the run would report MISSING. Zero rows proves they are ignored,
+    and the positive test above proves the same scanner does fire on a real
+    root citation.
+    """
+    repo_root = _write_repo(tmp_path, source_line="WIDGET_MAX = 10")
+    _write_moc(
+        repo_root,
+        "The `state.db` file, `app.py`, `AGENTS.md` bare, `127.0.0.1:8585`, "
+        "`localhost:8585`, `1.3.2`, and `AudioContext.currentTime`.\n",
+    )
+
+    rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
+
+    assert (rows, drift_count) == ([], 0)
+
+
+def test_root_level_threshold_pointer_is_not_double_counted(tmp_path: Path) -> None:
+    repo_root = _write_repo(tmp_path, source_line="WIDGET_MAX = 10")
+    _write_root_file(repo_root, "justfile")
+    _write_moc(repo_root, "Line two is `justfile line 2` (`justfile:2`).\n")
+
+    rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
+
+    assert drift_count == 0
+    assert [r.kind for r in rows] == ["threshold"]
+
+
 # --- combined fixture MOC covering all three cases at once ------------------
 
 
