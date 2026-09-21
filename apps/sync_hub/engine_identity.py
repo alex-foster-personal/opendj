@@ -551,6 +551,7 @@ def assert_identity_ready(conn: sqlite3.Connection) -> None:
     )
 
 
+# ADR: none, because this restores the public keyword names removed by a lint refactor.
 def assert_merge_safe(
     _conn: sqlite3.Connection,
     *,
