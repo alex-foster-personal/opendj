@@ -40,6 +40,16 @@ Requirements (mini-PRD)
   recorded and out of the slow tier, [else stop] ✔︎ ✅ 🎯
 - [if] an always-fast entry matches no collected test while a tier is selected [then] usage
   error naming the entry, so the list cannot rot, [else stop] ✔︎ ✅ 🎯
+- [if] a test carries ``@pytest.mark.slow`` and is not on the always-fast list [then] it is
+  out of the fast tier and in the slow tier whatever the ledger recorded, unseen included,
+  [else stop] ✔︎ ✅ 🎯
+
+The ``slow`` marker rule exists because an unseen test is included in the fast tier by
+design, and a test that never ran to completion is never recorded: on PR #3732 (Mon 21 Sep
+2026) the playlist-switch Playwright bench (tests/perf/test_library_playlist_switch_bench.py)
+became runnable for the first time, entered leg 2 as an unseen test, and ate the whole 480 s
+leg budget (exit 124). A bench author knows it is slow before any ledger does; the marker
+says so where the test lives, and the slow shards still run it.
 
 The always-fast list exists because the round 7 miss audit (specs/ci-fail-fast.md, Wed 16
 Sep 2026) found the fast tier caught 9 of 20 pull-request-caused failures, and 8 of the 11
@@ -58,6 +68,7 @@ LINE_PREFIX: str = "[fast-tier]"
 DEFAULT_LEDGER: str = ".test_durations"
 DEFAULT_MAX_SECONDS: float = 0.5
 DEFAULT_ALWAYS: str = "ci/fast-tier-always.txt"
+SLOW_MARKER: str = "slow"
 TIERS: tuple[str, ...] = ("fast", "slow", "all")
 #: Ledger rows that are padding, not tests (see the collect-floor notes in ci.yml).
 PAD_MARKER: str = "_ci_dur_pad"
@@ -131,6 +142,12 @@ def _always_matches(entry: str, nodeid: str) -> bool:
     return nodeid == entry or nodeid.startswith(entry + "::")
 
 
+def _marked_slow(item: pytest.Item) -> bool:
+    """``@pytest.mark.slow`` (registered in pyproject) on the test or any enclosing
+    node: the author's own statement that this test never belongs in the fast tier."""
+    return item.get_closest_marker(SLOW_MARKER) is not None
+
+
 class FastTier:
     """Deselects by recorded duration and measures how much of the collection the ledger names."""
 
@@ -169,9 +186,12 @@ class FastTier:
     def _forced(self, nodeid: str) -> bool:
         return any(_always_matches(entry, nodeid) for entry in self.always)
 
-    def _belongs(self, nodeid: str) -> bool:
+    def _belongs(self, item: pytest.Item) -> bool:
+        nodeid = item.nodeid
         if self.tier in ("fast", "slow") and self._forced(nodeid):
             return self.tier == "fast"
+        if self.tier in ("fast", "slow") and _marked_slow(item):
+            return self.tier == "slow"
         recorded = self.ledger.get(nodeid)
         if self.tier == "fast":
             return recorded is None or recorded < self.max_seconds
@@ -204,17 +224,19 @@ class FastTier:
                     f"{LINE_PREFIX} always-fast entries match no collected test: {stale}. "
                     "A renamed or deleted test leaves a stale entry; fix the list."
                 )
-        keep = [item for item in items if self._belongs(item.nodeid)]
-        deselected = [item for item in items if not self._belongs(item.nodeid)]
+        keep = [item for item in items if self._belongs(item)]
+        deselected = [item for item in items if not self._belongs(item)]
         unseen = sum(1 for item in keep if item.nodeid not in self.ledger)
         forced = sum(1 for item in keep if self._forced(item.nodeid))
+        marked = sum(1 for item in items if _marked_slow(item) and not self._forced(item.nodeid))
         if deselected:
             config.hook.pytest_deselected(items=deselected)
             items[:] = keep
         self.summary = (
             f"{LINE_PREFIX} tier={self.tier or 'none'} ceiling={self.max_seconds}s "
             f"selected={len(keep)} of {collected} (unseen included={unseen}) "
-            f"ledger coverage={known}/{collected}={coverage:.1%} always-fast={forced}"
+            f"ledger coverage={known}/{collected}={coverage:.1%} always-fast={forced} "
+            f"marked-slow={marked}"
         )
 
     def pytest_report_collectionfinish(self) -> list[str]:
