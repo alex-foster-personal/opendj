@@ -34,7 +34,7 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, SCHEDULE_DECK_SERIAL_ANCHOR } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://beat-sync-ownership.example.test';
@@ -213,20 +213,7 @@ test('pause and beat-sync disable bump re-anchor operation generation', () => {
 });
 
 test('the schedule ack path re-checks re-anchor generation after processor.schedule', () => {
-	const body = engineBlockAfter(
-		'async function _scheduleDeckSerial(\n' +
-			'\tdeck: DeckId,\n' +
-			'\twhen: number,\n' +
-			'\tinputSec: number | ((effectiveWhen: number) => number),\n' +
-			'\tactive: boolean,\n' +
-			'\ttempoRatio: number | undefined,\n' +
-			'\tmasterTempoEnabled: boolean | undefined,\n' +
-			'\tloop: LoopState | null | undefined,\n' +
-			'\tkeyShiftSemitones: number | undefined,\n' +
-			'\tpressT0Ms: number | undefined,\n' +
-			'\treanchorGeneration?: number\n' +
-			'): Promise<number> {'
-	);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 	assert.match(
 		body,
 		/reanchorGeneration !== undefined[\s\S]*_reanchorOperationIsCurrent\(deck, reanchorGeneration\)/

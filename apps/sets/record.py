@@ -639,9 +639,16 @@ def _default_source_factories(
 def status(
     *,
     sets_root: Path | None = None,
-    _state: SetsState | None = None,
+    state: SetsState | None = None,
 ) -> dict[str, Any]:
-    """Return a summary of any active session (pid file present)."""
+    """Return a summary of any active session (pid file present).
+
+    ``state`` is accepted by keyword from every caller (recorder_service, the
+    CLI, the availability tests); the pid-file scan does not consult it.
+    Renaming it to ``_state`` (17c7e99d) turned GET /api/v1/sets/recorder/status
+    into a 500 on every e2e run.
+    """
+    del state
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
     if not root.exists():
         return {"active": False}

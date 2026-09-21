@@ -2,7 +2,11 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
+import {
+	engineBlockAfter,
+	readFrontendSource as readSource,
+	SCHEDULE_DECK_SERIAL_ANCHOR
+} from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -338,17 +342,7 @@ test('SABOTAGE: one pitch-fader drag can no longer evict the press row', async (
 //-----------------------------------------------------------------------------
 
 test('the engine labels the row from the SAME context it read the clock from', () => {
-	const body = engineBlockAfter(`async function _scheduleDeckSerial(
-	deck: DeckId,
-	when: number,
-	inputSec: number | ((effectiveWhen: number) => number),
-	active: boolean,
-	tempoRatio: number | undefined,
-	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
-): Promise<number> {`);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 	// The facts are DERIVED FROM scheduleStages, so the floor terms the labels
 	// call absent are the same ones the row itself omits. A second read of the
 	// context could disagree with the row printed beside it.
@@ -641,11 +635,9 @@ test('a hot-cue jump against an already-playing synced follower carries the pres
 	);
 	// And the re-anchor/blend helpers those branches call must actually SPEND
 	// it, not just receive it - both funnel through the shared _scheduleSyncDeck.
-	assert.ok(
-		/function _scheduleSyncDeck\([^)]*pressT0Ms\?: number\)[^{]*\{\s*return _scheduleDeck\([^)]*pressT0Ms\);/.test(
-			body
-		),
-		'_scheduleSyncDeck must spend the stamp it was given, not just receive it'
+	assert.match(
+		body,
+		/function _scheduleSyncDeck\([\s\S]*?pressT0Ms\?: number[\s\S]*?\{[\s\S]*?return _scheduleDeck\([\s\S]*?pressT0Ms,[\s\S]*?reanchorGeneration[\s\S]*?\);/
 	);
 	// NEGATIVE CONTROL: 'master-max' fills reanchorDecks with the OTHER
 	// followers, never the pressed master - a re-anchored bystander must not
@@ -677,6 +669,10 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 	assert.ok(
 		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
 		'the receipt stamp must reach the glue layer'
+	);
+	assert.ok(
+		midi.includes('registerActionHandler(') && midi.includes('pressT0Ms?: number'),
+		'registerActionHandler must accept the receipt stamp as a fourth parameter'
 	);
 	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
 	assert.ok(

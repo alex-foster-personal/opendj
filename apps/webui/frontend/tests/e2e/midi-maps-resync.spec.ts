@@ -68,26 +68,24 @@ test('installed maps reload after real WebSocket disconnect/reconnect', async ({
 	await expect(page.getByRole('button', { name: 'Jobs drawer' })).toBeEnabled();
 
 	// +layout.svelte calls connectEventsBus(); wait for the real socket to open.
-	await page.waitForFunction(async () => {
-		const { getConnectionState } = await import('/src/lib/api/events-bus.ts');
+	await page.waitForFunction(async (modulePath: string) => {
+		const { getConnectionState } = await import(modulePath);
 		return getConnectionState() === 'open';
-	});
+	}, '/src/lib/api/events-bus.ts');
 
 	// Arm installed-map listeners (same entry point the MIDI panel uses).
-	await page.evaluate(async () => {
-		const { requestMidiAccess } = await import(
-			'/src/lib/components/rb/midi/midi-ui-state.svelte.ts'
-		);
+	await page.evaluate(async (modulePath: string) => {
+		const { requestMidiAccess } = await import(modulePath);
 		await requestMidiAccess();
-	});
+	}, '/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
 
 	const putA = await page.request.put(`${API}/api/v1/midi/maps/aaa-device`, { data: DOC_A });
 	expect(putA.status()).toBe(200);
 
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (modulePath: string) => {
+		const { resolveMapForPort } = await import(modulePath);
 		return resolveMapForPort('AaaDevice 1') !== null;
-	});
+	}, '/src/lib/rb/midi/webmidi.svelte.ts');
 
 	// Disconnect the page's real WebSocket; the bus schedules reconnect.
 	await context.setOffline(true);
@@ -96,26 +94,26 @@ test('installed maps reload after real WebSocket disconnect/reconnect', async ({
 	expect(putB.status()).toBe(200);
 
 	// Map B was installed while the socket was down - not yet in the page registry.
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (modulePath: string) => {
+		const { resolveMapForPort } = await import(modulePath);
 		return resolveMapForPort('BbbDevice 1') === null;
-	});
+	}, '/src/lib/rb/midi/webmidi.svelte.ts');
 
 	await context.setOffline(false);
 
-	await page.waitForFunction(async () => {
-		const { getConnectionState } = await import('/src/lib/api/events-bus.ts');
+	await page.waitForFunction(async (modulePath: string) => {
+		const { getConnectionState } = await import(modulePath);
 		return getConnectionState() === 'open';
-	});
+	}, '/src/lib/api/events-bus.ts');
 
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (modulePath: string) => {
+		const { resolveMapForPort } = await import(modulePath);
 		return resolveMapForPort('BbbDevice 1') !== null;
-	});
+	}, '/src/lib/rb/midi/webmidi.svelte.ts');
 
-	const installedMapsError = await page.evaluate(async () => {
-		const { midiUi } = await import('/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
+	const installedMapsError = await page.evaluate(async (modulePath: string) => {
+		const { midiUi } = await import(modulePath);
 		return midiUi.installedMapsError;
-	});
+	}, '/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
 	expect(installedMapsError).toBeNull();
 });

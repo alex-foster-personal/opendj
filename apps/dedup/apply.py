@@ -290,9 +290,13 @@ class DedupApplyPaths:
     backup_dir: Path | None = None
 
 
-def run_apply(
+def run_apply(  # noqa: PLR0913 - keyword contract, see docstring
     *,
     apply_paths: DedupApplyPaths | None = None,
+    dedup_db_path: Path | None = None,
+    rb_db_path: Path | None = None,
+    plan_csv: Path | None = None,
+    plan_md: Path | None = None,
     backup_dir: Path | None = None,
     cluster_ids: set[int] | None = None,
     live: bool = False,
@@ -306,14 +310,23 @@ def run_apply(
         # refusal. Refusing here means the one-way gate answers before any
         # handle exists, whatever ``--rb-db`` was aimed at.
         require_writeback_enabled("module.dedup.apply")
+    # ``apply_paths=`` bundles the five paths; the bare keywords are the older
+    # public form every caller outside this module still uses (tests included).
+    # An explicit keyword overrides the bundle's field, never the other way.
     cfg = apply_paths or DedupApplyPaths()
-    if backup_dir is not None:
+    overrides = {
+        "dedup_db_path": dedup_db_path,
+        "rb_db_path": rb_db_path,
+        "plan_csv": plan_csv,
+        "plan_md": plan_md,
+        "backup_dir": backup_dir,
+    }
+    if any(value is not None for value in overrides.values()):
         cfg = DedupApplyPaths(
-            dedup_db_path=cfg.dedup_db_path,
-            rb_db_path=cfg.rb_db_path,
-            plan_csv=cfg.plan_csv,
-            plan_md=cfg.plan_md,
-            backup_dir=backup_dir,
+            **{
+                field: (override if override is not None else getattr(cfg, field))
+                for field, override in overrides.items()
+            }
         )
     dedup_db = cfg.dedup_db_path or paths.DEDUP_FALLBACK_DB
     rb_db = cfg.rb_db_path or paths.REKORDBOX_WORKING_DB

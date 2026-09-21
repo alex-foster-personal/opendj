@@ -9,6 +9,7 @@ import os
 import shutil
 import signal
 import socket
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -286,6 +287,29 @@ def _scratch_engine_argv(data_dir: Path, port: int) -> list[str] | None:
     ]
 
 
+def _state_db_problem(state_db: Path) -> str | None:
+    """Why ``state_db`` cannot be measured against, or None when it can.
+
+    The engine boots happily on a 0-byte file (it migrates it into a fresh,
+    empty library), reports healthy, and the nightly then measures nothing
+    and exits 0. That is a false green: an empty file is not the operator's
+    library. Refuse before boot so the run records ``engine_unavailable``
+    instead of a clean ledger with no rows.
+    """
+    if not state_db.is_file():
+        return f"missing state database: {state_db}"
+    try:
+        with state_db.open("rb") as handle:
+            header = handle.read(16)
+        with sqlite3.connect(state_db) as connection:
+            connection.execute("PRAGMA schema_version").fetchone()
+    except (OSError, sqlite3.DatabaseError):
+        return f"state database is not a SQLite file: {state_db}"
+    if header != b"SQLite format 3\x00":
+        return f"state database is not a SQLite file: {state_db}"
+    return None
+
+
 def acquire_nightly_engine(
     config: PerfKpiConfig,
     *,
@@ -299,12 +323,16 @@ def acquire_nightly_engine(
         return None, None, None, _engine_unavailable(config, "MDT_PERF_KPI_DATA_DIR is unset")
 
     state_db = data_dir / "state" / "state.db"
-    if not state_db.is_file():
+    state_db_problem = _state_db_problem(state_db)
+    if state_db_problem is not None:
+        config.state_dir.mkdir(parents=True, exist_ok=True)
+        log_path = config.state_dir / SCRATCH_ENGINE_LOG_NAME
+        log_path.touch()
         return (
             None,
             None,
-            None,
-            _engine_unavailable(config, f"missing state database: {state_db}"),
+            log_path,
+            _engine_unavailable(config, state_db_problem, engine_log=log_path),
         )
 
     port = config.scratch_port

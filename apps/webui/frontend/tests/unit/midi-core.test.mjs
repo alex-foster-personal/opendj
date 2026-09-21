@@ -185,35 +185,61 @@ test('hot cue press on an empty slot toasts the missing-slot state', () => {
 	assert.match(lastToast().message, /Deck 3 is empty/);
 });
 
-test('mixer_global actions drive mixerState directly', () => {
-	glue.handleMidiAction(
-		{ type: 'mixer_global', target: 'master' },
-		{ kind: 'continuous', value01: 0.5, raw: 64 }
-	);
-	assert.equal(audioEngine.mixerState.master, 0.5);
-	glue.handleMidiAction(
-		{ type: 'mixer_global', target: 'crossfader' },
-		{ kind: 'continuous', value01: 0.25, raw: 32 }
-	);
-	assert.equal(audioEngine.mixerState.crossfader, 0.25);
+// The glue does not touch mixerState itself: every mixer move is a performance
+// command (agent-native parity), so it only lands once an IPC command session
+// exists, exactly as on the mounted /performance page. installPerformanceBrowserIpc
+// opens that session; the settle await lets the scheduler run the command.
+async function _withCommandSession(run) {
+	globalThis.window = {};
+	const uninstall = performanceIpc.installPerformanceBrowserIpc();
+	try {
+		await run();
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+}
+
+const _settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('mixer_global actions reach mixerState through the performance command session', async () => {
+	await _withCommandSession(async () => {
+		glue.handleMidiAction(
+			{ type: 'mixer_global', target: 'master' },
+			{ kind: 'continuous', value01: 0.5, raw: 64 }
+		);
+		await _settle();
+		assert.equal(audioEngine.mixerState.master, 0.5);
+		glue.handleMidiAction(
+			{ type: 'mixer_global', target: 'crossfader' },
+			{ kind: 'continuous', value01: 0.25, raw: 32 }
+		);
+		await _settle();
+		assert.equal(audioEngine.mixerState.crossfader, 0.25);
+	});
 });
 
-test('mixer_channel actions drive the channel strip state', () => {
-	glue.handleMidiAction(
-		{ type: 'mixer_channel', deck: 2, target: 'trim' },
-		{ kind: 'continuous', value01: 0.75, raw: 95 }
-	);
-	assert.equal(audioEngine.mixerState.channels[2].trim, 0.75);
-	glue.handleMidiAction(
-		{ type: 'mixer_channel', deck: 2, target: 'eq', band: 'low' },
-		{ kind: 'continuous', value01: 0.1, raw: 13 }
-	);
-	assert.equal(audioEngine.mixerState.channels[2].eq_low, 0.1);
-	glue.handleMidiAction(
-		{ type: 'mixer_channel', deck: 4, target: 'fader' },
-		{ kind: 'continuous14', value01: 0.5, raw: 8192 }
-	);
-	assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
+test('mixer_channel actions reach the channel strip through the performance command session', async () => {
+	await _withCommandSession(async () => {
+		glue.handleMidiAction(
+			{ type: 'mixer_channel', deck: 2, target: 'trim' },
+			{ kind: 'continuous', value01: 0.75, raw: 95 }
+		);
+		await _settle();
+		assert.equal(audioEngine.mixerState.channels[2].trim, 0.75);
+		glue.handleMidiAction(
+			{ type: 'mixer_channel', deck: 2, target: 'eq', band: 'low' },
+			{ kind: 'continuous', value01: 0.1, raw: 13 }
+		);
+		await _settle();
+		assert.equal(audioEngine.mixerState.channels[2].eq_low, 0.1);
+		glue.handleMidiAction(
+			{ type: 'mixer_channel', deck: 4, target: 'fader' },
+			{ kind: 'continuous14', value01: 0.5, raw: 8192 }
+		);
+		await _settle();
+		assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
+	});
 });
 
 // Regression: channel_cue used to call engine.setChannelCue directly,

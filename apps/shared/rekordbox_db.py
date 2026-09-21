@@ -205,7 +205,16 @@ def open_db(path: Path | None = None) -> Rekordbox6Database:
                 f"{paths.REKORDBOX_LIVE_DB} is missing."
             )
         target = copied["rekordbox"]  # type: ignore[assignment]
-    return Rekordbox6Database(path=str(target))
+    # master.plain.db (the decrypted working copy, and the disposable copies
+    # the writeback acceptance tests make of it) is plain SQLite; handing it
+    # to SQLCipher with the key raises "file is not a database". The header
+    # is the honest discriminator: encrypted pages never start with it.
+    return Rekordbox6Database(path=str(target), unlock=not _is_plain_sqlite(target))
+
+
+def _is_plain_sqlite(path: Path) -> bool:
+    with Path(path).open("rb") as handle:
+        return handle.read(16) == b"SQLite format 3\x00"
 
 
 def _safe_name(rel) -> str:

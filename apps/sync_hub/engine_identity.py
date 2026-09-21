@@ -552,19 +552,22 @@ def assert_identity_ready(conn: sqlite3.Connection) -> None:
 
 
 def assert_merge_safe(
-    _conn: sqlite3.Connection,
+    conn: sqlite3.Connection,
     *,
-    _hub_library_rows: int | None,
-    _first_sync: bool,
+    hub_library_rows: int | None,
+    first_sync: bool,
 ) -> None:
     """Apply :func:`assert_identity_ready`, but only where a merge can happen.
 
     ADR-0068: identity-less inferred rows travel as ``hash_pending``, so the
     old first-sync refusal no longer applies. This helper remains for tests
     that still exercise the explicit preflight path via
-    :func:`assert_identity_ready`.
+    :func:`assert_identity_ready`. The keyword names are the public contract
+    (``hub_library_rows=``, ``first_sync=``): callers pass them by name, so an
+    underscore rename to quiet ARG001 is a TypeError at every call site, which
+    is how trunk went red on Sat 19 Sep 2026 (17c7e99d).
     """
-    return
+    del conn, hub_library_rows, first_sync
 
 
 __all__ = [

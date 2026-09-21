@@ -126,6 +126,48 @@ def _backup_rb_db(
     return dst
 
 
+def _online_backup_plaintext_rekordbox(
+    source_url: Any, expected_target: Path, destination: Path, backup_id: str
+) -> str:
+    """Back up a plaintext (already decrypted) Rekordbox DB.
+
+    ``open_db`` opens master.plain.db without a key, so the writer's engine
+    has no SQLCipher key to export through. The copy still goes through
+    SQLite's online backup API rather than a file copy: a target in WAL mode
+    keeps committed pages in its ``-wal`` sidecar, and ``shutil.copy2`` of the
+    main file alone yields a backup that passes ``integrity_check`` while
+    silently missing those rows (Codex P2 / Devin P1 on PR #3716).
+    """
+    import sqlite3
+
+    source_database = getattr(source_url, "database", None)
+    if not source_database:
+        raise RuntimeError("rekordbox: plaintext engine names no database file")
+    actual_target = Path(source_database).resolve(strict=True)
+    if actual_target != expected_target:
+        raise RuntimeError(
+            "rekordbox: plaintext engine does not own exact target "
+            f"{expected_target}; connected to {actual_target}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise FileExistsError(f"rekordbox: backup already exists: {destination}")
+    try:
+        with sqlite3.connect(expected_target) as source, sqlite3.connect(destination) as target:
+            source.backup(target)
+            verdict = target.execute("PRAGMA quick_check").fetchone()
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
+    if verdict != ("ok",):
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"rekordbox: plaintext backup failed integrity check: {destination}")
+    if destination.stat().st_size <= 0:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"rekordbox: plaintext backup is empty: {destination}")
+    return backup_id
+
+
 def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
     """Export an encrypted Rekordbox DB through its unlocked SQLCipher engine."""
     from apps.smartlists import writeback_backup
@@ -144,8 +186,8 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         )
     source_key = source_url.password
     if source_key is None or source_key == "":
-        raise RuntimeError(
-            "rekordbox: unlocked SQLCipher engine has no key"
+        return _online_backup_plaintext_rekordbox(
+            source_url, expected_target, destination, backup_id
         )
     backup_engine = create_engine(
         source_url,

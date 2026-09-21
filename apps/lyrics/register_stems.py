@@ -161,16 +161,26 @@ class RegisterPairStorage:
 def _storage_for_register_pair(
     storage: RegisterPairStorage | None,
     root: Path | None,
+    s3: AssetS3Client | None = None,
+    cfg: CloudConfig | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> RegisterPairStorage:
-    """Accept ``storage=`` or legacy ``root=``, never both."""
-    if storage is not None and root is not None:
-        raise TypeError("register_pair accepts storage= or root=, not both")
+    """Accept ``storage=`` or the legacy ``root=``/``s3=``/``cfg=``/``conn=``
+    keywords, never both. The keyword form is the public contract the CLI,
+    ``batch.py`` and the stems-sync tests call; the dataclass is the bundled
+    form. Trunk broke Sat 19 Sep 2026 when a lint pay-down (17c7e99d) dropped
+    the keywords without migrating callers -- three shards failed on it."""
+    legacy = (root, s3, cfg, conn)
+    if storage is not None and any(value is not None for value in legacy):
+        raise TypeError(
+            "register_pair accepts storage= or the root=/s3=/cfg=/conn= keywords, not both"
+        )
     if storage is not None:
         return storage
-    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
+    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn)
 
 
-def register_pair(
+def register_pair(  # noqa: PLR0913 - keyword contract, see docstring
     *,
     stable_id: str,
     vocals: Path,
@@ -180,12 +190,15 @@ def register_pair(
     source_path: str,
     storage: RegisterPairStorage | None = None,
     root: Path | None = None,
+    s3: AssetS3Client | None = None,
+    cfg: CloudConfig | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> Path:
     """Write ONE canonical roformer2 bundle and verify it with the strict
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
-    store = _storage_for_register_pair(storage, root)
+    store = _storage_for_register_pair(storage, root, s3, cfg, conn)
     root = store.root
     s3 = store.s3
     cfg = store.cfg

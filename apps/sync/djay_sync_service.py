@@ -540,12 +540,16 @@ def run_ratings_apply(
     dry_run: bool = True,
     diff_csv: Path | None = None,
     live: bool = False,
-    _cautious: bool = False,
-    _bulk: bool = False,
+    cautious: bool = False,
+    bulk: bool = False,
     tracks: list[str] | None = None,
     i_understand_the_risks: bool = False,
 ) -> dict[str, Any]:
     from apps.sync import apply_ratings  # noqa: PLC0415
+
+    # The /ratings/apply route passes cautious= and bulk= by keyword; the
+    # tracks filter is what actually scopes the live run here.
+    del cautious, bulk
 
     resolved_csv = diff_csv or (SYNC_DIR / "ratings-diff.csv")
     rows = apply_ratings._load_ratings_diff(resolved_csv)

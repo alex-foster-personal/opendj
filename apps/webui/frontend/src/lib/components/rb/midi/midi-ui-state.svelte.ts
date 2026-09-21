@@ -43,6 +43,8 @@ import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
 import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
+import { api } from '$lib/api/client';
+import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -142,6 +144,28 @@ function _persistMidiEnabled(enabled: boolean): void {
 	}
 }
 
+const _syncMidiEnabledDisk = makeDiskWriteChain(async (patch: { midi_enabled: boolean }) => {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if the daemon is down */
+	}
+});
+
+function _syncMidiEnabledToDisk(enabled: boolean): void {
+	void _syncMidiEnabledDisk({ midi_enabled: enabled });
+}
+
+/** Record the user's MIDI-enabled choice: localStorage first (this page),
+ * then PUT `midi_enabled` to /api/v1/ui-prefs so prefs-hydrate can replay
+ * the opt-in on another browser (issue #2854). The disk half never existed
+ * before Mon 21 Sep 2026: hydrateMidiEnabledFromDisk read a key nothing
+ * wrote, so the pref could not become true from the UI. */
+export function setMidiEnabledChoice(enabled: boolean): void {
+	_persistMidiEnabled(enabled);
+	_syncMidiEnabledToDisk(enabled);
+}
+
 /** True if the user previously enabled MIDI (persisted choice). */
 export function midiEnabledPersisted(): boolean {
 	if (typeof localStorage === 'undefined') return false;
@@ -183,7 +207,7 @@ export async function requestMidiAccess(): Promise<void> {
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
-		_persistMidiEnabled(true);
+		setMidiEnabledChoice(true);
 		// Controllers onboarded in the app live in the daemon, not the bundle.
 		// Loaded AFTER initMidi and in its own catch on purpose: a daemon that
 		// cannot serve them must not cost the user the builtin maps mid-set.
@@ -217,7 +241,7 @@ export async function requestMidiAccess(): Promise<void> {
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		_persistMidiEnabled(false);
+		setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}
