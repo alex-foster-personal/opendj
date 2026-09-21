@@ -159,6 +159,20 @@ test('real loader: replay uploads after consent, stops and discards on play, res
 	for (const text of decoded) {
 		expect(text, 'a recorded segment carries the visible track title').not.toContain(fixtureTitle);
 	}
+	// Presence, not just absence: the click on the title cell above is a
+	// `ui.click` breadcrumb the real SDK built from the live element, so its
+	// selector carried `[title="<track>"]` into `beforeAddRecordingEvent`.
+	// Seeing the filtered marker in a decoded segment proves the hook ran
+	// inside the loader SDK, not in a unit-test stand-in.
+	await expect
+		.poll(
+			() =>
+				envelopes
+					.flatMap((e) => e.recordings)
+					.some((text) => text.includes('ui.click') && text.includes('[title=\\"[filtered]\\"]')),
+			{ timeout: 30_000 }
+		)
+		.toBe(true);
 	await page.waitForTimeout(1_500);
 	await page.locator('[data-testid="play-deck-1"]').click();
 	await expect

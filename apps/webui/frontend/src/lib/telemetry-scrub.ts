@@ -187,13 +187,43 @@ export const SELECTOR_ATTRIBUTES_KEPT: ReadonlySet<string> = new Set([
 	'disabled',
 	'aria-disabled'
 ]);
-const SELECTOR_ATTR_RE = /\[([\w:-]+)="([^"]*)"\]/g;
+// One element of the SDK's selector path: `tag`, then any of `#id`, `.class`
+// and `[name="value"]`. The SDK writes attribute values VERBATIM (no escaping),
+// so a value holding `"`, or the ` > ` the path is joined with, cannot be told
+// apart from the selector's own syntax. The parser below therefore accepts
+// only what it can account for completely; anything else fails closed.
+const SELECTOR_SEGMENT_RE = /^([a-zA-Z][\w-]*)((?:#[^\s#.[\]"]+|\.[^\s#.[\]"]+|\[[\w:-]+="[^"]*"\])*)$/;
+const SELECTOR_PART_RE = /#[^\s#.[\]"]+|\.[^\s#.[\]"]+|\[([\w:-]+)="([^"]*)"\]/g;
+const SELECTOR_JOIN = ' > ';
 
-/** `a.b[title="x"][type="button"]` -> `a.b[title="[filtered]"][type="button"]`. */
+/**
+ * `td.c-title[title="x"] > button[type="button"]` ->
+ * `td.c-title[title="[filtered]"] > button[type="button"]`. A path that does
+ * not parse end to end (a value containing a quote or the ` > ` joiner, a
+ * fragment that is not `tag#id.class[attr="value"]...) becomes `[filtered]`
+ * as a whole: the SDK does not escape values, so a partial rewrite could
+ * leave the rest of the title in place (Codex on #3752).
+ */
 export function scrubSelector(text: string): string {
-	return text.replace(SELECTOR_ATTR_RE, (_m, name: string, value: string) =>
-		SELECTOR_ATTRIBUTES_KEPT.has(name) ? `[${name}="${value}"]` : `[${name}="${FILTERED}"]`
-	);
+	const out: string[] = [];
+	for (const segment of text.split(SELECTOR_JOIN)) {
+		const m = SELECTOR_SEGMENT_RE.exec(segment);
+		if (m === null) return FILTERED;
+		const [, tag, parts] = m;
+		let rebuilt = tag;
+		let consumed = 0;
+		for (const part of parts.matchAll(SELECTOR_PART_RE)) {
+			if (part.index !== consumed) return FILTERED;
+			consumed += part[0].length;
+			const name = part[1];
+			if (name === undefined) rebuilt += part[0];
+			else if (SELECTOR_ATTRIBUTES_KEPT.has(name)) rebuilt += `[${name}="${part[2]}"]`;
+			else rebuilt += `[${name}="${FILTERED}"]`;
+		}
+		if (consumed !== parts.length) return FILTERED;
+		out.push(rebuilt);
+	}
+	return out.join(SELECTOR_JOIN);
 }
 
 function scrubNodeAttributes(node: unknown): void {
@@ -206,8 +236,23 @@ function scrubNodeAttributes(node: unknown): void {
 	}
 }
 
-export function scrubBreadcrumb<T extends { message?: unknown; data?: unknown }>(crumb: T): T {
-	if (typeof crumb.message === 'string') crumb.message = scrubSelector(scrubString(crumb.message));
+/** The SDK's DOM breadcrumbs (`ui.click`, `ui.input`, ...): message is a selector path. */
+function isDomBreadcrumb(category: unknown): boolean {
+	return typeof category === 'string' && category.startsWith('ui.');
+}
+
+interface Breadcrumb {
+	category?: unknown;
+	message?: unknown;
+	data?: unknown;
+}
+
+export function scrubBreadcrumb<T extends Breadcrumb>(crumb: T): T {
+	if (typeof crumb.message === 'string') {
+		crumb.message = isDomBreadcrumb(crumb.category)
+			? scrubSelector(crumb.message)
+			: scrubString(crumb.message);
+	}
 	if (crumb.data !== undefined && crumb.data !== null) crumb.data = allowlist(crumb.data);
 	return crumb;
 }
@@ -220,17 +265,21 @@ interface RecordingEvent {
 /**
  * `replayIntegration({ beforeAddRecordingEvent })`: every custom rrweb event
  * (type 5: the replay's own breadcrumbs and performance spans) passes here
- * before it is buffered. Breadcrumb messages and recorded node attributes get
- * the selector scrub; an event that cannot be scrubbed is dropped (null), the
- * same fail-closed answer as `scrubEvent`.
+ * before it is buffered. DOM breadcrumb messages get the selector scrub,
+ * other messages the string scrub, recorded node attributes the attribute
+ * scrub; an event that cannot be scrubbed is dropped (null), the same
+ * fail-closed answer as `scrubEvent`.
  */
 export function scrubRecordingEvent<T extends RecordingEvent>(event: T): T | null {
 	try {
 		if (event.type !== 5 || !isRecord(event.data) || event.data.tag !== 'breadcrumb') return event;
 		const payload = event.data.payload;
 		if (!isRecord(payload)) return event;
-		if (typeof payload.message === 'string')
-			payload.message = scrubSelector(scrubString(payload.message));
+		if (typeof payload.message === 'string') {
+			payload.message = isDomBreadcrumb(payload.category)
+				? scrubSelector(payload.message)
+				: scrubString(payload.message);
+		}
 		if (isRecord(payload.data)) scrubNodeAttributes(payload.data.node);
 		return event;
 	} catch {
