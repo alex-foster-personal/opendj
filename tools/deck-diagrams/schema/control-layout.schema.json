@@ -19,8 +19,9 @@
     },
     "layers": {
       "type": "array",
-      "items": { "type": "string" },
-      "default": ["base", "shift"]
+      "items": { "type": "string", "enum": ["base", "shift", "mode", "shift_mode"] },
+      "default": ["base", "shift"],
+      "description": "Every layer listed here must resolve through the matching *_name twin on each control that has it"
     },
     "out_of_scope": {
       "type": "array",
@@ -53,7 +54,14 @@
               "type": { "type": "string", "enum": ["note", "cc"] },
               "ch": { "type": "integer" },
               "code": { "type": "integer" },
-              "shift_name": { "type": ["string", "null"] }
+              "shift_name": { "type": ["string", "null"], "description": "midi.json name of the SHIFT twin" },
+              "mode_name": { "type": ["string", "null"], "description": "midi.json name of the MODE twin (vendors with a MODE modifier)" },
+              "shift_mode_name": { "type": ["string", "null"], "description": "midi.json name of the SHIFT+MODE twin" },
+              "scope": {
+                "type": "string",
+                "enum": ["global", "side", "modifier_side", "active_decks", "pad_bank"],
+                "description": "Which deck the base address belongs to: global (one channel), side (the deck of the side the control sits on), modifier_side (the deck whose MODE button is held), active_decks (follows the decks active on each side), pad_bank (the deck the pad bank is assigned to)"
+              }
             }
           },
           "notes": { "type": "string" }

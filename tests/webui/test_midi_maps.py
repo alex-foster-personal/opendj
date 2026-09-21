@@ -538,5 +538,8 @@ def test_catalog_counts_are_reported_so_coverage_is_never_guessed(
 ) -> None:
     body = midi_client.get("/api/v1/midi/catalog").json()
     # Measured Sat 29 Aug 2026: 88 mixxx + 6 vendor-pdf + 13 bootstrap-stub.
-    assert body["counts"]["bootstrap-stub"] == 13
+    # Re-measured Mon 21 Sep 2026: 14 bootstrap-stub after #3736 added
+    # reloop-mixtour-pro, whose midi.json source is prose that does not end in
+    # .pdf, so the grader grades it down rather than up (#3744).
+    assert body["counts"]["bootstrap-stub"] == 14
     assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 94

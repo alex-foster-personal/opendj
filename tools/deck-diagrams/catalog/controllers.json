@@ -262,13 +262,14 @@
       "brand": "Reloop",
       "model": "MIXTOUR PRO",
       "popularity_rank": 18,
-      "popularity_notes": "No official MIDI PDF - tier2",
+      "popularity_notes": "No official MIDI PDF on reloop.com; manufacturer midimap_MIXTOURPRO.pdf via community repo + hardware captures; manual + Laidback Luke sheet for functions",
       "doc_tier": 2,
       "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
