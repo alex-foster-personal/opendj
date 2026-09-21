@@ -95,7 +95,10 @@ def test_fast_job_is_a_signal_not_a_gate_in_round_6a() -> None:
     flips this to a gate once precision on one host class is measured; that
     flip edits this test on purpose.
     """
-    assert _jobs()["fast"]["continue-on-error"] is True
+    # Pull requests only: the six-hour `tier: fast` control dispatch on main
+    # (main-control.yml) has nothing but this job, so there a red leg must
+    # fail the run (tests/quality/test_main_control_workflow.py pins that half).
+    assert _jobs()["fast"]["continue-on-error"] == "${{ github.event_name == 'pull_request' }}"
 
 
 def test_fast_job_may_cancel_the_run() -> None:
