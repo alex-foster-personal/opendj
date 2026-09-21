@@ -245,6 +245,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ),
     (
         "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
+        "const DEFAULT_BACKEND_PORT = 8690;",
+        8690,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
         "const DEFAULT_FRONTEND_PORT = 9410;",
         9410,
     ),

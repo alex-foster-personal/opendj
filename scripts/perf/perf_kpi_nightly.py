@@ -9,6 +9,7 @@ import os
 import shutil
 import signal
 import socket
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -286,6 +287,19 @@ def _scratch_engine_argv(data_dir: Path, port: int) -> list[str] | None:
     ]
 
 
+def _state_db_is_valid(state_db: Path) -> bool:
+    """Reject an empty or non-SQLite state database before booting the engine."""
+    try:
+        with state_db.open("rb") as handle:
+            if handle.read(16) != b"SQLite format 3\x00":
+                return False
+        with sqlite3.connect(state_db) as connection:
+            connection.execute("PRAGMA schema_version").fetchone()
+    except (OSError, sqlite3.DatabaseError):
+        return False
+    return True
+
+
 def acquire_nightly_engine(
     config: PerfKpiConfig,
     *,
@@ -305,6 +319,21 @@ def acquire_nightly_engine(
             None,
             None,
             _engine_unavailable(config, f"missing state database: {state_db}"),
+        )
+
+    if not _state_db_is_valid(state_db):
+        log_path = config.state_dir / SCRATCH_ENGINE_LOG_NAME
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.touch()
+        return (
+            None,
+            None,
+            log_path,
+            _engine_unavailable(
+                config,
+                f"invalid state database: {state_db}",
+                engine_log=log_path,
+            ),
         )
 
     port = config.scratch_port
