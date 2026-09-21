@@ -28,7 +28,7 @@
 
 import { api } from './api/client';
 import type { components } from './api-types';
-import { bootScheduler, type BootScheduler } from './rb/boot-scheduler';
+import type { BootScheduler } from './rb/boot-scheduler';
 
 export type ConsentOut = components['schemas']['ConsentOut'];
 export type ConsentDecision = 'accepted' | 'declined';
@@ -224,9 +224,26 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 export interface BootDeps extends ReplayDeps {
 	scheduler?: BootScheduler;
 	fetchConsent?: () => Promise<ConsentOut>;
+	/** Dialog seam: production mounts the overlay into <body>; tests pass a no-op. */
+	showDialog?: () => Promise<() => void>;
 }
 
 let bootDeps: BootDeps | null = null;
+let unmountDialog: (() => void) | null = null;
+
+/**
+ * Mount the dialog component on demand. It is imported here, not in the
+ * root layout, so the component is fetched only for a tester who has not
+ * answered yet and never joins the first-paint bundle.
+ */
+async function mountDialog(): Promise<() => void> {
+	const [{ mount, unmount }, { default: Overlay }] = await Promise.all([
+		import('svelte'),
+		import('$lib/components/telemetry/TelemetryConsentOverlay.svelte')
+	]);
+	const instance = mount(Overlay, { target: document.body });
+	return () => void unmount(instance);
+}
 
 async function fetchConsent(): Promise<ConsentOut> {
 	const { data } = await api.GET('/api/v1/telemetry/consent');
@@ -248,23 +265,35 @@ export function shouldAsk(consent: ConsentOut): boolean {
  */
 export function bootTelemetryConsent(deps: BootDeps): () => void {
 	bootDeps = deps;
-	const scheduler = deps.scheduler ?? bootScheduler;
 	const fetcher = deps.fetchConsent ?? fetchConsent;
-	scheduler.defer('telemetry-consent:fetch', async () => {
+	const run = async (): Promise<void> => {
 		const consent = await fetcher();
+		if (bootDeps !== deps) return; // torn down while the request was in flight
 		current = consent;
 		if (consent.decision === 'accepted') {
 			startReplay(consent, deps);
 			return;
 		}
-		if (shouldAsk(consent)) setDialogOpen(true);
-	});
+		if (!shouldAsk(consent)) return;
+		unmountDialog = await (deps.showDialog ?? mountDialog)();
+		if (bootDeps !== deps) return;
+		setDialogOpen(true);
+	};
+	// app-init already runs this inside a deferred boot task (and imports this
+	// module there), so the default is to fetch now; a caller that has not
+	// yielded to the boot window passes its scheduler and waits its turn.
+	if (deps.scheduler !== undefined) deps.scheduler.defer('telemetry-consent:fetch', run);
+	else void run();
 	return () => {
 		setDialogOpen(false);
+		unmountDialog?.();
+		unmountDialog = null;
+		current = null;
 		stopReplayPoll?.();
 		stopReplayPoll = null;
 		replayArmed = false;
 		bootDeps = null;
+		if (typeof window !== 'undefined') delete window.sentryOnLoad;
 	};
 }
 
@@ -289,14 +318,4 @@ async function putConsent(body: {
 	const { data } = await api.PUT('/api/v1/telemetry/consent', { body });
 	if (data === undefined) throw new Error('telemetry consent: empty response from the engine');
 	return data;
-}
-
-export function __resetTelemetryConsentForTests(): void {
-	setDialogOpen(false);
-	current = null;
-	stopReplayPoll?.();
-	stopReplayPoll = null;
-	replayArmed = false;
-	bootDeps = null;
-	if (typeof window !== 'undefined') delete window.sentryOnLoad;
 }

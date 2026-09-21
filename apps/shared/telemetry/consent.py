@@ -101,6 +101,28 @@ def consent_path(data_dir: Path) -> Path:
     return data_dir / CONSENT_FILE
 
 
+def _undecided(path: Path) -> ConsentRecord:
+    return ConsentRecord("undecided", None, None, path)
+
+
+def _parse_consent(data: object, path: Path) -> ConsentRecord:
+    """Interpret one decoded file body. Anything malformed is ``undecided``."""
+    if not isinstance(data, dict):
+        return _undecided(path)
+    decision = str(data.get("decision") or "")
+    version = data.get("terms_version")
+    decided_at = data.get("decided_at")
+    if decision not in DECISIONS or decision == "undecided":
+        return _undecided(path)
+    stored_version = str(version) if version is not None else None
+    stored_at = str(decided_at) if decided_at is not None else None
+    if decision == "accepted" and version != TERMS_VERSION:
+        # Accepted OLD terms: ask again, and hold sends until they answer.
+        # The stale version is reported, not hidden.
+        return ConsentRecord("undecided", stored_version, stored_at, path)
+    return ConsentRecord(cast(ConsentDecision, decision), stored_version, stored_at, path)
+
+
 def read_consent(data_dir: Path) -> ConsentRecord:
     """The stored decision, or ``undecided`` when absent, unreadable or stale.
 
@@ -109,33 +131,13 @@ def read_consent(data_dir: Path) -> ConsentRecord:
     """
     path = consent_path(data_dir)
     if not path.is_file():
-        return ConsentRecord("undecided", None, None, path)
+        return _undecided(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         log.warning("telemetry consent file %s unreadable (%s); asking again", path, exc)
-        return ConsentRecord("undecided", None, None, path)
-    if not isinstance(data, dict):
-        return ConsentRecord("undecided", None, None, path)
-    decision = str(data.get("decision") or "")
-    version = data.get("terms_version")
-    decided_at = data.get("decided_at")
-    if decision not in DECISIONS or decision == "undecided":
-        return ConsentRecord("undecided", None, None, path)
-    if decision == "accepted" and version != TERMS_VERSION:
-        # Accepted OLD terms: ask again, and hold sends until they answer.
-        return ConsentRecord(
-            "undecided",
-            str(version) if version is not None else None,
-            str(decided_at) if decided_at is not None else None,
-            path,
-        )
-    return ConsentRecord(
-        cast(ConsentDecision, decision),
-        str(version) if version is not None else None,
-        str(decided_at) if decided_at is not None else None,
-        path,
-    )
+        return _undecided(path)
+    return _parse_consent(data, path)
 
 
 def write_consent(

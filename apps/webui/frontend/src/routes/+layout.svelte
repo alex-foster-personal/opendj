@@ -16,7 +16,6 @@
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
-	import TelemetryConsentOverlay from '$lib/components/telemetry/TelemetryConsentOverlay.svelte';
 	import { installQuitGate } from '$lib/shell/quit-gate';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
@@ -292,7 +291,9 @@
      shell, and the cheatsheet has to work there too. -->
 <HotkeysOverlay />
 <QuitConfirmOverlay />
-<TelemetryConsentOverlay />
+<!-- The diagnostics consent dialog (OBS-05) is mounted by $lib/telemetry-consent
+     from a deferred boot task, so neither it nor its module is on the
+     first-paint path or in the library page's bundle budget. -->
 
 <ToastStack items={toasts} />
 <BrandLaunch />

@@ -187,7 +187,9 @@ def test_any_deck_live_is_accepted_stored_and_forwarded(
     forwarded: list[dict[str, object]] = []
 
     def record_forward(**kwargs: object) -> None:
-        forwarded.append(dict(kwargs.get("context") or {}))
+        context = kwargs.get("context")
+        assert isinstance(context, dict)
+        forwarded.append(dict(context))
 
     monkeypatch.setattr(
         "apps.webui.server.routes.client_errors.capture_browser_error", record_forward

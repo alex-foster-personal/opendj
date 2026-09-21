@@ -26,7 +26,6 @@ import {
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { setLiveTransportProbe } from '$lib/client-error-reporting';
-import { bootTelemetryConsent } from '$lib/telemetry-consent';
 import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
@@ -115,7 +114,15 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	// Diagnostics consent (OBS-05) and, after acceptance, session replay
 	// (OBS-06). Deferred like every other boot request, and gated on the same
 	// live-transport read as error reporting so a replay never records a mix.
-	const stopTelemetryConsent = bootTelemetryConsent({ scheduler, isLive: anyDeckPlaying });
+	// The module is imported inside the deferred task on purpose: it is not
+	// on the first-paint path, and a static import would charge it (and the
+	// dialog) to the library page's bundle budget.
+	let stopTelemetryConsent: (() => void) | null = null;
+	scheduler.defer('telemetry-consent:fetch', () =>
+		import('$lib/telemetry-consent').then((consent) => {
+			stopTelemetryConsent = consent.bootTelemetryConsent({ isLive: anyDeckPlaying });
+		})
+	);
 	const stopBootScheduler = scheduler.start();
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 	const stopReloadCountdown = installReloadCountdown();
@@ -172,7 +179,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	});
 
 	return () => {
-		stopTelemetryConsent();
+		stopTelemetryConsent?.();
 		setLiveTransportProbe(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);

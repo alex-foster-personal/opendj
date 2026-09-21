@@ -11,8 +11,12 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 256000 then the figure was raised,
-//   which this repair explicitly must not do
+// - if the library limit stops being exactly 257024 then the figure moved
+//   without a reviewed note: 256000 was the inherited figure this repair
+//   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
+//   the live-transport probe on the client error path, with main already
+//   within 80 bytes of the limit. Any further move is a deliberate act with
+//   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
 // - if an emitted chunk reachable from nothing stops failing the run then the
@@ -124,11 +128,16 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 256000, unchanged by this repair', () => {
+test('the library limit is exactly 257024: the inherited 256000 plus the one reviewed KiB', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
-  assert.match(source, /\{ name: 'library', limit: 256000,/, 'the 250 KB library figure must not move');
+  assert.match(
+    source,
+    /\{ name: 'library', limit: 257024,/,
+    'the library figure must not move without a dated note in the gate and a new pin here'
+  );
+  assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

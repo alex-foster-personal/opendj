@@ -18,6 +18,8 @@ const LOADER = 'https://js-de.sentry-cdn.com/00ff00ff00ff00ff.min.js';
 
 let consent;
 let originalFetch;
+/** The teardown of the boot under test; afterEach runs it (it is the reset). */
+let stopBoot = null;
 
 function defineGlobal(name, value) {
 	Object.defineProperty(globalThis, name, {
@@ -95,7 +97,8 @@ before(async () => {
 });
 
 afterEach(() => {
-	consent.__resetTelemetryConsentForTests();
+	stopBoot?.();
+	stopBoot = null;
 	installBrowserGlobals();
 });
 
@@ -105,9 +108,10 @@ after(() => {
 
 test('an undecided tester with something to consent to is asked, after the boot window', async () => {
 	const scheduler = manualScheduler();
-	consent.bootTelemetryConsent({
+	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
 		isLive: () => false,
+		showDialog: async () => () => {},
 		fetchConsent: async () => consentBody(),
 		loadScript: () => assert.fail('replay must not load before acceptance')
 	});
@@ -120,7 +124,7 @@ test('an undecided tester with something to consent to is asked, after the boot 
 
 test('nothing to consent to means no dialog', async () => {
 	const scheduler = manualScheduler();
-	consent.bootTelemetryConsent({
+	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
 		isLive: () => false,
 		fetchConsent: async () =>
@@ -133,7 +137,7 @@ test('nothing to consent to means no dialog', async () => {
 
 test('a stored decision is never asked again; declined loads nothing', async () => {
 	const scheduler = manualScheduler();
-	consent.bootTelemetryConsent({
+	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
 		isLive: () => false,
 		fetchConsent: async () => consentBody({ decision: 'declined', terms_version: '2026-09-21' }),
@@ -147,9 +151,10 @@ test('accepting records the current terms version and then loads the loader, mas
 	const scheduler = manualScheduler();
 	const loaded = [];
 	const ticks = [];
-	consent.bootTelemetryConsent({
+	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
 		isLive: () => false,
+		showDialog: async () => () => {},
 		fetchConsent: async () => consentBody(),
 		loadScript: (url) => loaded.push(url),
 		every: (_ms, fn) => {
@@ -193,7 +198,7 @@ test('the live gate stops the replay while a deck plays and restarts after two i
 	const scheduler = manualScheduler();
 	let live = false;
 	let tick;
-	consent.bootTelemetryConsent({
+	stopBoot = consent.bootTelemetryConsent({
 		scheduler,
 		isLive: () => live,
 		fetchConsent: async () => consentBody({ decision: 'accepted', terms_version: '2026-09-21' }),

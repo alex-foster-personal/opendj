@@ -143,7 +143,17 @@ import { join, dirname, normalize, relative } from 'node:path';
 // ceiling as documented above. Raising any number below is a deliberate,
 // reviewable act.
 const BUDGETS = [
-  { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
+  // RAISED Mon 21 Sep 2026 (+1 KiB, PR #3737, OBS-02/OBS-05): the client error
+  // path now carries the page's live-transport read (`any_deck_live`, so the
+  // engine can hold Sentry sends while a deck plays) and app-init defers the
+  // diagnostics-consent module behind the boot window. That is ~435 bytes of
+  // genuine first-paint weight; the consent module and its dialog themselves
+  // are dynamically imported and land in other-lazy. Clean origin/main
+  // (17c74562) measured 256,059 locally and within 80 bytes of the limit on
+  // CI before this PR, the same "no headroom left" state the performance
+  // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
+  // reduction retires this KiB, not the consent code.
+  { name: 'library', limit: 257024, measured: 256494, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

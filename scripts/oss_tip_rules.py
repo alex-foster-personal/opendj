@@ -161,11 +161,8 @@ ALLOWED_MAILBOXES = frozenset(
         # it in two policy files removes nothing that is not already published.
         "15217094+owner@example.com",
         "public@o0.ingest.de.sentry.io",  # Sentry DSN public key, not a mailbox
-        # Same placeholder key on the US and global ingest hosts: the replay
-        # loader URL derives its CDN region from the DSN host, and the test
-        # for that needs one DSN per region (OBS-06).
-        "public@o0.ingest.us.sentry.io",
-        "public@o0.ingest.sentry.io",
+        "public@o0.ingest.us.sentry.io",  # placeholder key, US ingest host (OBS-06)
+        "public@o0.ingest.sentry.io",  # placeholder key, global ingest host (OBS-06)
         "support@sourcery.ai",  # vendor support address quoted in a planning doc
         "i@izs.me",  # third-party maintainer metadata inside a pnpm lockfile
     }
