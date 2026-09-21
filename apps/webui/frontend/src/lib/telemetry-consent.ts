@@ -76,6 +76,30 @@ interface LoaderSentry {
  */
 export const DROPPED_DEFAULT_INTEGRATIONS: ReadonlySet<string> = new Set(['BrowserSession']);
 
+/**
+ * DOM attributes the replay recorder masks on every element. The SDK's own
+ * default is title, placeholder and aria-label; the list is explicit here
+ * because the UI carries library metadata in attributes (TrackTable's
+ * `title={row.title}` and `title={row.artist}`, playlist and deck labels), and
+ * an SDK default is not a contract. The real-loader acceptance spec decodes
+ * a recorded segment and asserts a visible fixture title is absent from it.
+ */
+export const MASKED_ATTRIBUTES: readonly string[] = [
+	'title',
+	'placeholder',
+	'aria-label',
+	'aria-description',
+	'aria-valuetext',
+	'aria-roledescription',
+	'alt',
+	'data-title',
+	'data-artist',
+	'data-album',
+	'data-name',
+	'data-label',
+	'data-tooltip'
+];
+
 /** The loader's `integrations` option: defaults minus the droppers, plus replay. */
 export function selectIntegrations(
 	defaults: LoaderIntegration[],
@@ -252,10 +276,74 @@ interface ScrubbableEvent {
 	tags?: Record<string, unknown>;
 }
 
+/**
+ * Attribute values the SDK writes into a click/input breadcrumb's CSS-selector
+ * `message` (`td.c-title[title="<track>"]`) and into the recorded node's
+ * `attributes`. rrweb masking covers the DOM snapshot, not these: the SDK
+ * builds the selector from the live element, always including `aria-label`,
+ * `name`, `title` and `alt`, so a masked replay still carried the visible
+ * track title in its `ui.click` breadcrumb (real-loader e2e, Mon 21 Sep 2026).
+ * Only structural, content-free attributes keep their value.
+ */
+export const SELECTOR_ATTRIBUTES_KEPT: ReadonlySet<string> = new Set([
+	'type',
+	'role',
+	'data-testid',
+	'data-test-id',
+	'data-sentry-component',
+	'data-sentry-element',
+	'disabled',
+	'aria-disabled'
+]);
+const SELECTOR_ATTR_RE = /\[([\w:-]+)="([^"]*)"\]/g;
+
+/** `a.b[title="x"][type="button"]` -> `a.b[title="[filtered]"][type="button"]`. */
+export function scrubSelector(text: string): string {
+	return text.replace(SELECTOR_ATTR_RE, (_m, name: string, value: string) =>
+		SELECTOR_ATTRIBUTES_KEPT.has(name) ? `[${name}="${value}"]` : `[${name}="${FILTERED}"]`
+	);
+}
+
+function scrubNodeAttributes(node: unknown): void {
+	if (!isRecord(node) || !isRecord(node.attributes)) return;
+	for (const key of Object.keys(node.attributes)) {
+		// The SDK renames data-testid to testId before it lands here.
+		if (key === 'testId' || key === 'id' || key === 'class' || SELECTOR_ATTRIBUTES_KEPT.has(key))
+			continue;
+		node.attributes[key] = FILTERED;
+	}
+}
+
 export function scrubBreadcrumb<T extends { message?: unknown; data?: unknown }>(crumb: T): T {
-	if (typeof crumb.message === 'string') crumb.message = scrubString(crumb.message);
+	if (typeof crumb.message === 'string') crumb.message = scrubSelector(scrubString(crumb.message));
 	if (crumb.data !== undefined && crumb.data !== null) crumb.data = allowlist(crumb.data);
 	return crumb;
+}
+
+interface RecordingEvent {
+	type: number;
+	data?: unknown;
+}
+
+/**
+ * `replayIntegration({ beforeAddRecordingEvent })`: every custom rrweb event
+ * (type 5: the replay's own breadcrumbs and performance spans) passes here
+ * before it is buffered. Breadcrumb messages and recorded node attributes get
+ * the selector scrub; an event that cannot be scrubbed is dropped (null), the
+ * same fail-closed answer as `scrubEvent`.
+ */
+export function scrubRecordingEvent<T extends RecordingEvent>(event: T): T | null {
+	try {
+		if (event.type !== 5 || !isRecord(event.data) || event.data.tag !== 'breadcrumb') return event;
+		const payload = event.data.payload;
+		if (!isRecord(payload)) return event;
+		if (typeof payload.message === 'string')
+			payload.message = scrubSelector(scrubString(payload.message));
+		if (isRecord(payload.data)) scrubNodeAttributes(payload.data.node);
+		return event;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -381,7 +469,9 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 					Sentry.replayIntegration({
 						maskAllText: true,
 						maskAllInputs: true,
-						blockAllMedia: true
+						blockAllMedia: true,
+						maskAttributes: [...MASKED_ATTRIBUTES],
+						beforeAddRecordingEvent: scrubRecordingEvent
 					})
 				),
 			// The loader SDK captures browser exceptions on its own; while a
@@ -455,8 +545,14 @@ async function fetchConsent(): Promise<ConsentOut> {
 	return data;
 }
 
-/** Ask only when there is something an acceptance would turn on. */
+/**
+ * Ask only when an answer would change anything: consent must be REQUIRED
+ * on this boot (an operator's explicit OPENDJ_TELEMETRY=1 is never held, so
+ * a dialog there would offer a decline that cannot close the gate), the
+ * decision must be open, and an acceptance must turn something on.
+ */
 export function shouldAsk(consent: ConsentOut): boolean {
+	if (!consent.consent_required) return false;
 	if (consent.decision !== 'undecided') return false;
 	return consent.telemetry_active || consent.replay_loader_url !== null;
 }

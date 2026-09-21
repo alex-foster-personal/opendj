@@ -22,6 +22,7 @@ from apps.shared.paths import STATE_DB
 from apps.shared.telemetry import LAST_DECISION, _client
 from apps.shared.telemetry.bundled import BundledTelemetryError, load_bundled_telemetry
 from apps.shared.telemetry.consent import (
+    CONSENT,
     TERMS_VERSION,
     ConsentError,
     read_consent,
@@ -48,6 +49,10 @@ class ConsentOut(BaseModel):
     #: True when this engine has a live Sentry client (a packaged build, or a
     #: checkout that opted in). False means accepting changes nothing here.
     telemetry_active: bool
+    #: False on an operator-explicit enable (OPENDJ_TELEMETRY=1): the gate is
+    #: open by design and a decline could not close it, so the page must not
+    #: offer one. True for a packaged default-on build (Codex, #3737).
+    consent_required: bool
     environment: str | None
     release: str | None
     #: Session Replay loader script, or None when no frontend DSN is known.
@@ -93,6 +98,7 @@ def _out(request: Request) -> ConsentOut:
         terms_current_version=TERMS_VERSION,
         decided_at=record.decided_at,
         telemetry_active=active,
+        consent_required=CONSENT.required,
         environment=decision.environment if decision is not None else None,
         release=decision.release if decision is not None else None,
         # A stored "accepted" never outranks THIS boot's decision: with the

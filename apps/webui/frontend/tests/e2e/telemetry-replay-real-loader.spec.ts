@@ -11,7 +11,11 @@
  *      replay through the production watcher: `getReplayId()` reads undefined
  *      and NO further envelope leaves for longer than the SDK's flush interval,
  *      which is what `stop({ forceFlush: false })` discarding the tail means;
- *   3. after the deck stops, the poll restarts the replay and uploads resume.
+ *   3. after the deck stops, the poll restarts the replay and uploads resume;
+ *   4. a segment recorded while a fixture track title is on screen, decoded
+ *      from the envelope (pako-deflated rrweb events), does not contain it:
+ *      text masking plus the explicit attribute mask list hold on the real
+ *      recorder, not just in the options object.
  *
  * UNAVAILABLE, not a fake pass, whenever the engine has no live client or no
  * frontend DSN (every CI run today): the consent route then withholds the
@@ -19,11 +23,57 @@
  * SENTRY_FRONTEND_DSN for the engine before `pnpm test:e2e`, on a host that
  * can reach js-*.sentry-cdn.com. It sends one short replay to the fe project.
  */
+import { inflateSync } from 'node:zlib';
+
 import { expect, test, type Page } from '@playwright/test';
 
 const INGEST = /ingest\.(?:[a-z]+\.)?sentry\.io\/api\/\d+\/envelope/;
 const FLUSH_INTERVAL_MS = 5_500; // Sentry replay flushMaxDelay default
 const TRACK_ROW = '[data-testid="track-row"]';
+
+/**
+ * Walk a Sentry envelope: header line, then (item header, payload) pairs where
+ * a `length` header means that many raw bytes follow. Replay recordings are a
+ * one-line JSON header plus pako-deflated rrweb events; inflate them so the
+ * recorded DOM can be read. Returns the item types and every decoded
+ * recording as text.
+ */
+function parseEnvelope(raw: Buffer): { types: string[]; recordings: string[] } {
+	const types: string[] = [];
+	const recordings: string[] = [];
+	let offset = raw.indexOf(0x0a) + 1; // past the envelope header line
+	while (offset > 0 && offset < raw.length) {
+		const nl = raw.indexOf(0x0a, offset);
+		if (nl < 0) break;
+		let header: { type?: string; length?: number };
+		try {
+			header = JSON.parse(raw.subarray(offset, nl).toString('utf8')) as typeof header;
+		} catch {
+			break;
+		}
+		offset = nl + 1;
+		let payload: Buffer;
+		if (typeof header.length === 'number') {
+			payload = raw.subarray(offset, offset + header.length);
+			offset += header.length + 1;
+		} else {
+			const end = raw.indexOf(0x0a, offset);
+			payload = raw.subarray(offset, end < 0 ? raw.length : end);
+			offset = end < 0 ? raw.length : end + 1;
+		}
+		if (typeof header.type === 'string') types.push(header.type);
+		if (header.type === 'replay_recording') {
+			const split = payload.indexOf(0x0a);
+			const events = split < 0 ? payload : payload.subarray(split + 1);
+			try {
+				recordings.push(inflateSync(events).toString('utf8'));
+			} catch {
+				recordings.push(events.toString('utf8'));
+			}
+		}
+	}
+	return { types, recordings };
+}
 
 async function replayId(page: Page): Promise<string | undefined> {
 	return page.evaluate(() => {
@@ -51,21 +101,16 @@ test('real loader: replay uploads after consent, stops and discards on play, res
 	// Every envelope that leaves, with its item types parsed from the envelope
 	// header lines, so a failure names WHAT left (replay_event, session,
 	// client_report, event), not just that something did.
-	const envelopes: Array<{ at: number; types: string[] }> = [];
+	const envelopes: Array<{ at: number; types: string[]; recordings: string[] }> = [];
 	page.on('request', (r) => {
 		if (r.method() !== 'POST' || !INGEST.test(r.url())) return;
-		const body = r.postDataBuffer()?.toString('latin1') ?? '';
-		const types: string[] = [];
-		for (const line of body.split('\n')) {
-			if (!line.startsWith('{')) continue;
-			try {
-				const parsed = JSON.parse(line) as { type?: string };
-				if (typeof parsed.type === 'string') types.push(parsed.type);
-			} catch {
-				/* a payload line, not a header */
-			}
+		const raw = r.postDataBuffer();
+		if (raw === null) {
+			envelopes.push({ at: Date.now(), types: ['(no body)'], recordings: [] });
+			return;
 		}
-		envelopes.push({ at: Date.now(), types });
+		const { types, recordings } = parseEnvelope(raw);
+		envelopes.push({ at: Date.now(), types, recordings });
 	});
 
 	await page.goto('/');
@@ -95,6 +140,25 @@ test('real loader: replay uploads after consent, stops and discards on play, res
 	await row.locator('td.c-title').hover();
 	await row.locator('button[title="Load onto deck 1"]').click();
 	await expect(page.locator('[data-testid="play-deck-1"]')).toBeEnabled({ timeout: 30_000 });
+	// The recording must not carry what the screen shows: the fixture title is
+	// visible in the track table (text AND `title` attributes) and on the deck,
+	// so wait for a segment recorded with it on screen and read the decoded
+	// rrweb events for it. Positive control first: the DOM really has it.
+	// The cell's `title` attribute is the bare track title; its innerText also
+	// carries the hover-only deck chooser ("load to deck: 1 2 3 4").
+	const fixtureTitle = ((await row.locator('td.c-title').getAttribute('title')) ?? '').trim();
+	expect(fixtureTitle.length).toBeGreaterThan(0);
+	await expect(page.getByText(fixtureTitle).first()).toBeVisible();
+	const recordedBefore = envelopes.reduce((n, e) => n + e.recordings.length, 0);
+	await expect
+		.poll(() => envelopes.reduce((n, e) => n + e.recordings.length, 0), { timeout: 30_000 })
+		.toBeGreaterThan(recordedBefore);
+	const decoded = envelopes.flatMap((e) => e.recordings);
+	expect(decoded.length, 'at least one recording was decodable').toBeGreaterThan(0);
+	expect(decoded.some((text) => text.includes('rrweb') || text.includes('"type":'))).toBe(true);
+	for (const text of decoded) {
+		expect(text, 'a recorded segment carries the visible track title').not.toContain(fixtureTitle);
+	}
 	await page.waitForTimeout(1_500);
 	await page.locator('[data-testid="play-deck-1"]').click();
 	await expect

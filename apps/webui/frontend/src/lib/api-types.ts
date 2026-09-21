@@ -7616,6 +7616,8 @@ export interface components {
         };
         /** ConsentOut */
         ConsentOut: {
+            /** Consent Required */
+            consent_required: boolean;
             /** Decided At */
             decided_at: string | null;
             /**

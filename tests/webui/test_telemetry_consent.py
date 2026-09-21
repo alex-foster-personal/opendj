@@ -131,12 +131,16 @@ def test_frontend_dsn_yields_a_replay_loader_url_only_while_this_boot_has_a_clie
     assert off["decision"] == "accepted"
     assert off["telemetry_active"] is False
     assert off["replay_loader_url"] is None, "no client this boot: no loader URL"
+    assert off["consent_required"] is True, "a default-on build asks"
 
     captured: list[dict] = []  # type: ignore[type-arg]
     _live_client(captured)
     try:
         on = client.get("/api/v1/telemetry/consent").json()
         assert on["telemetry_active"] is True
+        # The helper boots an EXPLICIT enable: the gate is open by design, a
+        # decline could not close it, so the page is told not to ask.
+        assert on["consent_required"] is False
         assert on["replay_loader_url"] == "https://js-de.sentry-cdn.com/public.min.js"
         assert on["replay_session_sample_rate"] == 1.0
         assert on["replay_on_error_sample_rate"] == 1.0

@@ -46,6 +46,7 @@ function consentBody(overrides = {}) {
 		terms_current_version: '2026-09-21',
 		decided_at: null,
 		telemetry_active: true,
+		consent_required: true,
 		environment: 'ship',
 		release: 'abc123',
 		replay_loader_url: LOADER,
@@ -207,7 +208,18 @@ test('accepting records the current terms version and then loads the loader, mas
 		['Breadcrumbs', 'GlobalHandlers', 'Replay']
 	);
 	const replay = integrations.find((i) => i.name === 'Replay');
-	assert.deepEqual(replay.options, { maskAllText: true, maskAllInputs: true, blockAllMedia: true });
+	assert.deepEqual(replay.options, {
+		maskAllText: true,
+		maskAllInputs: true,
+		blockAllMedia: true,
+		maskAttributes: [...consent.MASKED_ATTRIBUTES],
+		beforeAddRecordingEvent: consent.scrubRecordingEvent
+	});
+	// Library metadata rides in these attributes (TrackTable title={row.title},
+	// deck and playlist labels); the SDK default is a subset and not a contract.
+	for (const attr of ['title', 'aria-label', 'placeholder', 'alt', 'aria-description']) {
+		assert.ok(consent.MASKED_ATTRIBUTES.includes(attr), `${attr} is masked`);
+	}
 	assert.deepEqual(fake.calls.tags, [['origin', 'browser-sdk']]);
 	assert.equal(ticks.length, 1, 'the live gate poll is armed');
 	// The loader SDK's own error capture: scrubbed when idle, DROPPED while a
@@ -382,6 +394,21 @@ test('the allowlists match the engine verbatim', async () => {
 	assert.deepEqual(new Set(consent.SDK_CONTEXT_BLOCKS), block('SDK_CONTEXT_BLOCKS'));
 });
 
+test('an operator-explicit host is never asked: a decline there could not close the gate', async () => {
+	const scheduler = manualScheduler();
+	stopBoot = consent.bootTelemetryConsent({
+		scheduler,
+		isLive: () => false,
+		showDialog: async () => assert.fail('no dialog on an explicit enable'),
+		fetchConsent: async () => consentBody({ consent_required: false }),
+		loadScript: () => assert.fail('undecided: nothing to load')
+	});
+	await scheduler.release();
+	assert.equal(consent.isConsentDialogOpen(), false);
+	assert.equal(consent.shouldAsk(consentBody({ consent_required: false })), false);
+	assert.equal(consent.shouldAsk(consentBody()), true, 'control: the default-on build asks');
+});
+
 test('a stored acceptance loads nothing when this boot has telemetry off', async () => {
 	const scheduler = manualScheduler();
 	stopBoot = consent.bootTelemetryConsent({
@@ -394,4 +421,75 @@ test('a stored acceptance loads nothing when this boot has telemetry off', async
 	await scheduler.release();
 	assert.equal(consent.isConsentDialogOpen(), false);
 	assert.equal(globalThis.window.sentryOnLoad, undefined);
+});
+
+test('a replay click breadcrumb never carries the attribute values the SDK writes into its selector', () => {
+	// Measured through the real loader (Mon 21 Sep 2026): rrweb masked the DOM
+	// snapshot, but the ui.click breadcrumb's selector still named the track.
+	const click = {
+		type: 5,
+		timestamp: 1,
+		data: {
+			tag: 'breadcrumb',
+			payload: {
+				category: 'ui.click',
+				message:
+					'td.c-title.s-X[title="webkit-fixture-b-124bpm"] > button.deck-target[title="Load onto deck 1"][type="button"][data-testid="load-1"]',
+				data: {
+					nodeId: 7,
+					node: {
+						id: 7,
+						tagName: 'button',
+						textContent: '*',
+						attributes: {
+							class: 'deck-target',
+							title: 'Load onto deck 1',
+							'aria-label': 'webkit-fixture-b-124bpm',
+							alt: 'cover of webkit-fixture-b-124bpm',
+							testId: 'load-1',
+							role: 'button'
+						}
+					}
+				}
+			}
+		}
+	};
+	const out = consent.scrubRecordingEvent(click);
+	assert.equal(
+		out.data.payload.message,
+		'td.c-title.s-X[title="[filtered]"] > button.deck-target[title="[filtered]"][type="button"][data-testid="load-1"]'
+	);
+	assert.deepEqual(out.data.payload.data.node.attributes, {
+		class: 'deck-target',
+		title: '[filtered]',
+		'aria-label': '[filtered]',
+		alt: '[filtered]',
+		testId: 'load-1',
+		role: 'button'
+	});
+	assert.ok(!JSON.stringify(out).includes('webkit-fixture-b-124bpm'), 'no track text survives');
+	// Control: a performance span and a non-custom rrweb event pass untouched.
+	const span = {
+		type: 5,
+		data: { tag: 'performanceSpan', payload: { op: 'resource.fetch', description: '/api/v1/x' } }
+	};
+	assert.equal(consent.scrubRecordingEvent(span), span);
+	const mutation = { type: 3, data: { source: 0 } };
+	assert.equal(consent.scrubRecordingEvent(mutation), mutation);
+	// Fail closed: a payload the scrub cannot walk is dropped, never buffered.
+	const poisoned = { type: 5, data: { tag: 'breadcrumb', payload: { data: { node: null } } } };
+	Object.defineProperty(poisoned.data.payload, 'message', {
+		get() {
+			throw new Error('boom');
+		}
+	});
+	assert.equal(consent.scrubRecordingEvent(poisoned), null);
+});
+
+test('the error-event click breadcrumb gets the same selector scrub', () => {
+	const crumb = consent.scrubBreadcrumb({
+		category: 'ui.click',
+		message: 'div.deck[aria-label="webkit-fixture-b-124bpm"] > button[type="button"]'
+	});
+	assert.equal(crumb.message, 'div.deck[aria-label="[filtered]"] > button[type="button"]');
 });
