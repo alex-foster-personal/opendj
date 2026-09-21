@@ -28,6 +28,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.redteam_trigger") from None
     raise
 from scripts import ci_health_trunk as health_trunk
+from scripts import redteam_guardrails as guardrails
 from scripts.review_docs_only import is_docs_only
 
 DEFAULT_MARKER_PATH = Path.home() / "jobs/state/redteam-last-sha"
@@ -168,7 +169,14 @@ def run_trigger(
     return TriggerResult.ATTACKED
 
 
-def _run_attack(command: str, sha: str) -> None:
+def _run_attack(command: str, sha: str, stop_path: Path) -> None:
+    """Spawn the attack fleet, unless the REDTEAM-05 kill switch says otherwise.
+
+    The check sits at the spawn, not at the tick, because the spawn is the thing
+    the switch exists to prevent: every caller of this function inherits the
+    same refusal, and the daily marker is only written after the attack returns.
+    """
+    guardrails.assert_pods_allowed(stop_path)
     arguments = shlex.split(command)
     if not arguments:
         raise RuntimeError("red-team attack command is empty")
@@ -181,14 +189,21 @@ def main() -> int:
     parser.add_argument("--branch", default=DEFAULT_BRANCH)
     parser.add_argument("--marker", type=Path, default=DEFAULT_MARKER_PATH)
     parser.add_argument("--attack-command", default=str(DEFAULT_ATTACK_COMMAND))
+    parser.add_argument("--stop", type=Path, default=guardrails.default_stop_path())
     arguments = parser.parse_args()
-    result = run_trigger(
-        remote=arguments.remote,
-        marker_path=arguments.marker,
-        attack=lambda sha: _run_attack(arguments.attack_command, sha),
-        verified_sha=newest_trunk_verified_sha,
-        branch=arguments.branch,
-    )
+    try:
+        result = run_trigger(
+            remote=arguments.remote,
+            marker_path=arguments.marker,
+            attack=lambda sha: _run_attack(arguments.attack_command, sha, arguments.stop),
+            verified_sha=newest_trunk_verified_sha,
+            branch=arguments.branch,
+        )
+    except guardrails.RedTeamStopped as stopped:
+        # A stand-down is deliberate, not a failure: the caller's
+        # `if trigger; then ... else FATAL` must not log one per tick.
+        print(f"SKIP redteam-trigger - {stopped}")
+        return 0
     print(f"redteam-trigger {result}")
     return 2 if result == TriggerResult.UNVERIFIED else 0
 
