@@ -114,25 +114,15 @@ def _existing_live_by_path(conn: Any, roots: list[Path]) -> dict[str, list[str]]
     return by_path
 
 
-def reconcile_folders(
-    writer: StateWriter,
-    roots: list[Path],
-    *,
-    previous_signature: str,
-    allow_mass_missing: bool = False,
-) -> FolderRescanReport:
-    """One cheap-if-nothing-changed reconcile cycle over ``roots``.
+def _initial_scan(
+    root_list: list[Path], previous_signature: str
+) -> tuple[FolderRescanReport, list[audio_files.AudioFile], bool]:
+    """The always-cheap first step: walk, sign, and decide whether to stop.
 
-    Additions and content-changes are detected and written; paths no longer
-    present, or superseded by a changed-mtime rewrite at the same path, are
-    tombstoned via ``writer.remove_from_library``. A ``MassMissingError``
-    (a whole root gone missing or mostly missing) and a denied root both
-    surface on ``report.warning`` rather than raising -- a background cycle
-    has no caller to hand an exception to, so the report IS the failure
-    channel.
+    Returns ``(report, files, done)``; ``done`` is true for a cheap-skip
+    (nothing changed since ``previous_signature``), in which case ``report``
+    is already complete except for ``duration_s``.
     """
-    start = time.perf_counter()
-    root_list = [Path(root).expanduser() for root in roots]
     files, denied, dataless = collect_audio(root_list)
     signature = compute_signature(files, denied)
     report = FolderRescanReport(
@@ -144,27 +134,26 @@ def reconcile_folders(
     )
     if denied:
         report.warning = f"could not read {', '.join(denied)}; {fs_access.GRANT_INSTRUCTIONS}"
+    done = signature == previous_signature
+    report.skipped_no_changes = done
+    return report, files, done
 
-    if signature == previous_signature:
-        report.skipped_no_changes = True
-        report.duration_s = round(time.perf_counter() - start, 3)
-        return report
 
+def _collision_warning(files: list[audio_files.AudioFile]) -> str | None:
     try:
         assert_no_path_collisions(str(entry.path) for entry in files)
     except PathCollisionError as exc:
-        report.warning = str(exc)
-        report.duration_s = round(time.perf_counter() - start, 3)
-        return report
+        return str(exc)
+    return None
 
-    conn = writer.raw_conn
-    existing = _existing_live_by_path(conn, root_list)
-    current_sid_by_path: dict[str, tuple[str, str]] = {
-        str(f.path): state_ids.stable_id(isrc=None, abs_path=str(f.path), mtime=f.mtime)
-        for f in files
-    }
-    current_sids = {sid for sid, _tier in current_sid_by_path.values()}
 
+def _mass_missing_warning(
+    root_list: list[Path],
+    current_sid_by_path: dict[str, tuple[str, str]],
+    existing: dict[str, list[str]],
+    *,
+    allow_mass_missing: bool,
+) -> str | None:
     try:
         guard_roots(
             root_list,
@@ -173,29 +162,32 @@ def reconcile_folders(
             allow_mass_missing=allow_mass_missing,
         )
     except MassMissingError as exc:
-        report.warning = str(exc)
-        report.duration_s = round(time.perf_counter() - start, 3)
-        return report
+        return str(exc)
+    return None
 
-    existing_sids = {sid for sids in existing.values() for sid in sids}
-    tombstones = sorted(existing_sids - current_sids)
+
+def _cap_tombstones(report: FolderRescanReport, tombstones: list[str]) -> list[str]:
+    """Truncate to the per-cycle cap, and see the ``MAX_TOMBSTONES_PER_CYCLE``
+    docstring for why a truncated cycle forces ``report.signature`` empty."""
     report.tombstones_pending = max(0, len(tombstones) - MAX_TOMBSTONES_PER_CYCLE)
-    tombstones = tombstones[:MAX_TOMBSTONES_PER_CYCLE]
     if report.tombstones_pending:
-        # The signature is a pure function of on-disk state, which has
-        # already settled (the files are gone) even though the backlog has
-        # not drained. Reporting the real signature here would look like a
-        # stable baseline to the NEXT cycle's cheap-skip check, and the
-        # remaining tombstones would never fire -- stale rows kept forever,
-        # exactly what the issue's own acceptance criteria rule out. An
-        # empty signature can never equal a real one (see
-        # ``compute_signature``, which never returns ""), so it forces the
-        # next cycle past cheap-skip until the backlog is fully applied.
         report.signature = ""
-    write_candidates = [
-        f for f in files if current_sid_by_path[str(f.path)][0] not in existing_sids
-    ]
+    return tombstones[:MAX_TOMBSTONES_PER_CYCLE]
 
+
+def _apply_tombstones_and_writes(
+    writer: StateWriter,
+    report: FolderRescanReport,
+    tombstones: list[str],
+    write_candidates: list[audio_files.AudioFile],
+) -> None:
+    """The one transactional step: tombstone, then write, in a SAVEPOINT.
+
+    A SAVEPOINT rather than a bare transaction because ``writer`` may already
+    be inside an outer one (``writer_tracks.py``'s own nested-``_tx()``
+    contract).
+    """
+    conn = writer.raw_conn
     savepoint = "folder_rescan_reconcile"
     conn.execute(f"SAVEPOINT {savepoint}")
     try:
@@ -219,6 +211,56 @@ def reconcile_folders(
         conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         conn.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise
+
+
+def reconcile_folders(
+    writer: StateWriter,
+    roots: list[Path],
+    *,
+    previous_signature: str,
+    allow_mass_missing: bool = False,
+) -> FolderRescanReport:
+    """One cheap-if-nothing-changed reconcile cycle over ``roots``.
+
+    Additions and content-changes are detected and written; paths no longer
+    present, or superseded by a changed-mtime rewrite at the same path, are
+    tombstoned via ``writer.remove_from_library``. A ``MassMissingError``
+    (a whole root gone missing or mostly missing) and a denied root both
+    surface on ``report.warning`` rather than raising -- a background cycle
+    has no caller to hand an exception to, so the report IS the failure
+    channel.
+    """
+    start = time.perf_counter()
+    root_list = [Path(root).expanduser() for root in roots]
+    report, files, done = _initial_scan(root_list, previous_signature)
+    if done:
+        report.duration_s = round(time.perf_counter() - start, 3)
+        return report
+
+    warning = _collision_warning(files)
+    if warning is None:
+        conn = writer.raw_conn
+        existing = _existing_live_by_path(conn, root_list)
+        current_sid_by_path: dict[str, tuple[str, str]] = {
+            str(f.path): state_ids.stable_id(isrc=None, abs_path=str(f.path), mtime=f.mtime)
+            for f in files
+        }
+        warning = _mass_missing_warning(
+            root_list, current_sid_by_path, existing, allow_mass_missing=allow_mass_missing
+        )
+    if warning is not None:
+        report.warning = warning
+        report.duration_s = round(time.perf_counter() - start, 3)
+        return report
+
+    current_sids = {sid for sid, _tier in current_sid_by_path.values()}
+    existing_sids = {sid for sids in existing.values() for sid in sids}
+    tombstones = _cap_tombstones(report, sorted(existing_sids - current_sids))
+    write_candidates = [
+        f for f in files if current_sid_by_path[str(f.path)][0] not in existing_sids
+    ]
+
+    _apply_tombstones_and_writes(writer, report, tombstones, write_candidates)
 
     report.duration_s = round(time.perf_counter() - start, 3)
     return report

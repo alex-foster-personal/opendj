@@ -7,11 +7,16 @@ tests inject a test-seam ``reconcile_fn`` (the same pattern
 because forcing a slow or failing REAL reconcile round deterministically
 would need its own filesystem race.
 
-  - [if] no folder import is on record [then] the scheduler never starts a round, [else stop].
-  - [if] a folder import lands on record after boot [then] the scheduler picks it up with no restart, [else stop].
-  - [if] a round is slow [then] a second round never starts alongside it, [else stop].
-  - [if] rounds fail repeatedly [then] the retry delay backs off instead of hammering, [else stop].
-  - [if] stop is called while a round is in flight [then] it is awaited, never abandoned, [else stop].
+  - [if] no folder import is on record [then] the scheduler never starts
+    a round, [else stop].
+  - [if] a folder import lands on record after boot [then] the scheduler
+    picks it up with no restart, [else stop].
+  - [if] a round is slow [then] a second round never starts alongside it,
+    [else stop].
+  - [if] rounds fail repeatedly [then] the retry delay backs off instead
+    of hammering, [else stop].
+  - [if] stop is called while a round is in flight [then] it is awaited,
+    never abandoned, [else stop].
 """
 from __future__ import annotations
 
@@ -60,7 +65,7 @@ def _empty_report(signature: str = "sig") -> FolderRescanReport:
 def test_idles_with_no_folder_import_on_record(tmp_path: Path) -> None:
     calls: list[object] = []
 
-    def counting_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def counting_reconcile(writer, roots, previous_signature):
         calls.append(roots)
         return _empty_report()
 
@@ -90,7 +95,7 @@ def test_a_rekordbox_only_import_does_not_start_rounds(tmp_path: Path) -> None:
     )
     calls: list[object] = []
 
-    def counting_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def counting_reconcile(writer, roots, previous_signature):
         calls.append(roots)
         return _empty_report()
 
@@ -112,7 +117,7 @@ def test_a_rekordbox_only_import_does_not_start_rounds(tmp_path: Path) -> None:
 def test_folder_import_landing_after_boot_is_picked_up_without_restart(tmp_path: Path) -> None:
     seen_roots: list[list[Path]] = []
 
-    def recording_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def recording_reconcile(writer, roots, previous_signature):
         seen_roots.append(roots)
         return _empty_report()
 
@@ -143,7 +148,7 @@ def test_a_slow_round_never_overlaps_another(tmp_path: Path) -> None:
     guard = threading.Lock()
     active = {"now": 0, "max": 0, "calls": 0}
 
-    def gated_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def gated_reconcile(writer, roots, previous_signature):
         with guard:
             active["now"] += 1
             active["calls"] += 1
@@ -184,7 +189,7 @@ def test_failing_rounds_back_off(tmp_path: Path) -> None:
     _mark_folder_import(tmp_path, [str(tmp_path / "music")])
     starts: list[float] = []
 
-    def failing_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def failing_reconcile(writer, roots, previous_signature):
         starts.append(time.monotonic())
         raise RuntimeError("simulated reconcile failure")
 
@@ -211,7 +216,7 @@ def test_a_success_after_failures_resets_the_backoff(tmp_path: Path) -> None:
     _mark_folder_import(tmp_path, [str(tmp_path / "music")])
     state = {"calls": 0}
 
-    def flaky_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def flaky_reconcile(writer, roots, previous_signature):
         state["calls"] += 1
         if state["calls"] <= 2:
             raise RuntimeError("simulated reconcile failure")
@@ -240,7 +245,7 @@ def test_stop_awaits_an_in_flight_round_rather_than_abandoning_it(tmp_path: Path
     _mark_folder_import(tmp_path, [str(tmp_path / "music")])
     entered, may_finish = threading.Event(), threading.Event()
 
-    def slow_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def slow_reconcile(writer, roots, previous_signature):
         entered.set()
         assert may_finish.wait(timeout=_DEADLINE_S), "test never released the round"
         return _empty_report()
@@ -309,7 +314,7 @@ def test_a_denied_root_warning_is_logged_not_just_recorded(
     root = tmp_path / "music"
     _mark_folder_import(tmp_path, [str(root)])
 
-    def denied_reconcile(writer, roots, previous_signature):  # noqa: ANN001
+    def denied_reconcile(writer, roots, previous_signature):
         return FolderRescanReport(signature="sig", warning="could not read /music/root: denied")
 
     scheduler = fr_scheduler.FolderRescanScheduler(

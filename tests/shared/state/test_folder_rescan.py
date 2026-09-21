@@ -4,11 +4,16 @@ Contract: ``apps/shared/state/ingest/folder_rescan.py``. No mocks: every test
 writes real audio bytes to a real ``tmp_path`` folder and reconciles against
 a real migrated ``state.db`` connection.
 
-  - [if] a new file appears under a configured root [then] it is a live track after one reconcile, [else stop].
-  - [if] a file disappears from a configured root [then] its track is tombstoned after one reconcile, [else stop].
-  - [if] nothing on disk changed since the last cycle [then] the cycle writes to no table, [else stop].
-  - [if] a root becomes fully denied [then] every cycle warns and none silently tombstones it, [else stop].
-  - [if] two path spellings of one unchanged file normalize to the same key [then] neither is flagged added or removed, [else stop].
+  - [if] a new file appears under a configured root [then] it is a live
+    track after one reconcile, [else stop].
+  - [if] a file disappears from a configured root [then] its track is
+    tombstoned after one reconcile, [else stop].
+  - [if] nothing on disk changed since the last cycle [then] the cycle
+    writes to no table, [else stop].
+  - [if] a root becomes fully denied [then] every cycle warns and none
+    silently tombstones it, [else stop].
+  - [if] two path spellings of one unchanged file normalize to the same
+    key [then] neither is flagged added or removed, [else stop].
 """
 from __future__ import annotations
 
@@ -68,13 +73,15 @@ def test_second_cycle_with_no_disk_change_writes_nothing(state_conn, tmp_path: P
     writer = _writer(state_conn)
     first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
 
-    with mock.patch.object(StateWriter, "upsert_track", side_effect=AssertionError("wrote")):
-        with mock.patch.object(
+    with (
+        mock.patch.object(StateWriter, "upsert_track", side_effect=AssertionError("wrote")),
+        mock.patch.object(
             StateWriter, "remove_from_library", side_effect=AssertionError("tombstoned")
-        ):
-            second = folder_rescan.reconcile_folders(
-                writer, [root], previous_signature=first.signature
-            )
+        ),
+    ):
+        second = folder_rescan.reconcile_folders(
+            writer, [root], previous_signature=first.signature
+        )
 
     assert second.skipped_no_changes is True
     assert second.signature == first.signature
