@@ -287,17 +287,36 @@ def _scratch_engine_argv(data_dir: Path, port: int) -> list[str] | None:
     ]
 
 
-def _state_db_is_valid(state_db: Path) -> bool:
-    """Reject an empty or non-SQLite state database before booting the engine."""
+def _state_db_problem(state_db: Path) -> str | None:
+    """Why ``state_db`` cannot be measured against, or None when it can.
+
+    The engine boots happily on a 0-byte file (it migrates it into a fresh,
+    empty library), reports healthy, and the nightly then measures nothing
+    and exits 0. That is a false green: neither an empty file nor a library
+    with no tracks is the operator's library. Refuse before boot so the run
+    records ``engine_unavailable`` instead of a clean ledger with no rows.
+    """
+    if not state_db.is_file():
+        return f"missing state database: {state_db}"
     try:
         with state_db.open("rb") as handle:
-            if handle.read(16) != b"SQLite format 3\x00":
-                return False
-        with sqlite3.connect(state_db) as connection:
+            header = handle.read(16)
+        with sqlite3.connect(f"file:{state_db}?mode=ro", uri=True) as connection:
             connection.execute("PRAGMA schema_version").fetchone()
+            if header != b"SQLite format 3\x00":
+                return f"state database is not a SQLite file: {state_db}"
+            try:
+                (track_rows,) = connection.execute("SELECT COUNT(*) FROM tracks").fetchone()
+            except sqlite3.OperationalError:
+                return f"state database has no tracks table: {state_db}"
     except (OSError, sqlite3.DatabaseError):
-        return False
-    return True
+        return f"state database is not a SQLite file: {state_db}"
+    # A migrated-but-empty library parses fine and boots fine; measuring it
+    # yields only unmeasured rows and a clean exit (Devin P2 on PR #3726).
+    # The denominator has to be a library with tracks in it.
+    if track_rows == 0:
+        return f"state database has no tracks: {state_db}"
+    return None
 
 
 def acquire_nightly_engine(
@@ -313,27 +332,16 @@ def acquire_nightly_engine(
         return None, None, None, _engine_unavailable(config, "MDT_PERF_KPI_DATA_DIR is unset")
 
     state_db = data_dir / "state" / "state.db"
-    if not state_db.is_file():
-        return (
-            None,
-            None,
-            None,
-            _engine_unavailable(config, f"missing state database: {state_db}"),
-        )
-
-    if not _state_db_is_valid(state_db):
+    state_db_problem = _state_db_problem(state_db)
+    if state_db_problem is not None:
+        config.state_dir.mkdir(parents=True, exist_ok=True)
         log_path = config.state_dir / SCRATCH_ENGINE_LOG_NAME
-        log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch()
         return (
             None,
             None,
             log_path,
-            _engine_unavailable(
-                config,
-                f"invalid state database: {state_db}",
-                engine_log=log_path,
-            ),
+            _engine_unavailable(config, state_db_problem, engine_log=log_path),
         )
 
     port = config.scratch_port
