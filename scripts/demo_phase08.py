@@ -20,7 +20,7 @@ import json
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.shared.pairings import PairingsRepo, ensure_phase08_tables
@@ -54,7 +54,7 @@ _PHASE5_DDL: tuple[str, ...] = (
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _seed_library(conn: sqlite3.Connection) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -67,7 +67,7 @@ def test_config() -> record_mod.RecorderConfig:
 
 @pytest.mark.requirement("SET-01")
 def test_resolve_session_id_appends_counter_on_collision(tmp_path: Path):
-    now = datetime(2026, 4, 17, 21, 30, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, 21, 30, 0, tzinfo=UTC)
     first = record_mod.resolve_session_id(root=tmp_path, now=now)
     (tmp_path / first).mkdir()
     second = record_mod.resolve_session_id(root=tmp_path, now=now)

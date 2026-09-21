@@ -12,8 +12,6 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const SRC = join(HERE, '../../src');
 const API_BASE = 'https://store-build.example.test';
 
-const PROGRESS_MISSING =
-	'progress ledger not offered by this daemon (the engine drops /api/v1/progress)';
 const JOBS_MISSING = 'jobs API not offered by this daemon (no /api/v1/jobs on a legacy boot)';
 const EVENTS_MISSING = 'event bus not offered by this daemon (no /api/v1/events on a legacy boot)';
 const INERT_PARITY_TODO = 'not implemented - see PARITY-TODO';
@@ -102,13 +100,13 @@ function routeFetch(handlers) {
 	};
 }
 
-test('engine health: jobs offered, progress refused with exact sentence', async () => {
+test('engine health: jobs and progress offered', async () => {
 	routeFetch({ '/api/v1/health': () => jsonResponse(engineHealth()) });
 	await bundle.capabilities.probe();
 	const snapshot = bundle.collectInspectorSnapshot();
 
 	assert.equal(row(snapshot, 'jobs')?.refusal, null);
-	assert.equal(row(snapshot, 'progressLedger')?.refusal, PROGRESS_MISSING);
+	assert.equal(row(snapshot, 'progressLedger')?.refusal, null);
 });
 
 test('legacy health: progress offered, jobs and events refused', async () => {
@@ -231,7 +229,8 @@ test('SSR: engine capabilities, empty entitlements, loaded flags', async () => {
 	assert.ok(html.includes('data-testid="entitlements-inspector"'));
 	assert.ok(html.includes('Entitlements inspector'));
 	assert.ok(html.includes('engine'));
-	assert.ok(html.includes(PROGRESS_MISSING));
+	assert.ok(html.includes('progressLedger'));
+	assert.ok(html.includes('No session-level refusals right now.'));
 	assert.ok(!html.includes('Every capability openDJ ships is available'));
 });
 

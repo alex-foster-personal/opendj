@@ -14,8 +14,8 @@ Regression lines (CLAUDE.md format):
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,7 +29,7 @@ PEAK_BASE = "/api/v1/copilot/peak-pressure"
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _seed_track(
@@ -42,7 +42,7 @@ def _seed_track(
     key: str | None,
     energy: int | None = None,
 ) -> None:
-    created = _iso(datetime(2026, 7, 22, 10, 0, 0, tzinfo=timezone.utc))
+    created = _iso(datetime(2026, 7, 22, 10, 0, 0, tzinfo=UTC))
     provenance = {}
     if energy is not None:
         provenance["energy"] = Provenance(
@@ -128,7 +128,7 @@ def test_same_key_candidate_gets_camelot_tag(client: TestClient) -> None:
 def test_pairing_bumps_and_tags_candidate(
     client: TestClient, backend: InMemoryBackend
 ) -> None:
-    created = _iso(datetime(2026, 7, 22, 10, 0, 0, tzinfo=timezone.utc))
+    created = _iso(datetime(2026, 7, 22, 10, 0, 0, tzinfo=UTC))
     backend.seed_pairing(Pairing(
         pairing_id="p-001", from_stable_id="cur-001",
         to_stable_id="cand-120", direction="->", source="manual",

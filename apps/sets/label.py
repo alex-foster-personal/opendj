@@ -7,9 +7,10 @@ The labels file is append-only JSONL; last row per idx wins.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import paths as sets_paths
 from .classify import CLASS_LIST, read_transitions
@@ -65,7 +66,7 @@ def append_label(
         raise ValueError(f"unknown class {class_!r}; expected one of {CLASS_LIST}")
     path = labels_path(session_id, sets_root=sets_root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    stamp = (now or datetime.now(timezone.utc)).isoformat(timespec="milliseconds")
+    stamp = (now or datetime.now(UTC)).isoformat(timespec="milliseconds")
     row = {
         "idx": int(idx),
         "class": class_,

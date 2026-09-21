@@ -14,7 +14,7 @@ process start.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SCHEMA_VERSION: int = 1
 
@@ -100,7 +100,7 @@ def apply_play_order_migrations(conn: sqlite3.Connection) -> int:
             conn.execute(
                 "INSERT INTO play_orders_schema_meta(version, applied_at) "
                 "VALUES (?, ?)",
-                (target_version, datetime.now(timezone.utc).isoformat()),
+                (target_version, datetime.now(UTC).isoformat()),
             )
             if not in_txn:
                 conn.execute("COMMIT")

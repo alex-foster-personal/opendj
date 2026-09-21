@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -242,9 +242,9 @@ class TestSchemaMigration:
                 conn.execute(
                     "INSERT INTO schema_meta(version, applied_at) "
                     "VALUES (?, ?)",
-                    (version, datetime.now(timezone.utc).isoformat()),
+                    (version, datetime.now(UTC).isoformat()),
                 )
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             conn.execute(
                 "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                 "  artists_json, created_at, updated_at) "

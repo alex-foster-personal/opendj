@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 from apps.shared import platform_paths
 
@@ -52,7 +51,7 @@ def _desktop_documents_sync_active() -> bool:
         return False
 
 
-def icloud_zone_reason(path: Path | str) -> Optional[str]:
+def icloud_zone_reason(path: Path | str) -> str | None:
     """Return a short reason when ``path`` is in the iCloud zone; else None.
 
     Off-Darwin always None (this problem domain is macOS iCloud Drive).

@@ -71,6 +71,25 @@ class PlayedTrack:
 # ----- helpers ----------------------------------------------------------
 
 
+def _index_track_object(obj: dict, idx: dict[str, tuple[str, str]]) -> None:
+    tid, name, arts = obj.get("id"), obj.get("name"), obj.get("artists")
+    if tid and name and arts and tid not in idx:
+        try:
+            idx[tid] = (", ".join(a.get("name", "") for a in arts), name)
+        except Exception:
+            pass
+
+
+def _walk_spotify_cache(obj: object, idx: dict[str, tuple[str, str]]) -> None:
+    if isinstance(obj, dict):
+        _index_track_object(obj, idx)
+        for value in obj.values():
+            _walk_spotify_cache(value, idx)
+    elif isinstance(obj, list):
+        for value in obj:
+            _walk_spotify_cache(value, idx)
+
+
 def _spotify_name_index() -> dict[str, tuple[str, str]]:
     """Map Spotify track-id -> (artist, title) from local caches.
 
@@ -89,25 +108,11 @@ def _spotify_name_index() -> dict[str, tuple[str, str]]:
             if isinstance(val, (list, tuple)) and len(val) == 2:
                 idx[tid] = (val[0], val[1])
 
-    def _walk(obj) -> None:
-        if isinstance(obj, dict):
-            tid, name, arts = obj.get("id"), obj.get("name"), obj.get("artists")
-            if tid and name and arts and tid not in idx:
-                try:
-                    idx[tid] = (", ".join(a.get("name", "") for a in arts), name)
-                except Exception:
-                    pass
-            for v in obj.values():
-                _walk(v)
-        elif isinstance(obj, list):
-            for v in obj:
-                _walk(v)
-
     cache_dir = sp_dir / "cache"
     if cache_dir.exists():
         for f in cache_dir.glob("*.json"):
             try:
-                _walk(json.loads(f.read_text()))
+                _walk_spotify_cache(json.loads(f.read_text()), idx)
             except Exception:
                 continue
     return idx

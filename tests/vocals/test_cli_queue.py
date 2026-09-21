@@ -25,7 +25,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -115,7 +115,7 @@ def data_dir(tmp_path: Path) -> Path:
             p.write_bytes(b"audio " + name.encode())
         return str(p)
 
-    def _twoex(name: str, payload: Optional[bytes]) -> Optional[str]:
+    def _twoex(name: str, payload: bytes | None) -> str | None:
         if payload is None:
             return None
         dat = media / f"{name}.DAT"
@@ -486,9 +486,9 @@ def test_run_worker_deadline_raises_and_never_reads_stdin(
 
     class TimedOutProcess:
         pid = 123456
-        returncode: Optional[int] = None
+        returncode: int | None = None
 
-        def communicate(self, timeout: Optional[float] = None) -> tuple[str, None]:
+        def communicate(self, timeout: float | None = None) -> tuple[str, None]:
             seen.setdefault("timeouts", []).append(timeout)
             if timeout is not None:
                 raise subprocess.TimeoutExpired("worker", timeout)
@@ -627,7 +627,7 @@ def test_posix_escalation_failure_retains_nonexpiring_claim(
         # named no group at all.
         pid = os.getpgid(0)
 
-        def wait(self, timeout: Optional[float] = None) -> int:
+        def wait(self, timeout: float | None = None) -> int:
             if timeout is not None:
                 raise subprocess.TimeoutExpired("worker", timeout)
             return 0
@@ -712,7 +712,7 @@ def test_pioneer_path_cannot_escape_share_root(
 # ----- live-data smoke (skips cleanly without local library data) ---------------------
 
 
-def _real_data_dir() -> Optional[Path]:
+def _real_data_dir() -> Path | None:
     override = os.environ.get("VOCALS_DATA_DIR")
     candidates = (
         [Path(override)]

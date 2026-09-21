@@ -13,12 +13,15 @@
 	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
 	 * so horizontal drag stays the fine-adjust axis.
 	 */
+	import { onDestroy } from 'svelte';
+	import { createDeferredClickGuard } from '$lib/rb/deferred-click';
 	import {
 		KNOB_CFG,
 		altClickKnob,
 		isKnobLinked,
 		isKnobSelected,
 		linkedPartnerId,
+		pointerTravelIsDrag,
 		readKnobValue,
 		registerKnob,
 		setKnobAbsolute,
@@ -50,6 +53,8 @@
 		accentColor?: string;
 		/** Double-click reset. EQ/filter stay at the 0.5 detent; MIX is 0 (full cue). */
 		resetValue?: number;
+		/** Optional delayed single-click action (suppressed by drag and double-click). */
+		onsingleclick?: () => void;
 	}
 
 	let {
@@ -62,7 +67,8 @@
 		tone = 'accent',
 		size = 30,
 		accentColor,
-		resetValue = 0.5
+		resetValue = 0.5,
+		onsingleclick
 	}: Props = $props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -92,6 +98,12 @@
 	let dragPartnerId: string | null = null;
 	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
+	let pointerMoved = false;
+	const singleClickGuard = createDeferredClickGuard();
+
+	onDestroy(() => {
+		singleClickGuard.dispose();
+	});
 
 	$effect(() => {
 		if (!live) return;
@@ -113,7 +125,8 @@
 	});
 
 	function handlePointerDown(e: PointerEvent): void {
-		if (!live) return;
+		// Right and middle clicks belong to the context menu, not the dial.
+		if (!live || e.button !== 0) return;
 		// Shift = select for the global wheel; Alt = arm/complete a link pair.
 		// Neither starts a drag, so a modifier click never also turns the dial.
 		if (e.shiftKey) {
@@ -127,6 +140,8 @@
 			return;
 		}
 		dragging = true;
+		pointerMoved = false;
+		singleClickGuard.cancel();
 		dragStartX = e.clientX;
 		dragStartY = e.clientY;
 		dragStartValue = value;
@@ -139,6 +154,13 @@
 
 	function handlePointerMove(e: PointerEvent): void {
 		if (!dragging || !live) return;
+		if (!pointerMoved) {
+			// Only a knob with a click action has a click to protect: jitter inside the
+			// slop stays that click. Every other knob keeps moving from the first pixel.
+			const insideSlop = !pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY);
+			if (onsingleclick !== undefined && insideSlop) return;
+			pointerMoved = true;
+		}
 		const dy = dragStartY - e.clientY; // up = clockwise = increase
 		const dx = e.clientX - dragStartX; // right = increase, far less sensitive
 		const target =
@@ -148,13 +170,17 @@
 
 	function handlePointerUp(e: PointerEvent): void {
 		if (!dragging) return;
+		const wasDrag = pointerMoved;
 		dragging = false;
 		dragPartnerId = null;
 		dragStartPartnerValue = null;
 		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		if (!live || wasDrag || onsingleclick === undefined) return;
+		singleClickGuard.schedule(() => onsingleclick?.());
 	}
 
 	function handleDblClick(): void {
+		singleClickGuard.cancel();
 		if (!live) return;
 		setKnobAbsolute(knobId, resetValue);
 	}

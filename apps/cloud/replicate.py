@@ -25,7 +25,8 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from .config import CloudConfig, MissingEnvError
 from .lock import (
@@ -62,6 +63,67 @@ def _default_subprocess_factory(argv: list[str]) -> SubprocessLike:
     return subprocess.Popen(argv)  # type: ignore[return-value]
 
 
+def _boto3_get_object(client, ClientError, bucket: str, key: str):  # pragma: no cover (IO)
+    try:
+        resp = client.get_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404"):
+            return None
+        raise
+    return resp["Body"].read(), resp["ETag"]
+
+
+def _boto3_put_if_none(client, ClientError, bucket: str, key: str, body: bytes):
+    try:
+        resp = client.put_object(Bucket=bucket, Key=key, Body=body, IfNoneMatch="*")
+        return True, resp["ETag"]
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("PreconditionFailed", "412"):
+            return False, None
+        raise
+
+
+def _boto3_put_if_match(client, ClientError, bucket: str, key: str, body: bytes, etag: str):
+    try:
+        resp = client.put_object(Bucket=bucket, Key=key, Body=body, IfMatch=etag)
+        return True, resp["ETag"]
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("PreconditionFailed", "412"):
+            return False, None
+        raise
+
+
+def _boto3_delete_if_match(client, ClientError, bucket: str, key: str, etag: str) -> bool:
+    try:
+        client.delete_object(Bucket=bucket, Key=key, IfMatch=etag)
+        return True
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("PreconditionFailed", "412", "NoSuchKey"):
+            return False
+        raise
+
+
+def _boto3_adapter(client, ClientError):  # pragma: no cover (IO)
+    class _Boto3Adapter:
+        def get_object(self, bucket: str, key: str):
+            return _boto3_get_object(client, ClientError, bucket, key)
+
+        def put_object_if_none_match(self, bucket: str, key: str, body: bytes):
+            return _boto3_put_if_none(client, ClientError, bucket, key, body)
+
+        def put_object_if_match(self, bucket: str, key: str, body: bytes, etag: str):
+            return _boto3_put_if_match(client, ClientError, bucket, key, body, etag)
+
+        def delete_object_if_match(self, bucket: str, key: str, etag: str):
+            return _boto3_delete_if_match(client, ClientError, bucket, key, etag)
+
+    return _Boto3Adapter()
+
+
 def boto3_s3_client(cfg: CloudConfig) -> S3Client:  # pragma: no cover (IO)
     """Build a sync S3Client adapter over boto3.
 
@@ -85,54 +147,7 @@ def boto3_s3_client(cfg: CloudConfig) -> S3Client:  # pragma: no cover (IO)
         region_name="auto",
     )
 
-    class _Boto3Adapter:
-        def get_object(self, bucket: str, key: str):
-            try:
-                resp = client.get_object(Bucket=bucket, Key=key)
-            except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
-                if code in ("NoSuchKey", "404"):
-                    return None
-                raise
-            return resp["Body"].read(), resp["ETag"]
-
-        def put_object_if_none_match(self, bucket: str, key: str, body: bytes):
-            try:
-                resp = client.put_object(
-                    Bucket=bucket, Key=key, Body=body, IfNoneMatch="*"
-                )
-                return True, resp["ETag"]
-            except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
-                if code in ("PreconditionFailed", "412"):
-                    return False, None
-                raise
-
-        def put_object_if_match(
-            self, bucket: str, key: str, body: bytes, etag: str
-        ):
-            try:
-                resp = client.put_object(
-                    Bucket=bucket, Key=key, Body=body, IfMatch=etag
-                )
-                return True, resp["ETag"]
-            except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
-                if code in ("PreconditionFailed", "412"):
-                    return False, None
-                raise
-
-        def delete_object_if_match(self, bucket: str, key: str, etag: str):
-            try:
-                client.delete_object(Bucket=bucket, Key=key, IfMatch=etag)
-                return True
-            except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
-                if code in ("PreconditionFailed", "412", "NoSuchKey"):
-                    return False
-                raise
-
-    return _Boto3Adapter()
+    return _boto3_adapter(client, ClientError)
 
 
 class Replicator:
@@ -274,7 +289,7 @@ class Replicator:
         self._stop.set()
 
 
-def self_check(argv: list[str] | None = None) -> int:
+def self_check(_argv: list[str] | None = None) -> int:
     """Run a dry-run smoke check against :class:`FakeS3Client`.
 
     Useful for CI: no network, no litestream binary required.

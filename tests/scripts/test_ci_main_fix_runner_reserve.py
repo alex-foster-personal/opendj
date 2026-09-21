@@ -6,8 +6,16 @@ referenced by ADR-0041). Two runners (nucbox-wsl, nucbox-wsl-2) are reserved
 host-side (nucbox ``~/jobs/runner-governor.sh``, label ``main-fix``, agentbox
 and nucbox stripped so the general pool never contends for them) and the
 ``test`` job's ``runs-on`` prefers ``vars.CI_RUNS_ON_MAIN_FIX`` for exactly
-two cases: a direct push to main, or a pull_request carrying the
-``ci:trunk-repair`` label. Every other PR is unaffected.
+one case: a pull_request carrying the ``ci:trunk-repair`` label. Every other
+event, a push to main included, takes the general chain.
+
+Mon 21 Sep 2026 (ADR-NEW-main-pushes-use-the-general-pytest-pool): the
+original guard also sent every push to main through the two reserved
+runners. Measured that day, main's own shards queued 40-60 minutes behind
+the previous merge's while the seven-runner pytest pool served PRs, so trunk
+could not prove itself and every PR inherited an unmeasured red (#3708
+section 2). The push clause was dropped; the reservation is now spent only
+on the repair PR, which is the run the reserve exists to protect.
 
 PR #2654 ("route pytest fast-lane shards off nucbox to agentbox pool")
 merged into main the same day, after this branch was cut, prepending its own
@@ -27,8 +35,10 @@ non-pull_request event (so a push event never touches
 github.event.pull_request).
 
 Regression lines:
-  - if the main-branch push guard is dropped then a trunk fix loses its
-    reserved pool and starves again exactly as it did today
+  - if the ci:trunk-repair guard is dropped then a trunk fix loses its
+    reserved pool and starves again exactly as it did on Mon 14 Sep 2026
+  - if a main-branch push guard is reintroduced then main's own CI is
+    funnelled through two runners again and trunk stops proving itself
   - if the guard does not short-circuit before github.event.pull_request then
     a push event (which has no pull_request context) can error instead of
     silently falling through
@@ -57,9 +67,8 @@ SHARD_JOB = "test"
 #: chain; a set var wins under a true cond; the label-guard clause alone
 #: reads false with no error on a non-pull_request event.
 EXPECTED_RUNS_ON = (
-    "${{ fromJSON(((github.event_name == 'push' && github.ref == "
-    "'refs/heads/main') || (github.event_name == 'pull_request' && "
-    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')))"
+    "${{ fromJSON((github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
     " && vars.CI_RUNS_ON_MAIN_FIX || vars.CI_RUNS_ON_PYTEST || "
     "vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || "
     '\'"ubuntu-latest"\') }}'
@@ -101,11 +110,15 @@ def _raw_runs_on(job_id: str) -> str:
     del job  # only used to assert the job exists
 
 
-def test_main_fix_job_prefers_the_reserved_pool_for_main_pushes_and_trunk_repair_prs() -> None:
-    """if the main-branch/trunk-repair guard is dropped then a fix to red main starves again"""
+def test_main_fix_job_prefers_the_reserved_pool_for_trunk_repair_prs_only() -> None:
+    """if the trunk-repair guard is dropped, or a main-push guard returns, the reserve is lost
+    or misused"""
     assert SHARD_JOB in _jobs(), f"expected a {SHARD_JOB!r} job in ci.yml"
     raw = _raw_runs_on(SHARD_JOB)
     assert raw == EXPECTED_RUNS_ON, f"test job runs-on changed shape, got: {raw}"
+    assert "refs/heads/main" not in raw, (
+        "a push to main must take the general pool, not the reserve"
+    )
 
 
 def test_guard_checks_event_name_before_dereferencing_pull_request() -> None:

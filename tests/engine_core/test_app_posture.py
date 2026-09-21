@@ -15,12 +15,12 @@ from fastapi.testclient import TestClient
 
 from apps.engine_core.app_posture_api import APP_POSTURE_PATH, add_app_posture_route
 from apps.shared.app_posture import (
-    AppPosture,
     GIG_LIBRARY_POLL_MS,
     GIG_PREFETCH_BYTES,
     GIG_PREFETCH_TRACKS,
-    InvalidAppPosture,
     PREP_LIBRARY_POLL_MS,
+    AppPosture,
+    InvalidAppPosture,
     apply_posture_to_prefetch,
     apply_posture_to_workers,
     library_poll_ms,

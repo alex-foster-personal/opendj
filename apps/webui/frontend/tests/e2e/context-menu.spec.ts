@@ -103,6 +103,23 @@ test('Add to playlist opens the picker and Escape closes it', async ({ page }) =
 	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toHaveCount(0);
 });
 
+test('a mounted context menu does not steal arrows after focus leaves it', async ({ page }) => {
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	const track = page.locator('[data-testid="track-row"]').first();
+	await track.click({ button: 'right' });
+	await expect(page.locator(MENU)).toBeVisible();
+
+	const masterVolume = page.locator('[role="slider"][aria-label="master volume"]');
+	const before = Number(await masterVolume.getAttribute('aria-valuenow'));
+	await masterVolume.focus();
+	await masterVolume.press('ArrowDown');
+	await expect
+		.poll(async () => Number(await masterVolume.getAttribute('aria-valuenow')))
+		.toBeLessThan(before);
+});
+
 test('multi-select context menu keeps the full selection count', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });

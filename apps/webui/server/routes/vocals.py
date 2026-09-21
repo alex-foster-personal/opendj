@@ -38,6 +38,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from apps.shared.paths import DATA_DIR
+from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 from apps.vocals.cli import (
@@ -52,7 +53,6 @@ from apps.vocals.cli import (
     classify,
     load_tracks,
 )
-from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -132,7 +132,7 @@ def analyze_vocals(
     body: VocalsAnalyzeIn,
     request: Request,
     background_tasks: BackgroundTasks,
-    backend: StateBackend = Depends(get_write_state),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsAnalyzeOut:
     stable_ids = _unique_stable_ids(_resolve_stable_ids(body, backend))
     ctx = Ctx(data_dir=DATA_DIR)
@@ -188,7 +188,7 @@ def analyze_vocals(
 @router.get("/{stable_id}/status", response_model=VocalsStatusOut)
 def get_vocal_status(
     stable_id: str,
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsStatusOut:
     try:
         content = rb_vendor.resolve_content(stable_id)

@@ -188,7 +188,7 @@ def _read_mp4(path: Path) -> dict[str, str]:
 def _write_mp4(path: Path, new: dict[str, str]) -> None:
     from mutagen.mp4 import MP4, MP4FreeForm
     mp4 = MP4(str(path))
-    mp4["tmpo"] = [int(round(float(new["BPM"])))]
+    mp4["tmpo"] = [round(float(new["BPM"]))]
     mp4["----:com.apple.iTunes:initialkey"] = [
         MP4FreeForm(new["INITIALKEY"].encode("utf-8"), dataformat=1)
     ]
@@ -302,7 +302,11 @@ def pgrep_warn_rail() -> list[str]:
     for name in ("rekordbox", "djay"):
         try:
             r = subprocess.run(
-                ["pgrep", "-if", name], capture_output=True, text=True, timeout=3
+                ["pgrep", "-if", name],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
             )
             if r.returncode == 0 and r.stdout.strip():
                 offenders.append(name)
@@ -610,7 +614,7 @@ def apply_writes(
             "[/yellow]"
         )
 
-    ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = _dt.datetime.now(_dt.UTC).strftime("%Y%m%dT%H%M%SZ")
 
     for d in to_write:
         snapshot: Path | None = None

@@ -2123,6 +2123,97 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "Binding": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "discriminator": {
+              "mapping": {
+                "browse_encoder": "#/components/schemas/BrowseEncoder",
+                "browse_load": "#/components/schemas/BrowseLoad",
+                "channel_cue": "#/components/schemas/ChannelCue",
+                "deck_beat_loop": "#/components/schemas/DeckBeatLoop",
+                "deck_cue": "#/components/schemas/DeckCue",
+                "deck_hot_cue": "#/components/schemas/DeckHotCue",
+                "deck_loop_exit": "#/components/schemas/DeckLoopExit",
+                "deck_pitch": "#/components/schemas/DeckPitch",
+                "deck_play_toggle": "#/components/schemas/DeckPlayToggle",
+                "mixer_channel": "#/components/schemas/MixerChannel",
+                "mixer_global": "#/components/schemas/MixerGlobal",
+                "shift_modifier": "#/components/schemas/ShiftModifier"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeckPlayToggle"
+              },
+              {
+                "$ref": "#/components/schemas/DeckCue"
+              },
+              {
+                "$ref": "#/components/schemas/DeckHotCue"
+              },
+              {
+                "$ref": "#/components/schemas/DeckBeatLoop"
+              },
+              {
+                "$ref": "#/components/schemas/DeckLoopExit"
+              },
+              {
+                "$ref": "#/components/schemas/MixerChannel"
+              },
+              {
+                "$ref": "#/components/schemas/MixerGlobal"
+              },
+              {
+                "$ref": "#/components/schemas/ChannelCue"
+              },
+              {
+                "$ref": "#/components/schemas/DeckPitch"
+              },
+              {
+                "$ref": "#/components/schemas/BrowseEncoder"
+              },
+              {
+                "$ref": "#/components/schemas/BrowseLoad"
+              },
+              {
+                "$ref": "#/components/schemas/ShiftModifier"
+              }
+            ],
+            "title": "Action"
+          },
+          "invert": {
+            "default": false,
+            "title": "Invert",
+            "type": "boolean"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "relative": {
+            "default": false,
+            "title": "Relative",
+            "type": "boolean"
+          },
+          "shift": {
+            "default": false,
+            "title": "Shift",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MidiSource"
+          }
+        },
+        "required": [
+          "source",
+          "action",
+          "provenance"
+        ],
+        "title": "Binding",
+        "type": "object"
+      },
       "BlockerOut": {
         "properties": {
           "machine_id": {
@@ -2356,6 +2447,47 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
+      "BrowseEncoder": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "browse_encoder",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "BrowseEncoder",
+        "type": "object"
+      },
+      "BrowseLoad": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "browse_load",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "BrowseLoad",
+        "type": "object"
+      },
       "BuildInfoOut": {
         "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
         "properties": {
@@ -2468,6 +2600,75 @@
         "title": "BuildInfoOut",
         "type": "object"
       },
+      "BuildPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "pr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "idle",
+                  "blocked",
+                  "hanging"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worktree"
+          }
+        },
+        "title": "BuildPatchIn",
+        "type": "object"
+      },
       "BuildStampOut": {
         "description": "Provenance of the build that recorded a piece of feedback.\n\nExactly one of the two shapes: a resolved (git_sha, built_at_utc, source)\ntriple, or an explicit error naming why resolution failed. Never blank.",
         "properties": {
@@ -2517,6 +2718,31 @@
           }
         },
         "title": "BuildStampOut",
+        "type": "object"
+      },
+      "BuildableIn": {
+        "additionalProperties": false,
+        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "cloud",
+              "hybrid",
+              "local"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "reason"
+        ],
+        "title": "BuildableIn",
         "type": "object"
       },
       "BulkEditIn": {
@@ -2656,6 +2882,110 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "CatalogDevice": {
+        "properties": {
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "controlCount": {
+            "title": "Controlcount",
+            "type": "integer"
+          },
+          "hasLayout": {
+            "title": "Haslayout",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "popularityRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Popularityrank"
+          },
+          "quality": {
+            "enum": [
+              "vendor-pdf",
+              "mixxx",
+              "bootstrap-stub"
+            ],
+            "title": "Quality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "brand",
+          "model",
+          "quality",
+          "controlCount",
+          "hasLayout"
+        ],
+        "title": "CatalogDevice",
+        "type": "object"
+      },
+      "CatalogOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogDevice"
+            },
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices",
+          "counts"
+        ],
+        "title": "CatalogOut",
+        "type": "object"
+      },
+      "ChannelCue": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "channel_cue",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "ChannelCue",
+        "type": "object"
+      },
       "ChatIn": {
         "description": "A whole conversation, resent every turn -- the engine stores none of it.",
         "properties": {
@@ -2740,6 +3070,17 @@
       },
       "ClientErrorIn": {
         "properties": {
+          "any_deck_live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Any Deck Live"
+          },
           "audio_worklet_available": {
             "title": "Audio Worklet Available",
             "type": "boolean"
@@ -4269,6 +4610,25 @@
         "title": "CommentUpdateIn",
         "type": "object"
       },
+      "CommitIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "sha": {
+            "title": "Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha",
+          "note"
+        ],
+        "title": "CommitIn",
+        "type": "object"
+      },
       "ConfigIn": {
         "properties": {
           "enabled": {
@@ -4305,6 +4665,128 @@
           "path"
         ],
         "title": "ConfigOut",
+        "type": "object"
+      },
+      "ConsentIn": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "declined"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "terms_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Terms Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "terms_version"
+        ],
+        "title": "ConsentIn",
+        "type": "object"
+      },
+      "ConsentOut": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decision": {
+            "enum": [
+              "undecided",
+              "accepted",
+              "declined"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release"
+          },
+          "replay_loader_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Loader Url"
+          },
+          "replay_on_error_sample_rate": {
+            "default": 1.0,
+            "title": "Replay On Error Sample Rate",
+            "type": "number"
+          },
+          "replay_session_sample_rate": {
+            "title": "Replay Session Sample Rate",
+            "type": "number"
+          },
+          "telemetry_active": {
+            "title": "Telemetry Active",
+            "type": "boolean"
+          },
+          "terms_current_version": {
+            "title": "Terms Current Version",
+            "type": "string"
+          },
+          "terms_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Version"
+          }
+        },
+        "required": [
+          "decision",
+          "terms_version",
+          "terms_current_version",
+          "decided_at",
+          "telemetry_active",
+          "environment",
+          "release",
+          "replay_loader_url",
+          "replay_session_sample_rate"
+        ],
+        "title": "ConsentOut",
         "type": "object"
       },
       "CopilotTrackOut": {
@@ -4927,6 +5409,131 @@
         "title": "DecisionRecordOut",
         "type": "object"
       },
+      "DeckBeatLoop": {
+        "additionalProperties": false,
+        "properties": {
+          "beats": {
+            "exclusiveMinimum": 0.0,
+            "title": "Beats",
+            "type": "integer"
+          },
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_beat_loop",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "beats"
+        ],
+        "title": "DeckBeatLoop",
+        "type": "object"
+      },
+      "DeckCue": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_cue",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckCue",
+        "type": "object"
+      },
+      "DeckHotCue": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "slot": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H"
+            ],
+            "title": "Slot",
+            "type": "string"
+          },
+          "type": {
+            "const": "deck_hot_cue",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "slot"
+        ],
+        "title": "DeckHotCue",
+        "type": "object"
+      },
+      "DeckLoopExit": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_loop_exit",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckLoopExit",
+        "type": "object"
+      },
       "DeckMarkOut": {
         "properties": {
           "audible": {
@@ -5107,6 +5714,72 @@
           "stem_status"
         ],
         "title": "DeckPerformanceSample",
+        "type": "object"
+      },
+      "DeckPitch": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "lsbOffset": {
+            "anyOf": [
+              {
+                "maximum": 127.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lsboffset"
+          },
+          "type": {
+            "const": "deck_pitch",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "lsbOffset"
+        ],
+        "title": "DeckPitch",
+        "type": "object"
+      },
+      "DeckPlayToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_play_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckPlayToggle",
         "type": "object"
       },
       "DeletedPlaylistOut": {
@@ -5774,10 +6447,16 @@
             "const": "own",
             "title": "Source",
             "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
           "source",
+          "status",
           "beat_count",
           "beats"
         ],
@@ -6530,6 +7209,11 @@
           },
           "files_dataless": {
             "title": "Files Dataless",
+            "type": "integer"
+          },
+          "files_rejected_unplayable": {
+            "default": 0,
+            "title": "Files Rejected Unplayable",
             "type": "integer"
           },
           "files_seen": {
@@ -8906,6 +9590,56 @@
         "title": "LifecycleQuitOut",
         "type": "object"
       },
+      "LinksPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
+        "properties": {
+          "issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issues"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
+          },
+          "specs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specs"
+          }
+        },
+        "title": "LinksPatchIn",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -10347,6 +11081,196 @@
         "title": "MetadataShareResponse",
         "type": "object"
       },
+      "MidiMapDoc": {
+        "additionalProperties": false,
+        "description": "One controller, as installed. camelCase on the wire to match DeviceMap.",
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/Binding"
+            },
+            "minItems": 1,
+            "title": "Bindings",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "nameMatch": {
+            "minLength": 1,
+            "title": "Namematch",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "vendor": {
+            "minLength": 1,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "vendor",
+          "model",
+          "nameMatch",
+          "bindings"
+        ],
+        "title": "MidiMapDoc",
+        "type": "object"
+      },
+      "MidiMapListOut": {
+        "properties": {
+          "maps": {
+            "items": {
+              "$ref": "#/components/schemas/MidiMapSummary"
+            },
+            "title": "Maps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "maps"
+        ],
+        "title": "MidiMapListOut",
+        "type": "object"
+      },
+      "MidiMapSummary": {
+        "properties": {
+          "bindingCount": {
+            "title": "Bindingcount",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "nameMatch": {
+            "title": "Namematch",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Provenance",
+            "type": "object"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "vendor",
+          "model",
+          "nameMatch",
+          "bindingCount",
+          "provenance"
+        ],
+        "title": "MidiMapSummary",
+        "type": "object"
+      },
+      "MidiSource": {
+        "additionalProperties": false,
+        "properties": {
+          "ch": {
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "id": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "note",
+              "cc",
+              "pitchbend"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ch",
+          "kind",
+          "id"
+        ],
+        "title": "MidiSource",
+        "type": "object"
+      },
+      "MixerChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "mid",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "target": {
+            "enum": [
+              "trim",
+              "eq",
+              "fader"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "type": {
+            "const": "mixer_channel",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "target"
+        ],
+        "title": "MixerChannel",
+        "type": "object"
+      },
       "MixerChannelMarkOut": {
         "properties": {
           "assign": {
@@ -10393,6 +11317,30 @@
           "assign"
         ],
         "title": "MixerChannelMarkOut",
+        "type": "object"
+      },
+      "MixerGlobal": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "enum": [
+              "crossfader",
+              "master"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "type": {
+            "const": "mixer_global",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "target"
+        ],
+        "title": "MixerGlobal",
         "type": "object"
       },
       "MixerMarkOut": {
@@ -10698,6 +11646,134 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "NodePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buildable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildableIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commits_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CommitIn"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commits Append"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinksPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing",
+                  "spiked",
+                  "building",
+                  "partial",
+                  "built",
+                  "verified",
+                  "merged",
+                  "user-finalized",
+                  "working"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tests_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Append"
+          },
+          "verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifiedIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "NodePatch",
+        "type": "object"
+      },
+      "NodePatchOut": {
+        "properties": {
+          "meta_updated": {
+            "title": "Meta Updated",
+            "type": "string"
+          },
+          "node": {
+            "additionalProperties": true,
+            "title": "Node",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node",
+          "meta_updated"
+        ],
+        "title": "NodePatchOut",
         "type": "object"
       },
       "OpsErrorBody": {
@@ -12932,6 +14008,39 @@
         "title": "PlaylistSummary",
         "type": "object"
       },
+      "PlaylistTracksPage": {
+        "description": "Paginated playlist membership slice (PERF-UI-05, issue #3530).\n\nHydrated rows in membership order for ``[offset:offset+limit]`` only.\nAgent parity: ``GET /api/v1/playlists/{playlist_id}/tracks``.",
+        "properties": {
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks",
+          "total"
+        ],
+        "title": "PlaylistTracksPage",
+        "type": "object"
+      },
       "PlaylistWriteOut": {
         "properties": {
           "created_at": {
@@ -13290,6 +14399,38 @@
           "checks"
         ],
         "title": "PreflightOut",
+        "type": "object"
+      },
+      "Provenance": {
+        "additionalProperties": false,
+        "description": "Where one binding's wire numbers came from. Required on every binding:\nit is what makes the no-fabricated-numbers house rule mechanical rather\nthan a comment convention, and it drives the confidence badge in the UI.",
+        "properties": {
+          "cite": {
+            "minLength": 1,
+            "title": "Cite",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "vendor-pdf",
+              "mixxx",
+              "learned",
+              "hand"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "verified": {
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tier",
+          "cite"
+        ],
+        "title": "Provenance",
         "type": "object"
       },
       "ProvenanceOut": {
@@ -15666,6 +16807,21 @@
           "permissions"
         ],
         "title": "SetupStatusOut",
+        "type": "object"
+      },
+      "ShiftModifier": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "shift_modifier",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "ShiftModifier",
         "type": "object"
       },
       "SmartlistConflictBody": {
@@ -20436,6 +21592,25 @@
           "target_mode"
         ],
         "title": "VendorCapabilityOut",
+        "type": "object"
+      },
+      "VerifiedIn": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "title": "By",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "by",
+          "method"
+        ],
+        "title": "VerifiedIn",
         "type": "object"
       },
       "VocalsAnalyzeIn": {
@@ -27274,6 +28449,197 @@
         ]
       }
     },
+    "/api/v1/midi/catalog": {
+      "get": {
+        "operationId": "search_midi_catalog_api_v1_midi_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Midi Catalog",
+        "tags": [
+          "midi"
+        ]
+      }
+    },
+    "/api/v1/midi/maps": {
+      "get": {
+        "operationId": "list_midi_maps_api_v1_midi_maps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MidiMapListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Midi Maps",
+        "tags": [
+          "midi"
+        ]
+      }
+    },
+    "/api/v1/midi/maps/{map_id}": {
+      "delete": {
+        "operationId": "delete_midi_map_api_v1_midi_maps__map_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "map_id",
+            "required": true,
+            "schema": {
+              "title": "Map Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Midi Map",
+        "tags": [
+          "midi"
+        ]
+      },
+      "get": {
+        "operationId": "get_midi_map_api_v1_midi_maps__map_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "map_id",
+            "required": true,
+            "schema": {
+              "title": "Map Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MidiMapDoc"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Midi Map",
+        "tags": [
+          "midi"
+        ]
+      },
+      "put": {
+        "operationId": "put_midi_map_api_v1_midi_maps__map_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "map_id",
+            "required": true,
+            "schema": {
+              "title": "Map Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MidiMapDoc"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Midi Map",
+        "tags": [
+          "midi"
+        ]
+      }
+    },
     "/api/v1/mytags": {
       "get": {
         "operationId": "list_mytags_api_v1_mytags_get",
@@ -28835,6 +30201,24 @@
     "/api/v1/playlists": {
       "get": {
         "operationId": "list_playlists_api_v1_playlists_get",
+        "parameters": [
+          {
+            "description": "When ``skip``, omit the bulk available_count pass and return ``available_count=-1`` per row for fast tree paint (PERF-UI-05).",
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "When ``skip``, omit the bulk available_count pass and return ``available_count=-1`` per row for fast tree paint (PERF-UI-05).",
+              "enum": [
+                "all",
+                "skip"
+              ],
+              "title": "Availability",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -28849,6 +30233,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Playlists",
@@ -29643,6 +31037,70 @@
       }
     },
     "/api/v1/playlists/{playlist_id}/tracks": {
+      "get": {
+        "description": "Paginated hydrated membership slice for first-page library paint.\n\nAgent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.\nFull detail remains on ``GET /playlists/{playlist_id}``.",
+        "operationId": "list_playlist_tracks_api_v1_playlists__playlist_id__tracks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistTracksPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Playlist Tracks",
+        "tags": [
+          "playlists"
+        ]
+      },
       "put": {
         "operationId": "replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put",
         "parameters": [
@@ -30141,6 +31599,156 @@
         "summary": "Read Preflight",
         "tags": [
           "preflight"
+        ]
+      }
+    },
+    "/api/v1/progress": {
+      "get": {
+        "description": "Full parsed tree + ledger-file git provenance + per-area rollups.",
+        "operationId": "get_progress_api_v1_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Api V1 Progress Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Progress",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/nodes/{node_id}": {
+      "patch": {
+        "description": "Guarded partial update of one node; atomic YAML rewrite, no git commit.",
+        "operationId": "patch_progress_node_api_v1_progress_nodes__node_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodePatchOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "If-Match is stale; refresh the ledger before retrying",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match header is required for every progress write"
+          },
+          "503": {
+            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
+          }
+        },
+        "summary": "Patch Progress Node",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/schema": {
+      "get": {
+        "description": "Agent-discoverable node schema, allowed statuses, and PATCH rules.",
+        "operationId": "get_progress_schema_api_v1_progress_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Schema Api V1 Progress Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Progress Schema",
+        "tags": [
+          "progress"
         ]
       }
     },
@@ -33453,6 +35061,66 @@
           }
         },
         "summary": "List Clients",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/consent": {
+      "get": {
+        "operationId": "get_consent_api_v1_telemetry_consent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Consent",
+        "tags": [
+          "telemetry"
+        ]
+      },
+      "put": {
+        "operationId": "put_consent_api_v1_telemetry_consent_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Consent",
         "tags": [
           "telemetry"
         ]

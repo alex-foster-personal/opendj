@@ -16,9 +16,9 @@ core logic (where the 6 safety rails live).
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.open_dj import SCHEMA_VERSION
 from apps.open_dj.adapters._base import ExportResult
@@ -83,7 +83,7 @@ def from_rbtrack(rb) -> RBTrackInput:
     artists = [a.strip() for a in artists_raw.split(",") if a.strip()] or [artists_raw]
     fp = rb.file_path
     # ISRC + duration surfaced on RBTrack as of Phase 15.2 widening.
-    duration_ms = int(round(rb.duration_s * 1000)) if rb.duration_s else 0
+    duration_ms = round(rb.duration_s * 1000) if rb.duration_s else 0
     return RBTrackInput(
         rb_id=str(rb.id),
         title=rb.title or "",

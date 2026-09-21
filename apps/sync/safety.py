@@ -18,11 +18,12 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Literal
+from typing import Literal
 
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
@@ -53,7 +54,7 @@ def mark_cautious_success(writer: str) -> Path:
     """
     stamp = _rollout_stamp(writer)
     stamp.parent.mkdir(parents=True, exist_ok=True)
-    stamp.write_text(datetime.now(timezone.utc).isoformat() + "\n", encoding="utf-8")
+    stamp.write_text(datetime.now(UTC).isoformat() + "\n", encoding="utf-8")
     return stamp
 
 
@@ -69,7 +70,7 @@ def mark_writeback_plan(writer: str, plan_hash: str) -> Path:
         json.dumps(
             {
                 "plan_hash": plan_hash,
-                "at": datetime.now(timezone.utc).isoformat(),
+                "at": datetime.now(UTC).isoformat(),
             },
             sort_keys=True,
         )
@@ -127,7 +128,7 @@ class WriteRecord:
 
 
 def _iso_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _is_running(process_name: str) -> bool:
@@ -219,7 +220,7 @@ class _TrackWriter:
     _written_ok: bool = False
     _verified_ok: bool = False
 
-    def write(self, payload: object) -> None:
+    def write(self, _payload: object) -> None:
         """Record that a write occurred. Auto-marks verified when no verifier."""
         self._written_ok = True
         if self.session.verifier is None:

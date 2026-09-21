@@ -299,7 +299,10 @@ def test_scorer_version_is_pinned() -> None:
 def _fixture_triples(times: list[float], bpms: float | list[float]) -> list[list]:
     """Compact ``[n, t, bpm]`` ref_beats as fixtures carry them."""
     bpm_list = bpms if isinstance(bpms, list) else [bpms] * len(times)
-    return [[(i % 4) + 1, round(t, 3), round(b, 2)] for i, (t, b) in enumerate(zip(times, bpm_list, strict=False))]
+    return [
+        [(i % 4) + 1, round(t, 3), round(b, 2)]
+        for i, (t, b) in enumerate(zip(times, bpm_list, strict=False))
+    ]
 
 
 def _minimal_fixture(
@@ -376,7 +379,8 @@ def test_fixed_and_dynamic_averages_are_not_blended() -> None:
 def test_rendered_table_shows_weights_not_released() -> None:
     """If masked-diffusion Beat This! is omitted or shows as n=0 then the table hides absence."""
     cells = [("librosa", {"n": 1, "bpm_exact_0_01_pct": 0.0, "bpm_within_0_1_pct": 0.0,
-                          "bpm_within_1_0_pct": 0.0, "octave_half_pct": 0.0, "octave_double_pct": 0.0,
+                          "bpm_within_1_0_pct": 0.0, "octave_half_pct": 0.0,
+                          "octave_double_pct": 0.0,
                           "f_measure_mean": 0.5, "f_measure_shifted_mean": 0.5,
                           "cmlt_mean": None, "amlt_mean": None, "n_continuity_scored": 0,
                           "raw_p50_ms": None, "raw_p95_ms": None,
@@ -428,7 +432,7 @@ def _report(*, candidate_f: float, promotion_figure: float | None) -> dict:
 
 @pytest.mark.requirement("NATIVE-01")
 def test_evaluate_shift_greater_than_tol_is_regression() -> None:
-    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    """[if] F shift >0.01 [then] regression recorded, promotion skipped, [else stop]."""
     shift = evaluate_fixed_tempo_f_shift(1.0, 0.989)
     assert shift.is_regression is True
     assert shift.delta == pytest.approx(0.011)
@@ -446,7 +450,7 @@ def test_evaluate_shift_of_exactly_0_01_is_not_a_regression() -> None:
 def test_a_threshold_change_that_moves_fixed_f_by_more_than_0_01_is_a_regression(
     tmp_path: Path,
 ) -> None:
-    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    """[if] F shift >0.01 [then] regression recorded, promotion skipped, [else stop]."""
     ref = click_grid(128.0, 64)
     baseline_f = score_positions(ref, ref).f_measure
     mutated_f = score_positions(ref, _thin_as_raised_threshold(ref)).f_measure

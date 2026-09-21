@@ -198,7 +198,8 @@ test('the engine feeds the instrument the post-clamp time, not the requested one
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {`);
 
 	assert.ok(
@@ -249,7 +250,8 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {`);
 	const scheduleAt = body.indexOf('await processor.schedule(');
 	// Q1 made the kind a value rather than a literal, because a pressed

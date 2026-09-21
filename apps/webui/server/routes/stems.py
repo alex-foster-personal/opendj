@@ -35,8 +35,6 @@ from apps.cloud.stem_source import (
     StemSourceError,
     hub_transport_failure_kind,
 )
-from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
-
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -44,6 +42,7 @@ from apps.stems.artifacts import (
     StemBundleNotFoundError,
     load_stem_bundle,
 )
+from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
 

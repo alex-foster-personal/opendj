@@ -269,6 +269,17 @@ def test_the_real_locked_export_carries_the_analysis_extra() -> None:
     assert "mutagen" not in {e.name for e in entries}
 
 
+@pytest.mark.requirement("OBS-04")
+def test_the_real_locked_export_carries_the_observability_extra() -> None:
+    """The dmg ships sentry-sdk (OBS-04). Against the real export, so a lock
+    that quietly stops carrying it fails here rather than on a tester's Mac."""
+    entries, _dropped = locked_requirements(REPO_ROOT)
+    project_pulled = {e.name for e in entries if "music-dj-tools" in e.via}
+    assert "sentry-sdk" in project_pulled
+    assert "observability" in REQUESTED_OPTIONAL_EXTRAS
+    assert "observability" not in OMITTED_OPTIONAL_EXTRAS
+
+
 @pytest.mark.requirement("INSTALL-25")
 def test_an_extra_registered_as_both_omitted_and_requested_is_refused() -> None:
     both = dict(OMITTED_OPTIONAL_EXTRAS)

@@ -18,15 +18,15 @@ from __future__ import annotations
 
 import sqlite3
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable
 
 from apps.shared.paths import DJAY_LIVE_DB
 
 # Core Data epoch: 2001-01-01 00:00:00 UTC
-COREDATA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
+COREDATA_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
 
 # Default DB path (live). Tests always pass an explicit path; this
 # default is only for manual runs via ``python -m apps.sync.djay_monitor``.

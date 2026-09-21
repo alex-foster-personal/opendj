@@ -28,10 +28,11 @@ every call site.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 DEFAULT_CONFIRM_PHRASE = "APPLY SMARTLIST"
 

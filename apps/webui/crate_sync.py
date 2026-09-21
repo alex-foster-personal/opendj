@@ -31,20 +31,20 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from apps.shared import fs_residency, library_mode, platform_paths
 from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
-from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
     allowed_ssh_host,
     allowed_ssh_hosts_description,
     ssh_agentbox_argv,
 )
+from apps.webui.soft_deletes import has_soft_deletes
 
 # Re-export, not a copy: the one prefix set lives in platform_paths (T3b D1).
 STREAMING_PREFIXES: tuple[str, ...] = platform_paths.STREAMING_PREFIXES
@@ -360,10 +360,10 @@ def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...
 def _selected_stable_ids(
     state: sqlite3.Connection,
     *,
-    playlist: Optional[str],
-    stable_ids: Optional[Sequence[str]],
+    playlist: str | None,
+    stable_ids: Sequence[str] | None,
     preload1: bool,
-) -> Optional[tuple[str, ...]]:
+) -> tuple[str, ...] | None:
     if preload1:
         return preload1_stable_ids()
     if stable_ids is not None:
@@ -374,7 +374,7 @@ def _selected_stable_ids(
 
 
 def _scope_name(
-    *, playlist: Optional[str], stable_ids: Optional[Sequence[str]], preload1: bool
+    *, playlist: str | None, stable_ids: Sequence[str] | None, preload1: bool
 ) -> str:
     if preload1:
         return "preload1"
@@ -385,11 +385,11 @@ def _scope_name(
     return "present"
 
 
-def _is_streaming(path: Optional[str]) -> bool:
+def _is_streaming(path: str | None) -> bool:
     return platform_paths.is_streaming_uri(path)
 
 
-def _materialised_source(raw: Optional[str]) -> Optional[Path]:
+def _materialised_source(raw: str | None) -> Path | None:
     if not raw or _is_streaming(raw):
         return None
     path = Path(raw)
@@ -402,7 +402,7 @@ def _materialised_source(raw: Optional[str]) -> Optional[Path]:
     return None
 
 
-def _anlz_sources(analysis_data_path: Optional[str]) -> list[Path]:
+def _anlz_sources(analysis_data_path: str | None) -> list[Path]:
     source = _materialised_source(analysis_data_path)
     if source is None:
         return []
@@ -418,7 +418,7 @@ def _anlz_sources(analysis_data_path: Optional[str]) -> list[Path]:
     )
 
 
-def _artwork_sources(image_path: Optional[str]) -> list[Path]:
+def _artwork_sources(image_path: str | None) -> list[Path]:
     source = _materialised_source(image_path)
     if source is None:
         return []
@@ -433,11 +433,11 @@ def _artwork_sources(image_path: Optional[str]) -> list[Path]:
 def collect_plan(
     *,
     state_db: Path,
-    master_db: Optional[Path],
+    master_db: Path | None,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
-    playlist: Optional[str] = None,
-    stable_ids: Optional[Sequence[str]] = None,
+    playlist: str | None = None,
+    stable_ids: Sequence[str] | None = None,
     preload1: bool = False,
 ) -> SyncPlan:
     """Keep a row only when the owner-machine source file is present."""
@@ -580,7 +580,7 @@ def _source_group(
     *,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
-    share_root: Optional[Path] = None,
+    share_root: Path | None = None,
 ) -> tuple[Path, Path, Path]:
     """Return source root, destination root, and relative file path.
 
@@ -1098,7 +1098,7 @@ def manifest_payload(
         "count": len(plan.files),
         "crate_root": str(crate_root),
         "files": files,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "ledger_digest": ledger_digest(files),
         "library": library_snapshot,
         "library_digest": snapshot_digest(library_snapshot),
@@ -1418,7 +1418,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _stable_ids_arg(raw: Optional[str]) -> Optional[tuple[str, ...]]:
+def _stable_ids_arg(raw: str | None) -> tuple[str, ...] | None:
     if raw is None:
         return None
     ids = tuple(part.strip() for part in raw.split(",") if part.strip())
@@ -1500,13 +1500,13 @@ def _print_manifest_plan(payload: dict[str, object], *, as_json: bool) -> None:
         )
 
 
-def _run(argv: Optional[Sequence[str]] = None) -> int:
+def _run(argv: Sequence[str] | None = None) -> int:
     from apps.webui.crate_sync_cli import run_crate_sync
 
     return run_crate_sync(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     try:
         return _run(argv)
     except (RuntimeError, TypeError, ValueError) as exc:

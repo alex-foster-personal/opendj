@@ -5,7 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 _logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def emit_playlist_set_changed(
         "set_id": set_id,
         "action": action,
     }
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
         conn.execute(

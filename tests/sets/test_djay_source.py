@@ -1,7 +1,7 @@
 """Tests for the djay deck-state source."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,7 @@ def test_djay_source_emits_track_loaded_and_track_change(
         session_id=session_id,
         state=sets_state,
         db_path=djay_three_tracks_two_decks,
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     # DjayNowPlaying only reports the *latest* item per poll. Call
     # poll_once three times after injecting the latest uuid each time.
@@ -68,7 +68,7 @@ def test_djay_source_poll_once_emits_latest_from_fixture(
         session_id=session_id,
         state=sets_state,
         db_path=djay_three_tracks_two_decks,
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     loaded = sets_state.fetch_events(session_id, action="track_loaded")
@@ -87,7 +87,7 @@ def test_djay_source_emits_source_error_when_db_missing(
         session_id=session_id,
         state=sets_state,
         db_path=tmp_path / "does-not-exist.db",
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     errors = sets_state.fetch_events(session_id, action="source_error")

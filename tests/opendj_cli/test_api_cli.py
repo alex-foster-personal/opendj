@@ -404,7 +404,7 @@ def test_api_prefers_worktree_port_over_lock(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    base_url, live_port = library_daemon
+    _base_url, live_port = library_daemon
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         dead_port = int(probe.getsockname()[1])

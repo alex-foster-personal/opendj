@@ -570,6 +570,14 @@ _MARKDOWN_CODE_BLOCK = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.DOTALL | re.MUL
 # ----- posting ------------------------------------------------------------
 
 
+def _require_post_head_unchanged(pr: str, reviewed_sha: str, current_sha: str) -> None:
+    if current_sha != reviewed_sha:
+        raise TriageError(
+            f"PR #{pr} moved from {reviewed_sha} to {current_sha} while the review ran; "
+            "nothing posted. Re-run against the new head."
+        )
+
+
 def post_review(
     pr: str,
     sha: str,
@@ -591,11 +599,7 @@ def post_review(
     after it -- the stale-round failure issue #1016 already fixed on the
     reading side.
     """
-    if (now := pinned_head(pr)) != sha:
-        raise TriageError(
-            f"PR #{pr} moved from {sha} to {now} while the review ran; nothing posted. "
-            "Re-run against the new head."
-        )
+    _require_post_head_unchanged(pr, sha, pinned_head(pr))
     payload = {
         "commit_id": sha,
         "event": "COMMENT",

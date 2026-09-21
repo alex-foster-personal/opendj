@@ -52,7 +52,8 @@ const SCHEDULE_DECK_ANCHOR = `async function _scheduleDeck(
 	masterTempoEnabled?: boolean,
 	loop?: LoopState | null,
 	keyShiftSemitones?: number,
-	pressT0Ms?: number
+	pressT0Ms?: number,
+	reanchorGeneration?: number
 ): Promise<number> {`;
 
 /** Component source, positively located: a guard that cannot find its file must
@@ -129,7 +130,8 @@ test('the post-ack write stays as the reconcile-to-truth', () => {
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {`);
 	assert.ok(
 		body.includes('rt.desiredActive'),
@@ -249,7 +251,8 @@ test('the live latency re-read never sits on the transport path', () => {
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
+	pressT0Ms: number | undefined,
+	reanchorGeneration?: number
 ): Promise<number> {`);
 	assert.ok(
 		body.includes('void _observeLiveProcessorLatency(deck, processor);'),

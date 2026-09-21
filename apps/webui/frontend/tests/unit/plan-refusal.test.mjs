@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
+import {
+	assertRefusalDistinctFromCapabilityRefusals,
+	readCapabilitiesSource
+} from './capabilities-source.mjs';
+
 // ENT-03 - "not on your plan" is a THIRD distinct UI state.
 //
 // The sibling of inert-controls.test.mjs, which pins the PARITY-TODO wording.
@@ -37,20 +42,10 @@ const INERT_TITLE = 'not implemented - see PARITY-TODO';
 const PLAN_REFUSAL_TITLE = 'not included in your plan - see your account for what is included';
 
 const CLIENT_MODULE = join(SRC, 'lib/api/entitlements.svelte.ts');
-const CAPABILITIES_MODULE = join(SRC, 'lib/api/capabilities.svelte.ts');
 const SERVER_MODULE = join(REPO_ROOT, 'apps/entitlements/resolver.py');
 
 function read(path) {
 	return readFileSync(path, 'utf8');
-}
-
-/** Every single-quoted string constant declared at module level in a TS file. */
-function declaredStrings(source) {
-	const out = [];
-	for (const match of source.matchAll(/\bconst\s+\w+\s*=\s*'([^'\n]+)'/g)) {
-		out.push(match[1]);
-	}
-	return out;
 }
 
 test('the frontend declares the plan refusal title verbatim', () => {
@@ -82,15 +77,8 @@ test('the plan refusal is not the PARITY-TODO wording', () => {
 });
 
 test('the plan refusal is none of the capability refusals', () => {
-	const capabilityStrings = declaredStrings(read(CAPABILITIES_MODULE));
-	assert.ok(
-		capabilityStrings.length >= 4,
-		`expected the capability refusal sentences to be module constants, found ${capabilityStrings.length}`
-	);
-	assert.ok(
-		!capabilityStrings.includes(PLAN_REFUSAL_TITLE),
-		'the plan refusal has collided with a capability refusal'
-	);
+	const source = readCapabilitiesSource();
+	assertRefusalDistinctFromCapabilityRefusals(source, PLAN_REFUSAL_TITLE);
 	// The capability refusals are all about the DAEMON; the plan refusal is
 	// about the ACCOUNT. If the plan sentence starts talking about daemons the
 	// two states have merged.

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
@@ -34,6 +36,40 @@ const urlSuffixImports = {
 };
 
 /**
+ * Svelte components, modelled for the test bundler.
+ *
+ * A module under test may import a `.svelte` file it mounts on demand (the
+ * telemetry consent dialog is imported and mounted from inside a deferred
+ * boot task, so the component never joins the first-paint bundle). esbuild
+ * has no Svelte loader and would refuse the whole bundle. Node tests never
+ * render, so the component resolves to a stub whose default export FAILS
+ * LOUD if anything tries to mount it: a test that reaches the real
+ * component has reached the DOM, and that is a browser test's job.
+ */
+const svelteComponentStubs = {
+	name: 'svelte-component-stub',
+	setup(build) {
+		build.onResolve({ filter: /\.svelte$/ }, (args) => {
+			// `./foo.svelte` is ALSO how a `foo.svelte.ts` rune module is imported
+			// (extensionless). Only a real component file is stubbed; a rune
+			// module resolves as the TypeScript it is.
+			const base = args.path.startsWith('$lib/')
+				? join(LIB_ROOT, args.path.slice('$lib/'.length))
+				: resolve(args.resolveDir, args.path);
+			if (existsSync(`${base}.ts`) || !existsSync(base)) return undefined;
+			return { path: args.path, namespace: 'svelte-component-stub' };
+		});
+		build.onLoad({ filter: /.*/, namespace: 'svelte-component-stub' }, (args) => ({
+			contents:
+				`export default function SvelteComponentStub() { throw new Error(${JSON.stringify(
+					`${args.path} is a Svelte component stub under node tests; mounting it needs a browser`
+				)}); }`,
+			loader: 'js'
+		}));
+	}
+};
+
+/**
  * Bundle one frontend TypeScript module to ESM source text, without
  * importing it. Exists so a caller that needs the SAME bundle in more than
  * one place (for example, once per child process spawned) can esbuild it
@@ -54,7 +90,7 @@ export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias 
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [urlSuffixImports],
+		plugins: [urlSuffixImports, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});

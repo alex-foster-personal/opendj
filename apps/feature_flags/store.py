@@ -150,7 +150,7 @@ def _check_mode_feature_flags(
             f"APP_MODE_FEATURE_FLAGS keys {sorted(table)} must equal "
             f"APP_MODE_IDS {list(APP_MODE_IDS)}"
         )
-    for mode_id, flag_ids in table.items():
+    for _mode_id, flag_ids in table.items():
         unknown = sorted(flag_ids - declared)
         if unknown:
             raise KeyError(

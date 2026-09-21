@@ -10,8 +10,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 DEFAULT_SAY_VOICE: str = "the maintainer"
 
