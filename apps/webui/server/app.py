@@ -44,10 +44,10 @@ from .app_wiring import (
     _resolve_ports,
     _SpaStaticFiles,
 )
-from .request_guard import install_request_guard
 from .backend import StateBackend
 from .cloud_sync import probe_syncthing_status
 from .frontend_build import frontend_build_dir
+from .request_guard import install_request_guard
 from .routes import ingest as ingest_routes
 from .share_gate import ShareConfig
 from .usage_telemetry import UsageStore
@@ -363,8 +363,8 @@ def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.shared.sync_bind_guard import assert_sync_bind_allowed
-    from apps.webui.server.request_guard import assert_request_guard_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
+    from apps.webui.server.request_guard import assert_request_guard_bind_allowed
 
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     # W3, before any disk work: this app mounts /api/v1/sync/*. Covers the bare

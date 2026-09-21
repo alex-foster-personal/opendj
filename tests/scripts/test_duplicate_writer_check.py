@@ -351,3 +351,16 @@ def test_the_ledger_comment_carries_the_row() -> None:
     assert "duplicate-writer" in (_report_job().get("needs") or []), (
         "the report job does not depend on the duplicate-writer job"
     )
+
+
+def test_a_reference_inside_a_default_expansion_keeps_its_closing_brace_out(tmp_path: Path) -> None:
+    """if `${VAR:-$JOBS/state/x.json}` scans as `x.json}` then a phantom undeclared file goes red"""
+    (tmp_path / "sink.sh").write_text(
+        'KPI=${SINK_TRIAGE_KPI:-$JOBS/state/sink-triage-kpi.json}\n'
+        'echo "$JOBS/state/sink-${_a}.json"\n',
+        encoding="utf-8",
+    )
+    found = mod.scan_state_paths(tmp_path)
+    assert "sink-triage-kpi.json" in found
+    assert not any(name.endswith("}") for name in found), sorted(found)
+    assert "sink-<account>.json" in found, "a variable INSIDE the name keeps its braces' meaning"

@@ -100,6 +100,14 @@ def _is_tombstone(entry: dict) -> bool:
 
 def canonicalize_extracted(token: str) -> str:
     cleaned = token.strip().strip("\"'")
+    # `_STATE_REF` admits `{` and `}` so `state/sink-${x}.json` keeps its variable, but
+    # the same class swallows the brace that CLOSES an enclosing expansion:
+    # `${SINK_TRIAGE_KPI:-$JOBS/state/sink-triage-kpi.json}` yielded the name
+    # `sink-triage-kpi.json}`, an undeclared file that exists nowhere, and the check
+    # went red on trunk (ops/fleet/sink-triage.sh:30, Wed 16 Sep 2026). A brace with no
+    # opener inside the token belongs to the caller's expansion, never to the name.
+    while cleaned.endswith("}") and cleaned.count("}") > cleaned.count("{"):
+        cleaned = cleaned[:-1]
     for pattern, repl in _VAR_SUBS:
         cleaned = pattern.sub(repl, cleaned)
     return cleaned

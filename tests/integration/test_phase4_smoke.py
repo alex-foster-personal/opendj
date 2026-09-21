@@ -70,7 +70,7 @@ def test_full_phase4_smoke(tmp_path: Path, capsys):
         NormalisedCue(position_msec=1000, kind="memory"),
         NormalisedCue(position_msec=5000, kind="hot", index=0),
     ]
-    rb_only, djay_only, conflicts = compare_cue_lists(rb_cues_a, djay_cues_a)
+    _rb_only, djay_only, _conflicts = compare_cue_lists(rb_cues_a, djay_cues_a)
     assert djay_only == [5000]
 
     res = resolve_cue_array(rb_cues_a, djay_cues_a)

@@ -27,9 +27,10 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 from rich.console import Console
@@ -71,8 +72,8 @@ class TrackProposal:
 def _rms_at_times(
     times_s: list[float],
     rms: list[float],
-    rms_hop: int,
-    sr: int = 44100,
+    rms_hop: int,  # noqa: ARG001
+    sr: int = 44100,  # noqa: ARG001
 ) -> list[float]:
     """Sample the (downsampled) RMS envelope at ``times_s``."""
     if not rms or not times_s:
@@ -86,7 +87,7 @@ def _rms_at_times(
     total_time = max(times_s) * 1.05 + 1e-3
     out: list[float] = []
     for t in times_s:
-        idx = int(round((t / total_time) * (n - 1)))
+        idx = round((t / total_time) * (n - 1))
         idx = max(0, min(n - 1, idx))
         out.append(float(arr[idx]))
     return out

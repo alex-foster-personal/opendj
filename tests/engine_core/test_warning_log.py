@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +17,32 @@ from apps.engine_core.warning_log import _WarningJsonHandler, configure_warning_
 pytestmark = pytest.mark.usefixtures("hermetic_rotation_gate")
 
 
-def test_warning_log_writes_warning_with_boot_id(tmp_path: Path) -> None:
+@pytest.fixture
+def uvicorn_error_logger_at_default_level() -> Iterator[logging.Logger]:
+    """The uvicorn.error logger's level belongs to this test, not to the process.
+
+    uvicorn.Config(log_level=...) pins logging.getLogger("uvicorn.error") at that
+    level for the rest of the process; 16 tests start an in-process uvicorn, and one
+    of them (tests/agentic_testing/test_engine_host.py) runs at "error". Whichever
+    of them the CI split seats before this file drops the uvicorn warning below,
+    so the stream held 1 record where 2 were written (PR #3396, fast tier leg 1).
+    The engine boots uvicorn with log_config=None and its own log level, so the
+    production contract is the logger's default level, restored here.
+    """
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    saved_level, saved_disabled = uvicorn_error.level, uvicorn_error.disabled
+    uvicorn_error.setLevel(logging.NOTSET)
+    uvicorn_error.disabled = False
+    try:
+        yield uvicorn_error
+    finally:
+        uvicorn_error.setLevel(saved_level)
+        uvicorn_error.disabled = saved_disabled
+
+
+def test_warning_log_writes_warning_with_boot_id(
+    tmp_path: Path, uvicorn_error_logger_at_default_level: logging.Logger
+) -> None:
     handler = configure_warning_log(tmp_path / "engine-warn.log", "boot-test")
     logger = logging.getLogger("tests.engine-warning-log")
     try:

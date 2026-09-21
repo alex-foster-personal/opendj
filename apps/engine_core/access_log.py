@@ -57,7 +57,7 @@ class AccessLogRateFilter(logging.Filter):
         super().__init__()
         self.gate = gate or AccessLogRateGate()
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, _record: logging.LogRecord) -> bool:
         return self.gate.allow()
 
 

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, digest_diff, protocol, service
+from apps.sync_hub import client, digest_diff, service
 from apps.sync_hub.client_transport_ops import state_db_path
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import (

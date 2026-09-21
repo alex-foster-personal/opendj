@@ -34,8 +34,21 @@ export function persistMidiEnabled(enabled: boolean): void {
 	}
 }
 
+let _hydratedListener: ((enabled: boolean) => void) | null = null;
+
+/** Register THE listener for a disk-hydrated choice. midi-ui-state registers
+ * the auto-enable re-run here at import, because this leaf must never import
+ * it (see the module docstring), and TopBar's one-shot `maybeAutoEnableMidi()`
+ * at mount can run before the prefs GET has answered: without a re-run, a
+ * `midi_enabled=true` that exists only on disk (another browser, an agent
+ * PUT) never opted this browser in until a second reload (Codex P2, PR #3726). */
+export function onMidiEnabledHydrated(listener: (enabled: boolean) => void): void {
+	_hydratedListener = listener;
+}
+
 /** Apply disk-backed MIDI opt-in from GET /api/v1/ui-prefs (issue #2854). */
 export function hydrateMidiEnabledFromDisk(body: { midi_enabled?: boolean }): void {
 	if (typeof body.midi_enabled !== 'boolean') return;
 	persistMidiEnabled(body.midi_enabled);
+	_hydratedListener?.(body.midi_enabled);
 }

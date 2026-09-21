@@ -3,7 +3,7 @@
 This is the repository-side contract for fleet workers. A worker must branch
 from an explicit remote base, never from a mutable primary checkout.
 
-REQUIREMENTS (OPS-38)
+REQUIREMENTS (OPS-41)
   R-1 Refuse an unpublished primary checkout. [done, run]
       [if] the primary is dirty or ahead of the requested base [then] preflight
       raises with the exact condition, [else stop]

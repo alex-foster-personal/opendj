@@ -206,6 +206,46 @@ def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int
     return {s: stems[order.index(s)] for s in STEMS}, infer_s
 
 
+def _load_truth_stems(window_dir: Path, mix: torch.Tensor, sr: int) -> dict[str, torch.Tensor]:
+    truth: dict[str, torch.Tensor] = {}
+    for stem in STEMS:
+        stem_audio, stem_sr = _load(window_dir / f"{stem}.wav")
+        if stem_sr != sr:
+            raise RuntimeError(f"true {stem} is {stem_sr} Hz, mixture is {sr} Hz")
+        if stem_audio.shape[-1] != mix.shape[-1]:
+            raise RuntimeError(
+                f"true {stem} is {stem_audio.shape[-1]} samples, mixture is {mix.shape[-1]}"
+            )
+        truth[stem] = stem_audio
+    return truth
+
+
+def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any]]:
+    arms: list[dict[str, Any]] = []
+    for spec in DEMUCS_ARMS:
+        print(f"[run] {spec['id']}", flush=True)
+        stems, infer_s = run_demucs_arm(
+            spec["model"], mix, sr, overlap=spec["overlap"], sep_rate=spec["sep_rate"],
+        )
+        arms.append({**spec, "engine": "demucs", "infer_s": round(infer_s, 2), "_audio": stems})
+    if args.rb7_model is not None:
+        print(f"[run] {RB7_ARM['id']}", flush=True)
+        stems, infer_s = run_rb7_arm(args.rb7_model, mix, sr)
+        arms.append({
+            **RB7_ARM, "engine": "rekordbox7-onnx", "model": "hdemucs.onnx",
+            "overlap": rekordbox_stems.OVERLAP, "sep_rate": sr,
+            "infer_s": round(infer_s, 2), "_audio": stems,
+        })
+    if args.with_rb6:
+        print(f"[run] {RB6_ARM['id']}", flush=True)
+        stems, infer_s = run_rb6_arm(args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr)
+        arms.append({
+            **RB6_ARM, "engine": "rekordbox6-spleeter", "model": "spleeter_4stems",
+            "overlap": 0.0, "sep_rate": sr, "infer_s": round(infer_s, 2), "_audio": stems,
+        })
+    return arms
+
+
 #----- main -------------------------------------------------------------------
 
 
@@ -226,46 +266,15 @@ def main() -> None:
     args = ap.parse_args()
 
     mix, sr = _load(args.window_dir / "mixture.wav")
-    truth: dict[str, torch.Tensor] = {}
-    for stem in STEMS:
-        stem_audio, stem_sr = _load(args.window_dir / f"{stem}.wav")
-        if stem_sr != sr:
-            raise RuntimeError(f"true {stem} is {stem_sr} Hz, mixture is {sr} Hz")
-        if stem_audio.shape[-1] != mix.shape[-1]:
-            raise RuntimeError(f"true {stem} is {stem_audio.shape[-1]} samples, "
-                               f"mixture is {mix.shape[-1]}")
-        truth[stem] = stem_audio
+    truth = _load_truth_stems(args.window_dir, mix, sr)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for stem, audio in truth.items():
         sf.write(str(args.out_dir / f"truth-{stem}.wav"), audio.T.numpy(), sr)
     sf.write(str(args.out_dir / "mixture.wav"), mix.T.numpy(), sr)
 
-    arms: list[dict[str, Any]] = []
+    arms = _run_separation_arms(args, mix, sr)
     duration_s = mix.shape[-1] / sr
-
-    for spec in DEMUCS_ARMS:
-        print(f"[run] {spec['id']}", flush=True)
-        stems, infer_s = run_demucs_arm(spec["model"], mix, sr,
-                                        overlap=spec["overlap"],
-                                        sep_rate=spec["sep_rate"])
-        arms.append({**spec, "engine": "demucs", "infer_s": round(infer_s, 2),
-                     "_audio": stems})
-
-    if args.rb7_model is not None:
-        print(f"[run] {RB7_ARM['id']}", flush=True)
-        stems, infer_s = run_rb7_arm(args.rb7_model, mix, sr)
-        arms.append({**RB7_ARM, "engine": "rekordbox7-onnx", "model": "hdemucs.onnx",
-                     "overlap": rekordbox_stems.OVERLAP, "sep_rate": sr,
-                     "infer_s": round(infer_s, 2), "_audio": stems})
-
-    if args.with_rb6:
-        print(f"[run] {RB6_ARM['id']}", flush=True)
-        stems, infer_s = run_rb6_arm(args.window_dir / "mixture.wav",
-                                     args.out_dir / "_rb6-work", sr)
-        arms.append({**RB6_ARM, "engine": "rekordbox6-spleeter", "model": "spleeter_4stems",
-                     "overlap": 0.0, "sep_rate": sr, "infer_s": round(infer_s, 2),
-                     "_audio": stems})
 
     truth_mono = {s: _mono(t) for s, t in truth.items()}
     mix_mono = _mono(mix)

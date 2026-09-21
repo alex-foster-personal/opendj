@@ -739,7 +739,7 @@ def test_a_reservation_from_another_lane_is_reallocated_not_restored(tmp_path: P
         path.mkdir(parents=True)
 
     stale = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
-    assert stale == WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    assert port_config._pair_in_lane_window(stale, 0), stale
     # The persisted .env is what the post-checkout clean removes; the
     # registry under .git is what survives.
     (repo_root / ".env").unlink()

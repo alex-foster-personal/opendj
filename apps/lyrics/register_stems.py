@@ -150,6 +150,26 @@ def _push_bundle_parts(
 #-----------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class RegisterPairStorage:
+    root: Path = ROFORMER_STEMS_DIR
+    s3: AssetS3Client | None = None
+    cfg: CloudConfig | None = None
+    conn: sqlite3.Connection | None = None
+
+
+def _storage_for_register_pair(
+    storage: RegisterPairStorage | None,
+    root: Path | None,
+) -> RegisterPairStorage:
+    """Accept ``storage=`` or legacy ``root=``, never both."""
+    if storage is not None and root is not None:
+        raise TypeError("register_pair accepts storage= or root=, not both")
+    if storage is not None:
+        return storage
+    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
+
+
 def register_pair(
     *,
     stable_id: str,
@@ -158,7 +178,8 @@ def register_pair(
     model_name: str,
     model_version: str,
     source_path: str,
-    root: Path = ROFORMER_STEMS_DIR,
+    storage: RegisterPairStorage | None = None,
+    root: Path | None = None,
     s3: AssetS3Client | None = None,
     cfg: CloudConfig | None = None,
     conn: sqlite3.Connection | None = None,
@@ -167,6 +188,20 @@ def register_pair(
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
+    if any(value is not None for value in (root, s3, cfg, conn)):
+        if storage is not None:
+            raise TypeError(
+                "register_pair accepts storage= or legacy storage keywords, not both"
+            )
+        store = RegisterPairStorage(
+            root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
+        )
+    else:
+        store = _storage_for_register_pair(storage, root)
+    root = store.root
+    s3 = store.s3
+    cfg = store.cfg
+    conn = store.conn
     if vocals.suffix.lower() != instrumental.suffix.lower():
         raise ValueError(
             f"{stable_id}: parts mix codecs ({vocals.suffix} vs {instrumental.suffix})"
@@ -357,7 +392,7 @@ def sweep_corpus(corpus: str, *, write: bool, root: Path = ROFORMER_STEMS_DIR) -
             register_pair(
                 stable_id=stable_id, vocals=voc, instrumental=ins,
                 model_name=model_name, model_version=model_version,
-                source_path=source_path, root=root,
+                source_path=source_path, storage=RegisterPairStorage(root=root),
             )
             report.registered.append(stable_id)
         except (ValueError, subprocess.CalledProcessError, OSError, HydrationError) as exc:

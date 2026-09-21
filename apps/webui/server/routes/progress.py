@@ -46,9 +46,9 @@ import tempfile
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 if os.name == "nt":
     import msvcrt
@@ -182,19 +182,19 @@ class BuildPatchIn(BaseModel):
     it on any build PATCH, so there is no ambiguity about who wrote it.
     """
     model_config = ConfigDict(extra="forbid")
-    branch: Optional[str] = None
-    pr: Optional[str] = None
-    worktree: Optional[str] = None
-    stage: Optional[str] = None
-    state: Optional[BuildState] = None
+    branch: str | None = None
+    pr: str | None = None
+    worktree: str | None = None
+    stage: str | None = None
+    state: BuildState | None = None
 
 
 class LinksPatchIn(BaseModel):
     """Partial 'links' object; each supplied key REPLACES that key's list."""
     model_config = ConfigDict(extra="forbid")
-    issues: Optional[list[str]] = None
-    specs: Optional[list[str]] = None
-    refs: Optional[list[str]] = None
+    issues: list[str] | None = None
+    specs: list[str] | None = None
+    refs: list[str] | None = None
 
 
 class BuildableIn(BaseModel):
@@ -211,16 +211,16 @@ class BuildableIn(BaseModel):
 
 class NodePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Optional[StatusLiteral] = None
-    note: Optional[str] = None
-    commits_append: Optional[list[CommitIn]] = Field(
+    status: StatusLiteral | None = None
+    note: str | None = None
+    commits_append: list[CommitIn] | None = Field(
         default=None, max_length=MAX_COMMITS_APPEND,
     )
-    tests_append: Optional[list[str]] = None
-    verified: Optional[VerifiedIn] = None
-    build: Optional[BuildPatchIn] = None
-    links: Optional[LinksPatchIn] = None
-    buildable: Optional[BuildableIn] = None
+    tests_append: list[str] | None = None
+    verified: VerifiedIn | None = None
+    build: BuildPatchIn | None = None
+    links: LinksPatchIn | None = None
+    buildable: BuildableIn | None = None
 
 
 class NodePatchOut(BaseModel):
@@ -396,7 +396,7 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _file_git_provenance(progress_file: Path) -> dict[str, Optional[str]]:
+def _file_git_provenance(progress_file: Path) -> dict[str, str | None]:
     """Last commit touching the ledger file; null fields when uncommitted.
 
     A ledger outside REPO_ROOT (tests use a tmp copy)
@@ -451,7 +451,7 @@ def _rollup(nodes: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(
+    return datetime.now(UTC).astimezone().isoformat(
         timespec="seconds",
     )
 
@@ -618,8 +618,8 @@ def patch_progress_node(
     node_id: str,
     patch: NodePatch,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> NodePatchOut:
     """Guarded partial update of one node; atomic YAML rewrite, no git commit."""
     if if_match is None:

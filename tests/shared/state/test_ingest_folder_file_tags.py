@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import struct
+import wave
 from pathlib import Path
 
 import pytest
@@ -12,13 +14,22 @@ from apps.shared.state.ingest import folder
 from apps.shared.state.writer import StateWriter
 
 
+def _write_wav(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "w") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(struct.pack("<h", 0))
+
+
 def test_folder_import_writes_genre_and_comment_file_tags(
     state_conn, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Unmapped browser rows need tag metadata without a rekordbox join."""
-    audio_path = tmp_path / "local.mp3"
-    audio_path.write_bytes(b"audio")
-    entry = audio_files.AudioFile(audio_path, 5, 1.0, ".mp3")
+    audio_path = tmp_path / "local.wav"
+    _write_wav(audio_path)
+    entry = audio_files.AudioFile(audio_path, audio_path.stat().st_size, 1.0, ".wav")
     monkeypatch.setattr(folder, "collect_audio", lambda _roots: ([entry], [], 0))
     monkeypatch.setattr(
         audio_files,

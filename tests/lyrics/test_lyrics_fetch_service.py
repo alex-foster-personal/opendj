@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from apps.cloud import stem_index
-from apps.cloud.lyrics_asr_source import lyrics_asr_object_key
 from apps.lyrics.asr_source import AsrLyricsProvider
 from apps.lyrics.cache import cache_path, load
 from apps.lyrics.fetch_verdicts import load_verdict

@@ -55,3 +55,27 @@ test('AppPostureChip does not use Performance mode or Practice mode strings', ()
 	assert.match(source, /Prep/);
 	assert.match(source, /Gig/);
 });
+
+test('previewPcmByteCapForPosture floors Gig at 64 MiB and passes Prep through', async () => {
+	const mod = await loadTypeScriptModule('src/lib/rb/app-posture.ts');
+	const { previewPcmByteCapForPosture, setResolvedPosture, GIG_PREVIEW_PCM_BYTES } = mod;
+	const MiB = 1024 * 1024;
+	setResolvedPosture('gig');
+	assert.equal(GIG_PREVIEW_PCM_BYTES, 64 * MiB);
+	assert.equal(
+		previewPcmByteCapForPosture(256 * MiB),
+		64 * MiB,
+		'if Gig does not cap the preview budget then previews can hold 256 MiB mid-set - broken'
+	);
+	assert.equal(
+		previewPcmByteCapForPosture(32 * MiB),
+		32 * MiB,
+		'if Gig raises a smaller tier budget then LOW machines get more, not less - broken'
+	);
+	setResolvedPosture('prep');
+	assert.equal(
+		previewPcmByteCapForPosture(256 * MiB),
+		256 * MiB,
+		'if Prep caps the preview budget then crate digging is needlessly slow - broken'
+	);
+});

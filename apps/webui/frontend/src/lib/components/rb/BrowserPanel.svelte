@@ -24,6 +24,7 @@
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
+		listPlaylistTracksPage,
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
@@ -70,6 +71,8 @@
 		getSpotifyPendingTracks,
 		type SpotifyPendingTrack,
 		fillAllTracksPane,
+		fillPlaylistPane,
+		PLAYLIST_FIRST_PAGE,
 		fillAutolistPane,
 		autolistNode,
 		isAutolistId,
@@ -100,7 +103,9 @@
 		createFilterDebounce,
 		recordCollectionSearchTiming,
 		recordFilterTiming,
-		recordLibraryLoadTiming
+		recordLibraryLoadTiming,
+		recordPlaylistSwitchFirstRowsMs,
+		recordPlaylistTreeReadyMs
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
 	import {
@@ -128,11 +133,13 @@
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
 	import {
+		bootPlaylistsPrefetch,
 		bootTracksPrefetch,
 		canBootAllTracksEarly,
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
 		setConfirmPref,
@@ -147,6 +154,7 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
@@ -234,7 +242,13 @@
 	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
 	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
 
+	function playlistBrokenCount(p: PlaylistSummaryHydrated): number {
+		if (p.available_count < 0) return 0;
+		return p.track_count - p.available_count;
+	}
+
 	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
+		if (p.available_count < 0) return false;
 		if (p.track_count === 0) return p.available_count === 0;
 		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
@@ -527,7 +541,7 @@
 					playlist_id: p.playlist_id,
 					name: p.name,
 					track_count: p.track_count,
-					broken_count: p.track_count - p.available_count,
+					broken_count: playlistBrokenCount(p),
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
 					forbid_duplicates: p.forbid_duplicates === true,
@@ -1056,7 +1070,7 @@
 		});
 		let bootPaneRestored = false;
 		const healthPromise = getHealthAtBoot(getHealth);
-		const playlistsPromise = listPlaylistsHydrated();
+		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
 			if (bootAllTracksEarly) {
 				await bootTracksPrefetch().prefsPromise.catch(() => {});
@@ -1092,6 +1106,12 @@
 			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
+			recordPlaylistTreeReadyMs(
+				Math.max(0, Math.round(performance.now() - bootTracksPrefetch().startedAt))
+			);
+			bootScheduler.defer('browser-panel:refresh-playlist-availability', () => {
+				void _refreshPlaylists();
+			});
 			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
 				await _sweepBlankPlaylists(lists);
 			}
@@ -1193,7 +1213,7 @@
 			playlist_id: playlist.playlist_id,
 			name: playlist.name,
 			track_count: playlist.track_count,
-			broken_count: playlist.track_count - playlist.available_count,
+			broken_count: playlistBrokenCount(playlist),
 			kind: 'playlist',
 			children: []
 		};
@@ -1822,6 +1842,7 @@
 				return;
 			}
 			if (node.kind === 'all_tracks') {
+				const switchStartedAt = performance.now();
 				await fillAllTracksPane({
 					pane: p,
 					seq,
@@ -1829,6 +1850,10 @@
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
 					onFirstPaint: () => {
+						recordPlaylistSwitchFirstRowsMs(
+							'all-tracks',
+							performance.now() - switchStartedAt
+						);
 						recordOpenToLibraryRows({ source: 'all-tracks' });
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
@@ -1854,14 +1879,38 @@
 				});
 				return;
 			}
+			if (node.kind === 'playlist') {
+				const switchStartedAt = performance.now();
+				await fillPlaylistPane({
+					pane: p,
+					seq,
+					pageSize: PLAYLIST_FIRST_PAGE,
+					fetchPage: (offset) =>
+						listPlaylistTracksPage(node.playlist_id, {
+							limit: PLAYLIST_FIRST_PAGE,
+							offset
+						}),
+					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
+					progressTotal: node.track_count,
+					onFirstPaint: () => {
+						recordPlaylistSwitchFirstRowsMs(
+							'playlist',
+							performance.now() - switchStartedAt
+						);
+						recordOpenToLibraryRows({ source: 'playlist' });
+						completeLibraryUsable({ source: 'playlist' });
+					},
+					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
+					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
 				node.kind === 'missing_tracks'
 					? await fetchMissingTrackRows()
-					: node.kind === 'smartlist'
-						? await _fetchSmartlistRows(node.playlist_id)
-						: await _fetchPlaylistRows(node.playlist_id);
+					: await _fetchSmartlistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
-			if (node.kind === 'playlist' || node.kind === 'smartlist') {
+			if (node.kind === 'smartlist') {
 				recordOpenToLibraryRows({ source: 'playlist' });
 				completeLibraryUsable({ source: 'playlist' });
 			}
@@ -2385,25 +2434,44 @@
 		return { deck: result.deck, reservation };
 	}
 
-	function previewSeek(row: LoadableRow, ratio: number): void {
-		const r = Math.max(0, Math.min(1, ratio));
-		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
-		if (targets.length === 0) {
-			pushToast(
-				'preview seek: track not on a deck (headphone cue not implemented - see PARITY-TODO)',
-				'error'
-			);
+	/**
+	 * CUEOUT-15: a click on a library mini-waveform means "play it in my ears
+	 * from here", always, whether or not the track is also on a deck.
+	 *
+	 * It used to seek EVERY deck holding that stable_id, with no check on
+	 * `playing` and none on `is_master`, so a click while browsing could jump
+	 * a deck that was live on air. `_loadOntoDeck` guards the master three
+	 * separate ways for exactly that reason; this path guarded nothing. The
+	 * browser is now a monitoring surface and never a transport control:
+	 * moving a deck is what the deck's own waveform and CUE are for.
+	 *
+	 * `previewCueSeek` owns every refusal, because only it can tell a missing
+	 * engine from a dead sink from a MIX knob at the master end.
+	 */
+	function previewSeek(row: LoadableRow & { bpm?: number | null }, ratio: number): void {
+		// Same refusal the deck load gives (FR-1), and for the same reason: a
+		// broken link has no audio to preview, and finding that out as an
+		// opaque decoder error several hundred milliseconds later teaches the
+		// operator nothing. `is_streaming` has no local file at all.
+		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
+			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		for (const deck of targets) {
-			const dur = decks[deck].duration_ms;
-			if (dur === null || dur <= 0) continue;
-			void runPerformanceCommandFromUi({
-				type: 'seek',
-				deck,
-				position_ms: Math.round(r * dur)
-			});
+		if (!row.file_exists) {
+			pushToast('preview: audio file missing on disk (broken link)', 'error');
+			return;
 		}
+		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
+		// R6) costs no request on the click path.
+		void previewCueSeek(row.stable_id, Math.max(0, Math.min(1, ratio)), {
+			trackBpm: row.bpm ?? null
+		}).then((outcome) => {
+			if (!outcome.ok) {
+				if (outcome.reason !== PREVIEW_SUPERSEDED) pushToast(outcome.reason, 'error');
+			} else if (outcome.warning !== null) {
+				pushToast(outcome.warning, 'warn');
+			}
+		});
 	}
 
 	async function _loadOntoDeck(

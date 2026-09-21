@@ -156,6 +156,12 @@ import {
 	performanceFeedbackSummary,
 	recordPerformanceFeedback
 } from '$lib/rb/vibe.svelte';
+import {
+	previewCacheStats,
+	previewCue,
+	previewCueSeek,
+	stopPreviewCue
+} from '$lib/player/preview-cue.svelte';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -172,7 +178,11 @@ export type HeadphoneCommand =
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
 	| { type: 'master_delay_ms'; value: number }
 	| { type: 'headphone_calibrate'; interactive?: boolean }
-	| { type: 'headphone_calibrate_abort' };
+	| { type: 'headphone_calibrate_abort' }
+	// CUEOUT-15: the library preview is a cue-bus voice, so it mirrors here
+	// with the rest of the cue controls rather than beside the deck transport.
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
+	| { type: 'preview_stop' };
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -236,6 +246,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	| { type: 'headphone_master_select'; device_id: string }
 	| { type: 'headphone_input_select'; device_id: string }
+	| { type: 'preview_cue'; stable_id: string; ratio: number; bpm?: number }
+	| { type: 'preview_stop' }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
 	| { type: 'master_delay_ms'; value: number }
@@ -407,6 +419,25 @@ export interface PerformanceState {
 	 * default. */
 	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
+	/** CUEOUT-15: the library preview voice. An agent that can START a preview
+	 * (`preview_cue`) has to be able to read whether one is running and where
+	 * it is, or the only way to find out is to look at the screen. `stable_id`
+	 * null means nothing is previewing; it is never a deck. */
+	preview: {
+		stable_id: string | null;
+		playing: boolean;
+		position_ms: number;
+		duration_ms: number | null;
+		route: 'cue' | 'main_practice' | 'split_right' | null;
+		/** CUEOUT-15 R6: 1, or the tempo-match rate against the master deck. */
+		rate: number;
+		/** Decoded preview audio held right now, and the cap it is held under.
+		 * Readable here because "how much memory is the preview holding" is a
+		 * question an agent has to be able to answer without a profiler. */
+		cache_tracks: number;
+		cache_bytes: number;
+		cache_budget_bytes: number;
+	};
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -452,8 +483,8 @@ export interface PerformanceBrowserAdapter {
  * ways would be a real cycle, not just a slack-ratchet number). A missing
  * registration fails loudly, same rationale as a missing browser adapter. */
 export interface AutoPlayNextController {
-	arm(): boolean;
-	cancel(): void;
+	arm(): Promise<boolean>;
+	cancel(): Promise<void>;
 }
 
 let _autoPlayNextController: AutoPlayNextController | null = null;
@@ -981,6 +1012,33 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		_exactKeys(record, ['type', 'muted', 'persist']);
 		return { type, muted: _boolean('muted', record.muted), persist: _boolean('persist', record.persist) };
+	}
+	if (type === 'preview_cue') {
+		// CUEOUT-15. `ratio` is validated here rather than clamped, because a
+		// caller that sent 1.6 meant something this cannot guess; the pointer
+		// path clamps because a pixel outside the strip DOES have an obvious
+		// intent.
+		_exactKeys(record, ['type', 'stable_id', 'ratio', 'bpm']);
+		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
+			throw new TypeError('stable_id must be a non-empty string');
+		}
+		// `bpm` is the caller's own copy of the track BPM, for the CUEOUT-15 R6
+		// tempo match. Optional: the pointer path always has it from the row,
+		// and an agent that does not send one gets a preview at its own tempo
+		// rather than a metadata request it did not ask for.
+		if (record.bpm !== undefined && (typeof record.bpm !== 'number' || !(record.bpm > 0))) {
+			throw new TypeError('bpm must be a positive number when given');
+		}
+		return {
+			type,
+			stable_id: record.stable_id,
+			ratio: _unit('ratio', record.ratio),
+			...(record.bpm === undefined ? {} : { bpm: record.bpm })
+		};
+	}
+	if (type === 'preview_stop') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'browser_select_playlist') {
 		_exactKeys(record, ['type', 'playlist_id']);
@@ -1539,6 +1597,7 @@ export function queryPerformanceState(): PerformanceState {
 	if (masterDecks.length > 1) {
 		throw new Error(`engine contract violation: ${masterDecks.length} master decks selected`);
 	}
+	const previewStats = previewCacheStats();
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
@@ -1583,6 +1642,17 @@ export function queryPerformanceState(): PerformanceState {
 			playing_deck_ids: [...rescueRestoreStatus.playing_deck_ids],
 			per_deck: { ...rescueRestoreStatus.per_deck },
 			started_at_ms: rescueRestoreStatus.started_at_ms
+		},
+		preview: {
+			stable_id: previewCue.stable_id,
+			playing: previewCue.playing,
+			position_ms: previewCue.position_ms,
+			duration_ms: previewCue.duration_ms,
+			route: previewCue.route,
+			rate: previewCue.rate,
+			cache_tracks: previewStats.tracks,
+			cache_bytes: previewStats.bytes,
+			cache_budget_bytes: previewStats.budget_bytes
 		},
 		last_error: performanceCommandStatus.last_error,
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
@@ -1699,6 +1769,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
+		// CUEOUT-15: the preview owns no deck, so serializing it behind one
+		// would make a library click wait on a transport it cannot touch.
+		command.type === 'preview_cue' ||
+		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
@@ -1919,6 +1993,17 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
 		await _browserAdapter.selectPlaylist(command.playlist_id);
 		_activeBrowserPlaylist = command.playlist_id;
+	} else if (command.type === 'preview_cue') {
+		// The UI path gets the refusal as a toast. An agent gets it as a failed
+		// step, so `POST /performance/headphones/preview` answers 400 with the
+		// reason instead of 200 over a preview that never started.
+		const outcome = await previewCueSeek(command.stable_id, command.ratio, {
+			trackBpm: command.bpm ?? null
+		});
+		if (!outcome.ok) throw new Error(outcome.reason);
+		if (outcome.warning !== null) pushToast(outcome.warning, 'warn');
+	} else if (command.type === 'preview_stop') {
+		stopPreviewCue();
 	} else if (command.type === 'headphone_mix') {
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
@@ -2053,12 +2138,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
 		}
-		_autoPlayNextController.arm();
+		await _autoPlayNextController.arm();
 	} else if (command.type === 'auto_play_next_cancel') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
 		}
-		_autoPlayNextController.cancel();
+		await _autoPlayNextController.cancel();
 	} else if (command.type === 'pins_show_other_users') {
 		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {

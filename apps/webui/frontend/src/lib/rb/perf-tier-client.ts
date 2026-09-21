@@ -3,8 +3,7 @@
  */
 
 import { API_BASE } from '$lib/api/base';
-import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
-import { applyAnlzCaps } from '$lib/components/rb/wave/anlz-cache-caps';
+import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import {
 	mapPrefToTier,
 	SCALERS,
@@ -17,8 +16,7 @@ function _isPerfTierName(value: unknown): value is PerfTierName {
 }
 
 function _applyTierCaps(): void {
-	applyPrefetchCaps();
-	applyAnlzCaps();
+	applyAllCaps();
 }
 
 export const PERF_TIER_PATH = '/api/v1/perf-tier';

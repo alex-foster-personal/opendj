@@ -9,13 +9,12 @@ from pathlib import Path
 from apps.analysis.selection import SelectionError
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.sync.analysis_csv_live import live_run
 from apps.sync.analysis_writeback_diff import (
-    UnpromotedLaneError,
     WRITEBACK_FIELDS,
     WRITEBACK_LANES,
-    dry_run as writeback_dry_run,
+    UnpromotedLaneError,
 )
-from apps.sync.analysis_csv_live import _camelot_to_djay_key_idx, live_run
 from apps.sync.safety import SafetyAbort
 
 # Codex P04-02: RB-side writes are only implemented for these fields.
@@ -230,7 +229,7 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
         return False
     if field == "bpm":
         try:
-            content.BPM = int(round(float(value) * 100))
+            content.BPM = round(float(value) * 100)
         except (TypeError, ValueError):
             return False
     elif field == "energy":
@@ -276,9 +275,7 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
         return False
     try:
         if field == "bpm":
-            return int(getattr(content, "BPM", -1)) == int(
-                round(float(value) * 100)
-            )
+            return int(getattr(content, "BPM", -1)) == round(float(value) * 100)
         if field == "energy":
             return int(getattr(content, "ColorID", -1)) == int(value)
     except (TypeError, ValueError):

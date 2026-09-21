@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts import review_coverage
+from scripts import review_coverage, review_coverage_carry
 from scripts.review_gh import TriageError
 
 _PR = "3290"
@@ -30,6 +30,11 @@ def _wire(
 ) -> None:
     monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: _GATE)
     monkeypatch.setattr(review_coverage, "_head_sha", lambda pr: _HEAD)
+    # The carry path reads the PR diff through review_lane.diff_of, a live gh
+    # call; the same seam test_review_coverage_carry_stdout.py pins. Without it
+    # the mixed and empty cases hit GitHub and fail on any host with no
+    # credential (every CI pytest runner) instead of testing the exemption.
+    monkeypatch.setattr(review_coverage_carry, "diff_of", lambda pr: "")
 
     def fake_paginated(path: str) -> list[dict]:
         if path.endswith("/files"):

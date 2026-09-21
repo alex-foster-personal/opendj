@@ -9,6 +9,8 @@ export const PREP_LIBRARY_POLL_MS = 60_000;
 export const GIG_LIBRARY_POLL_MS = 300_000;
 export const GIG_PREFETCH_TRACKS = 2;
 export const GIG_PREFETCH_BYTES = 24 * 1024 * 1024;
+/** Gig ceiling for decoded preview audio: the LOW tier's own cap. */
+export const GIG_PREVIEW_PCM_BYTES = 64 * 1024 * 1024;
 
 let _posture: AppPosture = 'prep';
 
@@ -36,6 +38,18 @@ export function shouldRunLibraryFallbackPoll(
 
 export function prefetchTrackCapForPosture(tierCap: number): number {
 	if (_posture === 'gig') return Math.min(tierCap, GIG_PREFETCH_TRACKS);
+	return tierCap;
+}
+
+/**
+ * Gig floors the preview's decoded-audio budget to the LOW tier's.
+ *
+ * During a gig the machine's memory belongs to the decks. Browsing a library
+ * mid-set is normal; holding a quarter of a gigabyte of previously auditioned
+ * PCM while doing it is not.
+ */
+export function previewPcmByteCapForPosture(tierCap: number): number {
+	if (_posture === 'gig') return Math.min(tierCap, GIG_PREVIEW_PCM_BYTES);
 	return tierCap;
 }
 

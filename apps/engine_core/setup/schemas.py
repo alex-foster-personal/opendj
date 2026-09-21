@@ -128,6 +128,7 @@ class FolderLastImportOut(BaseModel):
     files_seen: int
     files_dataless: int
     files_without_tags: int
+    files_rejected_unplayable: int = 0
     tracks: int
     tracks_written: int
     tracks_without_analysis: int

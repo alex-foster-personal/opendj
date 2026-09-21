@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import inspect
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.requirement("LIBMX-03")
 @pytest.fixture
 def writer(state_conn: sqlite3.Connection):
     bus = FakeEventBus()
-    t0 = datetime(2026, 9, 13, 12, 0, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 9, 13, 12, 0, 0, tzinfo=UTC)
     counter = {"n": 0}
 
     def clock() -> datetime:

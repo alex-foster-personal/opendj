@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from pyrekordbox import Rekordbox6Database
 
@@ -24,6 +24,30 @@ from . import paths, platform_paths
 
 class RekordboxDecryptError(RuntimeError):
     """Raised when SQLCipher decryption of a Rekordbox master.db fails."""
+
+
+SQLITE_MAGIC: bytes = b"SQLite format 3\x00"
+
+
+def is_plain_sqlite(path: Path) -> bool:
+    """True iff ``path`` opens as an unencrypted SQLite file.
+
+    Header-only, 16 bytes read. An encrypted Rekordbox DB has ciphertext
+    where the magic belongs, so this separates "open it directly" from
+    "hand it to SQLCipher" on the file's own evidence rather than on its
+    name or on where it was found.
+
+    This lives beside the decrypt routine because the two answer the same
+    question from opposite sides, and because it is the lowest layer that
+    needs it: ``apps.engine_core.setup.detect`` and
+    ``apps.reconcile.remove_track`` both import it from here, so the header
+    check exists once.
+    """
+    try:
+        with path.open("rb") as handle:
+            return handle.read(len(SQLITE_MAGIC)) == SQLITE_MAGIC
+    except OSError:
+        return False
 
 
 # ----- SQLCipher decrypt (single source of truth) ------------------------
@@ -205,7 +229,13 @@ def open_db(path: Path | None = None) -> Rekordbox6Database:
                 f"{paths.REKORDBOX_LIVE_DB} is missing."
             )
         target = copied["rekordbox"]  # type: ignore[assignment]
-    return Rekordbox6Database(path=str(target))
+    # pyrekordbox defaults ``unlock`` to True, which routes every open through
+    # the SQLCipher dialect and applies the Rekordbox key. Handed an already
+    # plain file that fails with "file is not a database", so the decision has
+    # to come from the file rather than from a default. The normal path is
+    # still encrypted: ``paths.copy_live_dbs()`` is a byte copy of the live DB,
+    # so ``master.db.copy`` keeps going through SQLCipher exactly as before.
+    return Rekordbox6Database(path=str(target), unlock=not is_plain_sqlite(target))
 
 
 def _safe_name(rel) -> str:

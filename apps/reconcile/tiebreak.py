@@ -73,9 +73,9 @@ import argparse
 import csv
 import os
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from rich.console import Console
 from rich.table import Table

@@ -1,0 +1,33 @@
+<!-- @dsCard group="App chrome" name="SidebarNav" subtitle="App shell: 220 px sidebar + content" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SidebarNav</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	body { padding: 0; }
+	.app-shell { min-height: 320px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+	<aside class="sidebar">
+		<h1>Open DJ</h1>
+		<nav>
+			<a href="#" class="active">Library</a>
+			<a href="#">Sets</a>
+			<a href="#">Smartlists</a>
+			<a href="#">Play analytics</a>
+			<a href="#">Dedup</a>
+			<a href="#">Settings</a>
+		</nav>
+	</aside>
+	<main class="content">
+		<h2 style="margin:0 0 8px;font-size:1rem">Library</h2>
+		<p class="ds-note">Sidebar: <code>--surface</code> fill, right border, 1 rem padding, accent-colored title. Links are 0.4 x 0.6 rem with a 6 px radius; <code>.active</code> and hover share the raised fill.</p>
+	</main>
+</div>
+</body>
+</html>

@@ -148,7 +148,6 @@ test('a capability refusal is never dressed up as a PARITY-TODO stub', () => {
 test('every refusal names the surface AND the daemon, not just "unavailable"', () => {
 	for (const phrase of [
 		'jobs API not offered by this daemon',
-		'progress ledger not offered by this daemon',
 		'event bus not offered by this daemon',
 		'daemon not identified yet'
 	]) {

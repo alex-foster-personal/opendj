@@ -38,7 +38,7 @@ class WriteReport:
     errors: list[str] = field(default_factory=list)
 
 
-def _kind_to_rb(kind: str, index: int | None, active_loop: bool) -> tuple[int, bool]:
+def _kind_to_rb(kind: str, index: int | None, _active_loop: bool) -> tuple[int, bool]:
     """Map ``NormalisedCue.kind`` to ``(DjmdCue.Kind, ActiveLoop)``.
 
     pyrekordbox docs (``db6/tables.py`` DjmdCue):
@@ -101,7 +101,7 @@ def write_cues(
     # Match existing rows to incoming cues (position ± tolerance, same kind).
     unmatched_existing = list(range(len(existing)))
     for cue in cues:
-        kind_int, active = _kind_to_rb(cue.kind, cue.index, False)
+        kind_int, _active = _kind_to_rb(cue.kind, cue.index, False)
         color_idx = rgb_to_color_index(cue.color_rgb)
         target = None
         target_j = -1

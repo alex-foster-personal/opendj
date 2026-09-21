@@ -8,6 +8,8 @@ Never purge on absence. Real temp dirs, no mocked filesystem.
 from __future__ import annotations
 
 import json
+import struct
+import wave
 from pathlib import Path
 
 import pytest
@@ -30,7 +32,22 @@ pytestmark = pytest.mark.requirement("LIBM-41")
 
 def _mp3(folder: Path, name: str) -> Path:
     path = folder / name
-    path.write_bytes(b"ID3" + b"\x00" * 64)
+    # ID3 magic alone is not enough when mutagen is installed: probe_playable_audio
+    # cross-checks duration against size, so include a minimal MPEG frame body.
+    path.write_bytes(b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x00" + b"\x00" * 500)
+    return path
+
+
+def _wav(folder: Path, name: str) -> Path:
+    """Playable wav for folder-ingest paths that call probe_playable_audio."""
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = int(44_100 * 0.05)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(44_100)
+        handle.writeframes(struct.pack("<" + "h" * frames, *([0] * frames)))
     return path
 
 
@@ -105,8 +122,8 @@ def test_ingest_folder_empty_after_populate_refuses_and_keeps_rows(
 ) -> None:
     root = tmp_path / "lib"
     root.mkdir()
-    _mp3(root, "one.mp3")
-    _mp3(root, "two.mp3")
+    _wav(root, "one.wav")
+    _wav(root, "two.wav")
     conn = state_db.open_rw(tmp_path / "state.db")
     writer = StateWriter(conn, actor="test")
     try:
@@ -135,7 +152,7 @@ def test_ingest_folder_allow_mass_missing_writes_nothing_on_empty(
     """Override is a refusal bypass, not a purge. Ingest never tombstones."""
     root = tmp_path / "lib"
     root.mkdir()
-    _mp3(root, "one.mp3")
+    _wav(root, "one.wav")
     conn = state_db.open_rw(tmp_path / "state.db")
     writer = StateWriter(conn, actor="test")
     try:

@@ -8,9 +8,9 @@ from __future__ import annotations
 import pytest
 
 from apps.smartlists.autolist_groups import (
-    AutolistSelectionError,
     GENRE_UNSPECIFIED_ID,
     RATING_UNRATED_ID,
+    AutolistSelectionError,
     bpm_bucket_key,
     rating_bucket_key,
     selection_to_rule,

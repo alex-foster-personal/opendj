@@ -52,7 +52,7 @@ class StubBackend:
     _fired: bool = False
     frame_samples: int = 480
 
-    def detect(self, frame: bytes) -> float:
+    def detect(self, _frame: bytes) -> float:
         if self.always:
             return self.confidence
         if self._fired:

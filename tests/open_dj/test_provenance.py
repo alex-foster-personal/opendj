@@ -1,7 +1,7 @@
 """Tests for :mod:`apps.open_dj.provenance`."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -18,7 +18,7 @@ def test_wrap_minimal() -> None:
 
 @pytest.mark.requirement("OPEN-01")
 def test_wrap_explicit_datetime() -> None:
-    dt = datetime(2026, 2, 2, 9, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 2, 9, 0, 0, tzinfo=UTC)
     out = wrap(128.0, source="rekordbox", modified_at=dt)
     assert out["modified_at"] == "2026-02-02T09:00:00Z"
 

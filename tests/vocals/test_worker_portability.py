@@ -25,7 +25,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -40,7 +40,7 @@ WORKER_SCRIPT: Path = (
 sf = pytest.importorskip("soundfile")
 np = pytest.importorskip("numpy")
 
-_UV: Optional[str] = shutil.which("uv")
+_UV: str | None = shutil.which("uv")
 
 
 def _require_uv() -> str:
@@ -275,7 +275,7 @@ class _FakeWorkerProcess:
         self._stdout = stdout
         self.pid = 12345
 
-    def communicate(self, timeout: Optional[float] = None) -> tuple[str, None]:
+    def communicate(self, timeout: float | None = None) -> tuple[str, None]:
         return self._stdout, None
 
 

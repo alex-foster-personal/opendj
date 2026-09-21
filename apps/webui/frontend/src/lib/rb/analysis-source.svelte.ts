@@ -20,7 +20,7 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { ApiError, api, unwrap } from '../api';
+import { ApiError, api, readApiErrorCode, readApiErrorStatus, unwrap } from '../api';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,
@@ -403,18 +403,26 @@ async function _rollBackFailedSwitch(
 		// it restores was the server's own `previous_toggle` from the failed
 		// switch's PUT, not a client-side cache that would otherwise need
 		// re-syncing here (discussion_r3970967286 P1 BLOCKING, discussion_r3974235454).
-		await unwrap(
-			api.PUT('/api/v1/analysis/source', {
-				body: {
-					lane,
-					toggle: displacedToggle,
-					expected_toggle: attemptedToggle,
-					expected_toggle_revision: attemptedToggleRevision ?? null
-				}
-			})
-		);
+		const rollbackBody: {
+			lane: string;
+			toggle: string;
+			expected_toggle: string;
+			expected_toggle_revision?: number;
+		} = {
+			lane,
+			toggle: displacedToggle,
+			expected_toggle: attemptedToggle
+		};
+		if (attemptedToggleRevision !== undefined) {
+			rollbackBody.expected_toggle_revision = attemptedToggleRevision;
+		}
+		await unwrap(api.PUT('/api/v1/analysis/source', { body: rollbackBody }));
 	} catch (exc) {
-		if (exc instanceof ApiError && exc.status === 409) {
+		if (
+			(exc instanceof ApiError && exc.status === 409) ||
+			readApiErrorStatus(exc) === 409 ||
+			readApiErrorCode(exc) === 'toggle_changed'
+		) {
 			console.error(
 				`[analysis-source] switch of ${lane} failed, but the daemon no longer holds ` +
 					`the '${attemptedToggle}' this switch itself set - someone else changed it ` +

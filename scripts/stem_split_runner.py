@@ -59,7 +59,7 @@ import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
@@ -188,7 +188,7 @@ def record_assignments(
                 "SELECT stable_id FROM events WHERE kind = ?", (EVENT_KIND,)
             )
         }
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        now = datetime.now(UTC).isoformat(timespec="seconds")
         for stable_id, arm in pairs:
             if stable_id in existing:
                 continue  # first assignment wins; never relabel history

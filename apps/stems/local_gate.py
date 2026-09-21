@@ -29,7 +29,15 @@ def local_stems_gate(*, flag_store: Any | None = None) -> str | None:
     store = flag_store if flag_store is not None else _flag_store()
     if not store.enabled(FLAG_ID):
         return f"{FLAG_ID} is off for this build (set in feature-flags.json)"
-    return local_stems_tier_refusal()
+    tier_refusal = local_stems_tier_refusal()
+    if tier_refusal is not None:
+        return tier_refusal
+    # Last, because it is the only check about the INSTALL rather than the
+    # machine or the build profile: a flag that is on and a tier that is high
+    # enough say nothing about whether the worker file shipped.
+    from apps.stems.job import local_worker_refusal
+
+    return local_worker_refusal()
 
 
 def main(argv: list[str] | None = None) -> int:

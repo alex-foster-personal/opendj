@@ -18,7 +18,6 @@ from apps.engine_core.host_info import (
     add_host_info_route,
     main,
     read_host_facts,
-    resolve_host_info,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -15,7 +15,7 @@
 //   if beat-loop pads aren't notes 0x60-0x67 with doubling ladder then broken
 //   if RELOOP-EXIT isn't 0x4D and no 4BEAT long-press 0x14 then broken
 //   if trim/EQ/fader MSB CCs drift from 4/7/11/15/19 ([PDF] 3-3..3-7) then broken
-//   if CFX filter isn't mixer_channel filter CC 23/24 on ch 1/2 ([PDF] 3-5) then broken
+//   if CFX filter isn't mixer_channel filter CC 23/24 on ch 7 ([PDF] 3-5, hardware Fri 18 Sep 2026) then broken
 //   if crossfader/master aren't ch7 CC 31/8 ([PDF] 3-8/3-1) then broken
 //   if browse encoder isn't relative cc 0x40 + loads 0x46/0x47 then broken
 //   if any deck-3 or deck-4 binding exists then broken
@@ -168,15 +168,15 @@ test('per-channel mixer MSB CCs: trim 4, EQ 7/11/15, fader 19 ([PDF] 3-3..3-7)',
 	}
 });
 
-test('CFX filter per deck CC 23/24 on ch 1/2 ([PDF] 3-5)', () => {
+test('CFX filter per deck CC 23/24 on global ch 7 ([PDF] 3-5, hardware-confirmed)', () => {
 	const f1 = theBinding(
 		(b) => b.action.type === 'mixer_channel' && b.action.deck === 1 && b.action.target === 'filter'
 	);
-	assert.deepEqual(f1.source, { ch: 1, kind: 'cc', id: 0x17 });
+	assert.deepEqual(f1.source, { ch: 7, kind: 'cc', id: 0x17 });
 	const f2 = theBinding(
 		(b) => b.action.type === 'mixer_channel' && b.action.deck === 2 && b.action.target === 'filter'
 	);
-	assert.deepEqual(f2.source, { ch: 2, kind: 'cc', id: 0x18 });
+	assert.deepEqual(f2.source, { ch: 7, kind: 'cc', id: 0x18 });
 });
 
 test('crossfader ch7 CC 31, master ch7 CC 8 ([PDF] 3-8/3-1)', () => {

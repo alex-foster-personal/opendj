@@ -14,17 +14,17 @@ import pytest
 
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.lock import EngineLock
+from apps.shared import sqlite_verified_copy as svc
+from apps.shared import state_authoritative_backup as sab
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.play_orders.schema import apply_play_order_migrations
 from apps.shared.state import db as state_db
-from apps.shared import state_authoritative_backup as sab
 from apps.shared.state_authoritative_backup import (
     StateAuthoritativeBackupError,
     backup_state_db,
     list_backups,
     restore_tables,
 )
-from apps.shared import sqlite_verified_copy as svc
 
 NOW = "2026-09-15T00:00:00+00:00"
 

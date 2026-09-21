@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ from apps.shared.harmonic import TrackFeature
 # avoids wall-clock drift when tests stamp ``captured_at`` / ``played_at``
 # fields that later get compared or serialised. Prefer this over
 # ``datetime.now(timezone.utc)`` inside dj_copilot tests.
-FIXED_NOW = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+FIXED_NOW = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

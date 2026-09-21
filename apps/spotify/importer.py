@@ -14,9 +14,9 @@ Exit codes:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .client import (
     SpotifyClient,
@@ -48,6 +48,18 @@ EXIT_SAFETY: int = 3
 
 
 @dataclass
+class ImportOptions:
+    live: bool = False
+    force: bool = False
+    use_cache: bool = True
+    max_tracks: int | None = None
+    out_root: Path | None = None
+    state_db_path: Path | None = None
+    include_timestamp: bool = True
+    progress: Callable[[str], None] | None = None
+
+
+@dataclass
 class ImportRun:
     playlist: SpotifyPlaylist
     result: MatchResult
@@ -61,14 +73,7 @@ def run_import(
     playlist_id: str,
     *,
     client: SpotifyClient,
-    live: bool = False,
-    force: bool = False,
-    use_cache: bool = True,
-    max_tracks: int | None = None,
-    out_root: Path | None = None,
-    state_db_path: Path | None = None,
-    include_timestamp: bool = True,
-    progress: Callable[[str], None] | None = None,
+    options: ImportOptions | None = None,
 ) -> ImportRun:
     """Run a full Spotify import.
 
@@ -76,14 +81,15 @@ def run_import(
     the caller to have already validated the 6-rail safety pattern
     (typed confirmation etc.) -- the CLI wrapper enforces that.
     """
-    progress = progress or (lambda _msg: None)
+    opts = options or ImportOptions()
+    progress = opts.progress or (lambda _msg: None)
     t0 = time.monotonic()
 
     progress(f"fetching playlist {playlist_id}")
-    playlist = client.fetch_playlist(playlist_id, use_cache=use_cache)
-    if max_tracks is not None and len(playlist.tracks) > max_tracks:
+    playlist = client.fetch_playlist(playlist_id, use_cache=opts.use_cache)
+    if opts.max_tracks is not None and len(playlist.tracks) > opts.max_tracks:
         progress(
-            f"cautious mode: truncating to first {max_tracks} of "
+            f"cautious mode: truncating to first {opts.max_tracks} of "
             f"{len(playlist.tracks)} tracks"
         )
         playlist = SpotifyPlaylist(
@@ -92,14 +98,14 @@ def run_import(
             snapshot_id=playlist.snapshot_id,
             owner=playlist.owner,
             description=playlist.description,
-            tracks=playlist.tracks[:max_tracks],
+            tracks=playlist.tracks[:opts.max_tracks],
         )
 
     progress("loading local tracks from state DB")
     from apps.shared.state import db as state_db
 
     try:
-        ro = state_db.open_ro(state_db_path)
+        ro = state_db.open_ro(opts.state_db_path)
         targets = load_local_tracks(ro)
         ro.close()
     except FileNotFoundError:
@@ -110,20 +116,20 @@ def run_import(
     result = match_spotify_tracks(playlist.tracks, targets)
 
     progress("writing report artifacts")
-    reports = build_report_dir(playlist.id, root=out_root)
+    reports = build_report_dir(playlist.id, root=opts.out_root)
     write_all_reports(
         playlist, result, reports,
         runtime_seconds=time.monotonic() - t0,
-        live=live,
-        include_timestamp=include_timestamp,
+        live=opts.live,
+        include_timestamp=opts.include_timestamp,
     )
 
     write_summary: WriteSummary | None = None
-    if live:
+    if opts.live:
         progress("LIVE mode: backing up state DB + writing playlist")
-        backup = backup_state_db(state_db_path)
-        reversal = emit_reversal_script(backup, state_db_path)
-        conn = open_state_rw_with_aux(state_db_path)
+        backup = backup_state_db(opts.state_db_path)
+        reversal = emit_reversal_script(backup, opts.state_db_path)
+        conn = open_state_rw_with_aux(opts.state_db_path)
         try:
             write_summary = write_playlist_and_pending(
                 conn,
@@ -131,7 +137,7 @@ def run_import(
                 result,
                 backup_path=backup,
                 reversal_script_path=reversal,
-                force=force,
+                force=opts.force,
             )
         finally:
             conn.close()
@@ -145,5 +151,5 @@ def run_import(
         reports=reports,
         write_summary=write_summary,
         runtime_seconds=runtime,
-        live=live,
+        live=opts.live,
     )

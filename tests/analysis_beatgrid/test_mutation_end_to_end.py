@@ -44,7 +44,7 @@ import wave
 
 import pytest
 
-from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase, lock_bar_phase
+from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.tempo_change import MIN_SEGMENT_BARS, detect_tempo_changes
 from apps.analysis_beatgrid.tempo_map import fit_tempo_map

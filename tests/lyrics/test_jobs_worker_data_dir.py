@@ -162,7 +162,7 @@ def test_run_batch_refuses_missing_r2_before_subprocess(
     use_cloud_mode(monkeypatch)
     for var in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
         monkeypatch.delenv(var, raising=False)
-    state_dir, paths = _seed_state(tmp_path, ["sid-a"])
+    _state_dir, paths = _seed_state(tmp_path, ["sid-a"])
     conn = state_db.open_rw(paths.state_db)
     seed_stamped_policy(conn, asset_kind="karaoke_words", mode="pinned")
     seed_stamped_policy(conn, asset_kind="stem_bundle", mode="pinned")

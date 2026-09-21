@@ -242,7 +242,7 @@ test('_init calls the real boot health/playlist read and reconciles each field t
 	// still start together, before the try block, and each must be awaited.
 	assert.match(
 		source,
-		/const healthPromise = getHealthAtBoot\(getHealth\);\s*const playlistsPromise = listPlaylistsHydrated\(\);\s*try \{/,
+		/const healthPromise = getHealthAtBoot\(getHealth\);\s*const playlistsPromise = bootPlaylistsPrefetch\(\);\s*try \{/,
 		'the boot read must still call the real getHealthAtBoot, not a stand-in'
 	);
 	assert.match(

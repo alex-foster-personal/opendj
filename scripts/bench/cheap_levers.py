@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -43,30 +44,44 @@ def _resample(x: torch.Tensor, src: int, dst: int) -> torch.Tensor:
         resample_poly(x.numpy(), dst // g, src // g, axis=-1).astype(np.float32))
 
 
-def run_arm(model_name: str, mix: torch.Tensor, sr: int, *, overlap: float,
-            segment: float | None, sep_rate: int, mono: bool, dtype: str,
-            device: str, jobs: int) -> tuple[torch.Tensor, torch.Tensor, float]:
+@dataclass(frozen=True)
+class SepRunOptions:
+    overlap: float
+    segment: float | None
+    sep_rate: int
+    mono: bool
+    dtype: str
+    device: str
+    jobs: int
+
+
+def run_arm(
+    model_name: str,
+    mix: torch.Tensor,
+    sr: int,
+    opts: SepRunOptions,
+) -> tuple[torch.Tensor, torch.Tensor, float]:
     """Return (vocals, instrumental, inference seconds), both at the input rate."""
     model = get_model(model_name)
     model.eval()
 
-    work = _resample(mix, sr, sep_rate)
+    work = _resample(mix, sr, opts.sep_rate)
     n_in = work.shape[-1]
-    if mono:
+    if opts.mono:
         work = work.mean(dim=0, keepdim=True).repeat(2, 1)
 
     # Casting the whole model to half fails: demucs runs torch.stft internally and
     # that has no half kernel. autocast is the working form of the precision lever,
     # keeping the transforms in fp32 and the convolutions in low precision.
     autocast_dtype = {"fp32": None, "fp16": torch.float16,
-                      "bf16": torch.bfloat16}[dtype]
-    model.to(device=device)
-    batch = work.unsqueeze(0).to(device=device)
+                      "bf16": torch.bfloat16}[opts.dtype]
+    model.to(device=opts.device)
+    batch = work.unsqueeze(0).to(device=opts.device)
 
-    kwargs = {"overlap": overlap, "shifts": 0, "split": True,
-              "progress": False, "device": device, "num_workers": jobs}
-    if segment is not None:
-        kwargs["segment"] = segment
+    kwargs = {"overlap": opts.overlap, "shifts": 0, "split": True,
+              "progress": False, "device": opts.device, "num_workers": opts.jobs}
+    if opts.segment is not None:
+        kwargs["segment"] = opts.segment
 
     t0 = time.perf_counter()
     with torch.no_grad():
@@ -109,10 +124,16 @@ def main() -> None:
     args = ap.parse_args()
 
     mix, sr = _load(args.input)
-    vocals, inst, infer_s = run_arm(
-        args.model, mix, sr, overlap=args.overlap, segment=args.segment,
-        sep_rate=args.sep_rate, mono=args.mono, dtype=args.dtype,
-        device=args.device, jobs=args.jobs)
+    opts = SepRunOptions(
+        overlap=args.overlap,
+        segment=args.segment,
+        sep_rate=args.sep_rate,
+        mono=args.mono,
+        dtype=args.dtype,
+        device=args.device,
+        jobs=args.jobs,
+    )
+    vocals, inst, infer_s = run_arm(args.model, mix, sr, opts)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     sf.write(str(args.out_dir / "vocals.wav"), vocals.T.numpy(), sr)

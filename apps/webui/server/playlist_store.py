@@ -32,21 +32,9 @@ from apps.shared.state.writer_playlists import (
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
-from .playlist_add import AlreadyExistsError, add_memberships as _add_memberships
-from .playlist_add import MEMBERSHIP_ORDER_BY
+from .playlist_add import MEMBERSHIP_ORDER_BY, AlreadyExistsError
+from .playlist_add import add_memberships as _add_memberships
 from .playlist_dupes import first_repeated_stable_id
-from .playlist_move import MoveResult, move_memberships as _move_memberships
-from .playlist_remove import (
-    apply_membership_snapshot,
-    remove_memberships as _remove_memberships,
-)
-from .playlist_transfer import (
-    apply_dest_write,
-    apply_source_write,
-    membership_plan,
-    skip_writes,
-    validate_transfer,
-)
 from .playlist_history import (
     HISTORY_LIMIT,
     PlaylistEditCommand,
@@ -56,6 +44,21 @@ from .playlist_history import (
     label_for,
     rebuild_stack,
     snapshots_match,
+)
+from .playlist_move import MoveResult
+from .playlist_move import move_memberships as _move_memberships
+from .playlist_remove import (
+    apply_membership_snapshot,
+)
+from .playlist_remove import (
+    remove_memberships as _remove_memberships,
+)
+from .playlist_transfer import (
+    apply_dest_write,
+    apply_source_write,
+    membership_plan,
+    skip_writes,
+    validate_transfer,
 )
 
 WEBUI_VENDOR: str = "webui"
@@ -500,15 +503,14 @@ class PlaylistStore:
         record_edit: bool = True,
     ) -> MoveResult:
         """O(k) slice reorder via ``:move`` (LIBM-22)."""
+        from .playlist_move import MoveAnchor, MoveSliceSpec
+
         with self._lock:
             return _move_memberships(
                 self,
                 playlist_id,
-                range_start=range_start,
-                range_length=range_length,
-                range_end=range_end,
-                before_item_id=before_item_id,
-                after_item_id=after_item_id,
+                slice_spec=MoveSliceSpec(range_start, range_length, range_end),
+                anchor=MoveAnchor(before_item_id, after_item_id),
                 expected_etag=expected_etag,
                 record_edit=record_edit,
             )

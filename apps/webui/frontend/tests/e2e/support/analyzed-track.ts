@@ -22,6 +22,7 @@ export interface BeatWire {
 	n: number;
 	bpm: number;
 	t: number;
+	extrapolated?: boolean;
 }
 
 export interface AnlzWire {

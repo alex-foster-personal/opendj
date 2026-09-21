@@ -102,5 +102,5 @@ def test_parent_path_is_the_ancestors() -> None:
         _pl("2", "Peak", "1", ["t1"]),
     ]
     flat = flatten_rb_playlists(playlists)
-    peak = [f for f in flat if f.flat_name == "Sets / Peak"][0]
+    peak = next(f for f in flat if f.flat_name == "Sets / Peak")
     assert peak.parent_path == ("Sets",)

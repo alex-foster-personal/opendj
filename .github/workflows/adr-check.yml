@@ -92,9 +92,13 @@ jobs:
             fi
           fi
 
+      # Full history so origin/main is current enough for the ancestry guard
+      # (issue #3513). edited below re-runs body declarations; ancestry catches
+      # stale synthetic merge refs that predate trunk ADR fixes.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         timeout-minutes: 2
         with:
+          fetch-depth: 0
           persist-credentials: false
           clean: false
 

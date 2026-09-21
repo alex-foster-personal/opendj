@@ -105,6 +105,14 @@ def test_stem_decode_bench_spec_is_ignored_by_the_root_suite() -> None:
     assert "'**/stem-decode-bench.spec.ts'" in source
 
 
+def test_playlist_switch_latency_spec_is_ignored_by_the_root_suite() -> None:
+    """if the PERF-UI-05 bench is reachable from pnpm test:e2e then the root
+    suite loads playwright.playlist-switch-latency.config.ts, which throws
+    without a production build."""
+    source = ROOT_CONFIG.read_text()
+    assert "'**/library-playlist-switch-latency.spec.ts'" in source
+
+
 def test_smoke_console_exemption_stays_specific_to_the_update_failure() -> None:
     """if another resource breaks then a failing update check cannot hide it"""
     spec = SMOKE_SPEC.read_text()

@@ -128,6 +128,16 @@ test('source: arrow keys walk all menuitems without skipping aria-disabled', () 
 	assert.match(source, /event\.key === 'End'/);
 });
 
+test('source: arrow keys are ignored after focus leaves the menu', () => {
+	const source = readFileSync(MENU_PATH, 'utf8');
+	const keydown = source.slice(source.indexOf('function onKeydown'));
+	const itemLookup = keydown.indexOf('const items = menuItems();');
+	assert.notEqual(itemLookup, -1);
+	const beforeItemLookup = keydown.slice(0, itemLookup);
+	assert.match(beforeItemLookup, /menu === null/);
+	assert.match(beforeItemLookup, /!menu\.contains\(document\.activeElement\)/);
+});
+
 test('source: CSS dims via aria-disabled, not button:disabled', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
 	assert.match(source, /button\[aria-disabled='true'\]/);

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -115,8 +115,8 @@ def test_replicator_exits_2_when_lock_held_elsewhere(capsys):
     # Pre-seed the lock as held by another host.
     foreign = LockHolder(
         holder="host-other",
-        acquired_at=datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc),
-        expires_at=datetime(2026, 4, 17, 12, 10, 0, tzinfo=timezone.utc),
+        acquired_at=datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC),
+        expires_at=datetime(2026, 4, 17, 12, 10, 0, tzinfo=UTC),
         pid=111,
         version=1,
     )
@@ -138,7 +138,7 @@ def test_replicator_exits_2_when_lock_held_elsewhere(capsys):
     # Freeze the lock's clock so the foreign lock is not expired (acquired
     # at 12:00, expires 12:10; we ask at 12:05).
     rep.lock._now = lambda: datetime(  # type: ignore[assignment]
-        2026, 4, 17, 12, 5, 0, tzinfo=timezone.utc
+        2026, 4, 17, 12, 5, 0, tzinfo=UTC
     )
     rc = rep.start()
     assert rc == 2

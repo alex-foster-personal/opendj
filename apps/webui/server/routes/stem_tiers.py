@@ -19,7 +19,6 @@ exactly, so an agent can drive the identical flow without a browser.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
@@ -68,12 +67,12 @@ class TierEstimateOut(BaseModel):
     availability: str
     unavailable_because: str
     measured: bool
-    seconds: Optional[float] = None
-    usd: Optional[float] = None
-    measured_at: Optional[str] = None
-    n_tracks: Optional[int] = None
-    r_squared: Optional[float] = None
-    unavailable_reason: Optional[str] = None
+    seconds: float | None = None
+    usd: float | None = None
+    measured_at: str | None = None
+    n_tracks: int | None = None
+    r_squared: float | None = None
+    unavailable_reason: str | None = None
 
 
 class EstimateOut(BaseModel):
@@ -118,7 +117,7 @@ def list_tiers() -> list[TierOut]:
 @router.get("/estimate", response_model=EstimateOut)
 def estimate(
     seconds: float = Query(..., gt=0, description="track duration in seconds"),
-    gpu: Optional[str] = Query(None, description="override the card"),
+    gpu: str | None = Query(None, description="override the card"),
 ) -> EstimateOut:
     """Every tier costed for one track, so a UI needs one round trip not three.
 
@@ -129,7 +128,7 @@ def estimate(
     return guard_stems_parity_call(lambda: _estimate_impl(seconds, gpu))
 
 
-def _estimate_impl(seconds: float, gpu: Optional[str]) -> EstimateOut:
+def _estimate_impl(seconds: float, gpu: str | None) -> EstimateOut:
     _ensure_loaded()
     out: list[TierEstimateOut] = []
     for tier in tiercfg.ladder():
@@ -369,9 +368,9 @@ def job_status(job_id: str) -> dict:
 
 @router.get("/estimate/batch", response_model=dict)
 def estimate_batch(
-    seconds: list[float] = Query(..., description="repeat once per track"),
+    seconds: list[float] = Query(..., description="repeat once per track"),  # noqa: B008  # FastAPI DI
     tier: str = Query(tiercfg.DEFAULT_TIER),
-    gpu: Optional[str] = Query(None),
+    gpu: str | None = Query(None),
 ) -> dict:
     """Wall clock for a whole batch, packed longest-first across GPU slots.
 

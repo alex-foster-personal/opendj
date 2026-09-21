@@ -15,8 +15,10 @@ Three things it refuses to be vague about:
 * An EVICTED iCloud placeholder is not a local file. Those are counted and
   skipped, never opened -- opening one asks iCloud to download it.
 * The denominators are named. ``files_seen`` counts readable, materialised
-  audio files; ``files_dataless`` and ``unreadable_roots`` are what that
-  number does not cover.
+  audio files; ``files_dataless``, ``files_rejected_unplayable`` and
+  ``unreadable_roots`` are what that number does not cover.
+* Corrupt or non-audio payloads with an allowlisted extension are counted in
+  ``files_rejected_unplayable`` and never become track rows.
 
 Safety mirrors the rekordbox adapter exactly: dry-run by default via an
 outer SAVEPOINT that is ROLLBACK-released, and the event bus swapped for a
@@ -35,7 +37,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from apps.shared import audio_files, fs_access, fs_residency
+from apps.shared import audio_files, audio_playable, fs_access, fs_residency
+from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
@@ -72,6 +75,8 @@ class FolderIngestReport:
     #: Files whose tags could not be read at all (mutagen absent, or the file
     #: is not parseable). They are still imported, titled from the filename.
     files_without_tags: int = 0
+    #: Allowlisted files that failed the playable-audio probe. Never imported.
+    files_rejected_unplayable: int = 0
     tracks_inserted: int = 0
     tracks_updated: int = 0
     tracks_unchanged: int = 0
@@ -257,8 +262,13 @@ def _identify(
     entry: audio_files.AudioFile, report: FolderIngestReport
 ) -> tuple[str, str, int | None, audio_files.AudioMetadata | None] | None:
     """Read the tags and mint the id, or count the file as skipped."""
+    try:
+        audio_playable.probe_playable_audio(entry.path)
+    except UnplayableAudioError:
+        report.files_rejected_unplayable += 1
+        return None
     metadata = audio_files.read_metadata(entry.path)
-    if metadata is None:
+    if not _has_file_tags(metadata):
         report.files_without_tags += 1
     duration_ms = (
         int(metadata.duration_s * 1000)
@@ -278,6 +288,22 @@ def _identify(
         report.tracks_skipped += 1
         return None
     return stable_id, tier, duration_ms, metadata
+
+
+def _has_file_tags(metadata: audio_files.AudioMetadata | None) -> bool:
+    """True when mutagen (or a stub) supplied a user-facing tag, not just duration."""
+    if metadata is None:
+        return False
+    return any(
+        bool(value)
+        for value in (
+            metadata.title,
+            metadata.artist,
+            metadata.album,
+            metadata.genre,
+            metadata.comment,
+        )
+    )
 
 
 def _title(
@@ -324,6 +350,7 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  audio files seen:   {report.files_seen}")
     print(f"  icloud placeholders skipped: {report.files_dataless}")
     print(f"  files without tags: {report.files_without_tags}")
+    print(f"  files rejected (unplayable): {report.files_rejected_unplayable}")
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
     print(f"  tracks skipped:     {report.tracks_skipped}")

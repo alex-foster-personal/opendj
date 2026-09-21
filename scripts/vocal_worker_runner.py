@@ -54,10 +54,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.vocals.cli import WORKER_SCRIPT, run_worker
@@ -470,7 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     _apply_windows_resource_controls(
         below_normal=args.windows_below_normal,

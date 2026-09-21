@@ -51,7 +51,7 @@ def live_run(
     cautious: bool = False,
     bulk: bool = False,
     rb_db_path: Path = paths.REKORDBOX_WORKING_DB,
-    djay_db_path: Path = paths.DJAY_WORKING_DB,
+    djay_db_path: Path = paths.DJAY_WORKING_DB,  # noqa: ARG001 - keyword contract
 ) -> int:
     """STUB live-run. Phase 4 Plan 3 ships the safety scaffold; the full
     per-track writer plumbing (RB + djay) is exercised in the smoke test.

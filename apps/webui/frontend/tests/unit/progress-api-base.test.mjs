@@ -10,10 +10,9 @@ let requestedUrl;
 
 before(async () => {
 	// Loaded through the shared-graph entry so the fetcher and the capability
-	// probe it consults live in one bundle. The ledger is a LEGACY-daemon
-	// surface, so the suite first resolves the probe against a real legacy
-	// health body (one with no engine handshake fields); the engine and
-	// not-yet-identified cases belong to daemon-capabilities.test.mjs.
+	// probe it consults live in one bundle. The engine and legacy daemons both
+	// serve progress once identified; the not-yet-identified case belongs to
+	// daemon-capabilities.test.mjs.
 	progressApi = await loadTypeScriptModule('tests/unit/fixtures/daemon-capability-entry.ts', {
 		viteApiBase: API_BASE
 	});

@@ -17,7 +17,7 @@ import pytest
 
 from scripts import worker_worktree_guard as guard
 
-pytestmark = pytest.mark.requirement("OPS-38")
+pytestmark = pytest.mark.requirement("OPS-41")
 
 
 def _git(repo: Path, *args: str) -> str:

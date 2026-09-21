@@ -7,13 +7,14 @@ Operator write-up: ``app_docs/0fe48ec6_gig-prep-posture.md``.
 from __future__ import annotations
 
 import json
-import sys
 from enum import StrEnum
 from pathlib import Path
+
 PREP_LIBRARY_POLL_MS: int = 60_000
 GIG_LIBRARY_POLL_MS: int = 300_000
 GIG_PREFETCH_TRACKS: int = 2
 GIG_PREFETCH_BYTES: int = 24 * 1024 * 1024
+GIG_PREVIEW_PCM_BYTES: int = 64 * 1024 * 1024
 
 
 class AppPosture(StrEnum):

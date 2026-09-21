@@ -348,7 +348,7 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     problems: list[str] = []
     family_rank: dict[str, int] = {}
     raw_entries = cfg.get("required", [])
-    for raw, req in zip(raw_entries, resolve_required(cfg)):
+    for raw, req in zip(raw_entries, resolve_required(cfg), strict=False):
         if isinstance(raw, str):
             continue
         family = _per_kpi_family(str(req.get("unit", "")))

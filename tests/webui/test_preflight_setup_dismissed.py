@@ -25,7 +25,6 @@ called "no state.db" by preflight in the same breath.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest

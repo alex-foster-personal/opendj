@@ -175,6 +175,11 @@ soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
 # extra, which tests/test_dependency_contract.py requires this file to cover.
 memray>=1.14; sys_platform != "win32"
 pyinstrument>=5
+# tools/controller-probe/capture.py imports rtmidi at module scope and
+# tests/controller_probe/test_capture.py imports that module by path, so the
+# pytest lanes (installed from this file, not the pyproject ``dev`` extra)
+# cannot collect without it. Mirrors the pyproject ``dev`` entry (#3491).
+python-rtmidi>=1.5,<2; sys_platform != "win32"
 
 # --- Phase 11 -- web UI daemon (CAT-05) + cloud sync (CAT-04) ---
 # FastAPI 0.115 / Starlette 0.38 minimums need standard ``httpx``. The

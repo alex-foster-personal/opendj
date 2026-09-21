@@ -56,8 +56,8 @@ def search_collection(
     ),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
-    state_db_path: Path = Depends(_state_db_path),
-    backend: StateBackend = Depends(get_read_state),
+    state_db_path: Path = Depends(_state_db_path),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> SearchResults:
     if not q.strip():
         return SearchResults(query=q, items=[], total=0, next_offset=None)

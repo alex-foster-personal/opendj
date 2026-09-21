@@ -16,10 +16,11 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from apps.shared.paths import DJAY_WORKING_DB, REKORDBOX_WORKING_DB
 
@@ -44,7 +45,7 @@ _SESSION_ID_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?
 
 
 def _iso_session_id(now: datetime | None = None) -> str:
-    dt = now or datetime.now(timezone.utc)
+    dt = now or datetime.now(UTC)
     return dt.strftime("%Y-%m-%dT%H-%M-%S")
 
 
@@ -166,7 +167,7 @@ class Recorder:
     # ------------------------------------------------------------------
 
     def _rel_ts(self) -> float:
-        delta = datetime.now(timezone.utc) - self.session_started_at
+        delta = datetime.now(UTC) - self.session_started_at
         return max(0.0, delta.total_seconds())
 
     def _emit(self, event: Event) -> None:
@@ -174,7 +175,7 @@ class Recorder:
         self.timeline.append(event)
 
     def _wall(self) -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        return datetime.now(UTC).isoformat(timespec="milliseconds")
 
     def _emit_simple(self, action: str, value: dict[str, Any] | None = None) -> None:
         self._emit(
@@ -318,7 +319,7 @@ def _segment_start_from_name(
         return 0.0
     raw = stem[len(prefix) :]
     try:
-        dt = datetime.strptime(raw, "%Y-%m-%dT%H-%M-%S").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(raw, "%Y-%m-%dT%H-%M-%S").replace(tzinfo=UTC)
     except ValueError:
         return 0.0
     return max(0.0, (dt - session_started_at).total_seconds())
@@ -389,7 +390,7 @@ def start(
     """
     cfg = config or RecorderConfig()
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
-    started = now or datetime.now(timezone.utc)
+    started = now or datetime.now(UTC)
     sid = resolve_session_id(session_id, root=root, now=started)
     state_obj = state or SetsState()
 
@@ -451,7 +452,7 @@ def stop(
     """Clean-stop the recorder; write manifest.json; update sets.ended_at."""
     from .capture import stop_capture  # late import to keep module light
 
-    end_at = ended_at or datetime.now(timezone.utc)
+    end_at = ended_at or datetime.now(UTC)
     recorder._emit_simple("session_end")
     recorder.shutdown(stop_capture_fn=stop_capture_fn or stop_capture)
     recorder.state.end_session(
@@ -517,7 +518,7 @@ def finalize(
         timeline=timeline,
         session_started_at=started,
     )
-    end_at = ended_at or datetime.now(timezone.utc)
+    end_at = ended_at or datetime.now(UTC)
     if row.ended_at is None:
         recorder._emit_simple("session_end")
     state_obj.end_session(
@@ -546,7 +547,7 @@ def resume(
     config: RecorderConfig | None = None,
     sets_root: Path | None = None,
     state: SetsState | None = None,
-    now: datetime | None = None,
+    _now: datetime | None = None,
     capture_factory: Callable[[Recorder], None] | None = None,
     source_factories: dict[str, Callable[[Recorder], Any]] | None = None,
 ) -> Recorder:
@@ -638,9 +639,18 @@ def _default_source_factories(
 def status(
     *,
     sets_root: Path | None = None,
-    state: SetsState | None = None,
+    state: SetsState | None = None,  # noqa: ARG001 - see below
 ) -> dict[str, Any]:
-    """Return a summary of any active session (pid file present)."""
+    """Return a summary of any active session (pid file present).
+
+    ``state`` is unread here: the answer comes from the pid file on disk, not
+    from the sets DB. It stays in the signature under its public name because
+    every caller in ``apps/sets/recorder_service.py`` passes it by keyword.
+    Commit 17c7e99da renamed it to ``_state`` to satisfy ARG001, which turned
+    ``GET /api/v1/sets/recorder/status`` into a 500 on every request -- and
+    since the performance page polls that route, it failed every e2e browser
+    test in the repo.
+    """
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
     if not root.exists():
         return {"active": False}

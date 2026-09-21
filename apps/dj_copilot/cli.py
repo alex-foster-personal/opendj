@@ -9,17 +9,17 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 from apps.shared.harmonic import TrackFeature
 from apps.shared.paths import STATE_DB
 from apps.shared.play_orders.schema import apply_play_order_migrations
 from apps.shared.state import db as state_db
 
-from .play_it import InsufficientDataError, play_it
 from .pinning import PinUnsatisfiableError
+from .play_it import InsufficientDataError, play_it
 from .session_context import PlayedTrack, SessionContext, load_session_context
 from .set_goal import SetGoal
 from .suggester import suggest_next
@@ -178,7 +178,7 @@ def _cmd_suggest_next(args: argparse.Namespace) -> int:
     manual_recent: list[PlayedTrack] | None = None
     if args.session_json is not None:
         raw = json.loads(args.session_json.read_text(encoding="utf-8"))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         manual_recent = [
             PlayedTrack(
                 stable_id=row["stable_id"],
