@@ -111,11 +111,14 @@ def _raw_runs_on(job_id: str) -> str:
 
 
 def test_main_fix_job_prefers_the_reserved_pool_for_trunk_repair_prs_only() -> None:
-    """if the trunk-repair guard is dropped, or a main-push guard returns, the reserve is lost or misused"""
+    """if the trunk-repair guard is dropped, or a main-push guard returns, the reserve is lost
+    or misused"""
     assert SHARD_JOB in _jobs(), f"expected a {SHARD_JOB!r} job in ci.yml"
     raw = _raw_runs_on(SHARD_JOB)
     assert raw == EXPECTED_RUNS_ON, f"test job runs-on changed shape, got: {raw}"
-    assert "refs/heads/main" not in raw, "a push to main must take the general pool, not the reserve"
+    assert "refs/heads/main" not in raw, (
+        "a push to main must take the general pool, not the reserve"
+    )
 
 
 def test_guard_checks_event_name_before_dereferencing_pull_request() -> None:
