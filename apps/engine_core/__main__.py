@@ -205,6 +205,7 @@ def _telemetry_decision(data_dir: Path | None = None):
         load_bundled_telemetry,
         opt_out_reason,
     )
+    from apps.shared.telemetry.consent import declined_reason
 
     try:
         info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
@@ -232,7 +233,8 @@ def _telemetry_decision(data_dir: Path | None = None):
         build_source=source,
         release=release,
         bundled_dsn=bundled.dsn if bundled is not None else None,
-        opt_out=opt_out_reason(data_dir),
+        # The marker file, else a stored "declined" answer to the terms.
+        opt_out=opt_out_reason(data_dir) or declined_reason(data_dir),
     )
 
 
@@ -274,7 +276,12 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         # route handlers as they are registered, so a later init would leave
         # every route already built and silently uninstrumented.
         try:
-            init_telemetry(_telemetry_decision(cfg.data_dir))
+            from apps.shared.telemetry.consent import read_consent
+
+            init_telemetry(
+                _telemetry_decision(cfg.data_dir),
+                consent_granted=read_consent(cfg.data_dir).decision == "accepted",
+            )
         except TelemetryConfigError as exc:
             # Asked for by name and undeliverable. Refusing here is the whole
             # point: booting anyway would mean the errors somebody is waiting

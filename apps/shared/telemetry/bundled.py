@@ -36,6 +36,8 @@ class BundledTelemetryError(RuntimeError):
 class BundledTelemetry:
     dsn: str
     path: Path
+    #: The open-dj-fe DSN the replay loader URL is derived from (OBS-06).
+    frontend_dsn: str | None = None
 
 
 def load_bundled_telemetry(environ: Mapping[str, str]) -> BundledTelemetry | None:
@@ -62,7 +64,8 @@ def load_bundled_telemetry(environ: Mapping[str, str]) -> BundledTelemetry | Non
             f"{BUNDLED_TELEMETRY_ENV}={path} carries no 'dsn'; it was not written "
             "by scripts/payload_telemetry.py"
         )
-    return BundledTelemetry(dsn=dsn, path=path)
+    frontend = str(data.get("frontend_dsn") or "").strip() if isinstance(data, dict) else ""
+    return BundledTelemetry(dsn=dsn, path=path, frontend_dsn=frontend or None)
 
 
 def opt_out_marker_path(data_dir: Path) -> Path:

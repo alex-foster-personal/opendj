@@ -26,6 +26,7 @@ import {
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { setLiveTransportProbe } from '$lib/client-error-reporting';
+import { bootTelemetryConsent } from '$lib/telemetry-consent';
 import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
@@ -111,6 +112,10 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		applyExplicitPerfTierPref(uiPrefs.perf_tier);
 	}
 	scheduler.defer('perf-tier:fetch', () => fetchPerfTier());
+	// Diagnostics consent (OBS-05) and, after acceptance, session replay
+	// (OBS-06). Deferred like every other boot request, and gated on the same
+	// live-transport read as error reporting so a replay never records a mix.
+	const stopTelemetryConsent = bootTelemetryConsent({ scheduler, isLive: anyDeckPlaying });
 	const stopBootScheduler = scheduler.start();
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 	const stopReloadCountdown = installReloadCountdown();
@@ -167,6 +172,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	});
 
 	return () => {
+		stopTelemetryConsent();
 		setLiveTransportProbe(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);

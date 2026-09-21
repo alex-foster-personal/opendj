@@ -103,6 +103,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
+from apps.shared.telemetry.consent import (
+    configure_consent_gate,
+    held_for_consent,
+)
 from apps.shared.telemetry.live import (
     MIRROR_LIVE_MAX_AGE_S,
     mirror_transport_live,
@@ -139,6 +143,18 @@ class _LiveGateCounter:
 
 
 LIVE_GATE = _LiveGateCounter()
+
+
+class _LastDecision:
+    """The decision init_telemetry ran with, for routes that report it."""
+
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value: TelemetryDecision | None = None
+
+
+LAST_DECISION = _LastDecision()
 
 #: Tri-state switch. Unset means "let the build decide" (see module docstring).
 TELEMETRY_ENV: str = "OPENDJ_TELEMETRY"
@@ -342,9 +358,16 @@ def decide_telemetry(
 
 # ----- init ---------------------------------------------------------------
 def init_telemetry(
-    decision: TelemetryDecision, *, transport: Any | None = None
+    decision: TelemetryDecision,
+    *,
+    transport: Any | None = None,
+    consent_granted: bool = False,
 ) -> bool:
     """Initialize the SDK for an enabled decision. Returns whether it ran.
+
+    ``consent_granted`` is what the consent file said at boot (OBS-05). It
+    matters only for a build that turned itself on: an explicit enable is an
+    operator asking by name and is never held for consent.
 
     ``sentry_sdk`` is imported HERE and nowhere else in the module, so a
     disabled decision leaves it absent from ``sys.modules`` and the "off
@@ -358,9 +381,11 @@ def init_telemetry(
     assert on a captured envelope without a live send. Production passes
     None and gets the SDK's own HTTP transport.
     """
+    LAST_DECISION.value = decision
     if not decision.enabled:
         log.info("telemetry off (%s)", decision.reason)
         return False
+    configure_consent_gate(required=not decision.explicit, granted=consent_granted)
 
     try:
         import sentry_sdk
@@ -410,10 +435,11 @@ def init_telemetry(
         ],
     )
     log.info(
-        "telemetry on (environment=%s, release=%s, traces_sample_rate=%s, %s)",
+        "telemetry on (environment=%s, release=%s, traces_sample_rate=%s, consent=%s, %s)",
         decision.environment,
         decision.release or "unstamped",
         decision.traces_sample_rate,
+        "not required" if decision.explicit else ("granted" if consent_granted else "held"),
         decision.reason,
     )
     return True
@@ -457,6 +483,8 @@ def _before_send(
     # A forwarded browser error already passed the gate in capture_browser_error
     # on the page's own flag, which outranks the engine's mirror read; asking
     # the probe again here would let a stale "playing" mirror overrule it.
+    if held_for_consent():
+        return None
     from_browser = (event.get("tags") or {}).get("origin") == "browser"
     if not from_browser and _keep_local_while_live("error"):
         return None
@@ -475,7 +503,7 @@ def _before_send_transaction(
     What it must not do is add work to a live set or carry a library path in
     a span, hence the gate and the scrub.
     """
-    if _keep_local_while_live("transaction"):
+    if held_for_consent() or _keep_local_while_live("transaction"):
         return None
     return cast("dict[str, Any] | None", scrub_event(event, hint))
 
@@ -548,7 +576,7 @@ def capture_browser_error(
     if is_perf_console_mirror(kind, message) or is_dev_tooling_console(kind, message):
         return None
     client = _client()
-    if client is None:
+    if client is None or held_for_consent():
         return None
     any_deck_live = context.get("any_deck_live")
     if any_deck_live is True or (any_deck_live is None and transport_is_live()):
@@ -601,7 +629,11 @@ def _client() -> Any | None:
     import sentry_sdk
 
     client = sentry_sdk.get_client()
-    return client if client is not None and client.is_active() else None
+    # is_active() alone is true for the SDK's own no-DSN placeholder client
+    # (what `sentry_sdk.init(dsn=None)` leaves behind), which can send nothing.
+    if client is None or not client.is_active() or not client.dsn:
+        return None
+    return client
 
 
 __all__ = [
@@ -611,6 +643,7 @@ __all__ = [
     "ENVIRONMENTS",
     "ENVIRONMENT_ENV",
     "FILTERED",
+    "LAST_DECISION",
     "LIVE_GATE",
     "MIRROR_LIVE_MAX_AGE_S",
     "REDACTED",

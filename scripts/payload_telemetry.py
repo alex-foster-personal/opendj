@@ -32,9 +32,14 @@ from pathlib import Path
 #: app/, because it is a build product rather than app source.
 BUNDLED_RELATIVE = Path("telemetry.json")
 
-#: The one env var (and Doppler secret) the bake reads. See module docstring
-#: for why SENTRY_DSN is not consulted.
+#: The env var (and Doppler secret) the bake reads for the engine. See the
+#: module docstring for why SENTRY_DSN is not consulted.
 SHIP_DSN_ENV: str = "OPENDJ_SENTRY_DSN_BACKEND_SHIP"
+
+#: The open-dj-fe DSN (Doppler, ADR-0017). The engine derives the Session
+#: Replay loader URL from it (OBS-06); the browser loads that script only
+#: after the tester accepts the terms (OBS-05).
+FRONTEND_DSN_ENV: str = "OPENDJ_SENTRY_DSN_FRONTEND"
 
 _MISSING_DSN = (
     f"payload is missing the ship Sentry DSN. Set {SHIP_DSN_ENV} in the build "
@@ -43,6 +48,15 @@ _MISSING_DSN = (
     "A packaged install reports nothing without it, which is the exact gap "
     "this bake closes; the build host's own SENTRY_DSN is the preview key "
     "and is deliberately not used."
+)
+
+
+_MISSING_FRONTEND_DSN = (
+    f"payload is missing the frontend Sentry DSN. Set {FRONTEND_DSN_ENV} in the "
+    "build environment, or provision it in Doppler project general config "
+    "dev_personal (the open-dj-fe project's client key). Session replay for "
+    "test users (OBS-06) is derived from it, so a build without it would ask "
+    "for consent and then record nothing."
 )
 
 
@@ -89,18 +103,26 @@ def _looks_like_dsn(value: str) -> bool:
     return value.startswith("https://") and "@" in value and "/" in value.split("@", 1)[1]
 
 
-def _resolve_dsn(env: Mapping[str, str]) -> str:
-    dsn = (env.get(SHIP_DSN_ENV) or "").strip()
+def _resolve_one(env: Mapping[str, str], name: str, missing: str) -> str:
+    dsn = (env.get(name) or "").strip()
     if not dsn:
-        dsn = _doppler_get(SHIP_DSN_ENV)
+        dsn = _doppler_get(name)
     if not dsn:
-        raise PayloadTelemetryError(_MISSING_DSN)
+        raise PayloadTelemetryError(missing)
     if not _looks_like_dsn(dsn):
         raise PayloadTelemetryError(
-            f"{SHIP_DSN_ENV} is set but does not look like a Sentry DSN "
+            f"{name} is set but does not look like a Sentry DSN "
             "(expected https://<key>@<host>/<project>); value not printed."
         )
     return dsn
+
+
+def _resolve_dsn(env: Mapping[str, str]) -> str:
+    return _resolve_one(env, SHIP_DSN_ENV, _MISSING_DSN)
+
+
+def _resolve_frontend_dsn(env: Mapping[str, str]) -> str:
+    return _resolve_one(env, FRONTEND_DSN_ENV, _MISSING_FRONTEND_DSN)
 
 
 def bake_telemetry(payload_dir: Path, env: Mapping[str, str] | None = None) -> Path:
@@ -112,10 +134,14 @@ def bake_telemetry(payload_dir: Path, env: Mapping[str, str] | None = None) -> P
     """
     import os
 
-    dsn = _resolve_dsn(os.environ if env is None else env)
+    source = os.environ if env is None else env
+    dsn = _resolve_dsn(source)
+    frontend_dsn = _resolve_frontend_dsn(source)
     dest = bundled_telemetry_path(payload_dir)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps({"dsn": dsn}) + "\n", encoding="utf-8")
+    dest.write_text(
+        json.dumps({"dsn": dsn, "frontend_dsn": frontend_dsn}) + "\n", encoding="utf-8"
+    )
     return dest
 
 
@@ -133,10 +159,14 @@ def verify_bundled_telemetry(payload_dir: Path) -> None:
     dsn = str(data.get("dsn") or "").strip()
     if not dsn or not _looks_like_dsn(dsn):
         raise PayloadTelemetryError(_MISSING_DSN)
+    frontend_dsn = str(data.get("frontend_dsn") or "").strip()
+    if not frontend_dsn or not _looks_like_dsn(frontend_dsn):
+        raise PayloadTelemetryError(_MISSING_FRONTEND_DSN)
 
 
 __all__ = [
     "BUNDLED_RELATIVE",
+    "FRONTEND_DSN_ENV",
     "SHIP_DSN_ENV",
     "PayloadTelemetryError",
     "bake_telemetry",

@@ -16,6 +16,7 @@
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
+	import TelemetryConsentOverlay from '$lib/components/telemetry/TelemetryConsentOverlay.svelte';
 	import { installQuitGate } from '$lib/shell/quit-gate';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
@@ -291,6 +292,7 @@
      shell, and the cheatsheet has to work there too. -->
 <HotkeysOverlay />
 <QuitConfirmOverlay />
+<TelemetryConsentOverlay />
 
 <ToastStack items={toasts} />
 <BrandLaunch />

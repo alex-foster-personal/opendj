@@ -74,7 +74,10 @@ function installBrowserGlobals() {
 	defineGlobal('crypto', { randomUUID: () => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
 	posted = [];
 	fetchedUrls = [];
-	globalThis.fetch = async (url, init) => {
+	globalThis.fetch = async (input, init) => {
+		// The typed openapi-fetch client (telemetry consent) passes a Request;
+		// the hand-rolled fetches pass a string. Same URL either way.
+		const url = typeof input === 'string' ? input : input.url;
 		fetchedUrls.push(url);
 		// The heartbeat POSTs a JSON body; the machine-pressure poll GETs with
 		// none, so only parse when one was actually sent.
@@ -160,8 +163,8 @@ test('the heartbeat and the pressure poll go through the same window, so neither
 	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
 	assert.equal(
 		manual.pending(),
-		4,
-		'the perf-tier fetch, heartbeat, pressure poll, and client samples are all queued, never dropped'
+		5,
+		'the perf-tier fetch, telemetry consent, heartbeat, pressure poll, and client samples are all queued, never dropped'
 	);
 
 	manual.release();
