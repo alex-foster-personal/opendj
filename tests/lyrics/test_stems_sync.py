@@ -112,7 +112,7 @@ def test_hydrate_fetches_by_hash_and_passes_strict_loader(
         model_name="m",
         model_version="v",
         source_path=str(source_root / "v.wav"),
-        root=tmp_path / "unused-root",
+        storage=register_stems.RegisterPairStorage(root=tmp_path / "unused-root"),
     )
     manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
     external_manifest = tmp_path / "manifest.json"
@@ -190,10 +190,9 @@ def test_register_cloud_push_verifies_without_track_locations(
         model_name="m",
         model_version="v",
         source_path=str(voc),
-        root=root,
-        s3=fake_s3,
-        cfg=cfg,
-        conn=state_db.open_rw(db_path),
+        storage=register_stems.RegisterPairStorage(
+            root=root, s3=fake_s3, cfg=cfg, conn=state_db.open_rw(db_path)
+        ),
     )
     conn = state_db.open_rw(db_path)
     try:
@@ -239,10 +238,9 @@ def test_register_cloud_excluded_pushes_nothing(
         model_name="m",
         model_version="v",
         source_path=str(voc),
-        root=root,
-        s3=fake_s3,
-        cfg=_test_cfg(),
-        conn=state_db.open_rw(db_path),
+        storage=register_stems.RegisterPairStorage(
+            root=root, s3=fake_s3, cfg=_test_cfg(), conn=state_db.open_rw(db_path)
+        ),
     )
     assert fake_s3.put_calls == []
 
@@ -274,8 +272,10 @@ def test_register_cloud_stream_raises(
             model_name="m",
             model_version="v",
             source_path=str(voc),
-            root=data_dir / "state" / "stems-roformer-spike",
-            s3=fake_s3,
-            cfg=_test_cfg(),
-            conn=state_db.open_rw(db_path),
+            storage=register_stems.RegisterPairStorage(
+                root=data_dir / "state" / "stems-roformer-spike",
+                s3=fake_s3,
+                cfg=_test_cfg(),
+                conn=state_db.open_rw(db_path),
+            ),
         )

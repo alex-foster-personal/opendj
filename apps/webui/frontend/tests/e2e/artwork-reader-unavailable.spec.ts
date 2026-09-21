@@ -151,6 +151,14 @@
  * /performance route's own onMount calls runPerformanceRescueAutoRestore
  * (rescue-restore.svelte.ts), which lists rescue snapshots once and stops
  * there when the list is empty.
+ * PERF-UI-05 playlist boot hydration (issue #3530, #3727): two KNOWN playlist
+ * list reads land inside PAST_BOOT_BURST_MS and must be mocked with
+ * stubPlaylistsRoute (RegExp route, not a Playwright glob on playlists alone,
+ * which misses availability=skip query strings):
+ *   - Boot: GET /api/v1/playlists?availability=skip (library-boot-hydration.ts)
+ *   - Deferred: GET /api/v1/playlists (BrowserPanel
+ *     browser-panel:refresh-playlist-availability task, bootScheduler)
+ *
  * The doubled rb-meta request is NOT a duplicate-fetch defect: scrutinized
  * because the point of this spec is exactly "no artwork request for this
  * track", so a spurious second metadata fetch would have been worth
@@ -170,6 +178,8 @@
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
+
+import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
 
 /** Real margin past the scheduler's own quiet-period + idle-frame ceiling,
  * so the deferred burst has unquestionably landed before the final asserts
@@ -318,7 +328,7 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/sets/recorder', (route) =>
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
-	await page.route('**/api/v1/playlists', (route) => route.fulfill({ json: [] }));
+	await stubPlaylistsRoute(page, (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/playlist-history', (route) =>
 		route.fulfill({
 			json: { cursor: 0, limit: 50, can_undo: false, can_redo: false, entries: [] }

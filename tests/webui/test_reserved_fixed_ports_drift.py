@@ -244,6 +244,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         9408,
     ),
     (
+        "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
+        "const DEFAULT_BACKEND_PORT = 8690;",
+        8690,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
+        "const DEFAULT_FRONTEND_PORT = 9410;",
+        9410,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/playwright.play-analytics.config.ts",
         "--port 9414",
         9414,

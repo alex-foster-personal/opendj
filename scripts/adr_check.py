@@ -43,17 +43,16 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.adr_pr_lookup import DEFAULT_REPO, current_pr_number, pr_files, pr_view
 from scripts.adr_ref_freshness import check_ref_freshness, emit_gate_result
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_REPO = "maintainer/music-dj-tools"
 DEFAULT_ADR_DIR = REPO_ROOT / "docs" / "decisions"
 DEFAULT_BASE = "origin/main"
 DEEPEN_HINT = "git fetch --deepen=900 origin main"
@@ -439,61 +438,6 @@ def git_rev_parse(ref: str, repo_root: Path) -> str:
             f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}"
         )
     return proc.stdout.strip()
-
-
-def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
-    proc = subprocess.run(
-        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return json.loads(proc.stdout)
-
-
-def pr_files(pr: int, repo: str = DEFAULT_REPO) -> list[str]:
-    """Every path the PR changes. Paginated, because ``gh pr view --json files`` truncates."""
-    proc = subprocess.run(
-        [
-            "gh",
-            "api",
-            "--paginate",
-            f"repos/{repo}/pulls/{pr}/files",
-            "--jq",
-            ".[].filename",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"gh api pulls/{pr}/files failed rc={proc.returncode}: {proc.stderr.strip()}"
-        )
-    return [line for line in proc.stdout.splitlines() if line.strip()]
-
-
-def current_pr_number(repo_root: Path, repo: str = DEFAULT_REPO) -> int | None:
-    proc = subprocess.run(
-        ["gh", "pr", "view", "--repo", repo, "--json", "number"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        return None
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    number = payload.get("number")
-    return int(number) if number else None
 
 
 def _resolve_changed_paths(
