@@ -100,11 +100,14 @@ def _ctrl_style(c: dict) -> str:
 def _ctrl_attrs(c: dict) -> str:
     m = c["midi"]
     shift = m.get("shift_name") or ""
+    mode = m.get("mode_name") or ""
+    shift_mode = m.get("shift_mode_name") or ""
     return (
         f'data-fig="{_esc(c["fig"])}" data-label="{_esc(c["label"])}" data-kind="{_esc(c["kind"])}" '
         f'data-midi-name="{_esc(m["name"])}" data-midi-type="{_esc(m["type"])}" '
         f'data-midi-ch="{_esc(m["ch"])}" data-midi-code="{_esc(m["code"])}" '
-        f'data-shift-name="{_esc(shift)}" data-layer="{_esc(c["layer"])}" '
+        f'data-shift-name="{_esc(shift)}" data-mode-name="{_esc(mode)}" '
+        f'data-shift-mode-name="{_esc(shift_mode)}" data-layer="{_esc(c["layer"])}" '
         f'title="{_esc(c["fig"])} {_esc(c["label"])}"'
     )
 
@@ -162,6 +165,8 @@ document.querySelectorAll('.control').forEach(el => {
       `<span class="k">${el.dataset.midiType.toUpperCase()}</span> ch${el.dataset.midiCh} ` +
       `code ${el.dataset.midiCode} · name <span class="k">${el.dataset.midiName}</span>` +
       (sn ? ` · shift twin <span class="k">${sn}</span>` : ' · (no shift twin)') +
+      (el.dataset.modeName ? ` · mode twin <span class="k">${el.dataset.modeName}</span>` : '') +
+      (el.dataset.shiftModeName ? ` · shift+mode twin <span class="k">${el.dataset.shiftModeName}</span>` : '') +
       (shift && sn ? ' · <span class="k">SHIFT LAYER ACTIVE</span>' : '');
   });
   el.addEventListener('pointerdown', (ev) => {
