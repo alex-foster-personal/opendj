@@ -181,7 +181,7 @@ test('the performance top bar keeps a labelled, hittable sign-in control at ever
 	}
 });
 
-// requirement: PERF-UI-05
+// requirement: PERF-UI-06
 // [if] /performance is at a width where the command entry is offered [then]
 // its centre passes a real elementFromPoint hit test and the top bar does not
 // overflow horizontally, [else stop].

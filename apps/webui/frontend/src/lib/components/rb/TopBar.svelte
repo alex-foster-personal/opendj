@@ -972,7 +972,7 @@
 	   elementFromPoint sweep across [1400px, 1920px] (105 widths) reports zero
 	   failures with the current ladder, so no further threshold move was needed
 	   here; tests/e2e/performance-topbar-responsive.spec.ts now guards
-	   PERF-UI-05 at the ladder boundaries.
+	   PERF-UI-06 at the ladder boundaries.
 
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the
