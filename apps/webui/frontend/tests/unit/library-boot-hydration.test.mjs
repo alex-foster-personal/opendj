@@ -61,7 +61,7 @@ test('fetchBootTracksFirstPage falls back when prefetch rejects', async () => {
 	assert.equal(page.items[0].stable_id, 't1');
 });
 
-test('bootPlaylistsPrefetch falls back to full list when fast prefetch rejects', async () => {
+test('bootPlaylistsPrefetch falls back to fast list when fast prefetch rejects', async () => {
 	hydration.setPrefsHydratorForTests(async () => {});
 	hydration.setFetchBootTracksPageForTests(() => Promise.resolve({ items: [], next_cursor: null }));
 	hydration.setFetchBootPlaylistsForTests(() => Promise.reject(new Error('fast validation fail')));

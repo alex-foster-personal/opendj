@@ -870,10 +870,6 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
-		// Reconcile accounting must not wait on playlist boot init (#3727): _init()
-		// throws when the fast playlist prefetch fails validation, and the Missing
-		// Tracks count comes from GET /api/v1/reconcile/summary, not from the tree.
-		void _loadReconcileSummary();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1139,6 +1135,9 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+			// Reconcile runs in finally so it never races the boot tree/pane but still
+			// resolves when playlist boot throws (#3750).
+			void _loadReconcileSummary();
 		}
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
