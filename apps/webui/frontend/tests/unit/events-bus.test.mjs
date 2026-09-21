@@ -154,7 +154,7 @@ test('a hello carrying the wrong types is an error and a resync, not a silent sk
 
 	socket.deliver('hello', 0, { contract_rev: 'rev-1', engine_version: 3, seq_start: 0, topics: [] });
 
-	assert.deepEqual(seen, ['malformed']);
+	assert.deepEqual(seen, ['initial-connect', 'malformed']);
 	assert.equal(bus.getHello(), null);
 	assert.equal(errors.length, 1);
 	assert.match(errors[0], /hello lacks contract_rev\/engine_version/);
@@ -178,9 +178,11 @@ test('the engine advertising a new contract_rev on reconnect is reported loudly'
 test('a contiguous seq run delivers events and never fires resync', () => {
 	const resyncs = [];
 	const seen = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	bus.subscribe('jobs.updated', (envelope) => seen.push(envelope.seq));
+	// Subscribed AFTER the connect: this test is about seq-gap behavior, not
+	// the initial-connect resync every open fires (covered on its own above).
 	const socket = connectAndHello({ seqStart: 10 });
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.deliver('jobs.updated', 11, {});
 	socket.deliver('jobs.updated', 12, {});
@@ -194,9 +196,9 @@ test('a contiguous seq run delivers events and never fires resync', () => {
 test('a skipped seq fires one resync and still delivers the frame that revealed it', () => {
 	const resyncs = [];
 	const seen = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	bus.subscribe('jobs.updated', (envelope) => seen.push(envelope.seq));
 	const socket = connectAndHello({ seqStart: 4 });
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.deliver('jobs.updated', 5, {});
 	socket.deliver('jobs.updated', 9, {}); // 6, 7 and 8 were missed.
@@ -210,8 +212,8 @@ test('a skipped seq fires one resync and still delivers the frame that revealed 
 
 test('a seq that rewinds is a gap too, because the engine restarted its counter', () => {
 	const resyncs = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	const socket = connectAndHello({ seqStart: 900 });
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.deliver('jobs.updated', 1, {});
 
@@ -220,8 +222,8 @@ test('a seq that rewinds is a gap too, because the engine restarted its counter'
 
 test('a malformed frame is treated as a gap, since its contents are unknowable', () => {
 	const resyncs = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	const socket = connectAndHello({ seqStart: 0 });
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.deliverRaw('{ not json');
 	socket.deliverRaw(JSON.stringify({ topic: 'jobs.updated', seq: 'one', ts: 'x', payload: {} }));
@@ -237,11 +239,11 @@ test('a malformed frame is treated as a gap, since its contents are unknowable',
 test('a data frame arriving before the hello is a contract break and a gap', () => {
 	const resyncs = [];
 	const seen = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	bus.subscribe('jobs.updated', (envelope) => seen.push(envelope.seq));
 	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
 	const socket = sockets.at(-1);
 	socket.open();
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.deliver('jobs.updated', 3, {});
 
@@ -398,12 +400,12 @@ test('a throwing topic subscriber does not starve the subscribers after it', () 
 
 test('a throwing resync listener does not stop the rest of the invalidation', () => {
 	const reached = [];
+	const socket = connectAndHello({ seqStart: 0 });
 	bus.subscribeResync(() => {
 		reached.push('first');
 		throw new Error('resync exploded');
 	});
 	bus.subscribeResync((reason) => reached.push(`second:${reason}`));
-	const socket = connectAndHello({ seqStart: 0 });
 
 	socket.deliver('jobs.updated', 5, {}); // A gap: 1 through 4 were missed.
 
@@ -489,25 +491,34 @@ test('a successful open resets the backoff, so a later blip starts at 500ms agai
 	assert.deepEqual(scheduler.delays, [500, 1000, 500]);
 });
 
-test('every reconnect fires resync, but the first connect does not', () => {
+test('the first connect fires resync too, not only a reconnect', () => {
+	// PR #1656 review round 5: the WS connects asynchronously, after a
+	// capability-probe round trip, well after any boot-time HTTP call a
+	// consumer already made. A change landing in that window is exactly as
+	// invisible to a consumer as a reconnect gap is, so "the first connect
+	// cannot have missed anything" was the wrong assumption -- fixed here so
+	// every subscribeResync() consumer gets the correction once, at the
+	// source, rather than each one re-discovering the gap independently
+	// (src/lib/api.ts's health cache and BrowserPanel's library refresh both
+	// already did).
 	const resyncs = [];
 	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
 	sockets.at(-1).open();
-	assert.deepEqual(resyncs, [], 'nothing could have been missed before the first connection');
+	assert.deepEqual(resyncs, ['initial-connect'], 'the first connect can miss a change too, from before it existed');
 
 	sockets.at(-1).serverClose();
 	scheduler.tick();
 	sockets.at(-1).open();
 
-	assert.deepEqual(resyncs, ['reconnect']);
+	assert.deepEqual(resyncs, ['initial-connect', 'reconnect']);
 });
 
 test('a 1013 slow-consumer close resyncs at the close and again on reopen', () => {
 	const resyncs = [];
-	bus.subscribeResync((reason) => resyncs.push(reason));
 	const socket = connectAndHello({ seqStart: 0 });
+	bus.subscribeResync((reason) => resyncs.push(reason));
 
 	socket.serverClose(1013, 'slow consumer');
 	scheduler.tick();
