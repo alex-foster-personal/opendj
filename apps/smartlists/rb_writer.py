@@ -144,9 +144,28 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         )
     source_key = source_url.password
     if source_key is None or source_key == "":
-        raise RuntimeError(
-            "rekordbox: unlocked SQLCipher engine has no key"
-        )
+        source_path = Path(source_url.database).resolve(strict=True)
+        if source_path != expected_target:
+            raise RuntimeError(
+                "rekordbox: plaintext engine does not own exact target "
+                f"{expected_target}; connected to {source_path}"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise FileExistsError(f"rekordbox: backup already exists: {destination}")
+        shutil.copy2(expected_target, destination)
+        try:
+            with sqlite3.connect(destination) as plaintext:
+                if plaintext.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                    raise RuntimeError(
+                        f"rekordbox: plaintext backup failed integrity check: {destination}"
+                    )
+        except sqlite3.DatabaseError as exc:
+            destination.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"rekordbox: plaintext backup is not a database: {destination}"
+            ) from exc
+        return backup_id
     backup_engine = create_engine(
         source_url,
         module=source_dbapi,
