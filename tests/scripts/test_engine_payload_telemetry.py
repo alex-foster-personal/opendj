@@ -1,7 +1,7 @@
 """OBS-04: payload bake + fail-loud verify for the ship Sentry DSN.
 
-[if] a payload ships without a bundled DSN [then] verify must fail naming
-OPENDJ_SENTRY_DSN_BACKEND_SHIP, [else stop].
+[if] a payload ships without a bundled DSN [then] verify fails naming the env var, [else stop].
+[if] the build host offers only SENTRY_DSN [then] bake refuses the preview key, [else stop].
 
 Until Mon 21 Sep 2026 every dmg carried no DSN and no SDK, so no installed
 engine ever reported an error. Bake writes telemetry.json at the payload

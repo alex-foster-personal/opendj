@@ -1,4 +1,10 @@
-"""OBS-05 / OBS-06: the consent route the first-launch dialog talks to."""
+"""OBS-05 / OBS-06: the consent route the first-launch dialog talks to.
+
+[if] a fresh install asks for its decision [then] it reads undecided, current terms, [else stop].
+[if] the dialog records accepted [then] the file is written and the send gate opens, [else stop].
+[if] the dialog records declined [then] the gate closes and the answer is remembered, [else stop].
+[if] acceptance names stale terms [then] the route answers 409 and writes nothing, [else stop].
+"""
 
 from __future__ import annotations
 
