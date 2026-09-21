@@ -32,10 +32,13 @@ def _run_live_playlist_switch_bench() -> dict:
         )
     env = dict(os.environ)
     # agentbox-14 and agentbox-15 share one host, so two shards (or a leaked
-    # engine from an earlier run) can both want the config's default 8701:
+    # engine from an earlier run) can both want the config's default port:
     # "http://127.0.0.1:8701/api/v1/health is already used" on main at
     # 2f0b917e (Mon 21 Sep 2026). An ephemeral port is never in the config's
-    # RESERVED_PORTS table, which tops out below 10000.
+    # RESERVED_PORTS table, which tops out below 10000. The config default
+    # itself moved 8701 -> 8713 (issue #3729) for operators running the bench
+    # by hand, since agentbox holds 8701 for opendj-release@rb-parity (#3448);
+    # the per-run port here is what keeps concurrent shards apart.
     env.setdefault("PLAYLIST_SWITCH_BENCH_PORT", str(_free_port()))
     env.setdefault("PLAYLIST_SWITCH_BENCH_SAMPLES", "10")
     env["PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE"] = "1"

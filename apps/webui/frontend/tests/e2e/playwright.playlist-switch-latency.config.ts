@@ -18,7 +18,7 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 export const PLAYLIST_SWITCH_BENCH_PORT = Number(
-	process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8701
+	process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8713
 );
 
 const RESERVED_PORTS: readonly number[] = [
