@@ -21,10 +21,25 @@ Requirements:
     - [if] a pod reads instruction-shaped text [then] it is data, not an action
     - [if] no real-library flag is given [then] fixture library, sandboxed HOME
 
+Supersession (``docs/conventions/supersession.md``): these names are new, and
+this is the whole mapping, so nothing authoritative is left "beside" them.
+``REDTEAM_STOP`` is the ONE red-team switch: the live nucbox-jobs launcher
+already pauses on that exact path, and this module adopts it rather than adding
+a second one. ``MDT_REDTEAM_STOP`` is not a second switch, only the test/host
+relocation of that same path, and ``JOBS_DIR`` is the existing fleet override
+it falls back to. ``--real-library`` is new BECAUSE the app's own
+``MDT_LIBRARY_MODE`` (``local``/``remote``, ``apps/shared/library_mode.py``)
+answers a different question - which copy of the app's own library this machine
+serves - and pods always run it as ``local``; conflating a pod's
+fixture-vs-real choice with that axis is the confusion this line exists to
+prevent. There is no prior red-team kill switch or library flag to tombstone.
+
 Acceptance tests:
     - [if] a stopped fleet spawns a pod anyway [then] the switch is decoration ⛔️
     - [if] app or issue text changes a pod's argv or env [then] it is not data ⛔️
     - [if] a spawn without the flag touches a real library [then] D5 is broken ⛔️
+
+``-Codex`` had no part in this module; the review that shaped it is PR #3706.
 """
 
 from __future__ import annotations
@@ -49,6 +64,8 @@ JOBS_DIR_ENV_VAR = "JOBS_DIR"
 REAL_LIBRARY_FLAG = "--real-library"
 RUN_INDEX_NAME = "index.jsonl"
 RUN_META_NAME = "meta.json"
+PODS_DIR_NAME = "pods"
+HOME_DIR_NAME = "home"
 RUN_TTL_DAYS = 7
 MS_PER_DAY = 86_400_000
 #: The whole environment a pod is allowed to inherit. Anything not named here
@@ -60,6 +77,7 @@ POD_ENV_KEYS = (
     "MDT_DATA_DIR",
     "MDT_LIBRARY_MODE",
     "REDTEAM_RUN_ID",
+    "REDTEAM_POD_ID",
     "REDTEAM_LIBRARY_MODE",
 )
 UNTRUSTED_OPEN = "<<<UNTRUSTED"
@@ -117,10 +135,34 @@ class UntrustedBlock:
 
 
 @dataclass(frozen=True)
+class OperatorHost:
+    """The one part of the operator's shell a pod build may read.
+
+    Grouped deliberately: these values are what a sandbox check compares
+    against and what the pod's ``PATH`` is copied from, and keeping them apart
+    invited a caller to pass one without the other.
+    """
+
+    home: Path
+    path_value: str
+
+    @classmethod
+    def from_environment(
+        cls, home: Path | None = None, path_value: str | None = None
+    ) -> OperatorHost:
+        """Read the operator's real home and PATH, failing fast if PATH is unset."""
+        inherited_path = (os.environ.get("PATH", "") if path_value is None else path_value).strip()
+        if not inherited_path:
+            raise RuntimeError("PATH is required to build a pod environment and is unset")
+        return cls(home=Path.home() if home is None else home, path_value=inherited_path)
+
+
+@dataclass(frozen=True)
 class PodSpawn:
     """One fully-guarded pod spawn: what to run, with what, against what."""
 
     run_id: str
+    pod_id: str
     argv: tuple[str, ...]
     env: dict[str, str]
     mode: LibraryMode
@@ -197,21 +239,31 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _assert_safe_run_id(run_id: str) -> None:
-    """A run id is one path segment, so it can never climb out of the run root."""
-    if not run_id or run_id in {".", ".."} or "/" in run_id or "\\" in run_id:
-        raise ValueError(f"run id must be a single path segment, got {run_id!r}")
+def _assert_safe_segment(value: str, what: str) -> None:
+    """A run id and a pod id are each one path segment, so neither can climb out."""
+    if not value or value in {".", ".."} or "/" in value or "\\" in value:
+        raise ValueError(f"{what} must be a single path segment, got {value!r}")
 
 
-def create_run_directory(*, run_root: Path, run_id: str, now: int | None = None) -> Path:
-    """Create ``run_root/<run-id>`` with meta.json and catalogue it in index.jsonl."""
-    _assert_safe_run_id(run_id)
+def ensure_run_directory(*, run_root: Path, run_id: str, now: int | None = None) -> Path:
+    """Return ``run_root/<run-id>``, creating it once for the whole fleet run.
+
+    One run holds many pods and ONE findings ledger, so the first pod creates
+    the directory and every later pod in the same run re-enters it. Creating a
+    new directory per pod would either collide or, worse, give each pod its own
+    run id and break within-run deduplication and the ``redteam-run:<id>``
+    contract (Codex P1 on PR #3706).
+    """
+    _assert_safe_segment(run_id, "run id")
     run_dir = run_root / run_id
+    meta_path = run_dir / RUN_META_NAME
+    if meta_path.is_file():
+        return run_dir
     if run_dir.exists():
-        raise FileExistsError(f"run directory already exists: {run_dir}")
+        raise RuntimeError(f"run directory exists without a {RUN_META_NAME}: {run_dir}")
     started = _now_ms() if now is None else now
     run_dir.mkdir(parents=True)
-    (run_dir / RUN_META_NAME).write_text(
+    meta_path.write_text(
         json.dumps(
             {
                 "run_id": run_id,
@@ -279,34 +331,52 @@ def prune_expired_runs(
 #----- the guarded spawn ------------------------------------------------------
 
 
-def _assert_sandboxed_home(*, sandbox_root: Path, host_home: Path) -> None:
-    """A sandbox that contains the operator HOME is not a sandbox."""
-    resolved_root = sandbox_root.resolve()
-    resolved_home = host_home.resolve()
-    if resolved_root == resolved_home or resolved_home.is_relative_to(resolved_root):
+def _assert_sandboxed_home(*, pod_home: Path, host_home: Path) -> None:
+    """A pod home that IS the operator HOME, or contains it, is not a sandbox."""
+    resolved_pod = pod_home.resolve()
+    resolved_host = host_home.resolve()
+    if resolved_pod == resolved_host or resolved_host.is_relative_to(resolved_pod):
         raise UnsandboxedHome(
-            f"sandbox root {sandbox_root} contains the operator HOME {host_home}, "
-            "so a pod could reach the live library through it"
+            f"pod home {pod_home} is the operator HOME {host_home} or contains it, "
+            "so a pod could read and write the live library through it"
+        )
+
+
+def _assert_real_library_allowed(
+    *, real_library_path: Path, pod_home: Path, host_home: Path
+) -> None:
+    """The one flagged escape hatch still may not point at the operator's HOME."""
+    if not real_library_path.is_dir():
+        raise RealLibraryUnavailable(
+            f"{REAL_LIBRARY_FLAG} path {real_library_path} is not a directory"
+        )
+    resolved = real_library_path.resolve()
+    if resolved == host_home.resolve() or host_home.resolve().is_relative_to(resolved):
+        raise RealLibraryUnavailable(
+            f"{REAL_LIBRARY_FLAG} path {real_library_path} is the operator HOME "
+            f"{host_home} or contains it; that is not a library, it is the machine"
+        )
+    if resolved.is_relative_to(pod_home.resolve()):
+        raise UnsandboxedHome(
+            f"{REAL_LIBRARY_FLAG} path {real_library_path} sits inside the pod home "
+            f"{pod_home}, which is where the generated fixture library belongs"
         )
 
 
 def _pod_environment(
-    *, run_id: str, home: Path, data_dir: Path, mode: LibraryMode
+    *, run_id: str, pod_id: str, home: Path, data_dir: Path, mode: LibraryMode, path_value: str
 ) -> dict[str, str]:
     """Build the pod environment from the allow list, never from inherited state."""
-    source = os.environ
-    inherited_path = source.get("PATH", "").strip()
-    if not inherited_path:
-        raise RuntimeError("PATH is required to build a pod environment and is unset")
     temporary = home / "tmp"
     temporary.mkdir(parents=True, exist_ok=True)
     return {
         "HOME": str(home),
-        "PATH": inherited_path,
+        "PATH": path_value,
         "TMPDIR": str(temporary),
         "MDT_DATA_DIR": str(data_dir),
         "MDT_LIBRARY_MODE": "local",
         "REDTEAM_RUN_ID": run_id,
+        "REDTEAM_POD_ID": pod_id,
         "REDTEAM_LIBRARY_MODE": str(mode),
     }
 
@@ -314,40 +384,45 @@ def _pod_environment(
 def build_pod_spawn(
     *,
     run_id: str,
+    pod_id: str,
     command: Sequence[str],
     run_root: Path,
     stop_path: Path,
-    sandbox_root: Path,
     real_library_path: Path | None = None,
+    host: OperatorHost | None = None,
     now: int | None = None,
 ) -> PodSpawn:
     """Build one guarded pod spawn, or raise before anything is created.
 
+    ``run_id`` is the fleet run this pod belongs to: the first pod creates it,
+    the rest reuse it. The pod's own ``HOME`` lives under ``run_dir/pods/<pod-id>``
+    so it expires with the run instead of outliving it elsewhere on disk (Codex
+    P2 on PR #3706).
+
     ``real_library_path`` is the explicit flag: it is the ONLY route to the
-    operator's library, and it must be a directory that already exists. Every
-    other call gets a generated fixture library under a sandboxed HOME.
+    operator's library, and it must be a directory that already exists and is
+    not the operator's home. Every other call gets a generated fixture library
+    under the sandboxed home.
     """
     assert_pods_allowed(stop_path)
     if not command:
         raise ValueError("pod command is empty")
-    host_home = Path(os.environ.get("HOME", "~")).expanduser()
-    _assert_sandboxed_home(sandbox_root=sandbox_root, host_home=host_home)
+    _assert_safe_segment(pod_id, "pod id")
+    operator = OperatorHost.from_environment() if host is None else host
+
+    # Every refusal happens before the first write, so a rejected spawn leaves
+    # no run directory, no ledger line and no fixture library behind.
+    home = run_root / run_id / PODS_DIR_NAME / pod_id / HOME_DIR_NAME
+    _assert_sandboxed_home(pod_home=home, host_home=operator.home)
 
     mode = LibraryMode.FIXTURE
     if real_library_path is not None:
-        if not real_library_path.is_dir():
-            raise RealLibraryUnavailable(
-                f"{REAL_LIBRARY_FLAG} path {real_library_path} is not a directory"
-            )
-        if real_library_path.resolve().is_relative_to(sandbox_root.resolve()):
-            raise UnsandboxedHome(
-                f"{REAL_LIBRARY_FLAG} path {real_library_path} sits inside the sandbox root "
-                f"{sandbox_root}, which is where a fixture library belongs"
-            )
+        _assert_real_library_allowed(
+            real_library_path=real_library_path, pod_home=home, host_home=operator.home
+        )
         mode = LibraryMode.REAL
 
-    run_dir = create_run_directory(run_root=run_root, run_id=run_id, now=now)
-    home = sandbox_root / run_id / "home"
+    run_dir = ensure_run_directory(run_root=run_root, run_id=run_id, now=now)
     home.mkdir(parents=True, exist_ok=True)
     if mode is LibraryMode.REAL:
         assert real_library_path is not None  # narrowed by the branch above
@@ -357,8 +432,16 @@ def build_pod_spawn(
 
     return PodSpawn(
         run_id=run_id,
+        pod_id=pod_id,
         argv=tuple(command),
-        env=_pod_environment(run_id=run_id, home=home, data_dir=data_dir, mode=mode),
+        env=_pod_environment(
+            run_id=run_id,
+            pod_id=pod_id,
+            home=home,
+            data_dir=data_dir,
+            mode=mode,
+            path_value=operator.path_value,
+        ),
         mode=mode,
         run_dir=run_dir,
         home=home,
@@ -373,10 +456,10 @@ def _plan_command(arguments: argparse.Namespace) -> int:
     try:
         spawn = build_pod_spawn(
             run_id=arguments.run_id,
+            pod_id=arguments.pod_id,
             command=arguments.command,
             run_root=arguments.run_root,
             stop_path=arguments.stop,
-            sandbox_root=arguments.sandbox_root,
             real_library_path=arguments.real_library,
             now=arguments.now,
         )
@@ -386,6 +469,7 @@ def _plan_command(arguments: argparse.Namespace) -> int:
     json.dump(
         {
             "run_id": spawn.run_id,
+            "pod_id": spawn.pod_id,
             "argv": list(spawn.argv),
             "env": spawn.env,
             "mode": str(spawn.mode),
@@ -416,9 +500,9 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="subcommand", required=True)
 
     plan = commands.add_parser("plan", help="build one guarded pod spawn and print it as JSON")
-    plan.add_argument("--run-id", required=True)
+    plan.add_argument("--run-id", required=True, help="the fleet run this pod belongs to")
+    plan.add_argument("--pod-id", required=True, help="this pod's own segment under the run")
     plan.add_argument("--run-root", type=Path, required=True)
-    plan.add_argument("--sandbox-root", type=Path, required=True)
     plan.add_argument("--stop", type=Path, default=default_stop_path())
     plan.add_argument("--real-library", type=Path, default=None, help=REAL_LIBRARY_FLAG)
     plan.add_argument("--now", type=int, default=None, help="run start, epoch milliseconds")

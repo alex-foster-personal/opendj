@@ -3,22 +3,27 @@
 A fleet of pods hammering the operator's live rekordbox library unattended is
 the failure this module prevents (D5). Every pod that is not given an explicit
 real-library path gets a throwaway library built here: a migrated
-``state/state.db`` with :data:`FIXTURE_TRACK_COUNT` synthetic tracks, a
-rekordbox-shaped ``master.plain.db`` carrying genres and play counts, and real
-WAV files under ``music/`` that every track's ``file_path`` resolves to.
+``state/state.db`` holding :data:`FIXTURE_TRACK_COUNT` synthetic tracks with
+rekordbox vendor ids, a rekordbox-shaped ``master.plain.db`` carrying genres
+and play counts, and real WAV files under ``music/`` that every track's
+``file_path`` resolves to.
 
 Requirements:
     - [if] the library is built twice [then] both trees carry identical content
     - [if] a pod opens the fixture state.db [then] every file_path resolves
-    - [if] the build is interrupted part way [then] the next build starts clean
+    - [if] a build is interrupted part way [then] the next build starts clean
 
-Acceptance tests (one per line, mapped to :mod:`tests.scripts.test_redteam_guardrails`):
-    - [if] two builds differ in a track row or a WAV byte [then] deterministic ⛔️
-    - [if] a track's file_path is missing from disk [then] the library is unplayable ⛔️
+Acceptance tests (mapped to :mod:`tests.scripts.test_redteam_guardrails`):
+    - [if] two builds differ in a track row or a WAV byte [then] deterministic is broken
+    - [if] a track's file_path is missing from disk [then] the library is unplayable
 
-The row shapes come from ``tests/webui/library_wheel_fixtures``, the same
-helpers the library-wheel e2e suite seeds with, so the fixture the pods see is
-the fixture the e2e tier already treats as a real library.
+Rows are written through the PRODUCTION writer (``apps.shared.state.writer``),
+never through a test helper: this module is imported by
+``scripts.redteam_trigger``, which the fleet runs with ``uv run --no-project``
+and no dev extra, so a ``pytest`` import anywhere on this path breaks the
+trigger before it can even read the kill switch (Codex P1 on PR #3706). The
+vendor-side ``master.plain.db`` is generated here for the same reason: it is
+rekordbox's schema, not ours, and no production module creates one.
 """
 
 from __future__ import annotations
@@ -30,7 +35,8 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests.webui.library_wheel_fixtures import GENRES, _make_master_db, _make_state_db
+from apps.shared.state.schema import apply_migrations
+from apps.shared.state.writer import StateWriter
 
 FIXTURE_TRACK_COUNT = 12
 SAMPLE_RATE = 22050
@@ -40,11 +46,15 @@ TONE_BASE_FREQUENCY = 220.0
 DATA_DIR_NAME = "data"
 MUSIC_DIR_NAME = "music"
 UNMAPPED_TRACK_STRIDE = 5  # every 5th track has no rekordbox mapping at all
-_GENRE_IDS = tuple(GENRES)
+FIXTURE_GENRES = (
+    ("g-fixture-techno", "Peak Time Techno"),
+    ("g-fixture-house", "Jackin House"),
+    ("g-fixture-spoken", "Spoken Word Poetry"),
+)
 _TRACK_ID_TEMPLATE = "t-fixture-{:04d}"
 _WAV_TEMPLATE = "fixture-{:04d}.wav"
-_FIXTURE_STAMP = "2026-01-01T00:00:00Z"
-_PLAYLIST = {"playlist_id": "pl-fixture", "name": "Fixture Warmup"}
+_STABLE_ID_TIER = "inferred"
+_VENDOR = "rekordbox"
 
 
 @dataclass(frozen=True)
@@ -93,52 +103,53 @@ def _write_tone(path: Path, frequency: float) -> None:
         handle.writeframes(bytes(frames))
 
 
-def _seed_tables(state_db: Path, master_db: Path, wav_paths: list[Path]) -> None:
-    tracks = [
-        {
-            "stable_id": track_id(index),
-            "title": f"Fixture Track {index:02d}",
-            "artists": [f"Fixture Artist {(index % 3) + 1}"],
-        }
-        for index in range(1, FIXTURE_TRACK_COUNT + 1)
-    ]
-    vendor_ids = {
-        track_id(index): f"v-fixture-{index:03d}"
-        for index in range(1, FIXTURE_TRACK_COUNT + 1)
-        if _is_mapped(index)
-    }
-    _make_state_db(
-        state_db,
-        tracks=tracks,
-        memberships=[
-            {"playlist_id": _PLAYLIST["playlist_id"], "stable_id": track_id(index)}
-            for index in range(1, FIXTURE_TRACK_COUNT + 1, 2)
-        ],
-        playlists=[_PLAYLIST],
-        vendor_ids=vendor_ids,
-    )
-    _make_master_db(
-        master_db,
-        content=[
-            {
-                "vendor_id": vendor_id,
-                "genre_id": _GENRE_IDS[index % len(_GENRE_IDS)],
-                "play_count": index,
-            }
-            for index, vendor_id in enumerate(sorted(vendor_ids.values()), start=1)
-        ],
-    )
-    # The two columns the shared seeder does not know about, and the reason a
-    # pod can load a deck at all: without file_path the track exists and plays
-    # nothing, which is the fault class REDTEAM-07 attacks.
+def _seed_master_db(path: Path) -> None:
+    """Write the rekordbox-side tables the library surface reads genres from."""
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(
+            "CREATE TABLE djmdGenre (ID VARCHAR(255) PRIMARY KEY, Name VARCHAR(255), "
+            "rb_local_deleted TINYINT(1) DEFAULT 0)"
+        )
+        conn.execute(
+            "CREATE TABLE djmdContent (ID VARCHAR(255) PRIMARY KEY, GenreID VARCHAR(255), "
+            "FolderPath VARCHAR(255), AnalysisDataPath VARCHAR(255), Commnt VARCHAR(255), "
+            "DJPlayCount INTEGER, rb_local_deleted TINYINT(1) DEFAULT 0)"
+        )
+        conn.executemany("INSERT INTO djmdGenre (ID, Name) VALUES (?, ?)", FIXTURE_GENRES)
+        rows = [
+            (f"v-fixture-{index:03d}", FIXTURE_GENRES[index % len(FIXTURE_GENRES)][0], index)
+            for index in range(1, FIXTURE_TRACK_COUNT + 1)
+            if _is_mapped(index)
+        ]
+        conn.executemany(
+            "INSERT INTO djmdContent (ID, GenreID, DJPlayCount) VALUES (?, ?, ?)", rows
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _seed_state_db(state_db: Path, wav_paths: list[Path]) -> None:
+    """Write the tracks through the production writer, one WAV path each."""
     conn = sqlite3.connect(str(state_db))
     try:
+        apply_migrations(conn)
+        writer = StateWriter(conn)
         for index, wav_path in enumerate(wav_paths, start=1):
-            conn.execute(
-                "UPDATE tracks SET file_path = ?, duration_ms = ? WHERE stable_id = ?",
-                (str(wav_path), round(TONE_FRAMES * 1000 / SAMPLE_RATE), track_id(index)),
+            stable_id = track_id(index)
+            writer.upsert_track(
+                stable_id=stable_id,
+                stable_id_tier=_STABLE_ID_TIER,
+                title=f"Fixture Track {index:02d}",
+                artists=[f"Fixture Artist {(index % 3) + 1}"],
+                album=None,
+                isrc=None,
+                duration_ms=round(TONE_FRAMES * 1000 / SAMPLE_RATE),
+                file_path=str(wav_path),
             )
-        conn.commit()
+            if _is_mapped(index):
+                writer.set_vendor_id(stable_id, _VENDOR, f"v-fixture-{index:03d}")
     finally:
         conn.close()
 
@@ -156,7 +167,8 @@ def build_fixture_library(root: Path) -> FixtureLibrary:
     wav_paths = [music_root / wav_name(index) for index in range(1, FIXTURE_TRACK_COUNT + 1)]
     for index, wav_path in enumerate(wav_paths, start=1):
         _write_tone(wav_path, TONE_BASE_FREQUENCY * index)
-    _seed_tables(state_dir / "state.db", data_dir / "master.plain.db", wav_paths)
+    _seed_state_db(state_dir / "state.db", wav_paths)
+    _seed_master_db(data_dir / "master.plain.db")
     return FixtureLibrary(
         root=root,
         data_dir=data_dir,
