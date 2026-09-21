@@ -205,7 +205,9 @@ def open_db(path: Path | None = None) -> Rekordbox6Database:
                 f"{paths.REKORDBOX_LIVE_DB} is missing."
             )
         target = copied["rekordbox"]  # type: ignore[assignment]
-    return Rekordbox6Database(path=str(target))
+    with target.open("rb") as handle:
+        is_plaintext = handle.read(16) == b"SQLite format 3\x00"
+    return Rekordbox6Database(path=str(target), unlock=not is_plaintext)
 
 
 def _safe_name(rel) -> str:

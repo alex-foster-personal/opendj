@@ -180,12 +180,24 @@ def register_pair(
     source_path: str,
     storage: RegisterPairStorage | None = None,
     root: Path | None = None,
+    s3: AssetS3Client | None = None,
+    cfg: CloudConfig | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> Path:
     """Write ONE canonical roformer2 bundle and verify it with the strict
     loader. Returns the bundle dir. Raises on any inconsistency - a bundle
     the app cannot read back must never be left behind (the tmp dir is
     removed on failure)."""
-    store = _storage_for_register_pair(storage, root)
+    if any(value is not None for value in (root, s3, cfg, conn)):
+        if storage is not None:
+            raise TypeError(
+                "register_pair accepts storage= or legacy storage keywords, not both"
+            )
+        store = RegisterPairStorage(
+            root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
+        )
+    else:
+        store = _storage_for_register_pair(storage, root)
     root = store.root
     s3 = store.s3
     cfg = store.cfg
