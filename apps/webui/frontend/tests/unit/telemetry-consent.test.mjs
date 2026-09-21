@@ -455,10 +455,7 @@ test('a replay click breadcrumb never carries the attribute values the SDK write
 		}
 	};
 	const out = consent.scrubRecordingEvent(click);
-	assert.equal(
-		out.data.payload.message,
-		'td.c-title.s-X[title="[filtered]"] > button.deck-target[title="[filtered]"][type="button"][data-testid="load-1"]'
-	);
+	assert.equal(out.data.payload.message, 'td.c-title.s-X[title="[filtered]"]');
 	assert.deepEqual(out.data.payload.data.node.attributes, {
 		class: 'deck-target',
 		title: '[filtered]',
@@ -491,7 +488,7 @@ test('the error-event click breadcrumb gets the same selector scrub', () => {
 		category: 'ui.click',
 		message: 'div.deck[aria-label="webkit-fixture-b-124bpm"] > button[type="button"]'
 	});
-	assert.equal(crumb.message, 'div.deck[aria-label="[filtered]"] > button[type="button"]');
+	assert.equal(crumb.message, 'div.deck[aria-label="[filtered]"]');
 	// Only the SDK's DOM breadcrumbs are selector paths; a console line with a
 	// ` > ` in it is scrubbed as text, not thrown away as an unparseable path.
 	const line = consent.scrubBreadcrumb({
@@ -501,22 +498,33 @@ test('the error-event click breadcrumb gets the same selector scrub', () => {
 	assert.equal(line.message, 'decode a > b <path.mp3>');
 });
 
-test('a selector the SDK wrote with an unescaped title is filtered whole, never in part', () => {
-	// The SDK writes `[title="${value}"]` verbatim. A quote or the path joiner
-	// inside the value makes the path ambiguous; a partial rewrite would keep
-	// the rest of the title, so the whole message goes (Codex on #3752).
+test('a selector the SDK wrote with an unescaped title keeps only the prefix before it', () => {
+	// The SDK writes `[title="${value}"]` verbatim, so the text after the
+	// first library-content attribute may be the value itself, however it
+	// parses: `A"] > span#PRIVATE[title="B` yields a clean path with #PRIVATE
+	// in it (Codex on #3752). Keep the DOM-derived prefix, drop the rest.
 	const ui = (message) => consent.scrubBreadcrumb({ category: 'ui.click', message }).message;
-	assert.equal(ui('td.c-title[title="Song "Live" Mix"] > span.title-text'), '[filtered]');
-	assert.equal(ui('td.c-title[title="A > B"] > span.title-text'), '[filtered]');
-	assert.equal(ui('td.c-title[title="A"] > B"] > span'), '[filtered]');
-	assert.equal(ui('not a selector at all'), '[filtered]');
-	// Brackets and dots inside a value are unambiguous and are filtered in place.
-	assert.equal(ui('td.c-title[title="Mix [radio] v1.2"]'), 'td.c-title[title="[filtered]"]');
-	// Structure survives: tag, id, classes, kept attributes, the path joiner.
 	assert.equal(
-		ui('main#app.s-X.rb-row-first > button.deck-target[type="button"][data-testid="load-1"][title="x"]'),
+		ui('td.c-title[title="A"] > span#PRIVATE[title="B"] > span.title-text'),
+		'td.c-title[title="[filtered]"]'
+	);
+	assert.equal(ui('td.c-title[title="Song "Live" Mix"] > span.title-text'), 'td.c-title[title="[filtered]"]');
+	assert.equal(ui('td.c-title[title="A > B"] > span.title-text'), 'td.c-title[title="[filtered]"]');
+	assert.equal(ui('td.c-title[title="Mix [radio] v1.2"]'), 'td.c-title[title="[filtered]"]');
+	// Kept, app-authored attributes before the first library one survive; the
+	// path joiner and the ancestors do too.
+	assert.equal(
+		ui('main#app.s-X.rb-row-first > button.deck-target[type="button"][data-testid="load-1"][title="x"] > span'),
 		'main#app.s-X.rb-row-first > button.deck-target[type="button"][data-testid="load-1"][title="[filtered]"]'
 	);
+	// No library attribute at all: the path passes whole when it parses.
+	assert.equal(ui('main#app > button[type="button"]'), 'main#app > button[type="button"]');
+	// Not a selector, a fragment, or a prefix that does not parse: filtered whole.
+	assert.equal(ui('not a selector at all'), '[filtered]');
+	assert.equal(ui('B"] > span'), '[filtered]');
+	assert.equal(ui('[title="x"]'), '[filtered]');
+	assert.equal(ui('td.c-title > [title="x"]'), '[filtered]');
+	assert.equal(ui('td.c-title[type="a"b"][title="x"]'), '[filtered]');
 	// The same through the recording hook.
 	const rec = consent.scrubRecordingEvent({
 		type: 5,
@@ -525,5 +533,5 @@ test('a selector the SDK wrote with an unescaped title is filtered whole, never 
 			payload: { category: 'ui.input', message: 'input.search[name="Song "Live""]' }
 		}
 	});
-	assert.equal(rec.data.payload.message, '[filtered]');
+	assert.equal(rec.data.payload.message, 'input.search[name="[filtered]"]');
 });

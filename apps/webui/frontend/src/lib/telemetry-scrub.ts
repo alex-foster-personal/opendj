@@ -189,41 +189,48 @@ export const SELECTOR_ATTRIBUTES_KEPT: ReadonlySet<string> = new Set([
 ]);
 // One element of the SDK's selector path: `tag`, then any of `#id`, `.class`
 // and `[name="value"]`. The SDK writes attribute values VERBATIM (no escaping),
-// so a value holding `"`, or the ` > ` the path is joined with, cannot be told
-// apart from the selector's own syntax. The parser below therefore accepts
-// only what it can account for completely; anything else fails closed.
-const SELECTOR_SEGMENT_RE = /^([a-zA-Z][\w-]*)((?:#[^\s#.[\]"]+|\.[^\s#.[\]"]+|\[[\w:-]+="[^"]*"\])*)$/;
-const SELECTOR_PART_RE = /#[^\s#.[\]"]+|\.[^\s#.[\]"]+|\[([\w:-]+)="([^"]*)"\]/g;
+// so once a value that can hold library content has started, nothing after
+// it can be told apart from the selector's own syntax: a title of
+// `A"] > span#PRIVATE[title="B` yields a path that parses cleanly with
+// `#PRIVATE` in it (Codex on #3752). The scrub therefore keeps only the
+// prefix BEFORE the first such value, which is DOM-derived by construction,
+// and drops everything from that value on.
+const SELECTOR_SEGMENT_RE = /^[a-zA-Z][\w-]*(?:#[^\s#.[\]"]+|\.[^\s#.[\]"]+|\[[\w:-]+="[^"]*"\])*$/;
+const SELECTOR_ATTR_OPEN_RE = /\[([\w:-]+)="/g;
 const SELECTOR_JOIN = ' > ';
 
+function isWellFormedPath(text: string): boolean {
+	return text.split(SELECTOR_JOIN).every((segment) => SELECTOR_SEGMENT_RE.test(segment));
+}
+
 /**
- * `td.c-title[title="x"] > button[type="button"]` ->
- * `td.c-title[title="[filtered]"] > button[type="button"]`. A path that does
- * not parse end to end (a value containing a quote or the ` > ` joiner, a
- * fragment that is not `tag#id.class[attr="value"]...) becomes `[filtered]`
- * as a whole: the SDK does not escape values, so a partial rewrite could
- * leave the rest of the title in place (Codex on #3752).
+ * `main#app > td.c-title[title="x"] > span.title-text` ->
+ * `main#app > td.c-title[title="[filtered]"]`.
+ *
+ * Everything up to the first attribute that is not in
+ * `SELECTOR_ATTRIBUTES_KEPT` is kept, that attribute's value becomes
+ * `[filtered]`, and the rest of the path is dropped: the SDK does not escape
+ * values, so the text after that point may be the value itself, however it
+ * happens to parse. The kept prefix is itself required to parse as a path
+ * (tags, ids, classes, kept attributes); anything else, a stray fragment or
+ * a message that is not a selector at all, becomes `[filtered]` whole.
+ * Cost: the descendants of the first titled element are not named; the
+ * rrweb snapshot still carries the click target by node id.
  */
 export function scrubSelector(text: string): string {
-	const out: string[] = [];
-	for (const segment of text.split(SELECTOR_JOIN)) {
-		const m = SELECTOR_SEGMENT_RE.exec(segment);
-		if (m === null) return FILTERED;
-		const [, tag, parts] = m;
-		let rebuilt = tag;
-		let consumed = 0;
-		for (const part of parts.matchAll(SELECTOR_PART_RE)) {
-			if (part.index !== consumed) return FILTERED;
-			consumed += part[0].length;
-			const name = part[1];
-			if (name === undefined) rebuilt += part[0];
-			else if (SELECTOR_ATTRIBUTES_KEPT.has(name)) rebuilt += `[${name}="${part[2]}"]`;
-			else rebuilt += `[${name}="${FILTERED}"]`;
-		}
-		if (consumed !== parts.length) return FILTERED;
-		out.push(rebuilt);
+	SELECTOR_ATTR_OPEN_RE.lastIndex = 0;
+	let open: RegExpExecArray | null;
+	while ((open = SELECTOR_ATTR_OPEN_RE.exec(text)) !== null) {
+		const name = open[1];
+		if (SELECTOR_ATTRIBUTES_KEPT.has(name)) continue;
+		const prefix = text.slice(0, open.index);
+		const lastSegment = prefix.split(SELECTOR_JOIN).pop() ?? '';
+		// The prefix ends inside a segment (`td.c-title` before `[title="`);
+		// it must be a well-formed path so far, with a tag on that segment.
+		if (lastSegment.length === 0 || !isWellFormedPath(prefix)) return FILTERED;
+		return `${prefix}[${name}="${FILTERED}"]`;
 	}
-	return out.join(SELECTOR_JOIN);
+	return isWellFormedPath(text) ? text : FILTERED;
 }
 
 function scrubNodeAttributes(node: unknown): void {
