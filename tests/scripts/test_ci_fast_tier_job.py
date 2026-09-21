@@ -91,9 +91,12 @@ def test_fast_job_is_a_signal_not_a_gate_in_round_6a() -> None:
 
 
 def test_fast_job_may_cancel_the_run() -> None:
-    """if `actions: write` is dropped then `gh run cancel` dies with 403 on a genuine red"""
+    """if `actions: write` or `checks: read` is dropped then the fail-fast step dies with 403"""
     job = _jobs()["fast"]
-    assert job["permissions"] == {"contents": "read", "actions": "write"}
+    # checks: read is what lets ci_main_red read main's check-runs for the
+    # baseline; without it every leg's fail-fast step crashed on a 403 and the
+    # decision was never made (seen live Mon 21 Sep 2026, run 35608165497).
+    assert job["permissions"] == {"contents": "read", "actions": "write", "checks": "read"}
     cancel = [s for s in job["steps"] if "scripts.ci_fast_cancel" in (s.get("run") or "")]
     assert len(cancel) == 1
     unknown_note = "UNKNOWN (exit 3) must not read as a second failure"

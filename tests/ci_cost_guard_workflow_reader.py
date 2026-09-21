@@ -79,9 +79,8 @@ CHAINED_RUNNER_SWITCH = re.compile(
 #: First disjunct of ci.yml job `test` runs-on (ADR-0041 main-fix reserve). Pinned
 #: in tests/scripts/test_ci_main_fix_runner_reserve.py EXPECTED_RUNS_ON.
 MAIN_FIX_RUNNER_GUARD_PREFIX = (
-    "((github.event_name == 'push' && github.ref == 'refs/heads/main') || "
     "(github.event_name == 'pull_request' && "
-    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))) "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
     "&& vars.CI_RUNS_ON_MAIN_FIX"
 )
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")

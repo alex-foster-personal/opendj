@@ -184,7 +184,20 @@ test.describe('setup entry points', () => {
 		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
 			endpoint: string;
 		};
-		const manifestResponse = await request.get(updateCheckBody.endpoint);
+		// The endpoint is the release manifest on github.com, not this engine, so
+		// a 5xx here is the CDN or the runner's egress failing to answer, which
+		// says nothing about the build under test. Retry a few times, then report
+		// UNMEASURED (a skip with the reason) rather than a red verdict; a 200 is
+		// asserted in full below and a 404 (a missing manifest) still fails.
+		let manifestResponse = await request.get(updateCheckBody.endpoint);
+		for (let attempt = 1; attempt < 4 && manifestResponse.status() >= 500; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+			manifestResponse = await request.get(updateCheckBody.endpoint);
+		}
+		test.skip(
+			manifestResponse.status() >= 500,
+			`UNMEASURED: release manifest ${updateCheckBody.endpoint} answered ${manifestResponse.status()} after 4 attempts`
+		);
 		expect(manifestResponse.status()).toBe(200);
 		const manifest = (await manifestResponse.json()) as {
 			version?: string;
