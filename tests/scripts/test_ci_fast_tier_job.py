@@ -8,7 +8,7 @@ except for the ledger guard.
 Single-line intent:
   - if the fast job's runs-on drops CI_RUNS_ON_FAST ahead of the Linux pool then legs queue
     behind shards
-  - if the fast job loses `actions: write` then the cancel step dies with 403 on a genuine red
+  - if the fast job loses `actions: write` or `checks: read` then the fail-fast step 403s
   - if the fast job runs on push then a trunk push can cancel its own verdict
   - if the fast job's pytest drops --tier-min-selected or --ledger-coverage-min then a thin run
     reads green
