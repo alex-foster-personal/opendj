@@ -409,6 +409,27 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/performance/telemetry/client-samples', (route) =>
 		route.fulfill({ status: 204, json: {} })
 	);
+	// telemetry-consent.ts's `bootTelemetryConsent`, deferred from app-init.ts
+	// (`scheduler.defer('telemetry-consent:fetch', ...)`, PR #3737, Mon 21 Sep
+	// 2026, OBS-05): one GET after the boot window. Answered `declined` so the
+	// consent dialog never mounts and no replay loader is fetched; the gate
+	// cares only that the request is a KNOWN one.
+	await page.route('**/api/v1/telemetry/consent', (route) =>
+		route.fulfill({
+			json: {
+				decision: 'declined',
+				terms_version: '2026-09-21',
+				terms_current_version: '2026-09-21',
+				decided_at: '2026-09-21T00:00:00Z',
+				telemetry_active: false,
+				environment: null,
+				release: null,
+				replay_loader_url: null,
+				replay_session_sample_rate: 1,
+				replay_on_error_sample_rate: 1
+			}
+		})
+	);
 	// RecentlyDeletedFolder.svelte constructs a TreeRecentlyDeleted on mount,
 	// which fetches this eagerly in its constructor
 	// (tree-recently-deleted.svelte.ts -> playlist-deleted.ts, LIBMX-03). The
