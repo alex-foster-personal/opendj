@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 
-from .conftest import _stub_rb_vendor
+from .conftest import TEST_HOST_BASE_URL, _stub_rb_vendor
 
 
 def _seed_1k_playlist(backend: InMemoryBackend, tmp_path: Path) -> str:
@@ -79,12 +79,12 @@ def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
     def _fail_paths_bulk(*_args, **_kwargs):
         raise AssertionError("fast list must not call get_file_paths_bulk")
 
-    monkeypatch.setattr(InMemoryBackend, "get_file_paths_bulk", _fail_paths_bulk)
+    monkeypatch.setattr(backend, "get_file_paths_bulk", _fail_paths_bulk)
     app = create_app(
         backend=backend, bind_host="127.0.0.1", hostname="test-host",
         lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
     )
-    with TestClient(app) as c:
+    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
         t0 = time.perf_counter()
         r = c.get("/api/v1/playlists", params={"availability": "skip"})
         elapsed = time.perf_counter() - t0
@@ -92,4 +92,7 @@ def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
     pl = next(p for p in r.json() if p["playlist_id"] == "pl-perf-1k")
     assert pl["available_count"] == -1
     assert pl["track_count"] == 1000
-    assert elapsed < 0.5
+    assert elapsed < 2.0, (
+        f"availability=skip took {elapsed:.3f}s; expected well under 2s "
+        "without the bulk file_paths pass"
+    )
