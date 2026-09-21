@@ -188,11 +188,25 @@ test('accepting records the current terms version and then loads the loader, mas
 	assert.equal(fake.calls.init.length, 1);
 	const options = fake.calls.init[0];
 	assert.equal(options.sendDefaultPii, false);
+	assert.equal(options.sendClientReports, false, 'no client-report envelopes mid-set');
 	assert.equal(options.replaysSessionSampleRate, 1);
 	assert.equal(options.replaysOnErrorSampleRate, 1);
 	assert.equal(options.environment, 'ship');
 	assert.equal(options.release, 'abc123');
-	const replay = options.integrations.find((i) => i.name === 'Replay');
+	// `integrations` is a function over the SDK's defaults: BrowserSession (the
+	// release-health `session` envelopes, measured leaving mid-set through the
+	// real loader) is removed, everything else kept, replay appended.
+	assert.equal(typeof options.integrations, 'function');
+	const integrations = options.integrations([
+		{ name: 'BrowserSession' },
+		{ name: 'Breadcrumbs' },
+		{ name: 'GlobalHandlers' }
+	]);
+	assert.deepEqual(
+		integrations.map((i) => i.name),
+		['Breadcrumbs', 'GlobalHandlers', 'Replay']
+	);
+	const replay = integrations.find((i) => i.name === 'Replay');
 	assert.deepEqual(replay.options, { maskAllText: true, maskAllInputs: true, blockAllMedia: true });
 	assert.deepEqual(fake.calls.tags, [['origin', 'browser-sdk']]);
 	assert.equal(ticks.length, 1, 'the live gate poll is armed');
@@ -291,7 +305,7 @@ test('the loader SDK scrub reduces paths and audio filenames to their extension'
 	const event = consent.scrubEvent({
 		message: 'could not decode /Users/maintainer/Music/Fred again - Delilah.mp3',
 		exception: { values: [{ value: 'read C:\\Music\\Artist - Title.flac failed' }] },
-		breadcrumbs: [{ message: 'loaded Delilah (PT).wav', data: { title: 'Delilah' } }],
+		breadcrumbs: [{ message: 'loaded Delilah (PT).wav', data: { title: 'Delilah', route: '/x' } }],
 		request: { url: 'x' },
 		user: { id: 'u' },
 		tags: { a: 'b' }
@@ -302,10 +316,82 @@ test('the loader SDK scrub reduces paths and audio filenames to their extension'
 	// (`scrub.py` `_PATH_RE`, third branch); a rooted path is what carries the
 	// artist, and that branch allows spaces. Same output on both sides by design.
 	assert.equal(event.breadcrumbs[0].message, 'loaded Delilah <path.wav>');
-	assert.equal(event.breadcrumbs[0].data, undefined);
+	// Breadcrumb data takes the engine's allowlist: `route` survives, `title` is redacted.
+	assert.deepEqual(event.breadcrumbs[0].data, { title: '[redacted]', route: '/x' });
 	assert.equal(event.request, undefined);
 	assert.equal(event.user, undefined);
-	assert.deepEqual(event.tags, { a: 'b', origin: 'browser-sdk' });
+	// An unknown tag is redacted, never forwarded; ours is stamped on.
+	assert.deepEqual(event.tags, { a: '[redacted]', origin: 'browser-sdk' });
 	// Control: app routes are diagnostics, not paths, and must survive.
 	assert.equal(consent.redactPaths('failed on /performance?deck=1'), 'failed on /performance?deck=1');
+});
+
+test('the loader SDK scrub mirrors the engine: tokens, extra/contexts allowlist, frame locals', () => {
+	const event = consent.scrubEvent({
+		message: 'fetch failed access_token=abcdefghijklmnop for /Users/dev/x.mp3',
+		logentry: { message: 'Bearer AAAAAAAAAAAAAAAA rejected', params: ['sk-abcdefghijklmnop'] },
+		transaction: '/Users/dev/Music/set.flac',
+		exception: {
+			values: [
+				{
+					value: 'boom',
+					stacktrace: {
+						frames: [
+							{ filename: '/Users/dev/app/chunk.js', function: 'load', lineno: 3, vars: { title: 'Delilah' } }
+						]
+					}
+				}
+			]
+		},
+		extra: { title: 'Delilah', deck_id: '1', nested: { artist: 'Fred' } },
+		contexts: {
+			browser: { name: 'Chrome', version: '141 /Users/dev/x.mp3' },
+			playback: { title: 'Delilah', deck_id: '2' }
+		},
+		server_name: 'silver.local',
+		tags: { error_id: 'eid-1', album: 'Actual Life' }
+	});
+	assert.equal(event.message, 'fetch failed [filtered] for <path.mp3>');
+	assert.equal(event.logentry.message, '[filtered] rejected');
+	assert.deepEqual(event.logentry.params, ['[filtered]']);
+	assert.equal(event.transaction, '<path.flac>');
+	const frame = event.exception.values[0].stacktrace.frames[0];
+	assert.equal(frame.vars, undefined, 'frame locals never leave');
+	assert.equal(frame.filename, '<path.js>');
+	assert.equal(frame.function, 'load');
+	assert.deepEqual(event.extra, { title: '[redacted]', deck_id: '1', nested: '[redacted]' });
+	// SDK-built block keeps its shape with string leaves scrubbed; an app block is allowlisted.
+	assert.deepEqual(event.contexts.browser, { name: 'Chrome', version: '141 <path.mp3>' });
+	assert.deepEqual(event.contexts.playback, { title: '[redacted]', deck_id: '2' });
+	assert.equal(event.server_name, undefined);
+	assert.deepEqual(event.tags, { error_id: 'eid-1', album: '[redacted]', origin: 'browser-sdk' });
+	// Fail closed: an event the scrubber cannot walk is dropped, not sent as is.
+	const poisoned = { get message() { throw new Error('unreadable'); } };
+	assert.equal(consent.scrubEvent(poisoned), null);
+});
+
+test('the allowlists match the engine verbatim', async () => {
+	const { readFileSync } = await import('node:fs');
+	const py = readFileSync(new URL('../../../../../apps/shared/telemetry/scrub.py', import.meta.url), 'utf8');
+	const block = (name) => {
+		const m = py.match(new RegExp(`${name}[^=]*=\\s*frozenset\\(\\s*\\{([\\s\\S]*?)\\}\\s*\\)`));
+		assert.ok(m, `${name} not found in scrub.py`);
+		return new Set([...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
+	};
+	assert.deepEqual(new Set(consent.ALLOWED_CONTEXT_KEYS), block('ALLOWED_CONTEXT_KEYS'));
+	assert.deepEqual(new Set(consent.SDK_CONTEXT_BLOCKS), block('SDK_CONTEXT_BLOCKS'));
+});
+
+test('a stored acceptance loads nothing when this boot has telemetry off', async () => {
+	const scheduler = manualScheduler();
+	stopBoot = consent.bootTelemetryConsent({
+		scheduler,
+		isLive: () => false,
+		fetchConsent: async () =>
+			consentBody({ decision: 'accepted', terms_version: '2026-09-21', telemetry_active: false }),
+		loadScript: () => assert.fail('opted-out boot must not load the loader, whatever the file says')
+	});
+	await scheduler.release();
+	assert.equal(consent.isConsentDialogOpen(), false);
+	assert.equal(globalThis.window.sentryOnLoad, undefined);
 });

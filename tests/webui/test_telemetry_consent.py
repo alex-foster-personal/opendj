@@ -87,11 +87,58 @@ def test_accepting_stale_terms_is_a_409(client: TestClient) -> None:
     assert client.get("/api/v1/telemetry/consent").json()["decision"] == "undecided"
 
 
-def test_frontend_dsn_in_env_yields_a_replay_loader_url(
+def _live_client(captured: list[dict]) -> None:  # type: ignore[type-arg]
+    """A REAL SDK client on the fake DSN with a capturing transport, the same
+    shape tests/shared/test_telemetry_gates.py boots; torn down by the caller
+    with ``sentry_sdk.init(dsn=None)``."""
+    from sentry_sdk.transport import Transport
+
+    from apps.shared.telemetry import init_telemetry
+    from apps.shared.telemetry.decision import TelemetryDecision
+
+    class CapturingTransport(Transport):
+        def capture_envelope(self, envelope) -> None:  # type: ignore[no-untyped-def]
+            captured.extend(
+                item.payload.json for item in envelope.items if item.payload.json is not None
+            )
+
+    decision = TelemetryDecision(
+        enabled=True, environment="dev", reason="test", dsn=FRONTEND_DSN, explicit=True
+    )
+    assert init_telemetry(decision, transport=CapturingTransport()) is True
+
+
+def test_frontend_dsn_yields_a_replay_loader_url_only_while_this_boot_has_a_client(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] the engine has no live client this boot [then] the loader URL is
+    withheld even with a frontend DSN configured, [else stop].
+
+    A stored ``accepted`` must not outrank the opt-out marker or
+    ``OPENDJ_TELEMETRY=0``: those leave no client, and a page that still got
+    the loader URL would upload replays against the tester's decision
+    (Codex, #3737). Control in the same test: the very same engine WITH a
+    client does hand out the URL, so the withholding is the gate under test.
+    """
+    import sentry_sdk
+
     monkeypatch.setenv("SENTRY_FRONTEND_DSN", FRONTEND_DSN)
-    body = client.get("/api/v1/telemetry/consent").json()
-    assert body["replay_loader_url"] == "https://js-de.sentry-cdn.com/public.min.js"
-    assert body["replay_session_sample_rate"] == 1.0
-    assert body["replay_on_error_sample_rate"] == 1.0
+    client.put(
+        "/api/v1/telemetry/consent",
+        json={"decision": "accepted", "terms_version": TERMS_VERSION},
+    )
+    off = client.get("/api/v1/telemetry/consent").json()
+    assert off["decision"] == "accepted"
+    assert off["telemetry_active"] is False
+    assert off["replay_loader_url"] is None, "no client this boot: no loader URL"
+
+    captured: list[dict] = []  # type: ignore[type-arg]
+    _live_client(captured)
+    try:
+        on = client.get("/api/v1/telemetry/consent").json()
+        assert on["telemetry_active"] is True
+        assert on["replay_loader_url"] == "https://js-de.sentry-cdn.com/public.min.js"
+        assert on["replay_session_sample_rate"] == 1.0
+        assert on["replay_on_error_sample_rate"] == 1.0
+    finally:
+        sentry_sdk.init(dsn=None)

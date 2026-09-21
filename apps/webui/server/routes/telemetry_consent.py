@@ -86,15 +86,20 @@ def _frontend_dsn() -> str | None:
 def _out(request: Request) -> ConsentOut:
     record = read_consent(_data_dir(request))
     decision = LAST_DECISION.value
+    active = _client() is not None
     return ConsentOut(
         decision=record.decision,
         terms_version=record.terms_version,
         terms_current_version=TERMS_VERSION,
         decided_at=record.decided_at,
-        telemetry_active=_client() is not None,
+        telemetry_active=active,
         environment=decision.environment if decision is not None else None,
         release=decision.release if decision is not None else None,
-        replay_loader_url=replay_loader_url(_frontend_dsn()),
+        # A stored "accepted" never outranks THIS boot's decision: with the
+        # telemetry-opt-out marker or OPENDJ_TELEMETRY=0 there is no client,
+        # and the loader URL is withheld so the page loads no replay SDK
+        # (Codex, #3737).
+        replay_loader_url=replay_loader_url(_frontend_dsn()) if active else None,
         replay_session_sample_rate=replay_session_sample_rate(),
     )
 

@@ -16,8 +16,9 @@
  * screen become blocks and album art is not captured; canvases (waveforms)
  * are never recorded without a canvas integration, which is not added.
  * Error events the loader SDK captures on its own pass `scrubEvent`, a port
- * of the engine scrubber's path rule, and carry `origin=browser-sdk` so
- * they are told apart from the engine-forwarded copy.
+ * of the engine scrubber (tokens, paths, section allowlists, fail-closed),
+ * and carry `origin=browser-sdk` so they are told apart from the
+ * engine-forwarded copy.
  *
  * NEVER WHILE A DECK IS LIVE. The same rule as error reporting, enforced on
  * three paths: (1) a live-transport WATCHER (a rune effect on the deck
@@ -54,11 +55,33 @@ interface LoaderReplay {
 	stop(options?: { forceFlush?: boolean }): Promise<void> | void;
 }
 
+interface LoaderIntegration {
+	name: string;
+}
+
 interface LoaderSentry {
 	init(options: Record<string, unknown>): void;
 	setTag(key: string, value: string): void;
 	getReplay(): LoaderReplay | undefined;
-	replayIntegration(options: Record<string, unknown>): unknown;
+	replayIntegration(options: Record<string, unknown>): LoaderIntegration;
+}
+
+/**
+ * Default integrations the loader SDK would otherwise install and that send
+ * envelopes of their own, outside the live gate. `BrowserSession` sends a
+ * release-health `session` envelope at start, on every route change and on
+ * every error: measured through the real loader (PR #3737), two of them left
+ * mid-set after the replay had stopped. Release health is not used, so the
+ * integration is removed rather than gated.
+ */
+export const DROPPED_DEFAULT_INTEGRATIONS: ReadonlySet<string> = new Set(['BrowserSession']);
+
+/** The loader's `integrations` option: defaults minus the droppers, plus replay. */
+export function selectIntegrations(
+	defaults: LoaderIntegration[],
+	replay: LoaderIntegration
+): LoaderIntegration[] {
+	return [...defaults.filter((i) => !DROPPED_DEFAULT_INTEGRATIONS.has(i.name)), replay];
 }
 
 declare global {
@@ -68,7 +91,15 @@ declare global {
 	}
 }
 
-// ----- the scrub (a port of apps/shared/telemetry/scrub.py's path rule) --------
+// ----- the scrub (a port of apps/shared/telemetry/scrub.py, fail-closed) ------
+// The loader SDK sends its own error events straight to Sentry, so this is
+// the ONLY scrubber on that path. It mirrors the engine's rules: token-shaped
+// and path-shaped substrings out of every string, a strict allowlist over the
+// app-supplied sections (extra, tags, breadcrumb data, non-SDK contexts),
+// SDK-built context blocks kept in shape with their string leaves scrubbed,
+// request/user/server_name removed, frame locals removed. The two allowlists
+// below are generated from scrub.py by the build step in PR #3737; keep them
+// identical or `tests/unit/telemetry-consent.test.mjs` fails.
 const FS_ROOT =
 	'(?:\\b[A-Za-z]:[\\\\/]|~[\\\\/]|/(?:Users|home|Volumes|mnt|media|private|var|tmp|opt|srv|root|Library|System|Applications)[\\\\/])';
 const AUDIO_EXT = 'mp3|flac|wav|aiff|aif|m4a|ogg|aac|opus|alac|wma|aax';
@@ -77,6 +108,65 @@ const PATH_RE = new RegExp(
 	'gi'
 );
 const EXT_RE = /(\.[A-Za-z0-9]{1,8})$/;
+const TOKENISH_RE =
+	/(?:bearer\s+)[a-z0-9._\-+=/]{8,}|sk-[a-z0-9]{10,}|ghp_[a-z0-9]{10,}|xox[baprs]-[a-z0-9-]{10,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|passwd|authorization)\s*[:=]\s*['"]?[^\s'"]{8,}/gi;
+export const FILTERED = '[filtered]';
+export const REDACTED = '[redacted]';
+
+/** Context keys that may travel verbatim (scrub.py ALLOWED_CONTEXT_KEYS). */
+export const ALLOWED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+	'adapter',
+	'any_deck_live',
+	'attempt',
+	'audio_worklet_available',
+	'boot_id',
+	'build_sha',
+	'build_source',
+	'channels',
+	'client_event_id',
+	'contract_rev',
+	'count',
+	'deck_id',
+	'duration_ms',
+	'engine_version',
+	'error_code',
+	'error_id',
+	'fallback_message',
+	'host',
+	'http_status',
+	'job_id',
+	'job_kind',
+	'kind',
+	'lane_label',
+	'method',
+	'origin',
+	'platform',
+	'python_version',
+	'route',
+	'sample_rate',
+	'secure_context',
+	'source',
+	'source_site',
+	'status',
+	'url',
+	'user_agent'
+]);
+/** SDK-built blocks that keep their shape, string leaves scrubbed (scrub.py SDK_CONTEXT_BLOCKS). */
+export const SDK_CONTEXT_BLOCKS: ReadonlySet<string> = new Set([
+	'app',
+	'browser',
+	'cloud_resource',
+	'culture',
+	'device',
+	'gpu',
+	'missing_instrumentation',
+	'os',
+	'profile',
+	'replay',
+	'response',
+	'runtime',
+	'trace'
+]);
 
 export function redactPaths(text: string): string {
 	return text.replace(PATH_RE, (match) => {
@@ -85,29 +175,128 @@ export function redactPaths(text: string): string {
 	});
 }
 
+/** Token-shaped and path-shaped substrings out of any free text. */
+export function scrubString(text: string): string {
+	return redactPaths(text.replace(TOKENISH_RE, FILTERED));
+}
+
+type Json = unknown;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Keep allowlisted keys, redact the rest, scrub what survives. */
+function allowlist(value: Json): Json {
+	if (Array.isArray(value)) return value.map(allowlist);
+	if (isRecord(value)) {
+		const out: Record<string, unknown> = {};
+		for (const [key, item] of Object.entries(value)) {
+			out[key] = ALLOWED_CONTEXT_KEYS.has(key.toLowerCase()) ? allowlist(item) : REDACTED;
+		}
+		return out;
+	}
+	if (typeof value === 'string') return scrubString(value);
+	return value;
+}
+
+/** Scrub string leaves, keep every key and the shape around them. */
+function scrubValues(value: Json): Json {
+	if (Array.isArray(value)) return value.map(scrubValues);
+	if (isRecord(value)) {
+		const out: Record<string, unknown> = {};
+		for (const [key, item] of Object.entries(value)) out[key] = scrubValues(item);
+		return out;
+	}
+	if (typeof value === 'string') return scrubString(value);
+	return value;
+}
+
+function scrubContexts(contexts: Json): Json {
+	if (!isRecord(contexts)) return allowlist(contexts);
+	const out: Record<string, unknown> = {};
+	for (const [name, block] of Object.entries(contexts)) {
+		out[name] = SDK_CONTEXT_BLOCKS.has(name.toLowerCase()) ? scrubValues(block) : allowlist(block);
+	}
+	return out;
+}
+
+interface Frame {
+	filename?: unknown;
+	abs_path?: unknown;
+	vars?: unknown;
+	[key: string]: unknown;
+}
+
+function scrubFrames(stacktrace: unknown): void {
+	if (!isRecord(stacktrace) || !Array.isArray(stacktrace.frames)) return;
+	for (const frame of stacktrace.frames as Frame[]) {
+		if (!isRecord(frame)) continue;
+		delete frame.vars;
+		if (typeof frame.filename === 'string') frame.filename = scrubString(frame.filename);
+		if (typeof frame.abs_path === 'string') frame.abs_path = scrubString(frame.abs_path);
+	}
+}
+
 interface ScrubbableEvent {
 	message?: unknown;
-	exception?: { values?: Array<{ value?: unknown }> };
-	breadcrumbs?: Array<{ message?: unknown; data?: unknown }>;
+	logentry?: unknown;
+	transaction?: unknown;
+	exception?: { values?: Array<{ value?: unknown; stacktrace?: unknown }> };
+	breadcrumbs?: unknown;
 	request?: unknown;
 	user?: unknown;
+	server_name?: unknown;
+	extra?: unknown;
+	contexts?: unknown;
 	tags?: Record<string, unknown>;
 }
 
-/** Path-scrub the free text of a loader-SDK event; drop request and user. */
-export function scrubEvent<T extends ScrubbableEvent>(event: T): T {
-	if (typeof event.message === 'string') event.message = redactPaths(event.message);
-	for (const value of event.exception?.values ?? []) {
-		if (typeof value.value === 'string') value.value = redactPaths(value.value);
+export function scrubBreadcrumb<T extends { message?: unknown; data?: unknown }>(crumb: T): T {
+	if (typeof crumb.message === 'string') crumb.message = scrubString(crumb.message);
+	if (crumb.data !== undefined && crumb.data !== null) crumb.data = allowlist(crumb.data);
+	return crumb;
+}
+
+/**
+ * Strip library content and secrets from a loader-SDK event. Returns null,
+ * i.e. drops the event, when scrubbing throws: an event whose contents are
+ * unknown is not sent (the engine scrubber's rule, scrub.py `scrub_event`).
+ */
+export function scrubEvent<T extends ScrubbableEvent>(event: T): T | null {
+	try {
+		if (typeof event.message === 'string') event.message = scrubString(event.message);
+		else if (isRecord(event.message) && typeof event.message.formatted === 'string')
+			event.message.formatted = scrubString(event.message.formatted);
+		if (isRecord(event.logentry)) {
+			for (const key of ['message', 'formatted']) {
+				if (typeof event.logentry[key] === 'string')
+					event.logentry[key] = scrubString(event.logentry[key] as string);
+			}
+			if (Array.isArray(event.logentry.params))
+				event.logentry.params = event.logentry.params.map((v) =>
+					typeof v === 'string' ? scrubString(v) : v
+				);
+		}
+		if (typeof event.transaction === 'string') event.transaction = scrubString(event.transaction);
+		for (const value of event.exception?.values ?? []) {
+			if (typeof value.value === 'string') value.value = scrubString(value.value);
+			scrubFrames(value.stacktrace);
+		}
+		const crumbs = isRecord(event.breadcrumbs) ? event.breadcrumbs.values : event.breadcrumbs;
+		if (Array.isArray(crumbs)) for (const crumb of crumbs) if (isRecord(crumb)) scrubBreadcrumb(crumb);
+		if (event.extra !== undefined && event.extra !== null) event.extra = allowlist(event.extra);
+		if (event.contexts !== undefined && event.contexts !== null)
+			event.contexts = scrubContexts(event.contexts);
+		const tags = isRecord(event.tags) ? (allowlist(event.tags) as Record<string, unknown>) : {};
+		event.tags = { ...tags, origin: 'browser-sdk' };
+		delete event.request;
+		delete event.user;
+		delete event.server_name;
+		return event;
+	} catch {
+		return null;
 	}
-	for (const crumb of event.breadcrumbs ?? []) {
-		if (typeof crumb.message === 'string') crumb.message = redactPaths(crumb.message);
-		delete crumb.data;
-	}
-	delete event.request;
-	delete event.user;
-	event.tags = { ...(event.tags ?? {}), origin: 'browser-sdk' };
-	return event;
 }
 
 // ----- replay ------------------------------------------------------------------
@@ -179,24 +368,27 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 			environment: consent.environment ?? undefined,
 			release: consent.release ?? undefined,
 			sendDefaultPii: false,
+			// Client reports (counts of dropped events) are an envelope of their
+			// own, sent on page-hide with no regard for the live gate; not used.
+			sendClientReports: false,
 			replaysSessionSampleRate: consent.replay_session_sample_rate,
 			replaysOnErrorSampleRate: consent.replay_on_error_sample_rate,
-			integrations: [
-				Sentry.replayIntegration({
-					maskAllText: true,
-					maskAllInputs: true,
-					blockAllMedia: true
-				})
-			],
+			// A function, not an array: an array would ADD to the defaults and
+			// keep BrowserSession (see DROPPED_DEFAULT_INTEGRATIONS).
+			integrations: (defaults: LoaderIntegration[]) =>
+				selectIntegrations(
+					defaults,
+					Sentry.replayIntegration({
+						maskAllText: true,
+						maskAllInputs: true,
+						blockAllMedia: true
+					})
+				),
 			// The loader SDK captures browser exceptions on its own; while a
 			// deck is live they are dropped here, the same answer the engine
 			// gives a forwarded error whose `any_deck_live` is true.
 			beforeSend: (event: ScrubbableEvent) => (deps.isLive() ? null : scrubEvent(event)),
-			beforeBreadcrumb: (crumb: { message?: unknown; data?: unknown }) => {
-				if (typeof crumb.message === 'string') crumb.message = redactPaths(crumb.message);
-				delete crumb.data;
-				return crumb;
-			}
+			beforeBreadcrumb: (crumb: { message?: unknown; data?: unknown }) => scrubBreadcrumb(crumb)
 		});
 		Sentry.setTag('origin', 'browser-sdk');
 		// The watcher is the stop path that matters: it fires in the microtask
@@ -283,7 +475,10 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 		if (bootDeps !== deps) return; // torn down while the request was in flight
 		setCurrentConsent(consent);
 		if (consent.decision === 'accepted') {
-			startReplay(consent, deps);
+			// A stored acceptance does not outrank THIS boot's decision: with the
+			// opt-out marker or OPENDJ_TELEMETRY=0 the engine has no client, the
+			// route withholds the loader URL, and nothing is loaded here either.
+			if (consent.telemetry_active) startReplay(consent, deps);
 			return;
 		}
 		if (!shouldAsk(consent)) return;
@@ -321,7 +516,8 @@ export async function answerConsent(
 	const consent = await put({ decision, terms_version });
 	setCurrentConsent(consent);
 	setConsentDialogOpen(false);
-	if (consent.decision === 'accepted' && bootDeps !== null) startReplay(consent, bootDeps);
+	if (consent.decision === 'accepted' && consent.telemetry_active && bootDeps !== null)
+		startReplay(consent, bootDeps);
 	return consent;
 }
 
