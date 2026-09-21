@@ -33,10 +33,10 @@ import pytest
 
 from apps.engine_core.__main__ import HUB_MACHINE_NAME_ENV
 from apps.shared.state import db as state_db
-from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, hub_deploy
+from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV
 from tests.waits import wait_for_external_state
 
 pytestmark = pytest.mark.requirement("CAT-04")

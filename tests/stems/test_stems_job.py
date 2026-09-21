@@ -290,3 +290,92 @@ def test_an_unparseable_payload_reconciles_to_unknown() -> None:
     """if a malformed row reconciled either way then re-enqueue would act on
     a verdict nothing supports"""
     assert reconcile_from_disk({"kind": JOB_KIND, "payload": {}}) == "unknown"
+
+
+# ----- the local worker script has to BE somewhere -------------------------
+# Measured on the shipped build on the test Mac Wed 16 Sep 2026: the wizard
+# enqueued separation, the job died 198 ms later, and the wizard had already
+# advanced so nobody saw it. The error was
+#   can't open file '//scripts/stems_local_worker.py': No such file or directory
+# because the argv named a RELATIVE path, the engine's cwd in an installed app
+# is /, and the payload ships no scripts/ directory at all. The gate that is
+# supposed to make the button inert never looked at whether the worker exists.
+@pytest.mark.requirement("STEM-36")
+def test_the_local_worker_argv_names_an_absolute_path() -> None:
+    """[if] the local worker argv is a relative path [then] fail, [else stop].
+
+    A relative path is a bet on the cwd of whoever spawns the job.
+    """
+    from apps.stems import job as stems_job
+
+    assert Path(stems_job.local_worker_script()).is_absolute()
+
+
+@pytest.mark.requirement("STEM-36")
+def test_the_gate_refuses_when_the_local_worker_is_not_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] the gate stays open with no worker script on disk [then] fail, [else stop]."""
+    from apps.stems import job as stems_job
+
+    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    refusal = stems_job.local_worker_refusal()
+    assert refusal is not None
+    assert "stems_local_worker.py" in refusal
+
+
+@pytest.mark.requirement("STEM-36")
+def test_the_gate_allows_it_when_the_local_worker_IS_installed() -> None:
+    """[if] the gate refuses in a checkout that ships the worker [then] fail, [else stop].
+
+    The opposite mutation. A refusal that fires in a real checkout would
+    turn local stems off for every developer, which no bug report would
+    mention because the feature would simply be gone."""
+    from apps.stems import job as stems_job
+
+    assert stems_job.local_worker_refusal() is None
+
+
+@pytest.mark.requirement("STEM-36")
+def test_build_argv_refuses_rather_than_naming_a_script_that_is_not_there(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] build_argv names a worker script that is absent [then] fail, [else stop].
+
+    The last line of defence: even if the gate is bypassed, the job must
+    not be queued to die in a subprocess nobody is watching."""
+    from apps.stems import job as stems_job
+
+    # Routed exactly as test_local_argv_uses_local_worker routes it. Without
+    # the executor patch this payload resolves to the MODAL branch and "did
+    # not raise" would be a true statement about the wrong code path.
+    monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: "local")
+    monkeypatch.setattr("apps.stems.local_gate.local_stems_gate", lambda: None)
+    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    with pytest.raises(stems_job.StemsJobPayloadError, match=r"stems_local_worker\.py"):
+        stems_job.build_argv({"stable_ids": [SID_A], "tier": "M"})
+
+
+@pytest.mark.requirement("STEM-36")
+def test_the_plan_gate_reports_a_missing_worker_as_its_refusal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] the plan gate omits a missing worker from its refusal [then] fail, [else stop].
+
+    GET /stems/plan reads local_stems_gate() for `local_refusal`, and the
+    wizard's StemsPrompt renders that inert with the sentence as its reason.
+    So the worker check has to be IN the gate, not only in build_argv, or the
+    button stays live and the tester presses it into a job that cannot run."""
+    from apps.stems import job as stems_job
+    from apps.stems import local_gate
+
+    class _FlagOn:
+        def enabled(self, _flag: str) -> bool:
+            return True
+
+    monkeypatch.setattr(local_gate, "resolve_stems_executor", lambda: "local")
+    monkeypatch.setattr(local_gate, "local_stems_tier_refusal", lambda: None)
+    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    refusal = local_gate.local_stems_gate(flag_store=_FlagOn())
+    assert refusal is not None
+    assert "not installed in this build" in refusal

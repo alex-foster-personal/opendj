@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from apps.shared.tag_writer import TagRead, read_tags
 
@@ -48,7 +48,7 @@ def parse_filename(path: Path) -> TagRead:
 
 
 _RB_CACHE_LOCK = threading.Lock()
-_RB_INDEX_CACHE: Optional[dict[str, TagRead]] = None
+_RB_INDEX_CACHE: dict[str, TagRead] | None = None
 _RB_UNAVAILABLE: bool = False
 
 
@@ -66,7 +66,7 @@ def _rb_normalise_path(raw: str) -> str:
         return raw.casefold()
 
 
-def _rb_build_index() -> Optional[dict[str, TagRead]]:
+def _rb_build_index() -> dict[str, TagRead] | None:
     """Open the working-copy RB DB and build a ``{path: TagRead}`` index.
 
     Returns ``None`` when the DB cannot be opened (missing, live lock,
@@ -107,7 +107,7 @@ def _rb_build_index() -> Optional[dict[str, TagRead]]:
     return index
 
 
-def _rb_index() -> Optional[dict[str, TagRead]]:
+def _rb_index() -> dict[str, TagRead] | None:
     """Lazy + thread-safe accessor for the path -> TagRead index."""
     global _RB_INDEX_CACHE, _RB_UNAVAILABLE
     if _RB_UNAVAILABLE:
@@ -144,11 +144,11 @@ def default_fetch_rb(path: Path) -> TagRead | None:
 
 
 _DJAY_CACHE_LOCK = threading.Lock()
-_DJAY_INDEX_CACHE: Optional[dict[str, TagRead]] = None
+_DJAY_INDEX_CACHE: dict[str, TagRead] | None = None
 _DJAY_UNAVAILABLE: bool = False
 
 
-def _djay_build_index() -> Optional[dict[str, TagRead]]:
+def _djay_build_index() -> dict[str, TagRead] | None:
     """Open the djay MediaLibrary.db and build a path -> TagRead index."""
     try:
         from apps.shared import djay_db
@@ -184,7 +184,7 @@ def _djay_build_index() -> Optional[dict[str, TagRead]]:
     return index
 
 
-def _djay_index() -> Optional[dict[str, TagRead]]:
+def _djay_index() -> dict[str, TagRead] | None:
     global _DJAY_INDEX_CACHE, _DJAY_UNAVAILABLE
     if _DJAY_UNAVAILABLE:
         return None
@@ -218,7 +218,7 @@ def default_fetch_djay(path: Path) -> TagRead | None:
 _MIK_UNAVAILABLE_LOGGED = False
 
 
-def default_fetch_mik(path: Path) -> TagRead | None:
+def default_fetch_mik(_path: Path) -> TagRead | None:
     """Default MIK fetcher.
 
     Phase 6 has not landed a dedicated MIK table in
@@ -261,9 +261,9 @@ def _reset_caches_for_tests() -> None:
 def collect_for(
     path: Path,
     *,
-    fetch_rb: Optional[Callable[[Path], TagRead | None]] = None,
-    fetch_djay: Optional[Callable[[Path], TagRead | None]] = None,
-    fetch_mik: Optional[Callable[[Path], TagRead | None]] = None,
+    fetch_rb: Callable[[Path], TagRead | None] | None = None,
+    fetch_djay: Callable[[Path], TagRead | None] | None = None,
+    fetch_mik: Callable[[Path], TagRead | None] | None = None,
 ) -> TagSources:
     """Build a :class:`TagSources` for ``path``.
 

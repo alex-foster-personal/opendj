@@ -28,10 +28,13 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.redteam_trigger") from None
     raise
 from scripts import ci_health_trunk as health_trunk
+from scripts import redteam_guardrails as guardrails
 from scripts.review_docs_only import is_docs_only
 
 DEFAULT_MARKER_PATH = Path.home() / "jobs/state/redteam-last-sha"
 DEFAULT_ATTACK_COMMAND = Path.home() / "jobs/redteam/run.sh"
+DEFAULT_RUN_ROOT = guardrails.jobs_root() / "redteam"
+DEFAULT_POD_ID = "attack"
 DEFAULT_REMOTE = "origin"
 DEFAULT_BRANCH = "main"
 
@@ -168,11 +171,40 @@ def run_trigger(
     return TriggerResult.ATTACKED
 
 
-def _run_attack(command: str, sha: str) -> None:
+def _run_attack(
+    command: str,
+    sha: str,
+    stop_path: Path,
+    run_root: Path = DEFAULT_RUN_ROOT,
+    pod_id: str = DEFAULT_POD_ID,
+    real_library_path: Path | None = None,
+) -> None:
+    """Spawn the attack fleet through the guarded plan, never around it.
+
+    The launch goes through :func:`redteam_guardrails.build_pod_spawn`, so the
+    attack process gets the sandboxed HOME, the fixture library and the allow
+    list environment instead of the operator's shell -- and the kill switch is
+    read first, because the spawn cannot be built while it is engaged. A check
+    that only refused to start an already-unguarded process was the defect Codex
+    found on PR #3706.
+    """
     arguments = shlex.split(command)
     if not arguments:
         raise RuntimeError("red-team attack command is empty")
-    subprocess.run([*arguments, sha], check=True)
+    spawn = guardrails.build_pod_spawn(
+        run_id=attack_run_id(sha),
+        pod_id=pod_id,
+        command=[*arguments, sha],
+        run_root=run_root,
+        stop_path=stop_path,
+        real_library_path=real_library_path,
+    )
+    subprocess.run(spawn.argv, env=spawn.env, check=True)
+
+
+def attack_run_id(sha: str) -> str:
+    """One run id per attacked SHA, so a retry re-enters the same run and ledger."""
+    return f"attack-{sha[:12]}"
 
 
 def main() -> int:
@@ -181,14 +213,31 @@ def main() -> int:
     parser.add_argument("--branch", default=DEFAULT_BRANCH)
     parser.add_argument("--marker", type=Path, default=DEFAULT_MARKER_PATH)
     parser.add_argument("--attack-command", default=str(DEFAULT_ATTACK_COMMAND))
+    parser.add_argument("--stop", type=Path, default=guardrails.default_stop_path())
+    parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument("--pod-id", default=DEFAULT_POD_ID)
+    parser.add_argument("--real-library", type=Path, default=None)
     arguments = parser.parse_args()
-    result = run_trigger(
-        remote=arguments.remote,
-        marker_path=arguments.marker,
-        attack=lambda sha: _run_attack(arguments.attack_command, sha),
-        verified_sha=newest_trunk_verified_sha,
-        branch=arguments.branch,
-    )
+    try:
+        result = run_trigger(
+            remote=arguments.remote,
+            marker_path=arguments.marker,
+            attack=lambda sha: _run_attack(
+                arguments.attack_command,
+                sha,
+                arguments.stop,
+                run_root=arguments.run_root,
+                pod_id=arguments.pod_id,
+                real_library_path=arguments.real_library,
+            ),
+            verified_sha=newest_trunk_verified_sha,
+            branch=arguments.branch,
+        )
+    except guardrails.RedTeamStopped as stopped:
+        # A stand-down is deliberate, not a failure: the caller's
+        # `if trigger; then ... else FATAL` must not log one per tick.
+        print(f"SKIP redteam-trigger - {stopped}")
+        return 0
     print(f"redteam-trigger {result}")
     return 2 if result == TriggerResult.UNVERIFIED else 0
 

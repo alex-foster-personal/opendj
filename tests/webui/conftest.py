@@ -1,9 +1,9 @@
 """Test fixtures for the webui daemon (CAT-05)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -69,7 +69,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _stub_rb_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,7 +93,7 @@ def _stub_rb_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
 def seed_backend() -> InMemoryBackend:
     """5 tracks, 2 playlists, 1 pairing, 1 dedup candidate."""
     backend = InMemoryBackend()
-    base = datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC)
     for i, (title, artist, bpm, key, rating, tags) in enumerate(
         [
             ("Midnight Drive", "the maintainer", 124.0, "8A", 4, ["deep-house"]),

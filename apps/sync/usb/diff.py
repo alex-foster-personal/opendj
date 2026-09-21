@@ -20,9 +20,10 @@ Op kinds
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Literal
+from typing import Literal
 
 from apps.sync.usb.layout import dst_relpath
 from apps.sync.usb.profile import Profile
@@ -170,7 +171,7 @@ def compute_plan(
             case_buckets[str(rel).lower()].append(rel)
 
     # --- 2. Case-collision check.
-    for key, variants in case_buckets.items():
+    for _key, variants in case_buckets.items():
         if len(variants) > 1:
             warnings.append(
                 "case collision: "

@@ -20,8 +20,8 @@ test('admin entitlements inspector lists capabilities and live refusals', async 
 	const refusals = panel.getByTestId('inspector-active-refusals');
 	await expect(resolved.getByText('jobs')).toBeVisible();
 	await expect(resolved.getByText('progressLedger')).toBeVisible();
-	await expect(refusals.getByText('progressLedger')).toBeVisible();
-	await expect(refusals.getByText('progress ledger not offered by this daemon')).toBeVisible();
+	await expect(refusals.getByText('progressLedger')).toHaveCount(0);
+	await expect(panel.getByText('progress ledger: offered')).toBeVisible();
 	await expect(panel.locator('.fatal')).toHaveCount(0);
 	await expect(page.locator('#lyrics-generator')).toBeVisible();
 });

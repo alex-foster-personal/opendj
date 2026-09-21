@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 from apps.cloud.config import CloudConfig
 from apps.cloud.lyrics_asr_source import (
     LYRICS_ASR_NOT_FOUND,
-    LYRICS_ASR_PRESIGN_FAILED,
     lyrics_asr_object_key,
 )
 from tests.cloudsync.conftest import InMemoryAssetS3, _enroll_hub_app

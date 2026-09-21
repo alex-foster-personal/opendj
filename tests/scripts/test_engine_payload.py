@@ -340,6 +340,18 @@ cffi==2.0.0 ; platform_python_implementation != 'PyPy'
     # via cryptography
 pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
+librosa==0.10.2.post1
+    # via music-dj-tools
+scipy==1.17.1
+    # via
+    #   librosa
+    #   music-dj-tools
+soundfile==0.13.1
+    # via
+    #   librosa
+    #   music-dj-tools
+scikit-learn==1.9.0
+    # via librosa
 """
 
 
@@ -364,6 +376,13 @@ def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
         "cryptography",
         "cffi",
         "pycparser",
+        # the requested "analysis" extra and what only it pulls in; audioread
+        # is still dropped because pyacoustid, not librosa, is its via edge
+        # in this sample.
+        "librosa",
+        "scipy",
+        "soundfile",
+        "scikit-learn",
     }
 
 
@@ -561,6 +580,13 @@ def _verify_report(**overrides: object) -> dict[str, object]:
             "native_import_error": None,
         },
         "crypto": {"has_crypto": True, "rust_bindings_error": None},
+        "analysis": {
+            "backend": "librosa",
+            "modules": ["librosa", "scipy"],
+            "installed": True,
+            "import_error": None,
+            "auto_analyze_arms": True,
+        },
     }
     report.update(overrides)
     return report
@@ -581,6 +607,60 @@ def test_a_payload_on_the_numpy_fallback_stops_the_build() -> None:
                     "selected": "python-numpy",
                     "native_available": False,
                     "native_import_error": "ModuleNotFoundError: ...",
+                }
+            )
+        )
+
+
+def test_a_payload_without_the_analysis_backend_stops_the_build() -> None:
+    """Measured on the shipped build on the test Mac Wed 16 Sep 2026: librosa
+    was absent, so analyze-on-import never armed and a folder import left all
+    100 tracks with no BPM, no key and no beatgrid, permanently."""
+    with pytest.raises(PayloadBuildError, match="no BPM, no key and no beatgrid"):
+        assert_verify_report(
+            _verify_report(
+                analysis={
+                    "backend": "librosa",
+                    "modules": ["librosa", "scipy"],
+                    "installed": False,
+                    "import_error": None,
+                    "auto_analyze_arms": False,
+                }
+            )
+        )
+
+
+def test_a_payload_whose_analysis_backend_fails_to_import_stops_the_build() -> None:
+    """find_spec saying yes and the backend class importing are different
+    questions, and the drain asks the second one. A closure that installs
+    librosa against an incompatible numpy passes the first and fails here."""
+    with pytest.raises(PayloadBuildError, match="cannot load"):
+        assert_verify_report(
+            _verify_report(
+                analysis={
+                    "backend": "librosa",
+                    "modules": ["librosa", "scipy"],
+                    "installed": True,
+                    "import_error": "ImportError: numpy.core.multiarray failed",
+                    "auto_analyze_arms": True,
+                }
+            )
+        )
+
+
+def test_a_payload_whose_auto_analyze_declines_to_arm_stops_the_build() -> None:
+    """The opposite mutation to the two above: the backend imports fine but
+    the loop that would USE it stays disarmed, which is the state that looks
+    healthiest and analyzes exactly as much as a missing backend does."""
+    with pytest.raises(PayloadBuildError, match="analyze-on-import"):
+        assert_verify_report(
+            _verify_report(
+                analysis={
+                    "backend": "librosa",
+                    "modules": ["librosa", "scipy"],
+                    "installed": True,
+                    "import_error": None,
+                    "auto_analyze_arms": False,
                 }
             )
         )

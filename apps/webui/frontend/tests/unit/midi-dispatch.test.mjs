@@ -285,7 +285,8 @@ test('FLX4 play note -> deck_play_toggle and CFX CC -> filter action', () => {
 	wire(flx4In, 0x90, 0x0b, 0x7f);
 	assert.equal(actions.length, n + 1);
 	assert.deepEqual(actions[n].action, { type: 'deck_play_toggle', deck: 1 });
-	wire(flx4In, 0xb0, 0x17, 64);
+	// [PDF] 3-5 CFX deck 1: CC 23 on the GLOBAL mixer channel 7 (0xb6), hardware-confirmed in #3491.
+	wire(flx4In, 0xb6, 0x17, 64);
 	assert.equal(actions.length, n + 2);
 	assert.deepEqual(actions[n + 1].action, {
 		type: 'mixer_channel',

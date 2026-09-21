@@ -26,6 +26,7 @@ def _volume_uuid(drive_root: Path) -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None

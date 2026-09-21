@@ -98,6 +98,28 @@ export function readApiErrorStatus(error: unknown): number | null {
 	return null;
 }
 
+/** Read an ApiError's detail.code without relying on `instanceof` alone. */
+export function readApiErrorCode(error: unknown): string | null {
+	if (error instanceof ApiError) return error.code;
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as ApiError).name === 'ApiError' &&
+		typeof (error as ApiError).code === 'string'
+	) {
+		return (error as ApiError).code;
+	}
+	if (typeof error === 'object' && error !== null) {
+		const body = (error as { body?: ErrorEnvelope | null }).body;
+		const detail = body?.detail;
+		if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+			const code = detail.code;
+			if (typeof code === 'string') return code;
+		}
+	}
+	return null;
+}
+
 const _throwApiError: Middleware = {
 	async onResponse({ response }) {
 		if (response.ok) return undefined;

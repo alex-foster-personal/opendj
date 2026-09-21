@@ -97,7 +97,7 @@ def test_burst_coalesces_into_single_eval(
 ) -> None:
     row_house, _ = seeded_two_lists
     runner = _make_runner(smartlists_repo, clock)
-    for i in range(10):
+    for _i in range(10):
         clock.advance(0.2)
         runner.handle_event(StateEvent(
             kind="track.tag_edited",

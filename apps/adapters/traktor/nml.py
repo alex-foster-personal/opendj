@@ -19,7 +19,6 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # ----------------------------------------------------------- data model
 
@@ -54,10 +53,10 @@ class NMLEntry:
         elif "TITLE" in self.element.attrib:
             del self.element.attrib["TITLE"]
 
-    def get_subchild(self, tag: str) -> Optional[ET.Element]:
+    def get_subchild(self, tag: str) -> ET.Element | None:
         return self.element.find(tag)
 
-    def get_subchild_attr(self, tag: str, attr: str) -> Optional[str]:
+    def get_subchild_attr(self, tag: str, attr: str) -> str | None:
         el = self.element.find(tag)
         if el is None:
             return None

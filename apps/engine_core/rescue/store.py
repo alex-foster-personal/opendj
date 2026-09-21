@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from apps.rescue.ring import RING_SIZE, append_snapshot, read_index, read_latest
+from apps.rescue.ring import RING_SIZE, append_snapshot, read_index
 
 SNAPSHOT_ID_PREFIX = "slot-"
 
@@ -51,7 +51,11 @@ class RescueStore:
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
 
-    def list_entries(self, *, now_ms: int) -> list[RescueRingEntry]:
+    def list_entries(
+        self,
+        *,
+        now_ms: int,  # noqa: ARG002 - retained for the caller's keyword contract
+    ) -> list[RescueRingEntry]:
         index = read_index(self._data_dir)
         rows: list[RescueRingEntry] = []
         for offset in range(RING_SIZE):

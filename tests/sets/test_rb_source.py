@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -22,7 +22,7 @@ def test_rb_source_emits_track_loaded_per_history_row(
         session_id=session_id,
         state=sets_state,
         db_path=rb_history_db,
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     loaded = sets_state.fetch_events(session_id, action="track_loaded")
@@ -43,7 +43,7 @@ def test_rb_source_only_emits_new_rows_on_second_poll(
         session_id=session_id,
         state=sets_state,
         db_path=rb_history_db,
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     # Insert a new row in the HISTORY playlist.
@@ -75,7 +75,7 @@ def test_rb_source_emits_source_error_when_db_missing(
         session_id=session_id,
         state=sets_state,
         db_path=tmp_path / "nope.db",
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     errors = sets_state.fetch_events(session_id, action="source_error")
@@ -95,7 +95,7 @@ def test_rb_source_handles_empty_history(sets_state: SetsState, tmp_path: Path):
         session_id=session_id,
         state=sets_state,
         db_path=db,
-        session_started_at=datetime.now(timezone.utc),
+        session_started_at=datetime.now(UTC),
     )
     source.poll_once()
     loaded = sets_state.fetch_events(session_id, action="track_loaded")

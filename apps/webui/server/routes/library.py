@@ -10,12 +10,12 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
 from apps.shared import paths as shared_paths
 from apps.shared.state.db import open_ro
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server.library_readiness import (
     LibraryReadinessOut,
     ReadinessAxis,
     query_library_readiness,
 )
-from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/library", tags=["library"])
 

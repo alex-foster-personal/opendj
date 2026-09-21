@@ -115,7 +115,7 @@ def test_default_allow_duplicate_memberships(
     """[if] duplicates are allowed [then] two independent rows are stored, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    status, etag, put_r = _put(client, pid, etag, ["t-001"])
+    status, etag, _put_r = _put(client, pid, etag, ["t-001"])
     assert status == 200
     add = client.post(
         f"/api/v1/playlists/{pid}/items:add",
@@ -264,7 +264,7 @@ def test_patch_flag_requires_if_match(client: TestClient) -> None:
 
 def test_patch_flag_stale_etag(client: TestClient) -> None:
     """[if] PATCH uses a stale If-Match [then] 409 conflict, [else stop]."""
-    body, etag = _create(client)
+    body, _etag = _create(client)
     pid = body["playlist_id"]
     r = client.patch(
         f"/api/v1/playlists/{pid}",

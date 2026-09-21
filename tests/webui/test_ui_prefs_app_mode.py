@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,7 @@ def test_default_last_gig_at_is_null(prefs_client: TestClient) -> None:
 @pytest.mark.requirement("PERFMODE-11")
 def test_put_last_gig_at_round_trip(prefs_client: TestClient) -> None:
     """[if] a valid UTC last_gig_at is PUT [then] GET round-trips the same value, [else stop]."""
-    stamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     response = prefs_client.put("/api/v1/ui-prefs", json={"app_mode": {"last_gig_at": stamp}})
     assert response.status_code == 200
     assert response.json()["app_mode"]["last_gig_at"] is not None

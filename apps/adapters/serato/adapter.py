@@ -270,7 +270,7 @@ def _beatgrid_to_opendj_beats(grid: BeatGrid) -> tuple[BeatGridPoint, ...]:
         bpm = m.bpm if m.bpm is not None else terminal_bpm
         out.append(
             BeatGridPoint(
-                position_ms=int(round(m.position_seconds * 1000.0)),
+                position_ms=round(m.position_seconds * 1000.0),
                 bpm=float(bpm),
                 terminal=(i == len(grid.markers) - 1),
             )
@@ -553,7 +553,7 @@ class SeratoAdapter:
             report.bump("geob_frames_written")
 
     def _read_geob_for_track(
-        self, file_path: str, track_id: str, report: AdapterReport
+        self, file_path: str, _track_id: str, report: AdapterReport
     ) -> tuple[tuple[CuePoint, ...], tuple[BeatGridPoint, ...]]:
         """Return (cues, beats) read from the track's GEOB frames.
 

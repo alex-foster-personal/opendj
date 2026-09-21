@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,7 @@ def _rec_for_cues(
         stable_id=stable_id,
         backend="librosa+madmom",
         backend_version="test-1",
-        analyzed_at=datetime(2026, 4, 17, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=duration_s,
         sample_rate=44100,
         bpm=120.0, bpm_confidence=0.9,
@@ -76,7 +76,7 @@ def test_min_cue_gap_enforced() -> None:
     rec = _rec_for_cues(onsets_s=onsets, rms=rms)
     tp = ac.propose_cues(rec)
     times = sorted(c.time_s for c in tp.cues)
-    for a, b in zip(times, times[1:]):
+    for a, b in zip(times, times[1:], strict=False):
         assert (b - a) >= 0.1  # 100 ms default
 
 

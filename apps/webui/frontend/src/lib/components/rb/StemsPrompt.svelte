@@ -135,8 +135,9 @@
 				: `Stems are not available in this build: ${blocked}`}
 		</p>
 		<p class="stems-note" title={stemsPlanSummary(plan)}>
-			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued
-			{localExecutor ? '.' : ' and nothing is charged.'}
+			{plan.pending} of {plan.total} tracks would need separating. {localExecutor
+				? 'Nothing is queued.'
+				: 'Nothing is queued and nothing is charged.'}
 		</p>
 		<div class="stems-actions">
 			<button class="stems-go rb-inert" disabled title={blocked}>

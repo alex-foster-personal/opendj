@@ -21,8 +21,9 @@ Only ``direction == "rb->djay"`` records carry a non-None
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from apps.sync.matcher import MatchedPair, MatchResult
 

@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import re
 import sqlite3
 
 import pytest
@@ -56,7 +55,6 @@ from apps.database import generate_agents_md
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol_common
 from scripts import sync_drift_lint as lint
-from scripts import sync_drift_rules as rules
 from scripts import sync_drift_subject as subject
 
 TRIO: tuple[str, ...] = protocol_common.SYNC_COLUMNS

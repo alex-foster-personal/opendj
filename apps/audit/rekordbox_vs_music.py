@@ -129,6 +129,34 @@ def _print_summary(buckets: Buckets, fs_total: int, fs_not_in_rb: int) -> None:
     console.print(table)
 
 
+def _rb_linked_paths(buckets: Buckets) -> set[Path]:
+    """Build RB-linked path set (OK + MISSING)."""
+    rb_linked: set[Path] = set()
+    for t in buckets.file_linked_ok:
+        p = t.file_path
+        if p is None:
+            continue
+        try:
+            rb_linked.add(p.resolve())
+        except OSError:
+            rb_linked.add(p)
+    for t in buckets.file_linked_missing:
+        if t.file_path is not None:
+            rb_linked.add(t.file_path)
+    return rb_linked
+
+
+def _fs_by_resolved(fs_files: list[audio_files.AudioFile]) -> dict[Path, audio_files.AudioFile]:
+    """Map resolved filesystem paths to AudioFile records."""
+    fs_by_resolved: dict[Path, audio_files.AudioFile] = {}
+    for f in fs_files:
+        try:
+            fs_by_resolved[f.path.resolve()] = f
+        except OSError:
+            fs_by_resolved[f.path] = f
+    return fs_by_resolved
+
+
 def main() -> None:
     console.print("[bold]Step 1:[/bold] copying live DBs → data/")
     copied = paths.copy_live_dbs()
@@ -146,30 +174,8 @@ def main() -> None:
     fs_files = list(audio_files.scan_music_files())
     console.print(f"  • {len(fs_files)} audio files on disk")
 
-    # Build RB-linked path set (OK + MISSING). For OK we resolve() for
-    # canonicalization; for MISSING we cannot resolve (file is gone), so use
-    # the Path as-is.
-    rb_linked: set[Path] = set()
-    for t in buckets.file_linked_ok:
-        p = t.file_path
-        if p is None:
-            continue
-        try:
-            rb_linked.add(p.resolve())
-        except OSError:
-            rb_linked.add(p)
-    for t in buckets.file_linked_missing:
-        if t.file_path is not None:
-            rb_linked.add(t.file_path)
-
-    # Filesystem side: resolve() for apples-to-apples comparison.
-    fs_by_resolved: dict[Path, audio_files.AudioFile] = {}
-    for f in fs_files:
-        try:
-            fs_by_resolved[f.path.resolve()] = f
-        except OSError:
-            fs_by_resolved[f.path] = f
-
+    rb_linked = _rb_linked_paths(buckets)
+    fs_by_resolved = _fs_by_resolved(fs_files)
     files_not_in_rb = [
         f for resolved, f in fs_by_resolved.items() if resolved not in rb_linked
     ]

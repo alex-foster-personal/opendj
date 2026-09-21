@@ -211,6 +211,8 @@ def create_app() -> FastAPI:
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
+    app.state.hold_next_anlz_stable_id: str | None = None
+    app.state.hold_next_anlz_release: asyncio.Event | None = None
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
     app.include_router(tracks_router, prefix="/api/v1")
@@ -234,6 +236,22 @@ def create_app() -> FastAPI:
         # test's own before/after delta was off by exactly the poll count).
         if request.url.path != "/test/requests":
             app.state.requests.append(str(request.url))
+        held_sid = app.state.hold_next_anlz_stable_id
+        if (
+            held_sid
+            and request.method == "GET"
+            and request.url.path.endswith(f"/{held_sid}/anlz")
+        ):
+            app.state.hold_next_anlz_stable_id = None
+            release = app.state.hold_next_anlz_release
+            if release is not None:
+                try:
+                    await asyncio.wait_for(release.wait(), timeout=30.0)
+                except TimeoutError:
+                    raise RuntimeError(
+                        f"held /anlz for {held_sid} timed out waiting for "
+                        "/test/release-held-anlz"
+                    ) from None
         response = await call_next(request)
         if (
             request.method == "GET"
@@ -261,6 +279,23 @@ def create_app() -> FastAPI:
     def _delay_next_analysis_source_get() -> dict[str, bool]:
         app.state.delay_next_analysis_source_get = True
         return {"armed": True}
+
+    @app.post("/test/hold-next-anlz")
+    async def _hold_next_anlz(request: Request) -> dict[str, str | bool]:
+        body = await request.json()
+        stable_id = body.get("stable_id")
+        if not stable_id:
+            raise ValueError("stable_id is required")
+        app.state.hold_next_anlz_stable_id = stable_id
+        app.state.hold_next_anlz_release = asyncio.Event()
+        return {"armed": True, "stable_id": stable_id}
+
+    @app.post("/test/release-held-anlz")
+    def _release_held_anlz() -> dict[str, bool]:
+        release = app.state.hold_next_anlz_release
+        if release is not None:
+            release.set()
+        return {"released": True}
 
     return app
 

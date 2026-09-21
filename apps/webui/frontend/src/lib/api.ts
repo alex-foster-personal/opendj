@@ -26,7 +26,14 @@ import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer'
 import { rememberOptionalResources } from './rb/optional-resource-availability';
 
 export { API_BASE } from './api/client';
-export { api, unwrap, ApiError, RbApiError } from './api/client';
+export {
+	api,
+	unwrap,
+	ApiError,
+	RbApiError,
+	readApiErrorCode,
+	readApiErrorStatus
+} from './api/client';
 
 /** The documented `/api/v1/tracks` filter set. `listTracks` keeps its open
  * `Record` signature (call sites pass filter bags straight through), so the

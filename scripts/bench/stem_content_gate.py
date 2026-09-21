@@ -140,7 +140,7 @@ def _rms(block: np.ndarray) -> float:
 
 
 def _active_frac(block: np.ndarray, sample_rate: int) -> float:
-    frame = max(1, int(round(FRAME_S * sample_rate)))
+    frame = max(1, round(FRAME_S * sample_rate))
     usable = (block.size // frame) * frame
     if usable == 0:
         raise RuntimeError("window shorter than one analysis frame")
@@ -290,9 +290,9 @@ def best_window(track_dir: Path) -> tuple[WindowVerdict, list[WindowVerdict]]:
     empty one, which is the exact failure this gate exists to catch.
     """
     frames, rate = _track_frames(track_dir)
-    length = int(round(WINDOW_S * rate))
-    trim = int(round(EDGE_TRIM_S * rate))
-    hop = int(round(WINDOW_HOP_S * rate))
+    length = round(WINDOW_S * rate)
+    trim = round(EDGE_TRIM_S * rate)
+    hop = round(WINDOW_HOP_S * rate)
     last_start = frames - trim - length
     if last_start < 0:
         raise RuntimeError(

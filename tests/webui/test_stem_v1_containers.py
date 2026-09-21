@@ -14,7 +14,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.webui.server.routes.stems import router
 from apps.stems.artifacts import (
     FRAME_MISMATCH_TOL_S,
     StemArtifactError,
@@ -27,6 +26,7 @@ from apps.stems.artifacts import (
     load_stem_bundle,
     read_mp3_metadata,
 )
+from apps.webui.server.routes.stems import router
 
 REAL_MP3_BUNDLE = Path(
     "/private/tmp/claude-502/-Users-maintainer-code-music-dj-tools-lanes/"

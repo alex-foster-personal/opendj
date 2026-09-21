@@ -39,15 +39,17 @@
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import {
+	DESTINATION_RMS_FLOOR,
+	installDestinationTap,
+	sampleDestinationRms
+} from './support/destination-audio-tap';
 
 const UI_BASE = (
 	process.env.PERFORMANCE_E2E_BASE_URL ??
 	process.env.PERFORMANCE_E2E_UI_BASE ??
 	''
 ).replace(/\/$/, '');
-
-/** Destination RMS floor. Silence (gain 0 anywhere downstream) reads exactly 0. */
-const DESTINATION_RMS_FLOOR = 1e-3;
 /** Library UI prefs only (same as zz-autoplay-playlist-switch.spec.ts): the
  * generated fixture tracks must not be hidden as broken links. Mixer state is
  * left at its fresh-storage defaults. */
@@ -59,44 +61,6 @@ const SAMPLE_INTERVAL_MS = 50;
 test.use({
 	launchOptions: { args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] }
 });
-
-type DestTapWindow = Window & { __destTaps?: AnalyserNode[] };
-
-async function installDestinationTap(page: Page): Promise<void> {
-	await page.addInitScript(() => {
-		const taps = new WeakMap<BaseAudioContext, AnalyserNode>();
-		const all: AnalyserNode[] = [];
-		(window as DestTapWindow).__destTaps = all;
-		const originalConnect = AudioNode.prototype.connect as (
-			this: AudioNode,
-			destination: AudioNode | AudioParam,
-			output?: number,
-			input?: number
-		) => AudioNode | void;
-		function tapFor(context: BaseAudioContext): AnalyserNode {
-			let tap = taps.get(context);
-			if (tap === undefined) {
-				tap = context.createAnalyser();
-				tap.fftSize = 2048;
-				taps.set(context, tap);
-				all.push(tap);
-			}
-			return tap;
-		}
-		AudioNode.prototype.connect = function (
-			this: AudioNode,
-			destination: AudioNode | AudioParam,
-			output?: number,
-			input?: number
-		) {
-			const result = originalConnect.call(this, destination, output, input);
-			if (destination === this.context.destination) {
-				originalConnect.call(this, tapFor(this.context), output ?? 0, 0);
-			}
-			return result;
-		} as typeof AudioNode.prototype.connect;
-	});
-}
 
 async function loadAndPlayDeck1(page: Page): Promise<void> {
 	// The All Tracks pane is selected by the `?playlist=all` deep link the
@@ -149,35 +113,10 @@ test('a playing deck on default mixer state is non-silent at AudioContext.destin
 		.poll(async () => Number(await meter.getAttribute('aria-valuenow')), { timeout: 15_000 })
 		.toBeGreaterThan(meterFloorDb);
 
-	const destination = await page.evaluate(
-		async ({ windowMs, intervalMs }) => {
-			const taps = (window as DestTapWindow).__destTaps ?? [];
-			if (taps.length === 0) throw new Error('no node was ever connected to an AudioContext.destination');
-			const running = taps.filter((tap) => tap.context.state === 'running');
-			if (running.length === 0) {
-				throw new Error(`no running AudioContext; states=${taps.map((t) => t.context.state).join(',')}`);
-			}
-			let maxRms = 0;
-			let sumRms = 0;
-			let samples = 0;
-			const deadline = performance.now() + windowMs;
-			while (performance.now() < deadline) {
-				for (const tap of running) {
-					const buffer = new Float32Array(tap.fftSize);
-					tap.getFloatTimeDomainData(buffer);
-					let sum = 0;
-					for (const value of buffer) sum += value * value;
-					const rms = Math.sqrt(sum / buffer.length);
-					maxRms = Math.max(maxRms, rms);
-					sumRms += rms;
-					samples += 1;
-				}
-				await new Promise((resolve) => setTimeout(resolve, intervalMs));
-			}
-			return { maxRms, meanRms: sumRms / samples, samples, contexts: running.length };
-		},
-		{ windowMs: SAMPLE_WINDOW_MS, intervalMs: SAMPLE_INTERVAL_MS }
-	);
+	const destination = await sampleDestinationRms(page, {
+		windowMs: SAMPLE_WINDOW_MS,
+		intervalMs: SAMPLE_INTERVAL_MS
+	});
 	const masterMeterDb = Number(await meter.getAttribute('aria-valuenow'));
 
 	const report =

@@ -3,7 +3,8 @@
 librosa (ISC) + scipy (BSD-3-Clause) install from PyPI wheels via the
 ``analysis`` extra, so this backend works on a clean machine with no
 git-HEAD builds. It intentionally provides beat, onset, key, RMS, and
-energy analysis without claiming downbeat tracking. Learned madmom beat
+energy analysis, and a confidence-gated bar-phase downbeat estimator.
+Ambiguous or uniform material returns no downbeats. Learned madmom beat
 and downbeat inference lives in the explicit ``librosa+madmom``
 development backend.
 
@@ -18,7 +19,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,101 @@ def _estimate_key(chroma: np.ndarray) -> tuple[str, str, float]:
     if best_is_major:
         return _CAMELOT_MAJOR[best_tonic], _OPENKEY_MAJOR[best_tonic], max(0.0, best_corr)
     return _CAMELOT_MINOR[best_tonic], _OPENKEY_MINOR[best_tonic], max(0.0, best_corr)
+
+
+def _onset_strength_at_beats(
+    onset_env: np.ndarray, beats_s: list[float], sr: int, hop: int
+) -> list[float]:
+    """Sample the onset envelope at each detected beat time."""
+    import librosa
+
+    strengths: list[float] = []
+    for beat_s in beats_s:
+        frame = int(librosa.time_to_frames(beat_s, sr=sr, hop_length=hop))
+        frame = max(0, min(len(onset_env) - 1, frame))
+        strengths.append(float(onset_env[frame]))
+    return strengths
+
+
+def _bar_phase_accent_scores(strengths: np.ndarray) -> list[float]:
+    """Accent/other onset-strength ratio for each candidate 4/4 phase."""
+    scores: list[float] = []
+    for phase in range(4):
+        accent = strengths[np.arange(len(strengths)) % 4 == phase]
+        other = strengths[np.arange(len(strengths)) % 4 != phase]
+        if accent.size < 2 or other.size < 4:
+            scores.append(0.0)
+            continue
+        accent_mean = float(np.mean(accent))
+        other_mean = float(np.mean(other))
+        if other_mean <= 1e-9:
+            scores.append(0.0)
+            continue
+        scores.append(accent_mean / other_mean)
+    return scores
+
+
+def _confident_bar_phase(
+    scores: list[float],
+    *,
+    min_accent_ratio: float,
+    min_phase_margin: float,
+) -> int | None:
+    """Return the winning 4/4 phase, or None when the accent is too weak."""
+    if not scores or max(scores) < min_accent_ratio:
+        return None
+    ranked = sorted(enumerate(scores), key=lambda item: item[1], reverse=True)
+    best_phase, best_score = ranked[0]
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+    if best_score <= 0 or (best_score - second_score) / best_score < min_phase_margin:
+        return None
+    return best_phase
+
+
+def estimate_downbeats_from_beats(
+    beats_s: list[float],
+    beat_onset_strengths: list[float],
+    *,
+    min_beats: int = 12,
+    max_spacing_cv: float = 0.15,
+    min_accent_ratio: float = 1.25,
+    min_phase_margin: float = 0.15,
+) -> tuple[list[float], bool]:
+    """Pick a 4/4 bar phase only when accent beats are measurably stronger.
+
+    Returns strictly increasing downbeat times and whether bar phase was
+    established. Uniform or ambiguous material stays downbeat-unknown.
+    """
+    if len(beats_s) < min_beats or len(beat_onset_strengths) != len(beats_s):
+        return [], False
+
+    intervals = np.diff(np.asarray(beats_s))
+    if intervals.size < 3:
+        return [], False
+    spacing_cv = float(np.std(intervals) / (np.mean(intervals) + 1e-9))
+    if spacing_cv > max_spacing_cv:
+        return [], False
+
+    strengths = np.asarray(beat_onset_strengths, dtype=np.float64)
+    if not np.any(strengths > 0):
+        return [], False
+
+    best_phase = _confident_bar_phase(
+        _bar_phase_accent_scores(strengths),
+        min_accent_ratio=min_accent_ratio,
+        min_phase_margin=min_phase_margin,
+    )
+    if best_phase is None:
+        return [], False
+
+    downbeats = [
+        float(beats_s[index])
+        for index in range(len(beats_s))
+        if index % 4 == best_phase
+    ]
+    if len(downbeats) < 3:
+        return [], False
+    return downbeats, True
 
 
 def _bpm_from_beats(beats_s: list[float]) -> tuple[float, float]:
@@ -240,13 +336,18 @@ class LibrosaBackend:
             # pitch class 9 under the corrected table).
             key_cam, key_ok, key_conf = _CAMELOT_MINOR[8], _OPENKEY_MINOR[8], 0.0
 
-        features_blob = cls._build_features_blob(rms=rms, beats=beats_s, bpm=bpm)
+        features_blob = cls._build_features_blob(
+            rms=rms,
+            beats=beats_s,
+            bpm=bpm,
+            downbeat_tracking=bool(downbeats_s),
+        )
 
         return AnalysisRecord(
             stable_id=stable_id,
             backend=cls.name,
             backend_version=cls._version(),
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=duration_s,
             sample_rate=int(sr),
             bpm=float(bpm),
@@ -329,12 +430,13 @@ class LibrosaBackend:
         y[:: sr // 2] = np.float32(0.9)
 
         cls._beats_and_bpm(y, sr)
+        librosa.onset.onset_strength(y=y, hop_length=512)
         librosa.onset.onset_detect(y=y, sr=sr, units="time")
         rms = librosa.feature.rms(y=y, hop_length=512)[0]
         cls._rms_peaks(rms, sr=sr, hop=512)
         librosa.feature.chroma_cqt(y=y, sr=sr)
         return (
-            f"warmed {cls.beat_tracking}+onset_detect+rms+chroma_cqt on "
+            f"warmed {cls.beat_tracking}+onset_strength+onset_detect+rms+chroma_cqt on "
             f"{cls._WARMUP_SECONDS:g}s float32 @ {sr}Hz"
         )
 
@@ -369,6 +471,7 @@ class LibrosaBackend:
     ) -> tuple[float, float, list[float], list[float]]:
         import librosa
 
+        hop = 512
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, sparse=True)
         beats = librosa.frames_to_time(beat_frames, sr=sr)
         beats_s = [float(v) for v in beats.tolist()]
@@ -376,7 +479,10 @@ class LibrosaBackend:
         if bpm <= 0:
             tempo_values = np.asarray(tempo).reshape(-1)
             bpm = float(tempo_values[0]) if tempo_values.size else 0.0
-        return bpm, conf, beats_s, []
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+        strengths = _onset_strength_at_beats(onset_env, beats_s, sr, hop)
+        downbeats_s, _tracked = estimate_downbeats_from_beats(beats_s, strengths)
+        return bpm, conf, beats_s, downbeats_s
 
     @classmethod
     def _rms_peaks(cls, rms: np.ndarray, sr: int, hop: int) -> list[float]:
@@ -399,6 +505,7 @@ class LibrosaBackend:
         rms: np.ndarray,
         beats: list[float],
         bpm: float,
+        downbeat_tracking: bool,
     ) -> dict[str, Any]:
         # bpm_per_frame: reciprocal of local beat intervals, downsampled.
         if len(beats) >= 4:
@@ -417,7 +524,7 @@ class LibrosaBackend:
             rms_ds = rms
         return {
             "beat_tracking": cls.beat_tracking,
-            "downbeat_tracking": cls.downbeat_tracking,
+            "downbeat_tracking": downbeat_tracking,
             "bpm_reported": float(bpm),
             "bpm_per_frame": bpm_per_frame,
             "rms": [float(v) for v in rms_ds.tolist()],
@@ -432,4 +539,5 @@ __all__ = [
     "_bpm_from_beats",
     "_energy_from_rms_dbfs",
     "_estimate_key",
+    "estimate_downbeats_from_beats",
 ]

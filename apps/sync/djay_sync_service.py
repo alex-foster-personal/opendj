@@ -540,8 +540,8 @@ def run_ratings_apply(
     dry_run: bool = True,
     diff_csv: Path | None = None,
     live: bool = False,
-    cautious: bool = False,
-    bulk: bool = False,
+    cautious: bool = False,  # noqa: ARG001 - kept for its keyword callers
+    bulk: bool = False,  # noqa: ARG001 - kept for its keyword callers
     tracks: list[str] | None = None,
     i_understand_the_risks: bool = False,
 ) -> dict[str, Any]:

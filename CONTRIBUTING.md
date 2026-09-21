@@ -107,6 +107,17 @@ Install it once after cloning:
 ln -sf ../../scripts/githooks/pre-push-master-guard.sh .git/hooks/pre-push
 ```
 
+Reviewer lease enforcement (issue #272) uses a separate optional hook that refuses
+pushes when another fleet holds `reviewer:codex` or `reviewer:claude` on the open
+PR for that branch. Install it instead of, or chained with, the master guard:
+
+```bash
+ln -sf ../../scripts/githooks/pre-push-reviewer-lease.sh .git/hooks/pre-push
+```
+
+If both hooks are needed, call each from one dispatcher script. See
+`scripts/review_lease.py` and `.planning/FANOUT-CONVENTIONS.md`.
+
 The full rationale, grammar, and lifecycle are in
 [`docs/branching.md`](docs/branching.md).
 

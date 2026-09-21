@@ -16,9 +16,9 @@ rules:
       - trunk-red-alarm.yml:16
   artipacked:
     ignore:
-      # These checkouts keep credentials because a later step runs git fetch (ci
-      # affected-canary, periodic-checks preview-drift) or git fetch + push
-      # (debt-index-regen). None of these jobs uploads the checkout as an artifact.
-      - ci.yml:798
+      # These checkouts keep credentials because a later step runs git fetch
+      # (periodic-checks preview-drift, on a GitHub-hosted runner with no other
+      # credential for this private repo) or git fetch + push (debt-index-regen).
+      # None of these jobs uploads the checkout as an artifact.
       - debt-index-regen.yml:91
-      - periodic-checks.yml:804
+      - periodic-checks.yml:943

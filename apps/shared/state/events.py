@@ -16,7 +16,8 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from .types import Event
 
@@ -121,10 +122,10 @@ class _DryRunSilentBus:
     def __init__(self) -> None:
         self.suppressed: int = 0
 
-    def publish(self, event: Any) -> None:
+    def publish(self, _event: Any) -> None:
         self.suppressed += 1
 
-    def subscribe(self, kind: str, callback: Any) -> None:  # pragma: no cover
+    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
         # Dry-run lifetime is a single call; no-op is safe.
         return None
 

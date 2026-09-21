@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +78,7 @@ _SEED_ORIGIN: str = "seed-fixture"
 # depend on how fast the test runs; a fixed epoch plus one second per
 # auto-stamped edit makes "the later step wins" a property of the YAML file,
 # not of machine speed.
-_TICK_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_TICK_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class ScenarioError(RuntimeError):

@@ -28,7 +28,7 @@ adapter output through (serato / traktor); module-family adapters
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from apps.open_dj.provenance import wrap
@@ -60,7 +60,7 @@ def library_to_wire_document(
     controls the timestamp; defaults to now-UTC.
     """
     if modified_at is None:
-        modified_at = datetime.now(timezone.utc).replace(microsecond=0)
+        modified_at = datetime.now(UTC).replace(microsecond=0)
 
     doc: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -85,6 +85,25 @@ def library_to_wire_document(
     return doc
 
 
+def _apply_optional_scalars(
+    track: dict[str, Any],
+    t: Track,
+    *,
+    source: str,
+    modified_at: datetime | str,
+) -> None:
+    if t.album:
+        track["album"] = t.album
+    if t.isrc:
+        track["isrc"] = t.isrc
+    if t.bpm is not None:
+        track["bpm"] = wrap(float(t.bpm), source=source, modified_at=modified_at)
+    if t.key_camelot:
+        track["key"] = wrap(t.key_camelot, source=source, modified_at=modified_at)
+    if t.rating is not None:
+        track["rating"] = wrap(int(t.rating), source=source, modified_at=modified_at)
+
+
 def _track_to_wire(
     t: Track, *, source: str, modified_at: datetime | str
 ) -> dict[str, Any]:
@@ -106,23 +125,7 @@ def _track_to_wire(
     if content_hash is not None:
         track["content_hash"] = str(content_hash)
 
-    if t.album:
-        track["album"] = t.album
-    if t.isrc:
-        track["isrc"] = t.isrc
-
-    if t.bpm is not None:
-        track["bpm"] = wrap(
-            float(t.bpm), source=source, modified_at=modified_at
-        )
-    if t.key_camelot:
-        track["key"] = wrap(
-            t.key_camelot, source=source, modified_at=modified_at
-        )
-    if t.rating is not None:
-        track["rating"] = wrap(
-            int(t.rating), source=source, modified_at=modified_at
-        )
+    _apply_optional_scalars(track, t, source=source, modified_at=modified_at)
 
     cue_points = _cues_to_wire(t.cues, source=source, modified_at=modified_at)
     if cue_points:

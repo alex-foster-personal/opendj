@@ -26,12 +26,15 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 
+import scripts.build_engine_payload as payload_build
 from scripts.build_engine_payload import (
     NEVER_SHIP,
     OMITTED_OPTIONAL_EXTRAS,
+    REQUESTED_OPTIONAL_EXTRAS,
     PayloadBuildError,
     _assert_never_ship_absent,
     _requirement_name,
@@ -112,7 +115,11 @@ def test_every_pyproject_extra_except_all_is_audited() -> None:
     "dev" is audited too: --no-dev disables uv's dev-dependencies/
     dependency-groups mechanism, not a PEP 621 extra merely named "dev"."""
     declared = set(PYPROJECT["project"]["optional-dependencies"]) - {"all"}
-    assert declared == set(OMITTED_OPTIONAL_EXTRAS)
+    assert declared == set(OMITTED_OPTIONAL_EXTRAS) | set(REQUESTED_OPTIONAL_EXTRAS)
+    # An extra can only be in one register. Both at once would let a group
+    # satisfy this equality while the two halves of the audit disagree about
+    # whether it ships.
+    assert not (set(OMITTED_OPTIONAL_EXTRAS) & set(REQUESTED_OPTIONAL_EXTRAS))
 
 
 @pytest.mark.requirement("INSTALL-12")
@@ -195,3 +202,86 @@ def test_a_madmom_line_in_the_lock_fails_the_build() -> None:
 def test_never_ship_states_why_each_package_is_permanently_unshippable() -> None:
     for name, reason in NEVER_SHIP.items():
         assert len(reason) > 40, f"{name} has no real justification recorded"
+
+
+# ----- REQUESTED_OPTIONAL_EXTRAS: the presence half ----------------------
+# The omission half above asks "did something we never requested sneak in".
+# That question has no answer for an extra we DO request, and the failure it
+# cannot see is the one measured live on the shipped build Wed 16 Sep 2026:
+# librosa absent, so every folder import landed with no BPM, no key and no
+# beatgrid and nothing in the build said a word.
+
+
+def _lock_without(lock: str, *packages: str) -> str:
+    """Drop whole ``name==ver`` + ``# via`` stanzas from an export sample."""
+    kept: list[str] = []
+    dropping = False
+    for line in lock.splitlines(keepends=True):
+        if line.startswith((" ", "#")):
+            if not dropping:
+                kept.append(line)
+            continue
+        dropping = _requirement_name(line) in packages
+        if not dropping:
+            kept.append(line)
+    return "".join(kept)
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_a_requested_extra_missing_from_the_lock_fails_the_build() -> None:
+    """The mutation this whole register exists to catch: the export stops
+    carrying librosa and the installed app silently goes back to analyzing
+    nothing."""
+    lock = _lock_without(LOCK_SAMPLE, "librosa")
+    with pytest.raises(PayloadBuildError) as excinfo:
+        _verify_omitted_extras(parse_locked_export(lock), PYPROJECT)
+    assert "librosa" in str(excinfo.value)
+    assert "analysis" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_the_helper_that_strips_a_package_really_strips_it() -> None:
+    """Control for the test above. A stripper that silently changed nothing
+    would make that test pass for the wrong reason, on a lock that still
+    holds librosa."""
+    stripped = _lock_without(LOCK_SAMPLE, "librosa")
+    assert "librosa" in {e.name for e in parse_locked_export(LOCK_SAMPLE)}
+    assert "librosa" not in {e.name for e in parse_locked_export(stripped)}
+    # and it strips ONLY what it was asked for
+    assert "scipy" in {e.name for e in parse_locked_export(stripped)}
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_a_requested_extra_present_in_the_lock_is_accepted() -> None:
+    """The opposite mutation: a guard that fired on a lock that DOES carry
+    the extra would fail every real build."""
+    _verify_omitted_extras(parse_locked_export(LOCK_SAMPLE), PYPROJECT)
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_the_real_locked_export_carries_the_analysis_extra() -> None:
+    """Against the export the dmg build actually installs from, not a sample."""
+    entries, _dropped = locked_requirements(REPO_ROOT)
+    project_pulled = {e.name for e in entries if "music-dj-tools" in e.via}
+    assert {"librosa", "scipy", "soundfile"} <= project_pulled
+    # Negative control: an extra this build still omits must read as absent,
+    # or "present" is what this probe says about everything.
+    assert "mutagen" not in {e.name for e in entries}
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_an_extra_registered_as_both_omitted_and_requested_is_refused() -> None:
+    both = dict(OMITTED_OPTIONAL_EXTRAS)
+    both["analysis"] = "x" * 100
+    with (
+        mock.patch.object(payload_build, "OMITTED_OPTIONAL_EXTRAS", both),
+        pytest.raises(PayloadBuildError) as excinfo,
+    ):
+        _verify_omitted_extras(parse_locked_export(LOCK_SAMPLE), PYPROJECT)
+    assert "analysis" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-25")
+def test_every_requested_extra_states_why_it_ships() -> None:
+    for name, reason in REQUESTED_OPTIONAL_EXTRAS.items():
+        assert len(reason) > 80, f"{name} has no real justification recorded"

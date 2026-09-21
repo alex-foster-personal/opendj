@@ -65,9 +65,10 @@ from apps.shared.state import db as state_db
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import StateWriter
-from apps.sync_hub import capabilities, config as sync_config, engine, protocol, spoke_credential
+from apps.sync_hub import capabilities, engine, protocol, spoke_credential
+from apps.sync_hub import config as sync_config
 from apps.sync_hub.client_transport_ops import _push_in_batches
-from apps.sync_hub.transport import API_PREFIX, HubTransport, HttpTransport, SyncTransportError
+from apps.sync_hub.transport import API_PREFIX, HttpTransport, HubTransport, SyncTransportError
 
 
 @dataclasses.dataclass

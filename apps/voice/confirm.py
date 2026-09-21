@@ -17,10 +17,11 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 YES_PATTERN = re.compile(
     r"^\s*(?:yes|yeah|yep|yup|confirm|affirmative|ok|okay|sure|do it)\b",
@@ -48,7 +49,7 @@ def parse_yes_no(text: str) -> bool | None:
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def append_confirmation_log(

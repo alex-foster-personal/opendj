@@ -278,11 +278,12 @@ def test_beatgrid_fallback_matches_anlz_shape(client: TestClient) -> None:
     assert body["bpm"] == BPM
     assert body["anlz_available"] is False
     grid = body["beatgrid"]
-    assert set(grid) == {"source", "beat_count", "beats"}
+    assert set(grid) == {"source", "status", "beat_count", "beats"}
     # Required on the wire (AnlzBeatgridSource in anlz-types.ts): a fail-closed,
     # source-aware reader rejects a grid whose source it cannot name (Codex P2
     # BLOCKING, PR #1587).
     assert grid["source"] == "own"
+    assert grid["status"] == "ok"
     assert grid["beat_count"] == len(grid["beats"]) > 0
     for beat in grid["beats"]:
         # Fallback beats carry extrapolated; PQTZ /anlz stays {n,bpm,t} only.

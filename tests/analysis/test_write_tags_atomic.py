@@ -9,7 +9,7 @@ with no way back.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -25,7 +25,7 @@ def _rec(sid: str) -> AnalysisRecord:
         stable_id=sid,
         backend="librosa+madmom",
         backend_version="librosa==0.10.2+madmom==0.17.dev",
-        analyzed_at=datetime(2026, 4, 17, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=10.0, sample_rate=44100,
         bpm=128.12, bpm_confidence=0.9,
         key_camelot="8A", key_openkey="1m", key_confidence=0.9,

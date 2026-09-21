@@ -12,7 +12,7 @@ pyrekordbox costs stay opt-in.
 from __future__ import annotations
 
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 Handler = Callable[[list[str]], int]
 

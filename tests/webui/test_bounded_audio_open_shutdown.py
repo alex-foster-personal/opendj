@@ -18,9 +18,9 @@ from httpx import Response
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
+from apps.webui.server import preflight_checks
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
-from apps.webui.server import preflight_checks
 
 pytestmark = pytest.mark.requirement("PREFLIGHT-01")
 

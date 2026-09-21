@@ -58,10 +58,12 @@ def test_dry_run_no_db_mutation(tmp_path: Path, tmp_rb_db: Path) -> None:
 
     before = _sha(tmp_rb_db)
     res = apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+        ),
         live=False,
     )
     assert _sha(tmp_rb_db) == before, "dry-run mutated DB"
@@ -77,10 +79,12 @@ def test_dry_run_plan_csv_shape(tmp_path: Path, tmp_rb_db: Path) -> None:
     dedup_db = tmp_path / "phase7.sqlite"
     _seed_cluster(dedup_db, canonical="/canon.mp3", alias="/alias-no-match.mp3")
     apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+        ),
         live=False,
     )
     import csv
@@ -115,11 +119,13 @@ def test_cautious_live_rewrites_one_row(
     _seed_cluster(dedup_db, canonical=canonical, alias=rb_path)
 
     res = apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
-        backup_dir=tmp_path / "backups",
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+            backup_dir=tmp_path / "backups",
+        ),
         live=True,
         allow_rb_running=True,
         confirm_fn=lambda: True,
@@ -140,11 +146,13 @@ def test_abort_if_rb_running(tmp_path: Path, tmp_rb_db: Path, monkeypatch) -> No
     before = _sha(tmp_rb_db)
 
     res = apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
-        backup_dir=tmp_path / "backups",
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+            backup_dir=tmp_path / "backups",
+        ),
         live=True,
         allow_rb_running=False,
     )
@@ -169,11 +177,13 @@ def test_confirm_refused_aborts(tmp_path: Path, tmp_rb_db: Path, monkeypatch) ->
 
     before = _sha(tmp_rb_db)
     res = apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
-        backup_dir=tmp_path / "backups",
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+            backup_dir=tmp_path / "backups",
+        ),
         live=True,
         allow_rb_running=True,
         confirm_fn=lambda: False,
@@ -201,11 +211,13 @@ def test_reversal_script_generated(
 
     backup_dir = tmp_path / "backups"
     res = apply_mod.run_apply(
-        dedup_db_path=dedup_db,
-        rb_db_path=tmp_rb_db,
-        plan_csv=tmp_path / "plan.csv",
-        plan_md=tmp_path / "plan.md",
-        backup_dir=backup_dir,
+        apply_paths=apply_mod.DedupApplyPaths(
+            dedup_db_path=dedup_db,
+            rb_db_path=tmp_rb_db,
+            plan_csv=tmp_path / "plan.csv",
+            plan_md=tmp_path / "plan.md",
+            backup_dir=backup_dir,
+        ),
         live=True,
         allow_rb_running=True,
         confirm_fn=lambda: True,
@@ -296,11 +308,13 @@ def test_reversal_script_written_before_write(
 
     with pytest.raises(RuntimeError, match="simulated mid-write crash"):
         apply_mod.run_apply(
-            dedup_db_path=dedup_db,
-            rb_db_path=tmp_rb_db,
-            plan_csv=tmp_path / "plan.csv",
-            plan_md=tmp_path / "plan.md",
-            backup_dir=backup_dir,
+            apply_paths=apply_mod.DedupApplyPaths(
+                dedup_db_path=dedup_db,
+                rb_db_path=tmp_rb_db,
+                plan_csv=tmp_path / "plan.csv",
+                plan_md=tmp_path / "plan.md",
+                backup_dir=backup_dir,
+            ),
             live=True,
             allow_rb_running=True,
             confirm_fn=lambda: True,

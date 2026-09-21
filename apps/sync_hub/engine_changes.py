@@ -26,11 +26,12 @@ from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol, sync_set
 from apps.sync_hub.engine_common import (
-    apply_rank,
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
     _pk_predicate,
+    apply_rank,
 )
+from apps.sync_hub.engine_identity import _child_tables
 from apps.sync_hub.engine_watermark import Watermark, local_seq
 from apps.sync_hub.protocol import (
     MEMBERSHIP_SPEC,
@@ -40,7 +41,6 @@ from apps.sync_hub.protocol import (
     RowChange,
     TableSpec,
 )
-from apps.sync_hub.engine_identity import _child_tables
 from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 
 log = logging.getLogger("apps.sync_hub.engine")

@@ -152,6 +152,17 @@ class FolderImportOutcome:
     folder import reads tags and nothing else, so this equals the number of
     tracks it wrote, and reporting it is what stops the result being mistaken
     for an analysed library.
+
+    That count is only HALF the story, and reporting only that half read as a
+    dead end to the first tester who saw it (test Mac run 2, Wed 16 Sep 2026).
+    A folder import is the one path with no rekordbox ANLZ to read, so it is
+    the path where own analysis is the only source there is: every track it
+    writes lands rekordbox-unmapped and the daemon's analyze-on-import queue
+    picks them up. ``analysis_available`` is therefore MEASURED on this engine
+    rather than hardcoded False -- whether own analysis can actually run here
+    is the fact that decides whether those tracks get a beatgrid at all, and
+    an agent driving setup over HTTP reads it from the same place the wizard
+    does.
     """
 
     started_at: str
@@ -161,13 +172,16 @@ class FolderImportOutcome:
     files_seen: int
     files_dataless: int
     files_without_tags: int
+    files_rejected_unplayable: int
     tracks: int
     tracks_written: int
     tracks_without_analysis: int
     analysis_available: bool = False
     analysis_detail: str = (
         "a folder import reads tags only: no BPM, no key and no beatgrid are "
-        "written, and none are guessed"
+        "written by the import itself, and none are guessed. Open DJ's own "
+        "analysis supplies them afterwards; GET /api/v1/analysis-queue is the "
+        "queue and POST /api/v1/analysis-queue/run starts the drain"
     )
     kind: str = "folder"
 
@@ -252,15 +266,23 @@ def run_folder_import(
         files_seen=report.files_seen,
         files_dataless=report.files_dataless,
         files_without_tags=report.files_without_tags,
+        files_rejected_unplayable=report.files_rejected_unplayable,
         tracks=counts.tracks,
         tracks_written=report.tracks_inserted + report.tracks_unchanged,
         tracks_without_analysis=report.tracks_without_analysis,
+        analysis_available=_own_analysis_available(),
     )
     emit(
         FOLDER_STAGE_PROGRESS["ingest"],
         (
             f"ingest: {outcome.tracks_written} of {outcome.files_seen} "
             f"readable files imported, none analysed"
+            + (
+                f"; {outcome.files_rejected_unplayable} file(s) skipped as "
+                f"unplayable"
+                if outcome.files_rejected_unplayable
+                else ""
+            )
             + (
                 f"; {len(outcome.unreadable_roots)} folder(s) could not be read"
                 if outcome.unreadable_roots
@@ -270,6 +292,19 @@ def run_folder_import(
     )
     record.set_last_import(data_dir, outcome.to_dict())
     return outcome
+
+
+def _own_analysis_available() -> bool:
+    """Can THIS engine run its own analysis, measured rather than assumed.
+
+    Imported here rather than at module scope: importing the backend registry
+    is cheap, but this module is loaded by the setup job worker in a
+    subprocess, and a hard import would make a missing analysis extra a boot
+    failure of the IMPORT instead of a reported capability of it.
+    """
+    from apps.analysis import backends
+
+    return backends.default_backend_installed()
 
 
 def _folder_progress(emit: Emit):
