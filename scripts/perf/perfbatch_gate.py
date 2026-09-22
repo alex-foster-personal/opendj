@@ -347,7 +347,7 @@ def _guard_prelude_ok(step: int, text: str, indent: str, stmt: str) -> bool:
     if step == 1:
         return code == f"{indent}    {stmt}"
     guard = _IMPORT_GUARD_EXCEPT_RE.match(text)
-    return bool(guard) and guard.group("indent") == indent
+    return guard is not None and guard.group("indent") == indent
 
 
 def match_import_guard(removed: str, added: list[str]) -> int:
