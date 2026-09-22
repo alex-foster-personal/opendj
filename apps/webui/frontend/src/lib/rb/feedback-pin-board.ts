@@ -38,6 +38,9 @@ export function anchorMovedAtPin(
   elementFromPoint: (x: number, y: number) => AnchorishElement | null
 ): boolean {
   if (!pin.anchor) return false;
+  // Pixel position is the durable reference; a pin without one has nothing
+  // to re-resolve against, so it cannot be reported as moved.
+  if (pin.x_pct === undefined || pin.y_pct === undefined) return false;
   const vw = pin.environment?.viewport_width ?? window.innerWidth;
   const vh = pin.environment?.viewport_height ?? window.innerHeight;
   const x = (pin.x_pct / 100) * vw;
