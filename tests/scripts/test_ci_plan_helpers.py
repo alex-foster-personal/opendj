@@ -315,3 +315,23 @@ def test_an_unclaimed_support_module_that_mentions_a_scope_is_refused(tmp_path: 
     (root / "orphan" / "rig.py").write_text('DIST = "apps/webui/frontend/dist"\n')
     with pytest.raises(PlanError, match="claimed by no scope"):
         observed_dependents(_nested_config(), pytest_inputs(root), root=tmp_path)
+
+
+def test_an_import_of_a_nested_scope_is_attributed_to_the_nested_scope(tmp_path: Path) -> None:
+    """Codex on #3780. `imported_packages` cuts a name to two components, so an import of
+    `apps.webui.frontend.support.x` read as `apps.webui` and the edge went to the PARENT.
+    Import syntax carries no string literal, so the mention reader cannot recover it; the
+    owner lookup has to see the full name. No mentions here, so only the import can answer."""
+    root = tmp_path / "tests"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "test_fixture.py").write_text("from apps.webui.frontend.support import x\n")
+    config = Config(
+        (),
+        ("tests/*.py",),
+        (
+            Scope("webui", ("apps/webui/",), ("tests/webui/",)),
+            Scope("front", ("apps/webui/frontend/",), ()),
+            Scope("a", ("apps/a/",), ("tests/a/",)),
+        ),
+    )
+    assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {"front": ("a",)}

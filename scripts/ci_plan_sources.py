@@ -82,7 +82,16 @@ def _relative_base(where: str, level: int) -> str:
 
 
 def imported_packages(text: str, where: str) -> set[str]:
-    """The `apps.x` / `scripts.x` / `ops.x` packages a module imports, read with the AST.
+    """The `apps.x` / `scripts.x` / `ops.x` packages a module imports: `imported_modules`
+    cut to two components. Kept for callers that ask about packages; the planner's owner
+    lookups use the full names, because a nested scope (`apps/webui/frontend/`) is invisible
+    at two components (Codex on #3780)."""
+    return {".".join(module.split(".")[:2]) for module in imported_modules(text, where)}
+
+
+def imported_modules(text: str, where: str) -> set[str]:
+    """Every dotted module name under `apps`, `scripts` or `ops` a module imports, read with
+    the AST and returned in FULL.
 
     A regular expression missed `from apps import engine_core` outright and saw only the
     first name in `import apps.foo, apps.bar`. Sol's P1 on #3339, and the reason it was
@@ -110,11 +119,7 @@ def imported_packages(text: str, where: str) -> set[str]:
             # `from apps import engine_core` names the package in the ALIAS, not the module.
             found.update(f"{module}.{alias.name}" for alias in node.names)
             found.add(module)
-    return {
-        ".".join(part.split(".")[:2])
-        for part in found
-        if part.split(".")[0] in _TOP_PACKAGES and "." in part
-    }
+    return {part for part in found if part.split(".")[0] in _TOP_PACKAGES and "." in part}
 
 
 def mentioned_strings(text: str, where: str) -> set[str]:

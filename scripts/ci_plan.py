@@ -38,7 +38,7 @@ import yaml
 from scripts.ci_plan_sources import (
     PlanError,
     _read_source,
-    imported_packages,
+    imported_modules,
     is_test_module,
     mentioned_strings,
     pytest_inputs,
@@ -453,7 +453,7 @@ def _consumed_scopes(text: str, where: str, config: Config) -> list[Scope]:
     """
     source_owner = _owner_index(config, sources_only=True)
     consumed: dict[str, Scope] = {}
-    for module in imported_packages(text, where):
+    for module in imported_modules(text, where):
         scope = source_owner(module.replace(".", "/") + "/")
         if scope is not None:
             consumed[scope.name] = scope
@@ -511,7 +511,7 @@ def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozens
                 # `_owner_index` applies at plan time, so the two cannot disagree.
                 if source_owner(where) is not scope:
                     continue
-                for module in imported_packages(_read_source(file, where), where):
+                for module in imported_modules(_read_source(file, where), where):
                     other = source_owner(module.replace(".", "/") + "/")
                     if other is not None and other.name != scope.name:
                         direct[scope.name].add(other.name)
