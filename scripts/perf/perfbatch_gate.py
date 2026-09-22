@@ -13,16 +13,20 @@ whitespace only:
 
 Allowlist (see docs/perf/perfbatch-gates.md for the reasoning and residuals):
 
-    Python   blank lines; ``#`` comments that are not a shebang and not a
-             PEP 723 metadata line; docstring lines whose opener follows a
-             ``def``/``class`` header (or opens the module); widening of an
-             ``except (...)`` / ``contextlib.suppress(...)`` tuple to a
-             strict superset that adds no broad base; wrapping an existing
-             import in ``try: ... except ImportError: <name> = None``.
-    Shell    blank lines; ``#`` comments that are not a shebang.
-    TS/JS    blank lines; ``//`` line comments (never ``*`` block lines).
+    Python   judged against exact ``tokenize``/``ast`` facts for the WHOLE
+             file on both sides (merge base and head): blank lines; ``#``
+             comment lines that are not a shebang and not a PEP 723
+             metadata line; lines of a real docstring (the first statement
+             of a module, class or function); widening of an
+             ``except (...)`` / ``contextlib.suppress(...)`` tuple on a
+             code line to a strict superset that adds no broad base;
+             wrapping an existing import in
+             ``try: ... except ImportError: <name> = None``. A source that
+             does not tokenize on either side refuses the file.
     Markdown every line (prose is never executed).
-    Other    nothing: any changed line is a mutation.
+    Other    nothing, including TypeScript, Svelte and shell: without a
+             tokenizer a template literal or heredoc makes ``//`` and ``#``
+             ambiguous, so any changed line is a mutation.
 
 The gate fails closed: a pipeline path with no parseable hunks (binary, or a
 name list with no diff text), or whose diff carries behavioral metadata (a
@@ -41,16 +45,25 @@ validated at import: edit the TOML, not this file, to change it.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
-from scripts.perf.perfbatch_hunks import FileDiff, classify_pipeline_paths, parse_unified_diff
+from scripts.perf.perfbatch_hunks import (
+    FileDiff,
+    SourceReader,
+    classify_pipeline_paths,
+    parse_unified_diff,
+)
 
+T = TypeVar("T")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REPO = "maintainer/music-dj-tools"
 DEFAULT_BASE = "origin/main"
@@ -161,7 +174,8 @@ def _run(argv: list[str], *, cwd: Path | None = None) -> str:
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
-    out = _run(["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"])
+    fields = "number,title,body,headRefOid,baseRefOid"
+    out = _run(["gh", "pr", "view", str(pr), "--repo", repo, "--json", fields])
     return json.loads(out)
 
 
@@ -209,19 +223,81 @@ def local_diff_text(paths: list[str], repo_root: Path = REPO_ROOT, base: str = D
     return _run(["git", "diff", _merge_base(repo_root, base), "--", *paths], cwd=repo_root)
 
 
+def local_sources(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> SourceReader:
+    """Whole-file sources for the Python classifier: merge-base blob and working-tree file."""
+    merge_base = _merge_base(repo_root, base)
+
+    def read(path: str) -> tuple[str | None, str | None]:
+        exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{merge_base}:{path}"],
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        )
+        old = (
+            _run(["git", "show", f"{merge_base}:{path}"], cwd=repo_root)
+            if exists.returncode == 0
+            else None
+        )
+        target = repo_root / path
+        new = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
+        return old, new
+
+    return read
+
+
+def pr_sources(pr: int, repo: str = DEFAULT_REPO, view: dict | None = None) -> SourceReader:
+    """Whole-file sources from GitHub: the merge-base commit and the PR head.
+
+    The merge base comes from the compare API (a PR's ``baseRefOid`` is the
+    base branch tip, not the point the diff is taken from). A 404 on the
+    contents API means the file is absent on that side; any other failure
+    raises so the gate prints UNKNOWN rather than guessing.
+    """
+    pr_json = view if view is not None else pr_view(pr, repo)
+    head, base = pr_json["headRefOid"], pr_json["baseRefOid"]
+    compare = f"repos/{repo}/compare/{base}...{head}"
+    merge_base = _run(["gh", "api", compare, "--jq", ".merge_base_commit.sha"]).strip()
+    if not merge_base:
+        raise RuntimeError(f"compare API returned no merge base for {compare}")
+
+    def contents(ref: str, path: str) -> str | None:
+        proc = subprocess.run(
+            ["gh", "api", f"repos/{repo}/contents/{path}?ref={ref}", "--jq", ".content"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+        if proc.returncode != 0:
+            if "HTTP 404" in proc.stderr:
+                return None
+            raise RuntimeError(f"contents API failed for {path}@{ref[:9]}: {proc.stderr.strip()}")
+        return base64.b64decode(proc.stdout).decode("utf-8", errors="replace")
+
+    def read(path: str) -> tuple[str | None, str | None]:
+        return contents(merge_base, path), contents(head, path)
+
+    return read
+
+
 # ----------------------------------------------------------------------------
 # Verdict
 
 
 def verdict(
-    paths: list[str], body: str, file_diffs: dict[str, FileDiff] | None = None
+    paths: list[str],
+    body: str,
+    file_diffs: dict[str, FileDiff] | None = None,
+    sources: SourceReader | None = None,
 ) -> tuple[int, str]:
     candidates = pipeline_mutation_paths(paths)
     if not candidates:
         if paths and len(measurement_only_paths(paths)) == len(paths):
             return 0, "[perfbatch-gate] OK -- measurement-only (declared prefix)"
         return 0, "[perfbatch-gate] OK -- measurement-only"
-    verdicts = classify_pipeline_paths(candidates, file_diffs)
+    verdicts = classify_pipeline_paths(candidates, file_diffs, sources)
     mutations = [v for v in verdicts if not v.benign]
     if not mutations:
         listed = ", ".join(v.describe() for v in verdicts)
@@ -241,12 +317,79 @@ def verdict(
     )
 
 
+class _Unknown(RuntimeError):
+    """The gate could not measure. main() prints the reason and exits 2, never a pass."""
+
+
+def _measure(label: str, call: Callable[[], T]) -> T:
+    try:
+        return call()
+    except Exception as exc:
+        raise _Unknown(f"{label} ({exc})") from exc
+
+
+def _gate(  # noqa: PLR0913 -- every keyword is a test seam for one data source
+    args: argparse.Namespace,
+    *,
+    fetch,
+    fetch_files,
+    fetch_diff,
+    fetch_sources,
+    diff_names: list[str] | None,
+    diff_text: str | None,
+    body: str | None,
+    repo_root: Path,
+    base: str,
+) -> tuple[int, str]:
+    pr: dict = {}
+    pr_body = body if body is not None else ""
+    paths = list(diff_names) if diff_names is not None else None
+    text = diff_text if diff_text is not None else ("" if diff_names is not None else None)
+
+    if args.pr:
+        pr = _measure(f"could not read PR #{args.pr}", lambda: fetch(args.pr, args.repo))
+        pr_body = body if body is not None else (pr.get("body") or "")
+        if paths is None:
+            paths = _measure(
+                f"could not list PR #{args.pr} files", lambda: fetch_files(args.pr, args.repo)
+            )
+    if paths is None:
+        paths = _measure("could not read local diff", lambda: local_diff_names(repo_root, base))
+
+    candidates = pipeline_mutation_paths(paths)
+    if candidates and text is None:
+        listed = ", ".join(candidates)
+        text = _measure(
+            f"could not read hunks for {listed}",
+            lambda: (
+                fetch_diff(args.pr, args.repo)
+                if args.pr
+                else local_diff_text(candidates, repo_root, base)
+            ),
+        )
+
+    # Whole-file sources for the exact Python classifier, only when there are
+    # hunks to judge; a fetch failure is UNKNOWN, never a guess.
+    sources: SourceReader | None = None
+    if candidates and text:
+        sources = _measure(
+            "could not read file sources",
+            lambda: (
+                fetch_sources(args.pr, args.repo, pr) if args.pr else local_sources(repo_root, base)
+            ),
+        )
+
+    file_diffs = parse_unified_diff(text) if text is not None else None
+    return verdict(paths, pr_body, file_diffs, sources)
+
+
 def main(  # noqa: PLR0913 -- every keyword is a test seam for one data source
     argv: list[str] | None = None,
     *,
     fetch=pr_view,
     fetch_files=pr_diff_names,
     fetch_diff=pr_diff_text,
+    fetch_sources=pr_sources,
     diff_names: list[str] | None = None,
     diff_text: str | None = None,
     body: str | None = None,
@@ -262,55 +405,22 @@ def main(  # noqa: PLR0913 -- every keyword is a test seam for one data source
     if not args.pr and not args.diff:
         print("[perfbatch-gate] UNKNOWN: pass --pr N or --diff", file=sys.stderr)
         return 2
-
-    pr_body = body if body is not None else ""
-    paths = list(diff_names) if diff_names is not None else None
-    text = diff_text if diff_text is not None else ("" if diff_names is not None else None)
-
-    if args.pr:
-        try:
-            pr = fetch(args.pr, args.repo)
-        except Exception as exc:
-            print(
-                f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})",
-                file=sys.stderr,
-            )
-            return 2
-        pr_body = body if body is not None else (pr.get("body") or "")
-        if paths is None:
-            try:
-                paths = fetch_files(args.pr, args.repo)
-            except Exception as exc:
-                print(
-                    f"[perfbatch-gate] UNKNOWN: could not list PR #{args.pr} files ({exc})",
-                    file=sys.stderr,
-                )
-                return 2
-
-    if paths is None:
-        try:
-            paths = local_diff_names(repo_root, base)
-        except Exception as exc:
-            print(f"[perfbatch-gate] UNKNOWN: could not read local diff ({exc})", file=sys.stderr)
-            return 2
-
-    candidates = pipeline_mutation_paths(paths)
-    if candidates and text is None:
-        try:
-            if args.pr:
-                text = fetch_diff(args.pr, args.repo)
-            else:
-                text = local_diff_text(candidates, repo_root, base)
-        except Exception as exc:
-            listed = ", ".join(candidates)
-            print(
-                f"[perfbatch-gate] UNKNOWN: could not read hunks for {listed} ({exc})",
-                file=sys.stderr,
-            )
-            return 2
-
-    file_diffs = parse_unified_diff(text) if text is not None else None
-    code, message = verdict(paths, pr_body, file_diffs)
+    try:
+        code, message = _gate(
+            args,
+            fetch=fetch,
+            fetch_files=fetch_files,
+            fetch_diff=fetch_diff,
+            fetch_sources=fetch_sources,
+            diff_names=diff_names,
+            diff_text=diff_text,
+            body=body,
+            repo_root=repo_root,
+            base=base,
+        )
+    except _Unknown as exc:
+        print(f"[perfbatch-gate] UNKNOWN: {exc}", file=sys.stderr)
+        return 2
     stream = sys.stdout if code == 0 else sys.stderr
     print(message, file=stream)
     return code

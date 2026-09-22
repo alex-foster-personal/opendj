@@ -3,18 +3,25 @@
 Parses a unified diff (``git diff`` / ``gh pr diff``) and decides, per file,
 whether every added or removed line is on the narrow non-behavioral
 allowlist described in ``scripts/perf/perfbatch_gate.py`` and
-``docs/perf/perfbatch-gates.md``. Anything not provably non-behavioral,
-including anything unreadable, is a pipeline mutation.
+``docs/perf/perfbatch-gates.md``. Python lines are judged against exact
+``tokenize``/``ast`` facts for the whole file on each side
+(``perfbatch_python.py``), never against the hunk window alone. Anything
+not provably non-behavioral, including anything unreadable, is a pipeline
+mutation.
 """
 
 from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from scripts.perf.perfbatch_strings import _string_regions
+from scripts.perf.perfbatch_python import PythonFacts, analyze
+
+#: path -> (source at the merge base or None if absent, source at the head or None)
+SourceReader = Callable[[str], tuple[str | None, str | None]]
 
 # ----------------------------------------------------------------------------
 # Unified diff parsing
@@ -26,6 +33,18 @@ class Hunk:
     new_start: int
     # (tag, text) with tag in {" ", "+", "-"}; text has no trailing newline.
     lines: list[tuple[str, str]] = field(default_factory=list)
+
+    def file_lines(self) -> list[int]:
+        """Physical line number of each hunk line on its own side (old for ``-``, new otherwise)."""
+        numbers: list[int] = []
+        old, new = self.old_start, self.new_start
+        for tag, _ in self.lines:
+            numbers.append(old if tag == "-" else new)
+            if tag in (" ", "-"):
+                old += 1
+            if tag in (" ", "+"):
+                new += 1
+        return numbers
 
 
 @dataclass
@@ -111,25 +130,19 @@ def parse_unified_diff(text: str) -> dict[str, FileDiff]:
 # Hunk classification (PERFBATCH-07)
 
 _PY = "python"
-_SH = "shell"
-_TS = "typescript"
 _PROSE = "prose"
 
-_LANGUAGE_BY_SUFFIX: dict[str, str] = {
-    ".py": _PY,
-    ".sh": _SH,
-    ".ts": _TS,
-    ".js": _TS,
-    ".mjs": _TS,
-    ".svelte": _TS,
-    ".md": _PROSE,
-}
+# Only languages the gate can read EXACTLY are allowlisted at all. TypeScript,
+# Svelte and shell have no tokenizer here, and a template literal or heredoc
+# makes a line-leading ``//`` or ``#`` ambiguous, so every changed line in
+# them is a mutation.
+_LANGUAGE_BY_SUFFIX: dict[str, str] = {".py": _PY, ".md": _PROSE}
 
 # Bare names that make an exception widening broad enough to swallow
 # cancellation, interpreter exit, or an exception group. Compared against the
 # LAST dotted component, so ``builtins.Exception`` and
 # ``asyncio.exceptions.CancelledError`` are refused the same as the bare name.
-# An alias (``from builtins import Exception as E``) is invisible to a hunk
+# An alias (``from builtins import Exception as E``) is invisible to a diff
 # and remains an accepted residual, documented in perfbatch-gates.md.
 _BROAD_EXCEPTIONS = frozenset(
     {
@@ -184,10 +197,6 @@ def _is_hash_comment(text: str, *, python: bool) -> bool:
     if body.startswith("///") or body[:1] in ('"', "'", "[", "]"):
         return False
     return not _TOML_ASSIGNMENT_RE.match(body)
-
-
-def _is_slash_comment(text: str) -> bool:
-    return text.strip().startswith("//")
 
 
 def _split_names(raw: str) -> list[str] | None:
@@ -323,13 +332,7 @@ def _mutation(path: str, offending: str) -> FileVerdict:
 
 def _describe_line(hunk: Hunk, index: int) -> str:
     tag, text = hunk.lines[index]
-    old, new = hunk.old_start, hunk.new_start
-    for t, _ in hunk.lines[:index]:
-        if t in (" ", "-"):
-            old += 1
-        if t in (" ", "+"):
-            new += 1
-    line_no = new if tag == "+" else old
+    line_no = hunk.file_lines()[index]
     # ascii(): a cp1252 console must never choke on the line it is refusing.
     return f"{tag}{line_no}: {text.strip()!a}"
 
@@ -353,45 +356,70 @@ def _metadata_refusal(diff: FileDiff, lang: str | None) -> str | None:
     return None
 
 
-def classify_file(diff: FileDiff) -> FileVerdict:
+def _python_facts(diff: FileDiff, sources: SourceReader | None) -> dict[str, PythonFacts] | str:
+    """Facts for both sides, or the refusal string when either side cannot be read."""
+    if sources is None:
+        return "no file sources for a Python pipeline file"
+    old_source, new_source = sources(diff.path)
+    if old_source is None or new_source is None:
+        return "file source missing on one side"
+    facts = {"-": analyze(old_source), "+": analyze(new_source)}
+    for tag, side in facts.items():
+        if side.error is not None:
+            name = "merge-base" if tag == "-" else "head"
+            return f"cannot tokenize the {name} version: {side.error}"
+    return facts
+
+
+def classify_file(diff: FileDiff, sources: SourceReader | None = None) -> FileVerdict:
     """Benign only when every changed line is on the allowlist; otherwise a mutation."""
     lang = _language(diff.path)
     refusal = _metadata_refusal(diff, lang)
     if refusal is not None or lang is None:
         return _mutation(diff.path, refusal or "no allowlist for this file")
     reasons: Counter[str] = Counter()
+    if lang == _PROSE:
+        reasons["prose"] = sum(1 for hunk in diff.hunks for tag, _ in hunk.lines if tag != " ")
+        return FileVerdict(diff.path, True, tuple(sorted(reasons.items())), None)
+    facts = _python_facts(diff, sources)
+    if isinstance(facts, str):
+        return _mutation(diff.path, facts)
     for hunk in diff.hunks:
-        changed = [i for i, (tag, _) in enumerate(hunk.lines) if tag != " "]
-        if not changed:
-            continue
-        if lang == _PROSE:
-            reasons["prose"] += len(changed)
-            continue
-        consumed: set[int] = set()
-        docstring: dict[str, set[int]] = {"-": set(), "+": set()}
-        string_content: set[int] = set()
-        if lang == _PY:
-            old_walk = _string_regions(hunk, "-", hunk.old_start)
-            new_walk = _string_regions(hunk, "+", hunk.new_start)
-            docstring = {"-": old_walk.docstring, "+": new_walk.docstring}
-            string_content = old_walk.other | new_walk.other
-            for block_removed, block_added in _replacement_blocks(hunk):
-                _pair_python_blocks(
-                    hunk, block_removed, block_added, consumed, reasons, string_content
-                )
-        for index in changed:
-            if index in consumed:
-                continue
-            tag, text = hunk.lines[index]
-            if index in string_content:
-                return _mutation(
-                    diff.path, _describe_line(hunk, index) + " inside a string literal"
-                )
-            kind = _benign_line_kind(lang, text, index in docstring[tag])
-            if kind is None:
-                return _mutation(diff.path, _describe_line(hunk, index))
-            reasons[kind] += 1
+        offending = _classify_python_hunk(hunk, facts, reasons)
+        if offending is not None:
+            return _mutation(diff.path, offending)
     return FileVerdict(diff.path, True, tuple(sorted(reasons.items())), None)
+
+
+def _classify_python_hunk(
+    hunk: Hunk, facts: dict[str, PythonFacts], reasons: Counter[str]
+) -> str | None:
+    """Count the allowlisted kinds in one hunk, or return the first offending line."""
+    numbers = hunk.file_lines()
+    code_lines = {
+        index
+        for index, (tag, _) in enumerate(hunk.lines)
+        if tag != " " and facts[tag].is_code(numbers[index])
+    }
+    consumed: set[int] = set()
+    for block_removed, block_added in _replacement_blocks(hunk):
+        _pair_python_blocks(hunk, block_removed, block_added, consumed, reasons, code_lines)
+    for index, (tag, text) in enumerate(hunk.lines):
+        if tag == " " or index in consumed:
+            continue
+        side, line = facts[tag], numbers[index]
+        if line in side.docstring_lines:
+            kind = "docstring"
+        elif line in side.string_lines:
+            return _describe_line(hunk, index) + " inside a string literal"
+        elif line in side.comment_lines and _is_hash_comment(text, python=True):
+            kind = "comment"
+        elif line in side.blank_lines:
+            kind = "blank"
+        else:
+            return _describe_line(hunk, index)
+        reasons[kind] += 1
+    return None
 
 
 def _replacement_blocks(hunk: Hunk) -> list[tuple[list[int], list[int]]]:
@@ -419,15 +447,15 @@ def _pair_python_blocks(
     added: list[int],
     consumed: set[int],
     reasons: Counter[str],
-    string_content: set[int],
+    code_lines: set[int],
 ) -> None:
     """Consume exception widenings and import guards inside one replacement block.
 
-    Lines inside a non-docstring string literal are never paired: ``except``
-    text inside a prompt is prose that happens to look like code.
+    Only lines the tokenizer proves are code take part: ``except`` text inside
+    a prompt is prose that happens to look like code and is never paired.
     """
-    removed = [i for i in removed if i not in string_content]
-    added = [i for i in added if i not in string_content]
+    removed = [i for i in removed if i in code_lines]
+    added = [i for i in added if i in code_lines]
     widen_removed = [i for i in removed if _exception_clause(hunk.lines[i][1])]
     widen_added = [i for i in added if _exception_clause(hunk.lines[i][1])]
     for r_index, a_index in zip(widen_removed, widen_added, strict=False):
@@ -446,24 +474,10 @@ def _pair_python_blocks(
             reasons["import guard"] += 1
 
 
-def _benign_line_kind(lang: str, text: str, in_docstring: bool) -> str | None:
-    if not text.strip():
-        return "blank"
-    if lang == _PY:
-        if in_docstring:
-            return "docstring"
-        if _is_hash_comment(text, python=True):
-            return "comment"
-        return None
-    if lang == _SH:
-        return "comment" if _is_hash_comment(text, python=False) else None
-    if lang == _TS:
-        return "comment" if _is_slash_comment(text) else None
-    return None
-
-
 def classify_pipeline_paths(
-    paths: list[str], file_diffs: dict[str, FileDiff] | None
+    paths: list[str],
+    file_diffs: dict[str, FileDiff] | None,
+    sources: SourceReader | None = None,
 ) -> list[FileVerdict]:
     verdicts: list[FileVerdict] = []
     for path in paths:
@@ -471,5 +485,5 @@ def classify_pipeline_paths(
         if diff is None:
             verdicts.append(_mutation(path, "no diff text for this path"))
         else:
-            verdicts.append(classify_file(diff))
+            verdicts.append(classify_file(diff, sources))
     return verdicts
