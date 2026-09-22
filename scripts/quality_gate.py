@@ -97,8 +97,8 @@ REG  Q-11 Tell an inherited trunk regression from one this change introduced.
            prints INHERITED and the run exits 0]
           [if this change adds to an already-over metric (base below the run)
            then the run exits 1]
-          [if the merge base cannot be measured then the message is unchanged
-           and the output says why, never a silent pass]
+          [if the merge base cannot be measured then base_compare reports
+           UNKNOWN (exit 2), never REGRESSION, and the output says why]
 REG  Q-12 Judge a run against its allowance PLUS a small declared slack, so a
           normal PR can land while debt still trends down (issue #1219: all
           seven count metrics sat at zero headroom at once because each
@@ -1458,11 +1458,16 @@ class BaseCheck:
     inherited maps a metric key to (metric, the value main measured).
     notes are the reasons any over-allowance metric was LEFT as a regression,
     so a failure always says why instead of silently passing.
+    undecidable is True when the merge-base could not be resolved or measured
+    at all; inheritance-eligible metrics must not print REGRESSION in that case.
+    reason is the canonical UNKNOWN detail for base_compare when undecidable.
     """
 
     sha: str
     inherited: dict[str, tuple[Metric, float]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    undecidable: bool = False
+    reason: str = ""
 
 
 def _resolve_base() -> tuple[str | None, str]:
@@ -1511,11 +1516,16 @@ def _measure_owners_at_base(
     base_dir = Path(tempfile.mkdtemp(prefix="quality-gate-base-"))
     base_dir.rmdir()
     try:
-        code, err = _run(
-            ["git", "worktree", "add", "--detach", str(base_dir), sha], allow_fail=True
+        code, stdout, stderr = _run_capture(
+            ["git", "worktree", "add", "--detach", str(base_dir), sha],
         )
         if code != 0:
-            return None, f"git worktree add of merge base {sha[:10]} failed: {err[-200:]}"
+            detail = (stderr or stdout).strip()
+            tail = detail[-400:] if detail else ""
+            return None, (
+                f"git worktree add of merge base {sha[:10]} failed (exit {code}): "
+                f"{tail}"
+            )
         if "frontend" in owners:
             # knip and svelte-kit resolve against a node_modules install, which
             # a git worktree does not carry. Reuse this run's install read-only
@@ -1567,27 +1577,34 @@ def _inherited_classification(
     is over the same allowance and this change added nothing to it, so failing
     the author for it blames them for trunk. A base BELOW this run's value means
     the change made an already-over metric worse - base at 50 and this run at 51
-    is this change's fault - so it stays a hard REGRESSION. A metric whose base
-    value cannot be measured stays an unqualified REGRESSION with a reason; the
-    gate must never downgrade on a guess or pass silently.
+    is this change's fault - so it stays a hard REGRESSION. When the merge-base
+    cannot be resolved or measured at all, inheritance is undecidable and the
+    gate reports UNKNOWN (base_compare, exit 2), never REGRESSION, for plain
+    ratchet metrics. A per-metric omission from an otherwise successful base run
+    stays REGRESSION with a reason. HEAD-on-main is a measured regression, not
+    undecidable.
     """
+    head_on_main = "HEAD is itself on main; there is no other main to inherit from"
     if not over:
         return BaseCheck("")
     base_sha, reason = resolve_base()
     if base_sha is None:
-        return BaseCheck("", {}, [
-            f"cannot check the merge-base main: {reason}",
-            f"{len(over)} regression(s) reported unqualified rather than guessed",
-        ])
+        if reason == head_on_main:
+            return BaseCheck("", {}, [
+                f"cannot check the merge-base main: {reason}",
+                f"{len(over)} regression(s) reported unqualified rather than guessed",
+            ])
+        canonical = f"cannot check the merge-base main: {reason}"
+        return BaseCheck("", {}, undecidable=True, reason=canonical)
     short = base_sha[:10]
     owners = sorted({owner_of[m.key] for m in over})
     base_values, measure_reason = measure_owners(base_sha, owners)
     if base_values is None:
-        return BaseCheck(short, {}, [
+        canonical = (
             f"cannot re-measure {', '.join(owners)} on merge-base main {short}: "
-            f"{measure_reason}",
-            f"{len(over)} regression(s) reported unqualified rather than guessed",
-        ])
+            f"{measure_reason}"
+        )
+        return BaseCheck(short, {}, undecidable=True, reason=canonical)
     inherited: dict[str, tuple[Metric, float]] = {}
     notes: list[str] = []
     for m in over:
@@ -1900,6 +1917,8 @@ def _classify_regressions(
             line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
             print(f"[quality] {line1}")
             print(line2)
+        elif check.undecidable and key not in HARD_ZERO:
+            continue
         elif main_report_only and key not in HARD_ZERO:
             print(f"[quality] REGRESSION        {line}")
             trend_only.append(line)
@@ -1939,8 +1958,9 @@ def _print_ratchet_verdict(
     regressions_kept, trend_only = _classify_regressions(
         regressions, check, baseline, slack, main_report_only
     )
-    for note in check.notes:
-        print(f"[quality] base compare: {note}")
+    if not check.undecidable:
+        for note in check.notes:
+            print(f"[quality] base compare: {note}")
     if main_report_only and trend_only:
         _write_trend_summary(trend_only)
     if regressions_kept:
@@ -2034,6 +2054,11 @@ def main(argv: list[str] | None = None) -> int:
         check = _inherited_classification(
             over, owner_of, _resolve_base, _measure_owners_at_base
         )
+        if check.undecidable:
+            measurement_failures.append(
+                MeasurementFailure("base_compare", check.reason)
+            )
+            print(f"[quality] UNKNOWN: base_compare: {check.reason}")
 
     hotspots = _hotspots()
     if hotspots.status == "UNKNOWN":
