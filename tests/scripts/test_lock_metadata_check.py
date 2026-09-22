@@ -17,6 +17,9 @@ from scripts.lock_metadata_check import (
     EXIT_OK,
     EXIT_STALE,
     EXIT_UNKNOWN,
+    _eval,
+    _grid,
+    _MarkerParser,
     canonical_version,
     check,
     markers_equivalent,
@@ -273,12 +276,47 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
         # itself evaluates the same on both sides, 3.10.100 does not.
         ("python_full_version < '3.11'", "python_full_version <= '3.10.99'", False),
         ("python_full_version >= '3.11'", "python_full_version > '3.10.99'", False),
+        # Prerelease boundaries: 3.11rc2 separates these (Codex on #3763, round 5).
+        ("python_full_version < '3.11'", "python_full_version <= '3.11rc1'", False),
+        ("python_full_version < '3.11'", "python_full_version < '3.11rc0'", False),
+        # Membership is substring membership: 'linux' satisfies `in` but not `==`.
+        ("sys_platform in 'linux,darwin'", "sys_platform == 'linux,darwin'", False),
+        (
+            "sys_platform in 'linux,darwin'",
+            "sys_platform == 'linux' or sys_platform == 'darwin'",
+            False,
+        ),
+        ("sys_platform not in 'win32'", "sys_platform != 'win32'", False),
+        # A prerelease literal on either side turns prerelease probing on: these part
+        # company at 3.10.dev0, and the plain-literal rewrite above stays equivalent.
+        ("python_full_version >= '3.10'", "python_full_version >= '3.10.dev0'", False),
+        ("python_full_version > '3.10'", "python_full_version > '3.10.post1'", False),
     ],
 )
 def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> None:
     from packaging.markers import Marker
 
     assert markers_equivalent((spelled,), (recorded,)) is same
+    # ORACLE over the checker's own probe grid, both directions: packaging must agree
+    # with our evaluator on EVERY probe environment (so the evaluator is right), and for
+    # the false cases separate the two markers on at least one (so the grid is complete).
+    ast_a, ast_b = _MarkerParser(spelled).parse(), _MarkerParser(recorded).parse()
+    envs = _grid(ast_a, ast_b)
+    for env in envs:
+        env.setdefault("platform_machine", "arm64")
+        env.setdefault("extra", "dev")
+        env.setdefault("sys_platform", "linux")
+        env.setdefault("python_full_version", "3.11.0")
+        env.setdefault("python_version", "3.11")
+        for text, ast in ((spelled, ast_a), (recorded, ast_b)):
+            assert _eval(ast, env) == Marker(text).evaluate(env), (text, env)
+    # ORACLE for the false cases too: packaging, evaluated over the very probe grid
+    # the checker built, separates the two on at least one environment. This checks
+    # the grid (the completeness claim) as much as the evaluator.
+    if not same:
+        assert any(
+            Marker(spelled).evaluate(env) != Marker(recorded).evaluate(env) for env in envs
+        ), (spelled, recorded, envs)
     # ORACLE for the true cases: packaging agrees on a hand-picked environment grid.
     if same:
         for full in ("3.9.7", "3.10.0", "3.10.12", "3.11.0", "3.11.3", "3.12.1"):
@@ -295,6 +333,13 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
                     recorded,
                     env,
                 )
+
+
+def test_membership_with_the_variable_on_the_right_is_unknown_not_a_verdict() -> None:
+    """`'lin' in sys_platform` holds for every value CONTAINING the literal, a class the
+    probe grid cannot enumerate; the compare must say so rather than guess either way."""
+    with pytest.raises(Exception, match="variable on the right"):
+        markers_equivalent(("'lin' in sys_platform",), ("sys_platform == 'linux'",))
 
 
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
