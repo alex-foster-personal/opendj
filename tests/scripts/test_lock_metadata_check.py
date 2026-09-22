@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -492,6 +493,44 @@ def test_a_quoted_and_or_inside_a_marker_literal_is_one_clause(tmp_path: Path) -
         # CONTROL: a different literal is still stale.
         code, message = _run(tmp_path, pyproject, lock.replace(f"'{literal}'", "'posix'"))
         assert code == EXIT_STALE, message
+
+
+def _with_marker(pyproject_marker: str, lock_marker: str) -> tuple[str, str]:
+    """The fixture pair with the Quartz requirement's marker swapped on each side; JSON
+    strings are valid TOML basic strings, so either quote form survives the fixture."""
+    quartz = "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\""
+    recorded = "marker = \"sys_platform == 'darwin'\""
+    pyproject = PYPROJECT.replace(
+        quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {pyproject_marker}")
+    )
+    lock = LOCK.replace(recorded, "marker = " + json.dumps(lock_marker))
+    assert pyproject != PYPROJECT and lock != LOCK
+    return pyproject, lock
+
+
+def test_a_double_quoted_marker_literal_matches_its_single_quoted_record(tmp_path: Path) -> None:
+    """if pyproject.toml says `os_name == "posix"` and uv recorded `os_name == 'posix'`
+    (which it does) then 0; a literal holding a double quote is recorded verbatim in
+    single quotes and matches too (Codex P2 on #3763, round 9)"""
+    code, message = _run(tmp_path, *_with_marker('os_name == "posix"', "os_name == 'posix'"))
+    assert code == EXIT_OK, message
+    pyproject, lock = _with_marker("os_name == 'say \"hi\"'", "os_name == 'say \"hi\"'")
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    # CONTROL: a different literal is still stale.
+    code, message = _run(tmp_path, pyproject, lock.replace('say \\"hi\\"', "posix"))
+    assert code == EXIT_STALE, message
+
+
+def test_uv_s_malformed_record_of_an_apostrophe_literal_is_unknown(tmp_path: Path) -> None:
+    """`os_name == "posix's"` is valid PEP 508, and uv 0.8.17 records it as
+    `os_name == 'posix's'`, which is not (a single-quoted literal cannot hold `'`).
+    The lock side cannot be parsed, so the check says UNKNOWN naming the marker,
+    never a verdict either way."""
+    pyproject, lock = _with_marker('os_name == "posix\'s"', "os_name == 'posix's'")
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert "posix's" in message
 
 
 def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:

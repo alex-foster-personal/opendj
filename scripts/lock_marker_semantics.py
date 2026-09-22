@@ -27,6 +27,8 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     python_full_version >= '3.11.2+local'      -> (marker dropped entirely)
     python_full_version <= '1!3'               -> python_full_version <= '3'
     os_name == 'posix and stuff'               -> kept verbatim (quoted `and`)
+    os_name == "posix's"                       -> kept verbatim (double quotes)
+    os_name == "posix"                         -> os_name == 'posix'
     sys_platform < 'win32' and sys_platform != 'win32'  -> sys_platform < 'win32'
     sys_platform < 'linux' or sys_platform == 'linux'   -> sys_platform <= 'linux'
     sys_platform < 'win32' or sys_platform >= 'win32'   -> (marker dropped: always true)
@@ -185,16 +187,19 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
 _VERSION_VARS = frozenset({"python_version", "python_full_version", "implementation_version"})
 _ORDER_OPS = frozenset({"<", "<=", ">", ">="})
 _TOKEN_RE = re.compile(
-    r"\s*(?:(?P<lp>\()|(?P<rp>\))|(?P<str>'[^']*')|(?P<word>[A-Za-z_][A-Za-z0-9_.]*)"
+    r"\s*(?:(?P<lp>\()|(?P<rp>\))|(?P<str>'[^']*'|\"[^\"]*\")|(?P<word>[A-Za-z_][A-Za-z0-9_.]*)"
     r"|(?P<op>===|==|!=|<=|>=|<|>|~=))"
 )
 _GRID_CAP = 20000
 
 
 def tokenize_marker(text: str) -> list[tuple[str, str]]:
+    """PEP 508 marker tokens. A string literal may use either quote form and keeps
+    its contents verbatim (`"posix's"` is a valid literal uv records as is); its
+    token text is re-quoted canonically, single quotes unless the value holds one,
+    so the two spellings of one value compare equal downstream."""
     out: list[tuple[str, str]] = []
     pos = 0
-    text = text.replace('"', "'")
     while pos < len(text):
         if text[pos:].strip() == "":
             break
@@ -203,8 +208,19 @@ def tokenize_marker(text: str) -> list[tuple[str, str]]:
             raise Unknown(f"unparseable marker: {text!r}")
         pos = match.end()
         kind = match.lastgroup or ""
-        out.append((kind, match.group(kind)))
+        token = match.group(kind)
+        if kind == "str":
+            token = quote_literal(token[1:-1])
+        out.append((kind, token))
     return out
+
+
+def quote_literal(value: str) -> str:
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    raise Unknown(f"a marker literal with both quote characters is not representable: {value!r}")
 
 
 class _MarkerParser:
