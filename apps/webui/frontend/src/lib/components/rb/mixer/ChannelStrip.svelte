@@ -443,6 +443,8 @@
 		background: color-mix(in srgb, var(--rb-panel-raised, #1a1e25) 55%, transparent);
 	}
 	.strip.deck-focus {
+		outline: 2px solid var(--rb-accent, #49c8ff);
+		outline-offset: -4px;
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;

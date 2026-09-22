@@ -559,6 +559,8 @@
 		}
 	}
 	.rb-deck.deck-focus {
+		outline: 2px solid var(--rb-accent, #49c8ff);
+		outline-offset: -4px;
 		transition:
 			box-shadow 50ms ease-out,
 			background 50ms ease-out;
