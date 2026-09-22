@@ -186,3 +186,10 @@ def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
     pyproject = tomllib.loads((CI.parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
     dev = pyproject["project"]["optional-dependencies"]["dev"]
     assert any(spec.startswith("pytest-timeout") for spec in dev), dev
+    # ci.yml provisions the lanes from requirements.txt with `uv pip install --exact`,
+    # not from the dev extra: a plugin declared only in pyproject.toml is absent on
+    # the runner and `--timeout` becomes a usage error that fails every leg and shard.
+    requirements = (CI.parents[2] / "requirements.txt").read_text(encoding="utf-8")
+    assert any(line.startswith("pytest-timeout") for line in requirements.splitlines()), (
+        "pytest-timeout is missing from requirements.txt, which is what CI installs"
+    )
