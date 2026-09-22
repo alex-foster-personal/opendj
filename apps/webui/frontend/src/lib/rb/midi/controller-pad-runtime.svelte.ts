@@ -71,7 +71,7 @@ function _releaseBounce(deck: DeckId, deviceId: string | undefined, pad?: number
 		(pad !== undefined && hold.pad !== pad)) return;
 	_bounceHolds.delete(deck);
 	if (deckStates[deck].stable_id !== null && deckStates[deck].load_generation === hold.generation) {
-		_cmdLoopExit(deck);
+		void dispatchPerformanceCommand({ type: 'loop', deck, loop: null, if_load_generation: hold.generation });
 	}
 }
 
@@ -297,8 +297,10 @@ export function runControllerPad(
 		return;
 	}
 	if (mode === 'bounce_loop') {
-		_bounceHolds.set(deck, { device: _controllerKey(deviceId), pad, generation: deckStates[deck].load_generation });
-		_cmdBeatLoop(deck, CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1]);
+		const generation = deckStates[deck].load_generation;
+		_bounceHolds.set(deck, { device: _controllerKey(deviceId), pad, generation });
+		void dispatchPerformanceCommand({ type: 'beat_loop', deck,
+			beats: CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1], if_load_generation: generation });
 		return;
 	}
 	// Unsupported modes intentionally remain inert after the warning emitted

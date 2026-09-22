@@ -203,8 +203,10 @@ export type PerformanceCommand =
 	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
-	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
-	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
+	/** Optional load condition is checked inside the queue, not at input time.
+	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
+	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
+	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
@@ -1258,25 +1260,28 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 		return { type, deck, position_ms };
 	} else if (type === 'loop') {
-		_exactKeys(record, ['type', 'deck', 'loop']);
-		if (record.loop === null) return { type, deck, loop: null };
+		_exactKeys(record, ['type', 'deck', 'loop', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
+		if (record.loop === null) return { type, deck, loop: null, ...condition };
 		const loop = _record(record.loop);
 		_exactKeys(loop, ['in_ms', 'out_ms']);
 		return {
 			type,
 			deck,
+			...condition,
 			loop: { in_ms: _finite('loop.in_ms', loop.in_ms), out_ms: _finite('loop.out_ms', loop.out_ms) }
 		};
 	} else if (type === 'beat_loop') {
-		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms']);
+		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
 		const beats = _finite('beats', record.beats);
 		if (beats <= 0) {
 			throw new RangeError(`beats must be positive; got ${beats}`);
 		}
-		if (record.start_ms === undefined) return { type, deck, beats };
+		if (record.start_ms === undefined) return { type, deck, beats, ...condition };
 		const start_ms = _finite('start_ms', record.start_ms);
 		if (start_ms < 0) throw new RangeError('start_ms must be >= 0');
-		return { type, deck, beats, start_ms };
+		return { type, deck, beats, start_ms, ...condition };
 	} else if (type === 'beat_jump') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		const beats = _finite('beats', record.beats);
@@ -1840,6 +1845,11 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// A device release can wait behind a load of the very same track ID. The
+	// load generation, checked under the deck queue claim, owns the gesture.
+	if ((command.type === 'loop' || command.type === 'beat_loop') &&
+		command.if_load_generation !== undefined &&
+		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
