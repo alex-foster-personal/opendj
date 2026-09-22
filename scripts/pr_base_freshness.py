@@ -14,6 +14,9 @@ Acceptance tests:
 * [if] a PR is based on a non-main branch [then] it is excluded.
 * [if] a main-based PR is current [then] it does not affect the stale metric.
 * [if] a main-based PR is behind main [then] the newest stale base is reported.
+* [if] the captured `gh pr list` payload (tests/fixtures/pr-base-freshness,
+  verified against its MANIFEST.json) is fed through ``--rows-json`` [then] the
+  same parser, git lookups, measurement and exit code run as on the live call.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -119,9 +123,40 @@ def _run(*command: str) -> str:
     return result.stdout
 
 
-def _live_rows() -> tuple[list[Mapping[str, object]], dict[str, tuple[str, int]]]:
-    rows = json.loads(
-        _run(
+def parse_rows(text: str) -> list[Mapping[str, object]]:
+    """The `gh pr list` JSON payload as validated rows: the one parser, which a
+    captured payload (``--rows-json``) goes through exactly as the live call does."""
+    rows = json.loads(text)
+    if not isinstance(rows, list):
+        raise TypeError("gh pr list did not return a JSON list")
+    for row in rows:
+        if not isinstance(row, dict):
+            raise TypeError(f"gh pr list returned a non-object row: {row!r}")
+        if not isinstance(row.get("baseRefOid"), str):
+            raise TypeError(f"PR row has no baseRefOid: {row!r}")
+    return rows
+
+
+def collect_commits(
+    rows: Sequence[Mapping[str, object]], *, main_ref: str
+) -> dict[str, tuple[str, int]]:
+    """Each base's commit time and how many commits ``main_ref`` is ahead of it."""
+    commits: dict[str, tuple[str, int]] = {}
+    for row in rows:
+        oid = str(row["baseRefOid"])
+        committed_at = _run("git", "show", "-s", "--format=%cI", oid).strip()
+        ahead_text = _run("git", "rev-list", "--count", f"{oid}..{main_ref}").strip()
+        commits[oid] = (committed_at, int(ahead_text))
+    return commits
+
+
+def _live_rows(
+    *, rows_json: Path | None, main_ref: str
+) -> tuple[list[Mapping[str, object]], dict[str, tuple[str, int]]]:
+    if rows_json is not None:
+        text = rows_json.read_text(encoding="utf-8")
+    else:
+        text = _run(
             "gh",
             "pr",
             "list",
@@ -134,29 +169,24 @@ def _live_rows() -> tuple[list[Mapping[str, object]], dict[str, tuple[str, int]]
             "--json",
             "number,baseRefName,baseRefOid",
         )
-    )
-    if not isinstance(rows, list):
-        raise TypeError("gh pr list did not return a JSON list")
-    commits: dict[str, tuple[str, int]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            raise TypeError(f"gh pr list returned a non-object row: {row!r}")
-        oid = row.get("baseRefOid")
-        if not isinstance(oid, str):
-            raise TypeError(f"PR row has no baseRefOid: {row!r}")
-        committed_at = _run("git", "show", "-s", "--format=%cI", oid).strip()
-        ahead_text = _run("git", "rev-list", "--count", f"{oid}..main").strip()
-        commits[oid] = (committed_at, int(ahead_text))
-    return rows, commits
+    rows = parse_rows(text)
+    return rows, collect_commits(rows, main_ref=main_ref)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-age-hours", type=int, required=True)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--rows-json",
+        type=Path,
+        default=None,
+        help="a captured `gh pr list` payload to measure in place of the live call",
+    )
+    parser.add_argument("--main-ref", default="main", help="the ref each base is measured against")
+    args = parser.parse_args(argv)
     if args.max_age_hours < 0:
         raise ValueError("--max-age-hours must be non-negative")
-    prs, commits = _live_rows()
+    prs, commits = _live_rows(rows_json=args.rows_json, main_ref=args.main_ref)
     result = measure(prs, commits, now=datetime.now(UTC))
     if result.pr_count == 0:
         print("PR_BASE_FRESHNESS OK stale_main_bases=0")

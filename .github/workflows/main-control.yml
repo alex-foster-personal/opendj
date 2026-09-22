@@ -101,6 +101,11 @@ jobs:
       # stale synthetic merge refs that predate trunk ADR fixes.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Pinned: a workflow_dispatch from another ref would otherwise check
+          # out THAT ref, and the freshness script measures `<base>..main`
+          # against the local `main`, which then may be absent or stale on a
+          # persistent runner. The dispatch job targets main; so does this.
+          ref: main
           fetch-depth: 0
           persist-credentials: false
           clean: false
