@@ -864,7 +864,7 @@
 				return;
 			}
 
-			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
 			if (!browserNavigationMayHandle({
 				editable: _editableTarget(e.target),
 				contextMenuOpen: document.querySelector('[data-testid="context-menu"]') !== null
@@ -885,9 +885,11 @@
 				}
 				return;
 			}
-			if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+			const horizontal = e.key === 'a' || e.key === 'A' ? 'ArrowLeft'
+				: e.key === 'd' || e.key === 'D' ? 'ArrowRight' : e.key;
+			if (horizontal === 'ArrowLeft' || horizontal === 'ArrowRight') {
 				e.preventDefault();
-				browserFocus = moveBrowserFocus(browserFocus, e.key);
+				browserFocus = moveBrowserFocus(browserFocus, horizontal);
 				_focusBrowserZone();
 				return;
 			}
@@ -2731,6 +2733,7 @@
 		// navigation while that menu is open (IOPIN-01).
 		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
 		if (visibleRows.length === 0 || delta === 0) return;
+		browserFocus = 'tracks';
 		const selected = panes[activePane].selected_id;
 		const current = selected === null
 			? -1
@@ -2747,6 +2750,7 @@
 	function _editableTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
 		return (
+			target.closest('[role="slider"], [role="dialog"], dialog, [role="menu"]') !== null ||
 			target.tagName === 'INPUT' ||
 			target.tagName === 'TEXTAREA' ||
 			target.tagName === 'SELECT' ||
