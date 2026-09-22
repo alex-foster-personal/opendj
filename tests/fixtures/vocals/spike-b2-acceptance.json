@@ -1,0 +1,18 @@
+{
+  "tracks": [
+    {
+      "vendor_id": "257466392",
+      "slug": "dub-congas",
+      "role": "instr",
+      "max_coverage_pct": 5.0
+    },
+    {
+      "vendor_id": "28327038",
+      "slug": "mozarts-house",
+      "role": "vocal",
+      "min_pvdi_iou": 0.6
+    }
+  ],
+  "source_data_dir_env": "VOCALS_ACCEPTANCE_SOURCE_DATA_DIR",
+  "disposable_data_dir_env": "VOCALS_ACCEPTANCE_DATA_DIR"
+}
