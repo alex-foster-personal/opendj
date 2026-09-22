@@ -208,8 +208,21 @@ function _startSignalMeters(nodes: HeadphoneNodes): void {
 	}
 	const master = new Float32Array(nodes.masterSignalAnalyser.fftSize);
 	const cue = new Float32Array(nodes.cueSignalAnalyser.fftSize);
+	let lastContextTime = -Infinity;
 	const sample = () => {
 		if (_headphoneNodes !== nodes) return;
+		const contextTime = nodes.level.context.currentTime;
+		if (
+			nodes.level.context.state !== 'running' ||
+			!Number.isFinite(contextTime) ||
+			contextTime <= lastContextTime
+		) {
+			_clearSignal('master', 'inactive');
+			_clearSignal('cue', 'inactive');
+			_signalMeterFrame = requestAnimationFrame(sample);
+			return;
+		}
+		lastContextTime = contextTime;
 		nodes.masterSignalAnalyser?.getFloatTimeDomainData(master);
 		nodes.cueSignalAnalyser?.getFloatTimeDomainData(cue);
 		_publishSignal('master', master);
@@ -1226,7 +1239,8 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	// observe the app buses and add no audible path or physical-output claim.
 	if (masterSignalAnalyser !== null && cueSignalAnalyser !== null && meterSilence !== null) {
 		masterMonitor.connect(masterSignalAnalyser);
-		cueMix.connect(cueSignalAnalyser);
+		// HEADPHONE CUE follows MIX/LEVEL, not an upstream pre-volume branch.
+		level.connect(cueSignalAnalyser);
 		masterSignalAnalyser.connect(meterSilence);
 		cueSignalAnalyser.connect(meterSilence);
 		meterSilence.connect(context.destination);

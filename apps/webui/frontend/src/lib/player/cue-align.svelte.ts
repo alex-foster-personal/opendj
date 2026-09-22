@@ -35,9 +35,9 @@ import {
 	CUE_LATENCY_PERIOD_MS,
 	CUE_LATENCY_PREROLL_MS,
 	crossCorrelateLagMs,
+	capturedSignalLevel,
 	cueLatencyCaptureMs,
 	cueLatencyClickTrain
-	,capturedSignalLevel
 } from '$lib/player/cue-latency';
 import type { CueCalibrationRecord } from '$lib/player/mixer-config';
 import type { CueAlignStep, CueCalibrationFailure, HeadphoneCalibrationState } from '$lib/rb/mixer-types';

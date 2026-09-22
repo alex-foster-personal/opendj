@@ -1,12 +1,15 @@
-// requirement: CUEOUT-06
+// requirement: CUEOUT-06, IOPIN-08
 // [if] headphoneMixGains(0.5) is called [then] both gains equal cos(pi/4) to 1e-9, and 0 and 1 return exact 1/0 and 0/1
 // [if] a device id vanishes from a refresh while selected [then] reconcileHeadphoneOutputRefresh clears selection and active
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let headphones;
+const FRONTEND = fileURLToPath(new URL('../..', import.meta.url));
 
 before(async () => {
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
@@ -103,6 +106,14 @@ test('headphoneAcquisitionKind uses the chooser only when selectAudioOutput exis
 		() => headphones.headphoneAcquisitionKind({ enumerateDevices: true, setSinkId: true }),
 		/booleans/
 	);
+});
+
+test('signal indicators clear rather than re-timestamping stale analyser data while the context clock is stopped', () => {
+	const source = readFileSync(`${FRONTEND}/src/lib/player/headphones.ts`, 'utf8');
+	assert.match(source, /context\.state !== 'running'/);
+	assert.match(source, /contextTime <= lastContextTime/);
+	assert.match(source, /_clearSignal\('master', 'inactive'\)/);
+	assert.match(source, /level\.connect\(cueSignalAnalyser\)/);
 });
 
 test('preferredAudioInputDeviceId prefers a built-in mic over Bluetooth-looking inputs', () => {
