@@ -1631,6 +1631,23 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
+				calibration: {
+					...mixerState.headphones.calibration,
+					diagnostics: {
+						...mixerState.headphones.calibration.diagnostics,
+						master_measurements_ms: [...mixerState.headphones.calibration.diagnostics.master_measurements_ms],
+						cue_measurements_ms: [...mixerState.headphones.calibration.diagnostics.cue_measurements_ms]
+					}
+				},
+				signals: {
+					master: { ...mixerState.headphones.signals.master },
+					cue: { ...mixerState.headphones.signals.cue },
+					input: { ...mixerState.headphones.signals.input }
+				},
+				routes: {
+					master: { ...mixerState.headphones.routes.master },
+					cue: { ...mixerState.headphones.routes.cue }
+				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
 				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
 			},
