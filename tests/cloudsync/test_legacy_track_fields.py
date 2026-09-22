@@ -21,22 +21,17 @@ from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state.migrations_v15 import HUB_CHANGELOG_TABLE
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
-from apps.sync_hub import client, digest_diff, engine_apply, protocol, sync_set
-from apps.sync_hub import service
+from apps.sync_hub import client, digest_diff, engine_apply, protocol, service, sync_set
 from apps.sync_hub.protocol_common import EPOCH, canonical_bytes, lww_key
 from apps.sync_hub.transport import HttpTransport
 from tests.cloudsync.conftest import free_port
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _T0,
-    _TestClientTransport,
     _insert_track,
     _open,
     _sync,
-    hub,
-    hub_dir,
-    spoke_a,
-    spoke_b,
+    _TestClientTransport,
 )
 from tests.waits import start_uvicorn_in_thread
 

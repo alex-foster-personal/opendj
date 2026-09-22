@@ -69,7 +69,6 @@ from apps.sync_hub.machine_wire_limits import (
     MachineWireLimitError,
     validate_machine_wire_fields,
 )
-from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
     DIGEST_TABLES,
@@ -104,6 +103,7 @@ from apps.sync_hub.protocol_common import (
     table_columns,
     validate_hash_pending_row,
 )
+from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 
 # ----- wire payloads -----------------------------------------------------
 

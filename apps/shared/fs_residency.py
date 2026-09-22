@@ -15,7 +15,6 @@ import os
 import stat as stat_module
 import sys
 from pathlib import Path
-from typing import Optional
 
 
 def is_dataless_stub(st: os.stat_result) -> bool:
@@ -59,7 +58,7 @@ def exists_for_audio_open_probe(path: Path) -> bool:
     return not is_dataless_stub(st)
 
 
-def materialised_size(path: Path) -> Optional[int]:
+def materialised_size(path: Path) -> int | None:
     """Byte size when materialised regular file; None when missing / stub / not a file."""
     try:
         st = path.stat()

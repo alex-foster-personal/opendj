@@ -25,9 +25,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared.djay_db import DjayPlaylist
 from apps.shared.rekordbox_db import RBPlaylist

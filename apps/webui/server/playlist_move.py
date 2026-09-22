@@ -45,6 +45,19 @@ class TargetInsideSliceError(BackendError):
 
 
 @dataclass(frozen=True)
+class MoveSliceSpec:
+    range_start: str
+    range_length: int | None = None
+    range_end: str | None = None
+
+
+@dataclass(frozen=True)
+class MoveAnchor:
+    before_item_id: str | None = None
+    after_item_id: str | None = None
+
+
+@dataclass(frozen=True)
 class MoveResult:
     row: PlaylistRow
     renumbered: bool
@@ -288,11 +301,8 @@ def move_memberships(
     store: PlaylistStore,
     playlist_id: str,
     *,
-    range_start: str,
-    range_length: int | None = None,
-    range_end: str | None = None,
-    before_item_id: str | None = None,
-    after_item_id: str | None = None,
+    slice_spec: MoveSliceSpec,
+    anchor: MoveAnchor,
     expected_etag: str,
     record_edit: bool = True,
 ) -> MoveResult:
@@ -310,21 +320,21 @@ def move_memberships(
         store,
         playlist_id,
         expected_etag,
-        range_start,
-        range_length,
-        range_end,
-        before_item_id,
-        after_item_id,
+        slice_spec.range_start,
+        slice_spec.range_length,
+        slice_spec.range_end,
+        anchor.before_item_id,
+        anchor.after_item_id,
     )
 
-    if after_item_id is not None:
+    if anchor.after_item_id is not None:
         updates, renumbered, no_op = _order_keys_after_neighbor(
-            members, start_idx, neighbor_idx, slice_members, slice_ids, after_item_id,
+            members, start_idx, neighbor_idx, slice_members, slice_ids, anchor.after_item_id,
         )
     else:
-        assert before_item_id is not None
+        assert anchor.before_item_id is not None
         updates, renumbered, no_op = _order_keys_before_neighbor(
-            members, end_idx, neighbor_idx, slice_members, slice_ids, before_item_id,
+            members, end_idx, neighbor_idx, slice_members, slice_ids, anchor.before_item_id,
         )
 
     if no_op:
@@ -351,7 +361,9 @@ def move_memberships(
 
 
 __all__ = [
+    "MoveAnchor",
     "MoveResult",
+    "MoveSliceSpec",
     "SliceNotContiguousError",
     "TargetInsideSliceError",
     "move_memberships",

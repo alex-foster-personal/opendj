@@ -166,7 +166,7 @@ def transcode_one(
             "3",
             str(part),
         ]
-        proc = subprocess.run(args, capture_output=True, text=True)
+        proc = subprocess.run(args, capture_output=True, text=True, check=False)
         if proc.returncode != 0:
             if part.exists():
                 part.unlink()

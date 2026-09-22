@@ -42,8 +42,8 @@ def served_beats_from_pqtz_tag(pqtz: PQTZAnlzTag) -> list[dict[str, float | int]
 
 def quantize_own_beat(beat: Mapping[str, object]) -> tuple[int, int, int]:
     n = int(beat["n"])
-    tempo = int(round(float(beat["bpm"]) * PQTZ_TEMPO_SCALE))
-    time_ms = int(round(float(beat["t"]) * PQTZ_TIME_SCALE))
+    tempo = round(float(beat["bpm"]) * PQTZ_TEMPO_SCALE)
+    time_ms = round(float(beat["t"]) * PQTZ_TIME_SCALE)
     if n not in (1, 2, 3, 4):
         raise ValueError(f"beat n must be 1..4, got {n}")
     return n, tempo, time_ms

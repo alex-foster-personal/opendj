@@ -28,6 +28,8 @@
  *   library-filter              - one settled local filter interaction
  *   library-load-all-tracks     - one completed All Tracks cursor walk
  *   library-load-playlist       - one completed playlist hydrate
+ *   library-playlist-tree-ready - playlist tree first paint after boot
+ *   library-switch-first-rows   - click to first tbody row on switch
  *   library-search-collection   - one completed whole-collection FTS query
  *   library-prefetch-anlz       - sampled row-select /anlz warm
  *   library-prefetch-audio      - sampled row-select audio ArrayBuffer warm
@@ -164,6 +166,26 @@ export function recordLibraryLoadTiming(
 		rows: args.rows
 	});
 	completeLibraryUsable({ source });
+}
+
+/** Playlist tree ready after boot prefetch (PERF-UI-05). */
+export function recordPlaylistTreeReadyMs(ms: number): void {
+	recordPerfTiming('library-playlist-tree-ready', {
+		ready_ms: Math.round(ms)
+	});
+}
+
+/** Click to first visible rows on playlist or All Tracks switch (PERF-UI-05). */
+export function recordPlaylistSwitchFirstRowsMs(
+	source: 'playlist' | 'all-tracks',
+	ms: number
+): void {
+	recordPerfTiming(
+		'library-switch-first-rows',
+		{ first_rows_ms: Math.round(ms) },
+		null,
+		{ source }
+	);
 }
 
 /** One completed whole-collection FTS query. `total` rides along because the

@@ -17,7 +17,6 @@ from apps.shared.playlist_sets import (
     record_run,
 )
 from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
-
 from tests.shared.playlist_sets.conftest import seed_playlist_and_tracks
 
 pytestmark = pytest.mark.requirement("SET-05")

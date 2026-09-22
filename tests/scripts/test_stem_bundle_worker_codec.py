@@ -99,8 +99,8 @@ import numpy as np
 import pytest
 
 import scripts.stem_bundle_worker as worker
-from apps.stems.stem_size_policy import UnknownSourceFormatError
 from apps.stems.artifacts import load_stem_bundle
+from apps.stems.stem_size_policy import UnknownSourceFormatError
 
 pytestmark = pytest.mark.requirement("STEM-02")
 

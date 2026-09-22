@@ -7,7 +7,10 @@ PUT  /api/v1/ui-prefs  - merge patch into data/state/ui-prefs.json
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+import os
+import tempfile
+import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +21,8 @@ from apps.shared.events import publish
 from apps.shared.paths import DATA_DIR
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
+
+_write_lock = threading.Lock()
 
 _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
@@ -89,6 +94,30 @@ def _path(request: Request) -> Path:
     configured = getattr(request.app.state, "data_dir", None)
     root = Path(configured) if configured is not None else DATA_DIR
     return root / "state" / _FILENAME
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` via same-dir temp file and ``os.replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    if os.name == "posix":
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
 
 
 # Level calibration is stored in dBFS, the same unit the meter reads. The
@@ -377,7 +406,7 @@ def _parse_last_gig_at(value: Any) -> str | None:
                 "message": f"app_mode.last_gig_at is not a valid UTC ISO timestamp: {exc}",
             },
         ) from exc
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _parse_app_mode_id(value: Any) -> str:
@@ -670,10 +699,10 @@ def persist_master_muted(request: Request, muted: bool) -> None:
     if not isinstance(muted, bool):
         raise TypeError("muted must be boolean")
     path = _path(request)
-    current = _load(path)
-    current["master_muted"] = muted
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    with _write_lock:
+        current = _load(path)
+        current["master_muted"] = muted
+        _write_atomic(path, json.dumps(current, indent=2) + "\n")
     publish("library.changed", {"kind": "ui_prefs", "ids": []})
 
 
@@ -685,7 +714,15 @@ def get_ui_prefs(request: Request) -> UiPrefsOut:
 @router.put("", response_model=UiPrefsOut)
 def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     path = _path(request)
-    current = _load(path)
+    with _write_lock:
+        current = _load(path)
+        current = _merge_ui_prefs_patch(current, body)
+        _write_atomic(path, json.dumps(current, indent=2) + "\n")
+    publish("library.changed", {"kind": "ui_prefs", "ids": []})
+    return UiPrefsOut.model_validate(current)
+
+
+def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[str, Any]:
     if body.confirm is not None:
         merged = {**current["confirm"], **body.confirm}
         # Drop keys explicitly set to null.
@@ -730,7 +767,4 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["level_calibration"] = _parse_level_calibration(
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
-    publish("library.changed", {"kind": "ui_prefs", "ids": []})
-    return UiPrefsOut.model_validate(current)
+    return current

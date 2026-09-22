@@ -1,7 +1,7 @@
 """Phase 4 SYNC-05/06: conflict resolver tests."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -36,28 +36,28 @@ def test_rating_both_nonzero_follows_prefer_djay():
 
 
 def test_newest_within_window_prefers_newer():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=3)
     res = resolve_conflict("rating", 2, 5, rb_modified_at=older, djay_modified_at=now)
     assert res == "accept_djay"
 
 
 def test_newest_when_rb_is_newer():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=2)
     res = resolve_conflict("rating", 5, 2, rb_modified_at=now, djay_modified_at=older)
     assert res == "accept_rb"
 
 
 def test_outside_window_defaults_to_rb():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=30)
     res = resolve_conflict("bpm", 128.0, 130.0, rb_modified_at=now, djay_modified_at=older)
     assert res == "accept_rb"
 
 
 def test_prefer_rb_when_rb_older_is_conflict():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=1)
     res = resolve_conflict(
         "rating", 5, 3, rb_modified_at=older, djay_modified_at=now, prefer="rb"
@@ -66,7 +66,7 @@ def test_prefer_rb_when_rb_older_is_conflict():
 
 
 def test_prefer_djay_when_djay_older_is_conflict():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=1)
     res = resolve_conflict(
         "rating", 5, 3, rb_modified_at=now, djay_modified_at=older, prefer="djay"
@@ -107,21 +107,21 @@ def test_prefer_rb_default_when_no_timestamps():
 
 
 def test_window_boundary_seven_days_exact():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=7)
     res = resolve_conflict("rating", 2, 5, rb_modified_at=older, djay_modified_at=now)
     assert res == "accept_djay"
 
 
 def test_window_boundary_eight_days_out():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=8)
     res = resolve_conflict("bpm", 128.0, 130.0, rb_modified_at=older, djay_modified_at=now)
     assert res == "conflict"
 
 
 def test_rating_both_nonzero_newest_tie():
-    now = datetime(2026, 4, 17, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 17, tzinfo=UTC)
     res = resolve_conflict(
         "rating", 5, 3, rb_modified_at=now, djay_modified_at=now, prefer="newest"
     )

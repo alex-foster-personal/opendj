@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled, require_writeback_enabled
 from apps.sync.djay_sync_service import (

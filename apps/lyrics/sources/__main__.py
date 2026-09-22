@@ -181,7 +181,7 @@ def _cmd_candidates(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_merge_musixmatch(args: argparse.Namespace) -> int:
+def _cmd_merge_musixmatch(_args: argparse.Namespace) -> int:
     """Merge the musixmatch ledger + fetched text into the candidate contract:
     licensed full-text candidates for matcher hits, instrumental_evidence for
     matcher instrumental flags. Idempotent -- re-running never duplicates."""
@@ -275,7 +275,7 @@ def _cmd_recover(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_crosscheck(args: argparse.Namespace) -> int:
+def _cmd_crosscheck(_args: argparse.Namespace) -> int:
     """One honest view: candidate-bucket partition x vocal-presence verdicts,
     with the contradiction lists. Fails fast if the buckets do not partition."""
     from apps.lyrics.sources.candidates import CANDIDATES_DIR, bucket_of
@@ -343,7 +343,7 @@ def _cmd_crosscheck(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_validate(args: argparse.Namespace) -> int:
+def _cmd_validate(_args: argparse.Namespace) -> int:
     from apps.lyrics.sources.candidates import CANDIDATES_DIR, validate_candidate_file
 
     files = sorted(CANDIDATES_DIR.glob("*.json"))
@@ -379,27 +379,15 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     return _cmd_crosscheck(args)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="python -m apps.lyrics.sources")
-    sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "fetch", "candidates", "recover",
-                 "merge-musixmatch", "crosscheck", "validate", "summary"):
-        p = sub.add_parser(name)
-        p.add_argument("--provider", dest="providers", action="append", default=None,
-                       help="repeatable; default: all in --tier")
-        p.add_argument("--tier", choices=("free", "keyed", "paid", "all"), default="free")
-        p.add_argument("--present-only", action="store_true",
-                       help="only tracks with locally resolved audio (honest karaoke denominator)")
-        p.add_argument("--sample", type=int, default=None)
-    args = parser.parse_args()
+def _default_providers(tier: str) -> list[str]:
+    tier_map = {"free": ["lrclib"], "keyed": ["musixmatch"], "paid": [], "all": ["lrclib", "musixmatch"]}
+    providers = tier_map[tier]
+    if not providers:
+        raise SystemExit(f"[ERROR] no providers in tier {tier!r}")
+    return providers
 
-    if args.providers is None:
-        tier_map = {"free": ["lrclib"], "keyed": ["musixmatch"],
-                    "paid": [], "all": ["lrclib", "musixmatch"]}
-        args.providers = tier_map[args.tier]
-        if not args.providers:
-            raise SystemExit(f"[ERROR] no providers in tier {args.tier!r}")
 
+def _dispatch_command(args: argparse.Namespace) -> int:
     if args.command == "check":
         return _cmd_check(args)
     if args.command == "fetch":
@@ -421,6 +409,25 @@ def main() -> int:
     if args.command == "summary":
         return _cmd_summary(args)
     raise AssertionError(f"unhandled command {args.command!r}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="python -m apps.lyrics.sources")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("check", "fetch", "candidates", "recover",
+                 "merge-musixmatch", "crosscheck", "validate", "summary"):
+        p = sub.add_parser(name)
+        p.add_argument("--provider", dest="providers", action="append", default=None,
+                       help="repeatable; default: all in --tier")
+        p.add_argument("--tier", choices=("free", "keyed", "paid", "all"), default="free")
+        p.add_argument("--present-only", action="store_true",
+                       help="only tracks with locally resolved audio (honest karaoke denominator)")
+        p.add_argument("--sample", type=int, default=None)
+    args = parser.parse_args()
+
+    if args.providers is None:
+        args.providers = _default_providers(args.tier)
+    return _dispatch_command(args)
 
 
 if __name__ == "__main__":

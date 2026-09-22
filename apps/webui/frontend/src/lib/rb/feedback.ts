@@ -285,9 +285,10 @@ export function pinBodyPos(
  * that needs the maintainer. Unclear instructions are a question in the agent note, never
  * blocked. A blocked note begins with one sentence naming what the maintainer must provide.
  * A pin NEVER disappears on its own: only `archived` leaves the canvas, and only
- * because the maintainer pressed Archive on a pin whose work is done.
+ * because the maintainer pressed Archive on a pin whose work is done. Pixel position
+ * (x_pct/y_pct) is the durable reference; anchor labels are diagnostic only.
  */
-const PIN_STATUSES = ["open", "issued", "blocked", "fixed", "merged", "archived"] as const;
+const PIN_STATUSES = ["open", "issued", "blocked", "fixed", "merged", "harvested", "archived"] as const;
 export type PinStatus = (typeof PIN_STATUSES)[number];
 
 /** The one localStorage key this feature owns: {pin id: updated_at seen}. */
@@ -297,10 +298,17 @@ export const PIN_SEEN_KEY = "mdt.feedback.pinSeen.v1";
  * can drive these with plain objects and no generated client types. */
 export interface LifecyclePin {
   id: string;
+  x_pct?: number;
+  y_pct?: number;
+  anchor?: string | null;
+  page?: string;
   status?: string | null;
   issue_url?: string | null;
   updated_at?: string | null;
   agent_note?: string | null;
+  fixed_in_sha?: string | null;
+  fixed_at?: string | null;
+  environment?: { viewport_width?: number; viewport_height?: number } | null;
 }
 
 /**
@@ -334,6 +342,7 @@ export interface PinStatusSummary {
 	blocked: number;
 	fixed: number;
 	merged: number;
+	harvested: number;
 }
 
 /** Count active statuses from the live comment board. Archived pins are moved
@@ -349,7 +358,8 @@ export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSu
 		issued: 0,
 		blocked: 0,
 		fixed: 0,
-		merged: 0
+		merged: 0,
+		harvested: 0
 	};
 	for (const pin of pins) {
 		const status = pinStatus(pin);
@@ -368,12 +378,12 @@ export function describePinStatusSummary(pins: readonly LifecyclePin[]): string 
 	const summary = summarizePinStatuses(pins);
 	return `Active comment pins: ${summary.total} total - ` +
 		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ${summary.blocked} blocked, ` +
-		`${summary.fixed} fixed, ${summary.merged} merged`;
+		`${summary.fixed} fixed, ${summary.merged} merged, ${summary.harvested} harvested`;
 }
 
 export { blockedPinDetail, blockedPinRequest } from './feedback-blocked-note';
 
-/** Archived pins leave the canvas; everything else stays on it forever. */
+/** Archived pins leave the canvas; harvested and everything else stay on it. */
 export function isPinDrawn(pin: LifecyclePin): boolean {
   return pinStatus(pin) !== "archived";
 }

@@ -19,9 +19,10 @@ Design constraints:
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 POPM_EMAIL = "music-dj-tools@local"
 POPM_BUCKETS: dict[int, int] = {0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}
@@ -261,7 +262,7 @@ def _write_mp3(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     if u.genre is not None:
         t["TCON"] = TCON(encoding=3, text=u.genre); applied["genre"] = u.genre
     if u.bpm is not None:
-        t["TBPM"] = TBPM(encoding=3, text=str(int(round(u.bpm)))); applied["bpm"] = u.bpm
+        t["TBPM"] = TBPM(encoding=3, text=str(round(u.bpm))); applied["bpm"] = u.bpm
     if u.key_openkey is not None:
         t["TKEY"] = TKEY(encoding=3, text=u.key_openkey); applied["key_openkey"] = u.key_openkey
     if u.key_camelot is not None:
@@ -293,7 +294,7 @@ def _write_mp4(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     t = f.tags
     applied: dict[str, Any] = {}
 
-    def ff(name: str, value: str) -> MP4FreeForm:
+    def ff(_name: str, value: str) -> MP4FreeForm:
         return MP4FreeForm(value.encode("utf-8"), dataformat=MP4FreeForm.FORMAT_TEXT)
 
     if u.title is not None:
@@ -305,7 +306,7 @@ def _write_mp4(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     if u.genre is not None:
         t["\xa9gen"] = [u.genre]; applied["genre"] = u.genre
     if u.bpm is not None:
-        t["tmpo"] = [int(round(u.bpm))]; applied["bpm"] = u.bpm
+        t["tmpo"] = [round(u.bpm)]; applied["bpm"] = u.bpm
     if u.key_openkey is not None:
         t["----:com.apple.iTunes:INITIALKEY"] = [ff("INITIALKEY", u.key_openkey)]
         applied["key_openkey"] = u.key_openkey
@@ -347,7 +348,7 @@ def _write_flac_ogg(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult
     if u.genre is not None:
         setv("GENRE", u.genre); applied["genre"] = u.genre
     if u.bpm is not None:
-        setv("BPM", str(int(round(u.bpm)))); applied["bpm"] = u.bpm
+        setv("BPM", str(round(u.bpm))); applied["bpm"] = u.bpm
     if u.key_openkey is not None:
         setv("KEY", u.key_openkey); applied["key_openkey"] = u.key_openkey
     if u.key_camelot is not None:

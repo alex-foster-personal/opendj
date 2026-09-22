@@ -162,15 +162,18 @@ def test_sink_rate_limit_emits_suppression_summary(
     assert "3 events suppressed" in summary["message"]
 
 
-def test_packaged_build_defaults_off_even_with_a_dsn() -> None:
-    """if the operator did not opt in then a payload build stays off.
-
-    Fleet test builds set OPENDJ_TELEMETRY=1. Packaged default is off until
-    a consent UX exists. A DSN sitting in the environment is not consent.
+def test_packaged_build_defaults_on_with_a_dsn_and_a_checkout_off() -> None:
+    """OBS-04 (Mon 21 Sep 2026): a packaged build with a DSN reports; the
+    consent gate (OBS-05) holds every send until the tester accepts, and a
+    checkout stays off because a DSN in a developer's .env is not consent.
     """
     ship = decide_telemetry({DSN_ENV: DSN}, build_source="payload", release=SHA)
-    assert ship.enabled is False
+    assert ship.enabled is True
+    assert ship.explicit is False, "default-on is not an operator ask; consent applies"
     assert ship.environment == "ship"
+
+    dev = decide_telemetry({DSN_ENV: DSN}, build_source="repo", release=SHA)
+    assert dev.enabled is False
 
     fleet = decide_telemetry(
         {TELEMETRY_ENV: "1", DSN_ENV: DSN}, build_source="payload", release=SHA

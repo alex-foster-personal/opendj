@@ -15,12 +15,12 @@ import argparse
 import json
 import signal
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from apps.voice import audio, tts
 
 
-def _cmd_list_devices(args: argparse.Namespace) -> int:
+def _cmd_list_devices(_args: argparse.Namespace) -> int:
     """Print the list of audio devices via ``sd.query_devices()``."""
     try:
         sd = audio._sounddevice()  # lazy import so --help works without it
@@ -60,7 +60,7 @@ def _cmd_say(args: argparse.Namespace) -> int:
     return result.returncode
 
 
-def _capture_transcripts(args: argparse.Namespace):
+def _capture_transcripts(_args: argparse.Namespace):
     """Yield transcripts from the mic -> wake -> STT pipeline.
 
     Default implementation requires the audio stack (sounddevice + a wake

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.webui.server.backend import InMemoryBackend, Track
+from apps.webui.server.backend import InMemoryBackend
 
 
 def _set_file_path(backend: InMemoryBackend, stable_id: str, file_path: str | None) -> None:

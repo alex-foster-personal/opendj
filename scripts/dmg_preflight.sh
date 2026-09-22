@@ -751,6 +751,62 @@ check_google_oauth_client() {
          "export OPENDJ_GOOGLE_OAUTH_CLIENT_ID=\"\$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain)\" and export OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET=\"\$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain)\" (Desktop-app client; Google documents the secret as not confidential for installed apps)."
 }
 
+check_sentry_ship_dsn() {
+    section "Sentry ship DSN (OBS-04)"
+    # The payload bakes OPENDJ_SENTRY_DSN_BACKEND_SHIP into telemetry.json and
+    # a packaged build defaults telemetry ON. The build host's own SENTRY_DSN
+    # is the preview-dev key and is deliberately not a fallback: a dmg
+    # reporting under it would mislabel every tester as a preview host.
+    if [ -n "${OPENDJ_SENTRY_DSN_BACKEND_SHIP:-}" ]; then
+        case "$OPENDJ_SENTRY_DSN_BACKEND_SHIP" in
+            https://*@*/*) ok "OPENDJ_SENTRY_DSN_BACKEND_SHIP is set and DSN-shaped (value not printed)"; return ;;
+        esac
+        fail "Sentry ship DSN" \
+             "OPENDJ_SENTRY_DSN_BACKEND_SHIP is set but is not DSN-shaped (expected https://<key>@<host>/<project>)" \
+             "export OPENDJ_SENTRY_DSN_BACKEND_SHIP=\"\$(doppler secrets get OPENDJ_SENTRY_DSN_BACKEND_SHIP --project general --config dev_personal --plain)\" (the open-dj-be Default client key)."
+        return
+    fi
+    local doppler_bin="${MDT_DOPPLER_BIN:-doppler}"
+    if command -v "$doppler_bin" >/dev/null 2>&1; then
+        local got_dsn=""
+        got_dsn="$("$doppler_bin" secrets get OPENDJ_SENTRY_DSN_BACKEND_SHIP --project general --config dev_personal --plain 2>/dev/null || true)"
+        if [ -n "$got_dsn" ]; then
+            ok "Sentry ship DSN is available from Doppler (value not printed)"
+            return
+        fi
+    fi
+    fail "Sentry ship DSN" \
+         "OPENDJ_SENTRY_DSN_BACKEND_SHIP is empty or unset and Doppler did not yield it. The payload build fails without it, because a dmg with no DSN reports nothing (the gap OBS-04 closes)" \
+         "export OPENDJ_SENTRY_DSN_BACKEND_SHIP=\"\$(doppler secrets get OPENDJ_SENTRY_DSN_BACKEND_SHIP --project general --config dev_personal --plain)\" (the open-dj-be Default client key; see docs/telemetry.md)."
+}
+
+check_sentry_frontend_dsn() {
+    section "Sentry frontend DSN (OBS-06 session replay)"
+    # The engine derives the Session Replay loader URL from the open-dj-fe DSN
+    # and the page loads it only after the tester accepts the terms (OBS-05).
+    if [ -n "${OPENDJ_SENTRY_DSN_FRONTEND:-}" ]; then
+        case "$OPENDJ_SENTRY_DSN_FRONTEND" in
+            https://*@*/*) ok "OPENDJ_SENTRY_DSN_FRONTEND is set and DSN-shaped (value not printed)"; return ;;
+        esac
+        fail "Sentry frontend DSN" \
+             "OPENDJ_SENTRY_DSN_FRONTEND is set but is not DSN-shaped (expected https://<key>@<host>/<project>)" \
+             "export OPENDJ_SENTRY_DSN_FRONTEND=\"\$(doppler secrets get OPENDJ_SENTRY_DSN_FRONTEND --project general --config dev_personal --plain)\" (the open-dj-fe client key)."
+        return
+    fi
+    local doppler_bin="${MDT_DOPPLER_BIN:-doppler}"
+    if command -v "$doppler_bin" >/dev/null 2>&1; then
+        local got_dsn=""
+        got_dsn="$("$doppler_bin" secrets get OPENDJ_SENTRY_DSN_FRONTEND --project general --config dev_personal --plain 2>/dev/null || true)"
+        if [ -n "$got_dsn" ]; then
+            ok "Sentry frontend DSN is available from Doppler (value not printed)"
+            return
+        fi
+    fi
+    fail "Sentry frontend DSN" \
+         "OPENDJ_SENTRY_DSN_FRONTEND is empty or unset and Doppler did not yield it. The payload build fails without it, because session replay for test users derives its loader from it (OBS-06)" \
+         "export OPENDJ_SENTRY_DSN_FRONTEND=\"\$(doppler secrets get OPENDJ_SENTRY_DSN_FRONTEND --project general --config dev_personal --plain)\" (the open-dj-fe client key; see docs/telemetry.md)."
+}
+
 #----- main ---------------------------------------------------------------
 
 echo "Open DJ dmg preflight (read-only)"
@@ -765,6 +821,8 @@ check_pnpm_pin
 check_spa_built
 check_updater_signing_key
 check_google_oauth_client
+check_sentry_ship_dsn
+check_sentry_frontend_dsn
 check_icon_composer_asset
 
 section "summary"
