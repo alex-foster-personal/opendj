@@ -19,6 +19,10 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     python_full_version >= '3.11.dev0'         -> python_full_version >= '3.11'
     python_full_version < '3.11.post1'         -> python_full_version < '3.11'
     python_full_version ~= '3.11.1'            -> >= '3.11.1' and < '3.12'
+    python_full_version == '3.11.0'            -> python_full_version == '3.11'
+    python_full_version == '3.11.*'            -> python_full_version == '3.11.*'
+    python_full_version == '3.11.0.*'          -> >= '3.11.0' and < '3.11.1'
+    python_full_version != '3.11.0.*'          -> < '3.11.0' or >= '3.11.1'
     implementation_version < '3.11rc1'         -> implementation_version < '3.11'
     python_full_version >= '3.11.2+local'      -> (marker dropped entirely)
     sys_platform < 'win32' and sys_platform != 'win32'  -> sys_platform < 'win32'
@@ -140,6 +144,12 @@ def _version_key(release: str) -> tuple[int, tuple[int, ...]]:
     return (int(match.group("epoch") or 0), tuple(parts))
 
 
+def _release_parts(release: str) -> tuple[int, ...]:
+    match = _VERSION_RE.match(release)
+    assert match is not None
+    return tuple(int(p) for p in match.group("release").split("."))
+
+
 def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
     """`lhs op rhs` over release versions, both sides already cut by release_literal:
     plain ordering, a `.*` wildcard as a prefix match on epoch + release, `~=` as
@@ -147,8 +157,13 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
     if op == "===":
         return lhs == rhs
     if op in ("==", "!=") and rhs.endswith(".*"):
-        prefix, candidate = _version_key(rhs[:-2]), _version_key(lhs)
-        hit = candidate[0] == prefix[0] and candidate[1][: len(prefix[1])] == prefix[1]
+        # The prefix keeps its WIDTH: `3.11.0.*` admits 3.11.0.x only, not 3.11.5, which
+        # is why uv records it as `>= '3.11.0' and < '3.11.1'` and `3.11.*` as itself.
+        prefix = _release_parts(rhs[:-2])
+        candidate = _release_parts(lhs)
+        candidate += (0,) * (len(prefix) - len(candidate))
+        same_epoch = _version_key(lhs)[0] == _version_key(rhs[:-2])[0]
+        hit = same_epoch and candidate[: len(prefix)] == prefix
         return hit if op == "==" else not hit
     left, right = _version_key(lhs), _version_key(rhs)
     if op == "~=":

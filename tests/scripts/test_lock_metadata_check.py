@@ -304,6 +304,20 @@ def _as_uv_stores_it(marker: str) -> str:
         ("python_full_version > '3.13.0b2'", "python_full_version > '3.13'", True),
         ("python_full_version < '3.11.post1'", "python_full_version < '3.11'", True),
         ("python_full_version == '3.11rc1'", "python_full_version == '3.11'", True),
+        ("python_full_version == '3.11.0'", "python_full_version == '3.11'", True),
+        # A wildcard keeps its width: uv records `3.11.0.*` as the 3.11.0.x range
+        # (Codex P2 on #3763, round 7), and it is NOT `3.11.*`.
+        (
+            "python_full_version == '3.11.0.*'",
+            "python_full_version >= '3.11.0' and python_full_version < '3.11.1'",
+            True,
+        ),
+        (
+            "python_full_version != '3.11.0.*'",
+            "python_full_version < '3.11.0' or python_full_version >= '3.11.1'",
+            True,
+        ),
+        ("python_full_version == '3.11.0.*'", "python_full_version == '3.11.*'", False),
         ("python_version <= '3.11rc1'", "python_full_version < '3.12'", True),
         ("implementation_version < '3.11rc1'", "implementation_version < '3.11'", True),
         (
@@ -419,6 +433,42 @@ def test_string_ordering_is_lexical_as_uv_ranges_it(
     env = {"sys_platform": value}
     assert _eval(_MarkerParser("sys_platform < 'win32'").parse(), env) is below_win32
     assert _eval(_MarkerParser("sys_platform <= 'linux'").parse(), env) is at_most_linux
+
+
+def test_a_compatible_requires_python_matches_the_bounds_uv_writes(tmp_path: Path) -> None:
+    """if pyproject.toml says `requires-python = "~=3.11"` and uv recorded `>=3.11, <4`
+    (which uv does; `~=3.11.2` becomes `>=3.11.2, <3.12`) then 0 (Codex P2 on #3763,
+    round 7)"""
+    pyproject = PYPROJECT.replace('requires-python = ">=3.11"', 'requires-python = "~=3.11"')
+    lock = LOCK.replace('requires-python = ">=3.11"', 'requires-python = ">=3.11, <4"')
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    pyproject = PYPROJECT.replace('requires-python = ">=3.11"', 'requires-python = "~=3.11.2"')
+    lock = LOCK.replace('requires-python = ">=3.11"', 'requires-python = ">=3.11.2, <3.12"')
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    # CONTROL: the next minor is still stale, and so is a wider upper bound.
+    code, message = _run(tmp_path, pyproject.replace("~=3.11.2", "~=3.12.0"), lock)
+    assert code == EXIT_STALE and "requires-python" in message
+    code, message = _run(tmp_path, pyproject, lock.replace("<3.12", "<4"))
+    assert code == EXIT_STALE and "requires-python" in message
+
+
+def test_a_compatible_dependency_specifier_matches_uv_s_verbatim_record(tmp_path: Path) -> None:
+    """uv keeps a dependency's `~=` verbatim (`six~=1.16` records `~=1.16`); both sides
+    expand the same way, so that still matches, and the bounds form matches too."""
+    code, message = _run(
+        tmp_path,
+        PYPROJECT.replace('"numpy>=1.26"', '"numpy~=1.26"'),
+        LOCK.replace('specifier = ">=1.26"', 'specifier = "~=1.26"'),
+    )
+    assert code == EXIT_OK, message
+    code, message = _run(
+        tmp_path,
+        PYPROJECT.replace('"numpy>=1.26"', '"numpy~=1.26"'),
+        LOCK.replace('specifier = ">=1.26"', 'specifier = ">=1.26,<2"'),
+    )
+    assert code == EXIT_OK, message
 
 
 def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:
