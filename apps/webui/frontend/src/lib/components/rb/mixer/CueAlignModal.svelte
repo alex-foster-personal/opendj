@@ -19,7 +19,7 @@
 	} from '$lib/rb/cue-align-session.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneState } from '$lib/rb/mixer-types';
 
-	let { headphones, onmode }: { headphones: HeadphoneState; onmode: (mode: HeadphoneAlignmentMode) => void } =
+	let { headphones, onmode, embedded = false }: { headphones: HeadphoneState; onmode: (mode: HeadphoneAlignmentMode) => void; embedded?: boolean } =
 		$props();
 
 	const MODE_COPY: Record<HeadphoneAlignmentMode, { label: string; detail: string }> = {
@@ -87,13 +87,13 @@
 
 <svelte:window onkeydown={onOverlayKeydown} />
 
-<div class="ca-overlay" role="presentation" onclick={closeCueAlignModal}>
+<div class="ca-overlay" class:embedded role="presentation" onclick={() => { if (!embedded) closeCueAlignModal(); }}>
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="ca-panel"
 		role="dialog"
-		aria-modal="true"
+		aria-modal={!embedded}
 		aria-label="Cue alignment calibration"
 		tabindex="-1"
 		data-cue-align-step={calibration.step}
@@ -222,6 +222,11 @@
 		background: rgba(0, 0, 0, 0.55);
 		z-index: 200;
 	}
+	.ca-overlay.embedded {
+		position: static;
+		display: block;
+		background: transparent;
+	}
 	.ca-panel {
 		width: min(720px, 96vw);
 		max-height: 82vh;
@@ -232,6 +237,10 @@
 		border-radius: 4px;
 		color: var(--rb-text, #ddd);
 		font-family: var(--rb-font, inherit);
+	}
+	.embedded .ca-panel {
+		width: 100%;
+		max-height: none;
 	}
 	.ca-header {
 		display: flex;
