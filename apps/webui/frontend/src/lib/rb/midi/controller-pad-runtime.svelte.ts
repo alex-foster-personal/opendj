@@ -7,11 +7,12 @@
  * change one another's pad surface.
  */
 
-import { deckStates } from '$lib/rb/audio-engine.svelte';
+import { deckStates, mixerState } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
 
 const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
 const AUTO_LOOP_BEATS = [0.25, 0.5, 1, 2, 4, 8, 16, 32] as const;
@@ -20,6 +21,39 @@ const BOUNCE_LOOP_BEATS = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8] as const;
 // The action adapter owns user notifications; pad state does not depend on
 // the application's global UI store.
 type Notify = (message: string, tone: 'info' | 'warn' | 'error') => void;
+
+export function toggleControllerStemEq(deck: DeckId, notify: Notify): void {
+	const enabled = !mixerState.channels[deck].stem_eq_mode;
+	const stems = deckStates[deck].stems;
+	if (enabled && stems.status !== 'ready') {
+		notify(`Deck ${deck}: stem EQ unavailable (${stems.status})`, 'warn');
+		return;
+	}
+	if (enabled && !stems.available_controls.includes('drums')) {
+		notify(`Deck ${deck}: no separate drums stem; LOW remains standard EQ`, 'warn');
+	}
+	void dispatchPerformanceCommand({ type: 'stem_eq_mode', deck, enabled });
+}
+
+/** MIDI and the visible mixer share the same fixed HI/MID/LOW stem slots.
+ * A missing slot remains EQ, exactly as ChannelStrip renders it. */
+export function setControllerEq(
+	deck: DeckId, band: EqDial, value: number, notify: Notify, pressT0Ms?: number
+): void {
+	if (mixerState.channels[deck].stem_eq_mode) {
+		const stems = deckStates[deck].stems;
+		if (stems.status !== 'ready') {
+			notify(`Deck ${deck}: stem EQ unavailable (${stems.status}); press N to return to EQ`, 'warn');
+			return;
+		}
+		const stem = stemDialAssignment(stems.available_controls)[band];
+		if (stem !== null) {
+			void dispatchPerformanceCommand({ type: 'stem_gain', deck, stem, value }, pressT0Ms);
+			return;
+		}
+	}
+	void dispatchPerformanceCommand({ type: 'eq', deck, band, value }, pressT0Ms);
+}
 
 const _padModes = new Map<string, Record<DeckId, ControllerPadMode>>();
 const _manualLoopInMs = new Map<string, Partial<Record<DeckId, number>>>();

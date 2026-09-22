@@ -135,6 +135,11 @@ class DeckLoopExit(_Strict):
     deck: DeckId
 
 
+class DeckStemEqToggle(_Strict):
+    type: Literal["deck_stem_eq_toggle"]
+    deck: DeckId
+
+
 class MixerChannel(_Strict):
     type: Literal["mixer_channel"]
     deck: DeckId
@@ -188,6 +193,7 @@ MidiActionModel = Annotated[
     | DeckHotCue
     | DeckBeatLoop
     | DeckLoopExit
+    | DeckStemEqToggle
     | MixerChannel
     | MixerGlobal
     | ChannelCue
@@ -203,7 +209,7 @@ MidiActionModel = Annotated[
 # 'note'; action-glue.svelte.ts's _pressed() throws on anything else.
 _BUTTON_ACTIONS = frozenset(
     {"deck_play_toggle", "deck_cue", "deck_hot_cue", "deck_beat_loop", "deck_loop_exit",
-     "channel_cue", "browse_load", "shift_modifier"}
+     "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle"}
 )
 
 # _continuous01() throws on anything but kind:'continuous'/'continuous14'. A

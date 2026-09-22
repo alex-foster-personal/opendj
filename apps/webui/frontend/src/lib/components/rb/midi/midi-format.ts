@@ -131,6 +131,8 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Loop ${action.factor === 0.5 ? 'half' : 'double'} (deck ${action.deck})`;
 		case 'deck_key_sync_toggle':
 			return `Key sync (deck ${action.deck})`;
+		case 'deck_stem_eq_toggle':
+			return `Stem EQ (deck ${action.deck})`;
 		case 'deck_key_nudge':
 			return `Key ${action.semitones < 0 ? 'down' : 'up'} (deck ${action.deck})`;
 		case 'deck_tempo_nudge':

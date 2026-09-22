@@ -2138,6 +2138,7 @@
                 "deck_loop_exit": "#/components/schemas/DeckLoopExit",
                 "deck_pitch": "#/components/schemas/DeckPitch",
                 "deck_play_toggle": "#/components/schemas/DeckPlayToggle",
+                "deck_stem_eq_toggle": "#/components/schemas/DeckStemEqToggle",
                 "mixer_channel": "#/components/schemas/MixerChannel",
                 "mixer_global": "#/components/schemas/MixerGlobal",
                 "shift_modifier": "#/components/schemas/ShiftModifier"
@@ -2159,6 +2160,9 @@
               },
               {
                 "$ref": "#/components/schemas/DeckLoopExit"
+              },
+              {
+                "$ref": "#/components/schemas/DeckStemEqToggle"
               },
               {
                 "$ref": "#/components/schemas/MixerChannel"
@@ -5831,6 +5835,32 @@
           "deck"
         ],
         "title": "DeckPlayToggle",
+        "type": "object"
+      },
+      "DeckStemEqToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_stem_eq_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckStemEqToggle",
         "type": "object"
       },
       "DeletedPlaylistOut": {

@@ -44,7 +44,6 @@ function _deckHints(deck: DeckId): ControlHint[] {
 		{ source: { ch: n, kind: 'note', id: 0x08 }, label: `MODE + LOAD deck-layer report (deck ${deck}; hardware-routed)` },
 		{ source: { ch: p, kind: 'note', id: 0x08 }, label: `MODE hold (deck ${deck}; hardware modifier)` },
 		{ source: { ch: p, kind: 'note', id: 0x10 }, label: `SHIFT + LOAD library section (deck ${deck}; not available)` },
-		{ source: { ch: p, kind: 'note', id: 0x24 }, label: `Neural Mix EQ mode (deck ${deck}; not available)` },
 		{ source: { ch: p, kind: 'note', id: 0x25 }, label: `SHIFT + Neural Mix view (deck ${deck}; not available)` },
 		{ source: { ch: p, kind: 'note', id: 0x26 }, label: `SHIFT + MODE (deck ${deck}; no documented function)` },
 		{ source: { ch: n, kind: 'note', id: 0x0b }, label: `PITCH BEND + hold (deck ${deck}; not available)` },
@@ -96,6 +95,7 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		{ source: { ch: n, kind: 'note', id: 0x30 }, action: { type: 'deck_tempo_nudge', deck, direction: 1 } },
 		{ source: { ch: n, kind: 'note', id: 0x1b }, action: { type: 'channel_cue', deck } },
 		{ source: { ch: p, kind: 'note', id: 0x0a }, action: { type: 'browse_load', deck } },
+		{ source: { ch: p, kind: 'note', id: 0x24 }, action: { type: 'deck_stem_eq_toggle', deck } },
 		{ source: { ch: n, kind: 'cc', id: 0x16 }, action: { type: 'mixer_channel', deck, target: 'trim' } },
 		{ source: { ch: n, kind: 'cc', id: 0x17 }, action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
 		{ source: { ch: n, kind: 'cc', id: 0x18 }, action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
@@ -139,6 +139,7 @@ function _deckLeds(deck: DeckId): LedRule[] {
 	const dim = deck <= 2 ? 0x02 : 0x01;
 	const full = deck <= 2 ? 0x7e : 0x7d;
 	const rules: LedRule[] = [
+		{ trigger: { kind: 'stem_eq_enabled', deck }, out: { ch: p, note: 0x24, velocityOn: 0x7f, velocityOff: 0x01 } },
 		{ trigger: { kind: 'deck_playing', deck }, out: { ch: n, note: 0x00, velocityOn: full, velocityOff: dim } },
 		// The engine has no separate cue-indicator bit; keep the proved idle
 		// colour rather than pretending loaded means cue-active.

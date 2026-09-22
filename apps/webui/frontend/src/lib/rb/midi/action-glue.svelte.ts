@@ -59,7 +59,9 @@ import {
 	cycleControllerManualLoop,
 	resetControllerPadRuntime,
 	runControllerPad,
-	selectControllerPadMode
+	selectControllerPadMode,
+	setControllerEq,
+	toggleControllerStemEq
 } from '$lib/rb/midi/controller-pad-runtime.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -310,6 +312,10 @@ export function handleMidiAction(
 			selectControllerPadMode(_deviceId, action.deck, action.mode, _syncLeds, pushToast);
 			return;
 		}
+		case 'deck_stem_eq_toggle': {
+			if (_pressed(value)) toggleControllerStemEq(action.deck, pushToast);
+			return;
+		}
 		case 'controller_pad': {
 			runControllerPad(
 				_deviceId,
@@ -330,10 +336,7 @@ export function handleMidiAction(
 				if (action.band === undefined) {
 					throw new Error('mixer_channel eq action requires band (device map bug)');
 				}
-				void dispatchPerformanceCommand(
-					{ type: 'eq', deck: action.deck, band: action.band, value: v },
-					pressT0Ms
-				);
+				setControllerEq(action.deck, action.band, v, pushToast, pressT0Ms);
 			} else if (action.target === 'fader') {
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
@@ -452,6 +455,8 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 		return loop !== null && loop.engaged;
 	} else if (trigger.kind === 'beat_sync_enabled') {
 		return deckStates[trigger.deck].beat_sync_enabled;
+	} else if (trigger.kind === 'stem_eq_enabled') {
+		return mixerState.channels[trigger.deck].stem_eq_mode && deckStates[trigger.deck].stems.status === 'ready';
 	} else if (trigger.kind === 'pad_mode_selected') {
 		return controllerPadMode(deviceId, trigger.deck) === trigger.mode;
 	} else if (trigger.kind === 'hot_cue_present') {

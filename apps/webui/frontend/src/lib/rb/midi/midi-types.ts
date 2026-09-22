@@ -111,6 +111,11 @@ export interface DeckKeySyncToggleAction {
 	deck: DeckId;
 }
 
+export interface DeckStemEqToggleAction {
+	type: 'deck_stem_eq_toggle';
+	deck: DeckId;
+}
+
 export interface DeckKeyNudgeAction {
 	type: 'deck_key_nudge';
 	deck: DeckId;
@@ -231,6 +236,7 @@ export type MidiAction =
 	| DeckManualLoopCycleAction
 	| DeckLoopScaleAction
 	| DeckKeySyncToggleAction
+	| DeckStemEqToggleAction
 	| DeckKeyNudgeAction
 	| DeckTempoNudgeAction
 	| ControllerPadModeAction
@@ -289,6 +295,7 @@ export type LedTrigger =
 	| { kind: 'deck_loaded'; deck: DeckId }
 	| { kind: 'loop_engaged'; deck: DeckId }
 	| { kind: 'beat_sync_enabled'; deck: DeckId }
+	| { kind: 'stem_eq_enabled'; deck: DeckId }
 	| { kind: 'pad_mode_selected'; deck: DeckId; mode: ControllerPadMode }
 	/** Lit when the hot-cue slot is populated. On RGB pads velocityOn may
 	 * be overridden per-cue by the palette resolver (FLX10: Note-On

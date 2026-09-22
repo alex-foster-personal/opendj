@@ -284,6 +284,19 @@ def test_deck_beat_loop_fractional_beats_validate(beats: float) -> None:
     assert action.beats == beats
 
 
+@pytest.mark.parametrize("deck", [1, 2, 3, 4])
+def test_stem_eq_toggle_validates_on_all_controller_decks(deck: int) -> None:
+    from pydantic import TypeAdapter
+
+    from apps.webui.server.routes.midi_maps import MidiActionModel
+
+    action = TypeAdapter(MidiActionModel).validate_python(
+        {"type": "deck_stem_eq_toggle", "deck": deck}
+    )
+    assert action.type == "deck_stem_eq_toggle"
+    assert action.deck == deck
+
+
 @pytest.mark.parametrize("beats", [0, -0.5, float("inf"), float("nan")])
 def test_deck_beat_loop_invalid_beats_are_refused(beats: float) -> None:
     from pydantic import ValidationError
