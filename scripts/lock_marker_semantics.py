@@ -25,6 +25,8 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     python_full_version != '3.11.0.*'          -> < '3.11.0' or >= '3.11.1'
     implementation_version < '3.11rc1'         -> implementation_version < '3.11'
     python_full_version >= '3.11.2+local'      -> (marker dropped entirely)
+    python_full_version <= '1!3'               -> python_full_version <= '3'
+    os_name == 'posix and stuff'               -> kept verbatim (quoted `and`)
     sys_platform < 'win32' and sys_platform != 'win32'  -> sys_platform < 'win32'
     sys_platform < 'linux' or sys_platform == 'linux'   -> sys_platform <= 'linux'
     sys_platform < 'win32' or sys_platform >= 'win32'   -> (marker dropped: always true)
@@ -117,8 +119,8 @@ def canonical_version(text: str) -> str:
 
 
 def release_literal(text: str) -> str:
-    """A marker's version literal as uv stores it: the release segment (epoch kept,
-    a `.*` wildcard kept), pre-, post- and dev-release cut off. A local version is
+    """A marker's version literal as uv stores it: the release segment only (a `.*`
+    wildcard kept), epoch, pre-, post- and dev-release cut off. A local version is
     UNKNOWN: uv dropped the whole marker for one, which this does not model."""
     wildcard = text.endswith(".*")
     match = _VERSION_RE.match(text[:-2] if wildcard else text)
@@ -126,10 +128,7 @@ def release_literal(text: str) -> str:
         raise Unknown(f"not a PEP 440 version: {text!r}")
     if match.group("local"):
         raise Unknown(f"a local version in a marker is not compared: {text!r}")
-    out = ""
-    if match.group("epoch") and int(match.group("epoch")):
-        out += f"{int(match.group('epoch'))}!"
-    out += ".".join(str(int(part)) for part in match.group("release").split("."))
+    out = ".".join(str(int(part)) for part in match.group("release").split("."))
     return out + ".*" if wildcard else out
 
 
@@ -162,8 +161,7 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
         prefix = _release_parts(rhs[:-2])
         candidate = _release_parts(lhs)
         candidate += (0,) * (len(prefix) - len(candidate))
-        same_epoch = _version_key(lhs)[0] == _version_key(rhs[:-2])[0]
-        hit = same_epoch and candidate[: len(prefix)] == prefix
+        hit = candidate[: len(prefix)] == prefix
         return hit if op == "==" else not hit
     left, right = _version_key(lhs), _version_key(rhs)
     if op == "~=":
@@ -193,7 +191,7 @@ _TOKEN_RE = re.compile(
 _GRID_CAP = 20000
 
 
-def _tokens(text: str) -> list[tuple[str, str]]:
+def tokenize_marker(text: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     pos = 0
     text = text.replace('"', "'")
@@ -213,7 +211,7 @@ class _MarkerParser:
     """Recursive descent over PEP 508's marker grammar: or > and > atom | (expr)."""
 
     def __init__(self, text: str) -> None:
-        self.toks = _tokens(text)
+        self.toks = tokenize_marker(text)
         self.i = 0
         self.text = text
 
@@ -365,14 +363,24 @@ def _between(lower: str, upper: str) -> str:
 
 
 def _version_probes(literals: set[str]) -> list[str]:
-    """Every literal (wildcards by their prefix), a point strictly between each
-    adjacent pair, one below the smallest and one above the largest: complete for
-    the order intervals any comparison against these literals can carve out.
-    Release versions only, because uv's marker algebra is (module docstring)."""
-    # One spelling per VALUE: `3.13` and `3.13.0` are the same point.
-    releases = (release_literal(lit).removesuffix(".*") for lit in literals)
-    points = {_version_key(release): release for release in releases}
-    ordered = [points[key] for key in sorted(points)]
+    """Every literal, a point strictly between each adjacent pair, one below the
+    smallest and one above the largest: complete for the order intervals any
+    comparison against these literals can carve out. A wildcard `X.*` contributes
+    both of its bounds (X and the next release at X's width: `3.11.0.*` is
+    `>= 3.11.0 and < 3.11.1`), so the point between them has the width that
+    separates it from the wider `3.11.*`. Release versions only, because uv's
+    marker algebra is (module docstring); one spelling per value (`3.11`, never
+    `3.11.0`) so the between-points do not depend on which literal was seen first."""
+    points: set[tuple[int, tuple[int, ...]]] = set()
+    for literal in literals:
+        release = release_literal(literal)
+        if release.endswith(".*"):
+            parts = _release_parts(release[:-2])
+            points.add(_version_key(release[:-2]))
+            points.add((0, (*parts[:-1], parts[-1] + 1)))
+        else:
+            points.add(_version_key(release))
+    ordered = [".".join(map(str, key[1])) for key in sorted(points)]
     probes = ["0", *ordered, "9999"]
     for lower, upper in itertools.pairwise(ordered):
         probes.append(_between(lower, upper))

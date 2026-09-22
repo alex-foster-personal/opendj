@@ -320,6 +320,9 @@ def _as_uv_stores_it(marker: str) -> str:
         ("python_full_version == '3.11.0.*'", "python_full_version == '3.11.*'", False),
         ("python_version <= '3.11rc1'", "python_full_version < '3.12'", True),
         ("implementation_version < '3.11rc1'", "implementation_version < '3.11'", True),
+        # uv drops an epoch too (measured, same table).
+        ("python_full_version <= '1!3'", "python_full_version <= '3'", True),
+        ("python_full_version >= '1!3.11'", "python_full_version >= '3.11'", True),
         (
             "python_full_version ~= '3.11.1'",
             "python_full_version >= '3.11.1' and python_full_version < '3.12'",
@@ -469,6 +472,26 @@ def test_a_compatible_dependency_specifier_matches_uv_s_verbatim_record(tmp_path
         LOCK.replace('specifier = ">=1.26"', 'specifier = ">=1.26,<2"'),
     )
     assert code == EXIT_OK, message
+
+
+def test_a_quoted_and_or_inside_a_marker_literal_is_one_clause(tmp_path: Path) -> None:
+    """if pyproject.toml says `os_name == 'posix and stuff'` and uv recorded it verbatim
+    (which it does) then 0: the `and` inside the quotes is not a conjunction (Codex P2 on
+    #3763, round 8)"""
+    for literal in ("posix and stuff", "a or b"):
+        pyproject = PYPROJECT.replace(
+            "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\"",
+            f"\"pyobjc-framework-Quartz>=10.0; os_name == '{literal}' and sys_platform == 'darwin'\"",
+        )
+        lock = LOCK.replace(
+            "marker = \"sys_platform == 'darwin'\"",
+            f"marker = \"os_name == '{literal}' and sys_platform == 'darwin'\"",
+        )
+        code, message = _run(tmp_path, pyproject, lock)
+        assert code == EXIT_OK, message
+        # CONTROL: a different literal is still stale.
+        code, message = _run(tmp_path, pyproject, lock.replace(f"'{literal}'", "'posix'"))
+        assert code == EXIT_STALE, message
 
 
 def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:
