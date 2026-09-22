@@ -61,6 +61,55 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _cmd_list(conn, args) -> int:
+    sets = list_playlist_sets(conn, args.playlist)
+    if args.as_json:
+        print(json.dumps([_set_to_dict(s) for s in sets]))
+    else:
+        for s in sets:
+            print(f"{s.name}\t{s.play_count}")
+    return 0
+
+
+def _cmd_create(conn, args) -> int:
+    set_id = create_playlist_set(
+        conn,
+        args.playlist,
+        args.name,
+        from_play_order=args.from_play_order,
+    )
+    conn.commit()
+    ps = load_playlist_set(conn, set_id)
+    if args.as_json:
+        print(json.dumps(_set_to_dict(ps)))
+    else:
+        print(f"created set {set_id} {ps.name}")
+    return 0
+
+
+def _cmd_record_run(conn, args, kind: str) -> int:
+    play_count = record_run(conn, args.set_id, kind)
+    conn.commit()
+    if args.as_json:
+        print(json.dumps({"set_id": args.set_id, "kind": kind, "play_count": play_count}))
+    else:
+        verb = "performed" if kind == "performance" else "practiced"
+        print(f"{verb} set {args.set_id} play_count={play_count}")
+    return 0
+
+
+def _dispatch(conn, args) -> int:
+    if args.cmd == "list":
+        return _cmd_list(conn, args)
+    if args.cmd == "create":
+        return _cmd_create(conn, args)
+    if args.cmd == "perform":
+        return _cmd_record_run(conn, args, "performance")
+    if args.cmd == "practice":
+        return _cmd_record_run(conn, args, "practice")
+    raise AssertionError(f"unhandled command {args.cmd!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
@@ -69,44 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     try:
-        if args.cmd == "list":
-            sets = list_playlist_sets(conn, args.playlist)
-            if args.as_json:
-                print(json.dumps([_set_to_dict(s) for s in sets]))
-            else:
-                for s in sets:
-                    print(f"{s.name}\t{s.play_count}")
-            return 0
-        if args.cmd == "create":
-            set_id = create_playlist_set(
-                conn,
-                args.playlist,
-                args.name,
-                from_play_order=args.from_play_order,
-            )
-            conn.commit()
-            ps = load_playlist_set(conn, set_id)
-            if args.as_json:
-                print(json.dumps(_set_to_dict(ps)))
-            else:
-                print(f"created set {set_id} {ps.name}")
-            return 0
-        if args.cmd == "perform":
-            play_count = record_run(conn, args.set_id, "performance")
-            conn.commit()
-            if args.as_json:
-                print(json.dumps({"set_id": args.set_id, "kind": "performance", "play_count": play_count}))
-            else:
-                print(f"performed set {args.set_id} play_count={play_count}")
-            return 0
-        if args.cmd == "practice":
-            play_count = record_run(conn, args.set_id, "practice")
-            conn.commit()
-            if args.as_json:
-                print(json.dumps({"set_id": args.set_id, "kind": "practice", "play_count": play_count}))
-            else:
-                print(f"practiced set {args.set_id} play_count={play_count}")
-            return 0
+        return _dispatch(conn, args)
     except (LookupError, ValueError, sqlite3.IntegrityError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

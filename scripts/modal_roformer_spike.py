@@ -1261,7 +1261,7 @@ def cmd_bench(args: argparse.Namespace) -> None:
     per_track_delta: dict[str, float] = {}
     gpu_s_total = 0.0
     failures: dict[str, str] = {}
-    for (track, mix_path, truth_path), result in zip(jobs, remote_results):
+    for (track, mix_path, truth_path), result in zip(jobs, remote_results, strict=False):
         gpu_s_total += result.get("gpu_s", 0.0)
         if "error" in result:
             failures[track.slug] = result["error"]
@@ -1395,7 +1395,7 @@ def cmd_separate(args: argparse.Namespace) -> None:
             )
         )
 
-    for path, result in zip(inputs, remote_results):
+    for path, result in zip(inputs, remote_results, strict=False):
         if "error" in result:
             print(f"[FAIL] {path.name}: {result['error']}", flush=True)
             continue

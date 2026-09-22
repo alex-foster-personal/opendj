@@ -244,7 +244,7 @@ def test_duplicate_stable_ids(client: TestClient, db_path: Path) -> None:
     r = client.delete(f"/api/v1/playlists/{pid}/items/{first_a}")
     assert r.status_code == 200, r.text
     assert r.json()["items"] == ["t-002", "t-001"]
-    surviving = [row for row in before.values() if row[1] == "t-001" and row[0] != first_a][0]
+    surviving = next(row for row in before.values() if row[1] == "t-001" and row[0] != first_a)
     after = dump_members(db_path, pid)
     assert after[surviving[0]][:4] == surviving[:4]
     client.post("/api/v1/playlist-history/undo")

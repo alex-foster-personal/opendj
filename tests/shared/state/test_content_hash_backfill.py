@@ -15,12 +15,11 @@ from pathlib import Path
 import pytest
 
 from apps.shared import hashing
-from apps.shared.state import db as state_db
 from apps.shared.state import backfill_content_hash as backfill_module
+from apps.shared.state import db as state_db
 from apps.shared.state.backfill_content_hash import (
     build_parser,
     run_backfill,
-    run_for_hub_backfill,
 )
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter

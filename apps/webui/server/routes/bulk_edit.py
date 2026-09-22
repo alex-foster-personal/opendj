@@ -69,7 +69,7 @@ class BulkEditOut(BaseModel):
 @router.patch("", response_model=BulkEditOut)
 def bulk_edit(
     body: BulkEditIn,
-    backend: StateBackend = Depends(get_write_state),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> BulkEditOut:
     missing_etags = [sid for sid in body.stable_ids if sid not in body.expected_etags]
     if missing_etags:

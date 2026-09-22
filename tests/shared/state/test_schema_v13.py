@@ -102,7 +102,7 @@ def test_v12_db_migrates_memberships_backfill(tmp_path: Path) -> None:
         item_ids = [r[2] for r in rows]
         assert len(set(item_ids)) == 3
         assert all(iid is not None for iid in item_ids)
-        for stable_id, position, _iid, order_key in rows:
+        for _stable_id, position, _iid, order_key in rows:
             assert order_key == f"{position:08d}"
         assert [r[0] for r in rows] == ["t-a", "t-b", "t-c"]
     finally:

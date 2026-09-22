@@ -211,6 +211,14 @@ def create_app() -> FastAPI:
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
+    # Plain assignments: mypy rejects an annotation on a non-self attribute
+    # ("Type cannot be declared in assignment to non-self attribute"), and the
+    # quality ratchet counts each one. The shapes are str | None and
+    # asyncio.Event | None; see _hold_if_armed and _register_hold_controls.
+    app.state.hold_next_anlz_stable_id = None
+    app.state.hold_next_anlz_release = None
+    app.state.hold_next_track_stable_id = None
+    app.state.hold_next_track_release = None
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
     app.include_router(tracks_router, prefix="/api/v1")
@@ -234,6 +242,15 @@ def create_app() -> FastAPI:
         # test's own before/after delta was off by exactly the poll count).
         if request.url.path != "/test/requests":
             app.state.requests.append(str(request.url))
+        # Both holds sit BEFORE the handler runs, unlike the post-handler
+        # sleeps below: the handler is what reads the daemon's toggle, so a
+        # hold is the only way to make one of a refresh's two parallel fetches
+        # observe a switch that landed after its sibling was served - the
+        # ordering a loaded runner produces by itself (nucbox-wsl-23, run
+        # 35731185371: "the two parallel fetches landed on different sides
+        # of a source switch" thrown by a superseded switch).
+        await _hold_if_armed(app, "anlz", request, lambda sid: f"/{sid}/anlz")
+        await _hold_if_armed(app, "track", request, lambda sid: f"/tracks/{sid}")
         response = await call_next(request)
         if (
             request.method == "GET"
@@ -262,7 +279,51 @@ def create_app() -> FastAPI:
         app.state.delay_next_analysis_source_get = True
         return {"armed": True}
 
+    _register_hold_controls(app, "anlz")
+    _register_hold_controls(app, "track")
     return app
+
+
+def _register_hold_controls(app: FastAPI, kind: str) -> None:
+    """`POST /test/hold-next-{kind}` with `{"stable_id": ...}` arms a hold on the
+    next matching GET (`anlz`: `/{sid}/anlz`; `track`: `/tracks/{sid}`), which the
+    request middleware then parks BEFORE its handler runs until
+    `POST /test/release-held-{kind}` (or 30 s, then the held request errors)."""
+
+    @app.post(f"/test/hold-next-{kind}")
+    async def _hold_next(request: Request) -> dict[str, str | bool]:
+        body = await request.json()
+        stable_id = body.get("stable_id")
+        if not stable_id:
+            raise ValueError("stable_id is required")
+        setattr(app.state, f"hold_next_{kind}_stable_id", stable_id)
+        setattr(app.state, f"hold_next_{kind}_release", asyncio.Event())
+        return {"armed": True, "stable_id": stable_id}
+
+    @app.post(f"/test/release-held-{kind}")
+    def _release_held() -> dict[str, bool]:
+        release = getattr(app.state, f"hold_next_{kind}_release")
+        if release is not None:
+            release.set()
+        return {"released": True}
+
+
+async def _hold_if_armed(app: FastAPI, kind: str, request: Request, suffix_of) -> None:
+    """Park `request` until the armed hold of `kind` is released, if it is the GET
+    that hold names; a hold is consumed by the first request it matches."""
+    held = getattr(app.state, f"hold_next_{kind}_stable_id")
+    if not held or request.method != "GET" or not request.url.path.endswith(suffix_of(held)):
+        return
+    setattr(app.state, f"hold_next_{kind}_stable_id", None)
+    release = getattr(app.state, f"hold_next_{kind}_release")
+    if release is None:
+        return
+    try:
+        await asyncio.wait_for(release.wait(), timeout=30.0)
+    except TimeoutError:
+        raise RuntimeError(
+            f"held {kind} GET for {held} timed out waiting for /test/release-held-{kind}"
+        ) from None
 
 
 def main() -> int:

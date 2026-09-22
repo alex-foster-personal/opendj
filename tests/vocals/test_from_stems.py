@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from apps.stems.artifacts import STEM_PARTS, load_stem_bundle
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
-from apps.stems.artifacts import STEM_PARTS, load_stem_bundle
 
 pytestmark = [
     pytest.mark.requirement("CAT-05"),

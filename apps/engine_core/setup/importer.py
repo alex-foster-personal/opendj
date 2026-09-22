@@ -172,6 +172,7 @@ class FolderImportOutcome:
     files_seen: int
     files_dataless: int
     files_without_tags: int
+    files_rejected_unplayable: int
     tracks: int
     tracks_written: int
     tracks_without_analysis: int
@@ -261,6 +262,7 @@ def run_folder_import(
         files_seen=report.files_seen,
         files_dataless=report.files_dataless,
         files_without_tags=report.files_without_tags,
+        files_rejected_unplayable=report.files_rejected_unplayable,
         tracks=counts.tracks,
         tracks_written=report.tracks_inserted + report.tracks_unchanged,
         tracks_without_analysis=report.tracks_without_analysis,
@@ -271,6 +273,12 @@ def run_folder_import(
         (
             f"ingest: {outcome.tracks_written} of {outcome.files_seen} "
             f"readable files imported, none analysed"
+            + (
+                f"; {outcome.files_rejected_unplayable} file(s) skipped as "
+                f"unplayable"
+                if outcome.files_rejected_unplayable
+                else ""
+            )
             + (
                 f"; {len(outcome.unreadable_roots)} folder(s) could not be read"
                 if outcome.unreadable_roots

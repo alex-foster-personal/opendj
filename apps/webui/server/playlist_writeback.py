@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, ExitStack, closing, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional, Protocol
+from typing import Literal, Protocol
 
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
@@ -34,6 +34,13 @@ class VendorPlaylist:
 @dataclass(frozen=True)
 class WritebackBackup:
     backup_id: str
+
+
+@dataclass(frozen=True)
+class WritebackTarget:
+    target_mode: TargetMode
+    target_path: str
+    target_id: str
 
 
 class VendorPlaylistWriter(Protocol):
@@ -138,8 +145,8 @@ class WritebackCapability:
     vendor: str
     available: bool
     target_mode: TargetMode = "live"
-    target_path: Optional[str] = None
-    reason: Optional[str] = None
+    target_path: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -173,9 +180,9 @@ class WritebackApplyResult:
     dry_run: bool
     added: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
-    backup_id: Optional[str] = None
-    target_revision: Optional[str] = None
-    error: Optional[str] = None
+    backup_id: str | None = None
+    target_revision: str | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -203,8 +210,8 @@ def _revision(value: object) -> str:
 class WritebackService:
     def __init__(
         self, *, writer_factory: WriterFactory = default_writer_factory,
-        source_members_reader: Optional[Callable[[str], list[str]]] = None,
-        source_lock_factory: Optional[SourceLockFactory] = None,
+        source_members_reader: Callable[[str], list[str]] | None = None,
+        source_lock_factory: SourceLockFactory | None = None,
     ) -> None:
         self._writer_factory = writer_factory
         self._source_members_reader = source_members_reader
@@ -320,33 +327,39 @@ class WritebackService:
             )
 
     def apply(
-        self, *, vendor: Vendor, source_playlist_id: str, desired_ids: list[str],
-        target_mode: TargetMode, target_path: str, target_id: str, plan_token: str,
-        dry_run: bool = True, confirmed: bool = False,
+        self,
+        *,
+        vendor: Vendor,
+        source_playlist_id: str,
+        desired_ids: list[str],
+        target: WritebackTarget,
+        plan_token: str,
+        dry_run: bool = True,
+        confirmed: bool = False,
     ) -> WritebackApplyResult:
         plan = self.plan(
             vendor=vendor, source_playlist_id=source_playlist_id, desired_ids=desired_ids,
-            target_mode=target_mode, target_path=target_path, target_id=target_id,
+            target_mode=target.target_mode, target_path=target.target_path, target_id=target.target_id,
         )
         if plan.plan_token != plan_token:
             raise WritebackConflict("writeback plan is stale: source or target revision changed; plan again")
         if plan.unresolved:
-            return WritebackApplyResult(vendor, target_id, plan.target_name, False, dry_run,
+            return WritebackApplyResult(vendor, target.target_id, plan.target_name, False, dry_run,
                 added=plan.added, removed=plan.removed,
                 error=f"{len(plan.unresolved)} track(s) have no {vendor} mapping: {plan.unresolved[:5]}")
         if dry_run:
-            return WritebackApplyResult(vendor, target_id, plan.target_name, False, True,
+            return WritebackApplyResult(vendor, target.target_id, plan.target_name, False, True,
                 added=plan.added, removed=plan.removed, target_revision=plan.target_revision)
         if not confirmed:
             raise WritebackConflict("live writeback requires confirmed=true")
         if vendor == "rekordbox":
             require_writeback_enabled("module.playlist_writeback.service_apply")
-        with self._writer(vendor, target_mode, target_path) as writer:
+        with self._writer(vendor, target.target_mode, target.target_path) as writer:
             backup, target_revision = writer.apply_with_backup_by_id(
-                target_id, desired_ids, plan.target_revision, plan.mapping_revision,
+                target.target_id, desired_ids, plan.target_revision, plan.mapping_revision,
                 lambda: self._source_transaction(source_playlist_id, plan.source_revision),
             )
-        return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,
+        return WritebackApplyResult(vendor, target.target_id, plan.target_name, True, False,
             added=plan.added, removed=plan.removed, backup_id=backup.backup_id,
             target_revision=target_revision)
 

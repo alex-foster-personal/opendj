@@ -75,11 +75,29 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	for (const call of [
 		"recordLibraryLoadTiming('all-tracks'",
 		"recordLibraryLoadTiming('playlist'",
+		'recordPlaylistTreeReadyMs(',
+		'recordPlaylistSwitchFirstRowsMs(',
 		'recordCollectionSearchTiming(',
 		'recordFilterTiming('
 	]) {
 		assert.ok(src.includes(call), `the library path lost its ${call} instrumentation`);
 	}
+	assert.match(
+		src,
+		/recordPlaylistSwitchFirstRowsMs\([\s\S]*?'playlist'/,
+		'playlist switch must record first-rows latency'
+	);
+	assert.match(
+		src,
+		/recordPlaylistSwitchFirstRowsMs\([\s\S]*?'all-tracks'/,
+		'all-tracks switch must record first-rows latency'
+	);
+});
+
+test('TrackTable row artwork stays thumbnail-sized', () => {
+	const src = source('src/lib/components/rb/browser/TrackTable.svelte');
+	assert.match(src, /artworkUrl\(row\.stable_id, 's'\)/);
+	assert.doesNotMatch(src, /artworkUrl\(row\.stable_id, 'orig'\)/);
 });
 
 test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
@@ -115,7 +133,7 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /getReconcileSummary/);
 	assert.match(src, /allTracksNonBrokenCount = summary\.total_tracks - summary\.total_broken/);
-	assert.match(src, /broken_count: p\.track_count - p\.available_count/);
+	assert.match(src, /broken_count: playlistBrokenCount\(p\)/);
 	assert.match(src, /void _loadReconcileSummary\(\);/);
 	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
@@ -132,7 +150,7 @@ test('BrowserPanel keeps the existing mostly-broken threshold and hides zero-tra
 	assert.match(src, /const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0\.3;/);
 	assert.match(
 		src,
-		/function playlistMostlyBroken\(p: PlaylistSummaryHydrated\): boolean \{\s*if \(p\.track_count === 0\) return p\.available_count === 0;\s*return p\.available_count \/ p\.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;/,
+		/function playlistMostlyBroken\(p: PlaylistSummaryHydrated\): boolean \{\s*if \(p\.available_count < 0\) return false;\s*if \(p\.track_count === 0\) return p\.available_count === 0;\s*return p\.available_count \/ p\.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;/,
 		'empty playlists must no longer escape the broken-link filter, while nonempty playlists retain the 30% policy'
 	);
 });

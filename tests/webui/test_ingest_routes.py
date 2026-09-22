@@ -34,8 +34,8 @@ from fastapi.testclient import TestClient
 from apps.analysis import store as analysis_store
 from apps.lyrics import cache as lyrics_cache
 from apps.shared.state.db import open_rw as open_state_rw
-from apps.vocals import cache as vocals_cache
 from apps.stems import artifacts as stem_artifacts
+from apps.vocals import cache as vocals_cache
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_upload as ingest_upload_mod
 

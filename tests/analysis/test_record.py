@@ -1,7 +1,7 @@
 """AnalysisRecord schema + JSON round-trip (META-01)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -13,7 +13,7 @@ def _sample() -> AnalysisRecord:
         stable_id="pathid_abc",
         backend="librosa+madmom",
         backend_version="librosa==0.10.2+madmom==0.17.dev",
-        analyzed_at=datetime(2026, 4, 17, 1, 23, 45, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 4, 17, 1, 23, 45, tzinfo=UTC),
         duration_s=123.45,
         sample_rate=44100,
         bpm=128.0,

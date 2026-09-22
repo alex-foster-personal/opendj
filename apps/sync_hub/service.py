@@ -65,7 +65,6 @@ from apps.sync_hub import (
     enrollment,
     entitlement_gate,
     generation,
-    hash_pending as hash_pending_api,
     policy_push,
     policy_store,
     protocol,
@@ -75,10 +74,14 @@ from apps.sync_hub import (
     service_storage,
     wire_version,
 )
+from apps.sync_hub import (
+    hash_pending as hash_pending_api,
+)
 from apps.sync_hub.machine_wire_limits import (
     MACHINE_ID_MAX_LENGTH,
     clamp_machine_row_for_wire,
 )
+from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
     DigestResponse,
@@ -96,7 +99,6 @@ from apps.sync_hub.service_models import (
     StatusResponse,
     SyncRowSampleModel,
 )
-from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -566,7 +568,7 @@ def pull(
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
     ),
-    bundle_stable_ids: list[str] = Query(
+    bundle_stable_ids: list[str] = Query(  # noqa: B008  # FastAPI DI
         default=[],
         description=(
             "optional track stable_id values whose live bundles are appended "
@@ -728,7 +730,7 @@ def rows(
     table: str = Query(min_length=1, description="sync-set table name"),
     limit: int = Query(500, ge=1, le=5000),
     cursor: str | None = Query(default=None),
-    capabilities_: list[str] = _CAPABILITIES_QUERY,
+    _capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> RowsResponse:
     """Paginated sync-eligible canonical rows for post-sync diff (CSSTATUS-09)."""
     if table not in protocol.DIGEST_TABLES:

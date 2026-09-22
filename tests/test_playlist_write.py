@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,7 +86,7 @@ def _event_kinds(db_path: Path) -> list[str]:
 # --- create ----------------------------------------------------------------
 
 def test_create_playlist_round_trips_through_read_api(client: TestClient) -> None:
-    body, etag = _create(client, "Warmup")
+    body, _etag = _create(client, "Warmup")
     assert body["name"] == "Warmup"
     assert body["vendor"] == "webui"
     assert body["items"] == []
@@ -391,7 +391,7 @@ def test_two_store_membership_replaces_serialise_before_etag_check(
 
 
 def test_fixed_clock_never_reuses_a_stale_playlist_revision(db_path: Path) -> None:
-    fixed = datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
+    fixed = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
     store = PlaylistStore(db_path, bus=FakeEventBus(), clock=lambda: fixed)
     try:
         created = store.create_playlist("Fixed clock")

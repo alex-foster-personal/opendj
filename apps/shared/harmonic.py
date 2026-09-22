@@ -155,6 +155,19 @@ def camelot_distance(k1: CamelotKey, k2: CamelotKey) -> int:
 # Compatibility Scorers
 # ---------------------------------------------------------------------------
 
+_CAMELOT_COMPAT: dict[tuple[int, bool | None], float] = {
+    (0, True): 1.0,
+    (0, False): 0.8,
+    (1, True): 0.9,
+    (1, False): 0.7,
+    (2, True): 0.5,
+    (2, False): 0.4,
+    (3, None): 0.25,
+    (4, None): 0.15,
+    (5, None): 0.1,
+}
+
+
 def camelot_compatibility(key1: str, key2: str) -> float:
     """Score harmonic compatibility between two keys (0.0-1.0).
 
@@ -165,32 +178,8 @@ def camelot_compatibility(key1: str, key2: str) -> float:
 
     dist = _camelot_distance(ck1, ck2)
     same_mode = ck1.letter == ck2.letter
-
-    if dist == 0 and same_mode:
-        # Same key: perfect
-        return 1.0
-    elif dist == 0 and not same_mode:
-        # Major/minor switch at same number (relative key)
-        return 0.8
-    elif dist == 1 and same_mode:
-        # Adjacent on wheel, same mode
-        return 0.9
-    elif dist == 1 and not same_mode:
-        # Adjacent but mode switch
-        return 0.7
-    elif dist == 2 and same_mode:
-        return 0.5
-    elif dist == 2 and not same_mode:
-        return 0.4
-    elif dist == 3:
-        return 0.25
-    elif dist == 4:
-        return 0.15
-    elif dist == 5:
-        return 0.1
-    else:
-        # dist >= 6 (opposite side)
-        return 0.05
+    mode_key = same_mode if dist <= 2 else None
+    return _CAMELOT_COMPAT.get((dist, mode_key), 0.05)
 
 
 def bpm_compatibility(bpm1: float | None, bpm2: float | None, max_diff_pct: float = 10.0) -> float:

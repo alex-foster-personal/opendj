@@ -20,8 +20,9 @@ Design notes
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 SAMPLE_RATE_HZ: int = 16_000
 CHANNELS: int = 1

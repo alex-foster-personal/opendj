@@ -180,7 +180,7 @@ def _get_field(
 @router.post("/preview", response_model=FindReplacePreviewOut)
 def preview(
     body: FindReplacePreviewIn,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> FindReplacePreviewOut:
     pattern = _compile(body.find, body.mode, body.case_sensitive)
     regex_deadline = _regex_deadline(body.mode)
@@ -209,7 +209,7 @@ def preview(
 @router.post("/apply", response_model=FindReplaceApplyOut)
 def apply(
     body: FindReplaceApplyIn,
-    backend: StateBackend = Depends(get_write_state),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> FindReplaceApplyOut:
     missing_etags = [sid for sid in body.stable_ids if sid not in body.expected_etags]
     if missing_etags:

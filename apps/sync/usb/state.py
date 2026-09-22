@@ -14,9 +14,9 @@ diff engine is blind to which backend sourced the data.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared.hashing import HashCache, sha256_file
 from apps.shared.stable_id import stable_id_str

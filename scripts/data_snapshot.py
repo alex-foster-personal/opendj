@@ -227,6 +227,37 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     }
 
 
+def _classify_snapshot_member(
+    member: tarfile.TarInfo,
+    seen: set[str],
+    required: dict[str, tarfile.TarInfo],
+) -> None:
+    name = member.name
+    if "\\" in name:
+        raise ValueError(f"snapshot member uses a Windows backslash alias: {name}")
+    if name in seen:
+        raise ValueError(f"snapshot contains duplicate member: {name}")
+    seen.add(name)
+    if name in REQUIRED_MEMBERS:
+        if not member.isfile():
+            raise ValueError(f"required snapshot member must be a regular file: {name}")
+        required[name] = member
+    elif name == PATH_MAP_MEMBER:
+        if not member.isfile():
+            raise ValueError(f"path map must be a regular file: {name}")
+    elif name == VOCAL_CACHE_MEMBER:
+        if not member.isdir():
+            raise ValueError(f"vocal cache root must be a directory: {name}")
+    elif name.startswith(f"{VOCAL_CACHE_MEMBER}/"):
+        filename = name.removeprefix(f"{VOCAL_CACHE_MEMBER}/")
+        if "/" in filename or not filename.endswith(".json"):
+            raise ValueError(f"unsupported vocal cache member: {name}")
+        if not member.isfile():
+            raise ValueError(f"vocal cache member must be a regular file: {name}")
+    else:
+        raise ValueError(f"unsupported snapshot member: {name}")
+
+
 def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
     """Return the exact snapshot schema, rejecting traversal and payloads.
 
@@ -240,32 +271,7 @@ def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
     seen: set[str] = set()
     required: dict[str, tarfile.TarInfo] = {}
     for member in members:
-        name = member.name
-        if "\\" in name:
-            raise ValueError(
-                f"snapshot member uses a Windows backslash alias: {name}"
-            )
-        if name in seen:
-            raise ValueError(f"snapshot contains duplicate member: {name}")
-        seen.add(name)
-        if name in REQUIRED_MEMBERS:
-            if not member.isfile():
-                raise ValueError(f"required snapshot member must be a regular file: {name}")
-            required[name] = member
-        elif name == PATH_MAP_MEMBER:
-            if not member.isfile():
-                raise ValueError(f"path map must be a regular file: {name}")
-        elif name == VOCAL_CACHE_MEMBER:
-            if not member.isdir():
-                raise ValueError(f"vocal cache root must be a directory: {name}")
-        elif name.startswith(f"{VOCAL_CACHE_MEMBER}/"):
-            filename = name.removeprefix(f"{VOCAL_CACHE_MEMBER}/")
-            if "/" in filename or not filename.endswith(".json"):
-                raise ValueError(f"unsupported vocal cache member: {name}")
-            if not member.isfile():
-                raise ValueError(f"vocal cache member must be a regular file: {name}")
-        else:
-            raise ValueError(f"unsupported snapshot member: {name}")
+        _classify_snapshot_member(member, seen, required)
 
     missing = [name for name in REQUIRED_MEMBERS if name not in required]
     if missing:

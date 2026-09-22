@@ -1,8 +1,8 @@
 """Materialisation engine (SMART-02)."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from apps.smartlists.diff import diff_sets
 from apps.smartlists.evaluator import evaluate

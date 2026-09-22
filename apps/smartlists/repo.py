@@ -5,8 +5,8 @@ import hashlib
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
-from typing import Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.smartlists import (
@@ -42,7 +42,7 @@ class SmartlistRevisionConflict(SmartlistsRepoError):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -104,8 +104,8 @@ def _row_to_model(row: tuple) -> SmartlistRow:
         last_materialized_track_ids=(
             json.loads(materialized) if materialized else []
         ),
-        created_at=_parse_iso(row[8]) or datetime.fromtimestamp(0, timezone.utc),
-        modified_at=_parse_iso(row[9]) or datetime.fromtimestamp(0, timezone.utc),
+        created_at=_parse_iso(row[8]) or datetime.fromtimestamp(0, UTC),
+        modified_at=_parse_iso(row[9]) or datetime.fromtimestamp(0, UTC),
         _raw_rule_json=rule_json,
     )
 

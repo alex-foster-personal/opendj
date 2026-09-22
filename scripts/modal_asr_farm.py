@@ -47,10 +47,11 @@ import os
 import random
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import modal
 
@@ -245,7 +246,7 @@ def _classify_index(
 
 
 def _journal_path() -> Path:
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date = datetime.now(UTC).strftime("%Y-%m-%d")
     return JOURNAL_DIR / f"{date}-modal-asr-farm.jsonl"
 
 
@@ -318,7 +319,7 @@ class AsrWorker:
                 "stable_id": stable_id,
                 "vocals_sha256": vocals_sha256,
                 "model": MODEL_LABEL,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
                 "language": info.language,
                 "language_probability": info.language_probability,
                 "duration_s": info.duration,

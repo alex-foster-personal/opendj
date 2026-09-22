@@ -13,6 +13,7 @@
 //   if mixer_global master 0.5 doesn't hit mixerState.master then broken
 //   if eq action without band doesn't throw then broken
 //   if ledTriggerActive(deck_loaded) is true on an empty deck then broken
+//   if the glue teardown leaves the action handler registered then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -334,6 +335,13 @@ test('channel_cue press toggles cue_enabled; release is ignored', async () => {
 	_restoreCueGlueState();
 });
 
+// ---------------------------------------------------- glue lifecycle
+
+// Meter pump regression guard intentionally absent on main (issue #3670):
+// host-driven VU meter CC output is planned (controller-onboarding.md,
+// unlanded bdf50f0e) but not implemented. Restoring the deleted test would
+// require building the pump, not restoring coverage. Track there, not here.
+
 test('headphone_mix and headphone_level dispatch through the performance command bus', async () => {
 	_restoreCueGlueState();
 	glue.handleMidiAction(
@@ -414,4 +422,116 @@ test('headphone_mix while master_cue latched updates saved restore mix only', as
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.headphones.mix, 0.8);
 	_restoreCueGlueState();
+});
+
+// -------------------------------------------- tiered registry (installed maps)
+
+// A controller onboarded at runtime has to be able to override a built-in map
+// without editing the bundle, and to be removed again without a page reload.
+// Precedence is TIERED, not array-order: installed always beats builtin, so
+// resolution does not depend on which module happened to register first.
+// Design: specs/controller-onboarding.md section 3.3.
+//
+//   if an installed map loses to a builtin on the same port name then broken
+//   if unregisterDeviceMap leaves the map resolvable then broken
+//   if unregisterDeviceMap reports a removal for a nameMatch nobody registered
+//     then broken (a silent no-op hides a bad uninstall)
+
+const _testMap = (vendor, nameMatch, note) => ({
+	vendor,
+	nameMatch,
+	bindings: [{ source: { ch: 1, kind: 'note', id: note }, action: { type: 'deck_cue', deck: 1 } }]
+});
+
+// Kept from 76dcf21ba (#3643): these cover installed-maps.ts, which that
+// commit really did add. The rest of this file is 76dcf21ba~1's, because the
+// same commit re-imported an older copy over it (see the PR description).
+
+test('installed maps shadow builtin maps regardless of registration order', () => {
+	webmidi._resetMidiForTests();
+	// Builtin registered FIRST, installed second: installed must still win.
+	webmidi.registerDeviceMap(_testMap('BuiltinCo', 'TieredTest', 11), 'builtin');
+	webmidi.registerDeviceMap(_testMap('InstalledCo', 'TieredTest', 12), 'installed');
+	assert.equal(webmidi.resolveMapForPort('TieredTest 1')?.vendor, 'InstalledCo');
+
+	// And the reverse order resolves identically.
+	webmidi._resetMidiForTests();
+	webmidi.registerDeviceMap(_testMap('InstalledCo', 'TieredTest', 12), 'installed');
+	webmidi.registerDeviceMap(_testMap('BuiltinCo', 'TieredTest', 11), 'builtin');
+	assert.equal(webmidi.resolveMapForPort('TieredTest 1')?.vendor, 'InstalledCo');
+	webmidi._resetMidiForTests();
+});
+
+test('listDeviceMaps reports tier so the UI can name what shadows what', () => {
+	webmidi._resetMidiForTests();
+	webmidi.registerDeviceMap(_testMap('BuiltinCo', 'TieredTest', 11), 'builtin');
+	webmidi.registerDeviceMap(_testMap('InstalledCo', 'TieredTest', 12), 'installed');
+	const listed = webmidi.listDeviceMaps().map((e) => `${e.tier}:${e.map.vendor}`).sort();
+	assert.deepEqual(listed, ['builtin:BuiltinCo', 'installed:InstalledCo']);
+	webmidi._resetMidiForTests();
+});
+
+test('registerDeviceMap rejects a second map on the same nameMatch AND tier', () => {
+	webmidi._resetMidiForTests();
+	webmidi.registerDeviceMap(_testMap('FirstCo', 'TieredTest', 11), 'installed');
+	assert.throws(
+		() => webmidi.registerDeviceMap(_testMap('SecondCo', 'TieredTest', 12), 'installed'),
+		/already registered/
+	);
+	webmidi._resetMidiForTests();
+});
+
+test('unregisterDeviceMap removes one tier and reveals the map it shadowed', () => {
+	webmidi._resetMidiForTests();
+	webmidi.registerDeviceMap(_testMap('BuiltinCo', 'TieredTest', 11), 'builtin');
+	webmidi.registerDeviceMap(_testMap('InstalledCo', 'TieredTest', 12), 'installed');
+	assert.equal(webmidi.unregisterDeviceMap('TieredTest', 'installed'), true);
+	// The builtin was never removed, so uninstalling reverts rather than breaks.
+	assert.equal(webmidi.resolveMapForPort('TieredTest 1')?.vendor, 'BuiltinCo');
+	assert.equal(webmidi.unregisterDeviceMap('TieredTest', 'builtin'), true);
+	assert.equal(webmidi.resolveMapForPort('TieredTest 1'), null);
+	webmidi._resetMidiForTests();
+});
+
+test('unregisterDeviceMap returns false rather than pretending it removed one', () => {
+	webmidi._resetMidiForTests();
+	assert.equal(webmidi.unregisterDeviceMap('NeverRegistered', 'installed'), false);
+	webmidi._resetMidiForTests();
+});
+
+// A MIDI-enabled user who leaves /performance and comes back is the whole
+// point of these two: detachMidiGlueForRouteUnmount() drops the glue, and
+// the next requestMidiAccess() re-attaches. unregisterActionHandler()'s own
+// docstring says the teardown calls it, and for a while nothing did, so the
+// second attach hit registerActionHandler()'s already-registered throw. That
+// throw surfaces inside requestMidiAccess()'s catch, which also runs
+// setMidiEnabledChoice(false) -- so the remount did not merely fail, it
+// silently forgot the user's MIDI opt-in and mapped controls stayed dead
+// until a full page reload.
+test('the glue teardown releases the action handler, not just its own latch', () => {
+	webmidi._resetMidiForTests();
+	const detach = glue.attachMidiGlue();
+	// Asserted on BOTH sides on purpose: against the post-detach check alone,
+	// an accessor stubbed to a flat false passes while proving nothing.
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		true,
+		'attach must register a handler for the teardown assertion below to mean anything'
+	);
+	detach();
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		false,
+		'teardown must release the handler webmidi holds, or the next attach throws'
+	);
+	webmidi._resetMidiForTests();
+});
+
+test('attachMidiGlue can reattach after a detach, as a route remount does', () => {
+	webmidi._resetMidiForTests();
+	glue.attachMidiGlue()();
+	assert.doesNotThrow(() => {
+		glue.attachMidiGlue()();
+	}, 'returning to /performance must re-attach rather than throw');
+	webmidi._resetMidiForTests();
 });

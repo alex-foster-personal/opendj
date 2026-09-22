@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.engine_core.host_info import HOST_INFO_STATE_ATTR, HostIdentity, HostInfoOut
+from apps.engine_core.host_info import HOST_INFO_STATE_ATTR, HostIdentity
 from apps.engine_core.perf_tier_api import PERF_TIER_PATH, add_perf_tier_route
 from apps.shared.perf_tier import (
     CanaryThresholdsUnmeasured,

@@ -10,8 +10,8 @@ import csv
 import io
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared.pairings.models import SOURCES, PairingEdge
 

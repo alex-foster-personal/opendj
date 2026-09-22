@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 @router.get("", response_model=HealthOut)
 def health(
     request: Request,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> HealthOut:
     stats = backend.stats()
     last_writer = backend.last_writer()
@@ -36,7 +37,7 @@ def health(
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
     version = getattr(request.app.state, "version", "0.1.0")
 
-    lock_fn: Optional[Callable[[], Any]] = getattr(
+    lock_fn: Callable[[], Any] | None = getattr(
         request.app.state, "lock_status_fn", None
     )
     lock_holder = None
@@ -47,7 +48,7 @@ def health(
             lock_holder = None
     cloud = HealthCloud(lock_holder=lock_holder)
 
-    syncthing_fn: Optional[Callable[[], Any]] = getattr(
+    syncthing_fn: Callable[[], Any] | None = getattr(
         request.app.state, "syncthing_status_fn", None
     )
     syncthing = None

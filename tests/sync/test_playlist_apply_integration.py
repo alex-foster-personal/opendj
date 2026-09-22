@@ -216,7 +216,7 @@ def test_apply_returns_failed_when_target_uuid_absent(apply_fixture) -> None:
     plan = json.loads(plan_path.read_text())
     plan["playlists"][1]["target_members"][0]["djay_uuid"] = "ghost-uuid-xxxxxxxxxxxxxxxxxxxxxx"
     result = pa.apply_plan(plan, db_path=db_path)
-    peak = [r for r in result.per_playlist if r.rb_name == "Peak"][0]
+    peak = next(r for r in result.per_playlist if r.rb_name == "Peak")
     assert peak.status == "failed"
     assert "not found" in peak.message.lower()
 

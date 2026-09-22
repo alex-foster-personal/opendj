@@ -17,8 +17,8 @@ starts emitting field-scoped events. Until then, runners pass either a
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from apps.smartlists.debounce import Debouncer
 from apps.smartlists.materializer import Materializer, MaterializeResult
