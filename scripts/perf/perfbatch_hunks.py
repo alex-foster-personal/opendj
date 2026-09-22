@@ -77,18 +77,21 @@ def parse_unified_diff(text: str) -> dict[str, FileDiff]:
             continue
         if current is None:
             continue
-        if raw.startswith(("--- ", "+++ ")):
-            continue
-        if raw.startswith(("Binary files ", "GIT binary patch")):
-            current.binary = True
-            hunk = None
-            continue
         hunk_header = _HUNK_HEADER.match(raw)
         if hunk_header:
             hunk = Hunk(int(hunk_header.group("old")), int(hunk_header.group("new")))
             current.hunks.append(hunk)
             continue
         if hunk is None:
+            # File headers exist only between "diff --git" and the first "@@".
+            # Inside a hunk an added "++ counter;" arrives as "+++ counter;"
+            # and a removed "-- counter;" as "--- counter;": those are content
+            # (Codex P1 on #3804), never headers.
+            if raw.startswith(("--- ", "+++ ")):
+                continue
+            if raw.startswith(("Binary files ", "GIT binary patch")):
+                current.binary = True
+                continue
             _note_extended_header(current, raw)
             continue  # index, similarity and the mode/rename/new/deleted headers
         if raw.startswith("\\"):
