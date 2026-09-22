@@ -26,7 +26,7 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     GENRE_REASON_TAGS_EXTRA_MISSING,
 )
 from apps.webui.server.sqlite_backend import SqliteBackend
-from tests.webui.library_wheel_fixtures import _make_state_db
+from tests.webui.library_wheel_fixtures import _make_master_db, _make_state_db
 
 pytest_plugins = ("tests.webui.library_wheel_fixtures",)
 
@@ -70,6 +70,44 @@ def test_mapped_track_still_uses_rekordbox_genre(wheel_dbs: tuple[Path, Path]) -
     result = query_library_wheel(state_db, master_db, axis="play_count")
     track = _find_track(result, MAPPED_SID)
     assert track["genre"] == "Peak Time Techno"
+    assert "rekordbox" in track["axis_title"].lower()
+
+
+def test_mapped_track_ignores_conflicting_local_genre(tmp_path: Path) -> None:
+    """[if] a mapped track also has a local genre field [then] rekordbox genre wins, [else stop]."""
+    state_db = tmp_path / "state.db"
+    master_db = tmp_path / "master.plain.db"
+    _make_state_db(
+        state_db,
+        tracks=[
+            {
+                "stable_id": "t-mapped-conflict",
+                "title": "Mapped Conflict",
+                "artists": ["Artist F"],
+                "file_path": "/music/mapped-conflict.mp3",
+            },
+        ],
+        memberships=[],
+        playlists=[],
+        vendor_ids={"t-mapped-conflict": "v-conflict"},
+        track_fields=[
+            {
+                "stable_id": "t-mapped-conflict",
+                "field_name": "genre",
+                "value_json": '"House"',
+            },
+        ],
+    )
+    _make_master_db(
+        master_db,
+        content=[{"vendor_id": "v-conflict", "genre_id": "g-techno", "play_count": 3}],
+    )
+    result = query_library_wheel(state_db, master_db, axis="play_count")
+    assert result["unclassified_track_count"] == 0
+    track = _find_track(result, "t-mapped-conflict")
+    assert track["genre"] == "Peak Time Techno"
+    assert result["families"][0]["name"] == "techno"
+    assert track["axis_value"] == 3
     assert "rekordbox" in track["axis_title"].lower()
 
 
