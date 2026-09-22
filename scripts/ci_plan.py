@@ -38,14 +38,15 @@ import yaml
 from scripts.ci_plan_sources import (
     PlanError,
     _read_source,
-    imported_packages,
+    imported_modules,
     is_test_module,
+    mentioned_strings,
     pytest_inputs,
 )
 
 REPO = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO / "ci" / "test-scopes.yml"
-SUPPORTED_CONFIG_VERSIONS = frozenset({1})
+SUPPORTED_CONFIG_VERSIONS = frozenset({2})
 CAP_FRACTION = 0.6
 
 
@@ -73,6 +74,13 @@ class Scope:
     # `tests/scripts/test_ci_plan.py` fails when the two disagree, so a new import across a
     # scope boundary forces this file to move rather than silently narrowing the selection.
     dependents: tuple[str, ...] = ()
+    # Strings a pytest input MENTIONS when it consumes this scope's sources. The import
+    # reader sees Python only, so a scope whose sources are Svelte, TypeScript or JSON has
+    # no importers and its consumers have to be found another way: a test that reads,
+    # builds or globs `apps/webui/frontend` names that path in its text. Declaring this
+    # is what makes such a scope derivable at all (`_dependencies_derivable`); a scope
+    # without it stays FULL on every non-Python change, as before. Round 9.
+    mentions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,12 @@ class Config:
     full_triggers: tuple[str, ...]
     always: tuple[str, ...]
     scopes: tuple[Scope, ...]
+    # Scopes a GLOBAL pytest helper imports (or mentions), so a change to a path they OWN
+    # runs everything. Named by scope rather than written as path triggers because
+    # ownership is longest-prefix: `apps/webui/frontend/` is its own scope inside
+    # `apps/webui/`, and a prefix trigger on the parent would swallow the child. Derived by
+    # `helper_carried_scopes` and held to it by a guard. Round 9.
+    helper_carried: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -128,15 +142,17 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # scan cannot see a glob or an index walk, and an incomplete list under-selects. Sol's P1 on
 # #3339.
 #
+# Round 10 keeps every word of that and still narrows: the prose trees are CLAIMED by a
+# `prose` scope whose consumers the mention reader finds (the tests that spell `docs`,
+# `specs`, ...), so a docs change runs those suites rather than nothing or everything.
+#
 # The cost is stated plainly rather than hidden: SKIP_PYTEST is now unreachable, so the
 # planner narrows nothing at all on this repository. That is the honest form of round 5's
 # result, not a new one -- selection here was already 0% SCOPED -- and a planner that runs
 # everything is merely useless, where one that skips a suite it should have run is wrong.
 
 
-def _classify_paths(
-    paths: list[str], config: Config
-) -> tuple[set[str], list[str], list[str]]:
+def _classify_paths(paths: list[str], config: Config) -> tuple[set[str], list[str], list[str]]:
     """Every changed path into exactly one of three buckets: the scopes it hits, the paths no
     scope claims, and the claimed paths whose dependencies the closure cannot read.
 
@@ -144,14 +160,15 @@ def _classify_paths(
     part with the branches. The three buckets are returned rather than acted on here, so the
     ORDER the verdicts are checked in stays visible in one place.
     """
+    owner_of = _owner_index(config)
     hit: set[str] = set()
     unclaimed_source: list[str] = []
     unanalyzable: list[str] = []
     for path in paths:
-        owners = [s.name for s in config.scopes if matches(path, s.sources + s.tests)]
-        if owners:
-            hit.update(owners)
-            if not _dependencies_derivable(path):
+        owner = owner_of(path)
+        if owner is not None:
+            hit.add(owner.name)
+            if not _dependencies_derivable(path, owner):
                 unanalyzable.append(path)
         elif matches(path, config.always):
             hit.add(_ALWAYS)
@@ -160,8 +177,8 @@ def _classify_paths(
     return hit, unclaimed_source, unanalyzable
 
 
-def _dependencies_derivable(path: str) -> bool:
-    """Whether the closure can see who consumes this file.
+def _dependencies_derivable(path: str, owner: Scope) -> bool:
+    """Whether a derivation can see who consumes this file.
 
     `_source_reachability` reads Python imports and nothing else, so a scope's TypeScript,
     Svelte, shell or JSON sources contribute NO edges. Owning the changed path is therefore
@@ -171,9 +188,40 @@ def _dependencies_derivable(path: str) -> bool:
     so this is the common case rather than an edge. Sol's P1 on #3339.
 
     Deliberately a property of the INSTRUMENT, not a list of risky file types: it answers
-    "can the derivation see this", so teaching the closure a new language is what widens it.
+    "can a derivation see this". Two derivations exist: the import reader, which sees any
+    `.py`, and the mention reader (round 9), which sees every file of a scope that declares
+    `mentions`, because that scope's consumers are found by the strings they name rather
+    than the packages they import.
     """
-    return path.endswith(".py")
+    return path.endswith(".py") or bool(owner.mentions)
+
+
+def _owner_index(config: Config, *, sources_only: bool = False) -> Callable[[str], Scope | None]:
+    """The scope owning a path, longest declared prefix winning.
+
+    ONE owner per path. Every scope whose prefix matched used to count, which made a scope
+    nested inside another (`apps/webui/frontend/` inside `apps/webui/`) impossible: the
+    parent claimed the child's files too, and the parent being helper-carried made every
+    child change FULL. Longest prefix is the rule `_test_owner_index` already applied to
+    tests; this applies it to sources as well. `sources_only` is the form the import graph
+    uses, where a package path can only ever be a source.
+    """
+    by_length = sorted(
+        (
+            (len(pattern), pattern, scope)
+            for scope in config.scopes
+            for pattern in (scope.sources if sources_only else scope.sources + scope.tests)
+        ),
+        key=lambda item: -item[0],
+    )
+
+    def owner(path: str) -> Scope | None:
+        for _, pattern, scope in by_length:
+            if matches(path, (pattern,)):
+                return scope
+        return None
+
+    return owner
 
 
 def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
@@ -193,9 +241,7 @@ def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
     return out
 
 
-def plan(
-    changes: tuple[Change, ...], config: Config, cap_fraction: float = CAP_FRACTION
-) -> Plan:
+def plan(changes: tuple[Change, ...], config: Config, cap_fraction: float = CAP_FRACTION) -> Plan:
     """The plan for one diff. Pure: no filesystem, no git, no network."""
     if not changes:
         raise PlanError(
@@ -218,6 +264,17 @@ def plan(
     triggered = [p for p in paths if matches(p, config.full_triggers)]
     if triggered:
         return Plan(Verdict.FULL, (), (), f"full trigger: {triggered[0]}")
+    owner_of = _owner_index(config)
+    carried = [
+        p for p in paths if (o := owner_of(p)) is not None and o.name in config.helper_carried
+    ]
+    if carried:
+        return Plan(
+            Verdict.FULL,
+            (),
+            (),
+            f"a global pytest helper carries the scope owning: {carried[0]}",
+        )
 
     by_name = {s.name: s for s in config.scopes}
     hit, unclaimed_source, unanalyzable = _classify_paths(paths, config)
@@ -287,7 +344,7 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
     # plan reported as a correct one. An unknown schema version is refused for the same
     # reason: a newer config may mean something this planner would silently misread.
     # Sol's P1 on #3339.
-    unknown = sorted(set(raw) - {"version", "full_triggers", "always", "scopes"})
+    unknown = sorted(set(raw) - {"version", "full_triggers", "helper_carried", "always", "scopes"})
     if unknown:
         raise PlanError(f"{path} has unknown key(s): {', '.join(unknown)}")
     if raw.get("version") not in SUPPORTED_CONFIG_VERSIONS:
@@ -295,7 +352,7 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
             f"{path} declares version {raw.get('version')!r}; "
             f"this planner reads {sorted(SUPPORTED_CONFIG_VERSIONS)}"
         )
-    for key in ("full_triggers", "always", "scopes"):
+    for key in ("full_triggers", "helper_carried", "always", "scopes"):
         if not isinstance(raw.get(key), list):
             raise PlanError(f"{path} is missing a list `{key}`, or it is not a list")
     scopes = raw["scopes"]
@@ -307,7 +364,7 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
         missing = [k for k in ("name", "sources", "tests") if k not in entry]
         if missing:
             raise PlanError(f"{path}: scope {entry.get('name', entry)!r} lacks {missing}")
-        extra = sorted(set(entry) - {"name", "sources", "tests", "dependents"})
+        extra = sorted(set(entry) - {"name", "sources", "tests", "dependents", "mentions"})
         if extra:
             raise PlanError(f"{path}: scope {entry['name']!r} has unknown key(s): {extra}")
     return Config(
@@ -319,9 +376,11 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
                 tuple(entry["sources"]),
                 tuple(entry["tests"]),
                 tuple(entry.get("dependents") or ()),
+                tuple(entry.get("mentions") or ()),
             )
             for entry in scopes
         ),
+        tuple(raw["helper_carried"]),
     )
 
 
@@ -367,26 +426,46 @@ def observed_dependents(
             # set and a guard holds the config to it.
             if matches(relative, config.always):
                 continue
-            if imported_packages(_read_source(file, relative), relative):
+            if _consumed_scopes(_read_source(file, relative), relative, config):
                 raise PlanError(
                     f"{relative} is claimed by no scope and matched by no `always` entry, "
-                    "yet imports one; it carries a dependency this derivation cannot place. "
+                    "yet consumes one; it carries a dependency this derivation cannot place. "
                     "Claim it in ci/test-scopes.yml rather than narrowing a plan without it"
                 )
             continue
-        for module in imported_packages(_read_source(file, relative), relative):
-            as_path = module.replace(".", "/") + "/"
-            for scope in config.scopes:
-                if not matches(as_path, scope.sources):
-                    continue
-                # The test has to run when the scope it imports changes AND when anything
-                # that scope imports changes. The second half is the closure, and taking it
-                # over SOURCES is what keeps it finite -- a direct test edge alone misses an
-                # upstream package the test never names.
-                for upstream in reaches[scope.name]:
-                    if upstream != owner:
-                        found[upstream].add(owner)
+        for scope in _consumed_scopes(_read_source(file, relative), relative, config):
+            # The test has to run when the scope it consumes changes AND when anything
+            # that scope imports changes. The second half is the closure, and taking it
+            # over SOURCES is what keeps it finite -- a direct test edge alone misses an
+            # upstream package the test never names.
+            for upstream in reaches[scope.name]:
+                if upstream != owner:
+                    found[upstream].add(owner)
     return {name: tuple(sorted(names)) for name, names in found.items() if names}
+
+
+def _consumed_scopes(text: str, where: str, config: Config) -> list[Scope]:
+    """The scopes one pytest input depends on: those it IMPORTS, read with the AST, plus
+    those it MENTIONS, for scopes that declare the strings their consumers name.
+
+    Both readers feed one edge set so the guard on `dependents` covers both. A mention is a
+    substring test over the module's string LITERALS (comments and docstrings excluded, see
+    `mentioned_strings`), and that floor is stated rather than hidden: a test that reaches a
+    frontend file through a path it never spells out is invisible here, exactly as a test
+    reading another scope's data file is invisible to the import reader. The miss audit
+    (round 7) is what measures that floor on real runs.
+    """
+    source_owner = _owner_index(config, sources_only=True)
+    consumed: dict[str, Scope] = {}
+    for module in imported_modules(text, where):
+        scope = source_owner(module.replace(".", "/") + "/")
+        if scope is not None:
+            consumed[scope.name] = scope
+    literals = mentioned_strings(text, where)
+    for scope in config.scopes:
+        if any(needle in literal for needle in scope.mentions for literal in literals):
+            consumed[scope.name] = scope
+    return [consumed[name] for name in sorted(consumed)]
 
 
 def helper_carried_scopes(config: Config, root: Path = REPO) -> frozenset[str]:
@@ -409,11 +488,8 @@ def helper_carried_scopes(config: Config, root: Path = REPO) -> frozenset[str]:
             continue
         if is_test_module(relative):
             continue
-        for module in imported_packages(_read_source(file, relative), relative):
-            as_path = module.replace(".", "/") + "/"
-            for scope in config.scopes:
-                if matches(as_path, scope.sources):
-                    carried |= reaches[scope.name]
+        for scope in _consumed_scopes(_read_source(file, relative), relative, config):
+            carried |= reaches[scope.name]
     return frozenset(carried)
 
 
@@ -425,6 +501,7 @@ def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozens
     what lets `_with_dependents` stay one hop at plan time: the same closure taken over the
     test edges instead does not compose and reaches the whole repository.
     """
+    source_owner = _owner_index(config, sources_only=True)
     direct: dict[str, set[str]] = {scope.name: {scope.name} for scope in config.scopes}
     for scope in config.scopes:
         for pattern in scope.sources:
@@ -433,11 +510,15 @@ def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozens
                 continue
             for file in base.rglob("*.py"):
                 where = file.relative_to(root).as_posix() if file.is_absolute() else file.as_posix()
-                for module in imported_packages(_read_source(file, where), where):
-                    as_path = module.replace(".", "/") + "/"
-                    for other in config.scopes:
-                        if other.name != scope.name and matches(as_path, other.sources):
-                            direct[scope.name].add(other.name)
+                # A file inside a NESTED scope's prefix belongs to that scope, not to this
+                # one, so its imports are attributed there; the same longest-prefix rule
+                # `_owner_index` applies at plan time, so the two cannot disagree.
+                if source_owner(where) is not scope:
+                    continue
+                for module in imported_modules(_read_source(file, where), where):
+                    other = source_owner(module.replace(".", "/") + "/")
+                    if other is not None and other.name != scope.name:
+                        direct[scope.name].add(other.name)
     closed = {name: set(names) for name, names in direct.items()}
     changed = True
     while changed:

@@ -24,6 +24,23 @@ supposed to be marked "unread" or "not verified here" in the MOC prose itself,
 per the area-moc skill's sourcing rule, rather than cited as if this script
 covers them.
 
+A repository-ROOT file has no `/` to mark it as a path, and a bare backtick
+name is ambiguous: `` `state.db` `` or `` `app.py` `` in MOC prose is a
+basename, not a root citation (measured Mon 21 Sep 2026: treating every
+extension-bearing bare name as a root path reported 130 false MISSING rows
+across ten MOCs). So a root-level name is a citation only when it is
+unambiguous (ROOT_PATH_RE plus `_is_root_citation`):
+
+  - a letter-initial name with a dot extension AND a `:line` or `:from-to`
+    pointer, e.g. `` `AGENTS.md:56-99` `` or `` `CLAUDE.md:23-29` ``, or
+  - one of the extensionless build files in ROOT_BARE_FILES (`justfile`,
+    `Makefile`), with or without a line pointer.
+
+`` `127.0.0.1:8585` `` (digit-initial) and `` `localhost:8585` `` (no
+extension) are host:port literals, not citations, and do not match. A bare
+`` `AGENTS.md` `` or `` `reqs.json` `` stays prose: cite a line to have it
+checked.
+
 Exit code is nonzero iff any citation is MISSING or DRIFTED. A MOC with zero
 citations is not an error (nothing to check), but is called out in the table
 so an empty MOC does not read as a silent pass.
@@ -44,6 +61,12 @@ PATH_RE = re.compile(
     r"`(?P<path>[A-Za-z0-9_][A-Za-z0-9_.\-/]*/[A-Za-z0-9_.\-]+)"
     r"(?::(?P<line1>\d+)(?:-(?P<line2>\d+))?)?`"
 )
+# Root-level candidates: no `/` at all. Every match is then filtered through
+# `_is_root_citation` -- the regex alone would also match a bare basename.
+ROOT_PATH_RE = re.compile(
+    r"`(?P<path>[A-Za-z_][A-Za-z0-9_.\-]*)(?::(?P<line1>\d+)(?:-(?P<line2>\d+))?)?`"
+)
+ROOT_BARE_FILES = frozenset({"justfile", "Makefile"})
 
 OK = "OK"
 MISSING = "MISSING"
@@ -119,6 +142,20 @@ def check_path(
     return Row(moc_name, "path", citation, OK, "")
 
 
+def _is_root_citation(m: re.Match[str]) -> bool:
+    """A root-level backtick name counts as a citation only when unambiguous.
+
+    A dotted, letter-initial name with a line pointer (`AGENTS.md:56-99`), or
+    one of ROOT_BARE_FILES (`justfile`, `Makefile`) with or without one. A bare
+    dotted name (`state.db`), a digit-initial host (`127.0.0.1:8585`), or an
+    extensionless word with a port (`localhost:8585`) is prose, not a citation.
+    """
+    path = m.group("path")
+    if path in ROOT_BARE_FILES:
+        return True
+    return m.group("line1") is not None and "." in path
+
+
 def scan_moc(repo_root: Path, moc_path: Path) -> list[Row]:
     moc_name = moc_path.name
     text = moc_path.read_text(encoding="utf-8")
@@ -137,7 +174,9 @@ def scan_moc(repo_root: Path, moc_path: Path) -> list[Row]:
         return any(start <= pos < end for start, end in threshold_spans)
 
     seen_paths: set[tuple[str, str | None, str | None]] = set()
-    for m in PATH_RE.finditer(text):
+    path_matches = list(PATH_RE.finditer(text))
+    path_matches.extend(m for m in ROOT_PATH_RE.finditer(text) if _is_root_citation(m))
+    for m in path_matches:
         if _in_threshold_span(m.start()):
             continue
         key = (m.group("path"), m.group("line1"), m.group("line2"))
