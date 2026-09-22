@@ -96,6 +96,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
       - name: Measure newest stale base
         env:
           GH_TOKEN: ${{ github.token }}
