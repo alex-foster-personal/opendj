@@ -6,7 +6,7 @@ clock so TTL expiry is testable without sleeping.
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -36,7 +36,7 @@ class Clock:
     """Deterministic clock fixture for TTL tests."""
 
     def __init__(self, start: datetime | None = None) -> None:
-        self.now = start or datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        self.now = start or datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self.now
@@ -172,7 +172,7 @@ def test_corrupt_lock_object_is_overwritten():
         '"garbage-etag"',
     )
     # Prime the etag so CAS overwrite works against our fake etag.
-    body, etag = s3.get_object("test-state", LOCK_KEY)  # type: ignore[misc]
+    body, _etag = s3.get_object("test-state", LOCK_KEY)  # type: ignore[misc]
     # Replace with actual etag that FakeS3 computes.
     lock = Lock(make_cfg("host-a"), s3, now_fn=Clock())
     # Because FakeS3 indexes by body hash, the stored etag is wrong. Manually
@@ -206,8 +206,8 @@ def test_current_holder_returns_none_on_corrupt_body():
 def test_lock_holder_json_round_trip():
     h = LockHolder(
         holder="mbp",
-        acquired_at=datetime(2026, 4, 17, 14, 2, 3, tzinfo=timezone.utc),
-        expires_at=datetime(2026, 4, 17, 14, 12, 3, tzinfo=timezone.utc),
+        acquired_at=datetime(2026, 4, 17, 14, 2, 3, tzinfo=UTC),
+        expires_at=datetime(2026, 4, 17, 14, 12, 3, tzinfo=UTC),
         pid=12345,
         version=1,
     )

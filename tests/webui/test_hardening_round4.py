@@ -23,10 +23,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient

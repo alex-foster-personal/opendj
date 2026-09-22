@@ -31,7 +31,7 @@ class TestTier1Isrc:
 
     def test_isrc_beats_fingerprint_fallback(self) -> None:
         """Tier 1 wins even when fingerprint triple is present."""
-        tid, tier = compute_track_id_with_tier({
+        _tid, tier = compute_track_id_with_tier({
             "isrc": "GBCEN0900132",
             "fingerprint": "Z" * 80,
             "duration_ms": 1000,

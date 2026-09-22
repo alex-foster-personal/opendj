@@ -109,14 +109,14 @@ def test_plan_json_reflects_decisions(tmp_path: Path) -> None:
     write_plan_json(_fixture_plan(), out)
     doc = json.loads(out.read_text(encoding="utf-8"))
     # Berlin -> create, because djay has no colliding name.
-    berlin = [p for p in doc["playlists"] if p["rb_id"] == "r1"][0]
+    berlin = next(p for p in doc["playlists"] if p["rb_id"] == "r1")
     assert berlin["op"] == "create"
     assert berlin["djay_uuid"] is None
     # Unmatched Ghost surfaces as metadata.
     assert [u["rb_id"] for u in berlin["unmatched_rb"]] == ["t_missing"]
 
     # Warmup -> update, case-insensitive match.
-    warm = [p for p in doc["playlists"] if p["rb_id"] == "r2"][0]
+    warm = next(p for p in doc["playlists"] if p["rb_id"] == "r2")
     assert warm["op"] == "update"
     assert warm["djay_uuid"] == "pl_warm"
     assert "u_old" in warm["removes"]

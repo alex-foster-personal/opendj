@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
@@ -15,10 +14,10 @@ from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.shared.state.migrations_v15 import (
+    _V15,
     HUB_CHANGELOG_TABLE,
     MARKER_TABLE,
     TRACK_FIELDS_STAMP_BACKFILL_MARKER,
-    _V15,
     active_changelog_table,
     backfill_track_fields_stamps,
     log_stamp_backfill_rows,

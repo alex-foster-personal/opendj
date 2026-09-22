@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import UTC
 
 from apps.shared.harmonic import TrackFeature
 
@@ -57,7 +58,7 @@ def _rationale_tags(sc: ScoredCandidate) -> list[str]:
 
 
 def _current_to_played(current: TrackFeature) -> PlayedTrack:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return PlayedTrack(
         stable_id=current.stable_id,
@@ -65,7 +66,7 @@ def _current_to_played(current: TrackFeature) -> PlayedTrack:
         bpm=current.bpm,
         key_camelot=current.key_camelot,
         energy=current.energy,
-        played_at=datetime.now(timezone.utc),
+        played_at=datetime.now(UTC),
     )
 
 
@@ -92,10 +93,10 @@ def suggest_next(
         return []
 
     if context is None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         context = SessionContext(
-            recent=[], source="empty", captured_at=datetime.now(timezone.utc)
+            recent=[], source="empty", captured_at=datetime.now(UTC)
         )
 
     current_played = _current_to_played(current)

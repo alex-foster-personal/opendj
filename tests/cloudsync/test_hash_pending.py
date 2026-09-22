@@ -20,17 +20,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.state.backfill_content_hash import run_for_hub_backfill
-from apps.sync_hub import capabilities, client, engine, maintenance, protocol, service, sync_set
+from apps.sync_hub import capabilities, client, engine, maintenance, protocol, sync_set
 from apps.sync_hub.hash_pending import count_hash_pending
-from apps.sync_hub.transport import HubTransport, refused
+from apps.sync_hub.transport import refused
 from tests.cloudsync.enrollment_transport import TestClientTransport
-from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1, _T2, _insert_track, _log
+from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _T1, _T2
 from tests.cloudsync.test_track_identity_collapse import (
     _HASH_A,
     _HASH_B,

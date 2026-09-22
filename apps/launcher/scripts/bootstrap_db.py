@@ -34,8 +34,8 @@ import hashlib
 import os
 import sqlite3
 import sys
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Iterable, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = REPO_ROOT / "data"

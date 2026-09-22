@@ -17,8 +17,9 @@ import os
 import struct
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 DEFAULT_WHISPER_URL: str = "http://127.0.0.1:2022/inference"
 DEFAULT_WHISPER_TIMEOUT_S: float = 15.0

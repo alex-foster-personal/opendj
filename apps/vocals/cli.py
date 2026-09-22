@@ -78,10 +78,11 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any
 
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import (
@@ -155,9 +156,9 @@ class VocalTrack:
     vendor_id: str
     title: str
     length_s: int
-    folder_path: Optional[str]
-    analysis_data_path: Optional[str]
-    audio_path: Optional[Path]
+    folder_path: str | None
+    analysis_data_path: str | None
+    audio_path: Path | None
     audio_on_disk: bool
     category: str = ""
 
@@ -185,7 +186,7 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     return conn
 
 
-def _resolve(path: str, *, path_map: PathMap) -> Optional[Path]:
+def _resolve(path: str, *, path_map: PathMap) -> Path | None:
     """Resolve a state.db/rekordbox path via the shared platform resolver.
 
     ``None`` is the load-bearing "unmapped" state (a foreign-absolute path,
@@ -212,7 +213,7 @@ def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
 # ----- track loading -------------------------------------------------------------
 
 
-def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
+def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
     """All rekordbox-mapped tracks (optionally one playlist's members)."""
     path_map = load_path_map(ctx.data_dir)
     state = _open_ro(ctx.state_db, "STATE_DB")
@@ -265,7 +266,7 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
         str(vid): (sid, title) for sid, vid, title in mappings
     }
     master = _open_ro(ctx.master_db, "MASTER_DB")
-    rows: list[tuple[str, str, int, Optional[str], Optional[str]]] = []
+    rows: list[tuple[str, str, int, str | None, str | None]] = []
     try:
         for chunk in _chunks(list(by_vendor), _SQL_CHUNK):
             marks = ",".join("?" * len(chunk))
@@ -283,7 +284,7 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
     tracks: list[VocalTrack] = []
     for vendor_id, title, length_s, folder_path, adp in rows:
         stable_id, state_title = by_vendor[str(vendor_id)]
-        audio: Optional[Path] = None
+        audio: Path | None = None
         on_disk = False
         if folder_path:
             audio = _resolve(str(folder_path), path_map=path_map)
@@ -330,7 +331,7 @@ def pvdi_present(path_2ex: Path) -> bool:
     return False
 
 
-def _anlz_data_file(track: VocalTrack, path_map: PathMap) -> Optional[Path]:
+def _anlz_data_file(track: VocalTrack, path_map: PathMap) -> Path | None:
     """Return the local ANLZ .DAT required before ``/anlz`` can serve a track."""
     if track.analysis_data_path is None:
         return None
@@ -567,7 +568,7 @@ def _claim_record_guard(lock: Path) -> Iterator[None]:
         os.close(descriptor)
 
 
-def _read_claim_record(lock: Path) -> Optional[dict[str, Any]]:
+def _read_claim_record(lock: Path) -> dict[str, Any] | None:
     if not lock.exists():
         return None
     try:
@@ -643,7 +644,7 @@ def _heartbeat_claim(
 def _claim_track(
     cache_file: Path,
     lease_s: float = LOCK_LEASE_S,
-) -> Optional[TrackClaim]:
+) -> TrackClaim | None:
     """Claim one uncached track without waiting behind another CLI process.
 
     The persisted lease duration and heartbeat are independent of any
@@ -780,10 +781,9 @@ def _managed_track_claim(claim: TrackClaim) -> Iterator[None]:
 def _fmt_dur(seconds: float) -> str:
     if seconds >= 3600:
         return f"{seconds / 3600:.1f}h"
-    elif seconds >= 60:
+    if seconds >= 60:
         return f"{seconds / 60:.1f}m"
-    else:
-        return f"{seconds:.0f}s"
+    return f"{seconds:.0f}s"
 
 
 def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
@@ -849,7 +849,7 @@ def _process_one(
     tr: VocalTrack,
     prefix: str,
     timeout_s: float = WORKER_TIMEOUT_S,
-    claim: Optional[TrackClaim] = None,
+    claim: TrackClaim | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Run the worker for one track and write its cache entry.
 
@@ -1272,7 +1272,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     from apps.vocals.errors import UnknownPlaylistError
 
     try:

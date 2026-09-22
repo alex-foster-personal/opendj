@@ -28,19 +28,18 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from apps.analysis import run as analysis_run
-from apps.shared import platform_paths
-from apps.shared.state import locations as state_locations
 from apps.lyrics import cache as lyrics_cache
-from apps.shared import fs_residency
-from apps.webui.soft_deletes import has_soft_deletes
+from apps.shared import platform_paths
 from apps.shared.paths import PROJECT_ROOT
-from apps.vocals import cache as vocals_cache
-from apps.webui.server.routes.ingest_analysis_argv import CliFailed
+from apps.shared.state import locations as state_locations
 from apps.stems.artifacts import (
     StemArtifactError,
     StemBundleNotFoundError,
     load_stem_bundle,
 )
+from apps.vocals import cache as vocals_cache
+from apps.webui.server.routes.ingest_analysis_argv import CliFailed
+from apps.webui.soft_deletes import has_soft_deletes
 
 #: Exit codes that describe THESE targets rather than this machine. Only
 #: these may leave the chunk loop running; see :func:`_step_analysis`. The

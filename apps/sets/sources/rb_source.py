@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from ..state import Event, SetsState
 
@@ -67,7 +67,7 @@ class RekordboxHistorySource:
     # ------------------------------------------------------------------
 
     def _rel_ts(self) -> float:
-        delta = datetime.now(timezone.utc) - self.session_started_at
+        delta = datetime.now(UTC) - self.session_started_at
         return max(0.0, delta.total_seconds())
 
     def _emit(self, event: Event) -> None:
@@ -86,7 +86,7 @@ class RekordboxHistorySource:
             Event(
                 session_id=self.session_id,
                 timestamp_s=self._rel_ts(),
-                wall_clock=datetime.now(timezone.utc).isoformat(
+                wall_clock=datetime.now(UTC).isoformat(
                     timespec="milliseconds"
                 ),
                 action="source_error",
@@ -148,7 +148,7 @@ class RekordboxHistorySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(timezone.utc).isoformat(
+                    wall_clock=datetime.now(UTC).isoformat(
                         timespec="milliseconds"
                     ),
                     deck=None,  # rb history does not carry a deck label

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .. import paths as sets_paths
 from .. import transitions as transitions_mod
@@ -189,7 +190,7 @@ def train(
     meta_path = models / META_FILE_NAME
     joblib.dump(final, model_path)
     meta = {
-        "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "macro_f1": round(macro_f1, 4),
         "feature_columns": feature_cols,
         "class_list": classes,

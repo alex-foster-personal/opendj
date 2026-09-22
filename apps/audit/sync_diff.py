@@ -5,9 +5,9 @@ import argparse
 import csv
 import sys
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
 
 from apps.shared import paths
 from apps.shared.normalised import NormalisedAnalysis

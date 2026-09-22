@@ -20,7 +20,7 @@ identifiers (field names, order-by columns) come from
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.analysis.selection import PROJECTION_FIELDS, Selection, field_column_sql
@@ -86,7 +86,7 @@ def _resolve_relative_date(expr: dict) -> str:
         raise SmartlistRuleError(
             f"$relative unit {unit!r} must be one of d/h/m/w"
         )
-    return (datetime.now(timezone.utc) + timedelta(**delta_kwargs)).isoformat()
+    return (datetime.now(UTC) + timedelta(**delta_kwargs)).isoformat()
 
 
 def _prepare_date_value(value: Any) -> Any:

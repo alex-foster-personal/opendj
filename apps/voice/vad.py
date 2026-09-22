@@ -14,8 +14,9 @@ from __future__ import annotations
 import math
 import os
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 FRAME_MS: int = 30
 # Default silence tail: 300 ms (configurable via $VOICE_VAD_TAIL_MS).
@@ -57,7 +58,7 @@ class AmplitudeVad:
 
     rms_threshold: float = 300.0
 
-    def is_speech(self, frame: bytes, sample_rate_hz: int) -> bool:
+    def is_speech(self, frame: bytes, _sample_rate_hz: int) -> bool:
         n = len(frame) // 2
         if n == 0:
             return False

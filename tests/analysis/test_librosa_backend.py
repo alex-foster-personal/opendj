@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import inspect
 import json
+import math
 import os
+import struct
 import subprocess
 import sys
+import wave
 from pathlib import Path
 
 import pytest
@@ -19,7 +22,7 @@ import pytest
 from apps.analysis import auto_cues, detect_bad_beatgrid, run, write_tags
 from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
 from apps.analysis.backends import librosa as librosa_backend_module
-from apps.analysis.backends.librosa import LibrosaBackend
+from apps.analysis.backends.librosa import LibrosaBackend, estimate_downbeats_from_beats
 from apps.analysis.record import AnalysisRecord
 from apps.analysis_key.canon import from_camelot, from_open_key
 
@@ -81,8 +84,52 @@ def test_registry_refuses_madmom_without_the_nonshippable_flag() -> None:
     assert get_backend(DEFAULT_BACKEND) is LibrosaBackend
 
 
+def _expected_bar_downbeats(bpm: float, duration_s: float) -> list[float]:
+    period = 60.0 / bpm
+    downbeats: list[float] = []
+    beat = 0
+    t0 = 0.0
+    while t0 < duration_s:
+        if beat % 4 == 0:
+            downbeats.append(t0)
+        beat += 1
+        t0 += period
+    return downbeats
+
+
+def _write_accented_bar_click_track(path: Path, *, bpm: float = 128.0, duration_s: float = 20.0) -> None:
+    """Four-on-the-floor click with a stronger transient on beat 1 of each bar."""
+    sample_rate = 44_100
+    period = 60.0 / bpm
+    n_samples = int(duration_s * sample_rate)
+    samples = [0.0] * n_samples
+    beat = 0
+    t0 = 0.0
+    while t0 < duration_s:
+        start = int(t0 * sample_rate)
+        burst = int(0.03 * sample_rate)
+        is_downbeat = beat % 4 == 0
+        freq = 1800.0 if is_downbeat else 1200.0
+        amp = 0.9 if is_downbeat else 0.45
+        for i in range(burst):
+            if start + i >= n_samples:
+                break
+            envelope = math.exp(-i / (0.01 * sample_rate))
+            samples[start + i] += amp * envelope * math.sin(2 * math.pi * freq * i / sample_rate)
+        beat += 1
+        t0 += period
+
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(
+            b"".join(struct.pack("<h", int(max(-1.0, min(1.0, sample)) * 32000)) for sample in samples)
+        )
+
+
 @pytest.mark.requirement("META-01")
-def test_librosa_default_analyzes_real_click_without_fabricated_downbeats(
+def test_librosa_default_analyzes_uniform_click_without_fabricated_downbeats(
     click_120_path: Path,
 ) -> None:
     record = LibrosaBackend.analyze(click_120_path, "librosa-120")
@@ -98,6 +145,46 @@ def test_librosa_default_analyzes_real_click_without_fabricated_downbeats(
     assert 1 <= record.energy <= 10
     assert record.downbeats_s == []
     assert record.features_blob["downbeat_tracking"] is False
+
+
+@pytest.mark.requirement("META-01")
+def test_librosa_default_detects_downbeats_on_accented_bar_audio(tmp_path: Path) -> None:
+    path = tmp_path / "accented_128bpm.wav"
+    _write_accented_bar_click_track(path, bpm=128.0, duration_s=20.0)
+    record = LibrosaBackend.analyze(path, "librosa-accented")
+
+    assert record.downbeats_s
+    assert record.downbeats_s == sorted(record.downbeats_s)
+    assert len(record.downbeats_s) == len(set(record.downbeats_s))
+    assert record.features_blob["downbeat_tracking"] is True
+    assert abs(record.bpm - 128.0) < 3.0
+    expected = _expected_bar_downbeats(128.0, 20.0)
+    bar_period_s = 4 * (60.0 / 128.0)
+    assert len(record.downbeats_s) >= 3
+    for measured in record.downbeats_s:
+        assert any(abs(measured - reference) < 0.08 for reference in expected)
+    for index in range(len(record.downbeats_s) - 1):
+        spacing = record.downbeats_s[index + 1] - record.downbeats_s[index]
+        assert abs(spacing - bar_period_s) < 0.12
+
+
+@pytest.mark.requirement("META-01")
+def test_downbeat_estimator_rejects_ambiguous_phase_scores() -> None:
+    beats = [float(index) * 0.5 for index in range(16)]
+    uniform = [1.0] * len(beats)
+    downbeats, tracked = estimate_downbeats_from_beats(beats, uniform)
+    assert downbeats == []
+    assert tracked is False
+
+    ambiguous = [1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]
+    downbeats, tracked = estimate_downbeats_from_beats(beats[:12], ambiguous)
+    assert downbeats == []
+    assert tracked is False
+
+    clear = [2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0]
+    downbeats, tracked = estimate_downbeats_from_beats(beats[:12], clear)
+    assert tracked is True
+    assert downbeats == [beats[index] for index in range(0, 12, 4)]
 
 
 @pytest.mark.requirement("META-02")

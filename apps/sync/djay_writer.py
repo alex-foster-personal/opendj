@@ -26,7 +26,7 @@ together.
 from __future__ import annotations
 
 import struct
-from typing import Iterable
+from collections.abc import Iterable
 
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index

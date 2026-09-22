@@ -12,8 +12,8 @@ Output contract (confirmed by djay Pro, Serato DJ, VLC)::
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from apps.sync.usb.layout import dst_relpath, sanitise_segment
 from apps.sync.usb.profile import Profile
@@ -36,7 +36,7 @@ def _m3u8_lines_for(
     for idx, t in enumerate(tracks, start=1):
         duration_secs = 0
         if t.duration_ms is not None:
-            duration_secs = max(0, int(round(t.duration_ms / 1000)))
+            duration_secs = max(0, round(t.duration_ms / 1000))
         title_display = (t.title or t.source_path.stem).replace("\n", " ").strip()
         artist_display = (t.artist or "").replace("\n", " ").strip()
         extinf = f"#EXTINF:{duration_secs},{artist_display} - {title_display}"

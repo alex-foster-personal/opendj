@@ -62,7 +62,7 @@ import sqlite3
 import statistics
 import subprocess
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -214,7 +214,7 @@ def _parse_ts(raw: str) -> float:
 
 
 def _iso(epoch_s: float) -> str:
-    return datetime.fromtimestamp(epoch_s, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(epoch_s, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def select_window(samples: list[TrackSample], window: str,

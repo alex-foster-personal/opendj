@@ -22,6 +22,7 @@ import pytest
 from apps.shared import fd_anchored_walk
 from apps.shared import platform_paths as pp
 
+
 @pytest.mark.skipif(pp.IS_WINDOWS, reason="symlink replacement fixture is POSIX-only")
 def test_contained_asset_path_revalidates_share_containment_after_directory_replacement(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -161,9 +161,14 @@ def _folder_summary(outcome: FolderImportOutcome) -> str:
         if denied
         else ""
     )
+    rejected = (
+        f"; {outcome.files_rejected_unplayable} file(s) skipped as unplayable"
+        if outcome.files_rejected_unplayable
+        else ""
+    )
     return (
         f"imported {outcome.tracks_written} of {outcome.files_seen} "
-        f"readable audio files, none of them analysed{caveat}"
+        f"readable audio files, none of them analysed{rejected}{caveat}"
     )
 
 

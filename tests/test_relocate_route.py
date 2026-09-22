@@ -27,9 +27,9 @@ tests/test_reconcile_route.py.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterator
 
 import pytest
 from fastapi import HTTPException

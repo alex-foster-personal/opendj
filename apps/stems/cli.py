@@ -20,9 +20,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from apps.shared.paths import DATA_DIR
+from apps.stems.artifacts import (
+    DEFAULT_STEMS_DIR,
+    StemArtifactError,
+    StemBundleNotFoundError,
+    load_stem_bundle,
+)
 from apps.vocals.cli import (
     CATEGORY_MISSING,
     CATEGORY_TODO,
@@ -32,12 +38,6 @@ from apps.vocals.cli import (
     best_playlist_rank,
     load_tracks,
     order_todo,
-)
-from apps.stems.artifacts import (
-    DEFAULT_STEMS_DIR,
-    StemArtifactError,
-    StemBundleNotFoundError,
-    load_stem_bundle,
 )
 
 # ----- CFG -------------------------------------------------------------------
@@ -696,7 +696,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     from apps.vocals.errors import UnknownPlaylistError
 
     try:

@@ -117,7 +117,7 @@ def _run_prune(clone: Path, bin_dir: Path) -> subprocess.CompletedProcess:
 
 
 def test_unpushed_branch_survives_prune(tmp_path: Path) -> None:
-    origin, clone = _make_origin_and_clone(tmp_path)
+    _origin, clone = _make_origin_and_clone(tmp_path)
     wt_dir = tmp_path / "wt-never-pushed"
     branch = "af--never-pushed"
     _add_worktree_with_local_commit(clone, branch, wt_dir)
@@ -134,7 +134,7 @@ def test_unpushed_branch_survives_prune(tmp_path: Path) -> None:
 
 
 def test_merged_and_green_branch_is_pruned(tmp_path: Path) -> None:
-    origin, clone = _make_origin_and_clone(tmp_path)
+    _origin, clone = _make_origin_and_clone(tmp_path)
     wt_dir = tmp_path / "wt-merged-clean"
     branch = "af--merged-clean"
     _add_worktree_with_local_commit(clone, branch, wt_dir)
@@ -156,7 +156,7 @@ def test_merged_and_green_branch_is_pruned(tmp_path: Path) -> None:
 
 
 def test_gh_failure_reports_unknown_and_keeps(tmp_path: Path) -> None:
-    origin, clone = _make_origin_and_clone(tmp_path)
+    _origin, clone = _make_origin_and_clone(tmp_path)
     wt_dir = tmp_path / "wt-gh-down"
     branch = "af--gh-down"
     _add_worktree_with_local_commit(clone, branch, wt_dir)
