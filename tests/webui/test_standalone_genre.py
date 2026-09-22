@@ -1,7 +1,9 @@
 """STANDALONE-05: genre works without rekordbox and never fails silently.
 
-- [if] a folder-imported file carries a GENRE tag and no rekordbox is present [then] the wheel places it in a genre family, [else stop].
-- [if] the optional tags extra is not installed [then] the genre column names that reason, [else stop].
+- [if] a folder-imported GENRE tag exists and no rekordbox is present [then] the
+  wheel places it in a genre family, [else stop].
+- [if] the optional tags extra is not installed [then] the genre column names
+  that reason, [else stop].
 """
 from __future__ import annotations
 
@@ -24,11 +26,9 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     GENRE_REASON_TAGS_EXTRA_MISSING,
 )
 from apps.webui.server.sqlite_backend import SqliteBackend
-from tests.webui.library_wheel_fixtures import (
-    _make_state_db,
-    state_only_wheel_db,
-    wheel_dbs,
-)
+from tests.webui.library_wheel_fixtures import _make_state_db
+
+pytest_plugins = ("tests.webui.library_wheel_fixtures",)
 
 pytestmark = pytest.mark.requirement("STANDALONE-05")
 
@@ -138,7 +138,7 @@ def state_only_client(
 def test_wheel_route_serves_state_only_genre_family(
     state_only_client: TestClient,
 ) -> None:
-    """[if] HTTP wheel on state-only library [then] house family with zero unclassified, [else stop]."""
+    """[if] HTTP wheel on state-only library [then] house family, zero unclassified, [else stop]."""
     resp = state_only_client.get("/api/v1/library/wheel", params={"axis": "genre"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -227,7 +227,6 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
         from apps.adapters.rekordbox import config as rb_config
         from apps.shared._mutagen import HAS_MUTAGEN
         from apps.webui.server.app import create_app
-        from apps.webui.server.rb_vendor_pkg.track_rows import GENRE_REASON_TAGS_EXTRA_MISSING
         from apps.webui.server.sqlite_backend import SqliteBackend
 
         assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
@@ -249,9 +248,7 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
         assert resp.status_code == 200, resp.text
         row = resp.json()["items"][0]
         assert row["genre"] is None
-        assert row["genre_reason"] == GENRE_REASON_TAGS_EXTRA_MISSING
-        assert "tags" in row["genre_reason"]
-        assert "mutagen" in row["genre_reason"]
+        print("GENRE_REASON=" + str(row["genre_reason"]))
         """
     )
     completed = subprocess.run(
@@ -263,6 +260,14 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    reason_lines = [
+        line for line in completed.stdout.splitlines() if line.startswith("GENRE_REASON=")
+    ]
+    assert len(reason_lines) == 1, completed.stdout
+    reason = reason_lines[0].removeprefix("GENRE_REASON=")
+    assert reason == GENRE_REASON_TAGS_EXTRA_MISSING
+    assert "tags" in reason
+    assert "mutagen" in reason
 
 
 def _find_track(result: dict, stable_id: str) -> dict:
