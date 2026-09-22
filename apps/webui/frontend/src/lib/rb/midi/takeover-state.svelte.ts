@@ -1,5 +1,6 @@
 /** IOPIN-06 runtime bridge: reactive ghosts + local Preview preference. */
 
+import { untrack } from 'svelte';
 import type { MidiAction } from './midi-types';
 import {
 	AbsoluteTakeoverPolicy,
@@ -28,7 +29,20 @@ export const midiTakeoverUi: {
 
 function refreshGhost(functionId: string): void {
 	knownFunctions.add(functionId);
-	midiTakeoverUi.ghosts = { ...midiTakeoverUi.ghosts, [functionId]: policy.ghostForFunction(functionId) };
+	const next = policy.ghostForFunction(functionId);
+	// This function is called from the engine-owned takeover $effect. Reading
+	// then replacing the reactive ghost object there made that effect subscribe
+	// to its own write, spinning until Svelte's update-depth guard intervened.
+	// Ghost state is a display projection, never an input to policy decisions.
+	const current = untrack(() => midiTakeoverUi.ghosts[functionId] ?? null);
+	if (
+		current === next ||
+		(current !== null && next !== null && current.value === next.value && current.target === next.target)
+	) {
+		return;
+	}
+	const ghosts = untrack(() => midiTakeoverUi.ghosts);
+	midiTakeoverUi.ghosts = { ...ghosts, [functionId]: next };
 }
 
 export function setMidiTakeoverMode(mode: MidiTakeoverMode): void {

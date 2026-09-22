@@ -162,6 +162,11 @@ import {
 	previewCueSeek,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
+import {
+	midiTakeoverUi,
+	setMidiTakeoverMode
+} from '$lib/rb/midi/takeover-state.svelte';
+import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -243,6 +248,8 @@ export type PerformanceCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
+	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
+	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -394,6 +401,7 @@ export interface PerformanceState {
 		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 		selected_row: string | null;
 	};
+	midi_takeover: { mode: MidiTakeoverMode };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -1049,6 +1057,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, playlist_id: record.playlist_id };
 	}
+	if (type === 'midi_takeover_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'pickup' && record.mode !== 'jump') {
+			throw new TypeError(`midi takeover mode must be pickup or jump; got ${String(record.mode)}`);
+		}
+		return { type, mode: record.mode };
+	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
 		return { type };
@@ -1608,6 +1623,7 @@ export function queryPerformanceState(): PerformanceState {
 	const previewStats = previewCacheStats();
 	return {
 		version: 1,
+		midi_takeover: { mode: midiTakeoverUi.mode },
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
 		master_reason: getMasterReason(),
@@ -1787,6 +1803,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_volume' ||
 		command.type === 'master_mute' ||
 		command.type === 'browser_select_playlist' ||
+		command.type === 'midi_takeover_mode' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		command.type === 'head_delay_ms' ||
@@ -2235,6 +2252,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		await engine.rescueStopAllTogether(decks);
 		_rescueRestoredDecks = [];
+	} else if (command.type === 'midi_takeover_mode') {
+		setMidiTakeoverMode(command.mode);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

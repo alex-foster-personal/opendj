@@ -1365,6 +1365,36 @@ test('master mute and browser playlist selection are bus commands with queryable
 	}
 });
 
+test('IOPIN-06 takeover mode is a strict dispatcher command with a query-visible result', async () => {
+	// [if] MIDI settings choose Jump [then] IPC reports Jump, [else stop].
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const originalMode = ipc.queryPerformanceState().midi_takeover.mode;
+	try {
+		const jumped = await window.musicDjToolsPerformance.dispatch({
+			type: 'midi_takeover_mode',
+			mode: 'jump'
+		});
+		assert.equal(jumped.midi_takeover.mode, 'jump');
+		assert.equal(ipc.queryPerformanceState().midi_takeover.mode, 'jump');
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'midi_takeover_mode', mode: 'teleport' }),
+			/midi takeover mode must be pickup or jump/
+		);
+	} finally {
+		await ipc.dispatchPerformanceCommand({ type: 'midi_takeover_mode', mode: originalMode });
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', async () => {
+	// [if] a takeover radio changes [then] it dispatches the shared command, [else stop].
+	const source = await readFile('src/lib/components/rb/MidiPanel.svelte', 'utf8');
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_takeover_mode', mode \}\)/);
+	assert.doesNotMatch(source, /setMidiTakeoverMode\(/);
+});
+
 // ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --
 // The community-pins toggle in FeedbackWidget is inert (rb-inert, disabled),
 // but per AGENT-NATIVE PARITY every UI control still needs a matching

@@ -20,7 +20,8 @@
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
 	import { midiUi, requestMidiAccess, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
-	import { midiTakeoverUi, setMidiTakeoverMode } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverUi } from '$lib/rb/midi/takeover-state.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {
 		unsupported: 'not supported in this browser (WebMIDI needs Chrome or Edge)',
@@ -33,6 +34,10 @@
 		if (e.key === 'Escape' && midiUi.panelOpen) {
 			toggleMidiPanel();
 		}
+	}
+
+	function setTakeoverMode(mode: 'pickup' | 'jump'): void {
+		void runPerformanceCommandFromUi({ type: 'midi_takeover_mode', mode });
 	}
 </script>
 
@@ -86,7 +91,7 @@
 					type="radio"
 					name="midi-takeover"
 					checked={midiTakeoverUi.mode === 'pickup'}
-					onchange={() => setMidiTakeoverMode('pickup')}
+					onchange={() => setTakeoverMode('pickup')}
 				/>
 				Pickup (default)
 			</label>
@@ -95,7 +100,7 @@
 					type="radio"
 					name="midi-takeover"
 					checked={midiTakeoverUi.mode === 'jump'}
-					onchange={() => setMidiTakeoverMode('jump')}
+					onchange={() => setTakeoverMode('jump')}
 				/>
 				Jump (immediate override)
 			</label>
