@@ -1,4 +1,8 @@
-"""STANDALONE-05: genre works without rekordbox and never fails silently."""
+"""STANDALONE-05: genre works without rekordbox and never fails silently.
+
+- [if] a folder-imported file carries a GENRE tag and no rekordbox is present [then] the wheel places it in a genre family, [else stop].
+- [if] the optional tags extra is not installed [then] the genre column names that reason, [else stop].
+"""
 from __future__ import annotations
 
 import subprocess
@@ -20,7 +24,11 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     GENRE_REASON_TAGS_EXTRA_MISSING,
 )
 from apps.webui.server.sqlite_backend import SqliteBackend
-from tests.webui.library_wheel_fixtures import _make_state_db, wheel_dbs
+from tests.webui.library_wheel_fixtures import (
+    _make_state_db,
+    state_only_wheel_db,
+    wheel_dbs,
+)
 
 pytestmark = pytest.mark.requirement("STANDALONE-05")
 
