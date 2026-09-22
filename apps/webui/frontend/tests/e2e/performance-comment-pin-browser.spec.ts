@@ -3,14 +3,24 @@ import { expect, test } from '@playwright/test';
 test('Enter respects a directly focused deck target and playlist row', async ({ page }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	// The real library can legitimately sort a broken historical row first.
+	// Exercise the production filter before asking its deck button to decode:
+	// otherwise this focus test turns a missing source file into a false
+	// keyboard-routing failure.
+	const showBroken = page.getByRole('checkbox', { name: 'Show broken links', exact: true });
+	if (await showBroken.isChecked()) await showBroken.uncheck();
 	const row = page.getByTestId('track-row').first();
 	await expect(row).toBeVisible();
+	await expect(row).not.toHaveClass(/\bbroken\b/);
 	await row.click();
 	const stableId = await row.getAttribute('data-stable-id');
+	expect(stableId, 'the filtered real library must expose a loadable track').toBeTruthy();
 	const loadsBefore = await page.evaluate(() =>
 		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
 	);
-	const deckTarget = row.locator('button.deck-target').first();
+	const selectedRow = page.locator(`[data-testid="track-row"][data-stable-id="${stableId}"]`);
+	await expect(selectedRow).toBeVisible();
+	const deckTarget = selectedRow.locator('button.deck-target').first();
 	await deckTarget.focus();
 	await expect(deckTarget).toBeFocused();
 	await page.keyboard.press('Enter');
