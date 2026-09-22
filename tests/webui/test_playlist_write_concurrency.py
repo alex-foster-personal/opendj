@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient

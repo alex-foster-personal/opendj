@@ -13,10 +13,11 @@ without changing the public API.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 _DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "voice" / "settings.sqlite"
 

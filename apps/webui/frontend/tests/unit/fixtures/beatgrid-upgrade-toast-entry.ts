@@ -13,4 +13,4 @@
  */
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-upgrade';
 export { toasts } from '$lib/stores.svelte';
-export { analysisSourceState } from '$lib/rb/analysis-source.svelte';
+export { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';

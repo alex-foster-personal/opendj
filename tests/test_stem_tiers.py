@@ -130,7 +130,7 @@ def _farm_presets() -> dict:
         if not isinstance(target, ast.Name) or target.id != "PRESETS":
             continue
         presets = {}
-        for key, val in zip(node.value.keys, node.value.values):
+        for key, val in zip(node.value.keys, node.value.values, strict=False):
             args = [ast.literal_eval(a) for a in val.args]
             presets[ast.literal_eval(key)] = (args[1], args[2], args[3])
         return presets

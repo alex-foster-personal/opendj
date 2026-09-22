@@ -113,7 +113,11 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
-from scripts.review_coverage_carry import print_carry_proofs, verdicts_with_carry
+from scripts.review_coverage_carry import (
+    ReviewCarryInputs,
+    print_carry_proofs,
+    verdicts_with_carry,
+)
 from scripts.review_docs_only import is_docs_only, render_docs_only_pass
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
@@ -531,14 +535,16 @@ def triage(pr: str) -> int:
         verdicts_with_carry(
             pr,
             head_sha,
-            checks,
-            evidence,
-            reviews,
-            inline,
-            issue,
-            CHECKOUT_ROOT,
-            EXPECTED_REVIEWERS,
-            classify_reviewer,
+            ReviewCarryInputs(
+                checks=checks,
+                evidence=evidence,
+                reviews=reviews,
+                inline=inline,
+                issue_comments=issue,
+                repo_root=CHECKOUT_ROOT,
+                expected_reviewers=EXPECTED_REVIEWERS,
+                classify_reviewer=classify_reviewer,
+            ),
         ),
         EXPECTED_REVIEWERS,
     )

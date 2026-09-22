@@ -16,12 +16,12 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 _TIMEOUT_SECONDS = 1.5
 
 
-def _get_json(url: str, api_key: str) -> Optional[dict[str, Any]]:
+def _get_json(url: str, api_key: str) -> dict[str, Any] | None:
     request = urllib.request.Request(url, headers={"X-API-Key": api_key})
     try:
         with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as resp:
@@ -30,7 +30,7 @@ def _get_json(url: str, api_key: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def probe_syncthing_status() -> Optional[dict[str, Any]]:
+def probe_syncthing_status() -> dict[str, Any] | None:
     """Query a local Syncthing REST API for connection/folder state.
 
     Returns None when SYNCTHING_API_URL/SYNCTHING_API_KEY are unset or the

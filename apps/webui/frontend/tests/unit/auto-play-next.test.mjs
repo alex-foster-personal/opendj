@@ -5,6 +5,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let findRepetitiveLoopWindow;
 let loopWindowToMs;
+let planAutoPlayNextBeatLoop;
 let bassEntryMs;
 let approximateDropMs;
 let duckedLowEqKnob;
@@ -14,6 +15,7 @@ before(async () => {
 	({
 		findRepetitiveLoopWindow,
 		loopWindowToMs,
+		planAutoPlayNextBeatLoop,
 		bassEntryMs,
 		approximateDropMs,
 		duckedLowEqKnob,
@@ -43,10 +45,12 @@ function _flatWaveform(length, low, mid, high) {
 	};
 }
 
-test('findRepetitiveLoopWindow finds the later of two identical 8-beat windows', () => {
-	const waveform = _flatWaveform(1600, 0.4, 0.3, 0.2);
-	const window = findRepetitiveLoopWindow(waveform, BEATS_16, DURATION_SEC, DEFAULT_AUTO_PLAY_NEXT_CONFIG);
-	assert.deepEqual(window, { startBeatIdx: 8, endBeatIdx: 16 });
+test('findRepetitiveLoopWindow finds the later armable 8-beat window on a downbeat', () => {
+	const beats32 = _beats(32);
+	const durationSec = 8 * 0.469 * 4;
+	const waveform = _flatWaveform(3200, 0.4, 0.3, 0.2);
+	const window = findRepetitiveLoopWindow(waveform, beats32, durationSec, DEFAULT_AUTO_PLAY_NEXT_CONFIG);
+	assert.deepEqual(window, { startBeatIdx: 16, endBeatIdx: 24 });
 });
 
 test('findRepetitiveLoopWindow returns null when the two windows are dissimilar', () => {
@@ -114,4 +118,21 @@ test('duckedLowEqKnob cuts the requested fraction from flat (0.5)', () => {
 	assert.equal(duckedLowEqKnob(0.3), 0.35);
 	assert.equal(duckedLowEqKnob(1), 0);
 	assert.throws(() => duckedLowEqKnob(1.5), /fraction must be within 0..1/);
+});
+
+// PLAY-11 / issue #3532: downbeat-aligned beat_loop planner.
+test('planAutoPlayNextBeatLoop snaps a non-downbeat window start to the next n===1 beat', () => {
+	const beats = _beats(32);
+	const window = { startBeatIdx: 9, endBeatIdx: 17 };
+	const plan = planAutoPlayNextBeatLoop(beats, window, DURATION_SEC * 2);
+	assert.notEqual(plan, null);
+	assert.equal(plan.beats, 8);
+	assert.equal(plan.start_ms, beats[12].t * 1000);
+	assert.equal(beats[12].n, 1);
+});
+
+test('planAutoPlayNextBeatLoop returns null when no downbeat-aligned 8-beat span fits', () => {
+	const beats = _beats(16);
+	const plan = planAutoPlayNextBeatLoop(beats, { startBeatIdx: 13, endBeatIdx: 21 }, DURATION_SEC);
+	assert.equal(plan, null);
 });

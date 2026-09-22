@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from apps.shared.play_orders import DEFAULT_ORDER_NAME, load_play_order
@@ -46,7 +46,7 @@ class PlaylistSet:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _normalize_name(name: str) -> str:

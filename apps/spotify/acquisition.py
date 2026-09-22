@@ -6,10 +6,10 @@ the DJ tackles the clearest gaps first.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import quote_plus
 
 from .client import SpotifyPlaylist
@@ -108,7 +108,7 @@ def render_markdown(
     lines.append(f"- Snapshot: `{playlist.snapshot_id}`")
     lines.append(f"- Tracks to acquire: **{len(entries)}**")
     if include_timestamp:
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")
         lines.append(f"- Generated: {ts}")
     lines.append("")
 

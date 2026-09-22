@@ -34,7 +34,7 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, SCHEDULE_DECK_SERIAL_ANCHOR } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://beat-sync-ownership.example.test';
@@ -141,7 +141,8 @@ test('the re-anchor ramp re-reads ownership before every scheduled step', () => 
 			'\tdeck: DeckId,\n' +
 			'\tsyncAt: number,\n' +
 			'\tremainingSteps: readonly TempoRampStep[],\n' +
-			'\tmasterTempoEnabled: boolean\n' +
+			'\tmasterTempoEnabled: boolean,\n' +
+			'\tgeneration: number\n' +
 			'): Promise<void> {'
 	);
 	const loopAt = body.indexOf('for (const step of remainingSteps)');
@@ -199,6 +200,29 @@ test('the sync command re-reads follower ownership after its awaits, before plan
 	const planAt = body.indexOf('computeFollowerSyncPlan({');
 	assert.ok(ownedAt < planAt, 'ownership must be re-read before any follower is planned');
 	assert.match(body, /for \(const deck of owned\)/, 'planning must iterate the owned set');
+});
+
+test('pause and beat-sync disable bump re-anchor operation generation', () => {
+	const pauseBody = engineBlockAfter('pause(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	assert.match(pauseBody, /_bumpReanchorOperation\(deck\)/);
+
+	const beatSyncBody = engineBlockAfter('setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
+	const disableAt = beatSyncBody.indexOf('if (!enabled) {');
+	assert.notEqual(disableAt, -1);
+	assert.match(beatSyncBody.slice(disableAt, disableAt + 400), /_bumpReanchorOperation\(deck\)/);
+});
+
+test('the schedule ack path re-checks re-anchor generation after processor.schedule', () => {
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
+	assert.match(
+		body,
+		/reanchorGeneration !== undefined[\s\S]*_reanchorOperationIsCurrent\(deck, reanchorGeneration\)/
+	);
+});
+
+test('ramp pending clears only when the owner generation matches', () => {
+	const releaseBody = engineBlockAfter('function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {');
+	assert.match(releaseBody, /reanchorRampOwnerGeneration === generation/);
 });
 
 test('pressing MASTER moves the role before the re-anchor, and puts it back if the lock is refused', () => {

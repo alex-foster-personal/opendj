@@ -14,10 +14,10 @@ from __future__ import annotations
 import csv
 import io
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared.paths import DATA_DIR
 
@@ -71,7 +71,7 @@ def build_report_dir(
     timestamp: datetime | None = None,
 ) -> ReportPaths:
     base = Path(root) if root is not None else DATA_DIR / "spotify"
-    ts = (timestamp or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    ts = (timestamp or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     dest = base / f"import-{playlist_id}-{ts}"
     dest.mkdir(parents=True, exist_ok=True)
     return ReportPaths(
@@ -182,7 +182,7 @@ def write_summary_md(
     lines.append(f"- Snapshot: `{playlist.snapshot_id}`")
     lines.append(f"- Mode: **{'LIVE' if live else 'dry-run'}**")
     if include_timestamp:
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")
         lines.append(f"- Generated: {ts}")
     if runtime_seconds is not None:
         lines.append(f"- Runtime: {runtime_seconds:.2f}s")

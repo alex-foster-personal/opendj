@@ -26,6 +26,7 @@ Requirements (mini-PRD):
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import NamedTuple
 
 
@@ -112,16 +113,21 @@ def withheld_prompt_line(dropped: list[str]) -> str:
     return f"generated data withheld: {', '.join(dropped)}"
 
 
+@dataclass(frozen=True)
+class ReviewPromptConfig:
+    run_id: str
+    max_diff_bytes: int
+    max_findings: int
+    fence: Fence
+    withheld: list[str]
+
+
 def build_prompt(
     pr: str,
     sha: str,
     title: str,
     diff: str,
-    run_id: str,
-    max_diff_bytes: int,
-    max_findings: int,
-    fence: Fence,
-    withheld: list[str],
+    config: ReviewPromptConfig,
 ) -> tuple[str, bool]:
     """The prompt, and whether the diff had to be truncated to fit.
 
@@ -136,23 +142,27 @@ def build_prompt(
     shape: the failure would be a Claude review whose reply is fenced as
     Sol's, parsed by neither.
     """
-    truncated = len(diff.encode()) > max_diff_bytes
-    body = diff.encode()[:max_diff_bytes].decode(errors="ignore") if truncated else diff
+    truncated = len(diff.encode()) > config.max_diff_bytes
+    body = (
+        diff.encode()[: config.max_diff_bytes].decode(errors="ignore")
+        if truncated
+        else diff
+    )
     note = (
-        f"NOTE: the diff is truncated at {max_diff_bytes} bytes. Review what is here."
+        f"NOTE: the diff is truncated at {config.max_diff_bytes} bytes. Review what is here."
         if truncated
         else ""
     )
-    withheld_line = withheld_prompt_line(withheld)
+    withheld_line = withheld_prompt_line(config.withheld)
     return (
         PROMPT.format(
-            max_findings=max_findings,
+            max_findings=config.max_findings,
             pr=pr,
             sha=sha,
             title=title,
-            open=fence.open,
-            close=fence.close,
-            run_id=run_id,
+            open=config.fence.open,
+            close=config.fence.close,
+            run_id=config.run_id,
             placeholder=RUN_ID_PLACEHOLDER,
             truncation=note,
             withheld=withheld_line,

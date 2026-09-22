@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request
@@ -28,10 +28,10 @@ class PageViewIn(BaseModel):
     kind: Literal["page-view"]
     url: str = Field(min_length=1, max_length=4096)
     path: str = Field(min_length=1, max_length=2048)
-    referrer: Optional[str] = Field(default=None, max_length=4096)
+    referrer: str | None = Field(default=None, max_length=4096)
     client_timestamp: str = Field(max_length=128)
     user_agent: str = Field(max_length=2048)
-    language: Optional[str] = Field(default=None, max_length=128)
+    language: str | None = Field(default=None, max_length=128)
     secure_context: bool
     viewport_width: int = Field(ge=0, le=100_000)
     viewport_height: int = Field(ge=0, le=100_000)
@@ -45,7 +45,7 @@ class PageViewIn(BaseModel):
 
     @field_validator("url", "referrer")
     @classmethod
-    def urls_exclude_secrets(cls, value: Optional[str]) -> Optional[str]:
+    def urls_exclude_secrets(cls, value: str | None) -> str | None:
         if value is None:
             return None
         parsed = urlsplit(value)
@@ -84,7 +84,7 @@ class ClientEventOut(BaseModel):
 @router.post("", response_model=ClientEventOut, status_code=202)
 def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEventOut:
     event_id = uuid.uuid4().hex[:16]
-    received_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
     record = {

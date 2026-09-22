@@ -143,7 +143,7 @@ def test_tsaf_scan_array_counts_elements():
     blob = patch_cue_points(blob, cues_in)
     span = _tsaf_scan_array(blob, b"cuePoints")
     assert span is not None
-    start, end, count = span
+    start, _end, count = span
     assert count == 3
     assert blob[start] == 0x0B
 

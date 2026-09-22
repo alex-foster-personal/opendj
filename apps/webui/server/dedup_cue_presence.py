@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterator, Sequence
-
 import sqlite3
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
 
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import _open_ro

@@ -135,7 +135,7 @@ def ratio_envelope(
         )
     return [
         (i * hop_s, v / m if m > 1e-6 else 0.0)
-        for i, (v, m) in enumerate(zip(vocals_rms, mix_rms))
+        for i, (v, m) in enumerate(zip(vocals_rms, mix_rms, strict=False))
     ]
 
 

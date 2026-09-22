@@ -40,10 +40,11 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from apps.shared.telemetry.error_id import classify_message
 

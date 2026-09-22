@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -89,7 +89,7 @@ def _write_v5_database(path: Path) -> None:
         assert stamped == _OLD_BUILD_VERSION, (
             f"the restored dump stamps schema {stamped}, not v{_OLD_BUILD_VERSION}"
         )
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.execute(
             "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path,"
             " created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?, ?)",

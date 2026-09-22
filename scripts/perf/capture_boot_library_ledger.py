@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -42,35 +43,39 @@ def _span_is_scorable(span: dict[str, Any]) -> tuple[bool, str | None]:
     return True, None
 
 
+@dataclass(frozen=True)
+class _LedgerRowCtx:
+    sha: str
+    machine: str
+    capture_date: date
+    note: str
+    status: str | None = None
+    measured: bool | None = None
+
+
 def _base_row(
-    *,
     kpi: str,
     value: float | None,
     unit: str,
-    sha: str,
-    machine: str,
-    capture_date: date,
-    note: str,
-    status: str | None = None,
-    measured: bool | None = None,
+    ctx: _LedgerRowCtx,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
-        "date": capture_date.isoformat(),
+        "date": ctx.capture_date.isoformat(),
         "round": ROUND,
         "kpi": kpi,
         "value": value,
         "unit": unit,
-        "machine": machine,
+        "machine": ctx.machine,
         "source": SOURCE,
         "method": METHOD,
-        "sha": sha,
+        "sha": ctx.sha,
         "capture_id": CAPTURE_ID,
-        "note": note,
+        "note": ctx.note,
     }
-    if status is not None:
-        row["status"] = status
-    if measured is not None:
-        row["measured"] = measured
+    if ctx.status is not None:
+        row["status"] = ctx.status
+    if ctx.measured is not None:
+        row["measured"] = ctx.measured
     return row
 
 
@@ -86,45 +91,32 @@ def span_to_ledger_rows(
     if span is None:
         withheld_reason = classify_boot_library_withhold_reason(reason)
         note = f"UNKNOWN: {withheld_reason}"
-        return [
-            _base_row(
-                kpi="open_to_library_rows_ms",
-                value=None,
-                unit="ms",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            )
-        ]
-    ok, reject_reason = _span_is_scorable(span)
-    if not ok:
-        note = f"UNKNOWN: {reject_reason}"
-        return [
-            _base_row(
-                kpi="open_to_library_rows_ms",
-                value=None,
-                unit="ms",
-                sha=sha,
-                machine=machine,
-                capture_date=capture_date,
-                note=note,
-                status="withheld",
-                measured=False,
-            )
-        ]
-    duration_ms = float(span["duration_ms"])
-    return [
-        _base_row(
-            kpi="open_to_library_rows_ms",
-            value=duration_ms,
-            unit="ms",
+        ctx = _LedgerRowCtx(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
-            note="measured open-to-library-rows perf-span",
-            measured=True,
+            note=note,
+            status="withheld",
+            measured=False,
         )
-    ]
+        return [_base_row("open_to_library_rows_ms", None, "ms", ctx)]
+    ok, reject_reason = _span_is_scorable(span)
+    if not ok:
+        ctx = _LedgerRowCtx(
+            sha=sha,
+            machine=machine,
+            capture_date=capture_date,
+            note=f"UNKNOWN: {reject_reason}",
+            status="withheld",
+            measured=False,
+        )
+        return [_base_row("open_to_library_rows_ms", None, "ms", ctx)]
+    duration_ms = float(span["duration_ms"])
+    ctx = _LedgerRowCtx(
+        sha=sha,
+        machine=machine,
+        capture_date=capture_date,
+        note="measured open-to-library-rows perf-span",
+        measured=True,
+    )
+    return [_base_row("open_to_library_rows_ms", duration_ms, "ms", ctx)]

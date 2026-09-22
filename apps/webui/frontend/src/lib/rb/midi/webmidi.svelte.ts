@@ -47,6 +47,17 @@ import type {
 	MidiInputValue,
 	MidiSource
 } from '$lib/rb/midi/midi-types';
+import {
+	bindingKey as _bindingKey,
+	chKey as _chKey,
+	combine14,
+	decodeRelative,
+	decodeSource
+} from '$lib/rb/midi/decode';
+
+// The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
+// limit). Re-exported here so callers and tests keep their import path.
+export { combine14, decodeRelative, decodeSource };
 
 // -------------------------------------------------------------- constants
 
@@ -54,6 +65,12 @@ export const LEARN_LOG_CAP = 50;
 /** LED queue flush interval. Coalesces bursts (e.g. hot-cue bank refresh)
  * into one send per (ch,note) per window. */
 export const LED_THROTTLE_MS = 15;
+
+/** Wire status nibbles for the outbound queue. Queued writes are keyed by
+ * status so Note-On LED writes and CC meter writes share one coalescing
+ * flush without ever being confused for each other. */
+export const MIDI_STATUS_NOTE_ON = 0x90;
+export const MIDI_STATUS_CC = 0xb0;
 
 // ------------------------------------------------------------ rune stores
 
@@ -102,7 +119,19 @@ interface _ResolvedDevice {
 }
 
 let _access: MIDIAccess | null = null;
-const _deviceMaps: DeviceMap[] = [];
+/** Where a registered map came from. Precedence is TIERED, not array order:
+ * an 'installed' map (onboarded at runtime and persisted by the daemon) always
+ * beats the 'builtin' map compiled into the bundle, whichever registered
+ * first. Order-dependent precedence would make resolution depend on module
+ * evaluation order, which nothing here controls. */
+export type DeviceMapTier = 'builtin' | 'installed';
+
+export interface RegisteredDeviceMap {
+	map: DeviceMap;
+	tier: DeviceMapTier;
+}
+
+const _deviceMaps: RegisteredDeviceMap[] = [];
 const _resolved: Map<string, _ResolvedDevice> = new Map();
 let _actionHandler:
 	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void)
@@ -115,13 +144,7 @@ let _ledTimer: ReturnType<typeof setInterval> | null = null;
 
 // ---------------------------------------------------------------- _helpers
 
-function _bindingKey(shift: boolean, src: MidiSource): string {
-	return `${shift ? 1 : 0}|${src.ch}|${src.kind}|${src.id}`;
-}
 
-function _chKey(ch: number, id: number): string {
-	return `${ch}:${id}`;
-}
 
 function _pushLearnLog(entry: LearnLogEntry): void {
 	learnLog.unshift(entry);
@@ -153,7 +176,11 @@ function _buildIndex(map: DeviceMap): {
 }
 
 function _resolveMap(portName: string): DeviceMap | null {
-	for (const map of _deviceMaps) {
+	// Installed first, then builtin: see DeviceMapTier.
+	for (const { map } of [
+		..._deviceMaps.filter((e) => e.tier === 'installed'),
+		..._deviceMaps.filter((e) => e.tier === 'builtin')
+	]) {
 		if (new RegExp(map.nameMatch, 'i').test(portName)) return map;
 	}
 	return null;
@@ -189,11 +216,6 @@ function _rescanPorts(): void {
 		};
 		input.onmidimessage = (ev: MIDIMessageEvent) => _dispatch(device, ev);
 		_resolved.set(input.id, device);
-		if (map !== null) {
-			console.info(
-				`[midi] selected ${map.vendor} map ${map.nameMatch} on ${name}: ${map.bindings.length} bindings`
-			);
-		}
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (!seen.has(id)) {
@@ -210,28 +232,6 @@ function _rescanPorts(): void {
 		mapVendor: d.map?.vendor ?? null,
 		hasOutput: d.output !== null
 	}));
-}
-
-/** Decode a raw status byte triple into a MidiSource, or null for families
- * outside P0 scope (aftertouch, program change, realtime...). */
-export function decodeSource(status: number, data1: number): MidiSource | null {
-	const family = status & 0xf0;
-	const ch = (status & 0x0f) + 1;
-	if (family === 0x90 || family === 0x80) return { ch, kind: 'note', id: data1 };
-	if (family === 0xb0) return { ch, kind: 'cc', id: data1 };
-	if (family === 0xe0) return { ch, kind: 'pitchbend', id: 0 };
-	return null;
-}
-
-/** Two's-complement relative-encoder decode (spike 2a: CW ticks 0x01..0x1E,
- * CCW ticks 0x7F..0x62 -> signed delta). */
-export function decodeRelative(raw: number): number {
-	return raw <= 63 ? raw : raw - 128;
-}
-
-/** Combine a stored MSB with an arriving LSB into a 14-bit raw value. */
-export function combine14(msb: number, lsb: number): number {
-	return (msb << 7) | lsb;
 }
 
 function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: number): MidiInputValue {
@@ -282,11 +282,11 @@ function _emit(
 		return;
 	}
 	try {
-		// Q1: `log.ts` is `performance.now()` taken at message RECEIPT, at the
-		// top of `_dispatch`, so it is already the controller press stamp on
-		// the epoch the perf ring uses. A hardware press is the P0 gesture the
-		// latency program exists for; without this it produced plain schedule
-		// rows and the primary control surface went unmeasured.
+		// `log.ts` is `performance.now()` taken at message RECEIPT, at the top of
+		// `_dispatch`, so it is already the controller press stamp on the epoch
+		// the perf ring uses. A hardware press is the P0 gesture the latency
+		// program exists for; without this it filed a plain schedule row and the
+		// primary control surface went unmeasured.
 		_actionHandler(binding.action, value, device.input.id, log.ts);
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
@@ -392,21 +392,71 @@ function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
 
 // ------------------------------------------------------------- public API
 
-/** Register a device map. Call for each supported controller BEFORE
- * initMidi(); registering after init re-resolves connected devices. */
-export function registerDeviceMap(map: DeviceMap): void {
+/** Drop every cached resolution and rescan, so a registry change reaches the
+ * ports that are already plugged in. No-op before initMidi(). */
+function _reresolvePorts(): void {
+	if (_access === null) return;
+	for (const dev of _resolved.values()) dev.input.onmidimessage = null;
+	_resolved.clear();
+	_rescanPorts();
+}
+
+/** Validate a map's static shape WITHOUT registering it: the same fail-fast
+ * checks registerDeviceMap performs below, minus the registry-clash check
+ * (which depends on what is already registered). Exported so a caller
+ * committing a whole batch (loadInstalledDeviceMaps()) can prove every map
+ * in the batch is registrable BEFORE mutating the registry - the daemon's
+ * nameMatch deny list (routes/midi_maps.py) cannot invoke the browser's own
+ * regex engine, so it is necessarily partial, and a document it accepted can
+ * still fail here. */
+export function validateDeviceMap(map: DeviceMap): void {
 	if (map.nameMatch.length === 0) {
-		throw new Error(`registerDeviceMap(${map.vendor}): nameMatch must be non-empty`);
+		throw new Error(`validateDeviceMap(${map.vendor}): nameMatch must be non-empty`);
 	}
 	new RegExp(map.nameMatch); // fail fast on an invalid pattern
 	_buildIndex(map); // fail fast on duplicate/invalid bindings
-	_deviceMaps.push(map);
-	if (_access !== null) {
-		// Re-resolve: drop cached devices so unmapped ports can pick the map up.
-		for (const dev of _resolved.values()) dev.input.onmidimessage = null;
-		_resolved.clear();
-		_rescanPorts();
+}
+
+/** Register a device map. Call for each supported controller BEFORE
+ * initMidi(); registering after init re-resolves connected devices.
+ *
+ * tier defaults to 'builtin' (a map compiled into the bundle). Maps onboarded
+ * at runtime register as 'installed' and shadow their builtin twin. Two maps
+ * on the same nameMatch in the SAME tier is a wiring bug, not a shadow, so it
+ * throws. */
+export function registerDeviceMap(map: DeviceMap, tier: DeviceMapTier = 'builtin'): void {
+	validateDeviceMap(map);
+	const clash = _deviceMaps.find((e) => e.tier === tier && e.map.nameMatch === map.nameMatch);
+	if (clash !== undefined) {
+		throw new Error(
+			`registerDeviceMap(${map.vendor}): ${tier} map for '${map.nameMatch}' is already registered (${clash.map.vendor}); unregister it first`
+		);
 	}
+	_deviceMaps.push({ map, tier });
+	_reresolvePorts();
+}
+
+/** Remove one registered map. Returns false when nothing matched, so an
+ * uninstall that hit nothing is visible to the caller rather than a silent
+ * no-op. Removing an 'installed' map reveals the 'builtin' it shadowed. */
+export function unregisterDeviceMap(nameMatch: string, tier: DeviceMapTier): boolean {
+	const at = _deviceMaps.findIndex((e) => e.tier === tier && e.map.nameMatch === nameMatch);
+	if (at === -1) return false;
+	_deviceMaps.splice(at, 1);
+	_reresolvePorts();
+	return true;
+}
+
+/** Every registered map with its tier, for the UI to name what shadows what. */
+export function listDeviceMaps(): readonly RegisteredDeviceMap[] {
+	return [..._deviceMaps];
+}
+
+/** Which map a given WebMIDI port name would resolve to, tier precedence
+ * applied. Exposed for the onboarding UI, which has to answer 'is this
+ * controller already known' before a device is even connected. */
+export function resolveMapForPort(portName: string): DeviceMap | null {
+	return _resolveMap(portName);
 }
 
 /** Register THE action handler (the glue layer). Exactly one; a second
@@ -418,6 +468,13 @@ export function registerActionHandler(
 		throw new Error('registerActionHandler: a handler is already registered');
 	}
 	_actionHandler = handler;
+}
+
+/** Release THE action handler. The glue's teardown calls this: without it a
+ * detach left the handler registered, so re-attaching after a /performance
+ * remount threw 'a handler is already registered'. */
+export function unregisterActionHandler(): void {
+	_actionHandler = null;
 }
 
 /** Request WebMIDI access (sysex: false - spike 2a: neither controller
@@ -461,7 +518,41 @@ export function sendLed(deviceId: string, ch: number, note: number, velocity: nu
 		queue = new Map();
 		_ledQueues.set(deviceId, queue);
 	}
-	queue.set(_chKey(ch, note), velocity);
+	queue.set(`${MIDI_STATUS_NOTE_ON}:${_chKey(ch, note)}`, velocity);
+	if (_ledTimer === null) {
+		_ledTimer = setInterval(_flushLedQueues, LED_THROTTLE_MS);
+	}
+}
+
+/** Queue a Control Change write on the SAME coalescing queue as sendLed.
+ *
+ * Needed for hardware whose level meters are host-driven rather than
+ * self-metering: the DDJ-400's channel VU is a CC stream (Bn 02 hh, [PDF]
+ * p.2 M12), not a Note On, so it cannot ride the LedRule path. Coalescing
+ * matters MORE here than for LEDs - a meter pump emits continuously, and
+ * without it a 30 Hz pump on two channels would flood the port.
+ *
+ * Same fail-fast contract as sendLed: an out-of-range argument or a device
+ * with no output port throws rather than silently dropping the write. */
+export function sendCc(deviceId: string, ch: number, cc: number, value: number): void {
+	if (ch < 1 || ch > 16) throw new RangeError(`sendCc: ch must be 1..16, got ${ch}`);
+	if (cc < 0 || cc > 127) throw new RangeError(`sendCc: cc must be 0..127, got ${cc}`);
+	if (value < 0 || value > 127) {
+		throw new RangeError(`sendCc: value must be 0..127, got ${value}`);
+	}
+	const device = _resolved.get(deviceId);
+	if (device === undefined) {
+		throw new Error(`sendCc: unknown device id ${deviceId}`);
+	}
+	if (device.output === null) {
+		throw new Error(`sendCc: device ${device.input.name} has no MIDI output port`);
+	}
+	let queue = _ledQueues.get(deviceId);
+	if (queue === undefined) {
+		queue = new Map();
+		_ledQueues.set(deviceId, queue);
+	}
+	queue.set(`${MIDI_STATUS_CC}:${_chKey(ch, cc)}`, value);
 	if (_ledTimer === null) {
 		_ledTimer = setInterval(_flushLedQueues, LED_THROTTLE_MS);
 	}
@@ -477,11 +568,15 @@ function _flushLedQueues(): void {
 			_ledQueues.delete(deviceId);
 			continue;
 		}
-		for (const [key, velocity] of queue) {
-			const [chStr, noteStr] = key.split(':');
+		for (const [key, value] of queue) {
+			const [statusStr, chStr, idStr] = key.split(':');
+			const status = Number(statusStr);
 			const ch = Number(chStr);
-			const note = Number(noteStr);
-			device.output.send([0x90 | (ch - 1), note, velocity]);
+			const id = Number(idStr);
+			if (status !== MIDI_STATUS_NOTE_ON && status !== MIDI_STATUS_CC) {
+				throw new Error(`_flushLedQueues: unknown queued status 0x${status.toString(16)}`);
+			}
+			device.output.send([status | (ch - 1), id, value]);
 			any = true;
 		}
 		queue.clear();
@@ -495,6 +590,13 @@ function _flushLedQueues(): void {
 /** The resolved DeviceMap for a connected device (glue needs its LedRules). */
 export function getDeviceMap(deviceId: string): DeviceMap | null {
 	return _resolved.get(deviceId)?.map ?? null;
+}
+
+/** TEST-ONLY: is a handler currently registered? Lets the glue's teardown
+ * be asserted on the state webmidi actually holds, rather than only on the
+ * absence of a throw from a later attach. */
+export function _actionHandlerRegisteredForTests(): boolean {
+	return _actionHandler !== null;
 }
 
 /** TEST-ONLY: reset all module state between unit tests. */

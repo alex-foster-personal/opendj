@@ -483,8 +483,8 @@ export interface PerformanceBrowserAdapter {
  * ways would be a real cycle, not just a slack-ratchet number). A missing
  * registration fails loudly, same rationale as a missing browser adapter. */
 export interface AutoPlayNextController {
-	arm(): boolean;
-	cancel(): void;
+	arm(): Promise<boolean>;
+	cancel(): Promise<void>;
 }
 
 let _autoPlayNextController: AutoPlayNextController | null = null;
@@ -2138,12 +2138,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
 		}
-		_autoPlayNextController.arm();
+		await _autoPlayNextController.arm();
 	} else if (command.type === 'auto_play_next_cancel') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
 		}
-		_autoPlayNextController.cancel();
+		await _autoPlayNextController.cancel();
 	} else if (command.type === 'pins_show_other_users') {
 		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {

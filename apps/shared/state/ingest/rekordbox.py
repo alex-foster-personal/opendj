@@ -25,12 +25,12 @@ import os
 import sqlite3
 import sys
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
-from apps.shared import hashing
+from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
-from apps.shared import rekordbox_db
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
@@ -58,10 +58,10 @@ class _DryRunSilentBus:
     def __init__(self) -> None:
         self.suppressed: int = 0
 
-    def publish(self, event: Any) -> None:
+    def publish(self, _event: Any) -> None:
         self.suppressed += 1
 
-    def subscribe(self, kind: str, callback: Any) -> None:  # pragma: no cover
+    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
         # Dry-run lifetime is a single call; no-op is safe.
         return None
 
@@ -189,13 +189,13 @@ def _rb_modified_at(raw: Any) -> str:
     if raw is None:
         return _UNKNOWN_MODIFIED_AT
     if isinstance(raw, _dt.datetime):
-        dt = raw if raw.tzinfo is not None else raw.replace(tzinfo=_dt.timezone.utc)
-        return dt.astimezone(_dt.timezone.utc).isoformat()
+        dt = raw if raw.tzinfo is not None else raw.replace(tzinfo=_dt.UTC)
+        return dt.astimezone(_dt.UTC).isoformat()
     try:
         parsed = _dt.datetime.fromisoformat(str(raw))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=_dt.timezone.utc)
-        return parsed.astimezone(_dt.timezone.utc).isoformat()
+            parsed = parsed.replace(tzinfo=_dt.UTC)
+        return parsed.astimezone(_dt.UTC).isoformat()
     except ValueError:
         return _UNKNOWN_MODIFIED_AT
 
@@ -218,7 +218,7 @@ def ingest_rb(
 
     start = time.perf_counter()
     report = IngestReport(rb_path=str(rb_db_path), dry_run=dry_run)
-    now_fn = clock or (lambda: _dt.datetime.now(_dt.timezone.utc))
+    now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
 
     rb_db = Rekordbox6Database(path=str(rb_db_path), unlock=False)
     # [I2] Use the public ``raw_conn`` accessor so this outer SAVEPOINT
@@ -404,10 +404,10 @@ def ingest_rb(
 
 
 def _write_csv_artefact(
-    conn: sqlite3.Connection, out_dir: Path, report: IngestReport
+    conn: sqlite3.Connection, out_dir: Path, _report: IngestReport
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d-%H%M%S")
     out_path = out_dir / f"ingest-rekordbox-{stamp}.csv"
     with out_path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)

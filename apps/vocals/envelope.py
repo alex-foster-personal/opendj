@@ -53,7 +53,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 ENVELOPE_SCHEMA: int = 1
 ENVELOPE_DTYPE: str = "float16"
@@ -125,7 +125,7 @@ def write_envelope(
     return path
 
 
-def read_envelope(path: Path, expect_signature: Optional[dict[str, int]] = None):
+def read_envelope(path: Path, expect_signature: dict[str, int] | None = None):
     """Read one sidecar, or None if it was never written.
 
     None means "entry predates envelope persistence", which is the normal state

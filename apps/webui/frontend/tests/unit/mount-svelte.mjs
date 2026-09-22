@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { compile } from 'svelte/compiler';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-let moduleSequence = 0;
 
 /**
  * Compile every `.svelte` component through the REAL Svelte compiler
@@ -67,9 +68,8 @@ export async function bundleSvelteEntry(entrySource) {
 	globalThis.__musicDjToolsTestState = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-	const source = Buffer.from(result.outputFiles[0].text).toString('base64');
-	moduleSequence += 1;
-	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
+	// A temp file, not a data: URL: see import-bundled-source.mjs.
+	return importBundledSource(result.outputFiles[0].text, 'svelte-entry');
 }
 
 /** Render a real Svelte SSR component to its HTML body string. */

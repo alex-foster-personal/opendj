@@ -4,11 +4,10 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from apps.shared.state.order_key import between
 from apps.shared.state.writer import StateWriter
-
-from typing import TYPE_CHECKING
 
 from .backend import BackendError, NotFoundError
 from .playlist_dupes import new_stable_ids

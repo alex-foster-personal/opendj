@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 TransferDirection = Literal["upload", "download"]
 

@@ -159,8 +159,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts import quality_latency
-    from scripts import shell_construct_lint
+    from scripts import quality_latency, shell_construct_lint
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None
@@ -228,6 +227,18 @@ class CFG:
         "**/yarn.lock",
         "**/Cargo.lock",
         "**/uv.lock",
+    )
+    # Generated contract artifacts, ignored for duplication on the same
+    # argument as the lockfiles above: nobody writes them, `just pre-push` and
+    # CI do, and every endpoint in them repeats the same 422 response block by
+    # construction. Sat 19 Sep 2026 made the cost concrete -- main's committed
+    # openapi.json had been truncated from 286 paths to 134, breaking contract
+    # drift on every PR, and restoring the 150 missing endpoints moved
+    # duplication.percent from 0.31 to 0.39. The gate would have blocked the
+    # repair of its own trunk. Scored without these two: 0.21.
+    GENERATED_CONTRACT_GLOBS: tuple[str, ...] = (
+        "**/webui/openapi.json",
+        "**/src/lib/api-types.ts",
     )
     # Paths excluded from size/complexity scoring: vendored, not ours.
     #
@@ -1135,7 +1146,7 @@ def _jscpd_duplication(apps_root: Path) -> Metric:
             CFG.JSCPD,
             "--reporters", "json", "--output", str(jscpd_dir), "--silent",
             "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
-            "--ignore", ",".join(CFG.LOCKFILE_GLOBS),
+            "--ignore", ",".join(CFG.LOCKFILE_GLOBS + CFG.GENERATED_CONTRACT_GLOBS),
             str(apps_root),
             allow_fail=True,
         )

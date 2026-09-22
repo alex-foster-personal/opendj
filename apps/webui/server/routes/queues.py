@@ -15,7 +15,7 @@ _VALID_KINDS = {"dedup", "bad_beatgrid", "auto_cue"}
 @router.get("/{kind}", response_model=QueueOut)
 def get_queue(
     kind: str,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> QueueOut:
     if kind not in _VALID_KINDS:
         raise HTTPException(

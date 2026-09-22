@@ -22,7 +22,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 import httpx
 
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
-from apps.opendj_cli.engine_status import build_engine_status
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     EngineClient,
@@ -31,6 +30,7 @@ from apps.opendj_cli.client import (
     OrderRejected,
     OrderTimedOut,
 )
+from apps.opendj_cli.engine_status import build_engine_status
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,

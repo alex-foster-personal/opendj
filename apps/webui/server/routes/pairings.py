@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 
@@ -28,10 +27,10 @@ def _to_out(p: Pairing) -> PairingOut:
 
 @router.get("", response_model=list[PairingOut])
 def list_pairings(
-    from_stable_id: Optional[str] = Query(None),
-    to_stable_id: Optional[str] = Query(None),
-    source: Optional[str] = Query(None),
-    backend: StateBackend = Depends(get_read_state),
+    from_stable_id: str | None = Query(None),
+    to_stable_id: str | None = Query(None),
+    source: str | None = Query(None),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[PairingOut]:
     items = backend.list_pairings(
         from_stable_id=from_stable_id, to_stable_id=to_stable_id, source=source,
@@ -42,9 +41,9 @@ def list_pairings(
 @router.post("", response_model=PairingOut, status_code=status.HTTP_201_CREATED)
 def create_pairing(
     body: PairingCreate,
-    backend: StateBackend = Depends(get_write_state),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> PairingOut:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     p = Pairing(
         pairing_id=str(uuid.uuid4()),
         from_stable_id=body.from_stable_id, to_stable_id=body.to_stable_id,
@@ -60,8 +59,8 @@ def create_pairing(
 @router.delete("/{pairing_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_pairing(
     pairing_id: str,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    backend: StateBackend = Depends(get_write_state),
+    if_match: str | None = Header(None, alias="If-Match"),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ):
     if not if_match:
         return precondition_required(
