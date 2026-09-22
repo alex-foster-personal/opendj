@@ -37,9 +37,10 @@ import {
 	crossCorrelateLagMs,
 	cueLatencyCaptureMs,
 	cueLatencyClickTrain
+	,capturedSignalLevel
 } from '$lib/player/cue-latency';
 import type { CueCalibrationRecord } from '$lib/player/mixer-config';
-import type { CueAlignStep, HeadphoneCalibrationState } from '$lib/rb/mixer-types';
+import type { CueAlignStep, CueCalibrationFailure, HeadphoneCalibrationState } from '$lib/rb/mixer-types';
 
 export { HEADPHONE_ALIGNMENT_MODES };
 
@@ -205,14 +206,18 @@ class _Aborted extends Error {
 
 /** A measurement that failed its peak check. Carries the bus for the copy. */
 class _MicCouldNotHear extends Error {
-	constructor(bus: CueAlignBus, peak: number) {
+	readonly failure: CueCalibrationFailure;
+	constructor(bus: CueAlignBus, peakNormalized: number, inputPeak: number, inputRms: number) {
 		const what = bus === 'master' ? 'speakers' : 'headphones';
-		const fix =
-			bus === 'master'
-				? 'Turn the room up or move the laptop closer.'
-				: 'Hold one ear cup against the laptop microphone.';
-		super(`The mic could not hear the ${what} (peak ${peak.toFixed(2)} < ${CUE_LATENCY_PEAK_MIN}). ${fix}`);
-		this.name = 'CueAlignMicCouldNotHear';
+		if (inputPeak === 0) {
+			super(`No input signal was captured while checking the ${what} (input peak 0.000). Check microphone permission and the selected input route; prior delay was kept.`);
+			this.name = 'CueAlignNoInputSignal';
+			this.failure = 'no_input_signal';
+			return;
+		}
+		super(`The captured input did not correlate with the ${what} probe (correlation ${peakNormalized.toFixed(2)} < ${CUE_LATENCY_PEAK_MIN}; input peak ${inputPeak.toFixed(3)}, rms ${inputRms.toFixed(3)}). Check the selected input and route; prior delay was kept.`);
+		this.name = 'CueAlignWeakCorrelation';
+		this.failure = 'weak_correlation';
 	}
 }
 
@@ -247,6 +252,21 @@ export function createCueAlignController(
 		if (abortController?.signal.aborted === true) throw new _Aborted();
 	}
 
+	function _resetDiagnostics(): void {
+		calibration.diagnostics = {
+			probe: 'chirp',
+			alternate_probe: 'unavailable',
+			failure: null,
+			master_measurements_ms: [],
+			cue_measurements_ms: [],
+			spread_ms: null
+		};
+	}
+
+	function _recordFailure(failure: CueCalibrationFailure): void {
+		calibration.diagnostics.failure = failure;
+	}
+
 	async function _measure(bus: CueAlignBus, mic: MicHandle): Promise<number> {
 		_throwIfAborted();
 		const signal = (abortController as AbortController).signal;
@@ -268,9 +288,17 @@ export function createCueAlignController(
 		await effects.playTrain(bus, reference, sampleRate, signal);
 		const captured = await recording;
 		_throwIfAborted();
+		const input = capturedSignalLevel(captured);
 		const { lagMs, peakNormalized } = crossCorrelateLagMs(reference, captured, sampleRate);
 		if (!Number.isFinite(peakNormalized) || peakNormalized < CUE_LATENCY_PEAK_MIN) {
-			throw new _MicCouldNotHear(bus, Number.isFinite(peakNormalized) ? peakNormalized : 0);
+			const error = new _MicCouldNotHear(
+				bus,
+				Number.isFinite(peakNormalized) ? peakNormalized : 0,
+				input.peak,
+				input.rms
+			);
+			_recordFailure(error.failure);
+			throw error;
 		}
 		return Math.round(lagMs);
 	}
@@ -290,6 +318,7 @@ export function createCueAlignController(
 		const cue: number[] = [];
 		_setStep('mic_check_master');
 		master.push(await _measure('master', mic));
+		calibration.diagnostics.master_measurements_ms = [...master];
 		calibration.master_latency_ms = master[0];
 		_setStep('mic_check_cue');
 		if (interactive) {
@@ -297,15 +326,20 @@ export function createCueAlignController(
 			_throwIfAborted();
 		}
 		cue.push(await _measure('cue', mic));
+		calibration.diagnostics.cue_measurements_ms = [...cue];
 		calibration.cue_latency_ms = cue[0];
 		_setStep('measuring');
 		for (let run = 1; run < CUE_ALIGN_RUNS; run += 1) {
 			master.push(await _measure('master', mic));
+			calibration.diagnostics.master_measurements_ms = [...master];
 			cue.push(await _measure('cue', mic));
+			calibration.diagnostics.cue_measurements_ms = [...cue];
 		}
 		const spread = Math.max(spreadMs(master), spreadMs(cue));
+		calibration.diagnostics.spread_ms = spread;
 		if (spread > CUE_ALIGN_MAX_SPREAD_MS) {
-			throw new Error(`measurement unstable (spread ${spread} ms), try again with less room noise`);
+			_recordFailure('inconsistent_measurements');
+			throw new Error(`inconsistent measurements (spread ${spread} ms); prior delay was kept. Check the selected routes and capture, then run again.`);
 		}
 		const masterMs = median3(master);
 		const cueMs = median3(cue);
@@ -327,6 +361,7 @@ export function createCueAlignController(
 		calibration.cue_latency_ms = cueMs;
 		calibration.offset_ms = offsetMs;
 		calibration.error = null;
+		calibration.diagnostics.failure = null;
 		_setStep('applied');
 	}
 
@@ -339,6 +374,7 @@ export function createCueAlignController(
 		calibration.master_latency_ms = null;
 		calibration.cue_latency_ms = null;
 		calibration.offset_ms = null;
+		_resetDiagnostics();
 		_setStep('mic_access');
 		let mic: MicHandle | null = null;
 		let paused: DeckId[] = [];
@@ -357,6 +393,9 @@ export function createCueAlignController(
 				_setStep('idle');
 			} else {
 				calibration.error = error instanceof Error ? error.message : String(error);
+				if (calibration.diagnostics.failure === null) {
+					_recordFailure(calibration.step === 'mic_access' ? 'microphone_access' : 'route_or_operation');
+				}
 				_setStep('failed');
 			}
 		} finally {

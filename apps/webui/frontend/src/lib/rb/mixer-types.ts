@@ -66,6 +66,29 @@ export type CueAlignStep =
 	| 'applied'
 	| 'failed';
 
+/** One production calibration probe.  The historic implementation only has a
+ * chirp train; `alternate_probe` makes that absence visible instead of
+ * offering a no-op selector. */
+export type CueCalibrationProbe = 'chirp';
+export type CueCalibrationFailure =
+	| 'no_input_signal'
+	| 'weak_correlation'
+	| 'inconsistent_measurements'
+	| 'microphone_access'
+	| 'route_or_operation';
+
+/** Bounded, serializable evidence from the current/last calibration run.
+ * These are measured summaries, never a claim that sound reached a physical
+ * speaker or headphone. */
+export interface HeadphoneCalibrationDiagnostics {
+	probe: CueCalibrationProbe;
+	alternate_probe: 'unavailable';
+	failure: CueCalibrationFailure | null;
+	master_measurements_ms: number[];
+	cue_measurements_ms: number[];
+	spread_ms: number | null;
+}
+
 /** Live calibration progress, mirrored as `GET /headphones.calibration`.
  * Seeded from the persisted last calibration on load so the offset survives a
  * reload; the latencies are null until a run has measured them. */
@@ -76,6 +99,32 @@ export interface HeadphoneCalibrationState {
 	/** `cue_latency_ms - master_latency_ms`: positive means the phones are behind the room. */
 	offset_ms: number | null;
 	error: string | null;
+	diagnostics: HeadphoneCalibrationDiagnostics;
+}
+
+export type HeadphoneSignalState = 'inactive' | 'unavailable' | 'measured';
+/** A measured internal app bus or captured microphone block.  It explicitly
+ * cannot prove physical acoustic output. */
+export interface HeadphoneSignal {
+	state: HeadphoneSignalState;
+	rms: number | null;
+	peak: number | null;
+	measured_at: string | null;
+	source: 'application_bus' | 'captured_input';
+	physical_output_proven: false;
+}
+
+export interface HeadphoneSignals {
+	master: HeadphoneSignal;
+	cue: HeadphoneSignal;
+	input: HeadphoneSignal;
+}
+
+/** Route capability is kept apart from CUE graph activity: an active CUE
+ * stream does not establish that a separate MAIN sink was accepted. */
+export interface HeadphoneRouteHealth {
+	state: 'default' | 'selected' | 'unsupported' | 'failed';
+	selected: boolean;
 }
 
 /** Serializable headphone cue-bus read model. `active` means the monitor
@@ -98,6 +147,9 @@ export interface HeadphoneState {
 	master_delay_ms: number;
 	/** CUEOUT-14: live calibration progress and the last measured offset. */
 	calibration: HeadphoneCalibrationState;
+	/** Actual analyser/capture observations. Null levels are unavailable or inactive, never animated estimates. */
+	signals: HeadphoneSignals;
+	routes: { master: HeadphoneRouteHealth; cue: HeadphoneRouteHealth };
 	outputs: HeadphoneOutputDevice[];
 	inputs: HeadphoneOutputDevice[];
 	/** Room / MASTER sink (`AudioContext.setSinkId`). Null follows the OS default. */
