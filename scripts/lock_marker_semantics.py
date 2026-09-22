@@ -19,6 +19,11 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     python_full_version >= '3.11.dev0'         -> python_full_version >= '3.11'
     python_full_version < '3.11.post1'         -> python_full_version < '3.11'
     python_full_version ~= '3.11.1'            -> >= '3.11.1' and < '3.12'
+    python_full_version ~= '3.10.0'            -> python_full_version == '3.10.*'
+    python_full_version ~= '3.10.0.0'          -> >= '3.10' and < '3.10.1'
+    python_full_version ~= '3.10'              -> >= '3.10' and < '4'
+    python_full_version ~= '3'                 -> (marker dropped entirely)
+    os_name == 'a@b'                           -> kept verbatim (`@` in a literal)
     python_full_version == '3.11.0'            -> python_full_version == '3.11'
     python_full_version == '3.11.*'            -> python_full_version == '3.11.*'
     python_full_version == '3.11.0.*'          -> >= '3.11.0' and < '3.11.1'
@@ -179,8 +184,12 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
         return hit if op == "==" else not hit
     left, right = _version_key(lhs), _version_key(rhs)
     if op == "~=":
-        prefix_release = right[1][:-1] if len(right[1]) > 1 else right[1]
-        return left >= right and left[1][: len(prefix_release)] == prefix_release
+        # The prefix keeps its WIDTH too: `~= '3.10.0'` is `== '3.10.*'` (uv records it
+        # so), not `>= '3.10' and < '4'` as the trailing-zero-stripping key would say.
+        prefix = _compatible_prefix(rhs)
+        candidate = _release_parts(lhs)
+        candidate += (0,) * (len(prefix) - len(candidate))
+        return left >= right and candidate[: len(prefix)] == prefix
     compare = {
         "==": left == right,
         "!=": left != right,
@@ -192,6 +201,22 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
     if op not in compare:
         raise Unknown(f"unsupported version operator {op!r}")
     return compare[op]
+
+
+def _compatible_prefix(release: str) -> tuple[int, ...]:
+    """The prefix `~= release` pins, at the literal's own width: `3.10.0` -> (3, 10).
+    A one-component literal has no prefix (PEP 440 forbids it; uv drops the marker,
+    a rewrite not modeled), so it is UNKNOWN rather than a verdict."""
+    parts = _release_parts(release)
+    if len(parts) < 2:
+        raise Unknown(f"compatible release {release!r} needs at least two components")
+    return parts[:-1]
+
+
+def _compatible_upper(release: str) -> str:
+    """The first release `~= release` excludes, spelled at the prefix's width."""
+    prefix = _compatible_prefix(release)
+    return ".".join(map(str, (*prefix[:-1], prefix[-1] + 1)))
 
 
 # ----- PEP 508 marker grammar --------------------------------------------------
@@ -370,6 +395,9 @@ class _Literals:
         else:
             raise Unknown(f"marker compares two literals: {node!r}")
         self.values.setdefault(var, set()).add(literal)
+        if op == "~=" and var in _VERSION_VARS:
+            # The range's upper bound is a boundary the literal alone does not name.
+            self.values[var].add(_compatible_upper(release_literal(literal)))
         if op in ("in", "not in"):
             self.members.setdefault(var, set()).add(literal)
         if op in _ORDER_OPS:
