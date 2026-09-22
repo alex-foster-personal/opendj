@@ -33,6 +33,12 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     sys_platform < 'linux' or sys_platform == 'linux'   -> sys_platform <= 'linux'
     sys_platform < 'win32' or sys_platform >= 'win32'   -> (marker dropped: always true)
     a and b / (a or b) and c                   -> re-associated, operands re-ordered
+    os_name != sys_platform                    -> (marker dropped entirely)
+    os_name in sys_platform                    -> (marker dropped entirely)
+    python_version >= '3.10' and os_name != sys_platform -> python_full_version >= '3.10'
+    os_name != sys_platform or sys_platform == 'win32'   -> sys_platform == 'win32'
+    (os_name != sys_platform) and python_version < '3.99' -> python_full_version < '3.99'
+    'posix' == os_name                         -> os_name == 'posix'
 
 So uv's marker algebra is RELEASE-ONLY: every version literal is cut to its
 release segment before the comparison is stored, whatever the operator, which
@@ -44,7 +50,13 @@ cut to their release, environments are probed over release versions only, and
 a local version literal, whose rewrite is not modeled (uv dropped the marker),
 is UNKNOWN rather than a verdict.
 
-The last three rows show that uv orders plain STRINGS lexically, as ranges:
+A comparison between two VARIABLES (`os_name != sys_platform`) is ERASED from
+whatever it sits in: it leaves an `and` and an `or` alike (so it is not a truth
+value, which would have made the `or` always true), and a marker made only of
+such clauses is dropped. `_erase_variable_pairs` mirrors that before anything
+is evaluated.
+
+The string-ordering rows show that uv orders plain STRINGS lexically, as ranges:
 that is the semantics mirrored here for `<`, `<=`, `>` and `>=` on a
 non-version variable. (packaging 26 evaluates `<` and `>` on strings as
 always false and `<=`, `>=` as equality, per the 2025 dependency-specifier
@@ -352,9 +364,9 @@ class _Literals:
                 )
             var, literal = rhs[1], lhs[1][1:-1]
         elif lhs[0] == "word" and rhs[0] == "word":
-            self.values.setdefault(lhs[1], set())
-            self.values.setdefault(rhs[1], set())
-            return
+            # Erased by _erase_variable_pairs before any grid is built; reaching
+            # here is a programming error, reported as UNKNOWN rather than a verdict.
+            raise Unknown(f"variable-to-variable comparison survived erasure: {node!r}")
         else:
             raise Unknown(f"marker compares two literals: {node!r}")
         self.values.setdefault(var, set()).add(literal)
@@ -473,4 +485,27 @@ def markers_equivalent(marker_a: tuple[str, ...], marker_b: tuple[str, ...]) -> 
 
 def _parse_clauses(clauses: tuple[str, ...]) -> tuple:
     text = " and ".join(clause for clause in clauses if clause.strip())
-    return _MarkerParser(text).parse() if text else ("true",)
+    if not text:
+        return ("true",)
+    return _erase_variable_pairs(_MarkerParser(text).parse()) or ("true",)
+
+
+def _erase_variable_pairs(node: tuple) -> tuple | None:
+    """uv erases a comparison between two variables from the marker it records
+    (module docstring: `os_name != sys_platform` leaves both an `and` and an `or`,
+    and a marker made only of such clauses is dropped). Mirror it on the parsed
+    tree: None is an erased subtree, which its parent then skips."""
+    kind = node[0]
+    if kind == "true":
+        return node
+    if kind in ("or", "and"):
+        left, right = _erase_variable_pairs(node[1]), _erase_variable_pairs(node[2])
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return (kind, left, right)
+    _, lhs, _op, rhs = node
+    if lhs[0] == "word" and rhs[0] == "word":
+        return None
+    return node

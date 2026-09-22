@@ -245,6 +245,17 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
     assert code == EXIT_OK, message
 
 
+def _compares_variables(marker: str) -> bool:
+    """Whether any clause compares two marker VARIABLES (`os_name != sys_platform`)."""
+
+    def walk(node: tuple) -> bool:
+        if node[0] in ("and", "or"):
+            return walk(node[1]) or walk(node[2])
+        return node[0] == "cmp" and node[1][0] == "word" and node[3][0] == "word"
+
+    return walk(_MarkerParser(marker).parse())
+
+
 def _orders_a_string(marker: str) -> bool:
     ordered = re.findall(r"([a-z_]+)\s*(?:<=|>=|<|>)\s*'", marker)
     return any(
@@ -321,6 +332,25 @@ def _as_uv_stores_it(marker: str) -> str:
         ("python_full_version == '3.11.0.*'", "python_full_version == '3.11.*'", False),
         ("python_version <= '3.11rc1'", "python_full_version < '3.12'", True),
         ("implementation_version < '3.11rc1'", "implementation_version < '3.11'", True),
+        # uv ERASES a comparison between two variables from an `and` and from an
+        # `or` alike, and drops a marker made only of them (measured, same table;
+        # Codex P2 on #3763, round 10). Erased, not true: `X or <erased>` is X.
+        ("os_name != sys_platform", "", True),
+        ("os_name in sys_platform", "", True),
+        (
+            "python_version >= '3.10' and os_name != sys_platform",
+            "python_full_version >= '3.10'",
+            True,
+        ),
+        ("os_name != sys_platform or sys_platform == 'win32'", "sys_platform == 'win32'", True),
+        (
+            "(os_name != sys_platform) and python_version < '3.99'",
+            "python_full_version < '3.99'",
+            True,
+        ),
+        ("os_name != sys_platform or sys_platform == 'win32'", "", False),
+        ("os_name != sys_platform and sys_platform == 'win32'", "", False),
+        ("'posix' == os_name", "os_name == 'posix'", True),
         # uv drops an epoch too (measured, same table).
         ("python_full_version <= '1!3'", "python_full_version <= '3'", True),
         ("python_full_version >= '1!3.11'", "python_full_version >= '3.11'", True),
@@ -354,6 +384,12 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
     from packaging.markers import Marker
 
     assert markers_equivalent((spelled,), (recorded,)) is same
+    if not spelled or not recorded or _compares_variables(spelled) or _compares_variables(recorded):
+        # uv ERASES a variable-to-variable comparison when it records a marker; packaging
+        # evaluates it against the real environment, so it is not an oracle for that
+        # rewrite (nor for an empty marker, which it cannot parse). The erasure has its
+        # own check()-level test below.
+        return
     if _orders_a_string(spelled) or _orders_a_string(recorded):
         # packaging 26 evaluates `<`/`>` on strings as always false and `<=`/`>=` as
         # equality; uv orders them lexically (measured table in the module docstring),
@@ -493,6 +529,39 @@ def test_a_quoted_and_or_inside_a_marker_literal_is_one_clause(tmp_path: Path) -
         # CONTROL: a different literal is still stale.
         code, message = _run(tmp_path, pyproject, lock.replace(f"'{literal}'", "'posix'"))
         assert code == EXIT_STALE, message
+
+
+def test_a_variable_to_variable_marker_matches_the_lock_uv_writes_without_it(
+    tmp_path: Path,
+) -> None:
+    """if pyproject.toml says `os_name != sys_platform` and uv erased the clause from
+    the record (which it does, in a conjunction and a disjunction alike) then 0; a clause
+    uv keeps is still compared (Codex P2 on #3763, round 10)"""
+    quartz = "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\""
+    recorded_line = "marker = \"sys_platform == 'darwin'\""
+
+    def pair(spelled: str, recorded: str) -> tuple[str, str]:
+        pyproject = PYPROJECT.replace(
+            quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {spelled}")
+        )
+        assert pyproject != PYPROJECT
+        return pyproject, LOCK.replace(recorded_line, "marker = " + json.dumps(recorded))
+
+    for spelled, recorded in (
+        ("os_name != sys_platform", ""),
+        ("sys_platform == 'darwin' and os_name != sys_platform", "sys_platform == 'darwin'"),
+        ("os_name != sys_platform or sys_platform == 'darwin'", "sys_platform == 'darwin'"),
+    ):
+        code, message = _run(tmp_path, *pair(spelled, recorded))
+        assert code == EXIT_OK, (spelled, message)
+    # CONTROL: the surviving clause is still compared, so a lock recorded WITHOUT it
+    # (or with another platform) is stale.
+    for spelled, recorded in (
+        ("sys_platform == 'darwin' and os_name != sys_platform", ""),
+        ("os_name != sys_platform or sys_platform == 'darwin'", "sys_platform == 'linux'"),
+    ):
+        code, message = _run(tmp_path, *pair(spelled, recorded))
+        assert code == EXIT_STALE, (spelled, message)
 
 
 def _with_marker(pyproject_marker: str, lock_marker: str) -> tuple[str, str]:
