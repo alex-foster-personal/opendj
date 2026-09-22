@@ -31,6 +31,8 @@ test('installed-shell MIDI is a bounded CoreMIDI transport into the shared runti
 	assert.match(native, /opendj-native-midi-message/);
 	assert.match(runtime, /listen<_NativeMidiMessage>/);
 	assert.match(runtime, /_dispatch\(device, \{ data: new Uint8Array\(event\.payload\.data\) \}\)/);
+	assert.match(runtime, /if \(await _rescanNativePorts\(\)\) return;\s*_nativeUnlisten = await listen/);
+	assert.match(runtime, /if \(_transport === 'native'\) \{\s*await _rescanNativePorts\(\);\s*return;/);
 });
 
 test('remote shell authority exposes only the bounded MIDI commands and event listener', async () => {

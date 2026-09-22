@@ -279,7 +279,7 @@ function _nativeOutput(deviceId: string): _MidiOutputPort {
 	};
 }
 
-function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): void {
+function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 	const seen = new Set(snapshot.map((device) => device.id));
 	for (const found of snapshot) {
 		const existing = _resolved.get(found.id);
@@ -326,12 +326,14 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): void {
 		const next = new URL(window.location.href);
 		next.searchParams.set('djio', [...profiles][0]);
 		window.location.replace(next);
+		return true;
 	}
+	return false;
 }
 
-async function _rescanNativePorts(): Promise<void> {
+async function _rescanNativePorts(): Promise<boolean> {
 	const snapshot = await invoke<_NativeMidiDevice[]>('native_midi_snapshot');
-	_applyNativeSnapshot(snapshot);
+	return _applyNativeSnapshot(snapshot);
 }
 
 function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: number): MidiInputValue {
@@ -607,6 +609,18 @@ function _hasNativeMidiBridge(): boolean {
  * WKWebView has no WebMIDI, use the shell's transport-only CoreMIDI bridge.
  * Mapping and action dispatch remain on this one shared code path. */
 export async function initMidi(): Promise<void> {
+	// The persisted local choice and the daemon-backed preference can hydrate
+	// separately. Both intentionally call the same request path, so make the
+	// transport initialization itself idempotent: a second request rescans but
+	// must not register a second event listener or hot-plug timer.
+	if (_transport === 'webmidi') {
+		_rescanWebMidiPorts();
+		return;
+	}
+	if (_transport === 'native') {
+		await _rescanNativePorts();
+		return;
+	}
 	if (typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined) {
 		midiState.permission = 'prompt';
 		try {
@@ -629,6 +643,11 @@ export async function initMidi(): Promise<void> {
 	}
 	midiState.permission = 'prompt';
 	try {
+		// Discover before subscribing. The first native snapshot may add the
+		// controller's required audio profile and navigate this page. Registering
+		// a Tauri event listener before that navigation leaves the old webview
+		// callback alive and every physical message arrives twice after reload.
+		if (await _rescanNativePorts()) return;
 		_nativeUnlisten = await listen<_NativeMidiMessage>(
 			'opendj-native-midi-message',
 			(event) => {
@@ -643,7 +662,6 @@ export async function initMidi(): Promise<void> {
 				_dispatch(device, { data: new Uint8Array(event.payload.data) });
 			}
 		);
-		await _rescanNativePorts();
 	} catch (exc) {
 		midiState.permission = 'denied';
 		_nativeUnlisten?.();
