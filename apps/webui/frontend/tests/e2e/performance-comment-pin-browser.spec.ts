@@ -1,5 +1,38 @@
 import { expect, test } from '@playwright/test';
 
+test('Enter respects a directly focused deck target and playlist row', async ({ page }) => {
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const row = page.getByTestId('track-row').first();
+	await expect(row).toBeVisible();
+	await row.click();
+	const stableId = await row.getAttribute('data-stable-id');
+	const loadsBefore = await page.evaluate(() =>
+		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	);
+	const deckTarget = row.locator('button.deck-target').first();
+	await deckTarget.focus();
+	await expect(deckTarget).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect.poll(() => page.evaluate(() =>
+		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	)).toBe(loadsBefore + 1);
+	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id)).toBe(stableId);
+
+	const playlist = page.getByTestId('playlist-row').first();
+	await expect(playlist).toBeVisible();
+	await playlist.focus();
+	const loadsAtPlaylist = await page.evaluate(() =>
+		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	);
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await expect(playlist).toBeFocused();
+	await expect.poll(() => page.evaluate(() =>
+		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	)).toBe(loadsAtPlaylist);
+});
+
 // IOPIN-01: exercise real keyboard/DOM focus and production browse adapter.
 test('browser selection scrolls, MIDI reclaims tracks, and sliders keep arrows', async ({ page }) => {
 	await page.goto('/performance');

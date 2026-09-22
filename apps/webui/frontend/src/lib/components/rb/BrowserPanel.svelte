@@ -896,6 +896,24 @@
 				return;
 			}
 			if (e.key !== 'Enter') return;
+			// A directly focused playlist row already handles Enter in PlaylistTree;
+			// a native deck button activates itself. Neither is a track-row
+			// double-Enter, regardless of an earlier browserFocus state.
+			const target = e.target instanceof HTMLElement ? e.target : null;
+			if (target?.closest('[data-testid="playlist-row"], [data-testid="playlist-all-tracks"]')) {
+				lastTrackEnter = null;
+				browserFocus = 'playlist';
+				return;
+			}
+			const deckTarget = target?.closest<HTMLButtonElement>('button.deck-target');
+			if (deckTarget) {
+				lastTrackEnter = null;
+				browserFocus = 'deck';
+				const targets = Array.from(deckTarget.parentElement?.querySelectorAll('button.deck-target') ?? []);
+				const index = targets.indexOf(deckTarget);
+				if (index >= 0) browserDeckTarget = (index + 1) as DeckId;
+				return;
+			}
 			e.preventDefault();
 			if (browserFocus === 'playlist') {
 				(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.click();
