@@ -287,3 +287,32 @@ def test_a_one_component_compatible_release_is_unknown_not_a_verdict() -> None:
     modeled, so the compare must say so rather than guess either way."""
     with pytest.raises(Exception, match="at least two components"):
         markers_equivalent(("python_full_version ~= '3'",), ())
+
+
+def test_a_wildcard_uv_cannot_compare_is_erased_as_uv_drops_it() -> None:
+    """A `.*` wildcard is a prefix pattern, meaningful only as the RIGHT operand of `==` /
+    `!=` against a version variable. Anywhere else (`'3.11.*' == python_full_version`,
+    `python_full_version < '3.11.*'`, `~=`, `in`) it is not a PEP 440 comparison, and uv
+    drops the clause (measured, round 16): erased from a conjunction and a disjunction
+    alike, never a crash. The wildcard equality uv keeps still compares, and a wildcard
+    against a STRING variable is a plain string."""
+    for spelled in (
+        "'3.11.*' == python_full_version",
+        "'3.11.*' != python_version",
+        "'3.11.*' < python_full_version",
+        "python_full_version < '3.11.*'",
+        "python_full_version >= '3.11.*'",
+        "python_full_version ~= '3.11.*'",
+        "python_full_version in '3.11.*'",
+    ):
+        assert markers_equivalent((spelled,), ()), spelled
+        with_and = (f"{spelled} and os_name == 'posix'",)
+        assert markers_equivalent(with_and, ("os_name == 'posix'",)), spelled
+        with_or = (f"{spelled} or os_name == 'posix'",)
+        assert markers_equivalent(with_or, ("os_name == 'posix'",)), spelled
+    for kept in (
+        "python_full_version == '3.11.*'",
+        "python_full_version != '3.11.*'",
+        "os_name == '3.11.*'",
+    ):
+        assert not markers_equivalent((kept,), ()), kept

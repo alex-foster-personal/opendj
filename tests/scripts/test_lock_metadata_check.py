@@ -58,6 +58,7 @@ requires-dist = [
     { name = "python-rtmidi", marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.5,<2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
+provides-extras = ["dev", "all"]
 """
 
 
@@ -162,8 +163,10 @@ def test_a_version_only_bump_without_uv_lock_is_stale(tmp_path: Path) -> None:
 def test_an_extra_named_with_underscores_matches_its_normalized_marker(tmp_path: Path) -> None:
     """if the optional-dependency key is `foo_bar` then uv's `extra == 'foo-bar'` marker matches"""
     pyproject = PYPROJECT.replace("dev = [", "dev_tools = [").replace("[dev]", "[dev_tools]")
-    lock = LOCK.replace("extra == 'dev'", "extra == 'dev-tools'").replace(
-        'extras = ["dev"]', 'extras = ["dev-tools"]'
+    lock = (
+        LOCK.replace("extra == 'dev'", "extra == 'dev-tools'")
+        .replace('extras = ["dev"]', 'extras = ["dev-tools"]')
+        .replace('provides-extras = ["dev", "all"]', 'provides-extras = ["dev-tools", "all"]')
     )
     code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_OK, message
@@ -387,7 +390,8 @@ def _with_marker(pyproject_marker: str, lock_marker: str) -> tuple[str, str]:
         quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {pyproject_marker}")
     )
     lock = LOCK.replace(recorded, "marker = " + json.dumps(lock_marker))
-    assert pyproject != PYPROJECT and lock != LOCK
+    assert pyproject != PYPROJECT
+    assert lock != LOCK or lock_marker == "sys_platform == 'darwin'", "no-op lock edit"
     return pyproject, lock
 
 
@@ -442,133 +446,98 @@ def test_uv_s_malformed_record_of_an_apostrophe_literal_is_unknown(tmp_path: Pat
     assert "posix's" in message
 
 
-LOCALDEP_TOML = '[project]\nname = "localdep"\nversion = "0.1.0"\n'
-
-
-def _with_source(
+def test_an_extra_added_or_removed_without_uv_lock_is_stale_even_when_empty(
     tmp_path: Path,
-    source_line: str | None,
-    lock_entry: str,
-    target_toml: str | None = LOCALDEP_TOML,
-) -> tuple[str, str]:
-    """The fixture pair with numpy replaced by a local `localdep` requirement: the
-    pyproject side gets `[tool.uv.sources]` (or none), the lock side the entry given,
-    and `tmp_path/localdep` the target's pyproject (None: no target directory)."""
-    if target_toml is not None:
-        for name in ("localdep", "elsewhere"):
-            (tmp_path / name).mkdir(exist_ok=True)
-            (tmp_path / name / "pyproject.toml").write_text(target_toml, encoding="utf-8")
-    pyproject = PYPROJECT.replace('"numpy>=1.26"', '"localdep"')
-    if source_line is not None:
-        pyproject += f"\n[tool.uv.sources]\nlocaldep = {source_line}\n"
-    lock = LOCK.replace('{ name = "numpy", specifier = ">=1.26" }', lock_entry)
-    assert pyproject != PYPROJECT and lock != LOCK
-    return pyproject, lock
-
-
-@pytest.mark.parametrize(
-    ("source_line", "lock_entry", "code"),
-    [
-        # Measured with uv 0.8.17: the forms uv records for a path source.
-        ('{ path = "./localdep/" }', '{ name = "localdep", directory = "localdep" }', EXIT_OK),
-        (
-            '{ path = "localdep", editable = true }',
-            '{ name = "localdep", editable = "localdep" }',
-            EXIT_OK,
-        ),
-        (
-            '{ path = "localdep", package = false }',
-            '{ name = "localdep", virtual = "localdep" }',
-            EXIT_OK,
-        ),
-        # A source edited without `uv lock` is stale: path swapped, editability
-        # flipped, package-ness flipped, source removed, source added.
-        ('{ path = "elsewhere" }', '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
-        (
-            '{ path = "localdep", editable = true }',
-            '{ name = "localdep", directory = "localdep" }',
-            EXIT_STALE,
-        ),
-        (
-            '{ path = "localdep", package = false }',
-            '{ name = "localdep", directory = "localdep" }',
-            EXIT_STALE,
-        ),
-        (None, '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
-        ('{ path = "localdep" }', '{ name = "localdep" }', EXIT_STALE),
-        # Sources this check does not model are UNKNOWN, never a verdict.
-        ('{ git = "https://example.test/x.git" }', '{ name = "localdep" }', EXIT_UNKNOWN),
-        ("{ workspace = true }", '{ name = "localdep", editable = "localdep" }', EXIT_UNKNOWN),
-        (
-            None,
-            '{ name = "localdep", git = "https://example.test/x.git?tag=1" }',
-            EXIT_UNKNOWN,
-        ),
-        (None, '{ name = "localdep", index = "https://pypi.org/simple" }', EXIT_UNKNOWN),
-    ],
-)
-def test_a_path_source_is_compared_with_the_form_uv_records(
-    tmp_path: Path, source_line: str | None, lock_entry: str, code: int
 ) -> None:
-    """if `[tool.uv.sources]` names a path source and uv recorded it (directory,
-    editable or virtual, which it does) then 0; a source changed without `uv lock` is
-    1; a git, url, index or workspace source is 2, not a verdict (Codex P2 on #3763,
-    round 13)"""
-    got, message = _run(tmp_path, *_with_source(tmp_path, source_line, lock_entry))
-    assert got == code, (source_line, lock_entry, message)
+    """if pyproject.toml declares `Empty_Group = []` and uv.lock's provides-extras does
+    not name it (uv records every declared extra there, normalized, and `uv lock --check`
+    rejects the stale lock even though an empty group adds no requires-dist entry) then 1
+    naming both lists; the lock uv writes for it reads 0; the group removed again against
+    that lock is stale the same way (Codex P2 on #3763, round 16)"""
+    added = PYPROJECT.replace(
+        'all = ["Demo_Project[dev]"]', 'all = ["Demo_Project[dev]"]\nEmpty_Group = []'
+    )
+    assert added != PYPROJECT
+    code, message = _run(tmp_path, added)
+    assert code == EXIT_STALE, message
+    assert "provides-extras" in message and "empty-group" in message
+    relocked = LOCK.replace(
+        'provides-extras = ["dev", "all"]', 'provides-extras = ["dev", "all", "empty-group"]'
+    )
+    assert relocked != LOCK
+    code, message = _run(tmp_path, added, relocked)
+    assert code == EXIT_OK, message
+    code, message = _run(tmp_path, PYPROJECT, relocked)
+    assert code == EXIT_STALE, message
+    assert "empty-group" in message
 
 
-def test_a_path_source_is_predicted_from_the_target_and_the_project_dir(tmp_path: Path) -> None:
-    """if the source path is absolute then it compares as uv records it, relative to the
-    project; if the target's own `[tool.uv] package = false` then uv records `virtual`
-    whatever the source says; a target that cannot be read is UNKNOWN, not a verdict
-    (Codex P2 on #3763, round 14)"""
-    absolute = json.dumps(str(tmp_path / "localdep"))
-    entry = '{ name = "localdep", directory = "localdep" }'
-    got, message = _run(tmp_path, *_with_source(tmp_path, f"{{ path = {absolute} }}", entry))
-    assert got == EXIT_OK, message
-    # An absolute path to ANOTHER directory is still a difference.
-    other = json.dumps(str(tmp_path / "elsewhere"))
-    got, message = _run(tmp_path, *_with_source(tmp_path, f"{{ path = {other} }}", entry))
-    assert got == EXIT_STALE, message
-    # The target's own package = false makes it virtual; the source need not say so.
-    virtual_target = LOCALDEP_TOML + "[tool.uv]\npackage = false\n"
-    got, message = _run(
-        tmp_path,
-        *_with_source(
-            tmp_path,
-            '{ path = "localdep" }',
-            '{ name = "localdep", virtual = "localdep" }',
-            virtual_target,
+def test_a_project_without_extras_matches_a_lock_without_provides_extras(tmp_path: Path) -> None:
+    """uv writes no provides-extras key for a project that declares no extras (measured),
+    so that pair is 0, not a stale list against a missing one."""
+    pyproject = PYPROJECT.split("[project.optional-dependencies]", maxsplit=1)[0]
+    lock = LOCK.replace('provides-extras = ["dev", "all"]\n', "")
+    for entry in (
+        '    { name = "demo-project", extras = ["dev"], marker = "extra == \'all\'" },\n',
+        '    { name = "pytest", marker = "extra == \'dev\'", specifier = ">=9,<10" },\n',
+        '    { name = "python-rtmidi", marker = "sys_platform != \'win32\' and extra == \'dev\'", specifier = ">=1.5,<2" },\n',
+    ):
+        assert entry in lock
+        lock = lock.replace(entry, "")
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    assert "3 requirements" in message
+
+
+def test_a_disjunctive_marker_under_an_extra_matches_the_distributed_form_uv_writes(
+    tmp_path: Path,
+) -> None:
+    """if pyproject.toml lists `dep; a or b` under extra `dev` and uv recorded
+    `(a and extra == 'dev') or (b and extra == 'dev')` (which it does: the extra guards
+    BOTH branches) then 0; a record guarding only one branch means something else and is
+    stale (Codex P2 on #3763, round 16)"""
+    spelled = "\"python-rtmidi>=1.5,<2; os_name == 'posix' or sys_platform == 'win32'\""
+    pyproject = PYPROJECT.replace("\"python-rtmidi>=1.5,<2; sys_platform != 'win32'\"", spelled)
+    assert pyproject != PYPROJECT
+    recorded = "marker = \"sys_platform != 'win32' and extra == 'dev'\""
+    assert recorded in LOCK
+    both = "(os_name == 'posix' and extra == 'dev') or (sys_platform == 'win32' and extra == 'dev')"
+    code, message = _run(tmp_path, pyproject, LOCK.replace(recorded, f'marker = "{both}"'))
+    assert code == EXIT_OK, message
+    one = "os_name == 'posix' or (sys_platform == 'win32' and extra == 'dev')"
+    code, message = _run(tmp_path, pyproject, LOCK.replace(recorded, f'marker = "{one}"'))
+    assert code == EXIT_STALE, message
+
+
+def test_a_wildcard_uv_cannot_compare_matches_the_lock_uv_writes_without_it(
+    tmp_path: Path,
+) -> None:
+    """if pyproject.toml puts the wildcard where it is not a PEP 440 comparison
+    (`'3.11.*' == python_full_version`, `python_full_version < '3.11.*'`) and uv erased
+    the clause from the record (which it does: alone, in a conjunction and in a
+    disjunction alike) then 0, never a crash; the wildcard equality uv keeps is still
+    compared, so a record without it is stale (Codex P2 on #3763, round 16)"""
+    for spelled, recorded in (
+        ("'3.11.*' == python_full_version", ""),
+        ("'3.11.*' != python_full_version", ""),
+        ("python_full_version < '3.11.*'", ""),
+        ("python_full_version ~= '3.11.*'", ""),
+        (
+            "'3.11.*' == python_full_version and sys_platform == 'darwin'",
+            "sys_platform == 'darwin'",
         ),
-    )
-    assert got == EXIT_OK, message
-    got, message = _run(
-        tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, virtual_target)
-    )
-    assert got == EXIT_STALE, message
-    # The source's own flags win over the target's package = false (measured, round 15).
-    got, message = _run(
-        tmp_path,
-        *_with_source(tmp_path, '{ path = "localdep", package = true }', entry, virtual_target),
-    )
-    assert got == EXIT_OK, message
-    got, message = _run(
-        tmp_path,
-        *_with_source(
-            tmp_path,
-            '{ path = "localdep", editable = true }',
-            '{ name = "localdep", editable = "localdep" }',
-            virtual_target,
-        ),
-    )
-    assert got == EXIT_OK, message
-    # A target without a build system or without [project] is still `directory` (measured).
-    got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, ""))
-    assert got == EXIT_OK, message
-    # No such directory: the form cannot be inferred, so UNKNOWN.
-    got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "missing" }', entry, None))
-    assert got == EXIT_UNKNOWN, message
+        ("'3.11.*' == python_full_version or sys_platform == 'darwin'", "sys_platform == 'darwin'"),
+    ):
+        code, message = _run(tmp_path, *_with_marker(spelled, recorded))
+        assert code == EXIT_OK, (spelled, message)
+    for spelled, recorded in (
+        ("python_full_version == '3.11.*'", ""),
+        ("python_full_version != '3.11.*'", ""),
+        ("'3.11.*' == python_full_version and sys_platform == 'darwin'", ""),
+        ("os_name == '3.11.*'", ""),
+    ):
+        code, message = _run(tmp_path, *_with_marker(spelled, recorded))
+        assert code == EXIT_STALE, (spelled, message)
 
 
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:

@@ -1,0 +1,147 @@
+"""scripts/lock_metadata_check.py: a `[tool.uv.sources]` path source is compared in the
+form uv records it (`directory` / `editable` / `virtual`), predicted from the source's
+own flags, the target's `[tool.uv] package`, and the project directory (Codex rounds
+12-15 on PR #3763). The fixture pair and `_run` live in test_lock_metadata_check.py.
+
+- [if] the source's form and path match the lock's [then] exit 0, [else stop]
+- [if] either differs [then] exit 1 naming the entry, [else stop]
+- [if] the target is missing or the source is not a path source [then] exit 2 UNKNOWN
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN
+from tests.scripts.test_lock_metadata_check import LOCK, PYPROJECT, _run
+
+LOCALDEP_TOML = '[project]\nname = "localdep"\nversion = "0.1.0"\n'
+
+
+def _with_source(
+    tmp_path: Path,
+    source_line: str | None,
+    lock_entry: str,
+    target_toml: str | None = LOCALDEP_TOML,
+) -> tuple[str, str]:
+    """The fixture pair with numpy replaced by a local `localdep` requirement: the
+    pyproject side gets `[tool.uv.sources]` (or none), the lock side the entry given,
+    and `tmp_path/localdep` the target's pyproject (None: no target directory)."""
+    if target_toml is not None:
+        for name in ("localdep", "elsewhere"):
+            (tmp_path / name).mkdir(exist_ok=True)
+            (tmp_path / name / "pyproject.toml").write_text(target_toml, encoding="utf-8")
+    pyproject = PYPROJECT.replace('"numpy>=1.26"', '"localdep"')
+    if source_line is not None:
+        pyproject += f"\n[tool.uv.sources]\nlocaldep = {source_line}\n"
+    lock = LOCK.replace('{ name = "numpy", specifier = ">=1.26" }', lock_entry)
+    assert pyproject != PYPROJECT and lock != LOCK
+    return pyproject, lock
+
+
+@pytest.mark.parametrize(
+    ("source_line", "lock_entry", "code"),
+    [
+        # Measured with uv 0.8.17: the forms uv records for a path source.
+        ('{ path = "./localdep/" }', '{ name = "localdep", directory = "localdep" }', EXIT_OK),
+        (
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", editable = "localdep" }',
+            EXIT_OK,
+        ),
+        (
+            '{ path = "localdep", package = false }',
+            '{ name = "localdep", virtual = "localdep" }',
+            EXIT_OK,
+        ),
+        # A source edited without `uv lock` is stale: path swapped, editability
+        # flipped, package-ness flipped, source removed, source added.
+        ('{ path = "elsewhere" }', '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
+        (
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", directory = "localdep" }',
+            EXIT_STALE,
+        ),
+        (
+            '{ path = "localdep", package = false }',
+            '{ name = "localdep", directory = "localdep" }',
+            EXIT_STALE,
+        ),
+        (None, '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
+        ('{ path = "localdep" }', '{ name = "localdep" }', EXIT_STALE),
+        # Sources this check does not model are UNKNOWN, never a verdict.
+        ('{ git = "https://example.test/x.git" }', '{ name = "localdep" }', EXIT_UNKNOWN),
+        ("{ workspace = true }", '{ name = "localdep", editable = "localdep" }', EXIT_UNKNOWN),
+        (
+            None,
+            '{ name = "localdep", git = "https://example.test/x.git?tag=1" }',
+            EXIT_UNKNOWN,
+        ),
+        (None, '{ name = "localdep", index = "https://pypi.org/simple" }', EXIT_UNKNOWN),
+    ],
+)
+def test_a_path_source_is_compared_with_the_form_uv_records(
+    tmp_path: Path, source_line: str | None, lock_entry: str, code: int
+) -> None:
+    """if `[tool.uv.sources]` names a path source and uv recorded it (directory,
+    editable or virtual, which it does) then 0; a source changed without `uv lock` is
+    1; a git, url, index or workspace source is 2, not a verdict (Codex P2 on #3763,
+    round 13)"""
+    got, message = _run(tmp_path, *_with_source(tmp_path, source_line, lock_entry))
+    assert got == code, (source_line, lock_entry, message)
+
+
+def test_a_path_source_is_predicted_from_the_target_and_the_project_dir(tmp_path: Path) -> None:
+    """if the source path is absolute then it compares as uv records it, relative to the
+    project; if the target's own `[tool.uv] package = false` then uv records `virtual`
+    whatever the source says; a target that cannot be read is UNKNOWN, not a verdict
+    (Codex P2 on #3763, round 14)"""
+    absolute = json.dumps(str(tmp_path / "localdep"))
+    entry = '{ name = "localdep", directory = "localdep" }'
+    got, message = _run(tmp_path, *_with_source(tmp_path, f"{{ path = {absolute} }}", entry))
+    assert got == EXIT_OK, message
+    # An absolute path to ANOTHER directory is still a difference.
+    other = json.dumps(str(tmp_path / "elsewhere"))
+    got, message = _run(tmp_path, *_with_source(tmp_path, f"{{ path = {other} }}", entry))
+    assert got == EXIT_STALE, message
+    # The target's own package = false makes it virtual; the source need not say so.
+    virtual_target = LOCALDEP_TOML + "[tool.uv]\npackage = false\n"
+    got, message = _run(
+        tmp_path,
+        *_with_source(
+            tmp_path,
+            '{ path = "localdep" }',
+            '{ name = "localdep", virtual = "localdep" }',
+            virtual_target,
+        ),
+    )
+    assert got == EXIT_OK, message
+    got, message = _run(
+        tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, virtual_target)
+    )
+    assert got == EXIT_STALE, message
+    # The source's own flags win over the target's package = false (measured, round 15).
+    got, message = _run(
+        tmp_path,
+        *_with_source(tmp_path, '{ path = "localdep", package = true }', entry, virtual_target),
+    )
+    assert got == EXIT_OK, message
+    got, message = _run(
+        tmp_path,
+        *_with_source(
+            tmp_path,
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", editable = "localdep" }',
+            virtual_target,
+        ),
+    )
+    assert got == EXIT_OK, message
+    # A target without a build system or without [project] is still `directory` (measured).
+    got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, ""))
+    assert got == EXIT_OK, message
+    # No such directory: the form cannot be inferred, so UNKNOWN.
+    got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "missing" }', entry, None))
+    assert got == EXIT_UNKNOWN, message

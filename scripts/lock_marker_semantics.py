@@ -44,6 +44,15 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     os_name != sys_platform or sys_platform == 'win32'   -> sys_platform == 'win32'
     (os_name != sys_platform) and python_version < '3.99' -> python_full_version < '3.99'
     'posix' == os_name                         -> os_name == 'posix'
+    '3.11.*' == python_full_version            -> (marker dropped entirely)
+    '3.11.*' != python_full_version            -> (marker dropped entirely)
+    python_full_version < '3.11.*'             -> (marker dropped entirely)
+    python_full_version ~= '3.11.*'            -> (marker dropped entirely)
+    python_full_version in '3.11.*'            -> (marker dropped entirely)
+    python_full_version != '3.11.*'            -> python_full_version != '3.11.*'
+    '3.11.*' == python_full_version and os_name == 'posix' -> os_name == 'posix'
+    '3.11.*' == python_full_version or sys_platform == 'win32' -> sys_platform == 'win32'
+    os_name == '3.11.*'                        -> kept verbatim (a string)
 
 So uv's marker algebra is RELEASE-ONLY: every version literal is cut to its
 release segment before the comparison is stored, whatever the operator, which
@@ -58,8 +67,13 @@ is UNKNOWN rather than a verdict.
 A comparison between two VARIABLES (`os_name != sys_platform`) is ERASED from
 whatever it sits in: it leaves an `and` and an `or` alike (so it is not a truth
 value, which would have made the `or` always true), and a marker made only of
-such clauses is dropped. `_erase_variable_pairs` mirrors that before anything
+such clauses is dropped. `_erase_dropped_clauses` mirrors that before anything
 is evaluated.
+A `.*` WILDCARD is a prefix pattern, meaningful only as the right operand of
+`==` / `!=` against a version variable. Anywhere else (`'3.11.*' ==
+python_full_version`, `python_full_version < '3.11.*'`, `~=`, `in`) it is not
+a PEP 440 comparison, and uv drops the clause the same way: erased from an
+`and` and an `or` alike, never a truth value (measured, round 16).
 
 The string-ordering rows show that uv orders plain STRINGS lexically, as ranges:
 that is the semantics mirrored here for `<`, `<=`, `>` and `>=` on a
@@ -174,6 +188,10 @@ def _cmp_versions(lhs: str, op: str, rhs: str) -> bool:
     the compatible range, `===` as string equality."""
     if op == "===":
         return lhs == rhs
+    if lhs.endswith(".*") or (rhs.endswith(".*") and op not in ("==", "!=")):
+        # Erased by _erase_dropped_clauses before evaluation (uv drops the clause);
+        # reaching here is a programming error, UNKNOWN rather than a crash.
+        raise Unknown(f"wildcard comparison survived erasure: {lhs!r} {op} {rhs!r}")
     if op in ("==", "!=") and rhs.endswith(".*"):
         # The prefix keeps its WIDTH: `3.11.0.*` admits 3.11.0.x only, not 3.11.5, which
         # is why uv records it as `>= '3.11.0' and < '3.11.1'` and `3.11.*` as itself.
@@ -389,7 +407,7 @@ class _Literals:
                 )
             var, literal = rhs[1], lhs[1][1:-1]
         elif lhs[0] == "word" and rhs[0] == "word":
-            # Erased by _erase_variable_pairs before any grid is built; reaching
+            # Erased by _erase_dropped_clauses before any grid is built; reaching
             # here is a programming error, reported as UNKNOWN rather than a verdict.
             raise Unknown(f"variable-to-variable comparison survived erasure: {node!r}")
         else:
@@ -525,25 +543,44 @@ def _parse_clauses(clauses: tuple[str, ...]) -> tuple:
     text = " and ".join(clause for clause in clauses if clause.strip())
     if not text:
         return ("true",)
-    return _erase_variable_pairs(_MarkerParser(text).parse()) or ("true",)
+    return _erase_dropped_clauses(_MarkerParser(text).parse()) or ("true",)
 
 
-def _erase_variable_pairs(node: tuple) -> tuple | None:
+def _erase_dropped_clauses(node: tuple) -> tuple | None:
     """uv erases a comparison between two variables from the marker it records
     (module docstring: `os_name != sys_platform` leaves both an `and` and an `or`,
-    and a marker made only of such clauses is dropped). Mirror it on the parsed
-    tree: None is an erased subtree, which its parent then skips."""
+    and a marker made only of such clauses is dropped), and a wildcard where it is
+    not a PEP 440 comparison the same way. Mirror it on the parsed tree: None is an
+    erased subtree, which its parent then skips."""
     kind = node[0]
     if kind == "true":
         return node
     if kind in ("or", "and"):
-        left, right = _erase_variable_pairs(node[1]), _erase_variable_pairs(node[2])
+        left, right = _erase_dropped_clauses(node[1]), _erase_dropped_clauses(node[2])
         if left is None:
             return right
         if right is None:
             return left
         return (kind, left, right)
-    _, lhs, _op, rhs = node
+    _, lhs, op, rhs = node
     if lhs[0] == "word" and rhs[0] == "word":
         return None
+    if _wildcard_uv_drops(lhs, op, rhs):
+        return None
     return node
+
+
+def _wildcard_uv_drops(lhs: tuple, op: str, rhs: tuple) -> bool:
+    """`'3.11.*' == python_full_version`, `python_full_version < '3.11.*'`: a `.*`
+    wildcard is a prefix pattern, meaningful only as the RIGHT operand of `==` / `!=`
+    against a version variable. Anywhere else uv drops the clause rather than record
+    it (measured, round 16). Against a string variable it is a plain string, kept."""
+    if lhs[0] == "word" and rhs[0] == "str":
+        var, literal, literal_on_right = lhs[1], rhs[1][1:-1], True
+    elif rhs[0] == "word" and lhs[0] == "str":
+        var, literal, literal_on_right = rhs[1], lhs[1][1:-1], False
+    else:
+        return False
+    if var not in _VERSION_VARS or not literal.endswith(".*"):
+        return False
+    return not (literal_on_right and op in ("==", "!="))
