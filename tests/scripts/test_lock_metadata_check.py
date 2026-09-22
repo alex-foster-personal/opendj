@@ -269,6 +269,10 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
             False,
         ),
         ("python_full_version < '3.11.3'", "python_full_version < '3.11.4'", False),
+        # Only a NEIGHBOR of a mentioned literal separates these two: every literal
+        # itself evaluates the same on both sides, 3.10.100 does not.
+        ("python_full_version < '3.11'", "python_full_version <= '3.10.99'", False),
+        ("python_full_version >= '3.11'", "python_full_version > '3.10.99'", False),
     ],
 )
 def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> None:
