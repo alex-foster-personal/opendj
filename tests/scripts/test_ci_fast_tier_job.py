@@ -165,6 +165,36 @@ def test_affected_canary_is_gone() -> None:
     assert "affected-canary" not in CI.read_text(encoding="utf-8")
 
 
+# Re-measured Mon 21 Sep 2026 over 117 green fast-tier legs on the agentbox pool
+# (the 300 most recent completed ci.yml runs): the leg step takes a median 341 s,
+# p90 439 s and up to 470 s, and legs the 480 s budget killed were at 94% progress
+# with no failing test (#3701 leg 1, run 35664438305). 720 s is 1.5x the measured
+# maximum; a budget under it re-introduces the budget-kill with nothing to name.
+MIN_FAST_WALL_BUDGET_S = 720
+# Provisioning ahead of pytest measured ~2 min warm, more cold, on the same runs.
+MIN_FAST_PRE_PYTEST_RESERVE_S = 240
+
+
+def test_fast_leg_wall_budget_clears_the_measured_pool_maximum() -> None:
+    job = _jobs()["fast"]
+    run = _pytest_step(job)
+    budget = re.search(r"^\s*MDT_FAST_TIMEOUT_S=(\d+)\s*$", run, re.MULTILINE)
+    assert budget, (
+        f"the fast leg must declare its wall budget as MDT_FAST_TIMEOUT_S=<seconds>:\n{run}"
+    )
+    budget_s = int(budget.group(1))
+    assert budget_s >= MIN_FAST_WALL_BUDGET_S, (
+        f"a {budget_s} s leg budget is under the {MIN_FAST_WALL_BUDGET_S} s floor the pool "
+        "measurement sets, so it reintroduces the budget-kill at 94% that #3701 leg 1 hit"
+    )
+    cap_s = job["timeout-minutes"] * 60
+    assert cap_s >= budget_s + MIN_FAST_PRE_PYTEST_RESERVE_S, (
+        f"the job cap ({cap_s} s) must leave the leg budget ({budget_s} s) plus "
+        f"{MIN_FAST_PRE_PYTEST_RESERVE_S} s of provisioning, or the job is CANCELLED by the "
+        "cap before the leg's own timeout reports a TIMEOUT by name"
+    )
+
+
 def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
     """[if] one test hangs [then] pytest-timeout fails THAT test by name with its stack,
     well before the leg's own wall budget kills the whole leg anonymously (six legs
