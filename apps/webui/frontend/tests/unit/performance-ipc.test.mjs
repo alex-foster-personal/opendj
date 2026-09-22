@@ -1007,8 +1007,22 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				cue_latency_ms: null,
 				master_latency_ms: null,
 				offset_ms: null,
-				error: null
+				error: null,
+				diagnostics: {
+					probe: 'chirp', alternate_probe: 'unavailable', failure: null,
+					master_measurements_ms: [], cue_measurements_ms: [], spread_ms: null
+				}
 			},
+			routes: {
+				master: { state: 'default', selected: false },
+				cue: { state: 'default', selected: false }
+			},
+			signals: Object.fromEntries(['master', 'cue', 'input'].map((bus) => [bus, {
+				state: bus === 'input' ? 'inactive' : 'unavailable',
+				rms: null, peak: null, measured_at: null,
+				source: bus === 'input' ? 'captured_input' : 'application_bus',
+				physical_output_proven: false
+			}])),
 			outputs: [],
 			inputs: [],
 			supported: false,
