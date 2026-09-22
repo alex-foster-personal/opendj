@@ -32,10 +32,30 @@ class FileDiff:
     old_path: str
     hunks: list[Hunk] = field(default_factory=list)
     binary: bool = False
+    # Extended headers. Each one is behavioral on its own: an executable bit
+    # changes how a worker or shell script is launched, a rename or copy moves
+    # an import path, a created or deleted module changes what the pipeline
+    # loads. They are recorded so classify_file() can refuse the file even
+    # when every hunk line is allowlisted.
+    mode_changed: bool = False
+    renamed: bool = False
+    created: bool = False
+    deleted: bool = False
 
 
 _DIFF_HEADER = re.compile(r'^diff --git "?a/(?P<a>.*?)"? "?b/(?P<b>.*?)"?$')
 _HUNK_HEADER = re.compile(r"^@@ -(?P<old>\d+)(?:,\d+)? \+(?P<new>\d+)(?:,\d+)? @@")
+
+
+def _note_extended_header(diff: FileDiff, raw: str) -> None:
+    if raw.startswith(("old mode ", "new mode ")):
+        diff.mode_changed = True
+    elif raw.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+        diff.renamed = True
+    elif raw.startswith("new file mode "):
+        diff.created = True
+    elif raw.startswith("deleted file mode "):
+        diff.deleted = True
 
 
 def parse_unified_diff(text: str) -> dict[str, FileDiff]:
@@ -69,12 +89,14 @@ def parse_unified_diff(text: str) -> dict[str, FileDiff]:
             current.hunks.append(hunk)
             continue
         if hunk is None:
-            continue  # extended headers: index, mode, rename, similarity
+            _note_extended_header(current, raw)
+            continue  # index, similarity and the mode/rename/new/deleted headers
         if raw.startswith("\\"):
             continue  # "\ No newline at end of file"
         tag = raw[:1] if raw else " "
         if tag not in (" ", "+", "-"):
             hunk = None  # trailing junk after a hunk; stop attributing lines to it
+            _note_extended_header(current, raw)
             continue
         hunk.lines.append((tag, raw[1:]))
     return files
@@ -98,18 +120,22 @@ _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".md": _PROSE,
 }
 
-# Names that make an exception widening broad enough to swallow cancellation
-# or interpreter exit. Adding any of these is never allowlisted.
+# Bare names that make an exception widening broad enough to swallow
+# cancellation, interpreter exit, or an exception group. Compared against the
+# LAST dotted component, so ``builtins.Exception`` and
+# ``asyncio.exceptions.CancelledError`` are refused the same as the bare name.
+# An alias (``from builtins import Exception as E``) is invisible to a hunk
+# and remains an accepted residual, documented in perfbatch-gates.md.
 _BROAD_EXCEPTIONS = frozenset(
     {
         "Exception",
         "BaseException",
+        "ExceptionGroup",
+        "BaseExceptionGroup",
         "KeyboardInterrupt",
         "SystemExit",
         "GeneratorExit",
         "CancelledError",
-        "asyncio.CancelledError",
-        "concurrent.futures.CancelledError",
     }
 )
 
@@ -125,10 +151,7 @@ _EXCEPT_RE = re.compile(
 _DOTTED_NAME = re.compile(r"^[A-Za-z_][\w.]*$")
 _BLOCK_HEADER_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+\w+.*:" + _TRAILING_COMMENT)
 _SIGNATURE_CLOSE_RE = re.compile(r"^\s*\)\s*(?:->\s*.+?)?\s*:" + _TRAILING_COMMENT)
-_DOCSTRING_OPEN_RE = re.compile(r"^\s*[rR]?(?P<q>\"\"\"|''')")
-_DOCSTRING_ONE_LINE_RE = re.compile(
-    r"^\s*[rR]?(?P<q>\"\"\"|''')(?:(?!(?P=q)).)*(?P=q)" + _TRAILING_COMMENT
-)
+_TRIPLE_QUOTE_RE = re.compile(r'"""|\'\'\'')
 _IMPORT_RE = re.compile(
     r"^(?P<indent>\s*)(?P<stmt>import\s+[\w.]+(?:\s+as\s+\w+)?"
     r"|from\s+[\w.]+\s+import\s+\w+(?:\s+as\s+\w+)?(?:\s*,\s*\w+(?:\s+as\s+\w+)?)*)"
@@ -173,6 +196,10 @@ def _split_names(raw: str) -> list[str] | None:
     return names
 
 
+def _is_broad(name: str) -> bool:
+    return name.rsplit(".", 1)[-1] in _BROAD_EXCEPTIONS
+
+
 def _exception_clause(text: str) -> tuple[str, str, str, frozenset[str]] | None:
     """(family, indent+modifier, as-target, names) for an except/suppress line."""
     match = _SUPPRESS_RE.match(text)
@@ -205,7 +232,7 @@ def is_exception_widening(removed: str, added: str) -> bool:
     old_names, new_names = before[3], after[3]
     if not old_names < new_names:
         return False
-    return not (new_names - old_names) & _BROAD_EXCEPTIONS
+    return not any(_is_broad(name) for name in new_names - old_names)
 
 
 def _bound_names(stmt: str) -> list[str]:
@@ -279,50 +306,84 @@ def _side_lines(hunk: Hunk, tag: str) -> list[tuple[int, str]]:
     return [(i, text) for i, (t, text) in enumerate(hunk.lines) if t in (" ", tag)]
 
 
-def _docstring_indices(hunk: Hunk, tag: str, start_line: int) -> set[int]:
-    """Hunk indices (on side ``tag``) that lie inside a docstring.
+@dataclass
+class _StringWalk:
+    """Per-side triple-quoted string tracker: docstring lines vs other string content."""
 
-    A triple-quoted opener counts as a docstring only when the nearest
-    preceding non-blank, non-comment line on that side is a ``def``/``class``
-    header (or a multi-line signature close), or when nothing but comments and
-    blank lines precede it from line 1 of the file. Any other triple-quoted
-    string (a prompt, SQL, a shell template) is code and is NOT allowlisted.
-    """
-    inside: set[int] = set()
+    docstring: set[int] = field(default_factory=set)
+    other: set[int] = field(default_factory=set)
+    kind: str | None = None  # "doc" | "other" while inside a multi-line string
+    delimiter: str = ""
+    block: list[int] = field(default_factory=list)
     prev_code: str | None = None
+
+    def open(self, kind: str, delimiter: str, index: int) -> None:
+        self.kind, self.delimiter, self.block = kind, delimiter, [index]
+
+    def close(self, index: int, tail: str) -> None:
+        self.block.append(index)
+        bare = not tail.strip() or tail.strip().startswith("#")
+        # A docstring whose closer is followed by code (``""".format(x)``) is
+        # an expression, not a bare statement: its lines are string content.
+        target = self.docstring if self.kind == "doc" and bare else self.other
+        target.update(self.block)
+        self.kind, self.block = None, []
+
+    def abandon(self) -> None:
+        """Closer beyond the hunk window: nothing inside can be proven benign."""
+        self.other.update(self.block)
+        self.kind, self.block = None, []
+
+
+def _string_regions(hunk: Hunk, tag: str, start_line: int) -> _StringWalk:
+    """Classify each line on side ``tag`` that lies inside a triple-quoted string.
+
+    A string is a DOCSTRING only when it opens at the start of a line whose
+    nearest preceding code line on that side is a ``def``/``class`` header (or
+    a multi-line signature close), or when nothing but comments and blank
+    lines precede it from line 1 of the file, and its closer is visible with
+    nothing but a comment after it. Every other triple-quoted region (a
+    prompt, SQL, a shell template, an unclosed block) is OTHER string content:
+    never benign, never eligible for widening or import-guard pairing.
+    """
+    walk = _StringWalk()
     at_file_top = start_line == 1
-    quote: str | None = None
-    block: list[int] = []
     for index, text in _side_lines(hunk, tag):
-        if quote is not None:
-            block.append(index)
-            if quote in text:
-                tail = text.split(quote, 1)[1].strip()
-                if not tail or tail.startswith("#"):
-                    inside.update(block)
-                # Code after the closer (``""".format(x)``) is an expression,
-                # not a bare docstring: the whole block stays unclassified.
-                quote = None
-                block = []
-                prev_code = text
+        if walk.kind is not None:
+            position = text.find(walk.delimiter)
+            if position == -1:
+                walk.block.append(index)
+            else:
+                walk.close(index, text[position + 3 :])
+                walk.prev_code = text
             continue
         stripped = text.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        opener = _DOCSTRING_OPEN_RE.match(text)
-        follows_header = prev_code is not None and bool(
-            _BLOCK_HEADER_RE.match(prev_code) or _SIGNATURE_CLOSE_RE.match(prev_code)
+        opener = _TRIPLE_QUOTE_RE.search(text)
+        if opener is None:
+            walk.prev_code = text
+            continue
+        delimiter = opener.group(0)
+        at_line_start = text[: opener.start()].strip() in ("", "r", "R")
+        follows_header = walk.prev_code is not None and bool(
+            _BLOCK_HEADER_RE.match(walk.prev_code) or _SIGNATURE_CLOSE_RE.match(walk.prev_code)
         )
-        if opener and (follows_header or (prev_code is None and at_file_top)):
-            delimiter = opener.group("q")
-            if delimiter in text[opener.end() :]:
-                if _DOCSTRING_ONE_LINE_RE.match(text):
-                    inside.add(index)
-            else:
-                quote = delimiter
-                block = [index]
-        prev_code = text
-    return inside
+        is_doc = at_line_start and (follows_header or (walk.prev_code is None and at_file_top))
+        rest = text[opener.end() :]
+        closer = rest.find(delimiter)
+        if closer == -1:
+            walk.open("doc" if is_doc else "other", delimiter, index)
+        else:
+            after = rest[closer + 3 :]
+            if is_doc and (not after.strip() or after.strip().startswith("#")):
+                walk.docstring.add(index)
+            elif _TRIPLE_QUOTE_RE.search(after) is not None:
+                walk.open("other", delimiter, index)  # a second string opens on this line
+        walk.prev_code = text
+    if walk.kind is not None:
+        walk.abandon()
+    return walk
 
 
 @dataclass(frozen=True)
@@ -356,16 +417,31 @@ def _describe_line(hunk: Hunk, index: int) -> str:
     return f"{tag}{line_no}: {text.strip()!a}"
 
 
+def _metadata_refusal(diff: FileDiff, lang: str | None) -> str | None:
+    if diff.binary:
+        return "binary diff has no readable hunks"
+    if diff.mode_changed:
+        return "file mode changed"
+    if diff.renamed:
+        return f"renamed from {diff.old_path}"
+    if diff.created and lang != _PROSE:
+        return "new file"
+    if diff.deleted and lang != _PROSE:
+        return "deleted file"
+    if not diff.hunks:
+        return "no readable hunks (rename-only, mode-only, or no diff text)"
+    if lang is None:
+        suffix = Path(diff.path).suffix or "<none>"
+        return f"no allowlist for {suffix} files"
+    return None
+
+
 def classify_file(diff: FileDiff) -> FileVerdict:
     """Benign only when every changed line is on the allowlist; otherwise a mutation."""
     lang = _language(diff.path)
-    if diff.binary:
-        return _mutation(diff.path, "binary diff has no readable hunks")
-    if not diff.hunks:
-        return _mutation(diff.path, "no readable hunks (rename-only, mode-only, or no diff text)")
-    if lang is None:
-        suffix = Path(diff.path).suffix or "<none>"
-        return _mutation(diff.path, f"no allowlist for {suffix} files")
+    refusal = _metadata_refusal(diff, lang)
+    if refusal is not None or lang is None:
+        return _mutation(diff.path, refusal or "no allowlist for this file")
     reasons: Counter[str] = Counter()
     for hunk in diff.hunks:
         changed = [i for i, (tag, _) in enumerate(hunk.lines) if tag != " "]
@@ -375,18 +451,26 @@ def classify_file(diff: FileDiff) -> FileVerdict:
             reasons["prose"] += len(changed)
             continue
         consumed: set[int] = set()
+        docstring: dict[str, set[int]] = {"-": set(), "+": set()}
+        string_content: set[int] = set()
         if lang == _PY:
-            old_doc = _docstring_indices(hunk, "-", hunk.old_start)
-            new_doc = _docstring_indices(hunk, "+", hunk.new_start)
+            old_walk = _string_regions(hunk, "-", hunk.old_start)
+            new_walk = _string_regions(hunk, "+", hunk.new_start)
+            docstring = {"-": old_walk.docstring, "+": new_walk.docstring}
+            string_content = old_walk.other | new_walk.other
             for block_removed, block_added in _replacement_blocks(hunk):
-                _pair_python_blocks(hunk, block_removed, block_added, consumed, reasons)
-        else:
-            old_doc = new_doc = set()
+                _pair_python_blocks(
+                    hunk, block_removed, block_added, consumed, reasons, string_content
+                )
         for index in changed:
             if index in consumed:
                 continue
             tag, text = hunk.lines[index]
-            kind = _benign_line_kind(lang, text, index in (new_doc if tag == "+" else old_doc))
+            if index in string_content:
+                return _mutation(
+                    diff.path, _describe_line(hunk, index) + " inside a string literal"
+                )
+            kind = _benign_line_kind(lang, text, index in docstring[tag])
             if kind is None:
                 return _mutation(diff.path, _describe_line(hunk, index))
             reasons[kind] += 1
@@ -418,8 +502,15 @@ def _pair_python_blocks(
     added: list[int],
     consumed: set[int],
     reasons: Counter[str],
+    string_content: set[int],
 ) -> None:
-    """Consume exception widenings and import guards inside one replacement block."""
+    """Consume exception widenings and import guards inside one replacement block.
+
+    Lines inside a non-docstring string literal are never paired: ``except``
+    text inside a prompt is prose that happens to look like code.
+    """
+    removed = [i for i in removed if i not in string_content]
+    added = [i for i in added if i not in string_content]
     widen_removed = [i for i in removed if _exception_clause(hunk.lines[i][1])]
     widen_added = [i for i in added if _exception_clause(hunk.lines[i][1])]
     for r_index, a_index in zip(widen_removed, widen_added, strict=False):

@@ -24,10 +24,15 @@ Allowlist (see docs/perf/perfbatch-gates.md for the reasoning and residuals):
     Markdown every line (prose is never executed).
     Other    nothing: any changed line is a mutation.
 
-The gate fails closed: a pipeline path with no parseable hunks (binary,
-rename-only, mode-only, or a name list with no diff text) is a mutation.
-``gh pr view`` / ``gh pr diff`` / ``git diff`` failing prints UNKNOWN and
-exits 2, never a silent pass.
+The gate fails closed: a pipeline path with no parseable hunks (binary, or a
+name list with no diff text), or whose diff carries behavioral metadata (a
+mode change, a rename or copy, a created or deleted code file), is a
+mutation. ``gh pr view`` / ``gh api`` / ``gh pr diff`` / ``git diff`` failing
+prints UNKNOWN and exits 2, never a silent pass.
+
+The path policy (pipeline prefixes, file-level exemptions, measurement-only
+prefixes) is declared in ``perfbatch_policy.toml`` next to this module and
+validated at import: edit the TOML, not this file, to change it.
 
     python -m scripts.perf.perfbatch_gate --pr N
     python -m scripts.perf.perfbatch_gate --diff
@@ -40,6 +45,8 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.perf.perfbatch_hunks import FileDiff, classify_pipeline_paths, parse_unified_diff
@@ -47,54 +54,47 @@ from scripts.perf.perfbatch_hunks import FileDiff, classify_pipeline_paths, pars
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REPO = "maintainer/music-dj-tools"
 DEFAULT_BASE = "origin/main"
+POLICY_PATH = Path(__file__).with_name("perfbatch_policy.toml")
 
-PIPELINE_PREFIXES: tuple[str, ...] = (
-    "apps/stems/",
-    "apps/lyrics/",
-    "scripts/stems_modal_worker.py",
-    "scripts/stems_local_worker.py",
-    "scripts/stem_bundle_worker.py",
-    "scripts/stem_farm_runner.py",
-    "scripts/stem_farm_watch_pull_down.sh",
-    "scripts/modal_vocal_farm.py",
-    "scripts/modal_demucs_ab.py",
-    "apps/webui/server/lyric_index_autostart.py",
-    "apps/webui/frontend/src/lib/components/rb/wave/lyrics-fetch.svelte.ts",
-)
 
-# Install-time machine capability (LATENCY-04) is not a stems/lyrics throughput
-# or latency pipeline mutation: it benchmarks once, persists a JSON record, and
-# exposes a read-only route. PERFBATCH-02/03 still apply to real pipeline edits.
-PIPELINE_EXEMPT: tuple[str, ...] = (
-    "apps/stems/live_capability.py",
-    "apps/stems/live_capability_api.py",
-    # Backward-compat kwarg restore only (``root=``); no throughput/latency change.
-    "apps/lyrics/register_stems.py",
-)
+@dataclass(frozen=True)
+class Policy:
+    """Path policy, declared in ``perfbatch_policy.toml`` next to this module."""
 
-# AGT-01 (issue #2123): luna primer plus persona checker. Markdown lives under
-# ops/agentic-testing/; the importable checker lives under ops/agentic_testing/.
-# Neither path changes stems or lyrics throughput or latency.
-#
-# PERF-UI-01 (issue #2303): short-viewport /performance layout (compact
-# waverow, library panel auto-collapse, history list hide). Viewport CSS/DOM
-# only; no stems or lyrics throughput or latency change.
-MEASUREMENT_ONLY_PREFIXES: tuple[str, ...] = (
-    "scripts/perf/",
-    "tests/perf/",
-    "tests/fixtures/perf/",
-    "docs/perf/",
-    "specs/perf-latency-program.md",
-    ".planning/REQUIREMENTS.md",
-    "reqs.json",
-    "justfile",
-    ".github/workflows/perfbatch-gate.yml",
-    "ops/agentic-testing/",
-    "ops/agentic_testing/",
-    "tests/agentic_testing/",
-    "docs/decisions/",
-    "specs/",
-)
+    pipeline_prefixes: tuple[str, ...]
+    pipeline_exempt: tuple[str, ...]
+    measurement_only_prefixes: tuple[str, ...]
+
+
+def _policy_list(table: dict, section: str, key: str, path: Path) -> tuple[str, ...]:
+    entries = table.get(section, {}).get(key) if isinstance(table.get(section), dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError(f"{path}: [{section}].{key} must be a non-empty list of path prefixes")
+    if any(not isinstance(entry, str) or not entry.strip() for entry in entries):
+        raise ValueError(f"{path}: [{section}].{key} holds a non-string or empty entry")
+    return tuple(entries)
+
+
+def load_policy(path: Path = POLICY_PATH) -> Policy:
+    """Read and validate the TOML policy. Malformed policy refuses to start the gate."""
+    try:
+        table = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(f"{path}: cannot read PERFBATCH policy ({exc})") from exc
+    policy = Policy(
+        pipeline_prefixes=_policy_list(table, "pipeline", "prefixes", path),
+        pipeline_exempt=_policy_list(table, "pipeline", "exempt", path),
+        measurement_only_prefixes=_policy_list(table, "measurement_only", "prefixes", path),
+    )
+    uncovered = [
+        entry
+        for entry in policy.pipeline_exempt
+        if not _matches_prefix(entry, policy.pipeline_prefixes)
+    ]
+    if uncovered:
+        raise ValueError(f"{path}: [pipeline].exempt entries outside every prefix: {uncovered}")
+    return policy
+
 
 # Horizontal whitespace only. Never `\\s`: a newline as the "reason" must fail.
 _IDLE = re.compile(r"perfbatch:[ \t]*pipelines-idle[ \t]+\S", re.IGNORECASE)
@@ -107,6 +107,12 @@ _QUALITY = re.compile(
 def _matches_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
     normalized = path.replace("\\", "/")
     return any(normalized == prefix or normalized.startswith(prefix) for prefix in prefixes)
+
+
+POLICY = load_policy()
+PIPELINE_PREFIXES = POLICY.pipeline_prefixes
+PIPELINE_EXEMPT = POLICY.pipeline_exempt
+MEASUREMENT_ONLY_PREFIXES = POLICY.measurement_only_prefixes
 
 
 def pipeline_mutation_paths(paths: list[str]) -> list[str]:
@@ -160,8 +166,24 @@ def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
 
 
 def pr_diff_names(pr: int, repo: str = DEFAULT_REPO) -> list[str]:
-    out = _run(["gh", "pr", "diff", str(pr), "--repo", repo, "--name-only"])
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    """Every path the PR touches, INCLUDING the old path of a rename.
+
+    ``gh pr diff --name-only`` prints only a rename's destination, so a file
+    moved out of a pipeline prefix would vanish from the candidate list and
+    the full diff would never be read. The files API reports
+    ``previous_filename`` for renames; ``--paginate`` walks past 30 files.
+    """
+    out = _run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/pulls/{pr}/files",
+            "--paginate",
+            "--jq",
+            ".[] | .filename, (.previous_filename // empty)",
+        ]
+    )
+    return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
 
 def pr_diff_text(pr: int, repo: str = DEFAULT_REPO) -> str:
@@ -173,8 +195,13 @@ def _merge_base(repo_root: Path, base: str) -> str:
 
 
 def local_diff_names(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> list[str]:
-    """Net change of the working tree (committed, staged, unstaged) against the merge base."""
-    out = _run(["git", "diff", "--name-only", _merge_base(repo_root, base)], cwd=repo_root)
+    """Net change of the working tree (committed, staged, unstaged) against the merge base.
+
+    ``--no-renames`` lists a rename as its old AND new path, so a file moved
+    out of a pipeline prefix stays a candidate.
+    """
+    argv = ["git", "diff", "--name-only", "--no-renames", _merge_base(repo_root, base)]
+    out = _run(argv, cwd=repo_root)
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
 
