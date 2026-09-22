@@ -154,7 +154,6 @@ _EXCEPT_RE = re.compile(
 _DOTTED_NAME = re.compile(r"^[A-Za-z_][\w.]*$")
 _BLOCK_HEADER_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+\w+.*:" + _TRAILING_COMMENT)
 _SIGNATURE_CLOSE_RE = re.compile(r"^\s*\)\s*(?:->\s*.+?)?\s*:" + _TRAILING_COMMENT)
-_TRIPLE_QUOTE_RE = re.compile(r'"""|\'\'\'')
 _IMPORT_RE = re.compile(
     r"^(?P<indent>\s*)(?P<stmt>import\s+[\w.]+(?:\s+as\s+\w+)?"
     r"|from\s+[\w.]+\s+import\s+\w+(?:\s+as\s+\w+)?(?:\s*,\s*\w+(?:\s+as\s+\w+)?)*)"
@@ -309,6 +308,35 @@ def _side_lines(hunk: Hunk, tag: str) -> list[tuple[int, str]]:
     return [(i, text) for i, (t, text) in enumerate(hunk.lines) if t in (" ", tag)]
 
 
+def _unescaped_find(text: str, delimiter: str, start: int = 0) -> int:
+    """Index of the next ``delimiter`` not preceded by an odd run of backslashes, else -1.
+
+    A backslash right before the triple quote escapes it, so that quote keeps
+    the string open (Codex P1 on #3804); an escaped quote never terminates a
+    literal, raw or not. An even run of backslashes is itself escaped, and
+    the quote after it is a real delimiter.
+    """
+    position = text.find(delimiter, start)
+    while position != -1:
+        backslashes = 0
+        while position - backslashes - 1 >= 0 and text[position - backslashes - 1] == "\\":
+            backslashes += 1
+        if backslashes % 2 == 0:
+            return position
+        position = text.find(delimiter, position + 1)
+    return -1
+
+
+def _first_delimiter(text: str, start: int = 0) -> tuple[int, str] | None:
+    """Earliest unescaped triple quote of either kind at or after ``start``."""
+    found = [
+        (position, delimiter)
+        for delimiter in ('"""', "'''")
+        if (position := _unescaped_find(text, delimiter, start)) != -1
+    ]
+    return min(found) if found else None
+
+
 @dataclass
 class _StringWalk:
     """Per-side triple-quoted string tracker: docstring lines vs other string content."""
@@ -353,7 +381,7 @@ def _string_regions(hunk: Hunk, tag: str, start_line: int) -> _StringWalk:
     at_file_top = start_line == 1
     for index, text in _side_lines(hunk, tag):
         if walk.kind is not None:
-            position = text.find(walk.delimiter)
+            position = _unescaped_find(text, walk.delimiter)
             if position == -1:
                 walk.block.append(index)
             else:
@@ -363,26 +391,34 @@ def _string_regions(hunk: Hunk, tag: str, start_line: int) -> _StringWalk:
         stripped = text.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        opener = _TRIPLE_QUOTE_RE.search(text)
+        opener = _first_delimiter(text)
         if opener is None:
             walk.prev_code = text
             continue
-        delimiter = opener.group(0)
-        at_line_start = text[: opener.start()].strip() in ("", "r", "R")
+        start, delimiter = opener
+        at_line_start = text[:start].strip() in ("", "r", "R")
         follows_header = walk.prev_code is not None and bool(
             _BLOCK_HEADER_RE.match(walk.prev_code) or _SIGNATURE_CLOSE_RE.match(walk.prev_code)
         )
         is_doc = at_line_start and (follows_header or (walk.prev_code is None and at_file_top))
-        rest = text[opener.end() :]
-        closer = rest.find(delimiter)
+        closer = _unescaped_find(text, delimiter, start + 3)
         if closer == -1:
             walk.open("doc" if is_doc else "other", delimiter, index)
         else:
-            after = rest[closer + 3 :]
+            after = text[closer + 3 :]
             if is_doc and (not after.strip() or after.strip().startswith("#")):
                 walk.docstring.add(index)
-            elif _TRIPLE_QUOTE_RE.search(after) is not None:
-                walk.open("other", delimiter, index)  # a second string opens on this line
+            else:
+                # Further strings on the same line: one that does not close
+                # here opens an OTHER region (never a docstring).
+                cursor = closer + 3
+                while (following := _first_delimiter(text, cursor)) is not None:
+                    next_start, next_delimiter = following
+                    next_close = _unescaped_find(text, next_delimiter, next_start + 3)
+                    if next_close == -1:
+                        walk.open("other", next_delimiter, index)
+                        break
+                    cursor = next_close + 3
         walk.prev_code = text
     if walk.kind is not None:
         walk.abandon()
