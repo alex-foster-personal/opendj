@@ -186,7 +186,13 @@ export function runControllerPad(
 	}
 	if (shifted) return;
 	if (mode === 'auto_loop') {
-		if (pressed) _cmdBeatLoop(deck, AUTO_LOOP_BEATS[pad - 1]);
+		if (!pressed) return;
+		const beats = AUTO_LOOP_BEATS[pad - 1];
+		const loop = deckStates[deck].loop;
+		// The engine's beat_loop command deliberately restarts a matching loop.
+		// Auto Loop pads instead toggle that length off on a second press.
+		if (loop?.engaged && loop.beat_length === beats) _cmdLoopExit(deck);
+		else _cmdBeatLoop(deck, beats);
 		return;
 	}
 	if (mode === 'bounce_loop') {
