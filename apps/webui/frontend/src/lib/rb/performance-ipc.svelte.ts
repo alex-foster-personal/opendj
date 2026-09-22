@@ -1270,8 +1270,8 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'beat_loop') {
 		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms']);
 		const beats = _finite('beats', record.beats);
-		if (!Number.isInteger(beats) || beats <= 0) {
-			throw new RangeError(`beats must be a positive integer; got ${beats}`);
+		if (beats <= 0) {
+			throw new RangeError(`beats must be positive; got ${beats}`);
 		}
 		if (record.start_ms === undefined) return { type, deck, beats };
 		const start_ms = _finite('start_ms', record.start_ms);

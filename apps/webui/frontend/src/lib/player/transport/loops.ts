@@ -64,7 +64,7 @@ export function phaseLockedSafetyLoop(
 	durationMs: number
 ): LoopSnapshot | null {
 	if (safety.beat_length === null) return null;
-	if (!Number.isInteger(safety.beat_length) || safety.beat_length <= 0) return null;
+	if (!Number.isFinite(safety.beat_length) || safety.beat_length <= 0) return null;
 	try {
 		const range = exactBeatLoopRangeMs(beats, safety.in_ms, safety.beat_length, safety.in_ms);
 		if (range.out_ms > durationMs) return null;
@@ -450,8 +450,8 @@ export function exactBeatLoopRangeMs(
 	beatCount: number,
 	startMs?: number
 ): { in_ms: number; out_ms: number } {
-	if (!Number.isInteger(beatCount) || beatCount <= 0) {
-		throw new RangeError(`beatCount must be a positive integer, got ${beatCount}`);
+	if (!Number.isFinite(beatCount) || beatCount <= 0) {
+		throw new RangeError(`beatCount must be finite and positive, got ${beatCount}`);
 	}
 	const anchorMs = startMs ?? positionMs;
 	if (!Number.isFinite(anchorMs) || anchorMs < 0) {
@@ -460,10 +460,16 @@ export function exactBeatLoopRangeMs(
 	const startSec = quantizeToNearestBeat(beats, anchorMs / 1000);
 	const startIndex = beats.findIndex((beat) => beat.t === startSec);
 	const endIndex = startIndex + beatCount;
-	if (startIndex < 0 || endIndex >= beats.length) {
+	if (startIndex < 0 || Math.ceil(endIndex) >= beats.length) {
 		throw new RangeError(
 			`${beatCount} PQTZ beats do not fit from loop anchor ${anchorMs}ms`
 		);
 	}
-	return { in_ms: startSec * 1000, out_ms: beats[endIndex].t * 1000 };
+	// Fractions interpolate the measured adjacent PQTZ interval, never nominal
+	// BPM. Whole-beat endpoints remain the exact recorded timestamps.
+	const whole = Math.floor(endIndex);
+	const fraction = endIndex - whole;
+	const endSec = fraction === 0 ? beats[whole].t
+		: beats[whole].t + fraction * (beats[whole + 1].t - beats[whole].t);
+	return { in_ms: startSec * 1000, out_ms: endSec * 1000 };
 }

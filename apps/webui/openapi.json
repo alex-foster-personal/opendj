@@ -5466,7 +5466,7 @@
           "beats": {
             "exclusiveMinimum": 0.0,
             "title": "Beats",
-            "type": "integer"
+            "type": "number"
           },
           "deck": {
             "enum": [

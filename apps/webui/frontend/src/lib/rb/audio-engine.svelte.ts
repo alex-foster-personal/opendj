@@ -3652,6 +3652,14 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {
+		await this._setLoop(deck, loop, null);
+	}
+
+	/** Beat-loop callers already resolved endpoints from PQTZ. Do not re-snap
+	 * those to the manual loop grid: that would collapse fractional loops. */
+	private async _setLoop(
+		deck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null
+	): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setLoop');
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
@@ -3682,11 +3690,11 @@ class RbAudioEngine implements AudioEngine {
 		// endpoints without one. A manual in/out loop is not grid-dependent.
 		const loopBeats = _quantizeGrid(st);
 		const snapped =
-			loopBeats !== null
+			loopBeats !== null && beatLength === null
 				? quantizedLoopEndpointsMs(loopBeats, loop, true, _quantizeGridBeats(st))
 				: quantizedLoopEndpointsMs([], loop, false);
 		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
-		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
+		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: beatLength };
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;
@@ -3765,13 +3773,9 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		const previousLoop = st.loop === null ? null : { ...st.loop };
-		await this.setLoop(deck, range);
-		if (st.loop !== null) st.loop.beat_length = beats;
+		await this._setLoop(deck, range, beats);
 		const pending = _rt[deck].pending;
 		const pendingLoop = pending[pending.length - 1]?.loop;
-		if (pendingLoop !== null && pendingLoop !== undefined) {
-			pendingLoop.beat_length = beats;
-		}
 		const nextLoop = pendingLoop ?? st.loop;
 		if (previousLoop !== null && nextLoop !== null) {
 			st.safety_loop = replaceMatchingSafetyLoopSnapshot(st.safety_loop, previousLoop, nextLoop);

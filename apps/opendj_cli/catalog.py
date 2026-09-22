@@ -169,7 +169,7 @@ _VERBS: tuple[Verb, ...] = (
     Verb("loop_exit", "loop", (_DECK,), fixed=(("loop", None),), quick_draws=("loop.exit",)),
     Verb("beat_loop", "beat_loop", (
         _DECK,
-        arg("beats", "int", int_value),
+        arg("beats", "number", number_value),
         arg("start_ms", "number", number_value, optional=True),
     ), quick_draws=("loop.start_4", "loop.start_8", "loop.start_16")),
     Verb("beat_jump", "beat_jump", (_DECK, arg("beats", "int", int_value))),
