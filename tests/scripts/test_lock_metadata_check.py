@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN, check
+import pytest
+
+from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN, canonical_version, check
 
 PYPROJECT = """
 [project]
@@ -131,6 +133,63 @@ def test_an_extra_named_with_underscores_matches_its_normalized_marker(tmp_path:
     )
     code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("spelled", "canonical"),
+    [
+        ("01.026", "1.26"),
+        ("v1.0", "1.0"),
+        ("1.0.0-rc1", "1.0.0rc1"),
+        ("1.0alpha", "1.0a0"),
+        ("1.0.preview.2", "1.0rc2"),
+        ("1.0-1", "1.0.post1"),
+        ("1.0.rev2", "1.0.post2"),
+        ("1.0-dev", "1.0.dev0"),
+        ("0!1.0", "1.0"),
+        ("2!1.0", "2!1.0"),
+        ("1.0+Ubuntu_1", "1.0+ubuntu.1"),
+        ("1.0.1", "1.0.1"),
+    ],
+)
+def test_canonical_version_matches_pep_440_normalization(spelled: str, canonical: str) -> None:
+    assert canonical_version(spelled) == canonical
+
+
+def test_a_non_version_is_unknown() -> None:
+    with pytest.raises(Exception, match="not a PEP 440 version"):
+        canonical_version("latest")
+
+
+def test_noncanonical_version_spellings_match_the_canonical_lock(tmp_path: Path) -> None:
+    """if pyproject.toml spells `>=01.026`, `>=03.011` and `1.0.0-rc1` and uv wrote the
+    canonical forms then 0: a fresh lock must never read stale over spelling"""
+    pyproject = (
+        PYPROJECT.replace('"numpy>=1.26"', '"numpy>=01.026"')
+        .replace('requires-python = ">=3.11"', 'requires-python = ">=03.011"')
+        .replace('name = "Demo_Project"', 'name = "Demo_Project"\nversion = "0.1.0-rc1"')
+    )
+    lock = LOCK.replace('version = "0.1.0"\nsource', 'version = "0.1.0rc1"\nsource')
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+
+
+def test_a_wildcard_and_arbitrary_equality_clause_still_compare(tmp_path: Path) -> None:
+    pyproject = PYPROJECT.replace('"numpy>=1.26"', '"numpy==01.026.*,!=1.26.3"')
+    lock = LOCK.replace('specifier = ">=1.26" }', 'specifier = "==1.26.*,!=1.26.3" }')
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    code, message = _run(tmp_path, pyproject.replace("!=1.26.3", "!=1.26.4"), lock)
+    assert code == EXIT_STALE
+
+
+def test_an_unparseable_project_version_is_unknown_not_clean(tmp_path: Path) -> None:
+    code, message = _run(
+        tmp_path,
+        PYPROJECT.replace('name = "Demo_Project"', 'name = "Demo_Project"\nversion = "latest"'),
+    )
+    assert code == EXIT_UNKNOWN
+    assert "not a PEP 440 version" in message
 
 
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
