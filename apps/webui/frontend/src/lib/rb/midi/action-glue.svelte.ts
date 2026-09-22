@@ -76,7 +76,7 @@ export {
 	controllerPadMode,
 	releaseControllerDevice,
 	resetControllerPadRuntime as _resetControllerStateForTests
-} from '$lib/rb/midi/controller-pad-runtime.svelte';
+};
 
 // ------------------------------------------------------- browse delegation
 
