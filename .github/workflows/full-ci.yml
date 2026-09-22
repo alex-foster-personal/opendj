@@ -5,7 +5,7 @@ name: Full CI (on-demand)
 # the fast lane in ci.yml). Dispatch this before releases, after touching
 # the slow product-edge suites (tests/analysis, tests/vocals,
 # tests/sync/usb, tests/sets), or whenever a full-coverage snapshot is
-# wanted. Dispatched runs are priced by the cost guard job in error-sink.yml.
+# wanted. Dispatched runs are priced by the CI Cost Guard.
 #
 # There is deliberately NO schedule and NO push trigger. Known trade-off:
 # a regression confined to the slow suites can land on main undetected

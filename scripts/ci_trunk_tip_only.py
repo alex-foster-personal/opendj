@@ -62,6 +62,8 @@ except ModuleNotFoundError as exc:
     raise
 
 GATING_WORKFLOW = "CI"
+# CI Cost Guard left this set on Tue 22 Sep 2026: it is a scheduled batch pass
+# now, not a per-SHA follower, so there is nothing of it to supersede.
 BOOKKEEPING_WORKFLOWS = frozenset(
     {
         "Stable evidence",
