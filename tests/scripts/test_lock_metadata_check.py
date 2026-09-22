@@ -547,6 +547,22 @@ def test_a_path_source_is_predicted_from_the_target_and_the_project_dir(tmp_path
         tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, virtual_target)
     )
     assert got == EXIT_STALE, message
+    # The source's own flags win over the target's package = false (measured, round 15).
+    got, message = _run(
+        tmp_path,
+        *_with_source(tmp_path, '{ path = "localdep", package = true }', entry, virtual_target),
+    )
+    assert got == EXIT_OK, message
+    got, message = _run(
+        tmp_path,
+        *_with_source(
+            tmp_path,
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", editable = "localdep" }',
+            virtual_target,
+        ),
+    )
+    assert got == EXIT_OK, message
     # A target without a build system or without [project] is still `directory` (measured).
     got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "localdep" }', entry, ""))
     assert got == EXIT_OK, message
