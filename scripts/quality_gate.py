@@ -894,7 +894,9 @@ _MYPY_ERROR_BUCKETS: tuple[str, ...] = ("apps", "tests", "scripts")
 
 def _mypy_bucket(rel: str) -> str:
     """Map a reported file to the metric that owns it, or refuse to guess."""
-    head = rel.split("/", 1)[0]
+    # mypy on Windows reports the path with the native separator; the scored
+    # roots are separator-free, so normalize before taking the head.
+    head = rel.replace("\\", "/").split("/", 1)[0]
     # conftest.py is the one scored root that is a file. It is test scaffolding,
     # so its debt is test debt rather than a fourth metric holding one number.
     if head == "conftest.py":
