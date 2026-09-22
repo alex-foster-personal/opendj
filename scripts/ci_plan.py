@@ -142,6 +142,10 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # scan cannot see a glob or an index walk, and an incomplete list under-selects. Sol's P1 on
 # #3339.
 #
+# Round 10 keeps every word of that and still narrows: the prose trees are CLAIMED by a
+# `prose` scope whose consumers the mention reader finds (the tests that spell `docs`,
+# `specs`, ...), so a docs change runs those suites rather than nothing or everything.
+#
 # The cost is stated plainly rather than hidden: SKIP_PYTEST is now unreachable, so the
 # planner narrows nothing at all on this repository. That is the honest form of round 5's
 # result, not a new one -- selection here was already 0% SCOPED -- and a planner that runs

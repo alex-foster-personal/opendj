@@ -218,6 +218,19 @@ scopes:
     tests: []
     dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "stems", "webui"]
     mentions: ["apps/webui/frontend", "frontend"]
+  - name: prose
+    # Documentation trees. Round 5 measured that prose is NOT harmless here (24 files named
+    # by literal path inside tests, six modules that glob for it), so an unclaimed prose path
+    # answered FULL and 46 of 60 recent merges carried one. Round 10 claims the trees and
+    # finds their consumers the way round 9 found the frontend's: by what tests spell. The
+    # mentions are bare directory names, not suffixes: a `.md` mention matched an error
+    # message in tests/conftest.py that names CLAUDE.md, which would have carried the scope.
+    # Root-level markdown stays unclaimed (FULL) for the same reason. `.planning/REQUIREMENTS.md`
+    # is a full trigger above and wins before this scope is consulted.
+    sources: ["docs/", "specs/", "app_docs/", ".planning/", "handoffs/", "blog/"]
+    tests: []
+    dependents: ["agentic_testing", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
+    mentions: ["docs", "specs", "app_docs", ".planning", "handoffs", "blog"]
   - name: agentic_testing
     sources: ["ops/agentic_testing/"]
     tests: ["tests/agentic_testing/"]
