@@ -107,6 +107,36 @@ def test_requires_python_drift_is_stale(tmp_path: Path) -> None:
     assert "requires-python" in message
 
 
+@pytest.mark.parametrize(
+    ("spelled", "recorded", "code"),
+    [
+        # uv records the tightest bounds (measured with uv 0.8.17, round 12).
+        (">=3.10,>=3.11,<4,<5", ">=3.11, <4", EXIT_OK),
+        (">3.10,>=3.11", ">=3.11", EXIT_OK),
+        (">=3.10,>3.10,<4,<=4", ">3.10, <4", EXIT_OK),
+        (">=3.11,<=3.13,<3.13.5", ">=3.11, <=3.13", EXIT_OK),
+        (">=3.10.0.1,>3.10", ">=3.10.0.1", EXIT_OK),
+        (">=3.11,!=3.12,!=3.12,<4", ">=3.11, !=3.12, <4", EXIT_OK),
+        (">=3.11,==3.12.*", "==3.12.*", EXIT_OK),
+        # CONTROLS: a bound that is not dominated is still a difference.
+        (">=3.10,>=3.11", ">=3.10", EXIT_STALE),
+        (">=3.11,<4,<5", ">=3.11, <5", EXIT_STALE),
+        (">=3.11,==3.12.*", ">=3.11", EXIT_STALE),
+    ],
+)
+def test_redundant_requires_python_bounds_match_the_tightest_form_uv_writes(
+    tmp_path: Path, spelled: str, recorded: str, code: int
+) -> None:
+    """if pyproject.toml spells requires-python with dominated bounds and uv recorded
+    the tightest form (which it does) then 0; a bound uv would keep still separates
+    (Codex P2 on #3763, round 12)"""
+    pyproject = PYPROJECT.replace('requires-python = ">=3.11"', f'requires-python = "{spelled}"')
+    lock = LOCK.replace('requires-python = ">=3.11"', f'requires-python = "{recorded}"')
+    assert pyproject != PYPROJECT  # the lock side may legitimately be the fixture's own
+    got, message = _run(tmp_path, pyproject, lock)
+    assert got == code, (spelled, recorded, message)
+
+
 def test_requires_python_removed_without_uv_lock_is_stale(tmp_path: Path) -> None:
     """if pyproject.toml drops requires-python and the lock still carries it then 1, not 0"""
     code, message = _run(tmp_path, PYPROJECT.replace('requires-python = ">=3.11"\n', ""))

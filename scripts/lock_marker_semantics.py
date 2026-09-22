@@ -454,9 +454,16 @@ def _string_probes(values: set[str], members: set[str], ordered: bool) -> list[s
     lies strictly inside the interval up to the next literal (or above the last)."""
     if members and ordered:
         raise Unknown("membership and ordering on one marker variable are not compared")
-    pool: set[str] = set(values) | {"zz-no-literal-mentions-this"}
+    pool: set[str] = set(values)
     for member in members:
         pool |= _substrings(member)
+    # A value no clause mentions: not a literal, not inside a membership literal.
+    # Derived, not fixed, or a marker naming the sentinel itself would read as
+    # matching everything (Codex P2 on #3763, round 12).
+    unmentioned = "zz-no-literal-mentions-this"
+    while unmentioned in pool or any(unmentioned in member for member in members):
+        unmentioned += "-"
+    pool.add(unmentioned)
     if ordered:
         pool |= {""} | {value + "\x00" for value in values}
     return sorted(pool)

@@ -142,6 +142,11 @@ def _as_uv_stores_it(marker: str) -> str:
         ("implementation_version ~= '3.10.0'", "implementation_version == '3.10.*'", True),
         ("python_full_version ~= '3.10.0'", "python_full_version ~= '3.10'", False),
         ("python_full_version ~= '3.10.0'", "python_full_version == '3.10.0.*'", False),
+        # The unmentioned-value probe is derived from the literals, so a marker that
+        # names the old fixed sentinel is still told apart from no marker (round 12).
+        ("sys_platform == 'zz-no-literal-mentions-this'", "", False),
+        ("sys_platform in 'zz-no-literal-mentions-this-and-more'", "", False),
+        ("sys_platform != 'zz-no-literal-mentions-this'", "", False),
         # uv drops an epoch too (measured, same table).
         ("python_full_version <= '1!3'", "python_full_version <= '3'", True),
         ("python_full_version >= '1!3.11'", "python_full_version >= '3.11'", True),
