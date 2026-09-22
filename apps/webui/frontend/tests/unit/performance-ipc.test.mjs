@@ -878,7 +878,9 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		assert.deepEqual(state.decks[1].stems.controls, {
 			vocal: { muted: false, solo: false, gain: 0.5 },
 			instrumental: { muted: false, solo: false, gain: 0.5 },
-			drums: { muted: false, solo: false, gain: 0.5 }
+			drums: { muted: false, solo: false, gain: 0.5 },
+			bass: { muted: false, solo: false, gain: 0.5 },
+			other: { muted: false, solo: false, gain: 0.5 }
 		});
 
 		await assert.rejects(
@@ -888,7 +890,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				muted: true
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -898,6 +900,12 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				solo: 'yes'
 			}),
 			/solo must be boolean/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_solo', deck: 1, stem: 'bass', solo: true, exclusive: 'yes'
+			}),
+			/exclusive must be boolean/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -923,7 +931,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				value: 0.5
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 	} finally {
 		uninstall();

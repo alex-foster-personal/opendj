@@ -23,7 +23,7 @@ import {
 	type PerformanceSessionSnapshot,
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
-import type { StemControl } from '$lib/rb/stem-types';
+import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
@@ -32,7 +32,7 @@ export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
 export const RESCUE_RESTORE_MAX_AGE_MS = 600_000;
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
+const STEM_CONTROLS = STEM_CONTROL_IDS;
 
 export interface PerformanceSessionRestoreOptions {
 	now?: () => number;
@@ -80,8 +80,9 @@ function _snapshotInputFromState(
 			assign: channel.assign,
 			stem_eq_mode: channel.stem_eq_mode
 		};
-		const deckStems = {} as Record<StemControl, { muted: boolean; solo: boolean; gain: number }>;
+		const deckStems = {} as PerformanceSessionSnapshotInput['stems'][DeckId];
 		for (const stem of STEM_CONTROLS) {
+			if ((stem === 'bass' || stem === 'other') && !deck.stems.available_controls.includes(stem)) continue;
 			deckStems[stem] = {
 				muted: deck.stems.controls[stem].muted,
 				solo: deck.stems.controls[stem].solo,
@@ -247,6 +248,7 @@ export async function restoreDeckConfigFromSnapshot(
 	];
 	for (const stem of STEM_CONTROLS) {
 		const control = snapshot.stems[deckId][stem];
+		if (control === undefined) continue; // legacy snapshot: new child controls remain neutral
 		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
 		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
 		if (control.gain !== undefined) {

@@ -16,6 +16,7 @@ export interface StemEngineRuntime {
 export interface StemEngineControlDeps {
 	requireLoaded: (deck: DeckId, op: string) => { st: DeckState; rt: StemEngineRuntime };
 	getChannel: (deck: DeckId) => MixerChannelState;
+	exclusive?: boolean;
 }
 
 export function applyStemControl(
@@ -25,8 +26,11 @@ export function applyStemControl(
 	value: boolean | number,
 	deps: StemEngineControlDeps
 ): void {
+	if (deps.exclusive !== undefined && typeof deps.exclusive !== 'boolean') {
+		throw new TypeError('exclusive stem solo must be boolean');
+	}
 	if (!STEM_CONTROLS.includes(stem)) {
-		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(stem)}`);
+		throw new TypeError(`unknown stem control: ${String(stem)}`);
 	}
 	const op =
 		field === 'muted' ? 'setStemMute' : field === 'solo' ? 'setStemSolo' : 'setStemGain';
@@ -54,8 +58,13 @@ export function applyStemControl(
 	const controls = {
 		vocal: { ...st.stems.controls.vocal },
 		instrumental: { ...st.stems.controls.instrumental },
-		drums: { ...st.stems.controls.drums }
+		drums: { ...st.stems.controls.drums },
+		bass: { ...st.stems.controls.bass },
+		other: { ...st.stems.controls.other }
 	};
+	if (field === 'solo' && deps.exclusive) {
+		for (const control of STEM_CONTROLS) controls[control].solo = false;
+	}
 	if (field === 'gain') {
 		if (typeof value !== 'number') {
 			throw new TypeError('setStemGain: value must be a number');

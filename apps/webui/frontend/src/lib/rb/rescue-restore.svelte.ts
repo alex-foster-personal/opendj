@@ -23,7 +23,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { API_BASE } from '$lib/api';
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS = ['vocal', 'instrumental', 'drums'] as const;
+import { STEM_CONTROL_IDS as STEM_CONTROLS } from '$lib/rb/stem-types';
 
 export type RescueDeckOutcome = 'resumed' | 'paused' | 'missing';
 
@@ -98,6 +98,7 @@ async function _restoreRescueDeckConfig(
 	];
 	for (const stem of STEM_CONTROLS) {
 		const control = deck.stems[stem];
+		if (control === undefined) continue; // legacy snapshot: child controls remain neutral
 		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
 		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
 		commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });

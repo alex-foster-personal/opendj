@@ -38,6 +38,8 @@
 
 import { untrack } from 'svelte';
 import { pushToast } from '$lib/stores.svelte';
+import { stemPartGains } from '$lib/rb/stem-graph';
+import { controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
 import {
 	deckStates,
 	engine,
@@ -456,7 +458,12 @@ export function pitchRatioFromFader(value01: number, rangePct: number): number {
 /** True when a LedRule's watched state is currently active. Reads ONLY
  * reactive stores so the caller's $effect re-runs on change. */
 export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolean {
-	if (trigger.kind === 'deck_playing') {
+	if (trigger.kind === 'stem_active' || trigger.kind === 'stem_solo') {
+		const stems = deckStates[trigger.deck].stems;
+		if (!controllerStemPadsAvailable(stems)) return false;
+		if (trigger.kind === 'stem_solo') return stems.controls[trigger.stem].solo;
+		return (stemPartGains(stems.controls)[trigger.stem === 'vocal' ? 'vocals' : trigger.stem] ?? 0) > 0;
+	} else if (trigger.kind === 'deck_playing') {
 		return deckStates[trigger.deck].playing;
 	} else if (trigger.kind === 'deck_loaded') {
 		return deckStates[trigger.deck].stable_id !== null;

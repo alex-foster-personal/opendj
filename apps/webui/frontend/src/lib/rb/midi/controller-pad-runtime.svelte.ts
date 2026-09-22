@@ -14,6 +14,7 @@ import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
 import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
+import { CONTROLLER_NEURAL_STEMS, controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
 
 const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
 
@@ -225,7 +226,9 @@ export function selectControllerPadMode(
 	if (controllerPadMode(deviceId, deck) !== mode) _releaseBounce(deck, deviceId);
 	_padModesFor(deviceId)[deck] = mode;
 	onModeChanged();
-	if (!['hot_cue', 'auto_loop', 'bounce_loop'].includes(mode)) {
+	if (mode === 'neural_mix' && !controllerStemPadsAvailable(deckStates[deck].stems)) {
+		notify(`Deck ${deck}: Neural Mix pads require four ready stems (${deckStates[deck].stems.status})`, 'warn');
+	} else if (!['hot_cue', 'auto_loop', 'bounce_loop', 'neural_mix'].includes(mode)) {
 		notify(`Deck ${deck}: ${mode.replaceAll('_', ' ')} pads are not available yet`, 'warn');
 	}
 }
@@ -301,6 +304,18 @@ export function runControllerPad(
 		_bounceHolds.set(deck, { device: _controllerKey(deviceId), pad, generation });
 		void dispatchPerformanceCommand({ type: 'beat_loop', deck,
 			beats: CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1], if_load_generation: generation });
+		return;
+	}
+	if (mode === 'neural_mix') {
+		const stems = deckStates[deck].stems;
+		if (!controllerStemPadsAvailable(stems)) {
+			notify(`Deck ${deck}: Neural Mix pads require four ready stems (${stems.status})`, 'warn');
+			return;
+		}
+		const stem = CONTROLLER_NEURAL_STEMS[(pad - 1) % 4];
+		const control = stems.controls[stem];
+		if (pad <= 4) void dispatchPerformanceCommand({ type: 'stem_mute', deck, stem, muted: !control.muted });
+		else void dispatchPerformanceCommand({ type: 'stem_solo', deck, stem, solo: !control.solo, exclusive: true });
 		return;
 	}
 	// Unsupported modes intentionally remain inert after the warning emitted

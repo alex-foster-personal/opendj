@@ -224,7 +224,7 @@ export type PerformanceCommand =
 	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
-	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
@@ -955,8 +955,8 @@ function _generation(value: unknown): number {
 }
 
 function _stem(value: unknown): StemControl {
-	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
-		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums' && value !== 'bass' && value !== 'other') {
+		throw new TypeError(`unknown stem control: ${String(value)}`);
 	}
 	return value;
 }
@@ -1321,8 +1321,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
 	} else if (type === 'stem_solo') {
-		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
-		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+		_exactKeys(record, ['type', 'deck', 'stem', 'solo', 'exclusive']);
+		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo),
+			...(record.exclusive === undefined ? {} : { exclusive: _boolean('exclusive', record.exclusive) }) };
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -1565,7 +1566,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			controls: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
-				drums: { ...deck.stems.controls.drums }
+				drums: { ...deck.stems.controls.drums },
+				bass: { ...deck.stems.controls.bass },
+				other: { ...deck.stems.controls.other }
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
@@ -1968,7 +1971,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'stem_mute') {
 		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
 	} else if (command.type === 'stem_solo') {
-		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms);
+		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_gain') {

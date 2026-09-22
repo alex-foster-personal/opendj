@@ -200,7 +200,7 @@ import {
 	decodeStemBuffers,
 	DEMUCS_PARTS,
 	loadingStemDeckState,
-	readyStemDeckState,
+	readyStemDeckState, playingStemsIntentionallySilent,
 	STEM_CONTROLS,
 	unavailableStemDeckState,
 	type StemBuffers
@@ -1999,8 +1999,8 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		const cueOnlyMonitoring = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates);
-		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), cueOnlyMonitoring);
+		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
 		if (anyTransport) noteAudioPresentationTick();
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -4163,9 +4163,9 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx !== null) logMixerApply('stem-mute-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive });
 		if (_ctx !== null) logMixerApply('stem-solo-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 

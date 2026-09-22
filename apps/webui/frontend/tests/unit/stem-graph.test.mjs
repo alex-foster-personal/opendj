@@ -51,6 +51,32 @@ test('instrumental control owns bass and other without synthesising subtraction'
 	});
 });
 
+test('independent bass and harmonics retain grouped instrumental gain and mute', () => {
+	const controls = stems.createDefaultStemControls();
+	assert.ok(controls.bass, 'the real bass branch needs its own control');
+	assert.ok(controls.other, 'the real other branch needs its own control');
+	controls.bass.muted = true;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 1, drums: 1, bass: 0, other: 1 });
+	controls.bass.muted = false;
+	controls.bass.gain = 0.25;
+	controls.instrumental.gain = 0.25;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 1, drums: 1, bass: 0.25, other: 0.5 });
+	controls.instrumental.muted = true;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 1, drums: 1, bass: 0, other: 0 });
+});
+
+test('child solos select their real branch, and unavailable solos cannot mute RoFormer', () => {
+	const controls = stems.createDefaultStemControls();
+	assert.ok(controls.bass);
+	controls.bass.solo = true;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 0, drums: 0, bass: 1, other: 0 });
+	assert.deepEqual(stems.stemPartGains(controls, 'roformer2'), { vocals: 1, instrumental: 1 });
+	controls.instrumental.solo = true;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 0, drums: 0, bass: 1, other: 1 });
+	controls.other.muted = true;
+	assert.deepEqual(stems.stemPartGains(controls), { vocals: 0, drums: 0, bass: 1, other: 0 });
+});
+
 test('solo matrix gates every non-solo group and explicit mute wins over solo', () => {
 	const controls = stems.createDefaultStemControls();
 	controls.vocal.solo = true;
@@ -155,7 +181,7 @@ test('each layout advertises only the controls it can genuinely drive', () => {
 	assert.deepEqual(stems.readyStemDeckState(
 		{ source: 'demucs', model: 'htdemucs', layout: 'demucs4' },
 		{ sample_rate_hz: 48_000, frame_count: 960_000, channel_count: 2, duration_ms: 20_000 }
-	).available_controls, ['vocal', 'instrumental', 'drums']);
+	).available_controls, ['vocal', 'instrumental', 'drums', 'bass', 'other']);
 });
 
 test('a roformer2 schedule reaches both branches and no phantom third', async () => {

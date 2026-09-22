@@ -304,6 +304,8 @@ export type LedTrigger =
 	| { kind: 'loop_beats_engaged'; deck: DeckId; beats: number }
 	| { kind: 'beat_sync_enabled'; deck: DeckId }
 	| { kind: 'stem_eq_enabled'; deck: DeckId }
+	| { kind: 'stem_active'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
+	| { kind: 'stem_solo'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
 	| { kind: 'pad_mode_selected'; deck: DeckId; mode: ControllerPadMode }
 	/** Lit when the hot-cue slot is populated. On RGB pads velocityOn may
 	 * be overridden per-cue by the palette resolver (FLX10: Note-On

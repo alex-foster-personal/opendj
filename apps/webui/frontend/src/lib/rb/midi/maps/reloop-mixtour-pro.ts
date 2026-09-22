@@ -22,6 +22,7 @@ import type {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
+import { CONTROLLER_NEURAL_STEMS } from '$lib/rb/midi/controller-stem-pads';
 
 const PAD_MODES: readonly ControllerPadMode[] = [
 	'hot_cue',
@@ -173,6 +174,14 @@ function _deckLeds(deck: DeckId): LedRule[] {
 					out: { ch: p, note, velocityOn: velocityOff + 64, velocityOff }
 				});
 			}
+		}
+	}
+	for (const [index, stem] of CONTROLLER_NEURAL_STEMS.entries()) {
+		for (const offset of [0, 8]) {
+			rules.push({ trigger: { kind: 'stem_active', deck, stem }, padMode: 'neural_mix',
+				out: { ch: p, note: 0x14 + index + offset, velocityOn: 120, velocityOff: 56 } });
+			rules.push({ trigger: { kind: 'stem_solo', deck, stem }, padMode: 'neural_mix',
+				out: { ch: p, note: 0x18 + index + offset, velocityOn: 127, velocityOff: 63 } });
 		}
 	}
 	// Firmware reveals these separate banks only while MODE / SHIFT+MODE is
