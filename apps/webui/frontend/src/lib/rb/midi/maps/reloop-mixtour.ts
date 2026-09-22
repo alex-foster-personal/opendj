@@ -14,13 +14,12 @@
  *   [SPIKE 2b] Mixtour transport is plain Note/CC, VU meter feedback is
  *        Note-On velocity = signal level (0x00-0x7F).
  *
- * Mixtour Pro: the spike documents NO separate MIDI identity or message map
- * for the Pro (spike 1b/3b only lists hardware diffs: deck 3/4 paddles,
- * split pad layout, STEMS pads - the latter BLOCKED, spike 3b row 16).
- * nameMatch 'Mixtour' therefore intentionally also matches 'Mixtour Pro'
- * port names; Pro-only controls (deck 3/4 layer) arrive unmapped and land
- * in the learn log, which is exactly the tool for capturing their numbers
- * before a cited Pro variant map can exist. No fabricated Pro rows.
+ * MIXTOUR PRO WARNING (Tue 22 Sep 2026): this legacy map currently matches
+ * `Mixtour Pro`, but that is now known unsafe rather than intentional. The Pro
+ * uses different transport, load, mixer, pad and global addresses; some of its
+ * real controls dispatch unrelated legacy actions through this map. The first
+ * implementation tranche in specs/mixtour-pro-hardening.md must make this
+ * identity classic-only and quarantine the Pro before adding Pro behavior.
  *
  * Requirements (mini-PRD):
  *   ✔︎ 2-deck transport (play/cue), 4 hot cues per deck, beat-loop +
@@ -190,7 +189,7 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
 
 // -------------------------------------------------------------- device map
 
-/** Reloop Mixtour (and Mixtour Pro - see header) P0 map. */
+/** Reloop Mixtour classic P0 map. Known unsafe for Pro until Package 0 lands. */
 export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
 	nameMatch: 'Mixtour',
