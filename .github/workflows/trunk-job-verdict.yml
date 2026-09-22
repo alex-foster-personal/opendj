@@ -155,7 +155,7 @@ jobs:
         run: scripts/ci_clean_untracked.sh
 
       # #1041: this job calls bare `python` below with no actions/setup-python
-      # step (this watchdog is deliberately lightweight, like ci-cost-guard.yml).
+      # step (this watchdog is deliberately lightweight, like the cost guard job in error-sink.yml).
       # A self-hosted box need not alias python -> python3 the way GitHub-hosted
       # images do. Fail HERE, naming the runner and the missing binary, rather
       # than mid-classification with a bare exit 127.
