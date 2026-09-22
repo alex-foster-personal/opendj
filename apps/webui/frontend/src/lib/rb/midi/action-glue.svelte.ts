@@ -53,7 +53,7 @@ import {
 	sendLed,
 	unregisterActionHandler
 } from '$lib/rb/midi/webmidi.svelte';
-import type { LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
+import type { DeviceMap, LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
 import {
 	controllerPadMode,
 	cycleControllerManualLoop,
@@ -453,6 +453,9 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 	} else if (trigger.kind === 'loop_engaged') {
 		const loop = deckStates[trigger.deck].loop;
 		return loop !== null && loop.engaged;
+	} else if (trigger.kind === 'loop_beats_engaged') {
+		const loop = deckStates[trigger.deck].loop;
+		return loop !== null && loop.engaged && loop.beat_length === trigger.beats;
 	} else if (trigger.kind === 'beat_sync_enabled') {
 		return deckStates[trigger.deck].beat_sync_enabled;
 	} else if (trigger.kind === 'stem_eq_enabled') {
@@ -471,6 +474,18 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 	throw new Error(`Unhandled LedTrigger: ${JSON.stringify(_exhaustive)}`);
 }
 
+/** Engine-backed, mode-resolved output snapshot. Last matching rule owns an
+ * address, just as the bounded MIDI writer coalesces writes to that address. */
+export function midiLedFeedback(map: DeviceMap, deviceId?: string): { ch: number; note: number; velocity: number }[] {
+	const outputs = new Map<string, { ch: number; note: number; velocity: number }>();
+	for (const rule of map.leds ?? []) {
+		if (rule.padMode !== undefined && controllerPadMode(deviceId, rule.trigger.deck) !== rule.padMode) continue;
+		const { ch, note, velocityOn, velocityOff } = rule.out;
+		outputs.set(`${ch}:${note}`, { ch, note, velocity: ledTriggerActive(rule.trigger, deviceId) ? velocityOn : velocityOff });
+	}
+	return [...outputs.values()];
+}
+
 function _syncLeds(): void {
 	for (const device of midiState.devices) {
 		const map = getDeviceMap(device.id);
@@ -480,9 +495,8 @@ function _syncLeds(): void {
 			console.error(`[midi-glue] ${device.name}: LedRules declared but device has no MIDI output`);
 			continue;
 		}
-		for (const rule of map.leds) {
-			const on = ledTriggerActive(rule.trigger, device.id);
-			sendLed(device.id, rule.out.ch, rule.out.note, on ? rule.out.velocityOn : rule.out.velocityOff);
+		for (const output of midiLedFeedback(map, device.id)) {
+			sendLed(device.id, output.ch, output.note, output.velocity);
 		}
 	}
 }

@@ -294,6 +294,7 @@ export type LedTrigger =
 	| { kind: 'deck_playing'; deck: DeckId }
 	| { kind: 'deck_loaded'; deck: DeckId }
 	| { kind: 'loop_engaged'; deck: DeckId }
+	| { kind: 'loop_beats_engaged'; deck: DeckId; beats: number }
 	| { kind: 'beat_sync_enabled'; deck: DeckId }
 	| { kind: 'stem_eq_enabled'; deck: DeckId }
 	| { kind: 'pad_mode_selected'; deck: DeckId; mode: ControllerPadMode }
@@ -307,6 +308,8 @@ export type LedTrigger =
  * velocityOff, as a Note On to (ch, note) on the device's MIDI output. */
 export interface LedRule {
 	trigger: LedTrigger;
+	/** A mode-specific rule only owns this output while that pad mode is selected. */
+	padMode?: ControllerPadMode;
 	out: {
 		ch: number;
 		note: number;

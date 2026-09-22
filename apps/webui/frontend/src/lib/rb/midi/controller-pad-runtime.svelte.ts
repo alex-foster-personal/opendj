@@ -13,10 +13,9 @@ import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
+import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
 
 const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
-const AUTO_LOOP_BEATS = [0.25, 0.5, 1, 2, 4, 8, 16, 32] as const;
-const BOUNCE_LOOP_BEATS = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8] as const;
 
 // The action adapter owns user notifications; pad state does not depend on
 // the application's global UI store.
@@ -218,10 +217,9 @@ export function runControllerPad(
 		});
 		return;
 	}
-	if (shifted) return;
 	if (mode === 'auto_loop') {
 		if (!pressed) return;
-		const beats = AUTO_LOOP_BEATS[pad - 1];
+		const beats = CONTROLLER_LOOP_BEATS.auto_loop[pad - 1];
 		const loop = deckStates[deck].loop;
 		// The engine's beat_loop command deliberately restarts a matching loop.
 		// Auto Loop pads instead toggle that length off on a second press.
@@ -230,7 +228,7 @@ export function runControllerPad(
 		return;
 	}
 	if (mode === 'bounce_loop') {
-		if (pressed) _cmdBeatLoop(deck, BOUNCE_LOOP_BEATS[pad - 1]);
+		if (pressed) _cmdBeatLoop(deck, CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1]);
 		else _cmdLoopExit(deck);
 		return;
 	}

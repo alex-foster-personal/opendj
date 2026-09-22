@@ -190,5 +190,17 @@ test('feedback carries deck colors, RGB hot cues, mode state and discrete VU add
 			deck,
 			out: { ch: deck, cc: 0x1f, maxValue: 6 }
 		});
+		for (const padMode of ['auto_loop', 'bounce_loop']) {
+			const rules = pro.RELOOP_MIXTOUR_PRO_MAP.leds.filter((rule) =>
+				rule.trigger.deck === deck && rule.padMode === padMode);
+			assert.equal(rules.length, 16, 'normal and SHIFT banks both carry feedback');
+			assert.equal(rules[0].trigger.beats, padMode === 'auto_loop' ? 0.25 : 0.03125);
+			for (const rule of rules) {
+				assert.equal(rule.trigger.kind, 'loop_beats_engaged');
+				assert.equal(rule.out.ch, 4 + deck);
+				assert.equal(rule.out.velocityOff, padMode === 'auto_loop' ? 3 : 11);
+				assert.equal(rule.out.velocityOn, padMode === 'auto_loop' ? 67 : 75);
+			}
+		}
 	}
 });

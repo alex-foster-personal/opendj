@@ -21,6 +21,7 @@ import type {
 } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
 
 const PAD_MODES: readonly ControllerPadMode[] = [
 	'hot_cue',
@@ -160,6 +161,18 @@ function _deckLeds(deck: DeckId): LedRule[] {
 				trigger: { kind: 'hot_cue_present', deck, slot, padMode: 'hot_cue' },
 				out: { ch: p, note, velocityOn: HOT_CUE_COLORS[index], velocityOff: 0x00 }
 			});
+		}
+	}
+	for (const padMode of ['auto_loop', 'bounce_loop'] as const) {
+		const velocityOff = padMode === 'auto_loop' ? 3 : 11;
+		for (const [index, beats] of CONTROLLER_LOOP_BEATS[padMode].entries()) {
+			for (const note of [0x14 + index, 0x1c + index]) {
+				rules.push({
+					trigger: { kind: 'loop_beats_engaged', deck, beats },
+					padMode,
+					out: { ch: p, note, velocityOn: velocityOff + 64, velocityOff }
+				});
+			}
 		}
 	}
 	// Firmware reveals these separate banks only while MODE / SHIFT+MODE is
