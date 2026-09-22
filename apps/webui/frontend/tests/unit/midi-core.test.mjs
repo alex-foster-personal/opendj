@@ -28,6 +28,7 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 let vite;
 let webmidi; // webmidi.svelte.ts module
 let glue; // action-glue.svelte.ts module
+let padRuntime; // controller-pad-runtime.svelte.ts module
 let stores; // $lib/stores.svelte
 let audioEngine; // $lib/rb/audio-engine.svelte
 let performanceIpc;
@@ -48,6 +49,7 @@ before(async () => {
 	});
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	glue = await vite.ssrLoadModule('/src/lib/rb/midi/action-glue.svelte.ts');
+	padRuntime = await vite.ssrLoadModule('/src/lib/rb/midi/controller-pad-runtime.svelte.ts');
 	stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
 	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
 	performanceIpc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
@@ -311,6 +313,13 @@ test('controller pad mode is per device/deck and drives mode LED truth', () => {
 		false
 	);
 	glue._resetControllerStateForTests();
+});
+
+test('controller hot-cue pad rounds the presented position to persistent milliseconds', () => {
+	assert.equal(padRuntime.persistentCuePositionMs(1234.75), 1235);
+	assert.equal(padRuntime.persistentCuePositionMs(0.4), 0);
+	assert.throws(() => padRuntime.persistentCuePositionMs(Number.NaN), RangeError);
+	assert.throws(() => padRuntime.persistentCuePositionMs(-0.1), RangeError);
 });
 
 test('unsupported pad mode warns once and pad input stays inert', () => {

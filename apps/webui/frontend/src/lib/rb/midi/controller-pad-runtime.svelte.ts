@@ -61,6 +61,13 @@ function _findHotCue(deck: DeckId, slot: HotCueSlot): number | null {
 	return cue === undefined ? null : cue.in_ms;
 }
 
+export function persistentCuePositionMs(positionMs: number): number {
+	if (!Number.isFinite(positionMs) || positionMs < 0) {
+		throw new RangeError('presented hot-cue position must be finite and non-negative');
+	}
+	return Math.round(positionMs);
+}
+
 function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {
 	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
 }
@@ -160,7 +167,10 @@ export function runControllerPad(
 			type: 'hot_cue_save',
 			deck,
 			slot,
-			in_ms: deckStates[deck].position_ms,
+			// Presented transport is sub-millisecond; the persistent Rekordbox
+			// cue contract is integer milliseconds. Round at this boundary so a
+			// physical pad can save the position the engine actually publishes.
+			in_ms: persistentCuePositionMs(deckStates[deck].position_ms),
 			revision: deckStates[deck].hot_cue_revisions[slot]
 		});
 		return;
