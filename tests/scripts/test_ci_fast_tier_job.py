@@ -22,6 +22,8 @@ Single-line intent:
 
 from __future__ import annotations
 
+import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -161,3 +163,26 @@ def test_affected_canary_is_gone() -> None:
     """if the affected-test canary is still in ci.yml then two jobs claim the same lane"""
     assert "affected-canary" not in _jobs()
     assert "affected-canary" not in CI.read_text(encoding="utf-8")
+
+
+def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
+    """[if] one test hangs [then] pytest-timeout fails THAT test by name with its stack,
+    well before the leg's own wall budget kills the whole leg anonymously (six legs
+    stalled at the same 32% mark on Mon 21 Sep 2026 and every kill read only
+    "exit 124 after 480s"), [else stop]"""
+    run = _pytest_step(_jobs()["fast"])
+    # The FLAG on its own line, not the comment above it that quotes the flag:
+    # a match inside a comment is not a match in shipped code.
+    per_test = re.search(r"^\s*--timeout=(\d+)\s*\\?$", run, re.MULTILINE)
+    assert per_test, f"the fast leg carries no per-test --timeout:\n{run}"
+    budget = re.search(r"MDT_FAST_TIMEOUT_S=(\d+)", run)
+    assert budget, "the fast leg carries no wall budget of its own"
+    assert int(per_test.group(1)) * 2 <= int(budget.group(1)), (
+        "a per-test ceiling within half the leg budget of the budget itself lets the "
+        "leg die first again, and the kill names nothing"
+    )
+    # The flag is only honored by an installed plugin; an unknown option is a usage
+    # error, and a plugin that is merely present in a venv is one `uv sync` from gone.
+    pyproject = tomllib.loads((CI.parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
+    dev = pyproject["project"]["optional-dependencies"]["dev"]
+    assert any(spec.startswith("pytest-timeout") for spec in dev), dev
