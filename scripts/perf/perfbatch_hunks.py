@@ -14,6 +14,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from scripts.perf.perfbatch_strings import _string_regions
+
 # ----------------------------------------------------------------------------
 # Unified diff parsing
 
@@ -152,8 +154,6 @@ _EXCEPT_RE = re.compile(
     r"(?P<as>\s+as\s+\w+)?\s*:" + _TRAILING_COMMENT
 )
 _DOTTED_NAME = re.compile(r"^[A-Za-z_][\w.]*$")
-_BLOCK_HEADER_RE = re.compile(r"^\s*(?:async\s+def|def|class)\s+\w+.*:" + _TRAILING_COMMENT)
-_SIGNATURE_CLOSE_RE = re.compile(r"^\s*\)\s*(?:->\s*.+?)?\s*:" + _TRAILING_COMMENT)
 _IMPORT_RE = re.compile(
     r"^(?P<indent>\s*)(?P<stmt>import\s+[\w.]+(?:\s+as\s+\w+)?"
     r"|from\s+[\w.]+\s+import\s+\w+(?:\s+as\s+\w+)?(?:\s*,\s*\w+(?:\s+as\s+\w+)?)*)"
@@ -301,128 +301,6 @@ def match_import_guard(removed: str, added: list[str]) -> int:
     if step < 3 or sorted(body) not in (["pass"], wanted):
         return 0
     return consumed
-
-
-def _side_lines(hunk: Hunk, tag: str) -> list[tuple[int, str]]:
-    """(hunk index, text) for one side of a hunk: context plus that side's tag."""
-    return [(i, text) for i, (t, text) in enumerate(hunk.lines) if t in (" ", tag)]
-
-
-def _unescaped_find(text: str, delimiter: str, start: int = 0) -> int:
-    """Index of the next ``delimiter`` not preceded by an odd run of backslashes, else -1.
-
-    A backslash right before the triple quote escapes it, so that quote keeps
-    the string open (Codex P1 on #3804); an escaped quote never terminates a
-    literal, raw or not. An even run of backslashes is itself escaped, and
-    the quote after it is a real delimiter.
-    """
-    position = text.find(delimiter, start)
-    while position != -1:
-        backslashes = 0
-        while position - backslashes - 1 >= 0 and text[position - backslashes - 1] == "\\":
-            backslashes += 1
-        if backslashes % 2 == 0:
-            return position
-        position = text.find(delimiter, position + 1)
-    return -1
-
-
-def _first_delimiter(text: str, start: int = 0) -> tuple[int, str] | None:
-    """Earliest unescaped triple quote of either kind at or after ``start``."""
-    found = [
-        (position, delimiter)
-        for delimiter in ('"""', "'''")
-        if (position := _unescaped_find(text, delimiter, start)) != -1
-    ]
-    return min(found) if found else None
-
-
-@dataclass
-class _StringWalk:
-    """Per-side triple-quoted string tracker: docstring lines vs other string content."""
-
-    docstring: set[int] = field(default_factory=set)
-    other: set[int] = field(default_factory=set)
-    kind: str | None = None  # "doc" | "other" while inside a multi-line string
-    delimiter: str = ""
-    block: list[int] = field(default_factory=list)
-    prev_code: str | None = None
-
-    def open(self, kind: str, delimiter: str, index: int) -> None:
-        self.kind, self.delimiter, self.block = kind, delimiter, [index]
-
-    def close(self, index: int, tail: str) -> None:
-        self.block.append(index)
-        bare = not tail.strip() or tail.strip().startswith("#")
-        # A docstring whose closer is followed by code (``""".format(x)``) is
-        # an expression, not a bare statement: its lines are string content.
-        target = self.docstring if self.kind == "doc" and bare else self.other
-        target.update(self.block)
-        self.kind, self.block = None, []
-
-    def abandon(self) -> None:
-        """Closer beyond the hunk window: nothing inside can be proven benign."""
-        self.other.update(self.block)
-        self.kind, self.block = None, []
-
-
-def _string_regions(hunk: Hunk, tag: str, start_line: int) -> _StringWalk:
-    """Classify each line on side ``tag`` that lies inside a triple-quoted string.
-
-    A string is a DOCSTRING only when it opens at the start of a line whose
-    nearest preceding code line on that side is a ``def``/``class`` header (or
-    a multi-line signature close), or when nothing but comments and blank
-    lines precede it from line 1 of the file, and its closer is visible with
-    nothing but a comment after it. Every other triple-quoted region (a
-    prompt, SQL, a shell template, an unclosed block) is OTHER string content:
-    never benign, never eligible for widening or import-guard pairing.
-    """
-    walk = _StringWalk()
-    at_file_top = start_line == 1
-    for index, text in _side_lines(hunk, tag):
-        if walk.kind is not None:
-            position = _unescaped_find(text, walk.delimiter)
-            if position == -1:
-                walk.block.append(index)
-            else:
-                walk.close(index, text[position + 3 :])
-                walk.prev_code = text
-            continue
-        stripped = text.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        opener = _first_delimiter(text)
-        if opener is None:
-            walk.prev_code = text
-            continue
-        start, delimiter = opener
-        at_line_start = text[:start].strip() in ("", "r", "R")
-        follows_header = walk.prev_code is not None and bool(
-            _BLOCK_HEADER_RE.match(walk.prev_code) or _SIGNATURE_CLOSE_RE.match(walk.prev_code)
-        )
-        is_doc = at_line_start and (follows_header or (walk.prev_code is None and at_file_top))
-        closer = _unescaped_find(text, delimiter, start + 3)
-        if closer == -1:
-            walk.open("doc" if is_doc else "other", delimiter, index)
-        else:
-            after = text[closer + 3 :]
-            if is_doc and (not after.strip() or after.strip().startswith("#")):
-                walk.docstring.add(index)
-            else:
-                # Further strings on the same line: one that does not close
-                # here opens an OTHER region (never a docstring).
-                cursor = closer + 3
-                while (following := _first_delimiter(text, cursor)) is not None:
-                    next_start, next_delimiter = following
-                    next_close = _unescaped_find(text, next_delimiter, next_start + 3)
-                    if next_close == -1:
-                        walk.open("other", next_delimiter, index)
-                        break
-                    cursor = next_close + 3
-        walk.prev_code = text
-    if walk.kind is not None:
-        walk.abandon()
-    return walk
 
 
 @dataclass(frozen=True)
