@@ -180,6 +180,13 @@ function _scaleLoop(deck: DeckId, factor: 0.5 | 2): void {
 		pushToast(`Deck ${deck}: no active loop to ${factor === 0.5 ? 'halve' : 'double'}`, 'info');
 		return;
 	}
+	if (loop.beat_length !== null) {
+		// Preserve the PQTZ anchor and beat identity, including pad-toggle state.
+		void dispatchPerformanceCommand({
+			type: 'beat_loop', deck, beats: loop.beat_length * factor, start_ms: loop.in_ms
+		});
+		return;
+	}
 	const lengthMs = loop.out_ms - loop.in_ms;
 	void dispatchPerformanceCommand({
 		type: 'loop',
