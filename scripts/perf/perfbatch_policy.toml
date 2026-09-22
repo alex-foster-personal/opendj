@@ -1,0 +1,76 @@
+# Path policy for the PERFBATCH-02/03 gate (scripts/perf/perfbatch_gate.py).
+#
+# Edit THIS file, not the gate, to change which paths count as a stems or
+# lyrics pipeline, which of those are file-level exempt, and which prefixes
+# are declared measurement-only. The gate loads it at import with the
+# standard library (tomllib) so the CI workflow needs no dependencies, and it
+# refuses to start on a malformed file: a missing table, an empty list, a
+# non-string entry, or an exempt path that no pipeline prefix covers.
+#
+# Hunk-level classification (PERFBATCH-07, scripts/perf/perfbatch_hunks.py)
+# runs AFTER this policy: a pipeline path is a mutation only when its diff
+# holds a changed line outside the allowlist in docs/perf/perfbatch-gates.md.
+
+[pipeline]
+# A diff under one of these needs idle plus quality-ok markers unless every
+# changed line is allowlisted.
+prefixes = [
+  "apps/stems/",
+  "apps/lyrics/",
+  "scripts/stems_modal_worker.py",
+  "scripts/stems_local_worker.py",
+  "scripts/stem_bundle_worker.py",
+  "scripts/stem_farm_runner.py",
+  "scripts/stem_farm_watch_pull_down.sh",
+  "scripts/modal_vocal_farm.py",
+  "scripts/modal_demucs_ab.py",
+  "apps/webui/server/lyric_index_autostart.py",
+  "apps/webui/frontend/src/lib/components/rb/wave/lyrics-fetch.svelte.ts",
+]
+
+# File-level exemptions: paths under a pipeline prefix that hold no pipeline
+# logic at all. Prefer the hunk allowlist over adding here; an entry here
+# blinds the gate to EVERY future edit of that file.
+#
+# - apps/stems/live_capability.py, live_capability_api.py: install-time
+#   machine capability (LATENCY-04). Benchmarks once, persists a JSON record,
+#   exposes a read-only route. Not a throughput or latency pipeline.
+# - apps/lyrics/register_stems.py: backward-compat kwarg restore only
+#   (``root=``); no throughput or latency change.
+exempt = [
+  "apps/stems/live_capability.py",
+  "apps/stems/live_capability_api.py",
+  "apps/lyrics/register_stems.py",
+]
+
+[measurement_only]
+# Prefixes whose changes are measurement, documentation or gate tooling. A
+# diff made only of these prints "OK -- measurement-only (declared prefix)".
+#
+# - scripts/perf/, tests/perf/, tests/fixtures/perf/, docs/perf/,
+#   specs/perf-latency-program.md: the perf program itself.
+# - .planning/REQUIREMENTS.md, reqs.json, justfile,
+#   .github/workflows/perfbatch-gate.yml: requirement and gate plumbing.
+# - ops/agentic-testing/, ops/agentic_testing/, tests/agentic_testing/:
+#   AGT-01 (issue #2123) luna primer plus persona checker. Neither path
+#   changes stems or lyrics throughput or latency.
+# - docs/decisions/, specs/: written records.
+#
+# PERF-UI-01 (issue #2303), the short-viewport /performance layout, needs no
+# entry: its paths are outside every pipeline prefix already.
+prefixes = [
+  "scripts/perf/",
+  "tests/perf/",
+  "tests/fixtures/perf/",
+  "docs/perf/",
+  "specs/perf-latency-program.md",
+  ".planning/REQUIREMENTS.md",
+  "reqs.json",
+  "justfile",
+  ".github/workflows/perfbatch-gate.yml",
+  "ops/agentic-testing/",
+  "ops/agentic_testing/",
+  "tests/agentic_testing/",
+  "docs/decisions/",
+  "specs/",
+]

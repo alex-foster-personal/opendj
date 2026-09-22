@@ -22,8 +22,9 @@ This module is self-contained stdlib Python; no third-party imports.
 from __future__ import annotations
 
 import struct
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence, Union
+from typing import Union
 
 # Known container tag types. An ``otrk`` tag (one per track inside ``database
 # V2``) holds a tag stream of per-track fields; ``osrt`` holds sort order;

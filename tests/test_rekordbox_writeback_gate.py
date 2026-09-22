@@ -314,7 +314,7 @@ def _probe_playlist_writeback_apply(tmp: Path) -> None:
     object.__setattr__(service, "plan", lambda **_kwargs: plan)
     service.apply(
         vendor="rekordbox", source_playlist_id="pl-1", desired_ids=["a"],
-        target_mode="live", target_path=str(tmp / "nope.db"), target_id="t-1",
+        target=module.WritebackTarget("live", str(tmp / "nope.db"), "t-1"),
         plan_token="tok", dry_run=False, confirmed=True,
     )
 
@@ -372,7 +372,9 @@ def _probe_dedup_apply(tmp: Path) -> None:
     """--rb-db is an argument, so the probe must not rely on a path constant."""
     from apps.dedup.apply import run_apply
 
-    run_apply(rb_db_path=tmp / "master.db", live=True)
+    from apps.dedup.apply import DedupApplyPaths
+
+    run_apply(apply_paths=DedupApplyPaths(rb_db_path=tmp / "master.db"), live=True)
 
 
 MODULE_PROBES: dict[str, Callable[[Path], None]] = {

@@ -62,7 +62,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -159,7 +158,7 @@ def _iter_all_tracks(backend: StateBackend) -> list[Track]:
     })
 
 
-def _is_local_path(path: Optional[str]) -> bool:
+def _is_local_path(path: str | None) -> bool:
     """True iff ``path`` is a real local file path (reconcile-app semantics).
 
     ``_rb_app_is_streaming`` already treats empty/None as streaming, which
@@ -167,7 +166,7 @@ def _is_local_path(path: Optional[str]) -> bool:
     """
     if _rb_app_is_streaming(path):
         return False
-    elif rb_vendor.is_streaming_path(path):
+    if rb_vendor.is_streaming_path(path):
         return False
     return True
 
@@ -232,14 +231,14 @@ def _to_row(scan: _BrokenScan, playlist_ids: list[str]) -> BrokenTrackOut:
 
 @router.get("/broken", response_model=BrokenTrackList)
 def list_broken_tracks(
-    playlist_id: Optional[str] = Query(
+    playlist_id: str | None = Query(
         None,
         description=(
             "Restrict to broken members of one playlist (404 when the "
             "playlist does not exist). Omit for the library-wide listing."
         ),
     ),
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> BrokenTrackList:
     if playlist_id is not None:
         # Raises NotFoundError -> 404 via the shared app exception handler,
@@ -259,7 +258,7 @@ def list_broken_tracks(
 
 @router.get("/summary", response_model=ReconcileSummary)
 def reconcile_summary(
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> ReconcileSummary:
     total_tracks, broken = _scan_broken(backend)
     broken_ids = {b.track.stable_id for b in broken}

@@ -146,7 +146,7 @@ def _missing_fields(features: list[TrackFeature]) -> dict[str, list[str]] | None
 def solve_play_it(
     playlist_id: str,
     body: PlayItGoalIn,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> PlayItSolveOut | JSONResponse:
     # Unknown playlist -> NotFoundError -> 404 via the app-level handler.
     playlist = backend.get_playlist(playlist_id)

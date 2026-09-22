@@ -27,9 +27,8 @@ from typing import Any, Literal
 
 from apps.shared.state import sync_stamp
 from apps.sync_hub import config as sync_config
-from apps.sync_hub import digest_diff
+from apps.sync_hub import digest_diff, spoke_credential
 from apps.sync_hub import heartbeat as sync_heartbeat
-from apps.sync_hub import spoke_credential
 from apps.sync_hub.wire_version import UpdateRequiredState, parse_update_required
 
 SCHEDULER_ENV: str = sync_config.SCHEDULER_ENV

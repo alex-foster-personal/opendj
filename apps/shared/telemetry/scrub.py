@@ -67,6 +67,7 @@ ALLOWED_CONTEXT_KEYS: frozenset[str] = frozenset(
         "fallback_message",
         "secure_context",
         "audio_worklet_available",
+        "any_deck_live",
         # host
         "platform",
         "python_version",
@@ -274,6 +275,30 @@ def _scrub_request(event: MutableMapping[str, Any]) -> None:
             request[key] = scrub_string(request[key])
 
 
+def _scrub_spans(event: MutableMapping[str, Any]) -> None:
+    """Transactions only: the route name and every span's free text and data.
+
+    A span description is where an integration writes a URL or a statement,
+    and span ``data`` is an open dict, so both get the same treatment as a
+    breadcrumb: text through the path/token filter, data through the
+    allowlist. Absent on an error event, and a no-op there.
+    """
+    if isinstance(event.get("transaction"), str):
+        event["transaction"] = scrub_string(event["transaction"])
+    spans = event.get("spans")
+    if not isinstance(spans, list):
+        return
+    for span in spans:
+        if not isinstance(span, dict):
+            continue
+        if isinstance(span.get("description"), str):
+            span["description"] = scrub_string(span["description"])
+        if span.get("data") is not None:
+            span["data"] = _allowlist(span["data"])
+        if span.get("tags") is not None:
+            span["tags"] = _allowlist(span["tags"])
+
+
 def _scrub_breadcrumbs(event: MutableMapping[str, Any]) -> None:
     breadcrumbs = event.get("breadcrumbs")
     values = breadcrumbs.get("values") if isinstance(breadcrumbs, dict) else breadcrumbs
@@ -303,6 +328,7 @@ def scrub_event(
         _scrub_logentry(event)
         _scrub_request(event)
         _scrub_breadcrumbs(event)
+        _scrub_spans(event)
         # send_default_pii=False already suppresses these; belt and braces
         # because a future integration could set them directly.
         event.pop("user", None)

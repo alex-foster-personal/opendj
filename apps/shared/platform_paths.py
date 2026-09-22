@@ -19,7 +19,6 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Optional
 
 from apps.shared import fd_anchored_walk, fs_residency
 from apps.shared.library_mode import crate_root, is_mac_users_path
@@ -67,7 +66,7 @@ def rekordbox_app_dir() -> Path:
     """
     if IS_DARWIN:
         return HOME / "Library" / "Pioneer" / "rekordbox"
-    elif IS_WINDOWS:
+    if IS_WINDOWS:
         appdata = os.environ.get("APPDATA")
         if not appdata:
             raise RuntimeError(
@@ -75,8 +74,7 @@ def rekordbox_app_dir() -> Path:
                 "Windows rekordbox app dir (%APPDATA%/Pioneer/rekordbox)."
             )
         return Path(appdata) / "Pioneer" / "rekordbox"
-    else:
-        return HOME / ".Pioneer" / "rekordbox"
+    return HOME / ".Pioneer" / "rekordbox"
 
 
 REKORDBOX_APP_DIR: Path = rekordbox_app_dir()
@@ -208,7 +206,7 @@ class MappedPath:
     """
 
     original: str
-    resolved: Optional[Path]
+    resolved: Path | None
     mapped: bool
     reason: str
 
@@ -223,7 +221,7 @@ def normalise_path_prefix(path: str) -> str:
     return path.rstrip("/\\")
 
 
-def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
+def load_path_map(data_dir: Path | None = None) -> PathMap:
     """Load the active :class:`PathMap`.
 
     Source order: env ``MDT_PATH_MAP`` (path to a JSON file) -> else
@@ -348,7 +346,7 @@ def resolve_local(path: Path) -> Path:
     return path.resolve(strict=False) if addressable else path
 
 
-def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
+def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> str | None:
     """Rewrite ``folder_path`` through the first matching prefix, or None."""
     for from_prefix, to_prefix in path_map.entries:
         suffix = _path_map_suffix(folder_path, from_prefix)
@@ -357,7 +355,7 @@ def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]
     return None
 
 
-def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
+def _path_map_suffix(folder_path: str, from_prefix: str) -> str | None:
     """Return a boundary-safe mapped suffix, or ``None`` when no match.
 
     Plain ``startswith`` maps ``/Users/dj/Music-old`` through a
@@ -383,7 +381,7 @@ def _is_native_absolute(path: str) -> bool:
 
 
 def resolve_library_path(
-    folder_path: str, *, path_map: Optional[PathMap] = None
+    folder_path: str, *, path_map: PathMap | None = None
 ) -> MappedPath:
     """Resolve a state.db/rekordbox ``FolderPath`` to a filesystem path.
 
@@ -546,7 +544,7 @@ def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
 
 
 def resolve_asset_path(
-    asset_path: str, *, path_map: Optional[PathMap] = None
+    asset_path: str, *, path_map: PathMap | None = None
 ) -> MappedPath:
     """Map one vendor asset path and enforce symlink-aware containment.
 

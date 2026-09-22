@@ -12,7 +12,6 @@ Run directly:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from apps.cloud.stem_source import StemSourceError

@@ -65,7 +65,7 @@ from apps.analysis import run as analysis_run
 from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
-from apps.webui.soft_deletes import has_soft_deletes
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
     _JOBS,
@@ -83,7 +83,7 @@ from apps.webui.server.routes.ingest_job import (
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
-from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.webui.soft_deletes import has_soft_deletes
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 

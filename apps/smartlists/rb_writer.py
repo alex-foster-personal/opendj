@@ -43,9 +43,10 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, ContextManager
+from typing import Any, ContextManager
 from uuid import uuid4
 
 from sqlalchemy import create_engine
@@ -125,6 +126,58 @@ def _backup_rb_db(
     return dst
 
 
+def _copy_open_database(
+    driver: Any, destination: Path, schema_name: str, source_key: str | None
+) -> None:
+    """Copy the database behind ``driver`` to ``destination``, live.
+
+    Two mechanisms, chosen by whether the source carries a SQLCipher key.
+    Both run on the connection the writer is about to mutate, so the copy is
+    consistent with what is being changed rather than with whatever the file
+    looked like beforehand.
+    """
+    if source_key:
+        driver.execute(
+            f"ATTACH DATABASE ? AS {schema_name} KEY ?",
+            (str(destination), source_key),
+        )
+        driver.execute(f"SELECT sqlcipher_export('{schema_name}')").fetchone()
+        driver.commit()
+        if driver.execute(f"PRAGMA {schema_name}.quick_check").fetchone() != ("ok",):
+            raise RuntimeError(
+                f"rekordbox: online backup failed integrity check: {destination}"
+            )
+        driver.execute(f"DETACH DATABASE {schema_name}")
+        return
+    # VACUUM INTO is SQLite's own online backup. It cannot run inside a
+    # transaction, so commit whatever the driver has open first.
+    driver.commit()
+    driver.execute("VACUUM INTO ?", (str(destination),))
+
+
+def _assert_backup_matches_source(destination: Path, *, encrypted: bool) -> None:
+    """Fail unless the backup's encryption matches the source's.
+
+    Both directions matter. An encrypted source that produced a readable plain
+    file means the key was never applied and the backup is leaking the whole
+    library; a plain source that produced an unreadable one means the copy is
+    corrupt and the rollback it exists for would not work.
+    """
+    try:
+        with sqlite3.connect(destination) as plaintext:
+            plaintext.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+    except sqlite3.DatabaseError as exc:
+        if not encrypted:
+            raise RuntimeError(
+                f"rekordbox: online backup is not readable: {destination}"
+            ) from exc
+    else:
+        if encrypted:
+            raise RuntimeError(
+                f"rekordbox: online backup is not encrypted: {destination}"
+            )
+
+
 def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
     """Export an encrypted Rekordbox DB through its unlocked SQLCipher engine."""
     from apps.smartlists import writeback_backup
@@ -141,11 +194,15 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         raise RuntimeError(
             "rekordbox: writer has no reusable unlocked SQLCipher engine configuration"
         )
+    # A plain-SQLite Rekordbox DB (Rekordbox 5, or an already-decrypted copy)
+    # is opened without SQLCipher, so its engine URL carries no key. That is
+    # not a fault: it just means the backup has to be SQLite's own online
+    # backup rather than sqlcipher_export, and the result is plain rather
+    # than encrypted. Both branches below run through the live connection, so
+    # either way the copy is consistent with what the writer is about to
+    # mutate.
     source_key = source_url.password
-    if source_key is None or source_key == "":
-        raise RuntimeError(
-            "rekordbox: unlocked SQLCipher engine has no key"
-        )
+    source_is_encrypted = bool(source_key)
     backup_engine = create_engine(
         source_url,
         module=source_dbapi,
@@ -169,31 +226,13 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
             raise FileExistsError(f"rekordbox: backup already exists: {destination}")
-        driver.execute(
-            f"ATTACH DATABASE ? AS {schema_name} KEY ?",
-            (str(destination), source_key),
-        )
-        driver.execute(f"SELECT sqlcipher_export('{schema_name}')").fetchone()
-        driver.commit()
-        if driver.execute(f"PRAGMA {schema_name}.quick_check").fetchone() != ("ok",):
-            raise RuntimeError(
-                f"rekordbox: online backup failed integrity check: {destination}"
-            )
-        driver.execute(f"DETACH DATABASE {schema_name}")
+        _copy_open_database(driver, destination, schema_name, source_key)
         connection.close()
         connection = None
 
         if destination.stat().st_size <= 0:
             raise RuntimeError(f"rekordbox: online backup is empty: {destination}")
-        try:
-            with sqlite3.connect(destination) as plaintext:
-                plaintext.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
-        except sqlite3.DatabaseError:
-            pass
-        else:
-            raise RuntimeError(
-                f"rekordbox: online backup is not encrypted: {destination}"
-            )
+        _assert_backup_matches_source(destination, encrypted=source_is_encrypted)
     except Exception:
         if connection is not None:
             connection.invalidate()

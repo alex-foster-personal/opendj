@@ -75,7 +75,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
@@ -178,7 +178,7 @@ def already_pulled(path: Path, app_id: str) -> bool:
 
 def append_block(path: Path, app: ModalApp, log_text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    pulled_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    pulled_at = datetime.now(UTC).isoformat(timespec="seconds")
     header = (
         f"{BLOCK_HEADER_PREFIX} app_id={app.app_id} description={app.description} "
         f"state={app.state} created_at={app.created_at} stopped_at={app.stopped_at} "

@@ -11,9 +11,9 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.shared import paths
 from apps.shared.normalised import NormalisedCue

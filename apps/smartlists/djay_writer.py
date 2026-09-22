@@ -18,9 +18,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, ContextManager
+from typing import ContextManager
 
 
 def _resolve_djay_uuid(

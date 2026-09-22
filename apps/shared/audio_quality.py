@@ -45,7 +45,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # ----- CFG -------------------------------------------------------------------
 LOSSLESS_EXTS: frozenset[str] = frozenset(
@@ -98,8 +97,8 @@ LOSSLESS: str = "stadium"
 class Quality:
     """What we can honestly say about one file."""
 
-    venue: Optional[Venue]
-    kbps: Optional[float]
+    venue: Venue | None
+    kbps: float | None
     container: str
     lossless: bool
     reason: str = ""  # only set when venue is None
@@ -123,8 +122,8 @@ class Quality:
 
 # ----- classify --------------------------------------------------------------
 def classify(
-    file_path: Optional[str], duration_ms: Optional[int],
-    size_bytes: Optional[int] = None,
+    file_path: str | None, duration_ms: int | None,
+    size_bytes: int | None = None,
 ) -> Quality:
     """Venue rung for one file. Returns an UNKNOWN Quality rather than guessing.
 

@@ -43,7 +43,6 @@ from .test_hub_sync import (
     _T0,
     _T1,
     _T2,
-    _TestClientTransport,
     _insert_playlist,
     _insert_track,
     _log,
@@ -51,6 +50,7 @@ from .test_hub_sync import (
     _open,
     _set_members,
     _sync,
+    _TestClientTransport,
 )
 
 _LOC_ID = "cccccccccccccccccccccccccccccccc"

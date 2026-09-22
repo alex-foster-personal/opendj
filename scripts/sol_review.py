@@ -91,7 +91,7 @@ from scripts.review_lane import (
     unreviewed_note,
     withheld,
 )
-from scripts.review_prompt import SOL_FENCE, build_prompt
+from scripts.review_prompt import ReviewPromptConfig, SOL_FENCE, build_prompt
 from scripts.review_sol import is_sol_artifact, marker
 
 
@@ -373,11 +373,13 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
         sha,
         title,
         diff,
-        run_id,
-        CFG.MAX_DIFF_BYTES,
-        CFG.MAX_FINDINGS,
-        SOL_FENCE,
-        unreviewed,
+        ReviewPromptConfig(
+            run_id=run_id,
+            max_diff_bytes=CFG.MAX_DIFF_BYTES,
+            max_findings=CFG.MAX_FINDINGS,
+            fence=SOL_FENCE,
+            withheld=unreviewed,
+        ),
     )
     output, used, model = review_with_codex(prompt, seat)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)
