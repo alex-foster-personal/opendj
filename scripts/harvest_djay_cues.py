@@ -22,7 +22,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.shared import paths
@@ -43,7 +43,7 @@ def djay_pro_running() -> bool:
 
 
 def copy_live_aside() -> Path:
-    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    now = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest_dir = paths.DATA_DIR / "djay"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"MediaLibrary.db.wip-04-{now}"

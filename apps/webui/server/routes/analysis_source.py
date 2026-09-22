@@ -331,7 +331,7 @@ def put_analysis_source(
     # dependency it would persist a promotion straight through both states
     # (Codex P1, PR #1549). The returned backend is unused -- the guard is
     # the point.
-    _write_guard: StateBackend = Depends(get_write_state),
+    _write_guard: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> AnalysisSourceOut:
     if body.default is None and body.toggle is None:
         raise HTTPException(

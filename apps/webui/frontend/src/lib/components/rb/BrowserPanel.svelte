@@ -24,6 +24,7 @@
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
+		listPlaylistTracksPage,
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
@@ -70,6 +71,8 @@
 		getSpotifyPendingTracks,
 		type SpotifyPendingTrack,
 		fillAllTracksPane,
+		fillPlaylistPane,
+		PLAYLIST_FIRST_PAGE,
 		fillAutolistPane,
 		autolistNode,
 		isAutolistId,
@@ -100,7 +103,9 @@
 		createFilterDebounce,
 		recordCollectionSearchTiming,
 		recordFilterTiming,
-		recordLibraryLoadTiming
+		recordLibraryLoadTiming,
+		recordPlaylistSwitchFirstRowsMs,
+		recordPlaylistTreeReadyMs
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
 	import {
@@ -128,11 +133,13 @@
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
 	import {
+		bootPlaylistsPrefetch,
 		bootTracksPrefetch,
 		canBootAllTracksEarly,
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
 		setConfirmPref,
@@ -235,7 +242,13 @@
 	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
 	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
 
+	function playlistBrokenCount(p: PlaylistSummaryHydrated): number {
+		if (p.available_count < 0) return 0;
+		return p.track_count - p.available_count;
+	}
+
 	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
+		if (p.available_count < 0) return false;
 		if (p.track_count === 0) return p.available_count === 0;
 		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
@@ -528,7 +541,7 @@
 					playlist_id: p.playlist_id,
 					name: p.name,
 					track_count: p.track_count,
-					broken_count: p.track_count - p.available_count,
+					broken_count: playlistBrokenCount(p),
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
 					forbid_duplicates: p.forbid_duplicates === true,
@@ -857,6 +870,10 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
+		// Reconcile accounting must not wait on playlist boot init (#3727): _init()
+		// throws when the fast playlist prefetch fails validation, and the Missing
+		// Tracks count comes from GET /api/v1/reconcile/summary, not from the tree.
+		void _loadReconcileSummary();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1057,7 +1074,7 @@
 		});
 		let bootPaneRestored = false;
 		const healthPromise = getHealthAtBoot(getHealth);
-		const playlistsPromise = listPlaylistsHydrated();
+		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
 			if (bootAllTracksEarly) {
 				await bootTracksPrefetch().prefsPromise.catch(() => {});
@@ -1093,6 +1110,12 @@
 			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
+			recordPlaylistTreeReadyMs(
+				Math.max(0, Math.round(performance.now() - bootTracksPrefetch().startedAt))
+			);
+			bootScheduler.defer('browser-panel:refresh-playlist-availability', () => {
+				void _refreshPlaylists();
+			});
 			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
 				await _sweepBlankPlaylists(lists);
 			}
@@ -1120,9 +1143,6 @@
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
 		void _loadIngestCoverage();
-		// Reconcile accounting is likewise post-render: playlist navigation stays
-		// available while the authoritative playable totals settle.
-		void _loadReconcileSummary();
 	}
 
 	/**
@@ -1194,7 +1214,7 @@
 			playlist_id: playlist.playlist_id,
 			name: playlist.name,
 			track_count: playlist.track_count,
-			broken_count: playlist.track_count - playlist.available_count,
+			broken_count: playlistBrokenCount(playlist),
 			kind: 'playlist',
 			children: []
 		};
@@ -1823,6 +1843,7 @@
 				return;
 			}
 			if (node.kind === 'all_tracks') {
+				const switchStartedAt = performance.now();
 				await fillAllTracksPane({
 					pane: p,
 					seq,
@@ -1830,6 +1851,10 @@
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
 					onFirstPaint: () => {
+						recordPlaylistSwitchFirstRowsMs(
+							'all-tracks',
+							performance.now() - switchStartedAt
+						);
 						recordOpenToLibraryRows({ source: 'all-tracks' });
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
@@ -1855,14 +1880,38 @@
 				});
 				return;
 			}
+			if (node.kind === 'playlist') {
+				const switchStartedAt = performance.now();
+				await fillPlaylistPane({
+					pane: p,
+					seq,
+					pageSize: PLAYLIST_FIRST_PAGE,
+					fetchPage: (offset) =>
+						listPlaylistTracksPage(node.playlist_id, {
+							limit: PLAYLIST_FIRST_PAGE,
+							offset
+						}),
+					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
+					progressTotal: node.track_count,
+					onFirstPaint: () => {
+						recordPlaylistSwitchFirstRowsMs(
+							'playlist',
+							performance.now() - switchStartedAt
+						);
+						recordOpenToLibraryRows({ source: 'playlist' });
+						completeLibraryUsable({ source: 'playlist' });
+					},
+					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
+					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
 				node.kind === 'missing_tracks'
 					? await fetchMissingTrackRows()
-					: node.kind === 'smartlist'
-						? await _fetchSmartlistRows(node.playlist_id)
-						: await _fetchPlaylistRows(node.playlist_id);
+					: await _fetchSmartlistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
-			if (node.kind === 'playlist' || node.kind === 'smartlist') {
+			if (node.kind === 'smartlist') {
 				recordOpenToLibraryRows({ source: 'playlist' });
 				completeLibraryUsable({ source: 'playlist' });
 			}

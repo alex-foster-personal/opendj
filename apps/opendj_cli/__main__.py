@@ -57,6 +57,7 @@ from apps.opendj_cli.confirm import (
     final_checks,
     verdict,
 )
+from apps.opendj_cli.helptext import LIBRARY_EPILOG, print_verbs
 from apps.opendj_cli.orders import (
     SINGLE,
     Group,
@@ -67,7 +68,6 @@ from apps.opendj_cli.orders import (
     single,
     slowed_since,
 )
-from apps.opendj_cli.helptext import LIBRARY_EPILOG, print_verbs
 from apps.opendj_cli.origin import (
     EngineIdentityMismatch,
     EngineNotRunning,

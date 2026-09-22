@@ -24,7 +24,7 @@ alongside the existing rb_assets router (same ``/tracks`` prefix)::
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -60,8 +60,8 @@ class HotCueSaveIn(BaseModel):
                     "by the caller when quantize is enabled -- this "
                     "endpoint never guesses at beat alignment.",
     )
-    comment: Optional[str] = None
-    color_table_index: Optional[int] = Field(None, ge=0)
+    comment: str | None = None
+    color_table_index: int | None = Field(None, ge=0)
 
 
 class AnlzCueOut(BaseModel):
@@ -70,12 +70,12 @@ class AnlzCueOut(BaseModel):
     kind: Literal["hot_cue"]
     slot: HotCueSlot
     in_ms: int
-    out_ms: Optional[int]
+    out_ms: int | None
     is_loop: bool
     active_loop: bool
-    beat_loop_size: Optional[int]
-    color_table_index: Optional[int]
-    comment: Optional[str]
+    beat_loop_size: int | None
+    color_table_index: int | None
+    comment: str | None
     revision: str
 
 
@@ -84,14 +84,14 @@ class HotCueReversalOut(BaseModel):
 
 
 class HotCueMutationOut(BaseModel):
-    cue: Optional[AnlzCueOut]
+    cue: AnlzCueOut | None
     revision: str
-    reversal: Optional[HotCueReversalOut] = None
+    reversal: HotCueReversalOut | None = None
 
 
 class HotCueSlotOut(BaseModel):
     slot: HotCueSlot
-    cue: Optional[AnlzCueOut]
+    cue: AnlzCueOut | None
     revision: str
 
 
@@ -122,7 +122,7 @@ def _mutation_response(result: dict[str, Any], response: Response) -> HotCueMuta
 @router.get("/{stable_id}/hot-cues", response_model=list[HotCueSlotOut])
 def list_hot_cue_slots(
     stable_id: str,
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> list[HotCueSlotOut]:
     try:
         content = rb_vendor.resolve_content(stable_id)
@@ -149,7 +149,7 @@ def save_hot_cue(
     body: HotCueSaveIn,
     response: Response,
     if_match: str = Depends(_require_if_match),
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
     content = rb_vendor.resolve_content(stable_id)
     row = rb_vendor.save_hot_cue(
@@ -175,7 +175,7 @@ def clear_hot_cue(
     slot: HotCueSlot,
     response: Response,
     if_match: str = Depends(_require_if_match),
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
     content = rb_vendor.resolve_content(stable_id)
     result = rb_vendor.clear_hot_cue(
@@ -197,7 +197,7 @@ def restore_hot_cue(
     body: HotCueRestoreIn,
     response: Response,
     if_match: str = Depends(_require_if_match),
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
     content = rb_vendor.resolve_content(stable_id)
     result = rb_vendor.restore_hot_cue(

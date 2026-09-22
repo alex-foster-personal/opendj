@@ -114,7 +114,7 @@ def test_an_unset_override_still_resolves_from_the_app_dir(
     app_dir = tmp_path / "app"
     real = _fixture_checkpoint(app_dir)
     monkeypatch.delenv(weights.WEIGHTS_PATH_ENV, raising=False)
-    resolved, reported = weights.resolve_checkpoint(
+    resolved, _reported = weights.resolve_checkpoint(
         expected_sha256=weights.sha256_of(real), app_dir=app_dir
     )
     assert resolved == real

@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import queue_store, queue_user, queue_user_runner
+from apps.analysis.store import open_conn
 from apps.cloud import stem_index
-from apps.lyrics.cache import Lyrics, LyricLine, cache_path, write
+from apps.lyrics.cache import LyricLine, Lyrics, cache_path, write
 from apps.lyrics.fetch_verdicts import FetchVerdict, utc_now_iso, write_verdict
 from apps.lyrics.service import FetchResult
-from apps.analysis.store import open_conn
 
 pytestmark = pytest.mark.requirement("LYRICS-07")
 

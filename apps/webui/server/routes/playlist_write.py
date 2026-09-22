@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -374,9 +374,9 @@ def move_playlist_items(
     playlist_id: str,
     body: MembershipMoveIn,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008  # FastAPI DI
 ) -> MembershipMoveOut:
     if not if_match:
         return precondition_required(

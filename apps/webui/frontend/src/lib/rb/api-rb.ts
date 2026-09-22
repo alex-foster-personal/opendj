@@ -487,21 +487,67 @@ export interface PlaylistSummaryHydrated extends PlaylistSummary {
 }
 
 /** GET /playlists with per-row available_count validated present. */
-export async function listPlaylistsHydrated(): Promise<PlaylistSummaryHydrated[]> {
-	const lists = await _fetchJson<PlaylistSummaryHydrated[]>('/api/v1/playlists');
+export async function listPlaylistsHydrated(opts?: {
+	fast?: boolean;
+}): Promise<PlaylistSummaryHydrated[]> {
+	const qs = opts?.fast === true ? '?availability=skip' : '';
+	const lists = await _fetchJson<PlaylistSummaryHydrated[]>(`/api/v1/playlists${qs}`);
 	for (const p of lists) {
 		if (
 			typeof p.available_count !== 'number' ||
 			!Number.isInteger(p.available_count) ||
-			p.available_count < 0 ||
+			p.available_count < -1 ||
 			p.available_count > p.track_count
 		) {
 			throw new Error(
 				`playlist ${p.playlist_id}: invalid available_count - backend contract point 2 not met`
 			);
 		}
+		if (opts?.fast === true) {
+			if (p.available_count !== -1) {
+				throw new Error(
+					`playlist ${p.playlist_id}: fast list must return available_count=-1`
+				);
+			}
+			continue;
+		}
+		if (p.available_count < 0) {
+			throw new Error(
+				`playlist ${p.playlist_id}: strict list must not return skipped available_count`
+			);
+		}
 	}
 	return lists;
+}
+
+export interface PlaylistTracksPageHydrated {
+	tracks: PlaylistTrackRowWire[];
+	total: number;
+	next_offset: number | null;
+}
+
+/** GET /playlists/{id}/tracks with membership ETag (PERF-UI-05). */
+export async function listPlaylistTracksPage(
+	playlistId: string,
+	params: { limit: number; offset: number }
+): Promise<{ page: PlaylistTracksPageHydrated; etag: string }> {
+	const qs = new URLSearchParams({
+		limit: String(params.limit),
+		offset: String(params.offset)
+	});
+	const path = `/api/v1/playlists/${encodeURIComponent(playlistId)}/tracks?${qs.toString()}`;
+	const init: RequestInit = { headers: { Accept: 'application/json' } };
+	const r = await fetch(`${RB_API_BASE}${path}`, init);
+	if (!r.ok) await _throwRbApiError(r);
+	const etag = r.headers.get('etag');
+	if (!etag) {
+		throw new Error(`playlist ${playlistId}: tracks page response carries no ETag header`);
+	}
+	const page = (await r.json()) as PlaylistTracksPageHydrated;
+	if (!Array.isArray(page.tracks) || typeof page.total !== 'number') {
+		throw new Error(`playlist ${playlistId}: tracks page payload malformed`);
+	}
+	return { page, etag };
 }
 
 /** Validated generated-contract summary of playable and broken library rows. */

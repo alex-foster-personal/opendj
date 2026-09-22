@@ -263,7 +263,7 @@ def _capture_window_cgimage(window_id: int):  # pragma: no cover - live only
 
 
 def _display_fallback_metadata(
-    png: bytes,
+    _png: bytes,
     geom: DisplayGeometry,
     scaled: tuple[int, int],
     *,
@@ -371,7 +371,7 @@ def window_scaled_to_global_points(
     bounds = metadata.get("window_bounds") or {"x": 0.0, "y": 0.0}
     gx = pt_x + float(bounds.get("x", 0.0))
     gy = pt_y + float(bounds.get("y", 0.0))
-    return int(round(gx)), int(round(gy))
+    return round(gx), round(gy)
 
 
 def is_point_inside_window(
@@ -616,7 +616,7 @@ def scaled_to_points(
     # Map from pixels → points
     pt_x = px_x / geometry.backing_scale
     pt_y = px_y / geometry.backing_scale
-    return int(round(pt_x)), int(round(pt_y))
+    return round(pt_x), round(pt_y)
 
 
 # --------------------------------------------------------------------------- #

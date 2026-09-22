@@ -4,9 +4,8 @@ The legacy FastAPI composition is REUSED, not reimplemented: this module
 calls ``apps.webui.server.app.create_app`` and then applies three
 chassis-level edits.
 
-1. The progress router is removed. The engine does not serve the fan-out
-   ledger, and boot refuses outright if a progress-tree.yaml is sitting in
-   the data dir.
+1. The legacy progress router stays mounted. Read and write for the fan-out
+   ledger share ``apps/webui/server/routes/progress.py``.
 2. ``/api/v1/health`` is replaced by a wrapper that calls the legacy handler
    and adds contract_rev / engine_version / boot_id. The legacy route
    function is untouched -- only the response is extended.
@@ -34,30 +33,24 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.cloud import job as cloud_job
 from apps.engine_core.account.api import (
     account_router,
     entitlements_router,
     flags_router,
 )
-from apps.engine_core.availability_api import add_availability_routes
-from apps.engine_core.rescue_api import add_rescue_routes
-from apps.engine_core.library_availability import (
-    LibraryAvailabilityWorker,
-    attach_library_changed_probe,
-)
-from apps.engine_core.assistant.api import router as assistant_router
-from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
-from apps.engine_core.host_info import add_host_info_route
 from apps.engine_core.app_posture_api import add_app_posture_route
-from apps.engine_core.perf_tier_api import add_perf_tier_route
+from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.availability_api import add_availability_routes
+from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
     EngineConfig,
-    assert_no_progress_ledger,
     prepare_layout,
 )
 from apps.engine_core.contract import compute_contract_rev
+from apps.engine_core.host_info import add_host_info_route
 from apps.engine_core.jobs.api import router as jobs_router
 from apps.engine_core.jobs.runner import (
     JobRunner,
@@ -66,7 +59,13 @@ from apps.engine_core.jobs.runner import (
     register_worker,
 )
 from apps.engine_core.jobs.store import JobStore
+from apps.engine_core.library_availability import (
+    LibraryAvailabilityWorker,
+    attach_library_changed_probe,
+)
 from apps.engine_core.lock import EngineLock
+from apps.engine_core.perf_tier_api import add_perf_tier_route
+from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
@@ -75,8 +74,6 @@ from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
-from apps.webui.server.request_guard import assert_request_guard_bind_allowed
-from apps.cloud import job as cloud_job
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
@@ -91,6 +88,7 @@ from apps.webui.server.cloud_sync import probe_syncthing_status
 from apps.webui.server.deps import get_read_state
 from apps.webui.server.frontend_build import frontend_build_dir
 from apps.webui.server.models import HealthOut
+from apps.webui.server.request_guard import assert_request_guard_bind_allowed
 from apps.webui.server.routes.health import health as legacy_health
 from apps.webui.server.sqlite_backend import make_backend
 
@@ -118,7 +116,6 @@ def create_app(
     cfg: EngineConfig, *, lock: EngineLock | None = None
 ) -> FastAPI:
     """Build the engine app. No import-time construction, no globals."""
-    assert_no_progress_ledger(cfg.data_dir)
     assert_sync_bind_allowed(cfg.host)
     assert_request_guard_bind_allowed(cfg.host)
     prepare_layout(cfg)
@@ -126,7 +123,6 @@ def create_app(
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())
     app = _compose_legacy(cfg)
 
-    _drop_or_raise(app, PROGRESS_PREFIX, "legacy progress router")
     _drop_or_raise(app, HEALTH_PATH, "legacy health route")
     _add_health_route(app)
 
@@ -189,6 +185,7 @@ def create_app(
     add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    app.state.engine_cfg = cfg
     add_rescue_routes(app)
 
     _drop_root_placeholder(app)
@@ -196,8 +193,6 @@ def create_app(
 
     contract_rev = compute_contract_rev(app.openapi())
     hub = WsHub(contract_rev=contract_rev, engine_version=ENGINE_VERSION)
-
-    app.state.engine_cfg = cfg
     app.state.engine_boot_id = boot_id
     app.state.contract_rev = contract_rev
     app.state.jobs_store = store

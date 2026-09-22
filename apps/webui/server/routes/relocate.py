@@ -52,10 +52,11 @@ import stat
 import subprocess
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Literal, Optional, TypeVar
+from typing import Literal, TypeVar
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -88,8 +89,8 @@ class RelocateCandidateOut(BaseModel):
 
 class RelocateCandidateList(BaseModel):
     stable_id: str
-    original_path: Optional[str]
-    vendor_id: Optional[str]
+    original_path: str | None
+    vendor_id: str | None
     total: int
     candidates: list[RelocateCandidateOut]
 
@@ -117,8 +118,8 @@ class RelocateApplyOut(BaseModel):
     stable_id: str
     new_path: str
     target: Literal["rekordbox", "state"]
-    vendor_id: Optional[str]
-    backup_path: Optional[str]
+    vendor_id: str | None
+    backup_path: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +132,7 @@ class CandidateFile:
 
 # ----- shared path resolution (mirrors reconcile._scan_broken's order) -----
 
-def _is_local(path: Optional[str]) -> bool:
+def _is_local(path: str | None) -> bool:
     if path is None:
         return False
     if _rb_app_is_streaming(path):
@@ -141,7 +142,7 @@ def _is_local(path: Optional[str]) -> bool:
     return True
 
 
-def _resolve_original_path(stable_id: str, track: Track) -> tuple[Optional[str], Optional[str]]:
+def _resolve_original_path(stable_id: str, track: Track) -> tuple[str | None, str | None]:
     """(original_path, vendor_id) for ``track``, rekordbox-wins-over-state.
 
     ``original_path`` is None when the track is streaming/pathless -- there
@@ -322,7 +323,7 @@ def _mutate_with_candidate_guard(
 def get_candidates(
     stable_id: str,
     limit: int = Query(5, ge=1, le=20, description="Max ranked candidates to return"),
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> RelocateCandidateList:
     track = backend.get_track(stable_id)  # NotFoundError -> 404
     original_path, vendor_id = _resolve_original_path(stable_id, track)
@@ -531,8 +532,8 @@ def _write_rekordbox_folder_path(
 def apply_relocate(
     stable_id: str,
     body: RelocateApplyIn,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    backend: StateBackend = Depends(get_write_state),
+    if_match: str | None = Header(None, alias="If-Match"),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ):
     require_writeback_enabled("http.relocate.apply")
     if not body.confirm:

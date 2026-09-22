@@ -31,11 +31,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from . import paths as sets_paths
 
@@ -144,7 +145,7 @@ class Event:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _ensure_schema(conn: sqlite3.Connection, *, events_table: str = "events") -> None:

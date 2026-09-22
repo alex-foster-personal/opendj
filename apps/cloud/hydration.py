@@ -69,8 +69,8 @@ def fetch_asset_for_hydration(
     *,
     stable_id: str,
     bytes_total: int | None = None,
-    pressure_payload: Mapping[str, Any] | None = None,
-    ui_mirror: Mapping[str, Any] | None = None,
+    _pressure_payload: Mapping[str, Any] | None = None,
+    _ui_mirror: Mapping[str, Any] | None = None,
     presigned_url: str | None = None,
 ) -> Path:
     """Download an asset for hydration with transfer_status progress.

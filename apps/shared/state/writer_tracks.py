@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from . import locations as _locations
+from . import provenance as _prov
 from .events import EventBus, FakeEventBus
 from .sync_stamp import Stamp
-from . import provenance as _prov
 from .types import Event, Source
 from .writer_common import (
     MEMBERSHIPS_TABLE,

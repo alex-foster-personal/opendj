@@ -3,7 +3,7 @@
  *
  * The SPA is served by two daemons with different APIs (legacy has
  * /api/v1/progress and no jobs; the engine has jobs + the events socket and
- * drops progress). One probe of /api/v1/health decides which, and every
+ * also serves progress). One probe of /api/v1/health decides which, and every
  * daemon-specific surface reads that answer instead of discovering it by
  * 404ing.
  *
@@ -17,8 +17,8 @@
  * - if a legacy health body grants the jobs capability then the drawer 404s again
  * - if hydrate() or attach() issues a request while the daemon has no jobs API
  *   then the whole gate is decorative
- * - if fetchProgress issues a request against the engine then /progress-tree is
- *   back to retrying a 404 every 30 seconds
+ * - if fetchProgress issues a request before the daemon is identified then the
+ *   gate is decorative
  * - if an unresolved or failed probe grants ANY capability then the UI is
  *   guessing which daemon it is talking to
  * - if a second probe() re-requests after a success then it is a poll, not a probe
@@ -125,10 +125,10 @@ test('an engine health body resolves the engine capabilities', async () => {
 	assert.deepEqual(requested, [`${API_BASE}/api/v1/health`]);
 	assert.equal(caps.jobs, true);
 	assert.equal(caps.events, true);
-	assert.equal(caps.progressLedger, false);
+	assert.equal(caps.progressLedger, true);
 	assert.equal(caps.error, null);
 	assert.equal(mod.jobsRefusal(), null);
-	assert.match(mod.progressRefusal(), /progress ledger not offered by this daemon/);
+	assert.equal(mod.progressRefusal(), null);
 	assert.equal(mod.eventsRefusal(), null);
 });
 
@@ -322,14 +322,23 @@ test('the jobs store DOES fetch once the engine is identified', async () => {
 
 // --------------------------------------------------- the progress surface
 
-test('fetchProgress fires NOTHING under engine capabilities', async () => {
+test('fetchProgress DOES fetch once the engine is identified', async () => {
 	serve(engineHealth());
 	await caps.probe();
 	requested = [];
-	serveNothing();
+	globalThis.fetch = async (request) => {
+		requested.push(request.url);
+		return jsonResponse({
+			meta: { branch: 'master', updated: '2026-08-19', convention: 'test' },
+			areas: [],
+			file_git: { last_sha: null, last_author: null, last_date: null }
+		});
+	};
 
-	await assert.rejects(mod.fetchProgress(), /not attempted: progress ledger not offered/);
-	assert.deepEqual(requested, [], 'the engine drops the progress router; asking it is pointless');
+	const progress = await mod.fetchProgress();
+
+	assert.deepEqual(requested, [`${API_BASE}/api/v1/progress`]);
+	assert.equal(progress.meta.branch, 'master');
 });
 
 test('fetchProgress fires nothing before the probe has answered', async () => {

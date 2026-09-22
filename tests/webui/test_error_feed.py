@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
-from apps.webui.server.client_logs import DEFAULT_LOG_DIR
 
 
 def _app(

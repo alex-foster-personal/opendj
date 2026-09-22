@@ -1,5 +1,5 @@
 {
-  "_provenance": "Captured Tue 1 Sep 2026, re-captured Wed 2 Sep 2026 (r3914268001: audio_file became a real decodable WAV instead of all-zero bytes, which changed only rb_meta_ok.body.quality) by hitting the real FastAPI app (apps.webui.server.routes.rb_assets + analysis) the same way tests/webui/test_unmapped_track_beatgrid_chain.py does. See that file's test_frontend_fixture_capture_matches_the_live_route for the assertion that keeps this fixture from drifting. folder_path is normalized to a placeholder: it is the tmp_path fixture's own path, non-deterministic per test run, and asserted separately as non-empty rather than pinned to a literal. Re-captured again Wed 2 Sep 2026 (PR #765 review round): rb_meta_ok.body.artwork_available changed false -> null, reflecting unrelated upstream fix #833 (local_artwork_available() now reports null rather than guessing false when the optional mutagen reader is absent, matching this dev environment). Re-captured again Wed 9 Sep 2026 (PR #1587): beatgrid_fallback_ok.body.beatgrid gained a required source field, fixed at \"own\" (Codex P2 BLOCKING; FallbackBeatgridOut now mirrors the ANLZ beatgrid's required source discriminator). Re-captured Sat 12 Sep 2026 (issue #2246, after PR #2237 / #1777); each fallback beat now carries required `extrapolated` (false through last detected downbeat t=58.0, true for the three tail beats past it).",
+  "_provenance": "Captured Tue 1 Sep 2026, re-captured Wed 2 Sep 2026 (r3914268001: audio_file became a real decodable WAV instead of all-zero bytes, which changed only rb_meta_ok.body.quality) by hitting the real FastAPI app (apps.webui.server.routes.rb_assets + analysis) the same way tests/webui/test_unmapped_track_beatgrid_chain.py does. See that file's test_frontend_fixture_capture_matches_the_live_route for the assertion that keeps this fixture from drifting. folder_path is normalized to a placeholder: it is the tmp_path fixture's own path, non-deterministic per test run, and asserted separately as non-empty rather than pinned to a literal. Re-captured again Wed 2 Sep 2026 (PR #765 review round): rb_meta_ok.body.artwork_available changed false -> null, reflecting unrelated upstream fix #833 (local_artwork_available() now reports null rather than guessing false when the optional mutagen reader is absent, matching this dev environment). Re-captured again Wed 9 Sep 2026 (PR #1587): beatgrid_fallback_ok.body.beatgrid gained a required source field, fixed at \"own\" (Codex P2 BLOCKING; FallbackBeatgridOut now mirrors the ANLZ beatgrid's required source discriminator). Re-captured Sat 12 Sep 2026 (issue #2246, after PR #2237 / #1777); each fallback beat now carries required `extrapolated` (false through last detected downbeat t=58.0, true for the three tail beats past it). Re-captured Fri 18 Sep 2026 (issue #1735): beatgrid_fallback_ok.body.beatgrid gained required status \"ok\" so hasTrustedBeatGrid accepts the merged fallback grid for Beat Sync.",
   "beatgrid_fallback_not_found": {
     "body": {
       "detail": {
@@ -739,7 +739,8 @@
             "t": 59.5
           }
         ],
-        "source": "own"
+        "source": "own",
+        "status": "ok"
       },
       "bpm": 120.0,
       "bpm_confidence": 0.9,

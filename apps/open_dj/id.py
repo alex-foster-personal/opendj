@@ -5,7 +5,7 @@ Per D2, ``track_id`` IS ``stable_id`` -- we delegate to
 """
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from apps.shared.state.ids import Tier, stable_id
 

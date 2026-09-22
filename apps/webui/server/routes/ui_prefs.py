@@ -10,7 +10,7 @@ import json
 import os
 import tempfile
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -406,7 +406,7 @@ def _parse_last_gig_at(value: Any) -> str | None:
                 "message": f"app_mode.last_gig_at is not a valid UTC ISO timestamp: {exc}",
             },
         ) from exc
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _parse_app_mode_id(value: Any) -> str:

@@ -139,7 +139,10 @@ class DirectR2Source:
         return stem_index.refresh_error(data_dir)
 
     def bundle_remote_size(
-        self, file_hashes: dict[str, str], *, stable_id: str
+        self,
+        file_hashes: dict[str, str],
+        *,
+        stable_id: str,  # noqa: ARG002 - callers pass stable_id=; size is hash-keyed
     ) -> int | None:
         total = 0
         for digest in file_hashes.values():
@@ -234,7 +237,7 @@ class HubPresignedSource:
         return stem_index.refresh_error(data_dir)
 
     def bundle_remote_size(
-        self, file_hashes: dict[str, str], *, stable_id: str | None = None
+        self, _file_hashes: dict[str, str], *, stable_id: str | None = None
     ) -> int | None:
         from apps.cloud.hub_stem_client import fetch_hub_bundle_presign
 

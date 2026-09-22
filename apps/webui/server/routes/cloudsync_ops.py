@@ -37,6 +37,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.shared.machine_pressure import read_machine_pressure
 from apps.shared.state.machine_identity import MachineIdentityError, is_hub_from_env
 from apps.shared.sync_runtime_gates import refuse_sync_round
 from apps.sync_hub import client as sync_client
@@ -44,7 +45,6 @@ from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enrol
 from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
-from apps.shared.machine_pressure import read_machine_pressure
 
 from .cloudsync_status import data_dir_for_request
 

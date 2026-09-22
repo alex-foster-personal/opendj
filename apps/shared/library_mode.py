@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, Mapping, Optional
+from typing import Literal
 
 LibraryMode = Literal["local", "remote"]
 
@@ -43,7 +44,7 @@ def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
 
 def apply_library_env(
     *,
-    environ: Optional[dict[str, str]] = None,
+    environ: dict[str, str] | None = None,
     dotenv_path: Path = _ENV_FILE,
 ) -> None:
     """Copy library-mode keys from root ``.env`` into the process env.
@@ -61,7 +62,7 @@ def apply_library_env(
         target[key] = value.strip()
 
 
-def library_mode(*, environ: Optional[Mapping[str, str]] = None) -> LibraryMode:
+def library_mode(*, environ: Mapping[str, str] | None = None) -> LibraryMode:
     """Return the explicit library mode for this process.
 
     Unset is local on darwin only. Non-darwin hosts must set
@@ -82,7 +83,7 @@ def library_mode(*, environ: Optional[Mapping[str, str]] = None) -> LibraryMode:
     raise RuntimeError(f"{MODE_ENV} must be local or remote, got {raw!r}")
 
 
-def crate_root(*, environ: Optional[Mapping[str, str]] = None) -> Path:
+def crate_root(*, environ: Mapping[str, str] | None = None) -> Path:
     """Absolute crate root. Required in remote mode; never guessed."""
     env = os.environ if environ is None else environ
     raw = env.get(CRATE_ROOT_ENV)
@@ -96,7 +97,7 @@ def crate_root(*, environ: Optional[Mapping[str, str]] = None) -> Path:
     return path
 
 
-def assert_ready(*, environ: Optional[Mapping[str, str]] = None) -> None:
+def assert_ready(*, environ: Mapping[str, str] | None = None) -> None:
     """Fail at process start when remote mode cannot serve the crate."""
     if library_mode(environ=environ) != "remote":
         return

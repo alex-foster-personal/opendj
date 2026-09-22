@@ -24,7 +24,6 @@ from scripts.ci_plan import (
     Scope,
     Verdict,
     helper_carried_scopes,
-    matches,
     observed_dependents,
     plan,
     read_config,
@@ -134,27 +133,23 @@ def test_an_unclaimed_support_module_with_no_scope_import_is_harmless(tmp_path: 
     assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {}
 
 
-def test_every_helper_carried_scope_is_a_full_trigger() -> None:
+def test_the_committed_helper_carried_list_is_exactly_the_derived_one() -> None:
     """A global pytest helper is not a test and does not run; it is imported by suites across
     the tree, so a change to a scope it imports has to run everything. The anti-rot guard for
     that, recomputed from the tree rather than trusting the committed list: a new import in
     `tests/conftest.py` fails this test instead of silently leaving suites unrun.
 
-    Stated as full triggers rather than dependent edges because 36 of this repository's 46
-    scopes are carried this way, and writing it as edges is roughly 1600 entries saying what
-    one line per scope says plainly."""
+    An EQUALITY, in both directions. The earlier form asked only whether every carried scope
+    was covered, and a mutation that shrank the carried set passed it (round 5); a list that
+    carries a scope no helper reaches is a constant, not a derivation, and is refused too.
+    Named by scope rather than written as path triggers since round 9, because ownership is
+    longest-prefix and a prefix trigger on `apps/webui/` would swallow `apps/webui/frontend/`.
+    """
     config = read_config()
     carried = helper_carried_scopes(config, Path("."))
     assert carried, "no helper-carried scope found; the derivation measured nothing"
-    missing = sorted(
-        pattern
-        for scope in config.scopes
-        if scope.name in carried
-        for pattern in scope.sources
-        if not matches(pattern, config.full_triggers)
-    )
-    assert not missing, (
-        f"a global pytest helper imports these scopes, so they must be full triggers: {missing}"
+    assert tuple(sorted(carried)) == tuple(sorted(config.helper_carried)), (
+        "ci/test-scopes.yml `helper_carried` no longer matches what the global helpers reach"
     )
 
 
@@ -236,3 +231,107 @@ def test_one_underivable_path_in_a_python_change_still_answers_full() -> None:
     the ones the closure could not name."""
     got = plan(_changed("apps/engine_core/deck.py", "apps/engine_core/ui.ts"), _config())
     assert got.verdict is Verdict.FULL
+
+
+# ----- round 9: a scope nested inside another, consumed by mention rather than import -----
+
+
+def _nested_config() -> Config:
+    return Config(
+        (),
+        ("tests/*.py",),
+        (
+            Scope("webui", ("apps/webui/",), ("tests/webui/",)),
+            Scope("front", ("apps/webui/frontend/",), (), mentions=("apps/webui/frontend",)),
+            Scope("a", ("apps/a/",), ("tests/a/",)),
+        ),
+        helper_carried=("webui",),
+    )
+
+
+def test_a_nested_scope_owns_its_files_and_the_carried_parent_does_not_swallow_them() -> None:
+    """`apps/webui/` is helper-carried, so every change under it was FULL, including the
+    Svelte app that no Python imports. Longest prefix gives the frontend to its own scope."""
+    got = plan(_changed("apps/webui/frontend/src/App.svelte"), _nested_config())
+    assert got.verdict is Verdict.SCOPED, got.reason
+    assert "front" in got.scopes and "webui" not in got.scopes
+
+
+def test_a_python_change_under_the_carried_parent_is_still_full() -> None:
+    """The overshoot control: narrowing the child must not free the parent."""
+    got = plan(_changed("apps/webui/library_assets.py"), _nested_config())
+    assert got.verdict is Verdict.FULL
+    assert "carries the scope owning" in got.reason
+
+
+def test_a_non_python_change_under_a_scope_without_mentions_is_still_full() -> None:
+    """Round 6's rule survives for every scope that declares no way to find its consumers."""
+    got = plan(_changed("apps/a/View.svelte"), _nested_config())
+    assert got.verdict is Verdict.FULL
+    assert "cannot be derived" in got.reason
+
+
+def _mention_tree(tmp_path: Path, test_text: str) -> tuple[Config, Path]:
+    root = tmp_path / "tests"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "test_build.py").write_text(test_text)
+    return _nested_config(), root
+
+
+def test_a_test_that_spells_the_path_is_a_dependent_of_the_mentioned_scope(
+    tmp_path: Path,
+) -> None:
+    config, root = _mention_tree(
+        tmp_path, 'from pathlib import Path\nD = Path("apps/webui/frontend/dist")\n'
+    )
+    assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {"front": ("a",)}
+
+
+def test_a_mention_in_a_comment_or_docstring_makes_no_edge(tmp_path: Path) -> None:
+    """The control that separates the reader from a grep; see `mentioned_strings`."""
+    config, root = _mention_tree(
+        tmp_path, '"""Checks apps/webui/frontend indirectly."""\n# apps/webui/frontend\nX = 1\n'
+    )
+    assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {}
+
+
+def test_a_global_helper_that_spells_the_path_carries_the_scope(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "conftest.py").write_text('DIST = "apps/webui/frontend/dist"\n')
+    assert "front" in helper_carried_scopes(_nested_config(), tmp_path)
+
+
+def test_a_global_helper_that_only_comments_on_the_path_carries_nothing(tmp_path: Path) -> None:
+    """The real `tests/conftest.py` case, reduced. Raw-text matching carried the frontend."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "conftest.py").write_text("# the frontend typing gate\nX = 1\n")
+    assert helper_carried_scopes(_nested_config(), tmp_path) == frozenset()
+
+
+def test_an_unclaimed_support_module_that_mentions_a_scope_is_refused(tmp_path: Path) -> None:
+    """Same rule as the import form: a dependency the derivation cannot place must not narrow."""
+    root = tmp_path / "tests"
+    (root / "orphan").mkdir(parents=True)
+    (root / "orphan" / "rig.py").write_text('DIST = "apps/webui/frontend/dist"\n')
+    with pytest.raises(PlanError, match="claimed by no scope"):
+        observed_dependents(_nested_config(), pytest_inputs(root), root=tmp_path)
+
+
+def test_an_import_of_a_nested_scope_is_attributed_to_the_nested_scope(tmp_path: Path) -> None:
+    """Codex on #3780. `imported_packages` cuts a name to two components, so an import of
+    `apps.webui.frontend.support.x` read as `apps.webui` and the edge went to the PARENT.
+    Import syntax carries no string literal, so the mention reader cannot recover it; the
+    owner lookup has to see the full name. No mentions here, so only the import can answer."""
+    root = tmp_path / "tests"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "test_fixture.py").write_text("from apps.webui.frontend.support import x\n")
+    config = Config(
+        (),
+        ("tests/*.py",),
+        (
+            Scope("webui", ("apps/webui/",), ("tests/webui/",)),
+            Scope("front", ("apps/webui/frontend/",), ()),
+            Scope("a", ("apps/a/",), ("tests/a/",)),
+        ),
+    )
+    assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {"front": ("a",)}

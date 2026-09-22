@@ -52,7 +52,7 @@ import os
 import statistics
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,11 +79,11 @@ def _least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, floa
     sxx = sum((x - mx) ** 2 for x in xs)
     if sxx == 0:
         raise ValueError("all x identical -- cannot separate fixed from slope")
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=False))
     slope = sxy / sxx
     intercept = my - slope * mx
     ss_tot = sum((y - my) ** 2 for y in ys)
-    ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+    ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys, strict=False))
     r2 = 1.0 if ss_tot == 0 else 1.0 - ss_res / ss_tot
     return intercept, slope, r2
 
@@ -239,7 +239,7 @@ def _fit(tier_key: str, gpu: str, rows: list[dict[str, Any]], cmd: str) -> dict:
         "duration_span_s": sorted(distinct),
         "r_squared": round(wall_r2, 4),
         "measured_by": cmd,
-        "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "note": note,
     }
 
