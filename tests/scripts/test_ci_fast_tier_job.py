@@ -8,7 +8,7 @@ except for the ledger guard.
 Single-line intent:
   - if the fast job's runs-on drops CI_RUNS_ON_FAST ahead of the Linux pool then legs queue
     behind shards
-  - if the fast job loses `actions: write` then the cancel step dies with 403 on a genuine red
+  - if the fast job loses `actions: write` or `checks: read` then the fail-fast step 403s
   - if the fast job runs on push then a trunk push can cancel its own verdict
   - if the fast job's pytest drops --tier-min-selected or --ledger-coverage-min then a thin run
     reads green
@@ -23,6 +23,7 @@ Single-line intent:
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -191,4 +192,34 @@ def test_fast_leg_wall_budget_clears_the_measured_pool_maximum() -> None:
         f"the job cap ({cap_s} s) must leave the leg budget ({budget_s} s) plus "
         f"{MIN_FAST_PRE_PYTEST_RESERVE_S} s of provisioning, or the job is CANCELLED by the "
         "cap before the leg's own timeout reports a TIMEOUT by name"
+    )
+
+
+def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
+    """[if] one test hangs [then] pytest-timeout fails THAT test by name with its stack,
+    well before the leg's own wall budget kills the whole leg anonymously (six legs
+    stalled at the same 32% mark on Mon 21 Sep 2026 and every kill read only
+    "exit 124 after 480s"), [else stop]"""
+    run = _pytest_step(_jobs()["fast"])
+    # The FLAG on its own line, not the comment above it that quotes the flag:
+    # a match inside a comment is not a match in shipped code.
+    per_test = re.search(r"^\s*--timeout=(\d+)\s*\\?$", run, re.MULTILINE)
+    assert per_test, f"the fast leg carries no per-test --timeout:\n{run}"
+    budget = re.search(r"MDT_FAST_TIMEOUT_S=(\d+)", run)
+    assert budget, "the fast leg carries no wall budget of its own"
+    assert int(per_test.group(1)) * 2 <= int(budget.group(1)), (
+        "a per-test ceiling within half the leg budget of the budget itself lets the "
+        "leg die first again, and the kill names nothing"
+    )
+    # The flag is only honored by an installed plugin; an unknown option is a usage
+    # error, and a plugin that is merely present in a venv is one `uv sync` from gone.
+    pyproject = tomllib.loads((CI.parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
+    dev = pyproject["project"]["optional-dependencies"]["dev"]
+    assert any(spec.startswith("pytest-timeout") for spec in dev), dev
+    # ci.yml provisions the lanes from requirements.txt with `uv pip install --exact`,
+    # not from the dev extra: a plugin declared only in pyproject.toml is absent on
+    # the runner and `--timeout` becomes a usage error that fails every leg and shard.
+    requirements = (CI.parents[2] / "requirements.txt").read_text(encoding="utf-8")
+    assert any(line.startswith("pytest-timeout") for line in requirements.splitlines()), (
+        "pytest-timeout is missing from requirements.txt, which is what CI installs"
     )
