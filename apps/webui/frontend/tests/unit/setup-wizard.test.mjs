@@ -28,6 +28,8 @@ const API_BASE = 'https://setup.example.test';
 
 let mod;
 let wizard;
+/** The singleton's source as CONSTRUCTED, read before any _resetForTests. */
+let constructedSource;
 let originalFetch;
 let requests;
 
@@ -145,6 +147,7 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	wizard = mod.setupWizard;
+	constructedSource = wizard.source;
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = async () => jsonResponse(engineHealth());
 	assert.equal(await mod.capabilities.probe(), 'engine');
@@ -294,6 +297,13 @@ test('load fills status and detection from one status request', async () => {
 	assert.equal(wizard.status.tracks, 0);
 	assert.equal(wizard.detection.import_source, '/data/master.plain.db');
 	assert.equal(wizard.error, null);
+});
+
+test('STANDALONE-08: the wizard is constructed with NO source, before any reset', () => {
+	// Mutation guard: _resetForTests() nulls the source before every test, so
+	// only the value captured at load time proves the class field itself
+	// defaults to null. Reverting the initial state to 'rekordbox' fails here.
+	assert.equal(constructedSource, null, 'a freshly built wizard must not assume rekordbox');
 });
 
 test('STANDALONE-08: detection alone leaves source unselected and makes no import POST', async () => {
