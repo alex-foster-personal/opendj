@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+from scripts.lock_marker_parser import tokenize_marker
 from scripts.lock_marker_semantics import (
     Unknown,
     _eval,
@@ -16,7 +17,6 @@ from scripts.lock_marker_semantics import (
     _MarkerParser,
     markers_equivalent,
     release_literal,
-    tokenize_marker,
 )
 
 
@@ -35,6 +35,12 @@ def _has_membership(marker: str) -> bool:
     """Whether any clause is `in` / `not in`: an opaque atom to uv (and to the
     evaluator), which packaging reads as substring membership, so no oracle."""
     return ("word", "in") in tokenize_marker(marker)
+
+
+def _uses_a_platform_rewrite(marker: str) -> bool:
+    """Whether uv's `platform_system` rewrite or its os_name / sys_platform
+    contradiction table can apply: packaging knows neither, so no oracle."""
+    return "platform_system" in marker or ("os_name" in marker and "sys_platform" in marker)
 
 
 def _orders_a_string(marker: str) -> bool:
@@ -206,6 +212,43 @@ def _as_uv_stores_it(marker: str) -> str:
         ("'lin' in sys_platform", "sys_platform == 'linux'", False),
         ("python_full_version >= '3.10'", "python_full_version >= '3.10.dev0'", True),
         ("python_full_version > '3.10'", "python_full_version > '3.10.post1'", True),
+        # uv rewrites `platform_system` to `sys_platform` for exactly Linux, Darwin
+        # and Windows (`==` and `!=`; measured table), every other value verbatim.
+        ("platform_system == 'Linux'", "sys_platform == 'linux'", True),
+        ("platform_system != 'Windows'", "sys_platform != 'win32'", True),
+        (
+            "platform_system == 'Darwin' or os_name == 'nt'",
+            "os_name == 'nt' or sys_platform == 'darwin'",
+            True,
+        ),
+        ("platform_system == 'FreeBSD'", "sys_platform == 'freebsd'", False),
+        ("platform_system == 'linux'", "sys_platform == 'linux'", False),
+        ("platform_system in 'Linux'", "sys_platform in 'linux'", False),
+        # and reads an `and` chain holding both `os_name == 'nt'` and `sys_platform ==`
+        # one of linux / darwin / ios, or `os_name == 'posix'` and `sys_platform ==
+        # 'win32'`, as false; only those pairs, only `==`, only on the chain as
+        # written (a pair split across an `or` is kept on both branches).
+        ("os_name == 'nt' and sys_platform == 'linux'", "python_version < '0'", True),
+        (
+            "os_name == 'nt' and sys_platform == 'linux' and extra == 'x'",
+            "python_version < '0'",
+            True,
+        ),
+        ("sys_platform == 'darwin' and os_name == 'nt'", "python_version < '0'", True),
+        ("os_name == 'posix' and platform_system == 'Windows'", "python_version < '0'", True),
+        ("os_name == 'nt' and sys_platform == 'android'", "python_version < '0'", False),
+        ("os_name != 'posix' and sys_platform == 'linux'", "python_version < '0'", False),
+        ("os_name == 'nt' and sys_platform != 'linux'", "os_name == 'nt'", False),
+        (
+            "(os_name == 'nt' or os_name == 'posix') and sys_platform == 'linux'",
+            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'posix' and sys_platform == 'linux')",
+            True,
+        ),
+        (
+            "os_name == 'nt' and (sys_platform == 'linux' or sys_platform == 'win32')",
+            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'nt' and sys_platform == 'win32')",
+            True,
+        ),
     ],
 )
 def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> None:
@@ -219,6 +262,8 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
         # own check()-level test below.
         return
     if _has_membership(spelled) or _has_membership(recorded):
+        return
+    if _uses_a_platform_rewrite(spelled) or _uses_a_platform_rewrite(recorded):
         return
     if _orders_a_string(spelled) or _orders_a_string(recorded):
         # packaging 26 evaluates `<`/`>` on strings as always false and `<=`/`>=` as
@@ -369,3 +414,15 @@ def test_a_probe_between_releases_of_any_depth_exists() -> None:
     assert markers_equivalent((deep,), (deep,))
     assert not markers_equivalent((deep,), (deep.replace("0.0.0.0.1", "0.0.0.0.2"),))
     assert not markers_equivalent((deep,), ("python_full_version == '3.11.15'",))
+
+
+def test_the_contradiction_table_reads_only_the_pyproject_side() -> None:
+    """uv applies its os_name / sys_platform table when it RECORDS a marker, so the
+    lock side never holds such a chain; one that does is another uv's output and
+    must not be read as uv 0.8.17's false."""
+    assert markers_equivalent(
+        ("os_name == 'nt' and sys_platform == 'linux'",), ("python_version < '0'",)
+    )
+    assert not markers_equivalent(
+        ("python_version < '0'",), ("os_name == 'nt' and sys_platform == 'linux'",)
+    )

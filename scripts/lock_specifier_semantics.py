@@ -51,14 +51,16 @@ def norm_clause(clause: str, *, expand_compatible: bool) -> list[str]:
     if op == "~=" and expand_compatible:
         return [">=" + canonical_version(version), "<" + compatible_upper(version)]
     if op in ("==", "!=") and version.endswith(".*"):
-        return [op + _trim_release(canonical_version(version[:-2])) + ".*"]
-    return [op + _trim_release(canonical_version(version))]
+        return [op + trim_release(canonical_version(version[:-2])) + ".*"]
+    return [op + trim_release(canonical_version(version))]
 
 
-def _trim_release(canonical: str) -> str:
+def trim_release(canonical: str) -> str:
     """`1.26.0` and `1.26` are one PEP 440 version and `uv lock --check` reads a
-    respelling between them as no change (module docstring), so trailing zero
-    release components are dropped, whatever the operator."""
+    respelling between them as no change (module docstring; the same for
+    `[project] version`, `1.0` -> `1.0.0` and `01.0` accepted, `1.0.0rc1` not,
+    round 24), so trailing zero release components are dropped, whatever the
+    operator."""
     match = _VERSION_RE.match(canonical)
     assert match is not None, canonical  # canonical_version emitted it
     parts = match.group("release").split(".")

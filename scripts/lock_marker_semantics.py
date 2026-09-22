@@ -63,6 +63,17 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     os_name in 'ab' or os_name not in 'ab'     -> (marker dropped: always true)
     os_name in 'ab' or os_name in 'ab'         -> os_name in 'ab'
     'a' in os_name or os_name == 'a'           -> kept verbatim (a distinct atom)
+    platform_system == 'Linux'                 -> sys_platform == 'linux'
+    platform_system != 'Windows'               -> sys_platform != 'win32'
+    platform_system == 'Darwin'                -> sys_platform == 'darwin'
+    platform_system == 'FreeBSD' / 'linux' / in 'Linux' / < 'M' -> kept verbatim
+    os_name == 'nt' and sys_platform == 'linux'         -> python_version < '0'
+    os_name == 'nt' and sys_platform == 'darwin'/'ios'  -> python_version < '0'
+    os_name == 'posix' and sys_platform == 'win32'      -> python_version < '0'
+    os_name == 'nt' and sys_platform == 'android'/'cygwin'/'freebsd' -> kept verbatim
+    os_name != 'posix' and sys_platform == 'linux'      -> kept verbatim
+    (os_name == 'nt' or os_name == 'posix') and sys_platform == 'linux'
+        -> (os_name == 'nt' and sys_platform == 'linux') or (os_name == 'posix' and ...)
 
 So uv's marker algebra is RELEASE-ONLY: every version literal is cut to its
 release segment before the comparison is stored, whatever the operator, which
@@ -94,6 +105,16 @@ always false and `<=`, `>=` as equality, per the 2025 dependency-specifier
 spec change; a uv.lock check follows uv, and the tests use packaging as an
 oracle only where the two agree.)
 
+`platform_system` compared with `==` / `!=` to exactly Linux, Darwin or Windows
+is REWRITTEN to the `sys_platform` form (rows above), both sides here. An `and`
+chain, as written, holding `os_name == 'nt'` beside `sys_platform ==` linux,
+darwin or ios, or `os_name == 'posix'` beside `sys_platform == 'win32'`, is
+recorded as false: a finite table of `==` pairs, not an implication (`os_name
+!= 'posix' and sys_platform == 'linux'` stays, and the same pair split across
+an `or` is kept on both branches once uv distributes it). It is applied to the
+SPELLED side only, since uv applied it when it recorded the other side (Codex
+P2 on #3763, round 24).
+
 Equivalence itself is a truth-table check: both markers are evaluated over a
 grid of environments built from the literals either side mentions. For the
 boolean structure over `==`/`!=` on strings a value mentioned by neither side
@@ -113,10 +134,7 @@ from __future__ import annotations
 import itertools
 import re
 
-
-class Unknown(Exception):
-    """The check could not measure; the caller must report UNKNOWN, not a verdict."""
-
+from scripts.lock_marker_parser import Unknown, _MarkerParser
 
 # PEP 440 public grammar (the spec's appendix, case-insensitive).
 _VERSION_RE = re.compile(
@@ -256,108 +274,7 @@ def _compatible_upper(release: str) -> str:
 
 _VERSION_VARS = frozenset({"python_version", "python_full_version", "implementation_version"})
 _ORDER_OPS = frozenset({"<", "<=", ">", ">="})
-_TOKEN_RE = re.compile(
-    r"\s*(?:(?P<lp>\()|(?P<rp>\))|(?P<str>'[^']*'|\"[^\"]*\")|(?P<word>[A-Za-z_][A-Za-z0-9_.]*)"
-    r"|(?P<op>===|==|!=|<=|>=|<|>|~=))"
-)
 _GRID_CAP = 20000
-
-
-def tokenize_marker(text: str) -> list[tuple[str, str]]:
-    """PEP 508 marker tokens. A string literal may use either quote form and keeps
-    its contents verbatim (`"posix's"` is a valid literal uv records as is); its
-    token text is re-quoted canonically, single quotes unless the value holds one,
-    so the two spellings of one value compare equal downstream."""
-    out: list[tuple[str, str]] = []
-    pos = 0
-    while pos < len(text):
-        if text[pos:].strip() == "":
-            break
-        match = _TOKEN_RE.match(text, pos)
-        if match is None or match.end() == pos:
-            raise Unknown(f"unparseable marker: {text!r}")
-        pos = match.end()
-        kind = match.lastgroup or ""
-        token = match.group(kind)
-        if kind == "str":
-            token = quote_literal(token[1:-1])
-        out.append((kind, token))
-    return out
-
-
-def quote_literal(value: str) -> str:
-    if "'" not in value:
-        return f"'{value}'"
-    if '"' not in value:
-        return f'"{value}"'
-    raise Unknown(f"a marker literal with both quote characters is not representable: {value!r}")
-
-
-class _MarkerParser:
-    """Recursive descent over PEP 508's marker grammar: or > and > atom | (expr)."""
-
-    def __init__(self, text: str) -> None:
-        self.toks = tokenize_marker(text)
-        self.i = 0
-        self.text = text
-
-    def _peek(self) -> tuple[str, str] | None:
-        return self.toks[self.i] if self.i < len(self.toks) else None
-
-    def _take(self) -> tuple[str, str]:
-        tok = self._peek()
-        if tok is None:
-            raise Unknown(f"marker ends early: {self.text!r}")
-        self.i += 1
-        return tok
-
-    def parse(self) -> tuple:
-        node = self._or()
-        if self._peek() is not None:
-            raise Unknown(f"trailing tokens in marker: {self.text!r}")
-        return node
-
-    def _or(self) -> tuple:
-        node = self._and()
-        while self._peek() == ("word", "or"):
-            self._take()
-            node = ("or", node, self._and())
-        return node
-
-    def _and(self) -> tuple:
-        node = self._atom()
-        while self._peek() == ("word", "and"):
-            self._take()
-            node = ("and", node, self._atom())
-        return node
-
-    def _atom(self) -> tuple:
-        tok = self._take()
-        if tok[0] == "lp":
-            node = self._or()
-            if self._take()[0] != "rp":
-                raise Unknown(f"unbalanced parentheses in marker: {self.text!r}")
-            return node
-        lhs = tok
-        op_tok = self._take()
-        if op_tok == ("word", "not"):
-            if self._take() != ("word", "in"):
-                raise Unknown(f"'not' without 'in' in marker: {self.text!r}")
-            op = "not in"
-        elif op_tok == ("word", "in"):
-            op = "in"
-        elif op_tok[0] == "op":
-            op = op_tok[1]
-        else:
-            raise Unknown(f"expected an operator in marker: {self.text!r}")
-        rhs = self._take()
-        for side in (lhs, rhs):
-            if side[0] not in ("str", "word"):
-                raise Unknown(f"expected a variable or string in marker: {self.text!r}")
-        return ("cmp", lhs, op, rhs)
-
-
-# ----- evaluation over a probe grid ---------------------------------------------
 
 
 def _eval(node: tuple, env: dict[str, str]) -> bool:
@@ -537,10 +454,13 @@ def _python_version_of(full: str) -> str:
     return f"{int(parts[0])}.{int(parts[1])}"
 
 
-def markers_equivalent(marker_a: tuple[str, ...], marker_b: tuple[str, ...]) -> bool:
-    """True when two (already-normalized) marker clause tuples mean the same thing;
-    an empty tuple is the always-true marker uv drops."""
-    ast_a, ast_b = _parse_clauses(marker_a), _parse_clauses(marker_b)
+def markers_equivalent(spelled: tuple[str, ...], recorded: tuple[str, ...]) -> bool:
+    """True when the marker as SPELLED in pyproject.toml and the one uv RECORDED
+    (both already normalized clause tuples) mean the same thing; an empty tuple is
+    the always-true marker uv drops. Ordered: uv's contradiction table (module
+    docstring) is applied to the spelled side, as uv applied it to the recorded one."""
+    ast_a = _false_chains(_parse_clauses(spelled))
+    ast_b = _parse_clauses(recorded)
     return all(_eval(ast_a, env) == _eval(ast_b, env) for env in _grid(ast_a, ast_b))
 
 
@@ -548,7 +468,52 @@ def _parse_clauses(clauses: tuple[str, ...]) -> tuple:
     text = " and ".join(clause for clause in clauses if clause.strip())
     if not text:
         return ("true",)
-    return _erase_dropped_clauses(_MarkerParser(text).parse()) or ("true",)
+    node = _erase_dropped_clauses(_MarkerParser(text).parse()) or ("true",)
+    return _rewrite_platform_system(node)
+
+
+_SYS_PLATFORM_OF = {"'Linux'": "'linux'", "'Darwin'": "'darwin'", "'Windows'": "'win32'"}
+_FALSE = ("cmp", ("word", "python_version"), "<", ("str", "'0'"))
+_CONFLICTS = {("'nt'", "'linux'"), ("'nt'", "'darwin'"), ("'nt'", "'ios'"), ("'posix'", "'win32'")}
+
+
+def _rewrite_platform_system(node: tuple) -> tuple:
+    """uv's `platform_system` -> `sys_platform` rewrite (module docstring)."""
+    if node[0] in ("or", "and"):
+        return (node[0], _rewrite_platform_system(node[1]), _rewrite_platform_system(node[2]))
+    if node[0] != "cmp" or node[2] not in ("==", "!="):
+        return node
+    _, lhs, op, rhs = node
+    if lhs[0] == "str" and rhs[0] == "word":
+        lhs, rhs = rhs, lhs
+    if lhs == ("word", "platform_system") and rhs[0] == "str" and rhs[1] in _SYS_PLATFORM_OF:
+        return ("cmp", ("word", "sys_platform"), op, ("str", _SYS_PLATFORM_OF[rhs[1]]))
+    return node
+
+
+def _false_chains(node: tuple) -> tuple:
+    """uv's os_name / sys_platform contradiction table (module docstring): an `and`
+    chain, as written, holding a listed `==` pair is the false marker uv records."""
+    if node[0] == "or":
+        return ("or", _false_chains(node[1]), _false_chains(node[2]))
+    if node[0] != "and":
+        return node
+    equal: dict[str, set[str]] = {}
+    for leaf in _and_leaves(node):
+        if leaf[0] == "cmp" and leaf[2] == "==" and {leaf[1][0], leaf[3][0]} == {"word", "str"}:
+            word, literal = (leaf[1], leaf[3]) if leaf[1][0] == "word" else (leaf[3], leaf[1])
+            equal.setdefault(word[1], set()).add(literal[1])
+    for os_name in equal.get("os_name", ()):
+        for platform in equal.get("sys_platform", ()):
+            if (os_name, platform) in _CONFLICTS:
+                return _FALSE
+    return ("and", _false_chains(node[1]), _false_chains(node[2]))
+
+
+def _and_leaves(node: tuple) -> list[tuple]:
+    if node[0] == "and":
+        return _and_leaves(node[1]) + _and_leaves(node[2])
+    return [node]
 
 
 def _erase_dropped_clauses(node: tuple) -> tuple | None:

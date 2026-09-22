@@ -56,3 +56,28 @@ def test_an_omitted_requires_python_is_unknown_over_uv_s_default_and_stale_other
     code, message = _run(tmp_path, omitted.replace('"numpy>=1.26"', '"numpy>=2.1"'), LOCK)
     assert code == EXIT_STALE
     assert "in pyproject.toml, not in uv.lock: numpy>=2.1" in message
+
+
+def test_a_platform_marker_matches_the_sys_platform_form_uv_records(tmp_path: Path) -> None:
+    """uv records `platform_system == 'Linux'` as `sys_platform == 'linux'` and an
+    `os_name == 'nt' and sys_platform == 'linux'` chain as `python_version < '0'`
+    (measured uv 0.8.17, Codex P2 on #3763, round 24); both fresh locks are clean."""
+    spelled = PYPROJECT.replace("sys_platform == 'darwin'", "platform_system == 'Darwin'").replace(
+        '"numpy>=1.26",',
+        "\"numpy>=1.26\",\n    \"six>=1.16; os_name == 'nt' and sys_platform == 'linux'\",",
+    )
+    assert spelled != PYPROJECT
+    recorded = LOCK.replace(
+        '    { name = "numpy", specifier = ">=1.26" },',
+        '    { name = "numpy", specifier = ">=1.26" },\n'
+        '    { name = "six", marker = "python_version < \'0\'", specifier = ">=1.16" },',
+    )
+    assert recorded != LOCK
+    code, message = _run(tmp_path, spelled, recorded)
+    assert (code, message) == (EXIT_OK, message)
+    # The table is uv's, not PEP 508's: a pair it does not list stays a real marker.
+    code, message = _run(
+        tmp_path, spelled.replace("sys_platform == 'linux'", "sys_platform == 'android'"), recorded
+    )
+    assert code == EXIT_STALE
+    assert "os_name == 'nt' and sys_platform == 'android'" in message
