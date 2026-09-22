@@ -38,7 +38,7 @@ MCP equivalent: `open_route` with `route` defaulting to `/performance`.
 | Command | Purpose |
 |---------|---------|
 | `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
-| `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies |
+| `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
 
 ## MCP tools
 
