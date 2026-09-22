@@ -1,6 +1,9 @@
 """STANDALONE-04: native beatgrid backfill must not degrade the deck grid.
 
 Uses the real analysis router and store paths; no mocks or fabricated records.
+ANLZ availability goes through the production probe: the fixture tracks carry
+no rekordbox vendor mapping, so ``resolve_content`` raises
+``VENDOR_MAPPING_NOT_FOUND`` and the probe reports no ANLZ by definition.
 """
 from __future__ import annotations
 
@@ -107,7 +110,6 @@ def standalone_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
         port=18722,
         frontend_port=19424,
     )
-    app.state.anlz_available_fn = lambda _sid: False
     with TestClient(app) as test_client:
         yield test_client
 
