@@ -187,3 +187,52 @@ def test_a_root_recorded_from_elsewhere_is_unknown_not_a_verdict(tmp_path: Path)
         code, message = _run(tmp_path, PYPROJECT, lock)
         assert code == EXIT_UNKNOWN, (source, message)
         assert "root source" in message, (source, message)
+
+
+def test_a_path_source_s_specifier_is_ignored_as_uv_ignores_it(tmp_path: Path) -> None:
+    """`localdep>=1` with `localdep = { path = ... }`: uv records `{ name, directory }`
+    with no specifier, and `uv lock --check` passes even after the specifier is edited
+    (measured, uv 0.8.17: the path decides the version), so the specifier is dropped
+    from the compare for a path source and only there (Codex P2 on #3763, round 18)."""
+    pyproject, lock = _with_source(
+        tmp_path, '{ path = "localdep" }', '{ name = "localdep", directory = "localdep" }'
+    )
+    for spec in (">=1", ">=2,<3", "==0.1.0"):
+        pinned = pyproject.replace(
+            '"localdep",', f'"localdep{spec}",'
+        )  # the dependency, not the source path
+        assert pinned != pyproject
+        code, message = _run(tmp_path, pinned, lock)
+        assert code == EXIT_OK, (spec, message)
+    # CONTROL: without a path source the specifier is still compared (a registry
+    # requirement's specifier is exactly what a bump without `uv lock` changes).
+    unsourced = PYPROJECT.replace('"numpy>=1.26"', '"localdep>=1"')
+    code, message = _run(tmp_path, unsourced, lock.replace(', directory = "localdep"', ""))
+    assert code == EXIT_STALE, message
+    assert "localdep>=1" in message
+
+
+def test_a_non_boolean_package_or_editable_flag_is_unknown_not_a_verdict(tmp_path: Path) -> None:
+    """`package = "false"` (a string) is a file uv refuses to parse (measured: `invalid
+    type: string "false", expected a boolean`), on the root's `[tool.uv]`, on a source
+    and on a path target alike; inferring a source from it would be a verdict about a
+    configuration uv never accepted, so it is UNKNOWN (Codex P2 on #3763, round 18)."""
+    code, message = _run(tmp_path, PYPROJECT + '\n[tool.uv]\npackage = "false"\n')
+    assert code == EXIT_UNKNOWN, message
+    assert "package" in message
+    entry = '{ name = "localdep", directory = "localdep" }'
+    for source_line in (
+        '{ path = "localdep", package = "false" }',
+        '{ path = "localdep", editable = 1 }',
+    ):
+        pyproject, lock = _with_source(tmp_path, source_line, entry)
+        code, message = _run(tmp_path, pyproject, lock)
+        assert code == EXIT_UNKNOWN, (source_line, message)
+    pyproject, lock = _with_source(
+        tmp_path,
+        '{ path = "localdep" }',
+        entry,
+        target_toml=LOCALDEP_TOML + '[tool.uv]\npackage = "false"\n',
+    )
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_UNKNOWN, message
