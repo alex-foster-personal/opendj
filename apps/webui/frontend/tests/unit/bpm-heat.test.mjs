@@ -47,4 +47,27 @@ describe('bpm-heat', () => {
 		const h = classifyBpmHeat(90, 180);
 		assert.equal(h.lane, 'half');
 	});
+
+	it('uses the closest raw, half, or double relationship for strict-under-8 compatibility', () => {
+		const { classifyBpmCompatibility } = mod;
+		const raw = classifyBpmCompatibility(135.9, 128);
+		assert.equal(raw.fold, 1);
+		assert.ok(Math.abs(raw.absDelta - 7.9) < 1e-9);
+		assert.equal(raw.compatible, true);
+
+		const edge = classifyBpmCompatibility(136, 128);
+		assert.equal(edge.compatible, false, '8 BPM exactly is outside the strict under-8 default');
+		assert.equal(edge.severity, 'neutral');
+
+		const folded = classifyBpmCompatibility(64.1, 128);
+		assert.equal(folded.fold, 0.5);
+		assert.equal(folded.compatible, true);
+	});
+
+	it('escalates red BPM-border severity only after 8, 16, and 24 BPM', () => {
+		const { classifyBpmCompatibility } = mod;
+		assert.equal(classifyBpmCompatibility(136.1, 128).severity, 'warn');
+		assert.equal(classifyBpmCompatibility(144.1, 128).severity, 'danger');
+		assert.equal(classifyBpmCompatibility(152.1, 128).severity, 'critical');
+	});
 });
