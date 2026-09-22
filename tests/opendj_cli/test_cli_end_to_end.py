@@ -1137,6 +1137,20 @@ def test_a_finite_deadline_is_still_accepted(
     real instruction unlike a negative one. It is asserted at parse level
     because a zero settle also races the page's republish, so a verdict is not
     what it pins.
+
+    The live half below used `--settle 0.5` and was flaky on a loaded runner:
+    shard 1 of 5 returned EXIT_UNCONFIRMED (exit 4) on agentbox while the same
+    test passed 5 of 5 locally clean, again under a 14 load average on 10
+    cores, and did not fail in a full local shard-1 run. 0.5 s was the only
+    sub-second settle in this file expected to CONFIRM; the other twelve are
+    there precisely to produce EXIT_UNCONFIRMED, so this one sat a fifth of a
+    second from the value the file uses to mean "deliberately too short".
+
+    `--settle` is a MAXIMUM wait for the mirror to confirm, not a sleep, so
+    raising it costs a passing run nothing and weakens no claim: the assertion
+    is still "this confirms", and a product that genuinely fails to confirm
+    still fails here, just later. Lowering an expectation to fit would be
+    shaving the test; removing a scheduling false-negative is not.
     """
 
     assert main(["--settle", "0", "--timeout", "0", "--list-verbs"]) == EXIT_CONFIRMED
@@ -1145,7 +1159,7 @@ def test_a_finite_deadline_is_still_accepted(
     page = engine.page()
     page.start()
     try:
-        assert main(_argv(engine, "--settle", "0.5", "--timeout", "30", "play", "1")) == (
+        assert main(_argv(engine, "--settle", "30", "--timeout", "30", "play", "1")) == (
             EXIT_CONFIRMED
         )
     finally:
