@@ -23,9 +23,11 @@ import type { PerformanceBrowserIpc } from '../../../src/lib/rb/performance-ipc.
  * one place to spell it.
  */
 export async function waitForPerformanceIpc(page: Page): Promise<void> {
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await page.waitForFunction(() => {
+		// The annotation keeps the type import referenced (an unused import
+		// would drop the `declare global` it carries) without exporting it
+		// (an unused export is what the quality ratchet counts).
+		const ipc: PerformanceBrowserIpc | undefined = window.musicDjToolsPerformance;
+		return ipc?.version === 1;
+	});
 }
-
-// Keep the type import referenced so an unused-import lint cannot drop the
-// `declare global` it carries.
-export type { PerformanceBrowserIpc };
