@@ -354,6 +354,7 @@ test.describe('setup entry points', () => {
 		const dialog = setupDialog(page);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog.getByRole('radio', { name: 'A rekordbox collection on this machine' }).check();
 
 		// The scanning state must resolve into a verdict, never stick.
 		await expect(dialog.locator('.probes li').first()).toBeVisible();
@@ -406,6 +407,84 @@ test.describe('setup entry points', () => {
 		await expect(setupDialog(page).locator('.steps .step.current')).toContainText(
 			'Find your music'
 		);
+	});
+
+	test('STANDALONE-08: rekordbox detection alone does not opt in or import', async ({
+		page
+	}) => {
+		// Mutation guard: reverting the initial source to rekordbox must fail here.
+		const importPosts: string[] = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && request.url().includes('/api/v1/setup/import')) {
+				importPosts.push(request.url());
+			}
+		});
+
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		const rekordboxRadio = dialog.getByRole('radio', {
+			name: 'A rekordbox collection on this machine'
+		});
+		const folderRadio = dialog.getByRole('radio', { name: /folder of audio files/ });
+		await expect(rekordboxRadio).not.toBeChecked();
+		await expect(folderRadio).not.toBeChecked();
+		await expect(importPosts).toEqual([]);
+
+		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
+		await expect(continueButton).toBeDisabled();
+		await expect(dialog.locator('.why')).toContainText('choose an import source');
+
+		await rekordboxRadio.check();
+		await expect(rekordboxRadio).toBeChecked();
+		await expect(dialog.locator('.probes li').first()).toBeVisible();
+		await expect(importPosts).toEqual([]);
+		await expect(dialog.locator('.steps .step.current')).toContainText('Find your music');
+
+		const fatal = await fatalBlockers(page);
+		if (fatal.length === 0) {
+			await expect(continueButton).toBeEnabled();
+			await continueButton.click();
+			await expect(dialog.locator('.steps .step.current')).toContainText('Confirm the import');
+		}
+	});
+
+	test('STANDALONE-08: declining import completes setup and is not re-offered', async ({
+		page
+	}) => {
+		// Mutation guard: making dismissed-empty libraries reopen must fail here.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Continue without importing', exact: true })
+			.click();
+
+		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		const statusAfterDismiss = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/setup/status');
+			return (await response.json()) as { dismissed: boolean; should_show_wizard: boolean };
+		});
+		expect(statusAfterDismiss.dismissed).toBe(true);
+		expect(statusAfterDismiss.should_show_wizard).toBe(false);
+
+		await page.reload();
+		await page.waitForFunction(
+			() => typeof (window as unknown as { __mdtPerfLog?: unknown }).__mdtPerfLog === 'function',
+			undefined,
+			{ timeout: 30_000 }
+		);
+		await expect(setupDialog(page)).toHaveCount(0);
+
+		// Re-arm for the next test.
+		await page.keyboard.press(SETTINGS_CHORD);
+		await runSetupButton(page).click();
+		await expectWizard(page);
 	});
 
 	test('continuing without importing closes into an honest empty state', async ({ page }) => {

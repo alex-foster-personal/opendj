@@ -399,6 +399,26 @@ test('the three escape actions are rendered ungated', () => {
 	assert.doesNotMatch(overlay, /disabled=\{blockers/);
 });
 
+test('STANDALONE-08: neither source radio is selected until the operator chooses', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /checked=\{source === 'rekordbox'\}/);
+	assert.match(overlay, /checked=\{source === 'folder'\}/);
+	assert.doesNotMatch(overlay, /checked=\{true\}/);
+});
+
+test('STANDALONE-08: welcome copy does not assume rekordbox import', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /when you choose to start that import/);
+	assert.doesNotMatch(overlay, /Setting it up means\s+reading your existing rekordbox/);
+});
+
+test('STANDALONE-08: the neutral detect step offers dismissal and refuses Continue', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\{#if step === 'detect' && source === null\}/);
+	assert.match(overlay, /Choose an import source above/);
+	assert.match(overlay, /Continue is not available: \{nextRefusal\}/);
+});
+
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
@@ -475,7 +495,7 @@ test('every step panel renders a Back control', () => {
 	// so Back cannot be present on some steps and missing on others.
 	assert.match(overlay, /\{#snippet backButton\(\)\}/);
 	const renders = overlay.match(/\{@render backButton\(\)\}/g) ?? [];
-	assert.equal(renders.length, 7, `expected a Back control on all 7 panels, found ${renders.length}`);
+	assert.equal(renders.length, 8, `expected a Back control on all 8 panels, found ${renders.length}`);
 });
 
 test('Back is gated by backRefusal, and says why in the same breath', () => {
