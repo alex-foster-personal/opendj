@@ -346,7 +346,7 @@ test('browse actions without a BrowseAdapter are loud (toast), not silent', () =
 
 test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	const calls = [];
-	glue.registerBrowseAdapter({
+	const unregister = glue.registerBrowseAdapter({
 		moveSelection: (delta) => calls.push(['move', delta]),
 		loadSelected: (deck) => calls.push(['load', deck])
 	});
@@ -360,6 +360,9 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 		['load', 2]
 	]);
 	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
+	unregister();
+	const unregisterRemount = glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} });
+	unregisterRemount();
 });
 
 function _restoreCueGlueState() {

@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
@@ -127,6 +128,37 @@ test('global controls and browse detent normalization match the corrected map', 
 	assert.equal(binding(16, 'cc', 0x0a).action.target, 'master');
 	assert.equal(binding(16, 'cc', 0x0c).action.type, 'headphone_level');
 	assert.equal(binding(16, 'cc', 0x0d).action.type, 'headphone_mix');
+});
+
+test('every documented input address is either bound or explicitly identified', () => {
+	const protocol = JSON.parse(
+		readFileSync(
+			resolve(FRONTEND_ROOT, '../../../tools/deck-diagrams/devices/reloop-mixtour-pro/midi.json'),
+			'utf8'
+		)
+	);
+	const bindings = new Set(
+		pro.RELOOP_MIXTOUR_PRO_MAP.bindings.map(({ source }) => `${source.ch}:${source.kind}:${source.id}`)
+	);
+	const hints = new Set(
+		pro.RELOOP_MIXTOUR_PRO_MAP.hints.map(({ source }) => `${source.ch}:${source.kind}:${source.id}`)
+	);
+	const channels = {
+		G: [16],
+		N: [1, 2, 3, 4],
+		P: [5, 6, 7, 8],
+		E: [9, 10, 11, 12]
+	};
+	for (const control of protocol.controls.filter(({ direction }) => direction === 'in')) {
+		for (const ch of channels[control.ch_key]) {
+			const key = `${ch}:${control.type}:${Number.parseInt(control.hex, 16)}`;
+			assert.equal(
+				bindings.has(key) || hints.has(key),
+				true,
+				`${control.name} (${key}) is neither usable nor visibly identified`
+			);
+		}
+	}
 });
 
 test('feedback carries deck colors, RGB hot cues, mode state and discrete VU addresses', () => {

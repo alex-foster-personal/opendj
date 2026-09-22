@@ -109,11 +109,17 @@ export function _resetControllerStateForTests(): void {
 	_manualLoopInMs.clear();
 }
 
-export function registerBrowseAdapter(adapter: BrowseAdapter): void {
+export function registerBrowseAdapter(adapter: BrowseAdapter): () => void {
 	if (_browseAdapter !== null) {
 		throw new Error('registerBrowseAdapter: an adapter is already registered');
 	}
 	_browseAdapter = adapter;
+	return () => {
+		if (_browseAdapter !== adapter) {
+			throw new Error('registerBrowseAdapter: adapter ownership changed before cleanup');
+		}
+		_browseAdapter = null;
+	};
 }
 
 function _requireBrowseAdapter(what: string): BrowseAdapter | null {

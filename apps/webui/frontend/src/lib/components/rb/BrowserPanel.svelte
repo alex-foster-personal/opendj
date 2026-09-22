@@ -113,6 +113,7 @@
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
+	import { registerBrowseAdapter } from '$lib/rb/midi/action-glue.svelte';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -822,6 +823,10 @@
 				};
 			}
 		});
+		const unregisterMidiBrowser = registerBrowseAdapter({
+			moveSelection: _moveMidiSelection,
+			loadSelected: _loadMidiSelection
+		});
 		const url = new URL(window.location.href);
 		const lv1 = parseLv1(url.searchParams);
 		if (lv1.source === 'spotify') {
@@ -932,6 +937,7 @@
 
 		return () => {
 			uninstallBrowserSortIpc();
+			unregisterMidiBrowser();
 			unregisterPerformanceBrowser();
 			connAlive = false;
 			clearInterval(connTimer);
@@ -2667,6 +2673,30 @@
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
 		ensureAudioPrefetch(row.stable_id);
+	}
+
+	function _moveMidiSelection(delta: number): void {
+		if (visibleRows.length === 0 || delta === 0) return;
+		const selected = panes[activePane].selected_id;
+		const current = selected === null
+			? -1
+			: visibleRows.findIndex((row) => row.stable_id === selected);
+		const next = current === -1
+			? (delta > 0 ? 0 : visibleRows.length - 1)
+			: Math.max(0, Math.min(visibleRows.length - 1, current + delta));
+		selectRow(visibleRows[next]);
+	}
+
+	function _loadMidiSelection(deck: DeckId): void {
+		const selected = panes[activePane].selected_id;
+		const row = selected === null
+			? null
+			: visibleRows.find((candidate) => candidate.stable_id === selected) ?? null;
+		if (row === null) {
+			pushToast(`Deck ${deck}: select a track before pressing LOAD`, 'error');
+			return;
+		}
+		loadRow(row, deck);
 	}
 
 	/**

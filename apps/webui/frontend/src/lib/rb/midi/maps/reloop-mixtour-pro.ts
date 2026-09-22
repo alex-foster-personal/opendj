@@ -12,6 +12,7 @@
  */
 
 import type {
+	ControlHint,
 	ControllerPadMode,
 	DeviceMap,
 	LedRule,
@@ -34,6 +35,48 @@ const PAD_MODES: readonly ControllerPadMode[] = [
 
 const HOT_CUE_SLOTS: readonly HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const HOT_CUE_COLORS = [0x43, 0x4c, 0x70, 0x7f, 0x7c, 0x46, 0x49, 0x52] as const;
+
+function _deckHints(deck: DeckId): ControlHint[] {
+	const n = deck;
+	const p = 4 + deck;
+	const e = 8 + deck;
+	return [
+		{ source: { ch: n, kind: 'note', id: 0x08 }, label: `MODE + LOAD deck-layer report (deck ${deck}; hardware-routed)` },
+		{ source: { ch: p, kind: 'note', id: 0x08 }, label: `MODE hold (deck ${deck}; hardware modifier)` },
+		{ source: { ch: p, kind: 'note', id: 0x10 }, label: `SHIFT + LOAD library section (deck ${deck}; not available)` },
+		{ source: { ch: p, kind: 'note', id: 0x24 }, label: `Neural Mix EQ mode (deck ${deck}; not available)` },
+		{ source: { ch: p, kind: 'note', id: 0x25 }, label: `SHIFT + Neural Mix view (deck ${deck}; not available)` },
+		{ source: { ch: p, kind: 'note', id: 0x26 }, label: `SHIFT + MODE (deck ${deck}; no documented function)` },
+		{ source: { ch: n, kind: 'note', id: 0x0b }, label: `PITCH BEND + hold (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x0c }, label: `PITCH BEND - hold (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x12 }, label: `Crossfader FX cue layer (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x2c }, label: `LOOP IN move mode (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x2e }, label: `LOOP OUT move mode (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x2d }, label: `crossfader-start report (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'note', id: 0x31 }, label: `line-fader start report (deck ${deck}; not available)` },
+		{ source: { ch: n, kind: 'cc', id: 0x06 }, label: `MODE + browse seek/loop-out adjust (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'note', id: 0x00 }, label: `SHIFT + FX paddle backspin (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'cc', id: 0x03 }, label: `MODE + FX parameter (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'note', id: 0x05 }, label: `FX paddle (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'note', id: 0x0a }, label: `SHIFT + FX PARAM previous (deck ${deck}; undocumented)` },
+		{ source: { ch: e, kind: 'note', id: 0x0b }, label: `MODE + FX SELECT previous (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'note', id: 0x0c }, label: `MODE + FX SELECT next (deck ${deck}; not available)` },
+		{ source: { ch: e, kind: 'note', id: 0x0d }, label: `SHIFT + FX PARAM next (deck ${deck}; undocumented)` }
+	];
+}
+
+const GLOBAL_HINTS: ControlHint[] = [
+	{ source: { ch: 16, kind: 'note', id: 0x00 }, label: 'SHIFT hold (hardware modifier)' },
+	{ source: { ch: 16, kind: 'cc', id: 0x01 }, label: 'SHIFT + browse section scroll (not available)' },
+	{ source: { ch: 16, kind: 'cc', id: 0x02 }, label: 'FX DRY/WET (not available)' },
+	{ source: { ch: 16, kind: 'note', id: 0x03 }, label: 'FX PARAM previous (not available)' },
+	{ source: { ch: 16, kind: 'note', id: 0x04 }, label: 'FX PARAM next (not available)' },
+	{ source: { ch: 16, kind: 'note', id: 0x06 }, label: 'browse press/open (not available)' },
+	{ source: { ch: 16, kind: 'note', id: 0x07 }, label: 'SHIFT + browse BACK (not available)' },
+	{ source: { ch: 16, kind: 'note', id: 0x09 }, label: 'SPLIT pad-bank mode (hardware-routed)' },
+	{ source: { ch: 16, kind: 'note', id: 0x0a }, label: 'SHIFT + SPLIT (undocumented)' },
+	{ source: { ch: 16, kind: 'note', id: 0x7f }, label: 'MONO/STEREO report (hardware state only)' }
+];
 
 function _deckBindings(deck: DeckId): MidiBinding[] {
 	const n = deck;
@@ -146,9 +189,10 @@ export const RELOOP_MIXTOUR_PRO_MAP: DeviceMap = {
 	leds: [..._deckLeds(1), ..._deckLeds(2), ..._deckLeds(3), ..._deckLeds(4)],
 	meters: [...MIXTOUR_PRO_METERS],
 	hints: [
-		{ source: { ch: 16, kind: 'cc', id: 0x02 }, label: 'FX DRY/WET (not available)' },
-		{ source: { ch: 16, kind: 'note', id: 0x03 }, label: 'FX PARAM previous (not available)' },
-		{ source: { ch: 16, kind: 'note', id: 0x04 }, label: 'FX PARAM next (not available)' },
-		{ source: { ch: 16, kind: 'note', id: 0x7f }, label: 'MONO/STEREO report (hardware state only)' }
+		..._deckHints(1),
+		..._deckHints(2),
+		..._deckHints(3),
+		..._deckHints(4),
+		...GLOBAL_HINTS
 	]
 };
