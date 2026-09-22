@@ -170,6 +170,29 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
 
 
 def _paginated_runs(path: str) -> list[QueuedRun]:
+    """Every run the listing holds, or a PreconditionError: never a partial census.
+
+    GitHub answers the count and each page from a queue that keeps moving, so a
+    run leaving or joining it between the two makes total_count disagree with what
+    paging collected. That is not a paging defect, and it was read as one: the
+    sweeper went red with every test job green on main runs 35730977563 (13:03Z),
+    35723785363, 35722075764 and 35721772426 (Tue 22 Sep 2026), 4 of its 11 red
+    runs in the last 30. A listing that disagrees with its own count is listed
+    ONCE more; the second one agreeing with its own count is the census, two that
+    do not are the error, naming both."""
+    first_runs, first_total = _list_runs_once(path)
+    if len(first_runs) == first_total:
+        return first_runs
+    runs, total_count = _list_runs_once(path)
+    if len(runs) != total_count:
+        raise PreconditionError(
+            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs,"
+            f" twice (the first listing: total_count={first_total} against {len(first_runs)})"
+        )
+    return runs
+
+
+def _list_runs_once(path: str) -> tuple[list[QueuedRun], int]:
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
@@ -189,11 +212,7 @@ def _paginated_runs(path: str) -> list[QueuedRun]:
         if len(runs) >= total_count:
             break
         page += 1
-    if len(runs) != total_count:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs"
-        )
-    return runs
+    return runs, total_count
 
 
 def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:
