@@ -19,7 +19,17 @@ from scripts.lock_marker_semantics import (
 )
 from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN, check
 
-PYPROJECT = """
+BUILD_SYSTEM = """
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+"""
+
+# A [build-system] makes the project a PACKAGE, which is why the lock below records
+# it as `editable = "."` (uv records a project without one as `virtual = "."`).
+PYPROJECT = (
+    BUILD_SYSTEM
+    + """
 [project]
 name = "Demo_Project"
 requires-python = ">=3.11"
@@ -35,6 +45,7 @@ dev = [
 ]
 all = ["Demo_Project[dev]"]
 """
+)
 
 LOCK = """
 version = 1

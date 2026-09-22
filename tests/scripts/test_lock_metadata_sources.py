@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN
-from tests.scripts.test_lock_metadata_check import LOCK, PYPROJECT, _run
+from tests.scripts.test_lock_metadata_check import BUILD_SYSTEM, LOCK, PYPROJECT, _run
 
 LOCALDEP_TOML = '[project]\nname = "localdep"\nversion = "0.1.0"\n'
 
@@ -145,3 +145,45 @@ def test_a_path_source_is_predicted_from_the_target_and_the_project_dir(tmp_path
     # No such directory: the form cannot be inferred, so UNKNOWN.
     got, message = _run(tmp_path, *_with_source(tmp_path, '{ path = "missing" }', entry, None))
     assert got == EXIT_UNKNOWN, message
+
+
+def test_the_root_source_follows_the_build_system_and_tool_uv_package(tmp_path: Path) -> None:
+    """uv records the project itself as `editable = "."` when it is a package (a
+    `[build-system]`, or `[tool.uv] package = true` without one) and as `virtual = "."`
+    otherwise (`package = false`, or no build-system), and `uv lock --check` rejects the
+    lock after either toggle (measured, uv 0.8.17); so does this, naming the root source
+    (Codex P2 on #3763, round 17)."""
+    virtual_lock = LOCK.replace('source = { editable = "." }', 'source = { virtual = "." }')
+    no_build = PYPROJECT.replace(BUILD_SYSTEM, "")
+    assert virtual_lock != LOCK and no_build != PYPROJECT
+    not_a_package = PYPROJECT + "\n[tool.uv]\npackage = false\n"
+    forced_package = no_build + "\n[tool.uv]\npackage = true\n"
+    for label, pyproject, lock, expected in (
+        ("build-system, editable", PYPROJECT, LOCK, EXIT_OK),
+        ("package = false, still editable", not_a_package, LOCK, EXIT_STALE),
+        ("package = false, virtual", not_a_package, virtual_lock, EXIT_OK),
+        ("no build-system, still editable", no_build, LOCK, EXIT_STALE),
+        ("no build-system, virtual", no_build, virtual_lock, EXIT_OK),
+        ("no build-system but package = true, editable", forced_package, LOCK, EXIT_OK),
+        ("package = true, still virtual", forced_package, virtual_lock, EXIT_STALE),
+        ("build-system, still virtual", PYPROJECT, virtual_lock, EXIT_STALE),
+    ):
+        code, message = _run(tmp_path, pyproject, lock)
+        assert code == expected, (label, message)
+        if expected == EXIT_STALE:
+            assert "root source" in message, (label, message)
+
+
+def test_a_root_recorded_from_elsewhere_is_unknown_not_a_verdict(tmp_path: Path) -> None:
+    """A root source that is not `editable = "."` / `virtual = "."` (another path, a
+    registry, two keys) is a lock this check does not model: UNKNOWN, never clean."""
+    for source in (
+        'source = { editable = "../elsewhere" }',
+        'source = { registry = "https://pypi.org/simple" }',
+        'source = { editable = ".", virtual = "." }',
+    ):
+        lock = LOCK.replace('source = { editable = "." }', source)
+        assert lock != LOCK
+        code, message = _run(tmp_path, PYPROJECT, lock)
+        assert code == EXIT_UNKNOWN, (source, message)
+        assert "root source" in message, (source, message)
