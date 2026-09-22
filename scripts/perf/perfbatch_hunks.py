@@ -12,6 +12,7 @@ mutation.
 
 from __future__ import annotations
 
+import builtins
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -139,11 +140,7 @@ _PROSE = "prose"
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {".py": _PY, ".md": _PROSE}
 
 # Bare names that make an exception widening broad enough to swallow
-# cancellation, interpreter exit, or an exception group. Compared against the
-# LAST dotted component, so ``builtins.Exception`` and
-# ``asyncio.exceptions.CancelledError`` are refused the same as the bare name.
-# An alias (``from builtins import Exception as E``) is invisible to a diff
-# and remains an accepted residual, documented in perfbatch-gates.md.
+# cancellation, interpreter exit, or an exception group.
 _BROAD_EXCEPTIONS = frozenset(
     {
         "Exception",
@@ -155,6 +152,21 @@ _BROAD_EXCEPTIONS = frozenset(
         "GeneratorExit",
         "CancelledError",
     }
+)
+
+# The only names a widening may ADD: bare builtin exception classes that are
+# not broad. A dotted or unknown name (``os.DoesNotExist``,
+# ``subprocess.TimeoutExpired``) cannot be proven to be an exception class
+# from a diff, and ``suppress`` evaluates it on entry, so an attribute that
+# does not exist would raise before the guarded call (Codex P1 on #3804).
+# An alias (``from builtins import Exception as E``) is invisible to a diff
+# and remains an accepted residual, documented in perfbatch-gates.md.
+_SAFE_EXCEPTIONS = frozenset(
+    name
+    for name, value in vars(builtins).items()
+    if isinstance(value, type)
+    and issubclass(value, BaseException)
+    and name not in _BROAD_EXCEPTIONS
 )
 
 _TRAILING_COMMENT = r"\s*(?:#.*)?$"
@@ -207,10 +219,6 @@ def _split_names(raw: str) -> list[str] | None:
     return names
 
 
-def _is_broad(name: str) -> bool:
-    return name.rsplit(".", 1)[-1] in _BROAD_EXCEPTIONS
-
-
 def _exception_clause(text: str) -> tuple[str, str, str, frozenset[str]] | None:
     """(family, indent+modifier, as-target, names) for an except/suppress line."""
     match = _SUPPRESS_RE.match(text)
@@ -243,7 +251,7 @@ def is_exception_widening(removed: str, added: str) -> bool:
     old_names, new_names = before[3], after[3]
     if not old_names < new_names:
         return False
-    return not any(_is_broad(name) for name in new_names - old_names)
+    return all(name in _SAFE_EXCEPTIONS for name in new_names - old_names)
 
 
 def _bound_names(stmt: str) -> list[str]:

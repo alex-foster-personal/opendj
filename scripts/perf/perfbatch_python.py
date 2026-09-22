@@ -40,8 +40,8 @@ class PythonFacts:
         )
 
 
-def _docstring_spans(tree: ast.AST) -> set[int]:
-    lines: set[int] = set()
+def _docstring_nodes(tree: ast.AST) -> list[ast.Expr]:
+    found: list[ast.Expr] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
             continue
@@ -54,7 +54,30 @@ def _docstring_spans(tree: ast.AST) -> set[int]:
             and isinstance(first.value.value, str)
             and first.end_lineno is not None
         ):
-            lines.update(range(first.lineno, first.end_lineno + 1))
+            found.append(first)
+    return found
+
+
+def _docstring_lines(tree: ast.AST, per_line: dict[int, list[tokenize.TokenInfo]]) -> set[int]:
+    """Lines of docstrings that share NO physical line with any other code token.
+
+    A docstring followed on its closing line by a semicolon and a statement
+    is a docstring by ``ast`` and a behavioral line by any reading (Codex P1
+    on #3804): such a docstring is left to the string rules, so every one of
+    its lines is refused as string content rather than allowlisted. A
+    trailing comment is fine.
+    """
+    lines: set[int] = set()
+    for node in _docstring_nodes(tree):
+        span = range(node.lineno, node.end_lineno + 1)  # type: ignore[operator]
+        own = (node.lineno, node.col_offset)
+        shared = any(
+            token.type not in _LAYOUT_TYPES | {tokenize.COMMENT} and token.start != own
+            for line in span
+            for token in per_line.get(line, [])
+        )
+        if not shared:
+            lines.update(span)
     return lines
 
 
@@ -65,13 +88,13 @@ def analyze(source: str) -> PythonFacts:
         tree = ast.parse(source)
     except (tokenize.TokenError, SyntaxError, ValueError) as exc:
         return PythonFacts(error=f"{type(exc).__name__}: {exc}")
-    docstrings = _docstring_spans(tree)
     strings: set[int] = set()
     per_line: dict[int, list[tokenize.TokenInfo]] = {}
     for token in tokens:
         if token.type in _STRING_TYPES:
             strings.update(range(token.start[0], token.end[0] + 1))
         per_line.setdefault(token.start[0], []).append(token)
+    docstrings = _docstring_lines(tree, per_line)
     strings -= docstrings
     comments: set[int] = set()
     blanks: set[int] = set()
