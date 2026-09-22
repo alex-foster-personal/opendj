@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, SCHEDULE_DECK_SERIAL_ANCHOR } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -334,18 +334,7 @@ test('no plain-transport call site passes a raw self-report as the lead', () => 
 });
 
 test('the instrument is fed BOTH the lead charged and the self-report', () => {
-	const body = engineBlockAfter(`async function _scheduleDeckSerial(
-	deck: DeckId,
-	when: number,
-	inputSec: number | ((effectiveWhen: number) => number),
-	active: boolean,
-	tempoRatio: number | undefined,
-	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined,
-	reanchorGeneration?: number
-): Promise<number> {`);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 	assert.ok(
 		body.includes('const processorLeadSec = _transportLeadSec(deck);'),
 		'the lead must be a const the floor and the log both read, or they can disagree ' +
