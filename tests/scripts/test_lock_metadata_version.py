@@ -112,3 +112,21 @@ def test_an_unparseable_project_version_is_unknown_not_clean(tmp_path: Path) -> 
     )
     assert code == EXIT_UNKNOWN
     assert "not a PEP 440 version" in message
+
+
+def test_a_non_string_version_or_dynamic_entry_is_unknown_not_clean(tmp_path: Path) -> None:
+    """[if] `[project] version` is a TOML number (`version = 1.0`) or a `dynamic` entry
+    is not a string [then] UNKNOWN: uv refuses the file ("invalid type: floating point
+    `1.0`, expected a string", measured uv 0.8.17, Codex P2 on #3763, round 20), so
+    stringifying `1.0` against a lock that records "1.0" must never read clean"""
+    lock_1_0 = LOCK.replace('version = "0.1.0"\nsource', 'version = "1.0"\nsource')
+    assert lock_1_0 != LOCK
+    for pyproject, lock in (
+        (PYPROJECT.replace('version = "0.1.0"', "version = 1.0"), lock_1_0),
+        (PYPROJECT.replace('version = "0.1.0"', "version = 1.0"), LOCK),
+        (PYPROJECT.replace('version = "0.1.0"', "dynamic = [1]"), VERSIONLESS_LOCK),
+        (PYPROJECT.replace('version = "0.1.0"', 'dynamic = ["version", 1]'), VERSIONLESS_LOCK),
+    ):
+        assert pyproject != PYPROJECT
+        code, message = _run(tmp_path, pyproject, lock)
+        assert code == EXIT_UNKNOWN, (pyproject[:80], message)

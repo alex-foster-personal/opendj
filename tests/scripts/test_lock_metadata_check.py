@@ -513,3 +513,21 @@ def test_the_real_tree_matches(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     code, message = check(root / "pyproject.toml", root / "uv.lock")
     assert code == EXIT_OK, message
+
+
+def test_a_compatible_release_on_a_string_variable_matches_the_lock_uv_writes_without_it(
+    tmp_path: Path,
+) -> None:
+    """if pyproject.toml puts `~=` on a string variable (`os_name ~= 'posix'`) and uv
+    erased the clause from the record (which it does: alone, in a conjunction and in a
+    disjunction alike, measured round 20) then 0, never stale; the literal-left form
+    uv cannot lock at all is UNKNOWN (Codex P2 on #3763, round 20)"""
+    for spelled, recorded in (
+        ("os_name ~= 'posix'", ""),
+        ("os_name ~= 'posix' and sys_platform == 'darwin'", "sys_platform == 'darwin'"),
+        ("sys_platform == 'darwin' or os_name ~= 'posix'", "sys_platform == 'darwin'"),
+    ):
+        code, message = _run(tmp_path, *_with_marker(spelled, recorded))
+        assert code == EXIT_OK, (spelled, message)
+    code, message = _run(tmp_path, *_with_marker("'posix' ~= os_name", ""))
+    assert code == EXIT_UNKNOWN, message

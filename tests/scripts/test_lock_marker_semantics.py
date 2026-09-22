@@ -10,6 +10,7 @@ import re
 import pytest
 
 from scripts.lock_marker_semantics import (
+    Unknown,
     _eval,
     _grid,
     _MarkerParser,
@@ -287,6 +288,37 @@ def test_a_one_component_compatible_release_is_unknown_not_a_verdict() -> None:
     modeled, so the compare must say so rather than guess either way."""
     with pytest.raises(Exception, match="at least two components"):
         markers_equivalent(("python_full_version ~= '3'",), ())
+
+
+def test_a_compatible_release_on_a_string_variable_is_erased_as_uv_drops_it() -> None:
+    """`~=` is a PEP 440 operator; on a string variable (`os_name ~= 'posix'`,
+    `platform_release ~= '5.15'`) uv drops the clause rather than record it (measured,
+    round 20): erased from a conjunction and a disjunction alike, never a truth value.
+    On a version variable it stays the width range, whichever side the literal is on."""
+    for spelled in ("os_name ~= 'posix'", "platform_release ~= '5.15'"):
+        assert markers_equivalent((spelled,), ()), spelled
+        with_and = (f"{spelled} and sys_platform == 'linux'",)
+        assert markers_equivalent(with_and, ("sys_platform == 'linux'",)), spelled
+        with_or = (f"sys_platform == 'linux' or {spelled}",)
+        assert markers_equivalent(with_or, ("sys_platform == 'linux'",)), spelled
+    assert not markers_equivalent(("implementation_version ~= '3.11'",), ())
+    assert markers_equivalent(
+        ("'3.11' ~= python_version",),
+        ("python_full_version >= '3.11' and python_full_version < '4'",),
+    )
+
+
+def test_a_literal_left_compatible_release_on_a_string_variable_is_unknown() -> None:
+    """`'posix' ~= os_name` is a marker uv cannot lock at all (uv 0.8.17 panics, exit
+    101, measured round 20), so no record of it exists to compare with: UNKNOWN, never a
+    verdict, wherever the clause sits."""
+    for spelled in (
+        "'posix' ~= os_name",
+        "'posix' ~= os_name and sys_platform == 'linux'",
+        "sys_platform == 'linux' or 'posix' ~= os_name",
+    ):
+        with pytest.raises(Unknown):
+            markers_equivalent((spelled,), ())
 
 
 def test_a_wildcard_uv_cannot_compare_is_erased_as_uv_drops_it() -> None:

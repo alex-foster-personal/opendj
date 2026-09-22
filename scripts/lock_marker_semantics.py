@@ -53,6 +53,9 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     '3.11.*' == python_full_version and os_name == 'posix' -> os_name == 'posix'
     '3.11.*' == python_full_version or sys_platform == 'win32' -> sys_platform == 'win32'
     os_name == '3.11.*'                        -> kept verbatim (a string)
+    os_name ~= 'posix'                         -> (marker dropped entirely)
+    'posix' ~= os_name                         -> uv panics (exit 101): UNKNOWN here
+    '3.11' ~= python_version                   -> >= '3.11' and < '4'
 
 So uv's marker algebra is RELEASE-ONLY: every version literal is cut to its
 release segment before the comparison is stored, whatever the operator, which
@@ -74,6 +77,8 @@ A `.*` WILDCARD is a prefix pattern, meaningful only as the right operand of
 python_full_version`, `python_full_version < '3.11.*'`, `~=`, `in`) it is not
 a PEP 440 comparison, and uv drops the clause the same way: erased from an
 `and` and an `or` alike, never a truth value (measured, round 16).
+`~=` on a STRING variable (`os_name ~= 'posix'`) is dropped the same way; with
+the literal on the LEFT uv 0.8.17 panics and locks nothing: UNKNOWN (round 20).
 
 The string-ordering rows show that uv orders plain STRINGS lexically, as ranges:
 that is the semantics mirrored here for `<`, `<=`, `>` and `>=` on a
@@ -365,6 +370,8 @@ def _eval(node: tuple, env: dict[str, str]) -> bool:
         return left in right
     if op == "not in":
         return left not in right
+    if op == "~=":  # erased by _erase_dropped_clauses before evaluation (uv drops it)
+        raise Unknown(f"string ~= survived erasure: {lhs!r} {rhs!r}")
     return {
         "==": left == right,
         "!=": left != right,
@@ -373,7 +380,6 @@ def _eval(node: tuple, env: dict[str, str]) -> bool:
         ">": left > right,
         ">=": left >= right,
         "===": left == right,
-        "~=": left == right,
     }[op]
 
 
@@ -565,22 +571,27 @@ def _erase_dropped_clauses(node: tuple) -> tuple | None:
     _, lhs, op, rhs = node
     if lhs[0] == "word" and rhs[0] == "word":
         return None
-    if _wildcard_uv_drops(lhs, op, rhs):
+    if _uv_drops_clause(lhs, op, rhs):
         return None
     return node
 
 
-def _wildcard_uv_drops(lhs: tuple, op: str, rhs: tuple) -> bool:
-    """`'3.11.*' == python_full_version`, `python_full_version < '3.11.*'`: a `.*`
-    wildcard is a prefix pattern, meaningful only as the RIGHT operand of `==` / `!=`
-    against a version variable. Anywhere else uv drops the clause rather than record
-    it (measured, round 16). Against a string variable it is a plain string, kept."""
+def _uv_drops_clause(lhs: tuple, op: str, rhs: tuple) -> bool:
+    """A `.*` wildcard is a prefix pattern, meaningful only as the RIGHT operand of `==`
+    / `!=` against a version variable; anywhere else uv drops the clause (round 16), as
+    it does `~=` on a STRING variable (round 20). Against a string variable a wildcard
+    is a plain string, kept. `'posix' ~= os_name` makes uv 0.8.17 panic instead of
+    locking, so nothing it could have recorded exists: UNKNOWN, never a verdict."""
     if lhs[0] == "word" and rhs[0] == "str":
         var, literal, literal_on_right = lhs[1], rhs[1][1:-1], True
     elif rhs[0] == "word" and lhs[0] == "str":
         var, literal, literal_on_right = rhs[1], lhs[1][1:-1], False
     else:
         return False
+    if op == "~=" and var not in _VERSION_VARS:
+        if literal_on_right:
+            return True
+        raise Unknown(f"uv cannot lock a marker with {literal!r} ~= {var} (it panics)")
     if var not in _VERSION_VARS or not literal.endswith(".*"):
         return False
     return not (literal_on_right and op in ("==", "!="))
