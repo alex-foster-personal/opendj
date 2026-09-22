@@ -466,8 +466,33 @@ def _uv(
     return _run(cmd, allow_fail=allow_fail, env=env)
 
 
+def _pnpm_bin() -> str:
+    """Absolute path to pnpm, because a bare `pnpm` never launches on Windows.
+
+    npm's global install ships `pnpm.cmd` beside an extensionless `pnpm` shim
+    for POSIX shells. An argv list without `shell=True` goes straight to
+    `CreateProcess`, which appends `.exe` to a bare name and searches for
+    that alone; it never consults PATHEXT, so `pnpm.cmd` is invisible to it
+    and the launch raises `FileNotFoundError: [WinError 2]`. `shutil.which`
+    does honor PATHEXT and resolves `pnpm.CMD`, and launching that path
+    works. Measured Tue 22 Sep 2026 on bifrost2 from PowerShell and Git Bash
+    alike, so it is the process launcher, not the shell. `shell=True` would
+    also work but routes every argument through cmd.exe quoting, which the
+    SAST scan flags, so the resolved path is the fix.
+    """
+    path = shutil.which("pnpm")
+    if path is None:
+        raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
+    return path
+
+
+def _pnpm(*args: str, allow_fail: bool = False) -> tuple[int, str]:
+    """Run pnpm in the frontend tree by its resolved path (see `_pnpm_bin`)."""
+    return _run([_pnpm_bin(), *args], cwd=FRONTEND, allow_fail=allow_fail)
+
+
 def _pnpm_dlx(pkg: str, *args: str, allow_fail: bool = False) -> tuple[int, str]:
-    return _run(["pnpm", "dlx", pkg, *args], cwd=FRONTEND, allow_fail=allow_fail)
+    return _pnpm("dlx", pkg, *args, allow_fail=allow_fail)
 
 
 def _is_vendored(rel: str) -> bool:
@@ -1094,7 +1119,7 @@ def _eval_frontend() -> list[Metric]:
             fan_in[dep] += 1
     fan_out = collections.Counter({k: len(v) for k, v in graph.items()})
 
-    _run(["pnpm", "exec", "svelte-kit", "sync"], cwd=FRONTEND, allow_fail=True)
+    _pnpm("exec", "svelte-kit", "sync", allow_fail=True)
     _, knip_raw = _pnpm_dlx(CFG.KNIP, "--reporter", "json", allow_fail=True)
     knip = json.loads(knip_raw[knip_raw.index("{"):])
     unused_files = [i["file"] for i in knip["issues"] if i.get("files")]
@@ -1764,8 +1789,8 @@ def _write_trend_summary(trend_lines: list[str]) -> None:
 def _preflight(selected: list[Evaluator]) -> None:
     if shutil.which("uv") is None:
         raise RuntimeError("uv is not on PATH; see CLAUDE.md (uv, never pip)")
-    if any(e.needs_node for e in selected) and shutil.which("pnpm") is None:
-        raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
+    if any(e.needs_node for e in selected):
+        _pnpm_bin()  # the launch-time error, raised before any evaluator runs
 
 
 def _marker(metric: Metric, allowed: float | None, slack: float = 0.0) -> str:
