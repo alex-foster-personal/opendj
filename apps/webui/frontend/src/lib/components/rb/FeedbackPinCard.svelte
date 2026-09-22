@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import { blockedPinDetail, blockedPinRequest } from '$lib/rb/feedback';
+	import { isPinRegressed } from '$lib/rb/feedback-pin-board';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import {
@@ -131,6 +132,19 @@
 	<p class="fb-hint">
 		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
 	</p>
+	{#if pin.anchor}
+		<p class="fb-hint" title="Original anchor captured at drop time">Anchor: {pin.anchor}</p>
+	{/if}
+	{#if pin.fixed_in_sha}
+		<p class="fb-hint" title="Build where this pin was marked fixed or merged">
+			Fixed in: {pin.fixed_in_sha}
+		</p>
+	{/if}
+	{#if isPinRegressed(pin)}
+		<p class="fb-hint fb-regressed" title="New activity after the pin was marked fixed">
+			Regressed: new reply after fix ({pin.fixed_in_sha})
+		</p>
+	{/if}
 	{#each thread as turn (turn.id)}
 		{#if turn.kind === 'opening'}
 			<p class="fb-body-text">{turn.text}</p>
