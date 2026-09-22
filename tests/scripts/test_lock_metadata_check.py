@@ -149,6 +149,8 @@ def test_an_extra_named_with_underscores_matches_its_normalized_marker(tmp_path:
         ("0!1.0", "1.0"),
         ("2!1.0", "2!1.0"),
         ("1.0+Ubuntu_1", "1.0+ubuntu.1"),
+        ("1.0+01", "1.0+1"),
+        ("1.0+abc.007.x01", "1.0+abc.7.x01"),
         ("1.0.1", "1.0.1"),
     ],
 )
@@ -172,6 +174,22 @@ def test_noncanonical_version_spellings_match_the_canonical_lock(tmp_path: Path)
     lock = LOCK.replace('version = "0.1.0"\nsource', 'version = "0.1.0rc1"\nsource')
     code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_OK, message
+
+
+def test_a_marker_without_operator_spacing_matches_the_spaced_lock(tmp_path: Path) -> None:
+    """if pyproject.toml writes `python_full_version<'3.11'` and uv wrote it with spaces then 0"""
+    pyproject = PYPROJECT.replace(
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\"",
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform=='darwin' and python_full_version<'3.13'\"",
+    )
+    lock = LOCK.replace(
+        "marker = \"sys_platform == 'darwin'\"",
+        "marker = \"python_full_version < '3.13' and sys_platform == 'darwin'\"",
+    )
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    code, message = _run(tmp_path, pyproject.replace("<'3.13'", "<'3.12'"), lock)
+    assert code == EXIT_STALE
 
 
 def test_a_wildcard_and_arbitrary_equality_clause_still_compare(tmp_path: Path) -> None:
