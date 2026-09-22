@@ -86,6 +86,17 @@ export async function startCueAlignment(opts: { interactive: boolean }): Promise
 	try {
 		effects = _effects();
 	} catch (error) {
+		// `_effects()` can refuse before the controller gets to reset its run
+		// evidence. Publish a fresh precondition diagnosis, never measurements
+		// or a failure reason retained from the previous run.
+		calibration.diagnostics = {
+			probe: 'chirp',
+			alternate_probe: 'unavailable',
+			failure: 'route_or_operation',
+			master_measurements_ms: [],
+			cue_measurements_ms: [],
+			spread_ms: null
+		};
 		calibration.error = error instanceof Error ? error.message : String(error);
 		calibration.step = 'failed';
 		recordHeadphoneFailureDiagnostic('calibration-precondition', error);

@@ -355,6 +355,10 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 			// the output mode sent a reader to the I/O pane to fix something that was
 			// not broken.
 			assert.match(calibration.error, /the audio graph is not built yet/);
+			assert.equal(calibration.diagnostics.failure, 'route_or_operation');
+			assert.deepEqual(calibration.diagnostics.master_measurements_ms, []);
+			assert.deepEqual(calibration.diagnostics.cue_measurements_ms, []);
+			assert.equal(calibration.diagnostics.spread_ms, null);
 		} finally {
 			uninstall();
 		}
