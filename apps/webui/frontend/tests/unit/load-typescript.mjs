@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-let moduleSequence = 0;
 
 /**
  * Vite's `?url` suffix, modelled for the test bundler.
@@ -112,7 +113,7 @@ export async function loadTypeScriptModule(relativePath, options = {}) {
 	globalThis.__musicDjToolsTestState = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-	const source = Buffer.from(text).toString('base64');
-	moduleSequence += 1;
-	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
+	// A temp file, not a data: URL: see import-bundled-source.mjs for the
+	// 26 MB CI log that the base64 stack frames produced.
+	return importBundledSource(text, relativePath);
 }
