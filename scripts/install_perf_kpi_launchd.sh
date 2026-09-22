@@ -5,11 +5,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
+HOST_LABEL="${MDT_PERF_KPI_MACHINE:-air}"
 
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --state-dir) STATE_DIR="${2:?}"; shift 2 ;;
+    --host-label) HOST_LABEL="${2:?}"; shift 2 ;;
     *) echo "[ERROR] unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -39,6 +41,7 @@ render() {
     -e "s|{{SMALL_STABLE_ID}}|$MDT_PERF_KPI_SMALL_STABLE_ID|g" \
     -e "s|{{LARGE_STABLE_ID}}|$MDT_PERF_KPI_LARGE_STABLE_ID|g" \
     -e "s|{{STEMMED_STABLE_ID}}|$MDT_PERF_KPI_STEMMED_STABLE_ID|g" \
+    -e "s|{{MACHINE}}|$HOST_LABEL|g" \
     "$template" >"$target"
   plutil -lint "$target" >/dev/null 2>&1 || python3 -c "import plistlib; plistlib.loads(open('$target','rb').read())"
 }

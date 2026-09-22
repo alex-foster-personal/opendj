@@ -21,12 +21,18 @@ LABEL="com.af.dmg-smoke"
 
 INSTALL=0
 RENDER_ONLY=""
+HOST_LABEL="air"
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --render-to)
       RENDER_ONLY="${2:-}"
       [ -n "$RENDER_ONLY" ] || { echo "[ERROR] --render-to needs a path" >&2; exit 2; }
+      shift 2
+      ;;
+    --host-label)
+      HOST_LABEL="${2:-}"
+      [ -n "$HOST_LABEL" ] || { echo "[ERROR] --host-label needs a value" >&2; exit 2; }
       shift 2
       ;;
     *)
@@ -77,6 +83,7 @@ rendered="$(cat "$TEMPLATE")"
 rendered=${rendered//__ABS_HOME__/$(xml_escape "$HOME")}
 rendered=${rendered//__MDT_MACOS_SIGNING_IDENTITY__/$(xml_escape "$MDT_MACOS_SIGNING_IDENTITY")}
 rendered=${rendered//__MDT_MACOS_NOTARY_KEYCHAIN_PROFILE__/$(xml_escape "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE")}
+rendered=${rendered//__MDT_DMG_SMOKE_HOST_LABEL__/$(xml_escape "$HOST_LABEL")}
 
 TARGET="${RENDER_ONLY:-$HOME/Library/LaunchAgents/com.af.dmg-smoke.plist}"
 mkdir -p "$(dirname "$TARGET")"
