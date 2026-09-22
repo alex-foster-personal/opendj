@@ -32,6 +32,26 @@ type SafetyLoopSnapshot = {
 	armed: boolean;
 };
 
+/** Resolve the complete loop snapshot before scheduling. Manual loops snap
+ * to the selected grid when available; PQTZ beat loops keep their already
+ * resolved fractional endpoints. Both paths remain bounded by real duration. */
+export function resolvedLoopState(
+	loop: { in_ms: number; out_ms: number },
+	beatLength: number | null,
+	durationMs: number,
+	beats: readonly AnlzBeat[] | null,
+	gridBeats: 1 | 4 | 8 | null
+): LoopSnapshot {
+	const snapped = beats !== null && gridBeats !== null && beatLength === null
+		? quantizedLoopEndpointsMs(beats, loop, true, gridBeats)
+		: quantizedLoopEndpointsMs([], loop, false);
+	return {
+		...loopEndpointsWithinDurationMs(snapped, durationMs),
+		engaged: true,
+		beat_length: beatLength
+	};
+}
+
 /** Keep a saved safety loop current only when it was captured from the exact
  * engaged loop being resized. A separately saved range remains intentional. */
 export function replaceMatchingSafetyLoopSnapshot(

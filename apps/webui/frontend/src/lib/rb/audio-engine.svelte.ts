@@ -283,6 +283,7 @@ import {
 	quantizedPositionMs,
 	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
+	resolvedLoopState,
 	shiftLiveBeatLoopRangeMs,
 	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
@@ -3685,16 +3686,11 @@ class RbAudioEngine implements AudioEngine {
 			}
 			return;
 		}
-		const durMs = _durationSec(deck) * 1000;
-		// Same rule as the rest of transport: quantize with a grid, exact
-		// endpoints without one. A manual in/out loop is not grid-dependent.
 		const loopBeats = _quantizeGrid(st);
-		const snapped =
-			loopBeats !== null && beatLength === null
-				? quantizedLoopEndpointsMs(loopBeats, loop, true, _quantizeGridBeats(st))
-				: quantizedLoopEndpointsMs([], loop, false);
-		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
-		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: beatLength };
+		const nextLoop = resolvedLoopState(
+			loop, beatLength, _durationSec(deck) * 1000, loopBeats,
+			loopBeats !== null && beatLength === null ? _quantizeGridBeats(st) : null
+		);
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;

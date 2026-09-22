@@ -25,6 +25,7 @@ let shiftLiveBeatLoopRangeMs;
 let targetWithinShiftedLiveLoopMs;
 let loopExitOnSeekMs;
 let quantizedSeekDecisionMs;
+let resolvedLoopState;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
 // builds a `new Request(url)` before any stub sees it. Node has no document to
@@ -49,7 +50,8 @@ before(async () => {
 		shiftLiveBeatLoopRangeMs,
 		targetWithinShiftedLiveLoopMs,
 		loopExitOnSeekMs,
-		quantizedSeekDecisionMs
+		quantizedSeekDecisionMs,
+		resolvedLoopState
 	} = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
@@ -899,6 +901,20 @@ test('central loop quantization snaps both endpoints and rejects collapsed loops
 		() => audio.quantizedLoopEndpointsMs(REAL_PQTZ_BEATS, { in_ms: 590, out_ms: 610 }, true),
 		/collapsed/i
 	);
+});
+
+test('resolved loop snapshot preserves beat fractions but snaps manual endpoints', () => {
+	assert.deepEqual(resolvedLoopState({ in_ms: 590, out_ms: 1090 }, null, 2000, REAL_PQTZ_BEATS, 1), {
+		in_ms: 608, out_ms: 1080, engaged: true, beat_length: null
+	});
+	const quarterBeat = { in_ms: 608, out_ms: 726 };
+	assert.deepEqual(resolvedLoopState(quarterBeat, 0.25, 2000, REAL_PQTZ_BEATS, 4), {
+		...quarterBeat, engaged: true, beat_length: 0.25
+	});
+	assert.deepEqual(resolvedLoopState(quarterBeat, null, 700, null, null), {
+		in_ms: 608, out_ms: 700, engaged: true, beat_length: null
+	});
+	assert.throws(() => resolvedLoopState(quarterBeat, null, 608, null, null), /empty at decoded duration/i);
 });
 
 test('loop endpoints clamp to decoded duration near EOF without hiding an empty loop', () => {
