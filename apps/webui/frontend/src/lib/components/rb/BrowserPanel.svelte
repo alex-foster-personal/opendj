@@ -276,7 +276,7 @@
 	let browserDeckTarget = $state<DeckId>(1);
 	let browseScrollRevision = 0;
 	let browseScroll = $state<{ order: number; direction: -1 | 1; revision: number } | null>(null);
-	let lastTrackEnterMs = 0;
+	let lastTrackEnter: { at: number; stableId: string | null; pane: number } | null = null;
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
@@ -872,6 +872,7 @@
 
 			const delta = browserSelectionDelta(e.key);
 			if (delta !== null) {
+				lastTrackEnter = null;
 				e.preventDefault();
 				if (browserFocus === 'playlist') _movePlaylistSelection(delta);
 				else if (browserFocus === 'deck') {
@@ -888,6 +889,7 @@
 			const horizontal = e.key === 'a' || e.key === 'A' ? 'ArrowLeft'
 				: e.key === 'd' || e.key === 'D' ? 'ArrowRight' : e.key;
 			if (horizontal === 'ArrowLeft' || horizontal === 'ArrowRight') {
+				lastTrackEnter = null;
 				e.preventDefault();
 				browserFocus = moveBrowserFocus(browserFocus, horizontal);
 				_focusBrowserZone();
@@ -904,11 +906,13 @@
 				return;
 			}
 			const now = performance.now();
-			if (now - lastTrackEnterMs <= 500) {
-				lastTrackEnterMs = 0;
+			const stableId = panes[activePane].selected_id;
+			if (lastTrackEnter !== null && now - lastTrackEnter.at <= 500 &&
+				lastTrackEnter.stableId === stableId && lastTrackEnter.pane === activePane) {
+				lastTrackEnter = null;
 				_triggerTrackDoubleEnter();
 			} else {
-				lastTrackEnterMs = now;
+				lastTrackEnter = { at: now, stableId, pane: activePane };
 				_focusBrowserZone();
 			}
 		};
@@ -2709,7 +2713,10 @@
 	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
-		if (p.selected_id !== row.stable_id) _pushNav();
+		if (p.selected_id !== row.stable_id) {
+			lastTrackEnter = null;
+			_pushNav();
+		}
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
 		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
@@ -2733,6 +2740,7 @@
 		// navigation while that menu is open (IOPIN-01).
 		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
 		if (visibleRows.length === 0 || delta === 0) return;
+		lastTrackEnter = null;
 		browserFocus = 'tracks';
 		const selected = panes[activePane].selected_id;
 		const current = selected === null
@@ -2749,6 +2757,10 @@
 
 	function _editableTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
+		const interactive = target.closest('button, a, [role="button"]');
+		if (interactive !== null && !interactive.matches(
+			'.deck-target, [data-testid="playlist-row"], [data-testid="playlist-all-tracks"]'
+		)) return true;
 		return (
 			target.closest('[role="slider"], [role="dialog"], dialog, [role="menu"]') !== null ||
 			target.tagName === 'INPUT' ||

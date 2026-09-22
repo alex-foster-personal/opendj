@@ -39,6 +39,13 @@ test('browser selection scrolls, MIDI reclaims tracks, and sliders keep arrows',
 	await expect(selected).toHaveAttribute('data-stable-id', menuSelection!);
 	await page.keyboard.press('Escape');
 	await expect(page.getByTestId('context-menu')).toBeHidden();
+	// Ordinary buttons own Enter; rapid presses must never double-load a row.
+	const masterMute = page.getByRole('button', { name: 'master mute', exact: true });
+	await masterMute.focus();
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await expect(masterMute).toBeFocused();
+	expect(await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id)).toBeNull();
 });
 
 test('BPM borders follow a real decoded master instead of permanent column tint', async ({ page }) => {
