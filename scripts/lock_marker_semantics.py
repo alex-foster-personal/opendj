@@ -434,8 +434,10 @@ def _substrings(text: str) -> set[str]:
 
 def _between(lower: str, upper: str) -> str:
     """A release version strictly between two release versions (lower < upper):
-    `lower.1`, `lower.0.1`, ... Nothing between is UNKNOWN, never a guess."""
-    for zeros in range(4):
+    `lower.1`, `lower.0.1`, ... One more component than `upper` has always suffices
+    (`3.11.15` < `3.11.15.0.0.0.0.0.1` < `3.11.15.0.0.0.0.1`; a fixed four read a
+    valid deep bound as UNKNOWN, round 21). Nothing between is UNKNOWN, never a guess."""
+    for zeros in range(len(_release_parts(upper)) + 2):
         candidate = lower + ".0" * zeros + ".1"
         if _version_key(lower) < _version_key(candidate) < _version_key(upper):
             return candidate

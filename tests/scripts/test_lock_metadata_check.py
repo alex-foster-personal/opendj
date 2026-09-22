@@ -256,20 +256,64 @@ def test_a_compatible_requires_python_matches_the_bounds_uv_writes(tmp_path: Pat
 
 
 def test_a_compatible_dependency_specifier_matches_uv_s_verbatim_record(tmp_path: Path) -> None:
-    """uv keeps a dependency's `~=` verbatim (`six~=1.16` records `~=1.16`); both sides
-    expand the same way, so that still matches, and the bounds form matches too."""
-    code, message = _run(
-        tmp_path,
-        PYPROJECT.replace('"numpy>=1.26"', '"numpy~=1.26"'),
-        LOCK.replace('specifier = ">=1.26"', 'specifier = "~=1.26"'),
+    """uv keeps a dependency's `~=` verbatim (`six~=1.16` records `~=1.16`), and
+    `uv lock --check` fails when the SPELLING changes between `~=1.3` and `>=1.3,<2` in
+    either direction (measured uv 0.8.17, Codex P2 on #3763, round 21): the same
+    spelling (a noncanonical operand included) is 0, the equivalent bounds form is 1."""
+    compatible = PYPROJECT.replace('"numpy>=1.26"', '"numpy~=1.26"')
+    lock_compatible = LOCK.replace('specifier = ">=1.26"', 'specifier = "~=1.26"')
+    lock_bounds = LOCK.replace('specifier = ">=1.26"', 'specifier = ">=1.26,<2"')
+    for pyproject, lock, expected in (
+        (compatible, lock_compatible, EXIT_OK),
+        (PYPROJECT.replace('"numpy>=1.26"', '"numpy~=01.26"'), lock_compatible, EXIT_OK),
+        (compatible, lock_bounds, EXIT_STALE),
+        (PYPROJECT.replace('"numpy>=1.26"', '"numpy>=1.26,<2"'), lock_compatible, EXIT_STALE),
+    ):
+        code, message = _run(tmp_path, pyproject, lock)
+        assert code == expected, (pyproject[pyproject.index("numpy") :][:20], message)
+
+
+def test_a_dependency_free_project_matches_a_lock_with_no_requires_dist(tmp_path: Path) -> None:
+    """if the project declares no dependencies and no extras then uv writes no
+    `requires-dist` (and no `[package.metadata]`) at all, and `uv lock --check` passes:
+    0, not UNKNOWN; the same lock under a pyproject.toml that does declare dependencies
+    is stale (`uv lock --check` exits 1), not UNKNOWN (measured uv 0.8.17, round 21)"""
+    start, end = LOCK.index("[package.metadata]"), LOCK.index('provides-extras = ["dev", "all"]')
+    bare_lock = LOCK[:start] + LOCK[end + len('provides-extras = ["dev", "all"]\n') :]
+    assert "requires-dist" not in bare_lock and "provides-extras" not in bare_lock
+    start, end = PYPROJECT.index("dependencies = ["), PYPROJECT.index('all = ["Demo_Project[dev]"]')
+    bare_pyproject = (
+        PYPROJECT[:start]
+        + "dependencies = []\n"
+        + PYPROJECT[end + len('all = ["Demo_Project[dev]"]') :]
     )
+    assert "optional-dependencies" not in bare_pyproject
+    code, message = _run(tmp_path, bare_pyproject, bare_lock)
     assert code == EXIT_OK, message
-    code, message = _run(
-        tmp_path,
-        PYPROJECT.replace('"numpy>=1.26"', '"numpy~=1.26"'),
-        LOCK.replace('specifier = ">=1.26"', 'specifier = ">=1.26,<2"'),
+    code, message = _run(tmp_path, PYPROJECT, bare_lock)
+    assert code == EXIT_STALE, message
+    assert "numpy" in message
+
+
+def test_a_requires_python_bound_deeper_than_four_components_is_compared_not_unknown(
+    tmp_path: Path,
+) -> None:
+    """if requires-python is `>=3.10,>=3.11.15,<3.11.15.0.0.0.0.1` (valid; uv records
+    `>=3.11.15, <3.11.15.0.0.0.0.1` and `uv lock --check` passes, measured uv 0.8.17)
+    then 0: the only release strictly between the bounds needs more than four zero
+    components, and the probe finds it rather than reporting UNKNOWN (Codex P2 on
+    #3763, round 21); a lock recording a different deep bound is stale"""
+    pyproject = PYPROJECT.replace(
+        'requires-python = ">=3.11"', 'requires-python = ">=3.10,>=3.11.15,<3.11.15.0.0.0.0.1"'
     )
+    lock = LOCK.replace(
+        'requires-python = ">=3.11"', 'requires-python = ">=3.11.15, <3.11.15.0.0.0.0.1"'
+    )
+    assert pyproject != PYPROJECT and lock != LOCK
+    code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_OK, message
+    code, message = _run(tmp_path, pyproject, lock.replace("0.0.0.0.1", "0.0.0.0.2"))
+    assert code == EXIT_STALE, message
 
 
 def test_a_quoted_and_or_inside_a_marker_literal_is_one_clause(tmp_path: Path) -> None:

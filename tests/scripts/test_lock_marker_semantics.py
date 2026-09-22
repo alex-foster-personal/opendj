@@ -348,3 +348,13 @@ def test_a_wildcard_uv_cannot_compare_is_erased_as_uv_drops_it() -> None:
         "os_name == '3.11.*'",
     ):
         assert not markers_equivalent((kept,), ()), kept
+
+
+def test_a_probe_between_releases_of_any_depth_exists() -> None:
+    """Between two distinct releases there is always a release (`lower.0...0.1` with one
+    more component than the upper bound has), so bounds deeper than four components
+    compare rather than read UNKNOWN (Codex P2 on #3763, round 21)."""
+    deep = "python_full_version >= '3.11.15' and python_full_version < '3.11.15.0.0.0.0.1'"
+    assert markers_equivalent((deep,), (deep,))
+    assert not markers_equivalent((deep,), (deep.replace("0.0.0.0.1", "0.0.0.0.2"),))
+    assert not markers_equivalent((deep,), ("python_full_version == '3.11.15'",))
