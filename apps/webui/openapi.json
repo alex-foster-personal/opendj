@@ -35838,7 +35838,7 @@
     },
     "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
       "get": {
-        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead defers to native-analysis v1 first: when v1\nhas already settled a beatgrid determination for this track (a\ncanonical own pointer exists, whatever it resolved to), this endpoint\npreserves that gridless/failed state rather than silently substituting\na superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).",
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead refuses a superseded pre-v1 legacy row only\nwhen the canonical own beatgrid lane is ``failed``; a successful native\nbackfill does not disable the legacy row while own is not yet serving\n(STANDALONE-04).",
         "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
         "parameters": [
           {
