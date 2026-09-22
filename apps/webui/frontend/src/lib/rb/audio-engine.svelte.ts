@@ -85,6 +85,7 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
+import { cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
@@ -557,6 +558,7 @@ let _masterMuteGain: GainNode | null = null;
 let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _djOutputNodes: AudioNode[] = [];
+let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
@@ -679,16 +681,6 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
-function _djOutputProfile(): 'master12-cue34' | null {
-	if (typeof window === 'undefined') return null;
-	const value = new URLSearchParams(window.location.search).get('djio');
-	if (value === null || value === '') return null;
-	if (value !== 'master12-cue34') {
-		throw new Error(`djio: unsupported profile '${value}' (expected master12-cue34)`);
-	}
-	return value;
-}
-
 // -------------------------------------------- external mixer routing
 // Opt-in via URL query `?extroute=1:1,2:7` -- comma-separated `deck:usbLeft`
 // pairs, where usbLeft is the 1-based LEFT channel of a stereo pair on the
@@ -726,6 +718,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			_masterDelay = null;
 			_externalMerger = _externalRouteAnalyser = null;
 			_djOutputNodes = [];
+			_djOutputProfileActive = null;
 			_ctx = null;
 			resetMasterSilenceWatch();
 			resetPresentationClockStall();
@@ -806,77 +799,23 @@ function _ensureGraph(): AudioContext {
 	// identically. See player/master-mute.svelte.ts.
 	_masterMuteGain = _ctx.createGain();
 	attachMasterMuteNode(_masterMuteGain);
-	// CUEOUT-14: the room delay is the ONLY node after the mute. Everything the
-	// operator hears in the phones was tapped upstream at _masterGain.
 	_masterDelay = createMasterDelayNode(_ctx);
 	const routing = parseExternalRouting();
-	const djOutputProfile = _djOutputProfile();
-	if (routing !== null && djOutputProfile !== null) {
-		throw new Error('extroute and djio are mutually exclusive output topologies');
-	}
+	_djOutputProfileActive = parseDjOutputProfile(window.location.search);
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	setMultichannelMonitorActive(false);
-	if (routing === null && djOutputProfile === null) {
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(_ctx.destination);
-	} else if (routing !== null) {
-		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
-		const dest = _ctx.destination;
-		if (dest.maxChannelCount < highestUsbChannel) {
-			throw new Error(
-				`extroute needs ${highestUsbChannel} output channels but the current output device exposes ` +
-					`${dest.maxChannelCount} - select the multichannel interface as the system output device and reload`
-			);
-		}
-		dest.channelCount = dest.maxChannelCount;
-		dest.channelInterpretation = 'discrete';
-		// The mute node inherits the discrete multichannel contract, otherwise
-		// the default speakers interpretation would downmix the per-deck USB
-		// pairs on their way through it.
-		_masterMuteGain.channelCount = dest.channelCount;
-		_masterMuteGain.channelCountMode = 'explicit';
-		_masterMuteGain.channelInterpretation = 'discrete';
-		_masterDelay.channelCount = dest.channelCount;
-		_masterDelay.channelCountMode = 'explicit';
-		_masterDelay.channelInterpretation = 'discrete';
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(dest);
-		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
-		_externalMerger.channelInterpretation = 'discrete';
-		_externalMerger.connect(_masterMuteGain);
-		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
-	} else {
-		const dest = _ctx.destination;
-		if (dest.maxChannelCount < 4) {
-			throw new Error(
-				'djio master12-cue34 needs four output channels - select the Mixtour Pro as the macOS output device and reload'
-			);
-		}
-		dest.channelCount = 4;
-		dest.channelInterpretation = 'discrete';
-		_masterMuteGain.channelCount = 4;
-		_masterMuteGain.channelCountMode = 'explicit';
-		_masterMuteGain.channelInterpretation = 'discrete';
-		_masterDelay.channelCount = 4;
-		_masterDelay.channelCountMode = 'explicit';
-		_masterDelay.channelInterpretation = 'discrete';
-		const merger = _ctx.createChannelMerger(4);
-		merger.channelInterpretation = 'discrete';
-		const masterSplitter = _ctx.createChannelSplitter(2);
-		const cueSplitter = _ctx.createChannelSplitter(2);
-		_masterGain.connect(masterSplitter);
-		masterSplitter.connect(merger, 0, 0);
-		masterSplitter.connect(merger, 1, 1);
-		headphones.delay.connect(cueSplitter);
-		cueSplitter.connect(merger, 0, 2);
-		cueSplitter.connect(merger, 1, 3);
-		merger.connect(_masterMuteGain);
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(dest);
-		_djOutputNodes = [masterSplitter, cueSplitter, merger];
-		setMultichannelMonitorActive(true);
-	}
-	if (routing === null && djOutputProfile === null) {
+	const output = wireAudioOutputTopology({
+		context: _ctx,
+		routing,
+		profile: _djOutputProfileActive,
+		masterGain: _masterGain,
+		masterMuteGain: _masterMuteGain,
+		masterDelay: _masterDelay,
+		headphoneDelay: headphones.delay
+	});
+	_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
+	_djOutputNodes = output.ownedNodes;
+	setMultichannelMonitorActive(output.multichannelMonitorActive);
+	if (routing === null && _djOutputProfileActive === null) {
 		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 	}
@@ -2059,7 +1998,8 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
+		const cueOnlyMonitoring = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates);
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), cueOnlyMonitoring);
 		if (anyTransport) noteAudioPresentationTick();
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -3046,6 +2986,7 @@ class RbAudioEngine implements AudioEngine {
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
 		_djOutputNodes = [];
+		_djOutputProfileActive = null;
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';

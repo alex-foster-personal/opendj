@@ -51,10 +51,10 @@ test('remote shell authority exposes only the bounded MIDI commands and event li
 });
 
 test('four-channel graph assigns stereo master to 1/2 and stereo monitor to 3/4', async () => {
-	const engine = await read('src/lib/rb/audio-engine.svelte.ts');
-	assert.match(engine, /masterSplitter\.connect\(merger, 0, 0\)/);
-	assert.match(engine, /masterSplitter\.connect\(merger, 1, 1\)/);
-	assert.match(engine, /cueSplitter\.connect\(merger, 0, 2\)/);
-	assert.match(engine, /cueSplitter\.connect\(merger, 1, 3\)/);
-	assert.match(engine, /setMultichannelMonitorActive\(true\)/);
+	const topology = await read('src/lib/rb/audio-output-topology.ts');
+	assert.match(topology, /masterSplitter\.connect\(merger, 0, 0\)/);
+	assert.match(topology, /masterSplitter\.connect\(merger, 1, 1\)/);
+	assert.match(topology, /cueSplitter\.connect\(merger, 0, 2\)/);
+	assert.match(topology, /cueSplitter\.connect\(merger, 1, 3\)/);
+	assert.match(topology, /multichannelMonitorActive:\s*true/);
 });
