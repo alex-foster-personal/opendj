@@ -115,3 +115,39 @@ def imported_packages(text: str, where: str) -> set[str]:
         for part in found
         if part.split(".")[0] in _TOP_PACKAGES and "." in part
     }
+
+
+def mentioned_strings(text: str, where: str) -> set[str]:
+    """Every string literal a module carries in CODE, read with the AST. Round 9.
+
+    The consumers of a scope the import reader cannot see (Svelte, TypeScript, JSON) are the
+    tests that spell its path: `Path("apps/webui/frontend/dist")`, a `pnpm --dir` argument,
+    `WEBUI / "frontend"`. Those are string constants. Comments and docstrings are NOT: the root
+    `tests/conftest.py` says "frontend" twice in comments and consumes nothing, and reading
+    raw text would have made the whole frontend helper-carried, which is FULL on every change
+    and exactly the over-selection this reader exists to remove. A docstring is the first
+    statement of a module, class or function, and is skipped by that position.
+
+    Fails loud on a file that does not parse, for the reason `imported_packages` does.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise PlanError(f"cannot parse {where}: {exc}") from None
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    }
