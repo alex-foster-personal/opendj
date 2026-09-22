@@ -69,6 +69,7 @@ test('map registers cleanly and every deck follows the N/P channel families', ()
 		assert.deepEqual(binding(deck, 'note', 0x01).action, { type: 'deck_cue', deck });
 		assert.deepEqual(binding(deck, 'note', 0x02).action, { type: 'deck_sync_toggle', deck });
 		assert.deepEqual(binding(deck, 'note', 0x03).action, { type: 'deck_manual_loop_cycle', deck });
+		assert.deepEqual(binding(deck, 'note', 0x40).action, { type: 'deck_auto_loop_toggle', deck });
 		assert.deepEqual(binding(4 + deck, 'note', 0x0a).action, { type: 'browse_load', deck });
 		assert.deepEqual(binding(4 + deck, 'note', 0x24).action, { type: 'deck_stem_eq_toggle', deck });
 		const neuralLed = pro.RELOOP_MIXTOUR_PRO_MAP.leds.find((rule) =>

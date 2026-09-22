@@ -86,7 +86,7 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		{ source: { ch: n, kind: 'note', id: 0x01 }, action: { type: 'deck_cue', deck } },
 		{ source: { ch: n, kind: 'note', id: 0x02 }, action: { type: 'deck_sync_toggle', deck } },
 		{ source: { ch: n, kind: 'note', id: 0x03 }, action: { type: 'deck_manual_loop_cycle', deck } },
-		{ source: { ch: n, kind: 'note', id: 0x40 }, action: { type: 'deck_beat_loop', deck, beats: 4 } },
+		{ source: { ch: n, kind: 'note', id: 0x40 }, action: { type: 'deck_auto_loop_toggle', deck } },
 		{ source: { ch: n, kind: 'note', id: 0x2a }, action: { type: 'deck_loop_scale', deck, factor: 0.5 } },
 		{ source: { ch: n, kind: 'note', id: 0x2b }, action: { type: 'deck_loop_scale', deck, factor: 2 } },
 		{ source: { ch: n, kind: 'note', id: 0x29 }, action: { type: 'deck_key_sync_toggle', deck } },

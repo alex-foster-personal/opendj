@@ -6763,7 +6763,7 @@ export interface components {
         /** Binding */
         Binding: {
             /** Action */
-            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
+            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
             /**
              * Invert
              * @default false
@@ -7910,6 +7910,19 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** DeckAutoLoopToggle */
+        DeckAutoLoopToggle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_auto_loop_toggle";
         };
         /** DeckBeatLoop */
         DeckBeatLoop: {

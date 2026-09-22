@@ -55,7 +55,26 @@ export function setControllerEq(
 }
 
 const _padModes = new Map<string, Record<DeckId, ControllerPadMode>>();
-const _manualLoopInMs = new Map<string, Partial<Record<DeckId, number>>>();
+// Supersedes the position-only manual gesture: a reload must invalidate IN,
+// even when the same track is loaded again. Auto length is a deck preference.
+type LoopGesture = { generation: number; inMs: number | null; autoBeats: number };
+const _loopGestures = new Map<string, Partial<Record<DeckId, LoopGesture>>>();
+
+function _loopGesture(deviceId: string | undefined, deck: DeckId): LoopGesture {
+	const key = _controllerKey(deviceId);
+	let gestures = _loopGestures.get(key);
+	if (gestures === undefined) {
+		gestures = {};
+		_loopGestures.set(key, gestures);
+	}
+	const generation = deckStates[deck].load_generation;
+	let gesture = gestures[deck];
+	if (gesture === undefined || gesture.generation !== generation) {
+		gesture = { generation, inMs: null, autoBeats: gesture?.autoBeats ?? 4 };
+		gestures[deck] = gesture;
+	}
+	return gesture;
+}
 
 function _controllerKey(deviceId: string | undefined): string {
 	return deviceId ?? '__direct_test__';
@@ -77,7 +96,7 @@ export function controllerPadMode(deviceId: string | undefined, deck: DeckId): C
 
 export function resetControllerPadRuntime(): void {
 	_padModes.clear();
-	_manualLoopInMs.clear();
+	_loopGestures.clear();
 }
 
 function _deckIsEmpty(deck: DeckId): boolean {
@@ -121,25 +140,20 @@ export function cycleControllerManualLoop(
 	deviceId: string | undefined,
 	notify: Notify
 ): void {
-	const key = _controllerKey(deviceId);
-	let pending = _manualLoopInMs.get(key);
-	if (pending === undefined) {
-		pending = {};
-		_manualLoopInMs.set(key, pending);
-	}
+	const gesture = _loopGesture(deviceId, deck);
 	if (deckStates[deck].loop?.engaged === true) {
-		delete pending[deck];
+		gesture.inMs = null;
 		_cmdLoopExit(deck);
 		return;
 	}
-	const loopInMs = pending[deck];
-	if (loopInMs === undefined) {
-		pending[deck] = deckStates[deck].position_ms;
+	const loopInMs = gesture.inMs;
+	if (loopInMs === null) {
+		gesture.inMs = deckStates[deck].position_ms;
 		notify(`Deck ${deck}: loop in set`, 'info');
 		return;
 	}
 	if (!Number.isFinite(loopInMs)) {
-		delete pending[deck];
+		gesture.inMs = null;
 		_cmdLoopExit(deck);
 		return;
 	}
@@ -151,8 +165,28 @@ export function cycleControllerManualLoop(
 	// Retain stage 2 until the next press even if the revisioned engine command
 	// has not presented yet; rapid IN/OUT/EXIT cannot accidentally start a new
 	// loop-in gesture while LOOP OUT is still queued.
-	pending[deck] = Number.NaN;
+	gesture.inMs = Number.NaN;
 	void dispatchPerformanceCommand({ type: 'loop', deck, loop: { in_ms: loopInMs, out_ms: loopOutMs } });
+}
+
+/** Factory SHIFT+LOOP cancels pending IN, otherwise toggles Auto Loop. */
+export function toggleControllerAutoLoop(
+	deck: DeckId, deviceId: string | undefined, notify: Notify
+): void {
+	const gesture = _loopGesture(deviceId, deck);
+	if (gesture.inMs !== null && Number.isFinite(gesture.inMs)) {
+		gesture.inMs = null;
+		notify(`Deck ${deck}: loop in cancelled`, 'info');
+		return;
+	}
+	gesture.inMs = null;
+	const loop = deckStates[deck].loop;
+	if (loop?.engaged) {
+		if (loop.beat_length !== null) gesture.autoBeats = loop.beat_length;
+		_cmdLoopExit(deck);
+	} else {
+		_cmdBeatLoop(deck, gesture.autoBeats);
+	}
 }
 
 export function selectControllerPadMode(
@@ -220,6 +254,9 @@ export function runControllerPad(
 	if (mode === 'auto_loop') {
 		if (!pressed) return;
 		const beats = CONTROLLER_LOOP_BEATS.auto_loop[pad - 1];
+		const gesture = _loopGesture(deviceId, deck);
+		gesture.inMs = null;
+		gesture.autoBeats = beats;
 		const loop = deckStates[deck].loop;
 		// The engine's beat_loop command deliberately restarts a matching loop.
 		// Auto Loop pads instead toggle that length off on a second press.

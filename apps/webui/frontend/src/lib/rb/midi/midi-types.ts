@@ -81,6 +81,12 @@ export interface DeckBeatLoopAction {
 	beats: number;
 }
 
+/** Toggle the selected loop length, or cancel an unfinished manual IN. */
+export interface DeckAutoLoopToggleAction {
+	type: 'deck_auto_loop_toggle';
+	deck: DeckId;
+}
+
 /** Loop exit (reloop/exit button family - disengages the active loop). */
 export interface DeckLoopExitAction {
 	type: 'deck_loop_exit';
@@ -231,6 +237,7 @@ export type MidiAction =
 	| DeckCueAction
 	| DeckHotCueAction
 	| DeckBeatLoopAction
+	| DeckAutoLoopToggleAction
 	| DeckLoopExitAction
 	| DeckSyncToggleAction
 	| DeckManualLoopCycleAction

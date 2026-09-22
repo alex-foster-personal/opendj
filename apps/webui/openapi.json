@@ -2132,6 +2132,7 @@
                 "browse_encoder": "#/components/schemas/BrowseEncoder",
                 "browse_load": "#/components/schemas/BrowseLoad",
                 "channel_cue": "#/components/schemas/ChannelCue",
+                "deck_auto_loop_toggle": "#/components/schemas/DeckAutoLoopToggle",
                 "deck_beat_loop": "#/components/schemas/DeckBeatLoop",
                 "deck_cue": "#/components/schemas/DeckCue",
                 "deck_hot_cue": "#/components/schemas/DeckHotCue",
@@ -2157,6 +2158,9 @@
               },
               {
                 "$ref": "#/components/schemas/DeckBeatLoop"
+              },
+              {
+                "$ref": "#/components/schemas/DeckAutoLoopToggle"
               },
               {
                 "$ref": "#/components/schemas/DeckLoopExit"
@@ -5462,6 +5466,32 @@
           "revision"
         ],
         "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "DeckAutoLoopToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_auto_loop_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckAutoLoopToggle",
         "type": "object"
       },
       "DeckBeatLoop": {

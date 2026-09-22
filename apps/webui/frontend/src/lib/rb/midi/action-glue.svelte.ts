@@ -61,6 +61,7 @@ import {
 	runControllerPad,
 	selectControllerPadMode,
 	setControllerEq,
+	toggleControllerAutoLoop,
 	toggleControllerStemEq
 } from '$lib/rb/midi/controller-pad-runtime.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -251,6 +252,12 @@ export function handleMidiAction(
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
 			_cmdBeatLoop(action.deck, action.beats);
+			return;
+		}
+		case 'deck_auto_loop_toggle': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
+			toggleControllerAutoLoop(action.deck, _deviceId, pushToast);
 			return;
 		}
 		case 'deck_loop_exit': {
