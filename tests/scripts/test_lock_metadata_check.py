@@ -9,21 +9,20 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-from scripts.lock_metadata_check import (
-    EXIT_OK,
-    EXIT_STALE,
-    EXIT_UNKNOWN,
+from scripts.lock_marker_semantics import (
     _eval,
     _grid,
     _MarkerParser,
     canonical_version,
-    check,
     markers_equivalent,
+    release_literal,
 )
+from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN, check
 
 PYPROJECT = """
 [project]
@@ -245,6 +244,26 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
     assert code == EXIT_OK, message
 
 
+def _orders_a_string(marker: str) -> bool:
+    ordered = re.findall(r"([a-z_]+)\s*(?:<=|>=|<|>)\s*'", marker)
+    return any(
+        var not in ("python_version", "python_full_version", "implementation_version")
+        for var in ordered
+    )
+
+
+def _as_uv_stores_it(marker: str) -> str:
+    """The marker with every version literal cut to its release, which is the spelling
+    uv records (scripts/lock_marker_semantics.py, measured table). Over release-only
+    environments packaging's PEP 440 evaluation of THAT spelling is uv's semantics."""
+    return re.sub(
+        r"(python_full_version|python_version|implementation_version)\s*"
+        r"(===|==|!=|<=|>=|<|>|~=)\s*'([^']*)'",
+        lambda m: f"{m.group(1)} {m.group(2)} '{release_literal(m.group(3))}'",
+        marker,
+    )
+
+
 @pytest.mark.parametrize(
     ("spelled", "recorded", "same"),
     [
@@ -276,9 +295,31 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
         # itself evaluates the same on both sides, 3.10.100 does not.
         ("python_full_version < '3.11'", "python_full_version <= '3.10.99'", False),
         ("python_full_version >= '3.11'", "python_full_version > '3.10.99'", False),
-        # Prerelease boundaries: 3.11rc2 separates these (Codex on #3763, round 5).
+        # uv cuts every version literal to its release before storing it (measured
+        # against uv 0.8.17, table in scripts/lock_marker_semantics.py), so a fresh lock
+        # spells `<= '3.11rc1'` as `<= '3.11'`: still not `< '3.11'`, they part at 3.11.
         ("python_full_version < '3.11'", "python_full_version <= '3.11rc1'", False),
-        ("python_full_version < '3.11'", "python_full_version < '3.11rc0'", False),
+        ("python_full_version < '3.11'", "python_full_version < '3.11rc0'", True),
+        ("python_full_version < '3.11rc1'", "python_full_version < '3.11'", True),
+        ("python_full_version > '3.13.0b2'", "python_full_version > '3.13'", True),
+        ("python_full_version < '3.11.post1'", "python_full_version < '3.11'", True),
+        ("python_full_version == '3.11rc1'", "python_full_version == '3.11'", True),
+        ("python_version <= '3.11rc1'", "python_full_version < '3.12'", True),
+        ("implementation_version < '3.11rc1'", "implementation_version < '3.11'", True),
+        (
+            "python_full_version ~= '3.11.1'",
+            "python_full_version >= '3.11.1' and python_full_version < '3.12'",
+            True,
+        ),
+        # Strings order lexically too (packaging and uv both compare them so): only
+        # a value strictly BETWEEN 'linux' and 'win32' separates these, e.g. 'netbsd'.
+        ("sys_platform <= 'linux'", "sys_platform < 'win32'", False),
+        # uv's own rewrites of ordered string markers (measured, same table):
+        ("sys_platform < 'win32'", "sys_platform < 'win32' and sys_platform != 'win32'", True),
+        ("sys_platform > 'linux'", "sys_platform >= 'linux' and sys_platform != 'linux'", True),
+        ("sys_platform <= 'linux'", "sys_platform < 'linux' or sys_platform == 'linux'", True),
+        ("sys_platform < 'win32' or sys_platform >= 'win32'", "", True),
+        ("sys_platform < 'win32' or sys_platform > 'win32'", "", False),
         # Membership is substring membership: 'linux' satisfies `in` but not `==`.
         ("sys_platform in 'linux,darwin'", "sys_platform == 'linux,darwin'", False),
         (
@@ -287,19 +328,25 @@ def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Pat
             False,
         ),
         ("sys_platform not in 'win32'", "sys_platform != 'win32'", False),
-        # A prerelease literal on either side turns prerelease probing on: these part
-        # company at 3.10.dev0, and the plain-literal rewrite above stays equivalent.
-        ("python_full_version >= '3.10'", "python_full_version >= '3.10.dev0'", False),
-        ("python_full_version > '3.10'", "python_full_version > '3.10.post1'", False),
+        ("python_full_version >= '3.10'", "python_full_version >= '3.10.dev0'", True),
+        ("python_full_version > '3.10'", "python_full_version > '3.10.post1'", True),
     ],
 )
 def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> None:
     from packaging.markers import Marker
 
     assert markers_equivalent((spelled,), (recorded,)) is same
-    # ORACLE over the checker's own probe grid, both directions: packaging must agree
-    # with our evaluator on EVERY probe environment (so the evaluator is right), and for
-    # the false cases separate the two markers on at least one (so the grid is complete).
+    if _orders_a_string(spelled) or _orders_a_string(recorded):
+        # packaging 26 evaluates `<`/`>` on strings as always false and `<=`/`>=` as
+        # equality; uv orders them lexically (measured table in the module docstring),
+        # and a uv.lock check follows uv. No packaging oracle for these rows; the
+        # lexical semantics has its own test below.
+        return
+    uv_spelled, uv_recorded = _as_uv_stores_it(spelled), _as_uv_stores_it(recorded)
+    # ORACLE over the checker's own probe grid, both directions: packaging, on the
+    # spelling uv stores, must agree with our evaluator on EVERY probe environment (so
+    # the evaluator is right), and for the false cases separate the two markers on at
+    # least one (so the grid is complete).
     ast_a, ast_b = _MarkerParser(spelled).parse(), _MarkerParser(recorded).parse()
     envs = _grid(ast_a, ast_b)
     for env in envs:
@@ -308,31 +355,88 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
         env.setdefault("sys_platform", "linux")
         env.setdefault("python_full_version", "3.11.0")
         env.setdefault("python_version", "3.11")
-        for text, ast in ((spelled, ast_a), (recorded, ast_b)):
+        for text, ast in ((uv_spelled, ast_a), (uv_recorded, ast_b)):
             assert _eval(ast, env) == Marker(text).evaluate(env), (text, env)
-    # ORACLE for the false cases too: packaging, evaluated over the very probe grid
-    # the checker built, separates the two on at least one environment. This checks
-    # the grid (the completeness claim) as much as the evaluator.
     if not same:
         assert any(
-            Marker(spelled).evaluate(env) != Marker(recorded).evaluate(env) for env in envs
+            Marker(uv_spelled).evaluate(env) != Marker(uv_recorded).evaluate(env) for env in envs
         ), (spelled, recorded, envs)
     # ORACLE for the true cases: packaging agrees on a hand-picked environment grid.
     if same:
-        for full in ("3.9.7", "3.10.0", "3.10.12", "3.11.0", "3.11.3", "3.12.1"):
-            for platform in ("darwin", "win32", "linux"):
+        for full in ("3.9.7", "3.10.0", "3.10.12", "3.11.0", "3.11.3", "3.12.1", "3.13.0"):
+            for platform in ("darwin", "win32", "linux", "netbsd"):
                 env = {
                     "python_full_version": full,
                     "python_version": full.rsplit(".", 1)[0],
+                    "implementation_version": full,
                     "sys_platform": platform,
                     "platform_machine": "x86_64",
                     "extra": "dev",
                 }
-                assert Marker(spelled).evaluate(env) == Marker(recorded).evaluate(env), (
+                assert Marker(uv_spelled).evaluate(env) == Marker(uv_recorded).evaluate(env), (
                     spelled,
                     recorded,
                     env,
                 )
+
+
+def test_a_prerelease_bounded_marker_matches_the_lock_uv_writes_for_it(tmp_path: Path) -> None:
+    """if pyproject.toml says `python_full_version < '3.11rc1'` and uv recorded
+    `python_full_version < '3.11'` (which uv 0.8.17 does) then 0: a freshly regenerated
+    lock must never read stale (Codex P2 on #3763, round 6)"""
+    pyproject = PYPROJECT.replace(
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\"",
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin' and python_full_version < '3.11rc1'\"",
+    )
+    lock = LOCK.replace(
+        "marker = \"sys_platform == 'darwin'\"",
+        "marker = \"python_full_version < '3.11' and sys_platform == 'darwin'\"",
+    )
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    # CONTROL: the same edit one minor version over is still stale.
+    code, message = _run(tmp_path, pyproject.replace("< '3.11rc1'", "< '3.12rc1'"), lock)
+    assert code == EXIT_STALE
+    assert "python_full_version < '3.12rc1'" in message
+
+
+@pytest.mark.parametrize(
+    ("value", "below_win32", "at_most_linux"),
+    [
+        ("darwin", True, True),
+        ("linux", True, True),
+        ("netbsd", True, False),
+        ("win32", False, False),
+    ],
+)
+def test_string_ordering_is_lexical_as_uv_ranges_it(
+    value: str, below_win32: bool, at_most_linux: bool
+) -> None:
+    """`sys_platform < 'win32'` holds for every platform that sorts before it, which is
+    how uv's marker algebra ranges strings (it folds `< 'win32' and != 'win32'` to
+    `< 'win32'`); 'netbsd' is the value between 'linux' and 'win32' that separates
+    `<= 'linux'` from `< 'win32'`."""
+    env = {"sys_platform": value}
+    assert _eval(_MarkerParser("sys_platform < 'win32'").parse(), env) is below_win32
+    assert _eval(_MarkerParser("sys_platform <= 'linux'").parse(), env) is at_most_linux
+
+
+def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:
+    """uv dropped the marker outright for `>= '3.11.2+local'` (measured); that rewrite is
+    not modeled, so the compare must say so rather than guess either way."""
+    with pytest.raises(Exception, match="local version"):
+        markers_equivalent(
+            ("python_full_version >= '3.11.2+local'",), ("python_full_version >= '3.11.2'",)
+        )
+
+
+def test_ordering_mixed_with_membership_is_unknown_not_a_verdict() -> None:
+    """`sys_platform in 'linux' and sys_platform < 'linux'` needs a probe per (interval,
+    substring) pair; the grid does not build those, so it must not render a verdict."""
+    with pytest.raises(Exception, match="membership and ordering"):
+        markers_equivalent(
+            ("sys_platform in 'linux' and sys_platform < 'linux'",), ("sys_platform < 'linux'",)
+        )
 
 
 def test_membership_with_the_variable_on_the_right_is_unknown_not_a_verdict() -> None:
