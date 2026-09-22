@@ -65,8 +65,6 @@ import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
 
-export { registerBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
-
 export {
 	controllerPadMode,
 	resetControllerPadRuntime as _resetControllerStateForTests

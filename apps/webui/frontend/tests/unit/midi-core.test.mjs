@@ -29,6 +29,7 @@ let vite;
 let webmidi; // webmidi.svelte.ts module
 let glue; // action-glue.svelte.ts module
 let padRuntime; // controller-pad-runtime.svelte.ts module
+let browseAdapter; // shared library-selection registry
 let stores; // $lib/stores.svelte
 let audioEngine; // $lib/rb/audio-engine.svelte
 let performanceIpc;
@@ -50,6 +51,7 @@ before(async () => {
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	glue = await vite.ssrLoadModule('/src/lib/rb/midi/action-glue.svelte.ts');
 	padRuntime = await vite.ssrLoadModule('/src/lib/rb/midi/controller-pad-runtime.svelte.ts');
+	browseAdapter = await vite.ssrLoadModule('/src/lib/rb/midi/browse-adapter.ts');
 	stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
 	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
 	performanceIpc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
@@ -355,7 +357,7 @@ test('browse actions without a BrowseAdapter are loud (toast), not silent', () =
 
 test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	const calls = [];
-	const unregister = glue.registerBrowseAdapter({
+	const unregister = browseAdapter.registerBrowseAdapter({
 		moveSelection: (delta) => calls.push(['move', delta]),
 		loadSelected: (deck) => calls.push(['load', deck])
 	});
@@ -368,9 +370,9 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 		['move', -2],
 		['load', 2]
 	]);
-	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
+	assert.throws(() => browseAdapter.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
 	unregister();
-	const unregisterRemount = glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} });
+	const unregisterRemount = browseAdapter.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} });
 	unregisterRemount();
 });
 
