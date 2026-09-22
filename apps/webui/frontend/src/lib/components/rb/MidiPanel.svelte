@@ -20,6 +20,7 @@
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
 	import { midiUi, requestMidiAccess, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import { midiTakeoverUi, setMidiTakeoverMode } from '$lib/rb/midi/takeover-state.svelte';
 
 	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {
 		unsupported: 'not supported in this browser (WebMIDI needs Chrome or Edge)',
@@ -73,6 +74,31 @@
 		<section class="drawer-section">
 			<h3 class="section-title">Devices ({midiState.devices.length})</h3>
 			<MidiDeviceList />
+		</section>
+
+		<section class="drawer-section" aria-label="absolute MIDI takeover">
+			<h3 class="section-title">Absolute controls</h3>
+			<p class="takeover-copy">
+				Preview: Pickup holds a knob/fader after software changes until hardware reaches or crosses it.
+			</p>
+			<label class="takeover-choice">
+				<input
+					type="radio"
+					name="midi-takeover"
+					checked={midiTakeoverUi.mode === 'pickup'}
+					onchange={() => setMidiTakeoverMode('pickup')}
+				/>
+				Pickup (default)
+			</label>
+			<label class="takeover-choice">
+				<input
+					type="radio"
+					name="midi-takeover"
+					checked={midiTakeoverUi.mode === 'jump'}
+					onchange={() => setMidiTakeoverMode('jump')}
+				/>
+				Jump (immediate override)
+			</label>
 		</section>
 
 		<section class="drawer-section grow">
@@ -147,6 +173,18 @@
 		text-transform: uppercase;
 		border-bottom: 1px solid var(--rb-border);
 		padding-bottom: 3px;
+	}
+	.takeover-copy {
+		margin: 0 0 6px;
+		color: var(--rb-text-dim);
+		font-size: 11px;
+		line-height: 1.35;
+	}
+	.takeover-choice {
+		display: block;
+		margin: 4px 0;
+		color: var(--rb-text);
+		font-size: 12px;
 	}
 	.perm-row {
 		display: flex;

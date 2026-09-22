@@ -244,6 +244,44 @@ test('mixer_channel actions dispatch through the performance command bus', async
 	assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
 });
 
+// [if] an absolute MIDI fader is away from a software edit [then] it must
+// not jump until it reaches/crosses that value, [else stop].
+test('IOPIN-06 pickup gates real action-glue scalar dispatch while relative browse stays immediate', async () => {
+	audioEngine.mixerState.channels[2].trim = 0.75;
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'trim' },
+		{ kind: 'continuous', value01: 0.1, raw: 13 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:11'
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].trim, 0.75, 'far physical position must be held');
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'trim' },
+		{ kind: 'continuous', value01: 0.8, raw: 102 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:11'
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].trim, 0.8, 'crossing target must pick up');
+
+	const calls = [];
+	const unregister = browseAdapter.registerBrowseAdapter({
+		moveSelection: (delta) => calls.push(delta), loadSelected: () => {}
+	});
+	glue.handleMidiAction(
+		{ type: 'browse_encoder' },
+		{ kind: 'relative', delta: -1 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:12'
+	);
+	assert.deepEqual(calls, [-1], 'relative browse is not subject to absolute pickup');
+	unregister();
+});
+
 test('eq action without band fails fast', () => {
 	assert.throws(
 		() =>

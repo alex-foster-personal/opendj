@@ -56,6 +56,7 @@ import {
 	decodeRelative,
 	decodeSource
 } from '$lib/rb/midi/decode';
+import { rearmMidiTakeoverDevice } from '$lib/rb/midi/takeover-state.svelte';
 
 // The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
 // limit). Re-exported here so callers and tests keep their import path.
@@ -163,6 +164,9 @@ let _actionHandler:
 	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void)
 	| null =
 	null;
+/** Synchronous dispatch context. The public handler signature remains the
+ * receipt-stamp contract; action glue reads this only during that call. */
+let _activeControlId: string | undefined;
 
 // LED queue: deviceId -> (`${ch}:${note}` -> velocity), flushed on a timer.
 const _ledQueues: Map<string, Map<string, number>> = new Map();
@@ -257,6 +261,7 @@ function _rescanWebMidiPorts(): void {
 		};
 		input.onmidimessage = (ev: MIDIMessageEvent) => _dispatch(device, ev);
 		_resolved.set(input.id, device);
+		rearmMidiTakeoverDevice(input.id);
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (!seen.has(id)) {
@@ -264,6 +269,7 @@ function _rescanWebMidiPorts(): void {
 			if (dev !== undefined) dev.detachInput();
 			_resolved.delete(id);
 			_ledQueues.delete(id);
+			rearmMidiTakeoverDevice(id);
 		}
 	}
 	_publishResolvedDevices();
@@ -305,12 +311,14 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 			msbValues: new Map(),
 			lsbIndex
 		});
+		rearmMidiTakeoverDevice(found.id);
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (seen.has(id)) continue;
 		_resolved.get(id)?.detachInput();
 		_resolved.delete(id);
 		_ledQueues.delete(id);
+		rearmMidiTakeoverDevice(id);
 	}
 	_publishResolvedDevices();
 	const profiles = new Set(
@@ -366,6 +374,10 @@ function _emit(
 			throw new Error('shift_modifier must be bound to a note (button) source');
 		}
 		midiState.shiftHeld = value.pressed;
+		// Layer changes can rebind an identical physical CC to a different
+		// scalar. Require a fresh pickup rather than carrying its old position
+		// into that layer.
+		rearmMidiTakeoverDevice(device.id);
 		_pushLearnLog({
 			...log,
 			mapped: true,
@@ -391,7 +403,12 @@ function _emit(
 		// the perf ring uses. A hardware press is the P0 gesture the latency
 		// program exists for; without this it filed a plain schedule row and the
 		// primary control surface went unmeasured.
-		_actionHandler(binding.action, value, device.id, log.ts);
+		_activeControlId = _bindingKey(binding.shift === true, binding.source);
+		try {
+			_actionHandler(binding.action, value, device.id, log.ts);
+		} finally {
+			_activeControlId = undefined;
+		}
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
 		// still propagates (no silent swallow).
@@ -590,11 +607,18 @@ export function registerActionHandler(
 	_actionHandler = handler;
 }
 
+/** The physical source of the action currently being synchronously handled.
+ * It is intentionally undefined for programmatic action-glue calls. */
+export function activeMidiControlId(): string | undefined {
+	return _activeControlId;
+}
+
 /** Release THE action handler. The glue's teardown calls this: without it a
  * detach left the handler registered, so re-attaching after a /performance
  * remount threw 'a handler is already registered'. */
 export function unregisterActionHandler(): void {
 	_actionHandler = null;
+	_activeControlId = undefined;
 }
 
 function _hasNativeMidiBridge(): boolean {
