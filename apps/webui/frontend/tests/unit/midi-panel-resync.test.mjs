@@ -137,6 +137,30 @@ async function _uninstall(id) {
 	}
 }
 
+// A resync-driven reload runs async off the bus callback through REAL uvicorn
+// round trips (GET /maps, then one GET per document), so its length belongs
+// to the runner, not to this test. A fixed 50 ms sleep here expired before the
+// reload landed under `--test-concurrency=4` on a loaded CI box (main
+// 5d703636 and #3701 f1c3c138, Mon 21 Sep 2026: the sibling test on the same
+// runner took 13 s) and read as the arm block being broken. Wait for the
+// PRESENCE of the reloaded map with a bounded deadline instead; null after
+// the deadline is the same failure the assertion always reported.
+const RELOAD_DEADLINE_MS = 15_000;
+async function _waitForMap(portName) {
+	const started = Date.now();
+	for (;;) {
+		if (webmidi.resolveMapForPort(portName) !== null) {
+			// One macrotask more: registerDeviceMap() runs inside the reload,
+			// and the coalesced wrapper clears installedMapsError only when
+			// that promise settles, one microtask later.
+			await new Promise((r) => setTimeout(r, 0));
+			return webmidi.resolveMapForPort(portName);
+		}
+		if (Date.now() - started > RELOAD_DEADLINE_MS) return null;
+		await new Promise((r) => setTimeout(r, 10));
+	}
+}
+
 before(async () => {
 	const port = await _startBackend();
 	apiOrigin = `http://127.0.0.1:${port}`;
@@ -233,12 +257,10 @@ test('a resync with no matching kind event still reloads the installed registry'
 	// seq skip, a 1013 slow-consumer close, or a reconnect would take.
 	socket.deliverRaw('not json');
 
-	// loadInstalledDeviceMaps() runs async off the resync callback; give its
-	// microtask/fetch chain a turn to settle.
-	await new Promise((r) => setTimeout(r, 50));
-
+	// loadInstalledDeviceMaps() runs async off the resync callback; wait for
+	// its fetch chain to land (bounded, see _waitForMap).
 	assert.notEqual(
-		webmidi.resolveMapForPort('BbbDevice 1'),
+		await _waitForMap('BbbDevice 1'),
 		null,
 		'resync alone must reload the installed registry, per events-bus.ts: ' +
 			'"a consumer that handles a kind MUST also handle resync"'
@@ -294,10 +316,9 @@ test('a failed first load of installed maps still arms the live-refresh listener
 	assert.equal(webmidi.resolveMapForPort('AaaDevice 1'), null);
 
 	socket.deliverRaw('not json'); // gap/resync, same as the test above
-	await new Promise((r) => setTimeout(r, 50));
 
 	assert.notEqual(
-		webmidi.resolveMapForPort('AaaDevice 1'),
+		await _waitForMap('AaaDevice 1'),
 		null,
 		'resync must still reload the registry even though the FIRST load failed - ' +
 			'the arm block must run unconditionally, not only after a successful load'

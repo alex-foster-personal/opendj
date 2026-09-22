@@ -21,6 +21,8 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { waitForPerformanceIpc } from './support/performance-ready';
+
 const MIX_KNOB = '[data-testid="knob-hp:hp-mix"]';
 const THIRD = 1 / 3;
 /** KNOB_SINGLE_CLICK_DELAY_MS (deferred-click.ts) plus slack for a loaded runner. */
@@ -33,6 +35,9 @@ async function _openMixKnob(page: Page): Promise<Locator> {
 	await page.goto('/performance');
 	const knob = page.locator(MIX_KNOB);
 	await expect(knob).toBeVisible({ timeout: 60_000 });
+	// The knob renders before its command path exists; a click before this
+	// resolves is dropped silently (see the helper).
+	await waitForPerformanceIpc(page);
 	return knob;
 }
 

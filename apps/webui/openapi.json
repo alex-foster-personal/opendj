@@ -4693,6 +4693,10 @@
       },
       "ConsentOut": {
         "properties": {
+          "consent_required": {
+            "title": "Consent Required",
+            "type": "boolean"
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -4781,6 +4785,7 @@
           "terms_current_version",
           "decided_at",
           "telemetry_active",
+          "consent_required",
           "environment",
           "release",
           "replay_loader_url",
