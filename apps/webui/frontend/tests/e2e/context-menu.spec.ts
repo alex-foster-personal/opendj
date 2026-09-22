@@ -10,6 +10,8 @@
  */
 import { expect, test } from '@playwright/test';
 
+import { waitForPerformanceIpc } from './support/performance-ready';
+
 const MENU = '[data-testid="context-menu"]';
 
 test('track, playlist, and folder context menus are pointer and keyboard reachable', async ({ page }) => {
@@ -29,6 +31,7 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	// regression is actually fixed rather than hidden.
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
 
 	const track = page.locator('[data-testid="track-row"]').first();
 	await track.click();
@@ -92,6 +95,7 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 test('Add to playlist opens the picker and Escape closes it', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
 
 	const track = page.locator('[data-testid="track-row"]').first();
 	await track.click({ button: 'right' });
@@ -106,6 +110,7 @@ test('Add to playlist opens the picker and Escape closes it', async ({ page }) =
 test('a mounted context menu does not steal arrows after focus leaves it', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
 
 	const track = page.locator('[data-testid="track-row"]').first();
 	await track.click({ button: 'right' });
@@ -123,6 +128,7 @@ test('a mounted context menu does not steal arrows after focus leaves it', async
 test('multi-select context menu keeps the full selection count', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
 
 	const rows = page.locator('[data-testid="track-row"]');
 	await rows.nth(0).click();

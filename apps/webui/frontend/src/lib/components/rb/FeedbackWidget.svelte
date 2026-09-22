@@ -23,6 +23,13 @@
 		type PinDraft,
 		type PinSeen
 	} from '$lib/rb/feedback';
+	import {
+		anchorMovedAtPin,
+		parseShowHarvestedPins,
+		pinBoardState,
+		serializeShowHarvestedPins,
+		SHOW_HARVESTED_PINS_KEY
+	} from '$lib/rb/feedback-pin-board';
 	import { readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
@@ -112,13 +119,17 @@
 	 * localStorage yet) defaults OFF; an existing viewer's own choice is read
 	 * in onMount and always wins over this initial value. */
 	let pinsVisible: boolean = $state(false);
+	let showHarvestedPins: boolean = $state(true);
 
 	const openCount = $derived(feedbackState.todos.filter((t) => !t.done).length);
 	const pagePins = $derived(
 		pinsVisible
-			? feedbackState.pins.filter(
-				(p) => p.page === pathname && isPinDrawn(p) && (p.author !== 'agent' || uiPrefs.show_agent_pins)
-			)
+			? feedbackState.pins.filter((p) => {
+					if (!isPinDrawn(p)) return false;
+					if (p.author === 'agent' && !uiPrefs.show_agent_pins) return false;
+					if (p.status === 'harvested' && !showHarvestedPins) return false;
+					return true;
+				})
 			: []
 	);
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
@@ -234,6 +245,7 @@
 		startPinWatch();
 		pinSeen = _readSeen();
 		pinsVisible = readPinsVisible(window.localStorage);
+		showHarvestedPins = parseShowHarvestedPins(window.localStorage.getItem(SHOW_HARVESTED_PINS_KEY));
 		// Agent parity: the seen stamp is the one piece of this feature that
 		// lives only in the browser, so it needs a programmatic twin.
 		_globals().__mdtPinSeen = {
@@ -438,7 +450,7 @@
 </span>
 
 <!-- comment pins on this page (#858): color is status, click opens the body -->
-<FeedbackPinMarkers pins={pagePins} seen={pinSeen} onopen={openPin} />
+<FeedbackPinMarkers pins={pagePins} seen={pinSeen} pathname={pathname} onopen={openPin} />
 
 <!-- pin body: the original text, the agent's reply, its issue, its actions -->
 {#if bodyPin !== null}
