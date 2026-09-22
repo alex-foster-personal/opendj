@@ -185,6 +185,7 @@ export async function requestMidiAccess(): Promise<void> {
 	}
 	midiUi.lastError = null;
 	midiUi.requestPending = true;
+	let attachedForThisRequest = false;
 	try {
 		if (!_mapsRegistered) {
 			registerAllDeviceMaps();
@@ -198,6 +199,7 @@ export async function requestMidiAccess(): Promise<void> {
 		// see its own docstring.
 		if (_detachMidiGlue === null) {
 			_detachMidiGlue = attachMidiGlue();
+			attachedForThisRequest = true;
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
@@ -231,6 +233,14 @@ export async function requestMidiAccess(): Promise<void> {
 			console.error('[midi-panel] installed device maps failed to load', exc);
 		}
 	} catch (exc) {
+		// A denied or unsupported request never owns an active MIDI route. Tear
+		// down the glue this attempt attached, including the 20 Hz meter timer,
+		// so failure cannot leak work for the lifetime of the page/process. Do
+		// not detach a pre-existing route if a later re-request failed.
+		if (attachedForThisRequest && _detachMidiGlue !== null) {
+			_detachMidiGlue();
+			_detachMidiGlue = null;
+		}
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
