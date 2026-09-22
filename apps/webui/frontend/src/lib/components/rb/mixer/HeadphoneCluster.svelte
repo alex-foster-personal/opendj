@@ -38,7 +38,6 @@
 	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode }: Props =
 		$props();
 	let ioOpen = $state(false);
-	let ioAcquisitionRequested = false;
 
 	let mixStepDirection: HeadphoneMixDirection = 1;
 	let lastMixStep: HeadphoneMixStepResult | null = null;
@@ -136,10 +135,6 @@
 
 	function openIo(): void {
 		ioOpen = true;
-		if (!ioAcquisitionRequested) {
-			ioAcquisitionRequested = true;
-			onacquire();
-		}
 	}
 
 	function closeIo(): void {
@@ -243,6 +238,8 @@
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
 				<div class="hp-section-heading"><h3>Devices</h3><button type="button" aria-label="Rescan available headphone output devices" title="Rescan audio devices" onclick={onrefresh}>Rescan ↻</button></div>
+			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
+			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
 				{#if masterLabel !== null || selectedLabel !== null}
 					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}.{/if}</p>
 				{/if}
@@ -423,7 +420,7 @@
 	.hp-section-heading h3 { margin: 0; }
 	.hp-section button, .hp-section select, .hp-section input { font: inherit; }
 	.hp-mode-choices { display: flex; flex-wrap: wrap; gap: 5px; }
-	.hp-mode-choices button, .hp-section-heading button, .hp-calibrate-button {
+	.hp-mode-choices button, .hp-section-heading button, .hp-calibrate-button, .hp-acquire {
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #333);
 		border-radius: 3px;

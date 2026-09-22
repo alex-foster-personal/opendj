@@ -1,5 +1,36 @@
 import { expect, test } from '@playwright/test';
 
+test('opening I/O is read-only and does not acquire or change audio routes', async ({ page }) => {
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const before = await page.evaluate(() => {
+		const state = window.musicDjToolsPerformance!.query();
+		return {
+			history: state.history,
+			mode: state.mixer.headphones.output_mode,
+			master: state.mixer.headphones.selected_master_output_device_id,
+			cue: state.mixer.headphones.selected_output_device_id
+		};
+	});
+	await page.getByRole('button', { name: 'SHOW AUDIO I/O' }).click();
+	await expect(page.getByRole('dialog', { name: 'Audio I/O settings' })).toBeVisible();
+	await page.waitForTimeout(250);
+	const after = await page.evaluate(() => {
+		const state = window.musicDjToolsPerformance!.query();
+		return {
+			history: state.history,
+			mode: state.mixer.headphones.output_mode,
+			master: state.mixer.headphones.selected_master_output_device_id,
+			cue: state.mixer.headphones.selected_output_device_id
+		};
+	});
+	expect(after).toEqual(before);
+	await page.getByRole('button', { name: 'Choose output / allow device access' }).click();
+	await expect.poll(() => page.evaluate(() =>
+		window.musicDjToolsPerformance!.query().history.some((command) => command.type === 'headphone_output_acquire')
+	)).toBe(true);
+});
+
 test('I/O hover is brief and click opens persistent settings with routing inside', async ({ page }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
