@@ -47,6 +47,8 @@ import type {
 	MidiInputValue,
 	MidiSource
 } from '$lib/rb/midi/midi-types';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
 	bindingKey as _bindingKey,
 	chKey as _chKey,
@@ -106,9 +108,16 @@ export const learnLog: LearnLogEntry[] = $state([]);
 
 // -------------------------------------------------- non-reactive runtime
 
+interface _MidiOutputPort {
+	send(data: number[]): void;
+}
+
 interface _ResolvedDevice {
-	input: MIDIInput;
-	output: MIDIOutput | null;
+	id: string;
+	name: string;
+	manufacturer: string;
+	detachInput: () => void;
+	output: _MidiOutputPort | null;
 	map: DeviceMap | null;
 	/** binding lookup key -> binding (see _bindingKey). */
 	index: Map<string, MidiBinding>;
@@ -119,6 +128,23 @@ interface _ResolvedDevice {
 }
 
 let _access: MIDIAccess | null = null;
+let _transport: 'none' | 'webmidi' | 'native' = 'none';
+let _nativeUnlisten: (() => void) | null = null;
+let _nativePollTimer: ReturnType<typeof setInterval> | null = null;
+
+interface _NativeMidiDevice {
+	id: string;
+	name: string;
+	manufacturer: string;
+	hasOutput: boolean;
+}
+
+interface _NativeMidiMessage {
+	deviceId: string;
+	deviceName: string;
+	timestampMicros: number;
+	data: number[];
+}
 /** Where a registered map came from. Precedence is TIERED, not array order:
  * an 'installed' map (onboarded at runtime and persisted by the daemon) always
  * beats the 'builtin' map compiled into the bundle, whichever registered
@@ -186,15 +212,25 @@ function _resolveMap(portName: string): DeviceMap | null {
 	return null;
 }
 
-function _findOutputFor(access: MIDIAccess, inputName: string): MIDIOutput | null {
+function _findOutputFor(access: MIDIAccess, inputName: string): _MidiOutputPort | null {
 	for (const output of access.outputs.values()) {
 		if (output.name === inputName) return output;
 	}
 	return null;
 }
 
-function _rescanPorts(): void {
-	if (_access === null) throw new Error('_rescanPorts before initMidi()');
+function _publishResolvedDevices(): void {
+	midiState.devices = [..._resolved.values()].map((d) => ({
+		id: d.id,
+		name: d.name,
+		manufacturer: d.manufacturer,
+		mapVendor: d.map?.vendor ?? null,
+		hasOutput: d.output !== null
+	}));
+}
+
+function _rescanWebMidiPorts(): void {
+	if (_access === null) throw new Error('_rescanWebMidiPorts before WebMIDI init');
 	const seen = new Set<string>();
 	for (const input of _access.inputs.values()) {
 		if (input.state !== 'connected') continue;
@@ -207,7 +243,12 @@ function _rescanPorts(): void {
 				? _buildIndex(map)
 				: { index: new Map<string, MidiBinding>(), lsbIndex: new Map<string, MidiBinding>() };
 		const device: _ResolvedDevice = {
-			input,
+			id: input.id,
+			name,
+			manufacturer: input.manufacturer ?? '',
+			detachInput: () => {
+				input.onmidimessage = null;
+			},
 			output: _findOutputFor(_access, name),
 			map,
 			index,
@@ -220,18 +261,77 @@ function _rescanPorts(): void {
 	for (const id of [..._resolved.keys()]) {
 		if (!seen.has(id)) {
 			const dev = _resolved.get(id);
-			if (dev !== undefined) dev.input.onmidimessage = null;
+			if (dev !== undefined) dev.detachInput();
 			_resolved.delete(id);
 			_ledQueues.delete(id);
 		}
 	}
-	midiState.devices = [..._resolved.values()].map((d) => ({
-		id: d.input.id,
-		name: d.input.name ?? '',
-		manufacturer: d.input.manufacturer ?? '',
-		mapVendor: d.map?.vendor ?? null,
-		hasOutput: d.output !== null
-	}));
+	_publishResolvedDevices();
+}
+
+function _nativeOutput(deviceId: string): _MidiOutputPort {
+	return {
+		send(data: number[]): void {
+			void invoke('native_midi_send', { deviceId, data }).catch((exc: unknown) => {
+				console.error(`[native-midi] output failed for ${deviceId}`, exc);
+			});
+		}
+	};
+}
+
+function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): void {
+	const seen = new Set(snapshot.map((device) => device.id));
+	for (const found of snapshot) {
+		const existing = _resolved.get(found.id);
+		if (existing !== undefined) {
+			existing.name = found.name;
+			existing.manufacturer = found.manufacturer;
+			existing.output = found.hasOutput ? _nativeOutput(found.id) : null;
+			continue;
+		}
+		const map = _resolveMap(found.name);
+		const { index, lsbIndex } =
+			map !== null
+				? _buildIndex(map)
+				: { index: new Map<string, MidiBinding>(), lsbIndex: new Map<string, MidiBinding>() };
+		_resolved.set(found.id, {
+			id: found.id,
+			name: found.name,
+			manufacturer: found.manufacturer,
+			detachInput: () => {},
+			output: found.hasOutput ? _nativeOutput(found.id) : null,
+			map,
+			index,
+			msbValues: new Map(),
+			lsbIndex
+		});
+	}
+	for (const id of [..._resolved.keys()]) {
+		if (seen.has(id)) continue;
+		_resolved.get(id)?.detachInput();
+		_resolved.delete(id);
+		_ledQueues.delete(id);
+	}
+	_publishResolvedDevices();
+	const profiles = new Set(
+		[..._resolved.values()].flatMap((device) =>
+			device.map?.nativeAudioProfile === undefined ? [] : [device.map.nativeAudioProfile]
+		)
+	);
+	if (profiles.size > 1) {
+		console.error('[native-midi] connected controller maps request conflicting audio profiles', [
+			...profiles
+		]);
+	} else if (profiles.size === 1 && !new URL(window.location.href).searchParams.has('djio')) {
+		const next = new URL(window.location.href);
+		next.searchParams.set('djio', [...profiles][0]);
+		window.location.replace(next);
+	}
+}
+
+async function _rescanNativePorts(): Promise<void> {
+	const snapshot = await invoke<_NativeMidiDevice[]>('native_midi_snapshot');
+	_applyNativeSnapshot(snapshot);
 }
 
 function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: number): MidiInputValue {
@@ -289,7 +389,7 @@ function _emit(
 		// the perf ring uses. A hardware press is the P0 gesture the latency
 		// program exists for; without this it filed a plain schedule row and the
 		// primary control surface went unmeasured.
-		_actionHandler(binding.action, value, device.input.id, log.ts);
+		_actionHandler(binding.action, value, device.id, log.ts);
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
 		// still propagates (no silent swallow).
@@ -305,7 +405,7 @@ function _emit(
 	_pushLearnLog({ ...log, mapped: true, note: binding.action.type, action: binding.action });
 }
 
-function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
+function _dispatch(device: _ResolvedDevice, ev: { data: Uint8Array | null }): void {
 	const data = ev.data;
 	if (data === null || data.length === 0) return;
 	const status = data[0];
@@ -315,8 +415,8 @@ function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
 	const src = decodeSource(status, d1);
 	const log: Omit<LearnLogEntry, 'mapped' | 'note'> = {
 		ts: performance.now(),
-		deviceId: device.input.id,
-		deviceName: device.input.name ?? '',
+		deviceId: device.id,
+		deviceName: device.name,
 		status,
 		data1: d1,
 		data2: d2,
@@ -397,10 +497,26 @@ function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
 /** Drop every cached resolution and rescan, so a registry change reaches the
  * ports that are already plugged in. No-op before initMidi(). */
 function _reresolvePorts(): void {
-	if (_access === null) return;
-	for (const dev of _resolved.values()) dev.input.onmidimessage = null;
-	_resolved.clear();
-	_rescanPorts();
+	if (_transport === 'webmidi') {
+		for (const dev of _resolved.values()) dev.detachInput();
+		_resolved.clear();
+		_rescanWebMidiPorts();
+		return;
+	}
+	if (_transport === 'native') {
+		for (const device of _resolved.values()) {
+			const map = _resolveMap(device.name);
+			const { index, lsbIndex } =
+				map !== null
+					? _buildIndex(map)
+					: { index: new Map<string, MidiBinding>(), lsbIndex: new Map<string, MidiBinding>() };
+			device.map = map;
+			device.index = index;
+			device.lsbIndex = lsbIndex;
+			device.msbValues.clear();
+		}
+		_publishResolvedDevices();
+	}
 }
 
 /** Validate a map's static shape WITHOUT registering it: the same fail-fast
@@ -479,24 +595,68 @@ export function unregisterActionHandler(): void {
 	_actionHandler = null;
 }
 
+function _hasNativeMidiBridge(): boolean {
+	return (
+		typeof window !== 'undefined' &&
+		typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object'
+	);
+}
+
 /** Request WebMIDI access (sysex: false - spike 2a: neither controller
- * needs SysEx) and start dispatching. Throws on unsupported browsers and
- * on user denial; permission state is mirrored in midiState. */
+ * needs SysEx) and start dispatching. In the installed macOS shell, where
+ * WKWebView has no WebMIDI, use the shell's transport-only CoreMIDI bridge.
+ * Mapping and action dispatch remain on this one shared code path. */
 export async function initMidi(): Promise<void> {
-	if (typeof navigator === 'undefined' || navigator.requestMIDIAccess === undefined) {
+	if (typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined) {
+		midiState.permission = 'prompt';
+		try {
+			_access = await navigator.requestMIDIAccess({ sysex: false });
+		} catch (exc) {
+			midiState.permission = 'denied';
+			throw new Error(`WebMIDI permission denied: ${String(exc)}`);
+		}
+		_transport = 'webmidi';
+		midiState.permission = 'granted';
+		_access.onstatechange = () => _rescanWebMidiPorts();
+		_rescanWebMidiPorts();
+		return;
+	}
+	if (!_hasNativeMidiBridge()) {
 		midiState.permission = 'unsupported';
-		throw new Error('WebMIDI is not supported in this browser (Safari has no WebMIDI - use Chrome/Edge)');
+		throw new Error(
+			'MIDI is not supported here (use Chrome/Edge, or the Open DJ macOS app with its native bridge)'
+		);
 	}
 	midiState.permission = 'prompt';
 	try {
-		_access = await navigator.requestMIDIAccess({ sysex: false });
+		_nativeUnlisten = await listen<_NativeMidiMessage>(
+			'opendj-native-midi-message',
+			(event) => {
+				const device = _resolved.get(event.payload.deviceId);
+				if (device === undefined) {
+					console.error(
+						`[native-midi] input arrived for unknown device ${event.payload.deviceId}; rescanning`
+					);
+					void _rescanNativePorts();
+					return;
+				}
+				_dispatch(device, { data: new Uint8Array(event.payload.data) });
+			}
+		);
+		await _rescanNativePorts();
 	} catch (exc) {
 		midiState.permission = 'denied';
-		throw new Error(`WebMIDI permission denied: ${String(exc)}`);
+		_nativeUnlisten?.();
+		_nativeUnlisten = null;
+		throw new Error(`native MIDI bridge failed: ${String(exc)}`);
 	}
+	_transport = 'native';
 	midiState.permission = 'granted';
-	_access.onstatechange = () => _rescanPorts();
-	_rescanPorts();
+	_nativePollTimer = setInterval(() => {
+		void _rescanNativePorts().catch((exc: unknown) => {
+			console.error('[native-midi] hot-plug rescan failed', exc);
+		});
+	}, 1000);
 }
 
 /** Queue an LED write (Note On, velocity = colour/state - spike 2a: FLX10
@@ -513,7 +673,7 @@ export function sendLed(deviceId: string, ch: number, note: number, velocity: nu
 		throw new Error(`sendLed: unknown device id ${deviceId}`);
 	}
 	if (device.output === null) {
-		throw new Error(`sendLed: device ${device.input.name} has no MIDI output port`);
+		throw new Error(`sendLed: device ${device.name} has no MIDI output port`);
 	}
 	let queue = _ledQueues.get(deviceId);
 	if (queue === undefined) {
@@ -547,7 +707,7 @@ export function sendCc(deviceId: string, ch: number, cc: number, value: number):
 		throw new Error(`sendCc: unknown device id ${deviceId}`);
 	}
 	if (device.output === null) {
-		throw new Error(`sendCc: device ${device.input.name} has no MIDI output port`);
+		throw new Error(`sendCc: device ${device.name} has no MIDI output port`);
 	}
 	let queue = _ledQueues.get(deviceId);
 	if (queue === undefined) {
@@ -603,7 +763,7 @@ export function _actionHandlerRegisteredForTests(): boolean {
 
 /** TEST-ONLY: reset all module state between unit tests. */
 export function _resetMidiForTests(): void {
-	for (const dev of _resolved.values()) dev.input.onmidimessage = null;
+	for (const dev of _resolved.values()) dev.detachInput();
 	_resolved.clear();
 	_deviceMaps.length = 0;
 	_ledQueues.clear();
@@ -612,7 +772,14 @@ export function _resetMidiForTests(): void {
 		_ledTimer = null;
 	}
 	_actionHandler = null;
+	_nativeUnlisten?.();
+	_nativeUnlisten = null;
+	if (_nativePollTimer !== null) {
+		clearInterval(_nativePollTimer);
+		_nativePollTimer = null;
+	}
 	_access = null;
+	_transport = 'none';
 	midiState.permission = 'prompt';
 	midiState.devices = [];
 	midiState.shiftHeld = false;

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "native-midi",
+  "description": "Receive CoreMIDI events in the installed WKWebView shell. The UI is served by the bundled engine on an ephemeral loopback origin, so this grants only event listener registration to that origin; native_midi_snapshot and native_midi_send are application commands and validate their own bounded MIDI payloads.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
+  },
+  "platforms": ["macOS"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

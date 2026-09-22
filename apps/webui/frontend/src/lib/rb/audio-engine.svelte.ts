@@ -255,6 +255,7 @@ import {
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	setMasterDelayMs as setMonitorMasterDelay,
+	setMultichannelMonitorActive,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
@@ -555,6 +556,7 @@ let _masterMuteGain: GainNode | null = null;
  * owns its delayTime; the engine only wires it. */
 let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
+let _djOutputNodes: AudioNode[] = [];
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
@@ -677,6 +679,16 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
+function _djOutputProfile(): 'master12-cue34' | null {
+	if (typeof window === 'undefined') return null;
+	const value = new URLSearchParams(window.location.search).get('djio');
+	if (value === null || value === '') return null;
+	if (value !== 'master12-cue34') {
+		throw new Error(`djio: unsupported profile '${value}' (expected master12-cue34)`);
+	}
+	return value;
+}
+
 // -------------------------------------------- external mixer routing
 // Opt-in via URL query `?extroute=1:1,2:7` -- comma-separated `deck:usbLeft`
 // pairs, where usbLeft is the 1-based LEFT channel of a stereo pair on the
@@ -697,7 +709,13 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 		disarmInstrumentation: () => disarmContextInstrumentation(),
 		muteNode: () => _masterMuteGain,
 		disposeResources: ({ processors, nodes }) =>
-			disposeAudioResources({ rafId: _rafId, processors, nodes, masterGain: _masterGain, context: _ctx }),
+			disposeAudioResources({
+				rafId: _rafId,
+				processors,
+				nodes: [...nodes, ..._djOutputNodes],
+				masterGain: _masterGain,
+				context: _ctx
+			}),
 		resetGraphState: () => {
 			disposeHeadphoneMonitor();
 			_rafId = null;
@@ -707,6 +725,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			_masterMuteGain = null;
 			_masterDelay = null;
 			_externalMerger = _externalRouteAnalyser = null;
+			_djOutputNodes = [];
 			_ctx = null;
 			resetMasterSilenceWatch();
 			resetPresentationClockStall();
@@ -791,10 +810,16 @@ function _ensureGraph(): AudioContext {
 	// operator hears in the phones was tapped upstream at _masterGain.
 	_masterDelay = createMasterDelayNode(_ctx);
 	const routing = parseExternalRouting();
-	if (routing === null) {
+	const djOutputProfile = _djOutputProfile();
+	if (routing !== null && djOutputProfile !== null) {
+		throw new Error('extroute and djio are mutually exclusive output topologies');
+	}
+	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
+	setMultichannelMonitorActive(false);
+	if (routing === null && djOutputProfile === null) {
 		_masterMuteGain.connect(_masterDelay);
 		_masterDelay.connect(_ctx.destination);
-	} else {
+	} else if (routing !== null) {
 		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
 		const dest = _ctx.destination;
 		if (dest.maxChannelCount < highestUsbChannel) {
@@ -820,9 +845,38 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
 		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
+	} else {
+		const dest = _ctx.destination;
+		if (dest.maxChannelCount < 4) {
+			throw new Error(
+				'djio master12-cue34 needs four output channels - select the Mixtour Pro as the macOS output device and reload'
+			);
+		}
+		dest.channelCount = 4;
+		dest.channelInterpretation = 'discrete';
+		_masterMuteGain.channelCount = 4;
+		_masterMuteGain.channelCountMode = 'explicit';
+		_masterMuteGain.channelInterpretation = 'discrete';
+		_masterDelay.channelCount = 4;
+		_masterDelay.channelCountMode = 'explicit';
+		_masterDelay.channelInterpretation = 'discrete';
+		const merger = _ctx.createChannelMerger(4);
+		merger.channelInterpretation = 'discrete';
+		const masterSplitter = _ctx.createChannelSplitter(2);
+		const cueSplitter = _ctx.createChannelSplitter(2);
+		_masterGain.connect(masterSplitter);
+		masterSplitter.connect(merger, 0, 0);
+		masterSplitter.connect(merger, 1, 1);
+		headphones.delay.connect(cueSplitter);
+		cueSplitter.connect(merger, 0, 2);
+		cueSplitter.connect(merger, 1, 3);
+		merger.connect(_masterMuteGain);
+		_masterMuteGain.connect(_masterDelay);
+		_masterDelay.connect(dest);
+		_djOutputNodes = [masterSplitter, cueSplitter, merger];
+		setMultichannelMonitorActive(true);
 	}
-	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	if (routing === null) {
+	if (routing === null && djOutputProfile === null) {
 		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 	}
@@ -2973,6 +3027,7 @@ class RbAudioEngine implements AudioEngine {
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
+		nodes.push(..._djOutputNodes);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -2990,6 +3045,7 @@ class RbAudioEngine implements AudioEngine {
 		_masterMuteGain = null;
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
+		_djOutputNodes = [];
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';

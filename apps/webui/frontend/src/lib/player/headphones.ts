@@ -153,6 +153,9 @@ export interface HeadphoneNodes {
 }
 
 let _headphoneNodes: HeadphoneNodes | null = null;
+/** True only while the engine has wired the monitor blend to channels 3/4 of
+ * the same multichannel destination that carries master on 1/2. */
+let _multichannelMonitorActive = false;
 /** The engine AudioContext the master mix is pinned onto via setSinkId. */
 let _outputContext: AudioContext | null = null;
 /** Bumped by every teardown. An operation that started under an older
@@ -325,7 +328,8 @@ export function applyHeadphoneMix(): void {
 	const level = mixerState.headphones.level;
 	const gains = headphoneMixGains(mix);
 	const monitorLive =
-		mixerState.headphones.output_mode === 'two_outputs' && mixerState.headphones.active;
+		_multichannelMonitorActive ||
+		(mixerState.headphones.output_mode === 'two_outputs' && mixerState.headphones.active);
 	_setMonitorParam(nodes, nodes.cueMix.gain, monitorLive ? gains.cue : 0);
 	_setMonitorParam(nodes, nodes.masterMix.gain, monitorLive ? gains.master : 0);
 	_setMonitorParam(nodes, nodes.level.gain, monitorLive ? level : 0);
@@ -820,6 +824,13 @@ export function setHeadphoneOutputMode(mode: unknown): void {
 	applyHeadphoneMix();
 }
 
+/** Activate the same CUE/MASTER/LEVEL monitor blend for a discrete 3/4 output
+ * pair. Wiring stays in the engine; this function only makes its gains live. */
+export function setMultichannelMonitorActive(active: boolean): void {
+	_multichannelMonitorActive = active;
+	applyHeadphoneMix();
+}
+
 /** Insert the practice equal-power pair between master and mute so cue and
  * master share one destination clock. Does not create a second sink. */
 export function wirePracticeBlendIntoMasterPath(
@@ -1198,6 +1209,7 @@ export function disposeHeadphoneMonitor(): void {
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
 	_masterDelayNode = null;
+	_multichannelMonitorActive = false;
 	_unwatchHeadphoneDeviceChanges();
 	_disposeHeadphoneGraph();
 }

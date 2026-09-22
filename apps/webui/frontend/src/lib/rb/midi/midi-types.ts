@@ -329,6 +329,10 @@ export interface DeviceMap {
 	 * port name, e.g. 'DDJ-FLX10'. Stored as a string so maps stay
 	 * serialisable. */
 	nameMatch: string;
+	/** Optional native-shell audio topology requested when this controller is
+	 * present. The runtime reloads into the profile explicitly; browser WebMIDI
+	 * never guesses that a MIDI port is also the selected audio destination. */
+	nativeAudioProfile?: 'master12-cue34';
 	bindings: MidiBinding[];
 	leds?: LedRule[];
 	/** Host-driven seven-segment channel meters. Values are scaled from the

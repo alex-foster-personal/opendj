@@ -179,6 +179,7 @@ export const MIXTOUR_PRO_METERS: readonly MidiMeterOutput[] = ([1, 2, 3, 4] as c
 export const RELOOP_MIXTOUR_PRO_MAP: DeviceMap = {
 	vendor: 'Reloop',
 	nameMatch: '\\bMixtour\\s+Pro\\b',
+	nativeAudioProfile: 'master12-cue34',
 	bindings: [
 		..._deckBindings(1),
 		..._deckBindings(2),
