@@ -29,7 +29,14 @@ from __future__ import annotations
 
 import re
 
-from scripts.lock_marker_semantics import _VERSION_RE, Unknown, canonical_version, release_literal
+from scripts.lock_marker_parser import tokenize_marker
+from scripts.lock_marker_semantics import (
+    _VERSION_RE,
+    Unknown,
+    canonical_version,
+    markers_equivalent,
+    release_literal,
+)
 
 CLAUSE_RE = re.compile(r"^(?P<op>===|==|!=|<=|>=|<|>|~=)\s*(?P<version>.+)$")
 
@@ -86,3 +93,54 @@ def norm_spec(spec: str, *, expand_compatible: bool = False) -> str:
             clause for p in parts for clause in norm_clause(p, expand_compatible=expand_compatible)
         )
     )
+
+
+def python_specs_equivalent(want: str, have: str) -> bool:
+    """requires-python compared BY MEANING: uv records the tightest bounds, not the
+    spelling (measured with uv 0.8.17: `>=3.10,>=3.11,<4,<5` -> `>=3.11, <4`,
+    `>3.10,>=3.11` -> `>=3.11`, `>=3.11,==3.12.*` -> `==3.12.*`), while a
+    dependency's specifier it keeps verbatim. Each side becomes the marker
+    `python_full_version <op> '<version>'` per clause and the two go through the
+    marker evaluator's probe grid (Codex P2 on #3763, round 12). A missing side is
+    a difference."""
+    normed = [norm_spec(want, expand_compatible=True), norm_spec(have, expand_compatible=True)]
+    if normed[0] == normed[1]:
+        return True
+    if not normed[0] or not normed[1]:
+        return False
+    markers = []
+    for spec in normed:
+        clauses = []
+        for clause in spec.split(","):
+            match = CLAUSE_RE.match(clause)
+            assert match is not None, clause  # _norm_spec emitted it
+            clauses.append(f"python_full_version {match.group('op')} '{match.group('version')}'")
+        markers.append(tuple(clauses))
+    return markers_equivalent(markers[0], markers[1])
+
+
+def norm_marker(marker: str | None) -> tuple[str, ...]:
+    """The marker's top-level `and` clauses, each `lhs op rhs` with single spaces, sorted;
+    a marker with `or` or parentheses is kept whole (re-spaced) for the semantic compare.
+    Split on TOKENS, not text: `os_name == 'posix and stuff'` is one clause, and uv
+    records that literal verbatim (Codex P2 on #3763, round 8)."""
+    if marker is None or not marker.strip():
+        return ()
+    toks = tokenize_marker(marker)
+    if any(tok == ("word", "or") or tok[0] == "lp" for tok in toks):
+        return (" ".join(text for _kind, text in toks),)
+    clauses: list[list[tuple[str, str]]] = [[]]
+    for tok in toks:
+        if tok == ("word", "and"):
+            clauses.append([])
+        else:
+            clauses[-1].append(tok)
+    out: list[str] = []
+    for clause in clauses:
+        if len(clause) == 4 and clause[1:3] == [("word", "not"), ("word", "in")]:
+            out.append(f"{clause[0][1]} not in {clause[3][1]}")
+        elif len(clause) == 3 and (clause[1][0] == "op" or clause[1] == ("word", "in")):
+            out.append(f"{clause[0][1]} {clause[1][1]} {clause[2][1]}")
+        else:
+            raise Unknown(f"unparseable marker clause in {marker!r}")
+    return tuple(sorted(out))

@@ -459,8 +459,20 @@ def markers_equivalent(spelled: tuple[str, ...], recorded: tuple[str, ...]) -> b
     (both already normalized clause tuples) mean the same thing; an empty tuple is
     the always-true marker uv drops. Ordered: uv's contradiction table (module
     docstring) is applied to the spelled side, as uv applied it to the recorded one."""
-    ast_a = _false_chains(_parse_clauses(spelled))
-    ast_b = _parse_clauses(recorded)
+    return _same_truth(_false_chains(_parse_clauses(spelled)), _parse_clauses(recorded))
+
+
+def spelled_markers_equivalent(one: tuple[str, ...], other: tuple[str, ...]) -> bool:
+    """True when two markers as SPELLED in pyproject.toml mean the same thing to uv,
+    which canonicalizes each before recording (so a requirement repeated under
+    `python_version < '3.12'` and `python_full_version < '3.12'`, or under
+    `platform_system == 'Linux'` and `sys_platform == 'linux'`, is recorded ONCE:
+    measured uv 0.8.17, Codex P2 on #3763, round 26). Symmetric: both sides get the
+    spelled-side rewrites."""
+    return _same_truth(_false_chains(_parse_clauses(one)), _false_chains(_parse_clauses(other)))
+
+
+def _same_truth(ast_a: tuple, ast_b: tuple) -> bool:
     return all(_eval(ast_a, env) == _eval(ast_b, env) for env in _grid(ast_a, ast_b))
 
 

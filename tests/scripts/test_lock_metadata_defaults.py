@@ -81,3 +81,48 @@ def test_a_platform_marker_matches_the_sys_platform_form_uv_records(tmp_path: Pa
     )
     assert code == EXIT_STALE
     assert "os_name == 'nt' and sys_platform == 'android'" in message
+
+
+def test_a_requirement_repeated_under_an_equivalent_marker_is_recorded_once(
+    tmp_path: Path,
+) -> None:
+    """uv canonicalizes markers before deduplicating: `six; python_version < '3.12'`
+    beside `six; python_full_version < '3.12'` is ONE requires-dist entry
+    (`python_full_version < '3.12'`), as is `platform_system == 'Linux'` beside
+    `sys_platform == 'linux'` in either order (measured uv 0.8.17, Codex P2 on #3763,
+    round 26); a fresh lock is clean, and a key-equal dedup read it as stale."""
+    for spelled_pair in (
+        ("numpy>=1.26; python_version < '3.12'", "numpy>=1.26; python_full_version < '3.12'"),
+        ("numpy>=1.26; platform_system == 'Linux'", "numpy>=1.26; sys_platform == 'linux'"),
+        ("numpy>=1.26; sys_platform == 'linux'", "numpy>=1.26; platform_system == 'Linux'"),
+    ):
+        first, second = spelled_pair
+        pyproject = PYPROJECT.replace('"numpy>=1.26",', f'"{first}",\n    "{second}",')
+        assert pyproject != PYPROJECT
+        recorded = "sys_platform == 'linux'"
+        if "python" in first:
+            recorded = "python_full_version < '3.12'"
+        lock = LOCK.replace(
+            '{ name = "numpy", specifier = ">=1.26" }',
+            f'{{ name = "numpy", marker = "{recorded}", specifier = ">=1.26" }}',
+        )
+        assert lock != LOCK
+        code, message = _run(tmp_path, pyproject, lock)
+        assert (code, message) == (EXIT_OK, message), spelled_pair
+        assert "6 requirements" in message
+
+
+def test_an_unmanaged_project_is_unknown_never_clean(tmp_path: Path) -> None:
+    """`[tool.uv] managed = false` makes `uv lock` and `uv lock --check` exit 2 ("The
+    project is marked as unmanaged"), so the lock left behind can never be checked by
+    uv (measured uv 0.8.17, Codex P2 on #3763, round 26): UNKNOWN, never clean.
+    `managed = true` is uv's default and changes nothing; a non-boolean is a file uv
+    rejects, UNKNOWN as every other flag."""
+    code, message = _run(tmp_path, PYPROJECT + "\n[tool.uv]\nmanaged = false\n", LOCK)
+    assert code == EXIT_UNKNOWN
+    assert "unmanaged" in message
+    code, message = _run(tmp_path, PYPROJECT + "\n[tool.uv]\nmanaged = true\n", LOCK)
+    assert code == EXIT_OK, message
+    code, message = _run(tmp_path, PYPROJECT + '\n[tool.uv]\nmanaged = "no"\n', LOCK)
+    assert code == EXIT_UNKNOWN
+    assert "managed" in message and "not a boolean" in message
