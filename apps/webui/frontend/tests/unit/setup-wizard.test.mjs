@@ -318,17 +318,11 @@ test('STANDALONE-08: detection alone leaves source unselected and makes no impor
 	assert.equal(importPosts.length, 0, 'detection alone must not enqueue an import');
 
 	wizard.useSource('rekordbox');
-	assert.equal(wizard.source, 'rekordbox');
-
-	routeFetch({ '/api/v1/setup/import': () => jsonResponse(job(), 202) });
-	await wizard.beginImport();
-	assert.equal(
-		requests.filter(
-			(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
-		).length,
-		1,
-		'import POST only after explicit beginImport'
-	);
+	assert.equal(wizard.source, 'rekordbox', 'the explicit pick is the only way to select it');
+	// The import that follows the explicit pick is NOT driven here: a fabricated
+	// 202 for /api/v1/setup/import would be simulated API success (AGENTS.md,
+	// Codex P1 on #3561). The real endpoint is exercised by the browser test
+	// 'STANDALONE-08: rekordbox detection alone does not opt in or import'.
 });
 
 test('_resetForTests leaves source unselected', () => {
@@ -568,6 +562,19 @@ test('skip persists engine-side rather than in this tab', async () => {
 
 	assert.deepEqual(body, { dismissed: true });
 	assert.equal(wizard.status.should_show_wizard, false);
+});
+
+test('STANDALONE-08: declining clears the source, so every reopen door is neutral', async () => {
+	// Codex P2 on #3561: the incomplete chip's "Run setup" raises the overlay
+	// WITHOUT setupWizard.reopen(), so the reset has to happen on the way out.
+	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: true }) });
+	wizard.useSource('rekordbox');
+
+	await wizard.skip();
+
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.status.dismissed, true);
+	assert.equal(wizard.source, null, 'a declined import must not survive as a selection');
 });
 
 test('reopen re-arms the wizard and returns it to the first step', async () => {

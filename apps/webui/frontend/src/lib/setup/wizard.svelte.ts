@@ -503,6 +503,9 @@ class SetupWizard {
 		this.busy = true;
 		try {
 			this.status = await setDismissed(true);
+			// Declining is final for this run: any door that reopens the overlay
+			// without reopen() must still find a neutral wizard (Codex P2, #3561).
+			this.source = null;
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
