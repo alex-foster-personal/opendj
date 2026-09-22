@@ -342,6 +342,7 @@ export interface PinStatusSummary {
 	blocked: number;
 	fixed: number;
 	merged: number;
+	harvested: number;
 }
 
 /** Count active statuses from the live comment board. Archived pins are moved
@@ -357,7 +358,8 @@ export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSu
 		issued: 0,
 		blocked: 0,
 		fixed: 0,
-		merged: 0
+		merged: 0,
+		harvested: 0
 	};
 	for (const pin of pins) {
 		const status = pinStatus(pin);
@@ -376,7 +378,7 @@ export function describePinStatusSummary(pins: readonly LifecyclePin[]): string 
 	const summary = summarizePinStatuses(pins);
 	return `Active comment pins: ${summary.total} total - ` +
 		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ${summary.blocked} blocked, ` +
-		`${summary.fixed} fixed, ${summary.merged} merged`;
+		`${summary.fixed} fixed, ${summary.merged} merged, ${summary.harvested} harvested`;
 }
 
 export { blockedPinDetail, blockedPinRequest } from './feedback-blocked-note';

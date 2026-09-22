@@ -49,6 +49,19 @@ test("anchorMovedAtPin compares describeAnchor at pixel point", () => {
   assert.equal(same, false);
 });
 
+test("anchorMovedAtPin never fires for a pin without a pixel position", () => {
+  let probed = 0;
+  const moved = board.anchorMovedAtPin(
+    pin({ anchor: "#old", x_pct: undefined, y_pct: undefined }),
+    () => {
+      probed += 1;
+      return { id: "new", tagName: "BUTTON" };
+    }
+  );
+  assert.equal(moved, false);
+  assert.equal(probed, 0);
+});
+
 test("regressed badge when updated_at is after fixed_at", () => {
   const state = board.pinBoardState(
     pin({
