@@ -211,10 +211,14 @@ def create_app() -> FastAPI:
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
-    app.state.hold_next_anlz_stable_id: str | None = None
-    app.state.hold_next_anlz_release: asyncio.Event | None = None
-    app.state.hold_next_track_stable_id: str | None = None
-    app.state.hold_next_track_release: asyncio.Event | None = None
+    # Plain assignments: mypy rejects an annotation on a non-self attribute
+    # ("Type cannot be declared in assignment to non-self attribute"), and the
+    # quality ratchet counts each one. The shapes are str | None and
+    # asyncio.Event | None; see _hold_if_armed and _register_hold_controls.
+    app.state.hold_next_anlz_stable_id = None
+    app.state.hold_next_anlz_release = None
+    app.state.hold_next_track_stable_id = None
+    app.state.hold_next_track_release = None
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
     app.include_router(tracks_router, prefix="/api/v1")
