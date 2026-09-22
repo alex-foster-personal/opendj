@@ -288,6 +288,7 @@
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
+		browseScroll = null,
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
@@ -348,6 +349,10 @@
 		restoreKey: string | number;
 		/** Pane's persisted scroll cursor (PaneStore.scroll_top). */
 		scrollTop: number;
+		/** IOPIN-01 controller/keyboard selection scroll request. A revision
+		 * makes repeated encoder steps observable even if they land on the same
+		 * row at a list boundary. */
+		browseScroll?: { order: number; direction: -1 | 1; revision: number } | null;
 		/** add-remove-reorder-tracks: true when the pane is a real playlist
 		 * (not All Tracks / blank) - shows the per-row remove control. */
 		removable?: boolean;
@@ -756,6 +761,28 @@
 			el.scrollTop = restored;
 			liveScrollTop = restored;
 		}
+	});
+
+	/** Keep controller/keyboard selection in view in a virtual table. Forward
+	 * movement leaves room below the selected row; backward leaves room above.
+	 * Mouse selection intentionally does not reposition the operator's list. */
+	$effect(() => {
+		const request = browseScroll;
+		if (request === null) return;
+		const el = wrapEl;
+		if (el === null) return;
+		const index = rows.findIndex((row) => row.order === request.order);
+		if (index < 0) return;
+		const offset = request.direction > 0 ? viewportHeight * 0.35 : viewportHeight * 0.65;
+		const target = scrollTopForRowIndex({
+			rowIndex: index,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: offset
+		});
+		el.scrollTop = target;
+		liveScrollTop = target;
+		onscrollcursor(target);
 	});
 
 	// ------------------------------------------------- DOM row virtualization
