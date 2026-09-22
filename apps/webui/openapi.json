@@ -4414,6 +4414,39 @@
               }
             ]
           },
+          "fixed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed At"
+          },
+          "fixed_in_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed In Sha"
+          },
+          "harvested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harvested At"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4577,6 +4610,19 @@
               }
             ],
             "title": "Agent Note"
+          },
+          "fixed_in_sha": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 7,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed In Sha"
           },
           "issue_url": {
             "anyOf": [
@@ -26322,6 +26368,24 @@
     "/api/v1/feedback/comments": {
       "get": {
         "operationId": "list_comments_api_v1_feedback_comments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -26332,6 +26396,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Comments",
