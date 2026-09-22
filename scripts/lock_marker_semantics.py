@@ -56,6 +56,13 @@ Mon 22 Sep 2026 (a scratch project locked with each spelling, then the root's
     os_name ~= 'posix'                         -> (marker dropped entirely)
     'posix' ~= os_name                         -> uv panics (exit 101): UNKNOWN here
     '3.11' ~= python_version                   -> >= '3.11' and < '4'
+    os_name == 'x' and os_name != 'x'          -> python_version < '0' (uv's always-false)
+    os_name in 'ab' or os_name == 'a'          -> kept verbatim (`in` is an opaque atom)
+    os_name in 'ab' and os_name == 'c'         -> kept verbatim (not reduced to false)
+    os_name in 'ab' and os_name not in 'ab'    -> python_version < '0' (`not in` negates it)
+    os_name in 'ab' or os_name not in 'ab'     -> (marker dropped: always true)
+    os_name in 'ab' or os_name in 'ab'         -> os_name in 'ab'
+    'a' in os_name or os_name == 'a'           -> kept verbatim (a distinct atom)
 
 So uv's marker algebra is RELEASE-ONLY: every version literal is cut to its
 release segment before the comparison is stored, whatever the operator, which
@@ -90,12 +97,15 @@ oracle only where the two agree.)
 Equivalence itself is a truth-table check: both markers are evaluated over a
 grid of environments built from the literals either side mentions. For the
 boolean structure over `==`/`!=` on strings a value mentioned by neither side
-covers every other assignment; every substring of an `in` literal covers
-membership; and for ORDERED comparisons, on versions and on plain strings
-alike, the literals plus a point strictly between each adjacent pair, one below
-the smallest and one above the largest cover every order interval. Membership
-and ordering on the SAME string variable would need a probe per (interval,
-substring) combination, so that mix is UNKNOWN too.
+covers every other assignment; for ORDERED comparisons, on versions and on
+plain strings alike, the literals plus a point strictly between each adjacent
+pair, one below the smallest and one above the largest cover every order
+interval. An `in` / `not in` clause is an OPAQUE ATOM, exactly as uv treats it
+(the rows above: never related to `==` on the same variable or to the
+literal's substrings, `not in` its negation), so each distinct one is a boolean
+axis of its own. Reading it as substring membership accepted `os_name in 'ab'`
+for the disjunction of its substrings, which uv records as a different marker
+(Codex P2 on #3763, round 23).
 """
 
 from __future__ import annotations
@@ -359,17 +369,15 @@ def _eval(node: tuple, env: dict[str, str]) -> bool:
     if kind == "and":
         return _eval(node[1], env) and _eval(node[2], env)
     _, lhs, op, rhs = node
+    if op in ("in", "not in"):
+        return (env[_atom(lhs, rhs)] == "1") == (op == "in")
     var = lhs if lhs[0] == "word" else rhs if rhs[0] == "word" else None
     left = env[lhs[1]] if lhs[0] == "word" else lhs[1][1:-1]
     right = env[rhs[1]] if rhs[0] == "word" else rhs[1][1:-1]
-    if var is not None and var[1] in _VERSION_VARS and op not in ("in", "not in"):
+    if var is not None and var[1] in _VERSION_VARS:
         # Both sides cut to their release: the literal because uv stores it so,
         # the probe because the grid only holds release versions anyway.
         return _cmp_versions(release_literal(left), op, release_literal(right))
-    if op == "in":
-        return left in right
-    if op == "not in":
-        return left not in right
     if op == "~=":  # erased by _erase_dropped_clauses before evaluation (uv drops it)
         raise Unknown(f"string ~= survived erasure: {lhs!r} {rhs!r}")
     return {
@@ -383,14 +391,19 @@ def _eval(node: tuple, env: dict[str, str]) -> bool:
     }[op]
 
 
+def _atom(lhs: tuple, rhs: tuple) -> str:
+    """The grid axis of an `in` / `not in` clause: one per (side, variable, literal),
+    the literal re-quoted so `"ab"` and `'ab'` are the same atom."""
+    return " in ".join(t[1] if t[0] == "word" else repr(t[1][1:-1]) for t in (lhs, rhs))
+
+
 class _Literals:
-    """Per variable: the literals it is compared with (`values`), the `in` /
-    `not in` right-hand literals (`members`, since `var in 'a,b'` is true for every
-    SUBSTRING of the literal), and whether it is ORDERED (`<`, `<=`, `>`, `>=`)."""
+    """Per variable: the literals it is compared with (`values`) and whether it is
+    ORDERED (`<`, `<=`, `>`, `>=`); plus the `in` / `not in` atoms (`atoms`)."""
 
     def __init__(self) -> None:
         self.values: dict[str, set[str]] = {}
-        self.members: dict[str, set[str]] = {}
+        self.atoms: set[str] = set()
         self.ordered: set[str] = set()
 
     def collect(self, node: tuple) -> None:
@@ -402,15 +415,14 @@ class _Literals:
             self.collect(node[2])
             return
         _, lhs, op, rhs = node
+        if op in ("in", "not in") and {lhs[0], rhs[0]} == {"word", "str"}:
+            if (lhs[1] if lhs[0] == "word" else rhs[1]) in _VERSION_VARS:
+                raise Unknown(f"membership test on a version variable is not compared: {node!r}")
+            self.atoms.add(_atom(lhs, rhs))
+            return
         if lhs[0] == "word" and rhs[0] == "str":
             var, literal = lhs[1], rhs[1][1:-1]
         elif rhs[0] == "word" and lhs[0] == "str":
-            if op in ("in", "not in"):
-                # `'lit' in var` is true for every value CONTAINING the literal; that
-                # class is not enumerable from the literals alone.
-                raise Unknown(
-                    f"membership with the variable on the right is not compared: {node!r}"
-                )
             var, literal = rhs[1], lhs[1][1:-1]
         elif lhs[0] == "word" and rhs[0] == "word":
             # Erased by _erase_dropped_clauses before any grid is built; reaching
@@ -422,14 +434,8 @@ class _Literals:
         if op == "~=" and var in _VERSION_VARS:
             # The range's upper bound is a boundary the literal alone does not name.
             self.values[var].add(_compatible_upper(release_literal(literal)))
-        if op in ("in", "not in"):
-            self.members.setdefault(var, set()).add(literal)
         if op in _ORDER_OPS:
             self.ordered.add(var)
-
-
-def _substrings(text: str) -> set[str]:
-    return {text[i:j] for i in range(len(text)) for j in range(i + 1, len(text) + 1)}
 
 
 def _between(lower: str, upper: str) -> str:
@@ -476,21 +482,16 @@ def _version_probes(literals: set[str]) -> list[str]:
     return sorted(set(probes), key=_version_key)
 
 
-def _string_probes(values: set[str], members: set[str], ordered: bool) -> list[str]:
-    """The literals, a value no literal mentions, every substring of a membership
-    literal, and when the variable is ordered the order intervals too: `''` sits
-    below every string and `lit + NUL` is the immediate successor of `lit`, so it
-    lies strictly inside the interval up to the next literal (or above the last)."""
-    if members and ordered:
-        raise Unknown("membership and ordering on one marker variable are not compared")
+def _string_probes(values: set[str], ordered: bool) -> list[str]:
+    """The literals, a value no literal mentions, and when the variable is ordered
+    the order intervals too: `''` sits below every string and `lit + NUL` is the
+    immediate successor of `lit`, so it lies strictly inside the interval up to the
+    next literal (or above the last)."""
     pool: set[str] = set(values)
-    for member in members:
-        pool |= _substrings(member)
-    # A value no clause mentions: not a literal, not inside a membership literal.
-    # Derived, not fixed, or a marker naming the sentinel itself would read as
-    # matching everything (Codex P2 on #3763, round 12).
+    # A value no clause mentions. Derived, not fixed, or a marker naming the
+    # sentinel itself would read as matching everything (Codex P2 on #3763, round 12).
     unmentioned = "zz-no-literal-mentions-this"
-    while unmentioned in pool or any(unmentioned in member for member in members):
+    while unmentioned in pool:
         unmentioned += "-"
     pool.add(unmentioned)
     if ordered:
@@ -505,18 +506,14 @@ def _grid(ast_a: tuple, ast_b: tuple) -> list[dict[str, str]]:
     python_lits: set[str] = set()
     for var in ("python_version", "python_full_version"):
         python_lits |= lits.values.pop(var, set())
-    for var in lits.members:
-        if var in _VERSION_VARS:
-            raise Unknown(f"membership test on {var} is not compared")
-    axes: list[tuple[str, list[str]]] = []
+    axes: list[tuple[str, list[str]]] = [(atom, ["", "1"]) for atom in sorted(lits.atoms)]
     if python_lits:
         axes.append(("python_full_version", _version_probes(python_lits)))
     for var, values in sorted(lits.values.items()):
         if var in _VERSION_VARS:
             axes.append((var, _version_probes(values) if values else ["0"]))
         else:
-            probes = _string_probes(values, lits.members.get(var, set()), var in lits.ordered)
-            axes.append((var, probes))
+            axes.append((var, _string_probes(values, var in lits.ordered)))
     size = 1
     for _axis, probes_on_axis in axes:
         size *= len(probes_on_axis)

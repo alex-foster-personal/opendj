@@ -16,6 +16,7 @@ from scripts.lock_marker_semantics import (
     _MarkerParser,
     markers_equivalent,
     release_literal,
+    tokenize_marker,
 )
 
 
@@ -28,6 +29,12 @@ def _compares_variables(marker: str) -> bool:
         return node[0] == "cmp" and node[1][0] == "word" and node[3][0] == "word"
 
     return walk(_MarkerParser(marker).parse())
+
+
+def _has_membership(marker: str) -> bool:
+    """Whether any clause is `in` / `not in`: an opaque atom to uv (and to the
+    evaluator), which packaging reads as substring membership, so no oracle."""
+    return ("word", "in") in tokenize_marker(marker)
 
 
 def _orders_a_string(marker: str) -> bool:
@@ -171,7 +178,10 @@ def _as_uv_stores_it(marker: str) -> str:
         ("sys_platform <= 'linux'", "sys_platform < 'linux' or sys_platform == 'linux'", True),
         ("sys_platform < 'win32' or sys_platform >= 'win32'", "", True),
         ("sys_platform < 'win32' or sys_platform > 'win32'", "", False),
-        # Membership is substring membership: 'linux' satisfies `in` but not `==`.
+        # `in` / `not in` is an OPAQUE atom to uv: it never relates the literal's
+        # substrings to `==`, so `os_name in 'ab'` is not the disjunction of its
+        # substrings (Codex P2 on #3763, round 23); `not in` negates the same atom, a
+        # literal on the left is another atom, and the atom is not reduced against `==`.
         ("sys_platform in 'linux,darwin'", "sys_platform == 'linux,darwin'", False),
         (
             "sys_platform in 'linux,darwin'",
@@ -179,6 +189,21 @@ def _as_uv_stores_it(marker: str) -> str:
             False,
         ),
         ("sys_platform not in 'win32'", "sys_platform != 'win32'", False),
+        (
+            "os_name in 'ab'",
+            "os_name == '' or os_name == 'a' or os_name == 'b' or os_name == 'ab'",
+            False,
+        ),
+        ("os_name in 'ab' and os_name not in 'ab'", "python_version < '0'", True),
+        ("os_name in 'ab' or os_name not in 'ab'", "", True),
+        ("os_name in 'ab' or os_name in 'ab'", "os_name in 'ab'", True),
+        ("os_name in 'ab' or os_name == 'a'", "os_name in 'ab'", False),
+        ("os_name in 'ab' and os_name == 'c'", "python_version < '0'", False),
+        ("'a' in os_name or os_name == 'a'", "'a' in os_name", False),
+        ("'a' in os_name", "os_name in 'a'", False),
+        ("os_name in 'ab' and 'ab' in os_name", "'ab' in os_name and os_name in 'ab'", True),
+        ("sys_platform in 'linux' and sys_platform < 'linux'", "sys_platform < 'linux'", False),
+        ("'lin' in sys_platform", "sys_platform == 'linux'", False),
         ("python_full_version >= '3.10'", "python_full_version >= '3.10.dev0'", True),
         ("python_full_version > '3.10'", "python_full_version > '3.10.post1'", True),
     ],
@@ -192,6 +217,8 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
         # evaluates it against the real environment, so it is not an oracle for that
         # rewrite (nor for an empty marker, which it cannot parse). The erasure has its
         # own check()-level test below.
+        return
+    if _has_membership(spelled) or _has_membership(recorded):
         return
     if _orders_a_string(spelled) or _orders_a_string(recorded):
         # packaging 26 evaluates `<`/`>` on strings as always false and `<=`/`>=` as
@@ -265,22 +292,6 @@ def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:
         markers_equivalent(
             ("python_full_version >= '3.11.2+local'",), ("python_full_version >= '3.11.2'",)
         )
-
-
-def test_ordering_mixed_with_membership_is_unknown_not_a_verdict() -> None:
-    """`sys_platform in 'linux' and sys_platform < 'linux'` needs a probe per (interval,
-    substring) pair; the grid does not build those, so it must not render a verdict."""
-    with pytest.raises(Exception, match="membership and ordering"):
-        markers_equivalent(
-            ("sys_platform in 'linux' and sys_platform < 'linux'",), ("sys_platform < 'linux'",)
-        )
-
-
-def test_membership_with_the_variable_on_the_right_is_unknown_not_a_verdict() -> None:
-    """`'lin' in sys_platform` holds for every value CONTAINING the literal, a class the
-    probe grid cannot enumerate; the compare must say so rather than guess either way."""
-    with pytest.raises(Exception, match="variable on the right"):
-        markers_equivalent(("'lin' in sys_platform",), ("sys_platform == 'linux'",))
 
 
 def test_a_one_component_compatible_release_is_unknown_not_a_verdict() -> None:

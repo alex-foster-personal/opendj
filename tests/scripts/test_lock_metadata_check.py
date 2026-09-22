@@ -147,11 +147,13 @@ def test_redundant_requires_python_bounds_match_the_tightest_form_uv_writes(
     assert got == code, (spelled, recorded, message)
 
 
-def test_requires_python_removed_without_uv_lock_is_stale(tmp_path: Path) -> None:
-    """if pyproject.toml drops requires-python and the lock still carries it then 1, not 0"""
+def test_requires_python_removed_without_uv_lock_is_never_clean(tmp_path: Path) -> None:
+    """if pyproject.toml drops requires-python and the lock still carries `>=3.11` then
+    UNKNOWN, never 0: that is also the default uv fills in from a 3.11 interpreter,
+    which this check does not see (tests/scripts/test_lock_metadata_defaults.py)"""
     code, message = _run(tmp_path, PYPROJECT.replace('requires-python = ">=3.11"\n', ""))
-    assert code == EXIT_STALE
-    assert "requires-python: pyproject.toml None, uv.lock '>=3.11'" in message
+    assert code == EXIT_UNKNOWN
+    assert "omits requires-python" in message and "'>=3.11'" in message
 
 
 def test_an_extra_named_with_underscores_matches_its_normalized_marker(tmp_path: Path) -> None:
