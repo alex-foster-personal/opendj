@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -249,14 +249,15 @@ test('the setter works before any node exists and applies on attach', () => {
 
 test('every path to the destination runs through the mute gain and the room delay', () => {
 	const body = engineBlockAfter('function _ensureGraph(): AudioContext {');
+	const topology = readSource('src/lib/rb/audio-output-topology.ts');
 
 	// Internal path: master bus -> mute -> room delay -> speakers.
 	assert.ok(
-		body.includes('_masterMuteGain.connect(_masterDelay)'),
+		topology.includes('masterMuteGain.connect(masterDelay)'),
 		'if the mute gain does not feed the room delay then muting silences nothing'
 	);
 	assert.ok(
-		body.includes('_masterDelay.connect(_ctx.destination)'),
+		topology.includes('masterDelay.connect(context.destination)'),
 		'if the room delay does not feed _ctx.destination then the speakers are dead'
 	);
 	assert.ok(
@@ -270,12 +271,12 @@ test('every path to the destination runs through the mute gain and the room dela
 
 	// External-mixer path (?extroute=): merger -> mute -> room delay -> speakers.
 	assert.ok(
-		body.includes('_externalMerger.connect(_masterMuteGain)'),
+		topology.includes('externalMerger.connect(masterMuteGain)'),
 		'if extroute bypasses the mute gain then ?muted=1 is silently ignored on the ' +
 			'multichannel path and a routed deck plays out loud'
 	);
 	assert.ok(
-		body.includes('_masterDelay.connect(dest)'),
+		topology.includes('masterDelay.connect(dest)'),
 		'if the room delay does not feed the routed destination then extroute is dead'
 	);
 
@@ -289,14 +290,14 @@ test('every path to the destination runs through the mute gain and the room dela
 		'if the merger still reaches the destination directly then the mute is orphaned'
 	);
 	assert.ok(
-		!body.includes('_masterMuteGain.connect(dest)') &&
-			!body.includes('_masterMuteGain.connect(_ctx.destination)'),
+		!topology.includes('masterMuteGain.connect(dest)') &&
+			!topology.includes('masterMuteGain.connect(context.destination)'),
 		'if the mute gain still reaches the destination directly then the room delay is ' +
 			'bypassed and cue alignment is silently ignored on that path'
 	);
 
 	// Anything reaching the room delay directly would route around the mute.
-	const masterDelayFeeders = [...body.matchAll(/(\w+)\.connect\(_masterDelay\)/g)].map(
+	const masterDelayFeeders = [...topology.matchAll(/(\w+)\.connect\(masterDelay\)/g)].map(
 		([, name]) => name
 	);
 	assert.ok(
@@ -306,7 +307,7 @@ test('every path to the destination runs through the mute gain and the room dela
 	for (const name of masterDelayFeeders) {
 		assert.equal(
 			name,
-			'_masterMuteGain',
+			'masterMuteGain',
 			'if anything reaches the room delay without passing the mute gain then ?muted=1 plays out loud'
 		);
 	}

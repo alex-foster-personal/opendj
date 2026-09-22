@@ -90,22 +90,19 @@ test('master setSinkId failure names Chrome and does not silently follow the OS 
 test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps SHOW AUDIO I/O', () => {
 	const source = readFileSync(CLUSTER, 'utf8');
 	assert.match(source, /aria-label="SHOW AUDIO I\/O"/);
-	assert.match(source, />I\/O</);
+	assert.match(source, /title="Audio I\/O quick settings"/);
+	assert.match(source, /showDelayMs=\{100\}/);
+	assert.match(source, /aria-label="Audio I\/O settings"/);
 	assert.match(source, /ControlExplainer/);
 	assert.match(source, /title="MIX"/);
-	assert.match(source, /title="GAIN"/);
-	assert.match(source, /label="GAIN"/);
+	assert.match(source, /title="VOL"/);
+	assert.match(source, /label="VOL"/);
 	assert.doesNotMatch(source, /title="LEVEL"/);
 	assert.doesNotMatch(source, /label="LEVEL"/);
-	assert.match(source, /title="MAIN"/);
-	assert.match(source, /title="SPLIT"/);
+	assert.match(source, /aria-label="Practice output mode"/);
+	assert.match(source, /aria-label="Split cable output mode"/);
 	assert.match(source, /title="HEAD DELAY"/);
-	assert.match(source, /title="Audio I\/O"/);
-	assert.match(source, /title="Output mode"/);
-	assert.match(source, /title="Pinned sinks"/);
-	assert.match(source, /title="SPLIT warning"/);
-	assert.match(source, /title="Two outputs warning"/);
-	assert.match(source, /title="Rescan"/);
+	assert.match(source, /aria-label="Rescan available headphone output devices"/);
 	assert.match(source, /title="MASTER \/ MAIN"/);
 	assert.match(source, /title="HEADPHONE CUE"/);
 	assert.match(source, /title="AUDIO IN"/);
@@ -117,7 +114,6 @@ test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps 
 	assert.match(source, /aria-label="audio input device"/);
 	assert.doesNotMatch(source, /title="Pinned master and cue sinks"/);
 	assert.doesNotMatch(source, /title="Split-cable mode requires/);
-	assert.match(source, /pinOnClick/);
 	assert.match(source, /resetValue=\{0\}/);
 	assert.match(source, /headphoneMixAccent/);
 	assert.match(source, /Press CALIBRATE afterwards/, 'CUEOUT-14: the cue pick explains the modal, not the removed first-select chirp');

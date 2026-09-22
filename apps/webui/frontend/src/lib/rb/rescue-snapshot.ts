@@ -42,6 +42,8 @@ export interface RescueDeckSnapshot {
 		vocal: { muted: boolean; solo: boolean; gain: number };
 		instrumental: { muted: boolean; solo: boolean; gain: number };
 		drums: { muted: boolean; solo: boolean; gain: number };
+		bass?: { muted: boolean; solo: boolean; gain: number };
+		other?: { muted: boolean; solo: boolean; gain: number };
 	};
 	mixer_channel: {
 		trim: number;
@@ -115,7 +117,9 @@ export function buildRescueSnapshot(
 			stems: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
-				drums: { ...deck.stems.controls.drums }
+				drums: { ...deck.stems.controls.drums },
+				...(deck.stems.available_controls.includes('bass') ? { bass: { ...deck.stems.controls.bass } } : {}),
+				...(deck.stems.available_controls.includes('other') ? { other: { ...deck.stems.controls.other } } : {})
 			},
 			mixer_channel: {
 				trim: channel.trim,

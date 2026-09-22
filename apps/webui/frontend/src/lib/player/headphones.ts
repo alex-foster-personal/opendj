@@ -47,6 +47,7 @@ import {
 	type CueAlignEffects,
 	type MicHandle
 } from '$lib/player/cue-align.svelte';
+import { capturedSignalLevel } from '$lib/player/cue-latency';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import {
@@ -150,14 +151,86 @@ export interface HeadphoneNodes {
 	splitRightCueGain: GainNode;
 	splitRightMasterGain: GainNode;
 	splitMerger: ChannelMergerNode;
+	/** Observers only: application-bus level does not prove physical output. */
+	masterSignalAnalyser: AnalyserNode | null;
+	cueSignalAnalyser: AnalyserNode | null;
+	meterSilence: GainNode | null;
 }
 
 let _headphoneNodes: HeadphoneNodes | null = null;
+/** True only while the engine has wired the monitor blend to channels 3/4 of
+ * the same multichannel destination that carries master on 1/2. */
+let _multichannelMonitorActive = false;
 /** The engine AudioContext the master mix is pinned onto via setSinkId. */
 let _outputContext: AudioContext | null = null;
 /** Bumped by every teardown. An operation that started under an older
  * generation refuses to publish rather than resurrect a disposed monitor. */
 let _headphoneGeneration = 0;
+let _signalMeterFrame: number | null = null;
+
+function _clearSignal(name: 'master' | 'cue' | 'input', state: 'inactive' | 'unavailable'): void {
+	const signal = mixerState.headphones.signals[name];
+	signal.state = state;
+	signal.rms = null;
+	signal.peak = null;
+	signal.measured_at = null;
+}
+
+function _publishSignal(name: 'master' | 'cue' | 'input', samples: Float32Array): void {
+	const signal = mixerState.headphones.signals[name];
+	const level = capturedSignalLevel(samples);
+	signal.state = 'measured';
+	signal.rms = level.rms;
+	signal.peak = level.peak;
+	signal.measured_at = new Date().toISOString();
+}
+
+function _stopSignalMeters(): void {
+	if (_signalMeterFrame !== null && typeof cancelAnimationFrame === 'function') {
+		cancelAnimationFrame(_signalMeterFrame);
+	}
+	_signalMeterFrame = null;
+	_clearSignal('master', 'unavailable');
+	_clearSignal('cue', 'unavailable');
+	_clearSignal('input', 'inactive');
+}
+
+/** Sample actual AnalyserNode buffers only while the browser provides an
+ * animation clock.  There is deliberately no timer-made level estimate. */
+function _startSignalMeters(nodes: HeadphoneNodes): void {
+	_stopSignalMeters();
+	if (
+		nodes.masterSignalAnalyser === null ||
+		nodes.cueSignalAnalyser === null ||
+		typeof requestAnimationFrame !== 'function'
+	) {
+		return;
+	}
+	const master = new Float32Array(nodes.masterSignalAnalyser.fftSize);
+	const cue = new Float32Array(nodes.cueSignalAnalyser.fftSize);
+	let lastContextTime = -Infinity;
+	const sample = () => {
+		if (_headphoneNodes !== nodes) return;
+		const contextTime = nodes.level.context.currentTime;
+		if (
+			nodes.level.context.state !== 'running' ||
+			!Number.isFinite(contextTime) ||
+			contextTime <= lastContextTime
+		) {
+			_clearSignal('master', 'inactive');
+			_clearSignal('cue', 'inactive');
+			_signalMeterFrame = requestAnimationFrame(sample);
+			return;
+		}
+		lastContextTime = contextTime;
+		nodes.masterSignalAnalyser?.getFloatTimeDomainData(master);
+		nodes.cueSignalAnalyser?.getFloatTimeDomainData(cue);
+		_publishSignal('master', master);
+		_publishSignal('cue', cue);
+		_signalMeterFrame = requestAnimationFrame(sample);
+	};
+	_signalMeterFrame = requestAnimationFrame(sample);
+}
 
 /** Unit-interval guard for the mix knob. Deliberately a private leaf here
  * rather than an import: the engine's copy guards trim/EQ/fader/master, and
@@ -325,7 +398,8 @@ export function applyHeadphoneMix(): void {
 	const level = mixerState.headphones.level;
 	const gains = headphoneMixGains(mix);
 	const monitorLive =
-		mixerState.headphones.output_mode === 'two_outputs' && mixerState.headphones.active;
+		_multichannelMonitorActive ||
+		(mixerState.headphones.output_mode === 'two_outputs' && mixerState.headphones.active);
 	_setMonitorParam(nodes, nodes.cueMix.gain, monitorLive ? gains.cue : 0);
 	_setMonitorParam(nodes, nodes.masterMix.gain, monitorLive ? gains.master : 0);
 	_setMonitorParam(nodes, nodes.level.gain, monitorLive ? level : 0);
@@ -820,6 +894,13 @@ export function setHeadphoneOutputMode(mode: unknown): void {
 	applyHeadphoneMix();
 }
 
+/** Activate the same CUE/MASTER/LEVEL monitor blend for a discrete 3/4 output
+ * pair. Wiring stays in the engine; this function only makes its gains live. */
+export function setMultichannelMonitorActive(active: boolean): void {
+	_multichannelMonitorActive = active;
+	applyHeadphoneMix();
+}
+
 /** Insert the practice equal-power pair between master and mute so cue and
  * master share one destination clock. Does not create a second sink. */
 export function wirePracticeBlendIntoMasterPath(
@@ -858,9 +939,52 @@ export function wireSplitCableIntoMasterPath(
 	nodes.splitMerger.connect(muteGain);
 }
 
+const HEADPHONE_DIAGNOSTIC_WINDOW_MS = 60_000;
+let _lastHeadphoneDiagnosticAt = -Infinity;
+
+function _safeErrorClass(error: unknown): string {
+	const candidate = error instanceof Error ? error.name : typeof error;
+	return /^[A-Za-z0-9_.-]{1,64}$/.test(candidate) ? candidate : 'unknown';
+}
+
+/** One bounded, privacy-safe record for repeated audio-route failures.  Keep
+ * device ids, browser messages and media paths out: those may be present in a
+ * DOMException and are not needed to diagnose topology. */
+function _recordHeadphoneDiagnostic(operation: string, error: unknown): void {
+	const now = Date.now();
+	if (now - _lastHeadphoneDiagnosticAt < HEADPHONE_DIAGNOSTIC_WINDOW_MS) return;
+	_lastHeadphoneDiagnosticAt = now;
+	const hp = mixerState.headphones;
+	const fmt = (value: number | null) => (value === null ? 'na' : value.toFixed(3));
+	recordPerfEvent(
+		'headphone-diagnostic',
+		[
+			`operation=${operation.replace(/[^A-Za-z0-9_.-]/g, '_')}`,
+			`error_class=${_safeErrorClass(error)}`,
+			`mode=${hp.output_mode}`,
+			`supported=${hp.supported}`,
+			`cue_active=${hp.active}`,
+			`master_route=${hp.routes.master.state}`,
+			`cue_route=${hp.routes.cue.state}`,
+			`master_rms=${fmt(hp.signals.master.rms)}`,
+			`cue_rms=${fmt(hp.signals.cue.rms)}`,
+			`input_rms=${fmt(hp.signals.input.rms)}`
+		].join(' '),
+		null,
+		'error'
+	);
+}
+
+/** Calibration/session code uses this for failures that occur above a device
+ * operation. It retains the same rate, privacy and deferred Sentry policy. */
+export function recordHeadphoneFailureDiagnostic(operation: string, error: unknown): void {
+	_recordHeadphoneDiagnostic(operation, error);
+}
+
 function _headphoneError(operation: string, error: unknown): Error {
 	const message = error instanceof Error ? error.message : String(error);
 	mixerState.headphones.error = `${operation}: ${message}`;
+	_recordHeadphoneDiagnostic(operation, error);
 	return new Error(mixerState.headphones.error, { cause: error });
 }
 
@@ -987,6 +1111,7 @@ function _clearHeadphoneSelection(): void {
 	_stopHeadphoneLiveness();
 	mixerState.headphones.selected_output_device_id = null;
 	mixerState.headphones.active = false;
+	mixerState.headphones.routes.cue = { state: 'default', selected: false };
 	_cueClearedByOperator = true;
 }
 
@@ -1014,6 +1139,10 @@ async function _unlockHeadphoneOutputLabels(mediaDevices: MediaDevices): Promise
 
 function _requireMasterSinkApi(context: AudioContext): AudioContext & { setSinkId: (sinkId: string) => Promise<void> } {
 	if (!audioContextSinkIdIsSupported(context)) {
+		mixerState.headphones.routes.master = {
+			state: 'unsupported',
+			selected: mixerState.headphones.selected_master_output_device_id !== null
+		};
 		throw new Error(
 			'AudioContext.setSinkId is unavailable; master follows the OS default. Use Chrome for two-device cue.'
 		);
@@ -1025,6 +1154,7 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
 	const ctx = _requireMasterSinkApi(context);
 	await withHeadphoneOperationTimeout('master setSinkId', ctx.setSinkId(deviceId));
 	_outputContext = context;
+	mixerState.headphones.routes.master = { state: 'selected', selected: true };
 }
 
 async function _reapplyPinnedSinks(
@@ -1084,6 +1214,11 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const splitRightCueGain = context.createGain();
 	const splitRightMasterGain = context.createGain();
 	const splitMerger = context.createChannelMerger(2);
+	const canMeasureBuses = typeof context.createAnalyser === 'function';
+	const masterSignalAnalyser = canMeasureBuses ? context.createAnalyser() : null;
+	const cueSignalAnalyser = canMeasureBuses ? context.createAnalyser() : null;
+	const meterSilence = canMeasureBuses ? context.createGain() : null;
+	if (meterSilence !== null) meterSilence.gain.value = 0;
 	masterLeftHalf.gain.value = 0.5;
 	masterRightHalf.gain.value = 0.5;
 	cueLeftHalf.gain.value = 0.5;
@@ -1100,6 +1235,16 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	masterMix.connect(level);
 	level.connect(delay);
 	delay.connect(destination);
+	// Keep analyser taps in the pulled graph through a silent sink.  They
+	// observe the app buses and add no audible path or physical-output claim.
+	if (masterSignalAnalyser !== null && cueSignalAnalyser !== null && meterSilence !== null) {
+		masterMonitor.connect(masterSignalAnalyser);
+		// HEADPHONE CUE follows MIX/LEVEL, not an upstream pre-volume branch.
+		level.connect(cueSignalAnalyser);
+		masterSignalAnalyser.connect(meterSilence);
+		cueSignalAnalyser.connect(meterSilence);
+		meterSilence.connect(context.destination);
+	}
 	_headphoneNodes = {
 		cueSum,
 		masterMonitor,
@@ -1122,9 +1267,13 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		splitLeftGain,
 		splitRightCueGain,
 		splitRightMasterGain,
-		splitMerger
+		splitMerger,
+		masterSignalAnalyser,
+		cueSignalAnalyser,
+		meterSilence
 	};
 	applyHeadphoneMix();
+	_startSignalMeters(_headphoneNodes);
 	return _headphoneNodes;
 }
 
@@ -1158,6 +1307,7 @@ function _detachHeadphoneElement(element: HTMLAudioElement): void {
 
 function _disposeHeadphoneGraph(): void {
 	_stopHeadphoneLiveness();
+	_stopSignalMeters();
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
 	_outputContext = null;
@@ -1183,7 +1333,10 @@ function _disposeHeadphoneGraph(): void {
 		nodes.splitLeftGain,
 		nodes.splitRightCueGain,
 		nodes.splitRightMasterGain,
-		nodes.splitMerger
+		nodes.splitMerger,
+		...(nodes.masterSignalAnalyser === null ? [] : [nodes.masterSignalAnalyser]),
+		...(nodes.cueSignalAnalyser === null ? [] : [nodes.cueSignalAnalyser]),
+		...(nodes.meterSilence === null ? [] : [nodes.meterSilence])
 	]) {
 		node.disconnect();
 	}
@@ -1198,6 +1351,7 @@ export function disposeHeadphoneMonitor(): void {
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
 	_masterDelayNode = null;
+	_multichannelMonitorActive = false;
 	_unwatchHeadphoneDeviceChanges();
 	_disposeHeadphoneGraph();
 }
@@ -1426,6 +1580,7 @@ async function _recordChirpCapture(
 			signal.addEventListener('abort', onAbort, { once: true });
 			processor.onaudioprocess = (event: AudioProcessingEvent) => {
 				const input = event.inputBuffer.getChannelData(0);
+				_publishSignal('input', input);
 				const n = Math.min(input.length, frames - offset);
 				out.set(input.subarray(0, n), offset);
 				offset += n;
@@ -1442,6 +1597,7 @@ async function _recordChirpCapture(
 		silent.disconnect();
 		return out;
 	} finally {
+		_clearSignal('input', 'inactive');
 		await ctx.close();
 	}
 }
@@ -1473,6 +1629,13 @@ export function cueAlignAudioEffects(): Pick<
 	}
 	if (ctx === null || nodes === null || cueId === null) {
 		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
+	}
+	const selectedMaster = mixerState.headphones.selected_master_output_device_id;
+	const masterRoute = mixerState.headphones.routes.master;
+	if (selectedMaster !== null && masterRoute.state !== 'selected') {
+		throw new Error(
+			`cue alignment cannot measure the selected MASTER route: route capability is ${masterRoute.state}. Clear MAIN to use the OS default, or select a supported MAIN route.`
+		);
 	}
 	return {
 		sampleRate: () => ctx.sampleRate,
@@ -1580,6 +1743,7 @@ export async function selectHeadphoneOutput(
 		nodes.element = nextElement;
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.active = true;
+		mixerState.headphones.routes.cue = { state: 'selected', selected: true };
 		mixerState.headphones.output_mode = 'two_outputs';
 		_rememberedCueId = deviceId;
 		_cueClearedByOperator = false;
@@ -1593,6 +1757,7 @@ export async function selectHeadphoneOutput(
 		mixerState.headphones.selected_output_device_id = previousId;
 		mixerState.headphones.active = previousActive;
 		mixerState.headphones.output_mode = previousMode;
+		mixerState.headphones.routes.cue = { state: 'failed', selected: previousId !== null };
 		_assertCurrentHeadphoneOperation(generation, nodes);
 		throw _headphoneError('headphone output selection failed', error);
 	}
@@ -1620,6 +1785,9 @@ export async function selectMasterOutput(
 		mixerState.headphones.error = null;
 	} catch (error) {
 		mixerState.headphones.selected_master_output_device_id = previousId;
+		if (mixerState.headphones.routes.master.state !== 'unsupported') {
+			mixerState.headphones.routes.master = { state: 'failed', selected: previousId !== null };
+		}
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('master output selection failed', error);
 	}

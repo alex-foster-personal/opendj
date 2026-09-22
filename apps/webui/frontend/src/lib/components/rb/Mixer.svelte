@@ -19,14 +19,13 @@
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from '$lib/rb/mixer-types';
-	import { cueAlignModal, openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
+	import { openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
-	import CueAlignModal from './mixer/CueAlignModal.svelte';
 
 	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
 	 * 4 entries, MORE or LESS - pin 862cd3's LESS mode collapses strips 3/4
@@ -231,6 +230,7 @@
 				oninput={selectAudioInput}
 				onmode={handleHeadphoneOutputMode}
 				oncalibrate={openCueAlignModal}
+				onAlignmentMode={handleAlignmentMode}
 			/>
 		</div>
 		<div class="xfade-row">
@@ -240,10 +240,6 @@
 		</div>
 	</div>
 </section>
-
-{#if cueAlignModal.open}
-	<CueAlignModal headphones={mixerState.headphones} onmode={handleAlignmentMode} />
-{/if}
 
 <style>
 	.rb-mixer {

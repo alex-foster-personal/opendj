@@ -128,13 +128,13 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 257024: the inherited 256000 plus the one reviewed KiB', () => {
+test('the library limit preserves the documented Mixtour 258048 ceiling', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 257024,/,
+    /\{ name: 'library', limit: 258048,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');

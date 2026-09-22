@@ -22,7 +22,9 @@ export const STEM_DIAL_SLOTS: Record<EqDial, StemControl> = {
 export const STEM_DIAL_LABELS: Record<StemControl, string> = {
 	vocal: 'VOCAL',
 	instrumental: 'INST',
-	drums: 'DRUMS'
+	drums: 'DRUMS',
+	bass: 'BASS',
+	other: 'HARM'
 };
 
 export function stemDialAssignment(available: readonly StemControl[]): StemDialAssignment {

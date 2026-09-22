@@ -35,6 +35,9 @@ export type SilenceVerdict = 'ok' | 'silent-while-playing' | 'output-stalled-whi
 export interface SilenceSample {
 	playing: boolean;
 	audible?: boolean;
+	/** A separate monitor path is intentionally carrying the live deck while
+	 * the room/master bus is silent. This is normal DJ cueing, not a dropout. */
+	masterOutputIntentionallySilent?: boolean;
 	masterRms: number;
 	tMs: number;
 }
@@ -59,8 +62,8 @@ export function foldSilenceSample(
 	state: Readonly<SilenceState> = EMPTY,
 	sample: SilenceSample
 ): SilenceState {
-	const { playing, masterRms, tMs, audible } = sample;
-	const claimedLive = playing || audible === true;
+	const { playing, masterRms, tMs, audible, masterOutputIntentionallySilent } = sample;
+	const claimedLive = (playing || audible === true) && masterOutputIntentionallySilent !== true;
 	// A broken meter must not read as silence: it would raise a dropout alarm
 	// through perfectly good audio, which is worse than having no watchdog.
 	if (!Number.isFinite(masterRms) || masterRms < 0) {

@@ -47,6 +47,7 @@
 		columnExplainer,
 		type TrackEditModalKind
 	} from './track-table-support';
+	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import {
 		previewCue,
@@ -216,6 +217,10 @@
 		return classifyBpmHeat(bpm, masterBpm);
 	}
 
+	function bpmCellCompatibility(bpm: number | null) {
+		return classifyBpmCompatibility(bpm, masterBpm);
+	}
+
 	function bpmCellStyle(bpm: number | null): string | undefined {
 		const heat = bpmCellHeat(bpm);
 		return heat === null ? undefined : `color:${heat.color}`;
@@ -283,6 +288,7 @@
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
+		browseScroll = null,
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
@@ -343,6 +349,10 @@
 		restoreKey: string | number;
 		/** Pane's persisted scroll cursor (PaneStore.scroll_top). */
 		scrollTop: number;
+		/** IOPIN-01 controller/keyboard selection scroll request. A revision
+		 * makes repeated encoder steps observable even if they land on the same
+		 * row at a list boundary. */
+		browseScroll?: { order: number; direction: -1 | 1; revision: number } | null;
 		/** add-remove-reorder-tracks: true when the pane is a real playlist
 		 * (not All Tracks / blank) - shows the per-row remove control. */
 		removable?: boolean;
@@ -751,6 +761,28 @@
 			el.scrollTop = restored;
 			liveScrollTop = restored;
 		}
+	});
+
+	/** Keep controller/keyboard selection in view in a virtual table. Forward
+	 * movement leaves room below the selected row; backward leaves room above.
+	 * Mouse selection intentionally does not reposition the operator's list. */
+	$effect(() => {
+		const request = browseScroll;
+		if (request === null) return;
+		const el = wrapEl;
+		if (el === null) return;
+		const index = rows.findIndex((row) => row.order === request.order);
+		if (index < 0) return;
+		const offset = request.direction > 0 ? viewportHeight * 0.35 : viewportHeight * 0.65;
+		const target = scrollTopForRowIndex({
+			rowIndex: index,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: offset
+		});
+		el.scrollTop = target;
+		liveScrollTop = target;
+		onscrollcursor(target);
 	});
 
 	// ------------------------------------------------- DOM row virtualization
@@ -1453,7 +1485,8 @@
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
-						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-mix-compatible={keyCompat(row.key) &&
+							bpmCellCompatibility(row.bpm)?.compatible === true}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
@@ -1736,7 +1769,10 @@
 							class="c-bpm"
 							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
-							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
+							class:bpm-compatible={bpmCellCompatibility(row.bpm)?.compatible === true}
+							class:bpm-warn={bpmCellCompatibility(row.bpm)?.severity === 'warn'}
+							class:bpm-danger={bpmCellCompatibility(row.bpm)?.severity === 'danger'}
+							class:bpm-critical={bpmCellCompatibility(row.bpm)?.severity === 'critical'}
 							style={bpmCellStyle(row.bpm)}
 							title={`${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`}
 						>{_fmtBpm(row.bpm)}</td>
@@ -2285,13 +2321,14 @@
 			background: color-mix(in srgb, rgba(255, 255, 255, 0.14) 100%, transparent);
 		}
 	}
-	/* Camelot-compatible / suggested-next: faint green (go / mixable). */
-	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
+	/* IOPIN-11: a row is green only when both Camelot key and closest
+	 * raw/half/double BPM relationship are compatible. */
+	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
 			.rb-row-spotify-pending
 		) {
 		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
 	}
-	tbody tr.rb-row-key-compat:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+	tbody tr.rb-row-mix-compatible:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		):not(.rb-row-spotify-pending) {
 		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
@@ -2464,7 +2501,9 @@
 	.key-status {
 		opacity: 0.85;
 	}
-	/* Sweet BPM: green wash only (no border). Half = purple wash. */
+	/* Existing heat washes remain secondary. IOPIN-11's border is the
+	 * actionable master-relative verdict and uses the nearest raw/half/double
+	 * relationship from bpm-heat.ts. */
 	.c-bpm.bpm-sweet {
 		border-radius: 2px;
 		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
@@ -2473,9 +2512,10 @@
 		border-radius: 2px;
 		background: color-mix(in srgb, #a855f7 12%, transparent);
 	}
-	.c-bpm.bpm-far {
-		border-radius: 2px;
-	}
+	.c-bpm.bpm-compatible { box-shadow: inset 0 0 0 1px var(--rb-green); }
+	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px #d45a4f; }
+	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px #e14238; }
+	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px #ff2f25; }
 	.c-cloud {
 		text-align: center;
 		color: var(--rb-text-dim);

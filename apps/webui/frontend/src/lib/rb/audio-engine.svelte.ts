@@ -85,6 +85,7 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
+import { cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
@@ -199,7 +200,7 @@ import {
 	decodeStemBuffers,
 	DEMUCS_PARTS,
 	loadingStemDeckState,
-	readyStemDeckState,
+	readyStemDeckState, playingStemsIntentionallySilent,
 	STEM_CONTROLS,
 	unavailableStemDeckState,
 	type StemBuffers
@@ -255,6 +256,7 @@ import {
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	setMasterDelayMs as setMonitorMasterDelay,
+	setMultichannelMonitorActive,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
@@ -281,6 +283,7 @@ import {
 	quantizedPositionMs,
 	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
+	resolvedLoopState,
 	shiftLiveBeatLoopRangeMs,
 	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
@@ -555,6 +558,8 @@ let _masterMuteGain: GainNode | null = null;
  * owns its delayTime; the engine only wires it. */
 let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
+let _djOutputNodes: AudioNode[] = [];
+let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
@@ -697,7 +702,13 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 		disarmInstrumentation: () => disarmContextInstrumentation(),
 		muteNode: () => _masterMuteGain,
 		disposeResources: ({ processors, nodes }) =>
-			disposeAudioResources({ rafId: _rafId, processors, nodes, masterGain: _masterGain, context: _ctx }),
+			disposeAudioResources({
+				rafId: _rafId,
+				processors,
+				nodes: [...nodes, ..._djOutputNodes],
+				masterGain: _masterGain,
+				context: _ctx
+			}),
 		resetGraphState: () => {
 			disposeHeadphoneMonitor();
 			_rafId = null;
@@ -707,6 +718,8 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			_masterMuteGain = null;
 			_masterDelay = null;
 			_externalMerger = _externalRouteAnalyser = null;
+			_djOutputNodes = [];
+			_djOutputProfileActive = null;
 			_ctx = null;
 			resetMasterSilenceWatch();
 			resetPresentationClockStall();
@@ -787,42 +800,23 @@ function _ensureGraph(): AudioContext {
 	// identically. See player/master-mute.svelte.ts.
 	_masterMuteGain = _ctx.createGain();
 	attachMasterMuteNode(_masterMuteGain);
-	// CUEOUT-14: the room delay is the ONLY node after the mute. Everything the
-	// operator hears in the phones was tapped upstream at _masterGain.
 	_masterDelay = createMasterDelayNode(_ctx);
 	const routing = parseExternalRouting();
-	if (routing === null) {
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(_ctx.destination);
-	} else {
-		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
-		const dest = _ctx.destination;
-		if (dest.maxChannelCount < highestUsbChannel) {
-			throw new Error(
-				`extroute needs ${highestUsbChannel} output channels but the current output device exposes ` +
-					`${dest.maxChannelCount} - select the multichannel interface as the system output device and reload`
-			);
-		}
-		dest.channelCount = dest.maxChannelCount;
-		dest.channelInterpretation = 'discrete';
-		// The mute node inherits the discrete multichannel contract, otherwise
-		// the default speakers interpretation would downmix the per-deck USB
-		// pairs on their way through it.
-		_masterMuteGain.channelCount = dest.channelCount;
-		_masterMuteGain.channelCountMode = 'explicit';
-		_masterMuteGain.channelInterpretation = 'discrete';
-		_masterDelay.channelCount = dest.channelCount;
-		_masterDelay.channelCountMode = 'explicit';
-		_masterDelay.channelInterpretation = 'discrete';
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(dest);
-		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
-		_externalMerger.channelInterpretation = 'discrete';
-		_externalMerger.connect(_masterMuteGain);
-		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
-	}
+	_djOutputProfileActive = parseDjOutputProfile(window.location.search);
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	if (routing === null) {
+	const output = wireAudioOutputTopology({
+		context: _ctx,
+		routing,
+		profile: _djOutputProfileActive,
+		masterGain: _masterGain,
+		masterMuteGain: _masterMuteGain,
+		masterDelay: _masterDelay,
+		headphoneDelay: headphones.delay
+	});
+	_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
+	_djOutputNodes = output.ownedNodes;
+	setMultichannelMonitorActive(output.multichannelMonitorActive);
+	if (routing === null && _djOutputProfileActive === null) {
 		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 	}
@@ -2005,7 +1999,8 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
+		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
 		if (anyTransport) noteAudioPresentationTick();
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -2973,6 +2968,7 @@ class RbAudioEngine implements AudioEngine {
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
+		nodes.push(..._djOutputNodes);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -2990,6 +2986,8 @@ class RbAudioEngine implements AudioEngine {
 		_masterMuteGain = null;
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
+		_djOutputNodes = [];
+		_djOutputProfileActive = null;
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';
@@ -3655,6 +3653,14 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {
+		await this._setLoop(deck, loop, null);
+	}
+
+	/** Beat-loop callers already resolved endpoints from PQTZ. Do not re-snap
+	 * those to the manual loop grid: that would collapse fractional loops. */
+	private async _setLoop(
+		deck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null
+	): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setLoop');
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
@@ -3680,16 +3686,11 @@ class RbAudioEngine implements AudioEngine {
 			}
 			return;
 		}
-		const durMs = _durationSec(deck) * 1000;
-		// Same rule as the rest of transport: quantize with a grid, exact
-		// endpoints without one. A manual in/out loop is not grid-dependent.
 		const loopBeats = _quantizeGrid(st);
-		const snapped =
-			loopBeats !== null
-				? quantizedLoopEndpointsMs(loopBeats, loop, true, _quantizeGridBeats(st))
-				: quantizedLoopEndpointsMs([], loop, false);
-		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
-		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
+		const nextLoop = resolvedLoopState(
+			loop, beatLength, _durationSec(deck) * 1000, loopBeats,
+			loopBeats !== null && beatLength === null ? _quantizeGridBeats(st) : null
+		);
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;
@@ -3768,13 +3769,9 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		const previousLoop = st.loop === null ? null : { ...st.loop };
-		await this.setLoop(deck, range);
-		if (st.loop !== null) st.loop.beat_length = beats;
+		await this._setLoop(deck, range, beats);
 		const pending = _rt[deck].pending;
 		const pendingLoop = pending[pending.length - 1]?.loop;
-		if (pendingLoop !== null && pendingLoop !== undefined) {
-			pendingLoop.beat_length = beats;
-		}
 		const nextLoop = pendingLoop ?? st.loop;
 		if (previousLoop !== null && nextLoop !== null) {
 			st.safety_loop = replaceMatchingSafetyLoopSnapshot(st.safety_loop, previousLoop, nextLoop);
@@ -4166,9 +4163,9 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx !== null) logMixerApply('stem-mute-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive });
 		if (_ctx !== null) logMixerApply('stem-solo-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 

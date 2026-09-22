@@ -3,8 +3,8 @@
 	// big beat-length readout, < > halve/double. Real behaviour via the
 	// audio engine: clicking the readout engages/disengages an exact PQTZ
 	// beat loop at the current position; halve/double resize it in place.
-	// Requires a loaded track with a real beatgrid. Sub-beat loops remain
-	// unimplemented until the engine has honest PQTZ interpolation.
+	// Requires a loaded track with a real beatgrid. The engine also supports
+	// interpolated sub-beat loops; this selector offers whole-beat lengths.
 	//
 	// A very small toggle above the cluster swaps the single big readout for
 	// a 4-choice interval grid (< > on top, then a 2x2 of beat lengths).

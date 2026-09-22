@@ -162,6 +162,11 @@ import {
 	previewCueSeek,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
+import {
+	midiTakeoverUi,
+	setMidiTakeoverMode
+} from '$lib/rb/midi/takeover-state.svelte';
+import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -203,8 +208,10 @@ export type PerformanceCommand =
 	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
-	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
-	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
+	/** Optional load condition is checked inside the queue, not at input time.
+	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
+	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
+	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
@@ -222,7 +229,7 @@ export type PerformanceCommand =
 	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
-	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
@@ -241,6 +248,8 @@ export type PerformanceCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
+	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
+	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -392,6 +401,7 @@ export interface PerformanceState {
 		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 		selected_row: string | null;
 	};
+	midi_takeover: { mode: MidiTakeoverMode };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -953,8 +963,8 @@ function _generation(value: unknown): number {
 }
 
 function _stem(value: unknown): StemControl {
-	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
-		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums' && value !== 'bass' && value !== 'other') {
+		throw new TypeError(`unknown stem control: ${String(value)}`);
 	}
 	return value;
 }
@@ -1046,6 +1056,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('playlist_id must be a non-empty string');
 		}
 		return { type, playlist_id: record.playlist_id };
+	}
+	if (type === 'midi_takeover_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'pickup' && record.mode !== 'jump') {
+			throw new TypeError(`midi takeover mode must be pickup or jump; got ${String(record.mode)}`);
+		}
+		return { type, mode: record.mode };
 	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
@@ -1258,25 +1275,28 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 		return { type, deck, position_ms };
 	} else if (type === 'loop') {
-		_exactKeys(record, ['type', 'deck', 'loop']);
-		if (record.loop === null) return { type, deck, loop: null };
+		_exactKeys(record, ['type', 'deck', 'loop', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
+		if (record.loop === null) return { type, deck, loop: null, ...condition };
 		const loop = _record(record.loop);
 		_exactKeys(loop, ['in_ms', 'out_ms']);
 		return {
 			type,
 			deck,
+			...condition,
 			loop: { in_ms: _finite('loop.in_ms', loop.in_ms), out_ms: _finite('loop.out_ms', loop.out_ms) }
 		};
 	} else if (type === 'beat_loop') {
-		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms']);
+		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
 		const beats = _finite('beats', record.beats);
-		if (!Number.isInteger(beats) || beats <= 0) {
-			throw new RangeError(`beats must be a positive integer; got ${beats}`);
+		if (beats <= 0) {
+			throw new RangeError(`beats must be positive; got ${beats}`);
 		}
-		if (record.start_ms === undefined) return { type, deck, beats };
+		if (record.start_ms === undefined) return { type, deck, beats, ...condition };
 		const start_ms = _finite('start_ms', record.start_ms);
 		if (start_ms < 0) throw new RangeError('start_ms must be >= 0');
-		return { type, deck, beats, start_ms };
+		return { type, deck, beats, start_ms, ...condition };
 	} else if (type === 'beat_jump') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		const beats = _finite('beats', record.beats);
@@ -1316,8 +1336,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
 	} else if (type === 'stem_solo') {
-		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
-		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+		_exactKeys(record, ['type', 'deck', 'stem', 'solo', 'exclusive']);
+		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo),
+			...(record.exclusive === undefined ? {} : { exclusive: _boolean('exclusive', record.exclusive) }) };
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -1560,7 +1581,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			controls: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
-				drums: { ...deck.stems.controls.drums }
+				drums: { ...deck.stems.controls.drums },
+				bass: { ...deck.stems.controls.bass },
+				other: { ...deck.stems.controls.other }
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
@@ -1600,6 +1623,7 @@ export function queryPerformanceState(): PerformanceState {
 	const previewStats = previewCacheStats();
 	return {
 		version: 1,
+		midi_takeover: { mode: midiTakeoverUi.mode },
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
 		master_reason: getMasterReason(),
@@ -1623,6 +1647,23 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
+				calibration: {
+					...mixerState.headphones.calibration,
+					diagnostics: {
+						...mixerState.headphones.calibration.diagnostics,
+						master_measurements_ms: [...mixerState.headphones.calibration.diagnostics.master_measurements_ms],
+						cue_measurements_ms: [...mixerState.headphones.calibration.diagnostics.cue_measurements_ms]
+					}
+				},
+				signals: {
+					master: { ...mixerState.headphones.signals.master },
+					cue: { ...mixerState.headphones.signals.cue },
+					input: { ...mixerState.headphones.signals.input }
+				},
+				routes: {
+					master: { ...mixerState.headphones.routes.master },
+					cue: { ...mixerState.headphones.routes.cue }
+				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
 				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
 			},
@@ -1762,6 +1803,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_volume' ||
 		command.type === 'master_mute' ||
 		command.type === 'browser_select_playlist' ||
+		command.type === 'midi_takeover_mode' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		command.type === 'head_delay_ms' ||
@@ -1840,6 +1882,11 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// A device release can wait behind a load of the very same track ID. The
+	// load generation, checked under the deck queue claim, owns the gesture.
+	if ((command.type === 'loop' || command.type === 'beat_loop') &&
+		command.if_load_generation !== undefined &&
+		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -1958,7 +2005,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'stem_mute') {
 		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
 	} else if (command.type === 'stem_solo') {
-		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms);
+		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_gain') {
@@ -2205,6 +2252,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		await engine.rescueStopAllTogether(decks);
 		_rescueRestoredDecks = [];
+	} else if (command.type === 'midi_takeover_mode') {
+		setMidiTakeoverMode(command.mode);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

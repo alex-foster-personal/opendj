@@ -203,7 +203,15 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			cue_latency_ms: 900,
 			master_latency_ms: 200,
 			offset_ms: 700,
-			error: null
+			error: null,
+			diagnostics: {
+				probe: 'chirp',
+				alternate_probe: 'unavailable',
+				failure: null,
+				master_measurements_ms: [],
+				cue_measurements_ms: [],
+				spread_ms: null
+			}
 		});
 	});
 });

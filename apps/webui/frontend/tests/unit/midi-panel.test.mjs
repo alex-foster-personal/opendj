@@ -70,6 +70,7 @@ function _uninstallLocalStorage() {
 }
 
 after(async () => {
+	uiState?.detachMidiGlueForRouteUnmount();
 	await vite.close();
 });
 
@@ -208,6 +209,10 @@ test('requestMidiAccess on a WebMIDI-less runtime fails LOUDLY into lastError', 
 	assert.notEqual(uiState.midiUi.lastError, null);
 	assert.match(uiState.midiUi.lastError, /not supported/i);
 	assert.equal(webmidi.midiState.permission, 'unsupported');
+	// Failure must release the action handler and meter interval: a second
+	// request is a fresh failure, not "attachMidiGlue: already attached".
+	await uiState.requestMidiAccess();
+	assert.match(uiState.midiUi.lastError, /not supported/i);
 });
 
 test('requestMidiAccess throws on a concurrent second call', async () => {

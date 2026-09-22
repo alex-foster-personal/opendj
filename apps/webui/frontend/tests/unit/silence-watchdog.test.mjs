@@ -141,6 +141,25 @@ test('silence with nothing playing is never a verdict', () => {
 	);
 });
 
+test('intentional monitor-only cueing is never a master-bus dropout', () => {
+	const mod = _silence();
+	const { verdicts, state } = runSamples(
+		heldFor(mod.SILENT_WHILE_PLAYING_MS * 4, {
+			playing: true,
+			audible: true,
+			masterOutputIntentionallySilent: true,
+			masterRms: 0
+		})
+	);
+	assert.equal(
+		verdicts.length,
+		0,
+		'if a deck intentionally audible only on the independent cue bus is stopped, ' +
+			'the controller cannot preview a track before opening the room fader'
+	);
+	assert.equal(state.verdict, 'ok');
+});
+
 test('signal above the silence floor is never a verdict', () => {
 	const mod = _silence();
 	const { verdicts } = runSamples(

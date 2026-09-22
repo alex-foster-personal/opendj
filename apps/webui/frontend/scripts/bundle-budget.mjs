@@ -153,7 +153,13 @@ const BUDGETS = [
   // CI before this PR, the same "no headroom left" state the performance
   // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
   // reduction retires this KiB, not the consent code.
-  { name: 'library', limit: 257024, measured: 256494, note: 'initial load of "/"' },
+  // RAISED Mon 22 Sep 2026 (+1 KiB, PR #3836, MIDI-01): controller discovery
+  // and the Mixtour Pro's shared indicator runtime are reachable from the main
+  // Rekordbox workspace. The merge build measured 257,027 bytes gzip, three
+  // bytes above the prior inherited ceiling; local builds varied by over 100
+  // gzip bytes, so a one-KiB ratchet is the smallest reliable reviewable step.
+  // Payback: the next library-route weight reduction retires this KiB.
+  { name: 'library', limit: 258048, measured: 257027, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

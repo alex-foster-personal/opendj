@@ -43,7 +43,7 @@ const dynamicImportExternal = {
 	}
 };
 
-function _bundle(entry, { stdin = false } = {}) {
+function _bundle(entry, { stdin = false, deferSvelteRuntime = false } = {}) {
 	return build({
 		...(stdin
 			? { stdin: { contents: entry, resolveDir: FRONTEND_ROOT, loader: 'ts', sourcefile: 'rune-entry.ts' } }
@@ -51,6 +51,12 @@ function _bundle(entry, { stdin = false } = {}) {
 		absWorkingDir: FRONTEND_ROOT,
 		alias: { $lib: LIB_ROOT },
 		bundle: true,
+		// compileModule must see application runes, not Svelte's own runtime
+		// internals. A production module may import `untrack` from `svelte`;
+		// inlining that package here exposes runtime names such as `$window` to
+		// the application rune compiler, which correctly rejects them. Link the
+		// real runtime only in the second bundle, after rune compilation.
+		...(deferSvelteRuntime ? { external: ['svelte', 'svelte/*'] } : {}),
 		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test') },
 		format: 'esm',
 		logLevel: 'silent',
@@ -83,7 +89,7 @@ function _bundle(entry, { stdin = false } = {}) {
  * test needs to poke to drive it.
  */
 export async function loadRuneModule(entrySource) {
-	const runes = await _bundle(entrySource, { stdin: true });
+	const runes = await _bundle(entrySource, { stdin: true, deferSvelteRuntime: true });
 	const compiled = compileModule(runes.outputFiles[0].text, {
 		generate: 'client',
 		filename: 'rune-entry.svelte.js'

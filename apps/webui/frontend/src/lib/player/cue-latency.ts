@@ -16,6 +16,22 @@ export const CUE_LATENCY_PERIOD_MS = 60;
 export const CUE_LATENCY_CLICK_COUNT = 4;
 export const CUE_LATENCY_PREROLL_MS = 40;
 
+/** Level calculated from audio samples received by the production capture
+ * path.  This is an observation of that buffer, not an acoustic-output claim. */
+export function capturedSignalLevel(samples: Float32Array): { rms: number; peak: number } {
+	if (!(samples instanceof Float32Array)) throw new TypeError('captured signal must be a Float32Array');
+	if (samples.length === 0) return { rms: 0, peak: 0 };
+	let sumSquares = 0;
+	let peak = 0;
+	for (const sample of samples) {
+		if (!Number.isFinite(sample)) continue;
+		const magnitude = Math.abs(sample);
+		peak = Math.max(peak, magnitude);
+		sumSquares += sample * sample;
+	}
+	return { rms: Math.sqrt(sumSquares / samples.length), peak };
+}
+
 export function cueLatencyCaptureMs(maxLagMs = HEAD_DELAY_MAX_MS): number {
 	if (!Number.isFinite(maxLagMs) || maxLagMs < 0) {
 		throw new RangeError(`cue latency capture window must be >= 0, got ${maxLagMs}`);

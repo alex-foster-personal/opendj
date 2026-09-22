@@ -5,6 +5,7 @@
 	 * Wheel up moves toward B.
 	 */
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
 
 	interface Props {
 		/** 0..1; 0 = full A, 1 = full B. */
@@ -21,6 +22,10 @@
 	let trackWidth = $state(0);
 
 	const thumbLeftPx = $derived(value * Math.max(0, trackWidth - THUMB_W));
+	const takeoverGhost = $derived(midiTakeoverGhost('mixer:global:crossfader'));
+	const ghostLeftPx = $derived(
+		takeoverGhost === null ? 0 : takeoverGhost.value * Math.max(0, trackWidth - THUMB_W)
+	);
 
 	function _clamp01(v: number): number {
 		return Math.min(1, Math.max(0, v));
@@ -70,6 +75,7 @@
 	aria-valuemax={1}
 	aria-valuenow={value}
 	tabindex="0"
+	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
 	bind:clientWidth={trackWidth}
 	use:wheelAdjust={{ step: WHEEL_STEP.crossfader, get: () => value, set: onchange }}
 	onpointerdown={handlePointerDown}
@@ -78,6 +84,9 @@
 	onkeydown={handleKeyDown}
 >
 	<div class="track"></div>
+	{#if takeoverGhost !== null}
+		<div class="ghost-thumb" style={`left: ${ghostLeftPx}px;`}></div>
+	{/if}
 	<div class="thumb" style={`left: ${thumbLeftPx}px;`}></div>
 </div>
 
@@ -108,6 +117,15 @@
 		background: #2a2f37;
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
+	}
+	.ghost-thumb {
+		position: absolute;
+		top: 2px;
+		bottom: 2px;
+		width: 12px;
+		border: 1px dashed #f2b84b;
+		border-radius: 2px;
+		pointer-events: none;
 	}
 	.thumb::after {
 		content: '';

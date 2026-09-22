@@ -443,6 +443,8 @@
 		background: color-mix(in srgb, var(--rb-panel-raised, #1a1e25) 55%, transparent);
 	}
 	.strip.deck-focus {
+		outline: 2px solid var(--rb-accent, #49c8ff);
+		outline-offset: -4px;
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
@@ -599,15 +601,21 @@
 		grid-area: stemlabel;
 		margin-top: 2px;
 	}
+	.stem-slot {
+		flex: 0 0 auto;
+		align-self: stretch;
+	}
 	.stem-slot :global(.stems) {
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 2px;
 	}
 	.stem-slot :global(.mute) {
-		margin-right: 0;
+		/* The STEM heading already identifies this compact mixer group. */
+		display: none;
 	}
 	.stem-slot :global(.chip) {
 		font-size: 7px;
-		padding: 1px 4px;
+		padding: 1px;
 	}
 </style>

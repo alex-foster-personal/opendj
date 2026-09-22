@@ -107,10 +107,10 @@ test('practice blend sits on the master mute path, never a second sink', async (
 	assert.match(hpSrc, /splitCableGains\([^)]*level\)/);
 	assert.match(typesSrc, /split_cable/);
 	assert.match(typesSrc, /output_mode: HeadphoneOutputMode/);
-	assert.match(clusterSrc, /data-output-mode=\{state\.output_mode\}/);
+	assert.match(clusterSrc, /data-output-mode=\{headphoneState\.output_mode\}/);
 	assert.match(clusterSrc, /practice/);
 	assert.match(clusterSrc, /two outputs/);
-	assert.match(clusterSrc, />MAIN</);
+	assert.match(clusterSrc, />MAIN \/ practice</);
 	const wireStart = hpSrc.indexOf('export function wirePracticeBlendIntoMasterPath');
 	const wireEnd = hpSrc.indexOf('\nfunction _headphoneError', wireStart);
 	const wireBody = hpSrc.slice(wireStart, wireEnd === -1 ? undefined : wireEnd);

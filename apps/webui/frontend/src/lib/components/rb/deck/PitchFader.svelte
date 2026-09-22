@@ -8,6 +8,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { coalesceLatest } from '$lib/rb/coalesce';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 	import { thumbOffsetPx, valueFromPointer } from '$lib/rb/pitch-fader-geometry';
 
@@ -44,6 +45,8 @@
 	// 0 = -range%, 0.5 = 0% (ratio 1.0), 1 = +range% (top = faster).
 	const value: number = $derived(faderValueFromPitchRatio(deck.pitch, pitchRange));
 	const thumbTopPx: number = $derived(thumbOffsetPx(value, trackH));
+	const takeoverGhost = $derived(midiTakeoverGhost(`deck:${deck.deck_id}:pitch`));
+	const ghostTopPx = $derived(takeoverGhost === null ? 0 : thumbOffsetPx(takeoverGhost.value, trackH));
 
 	$effect(() => {
 		const el = trackEl;
@@ -147,6 +150,7 @@
 		tabindex="0"
 		data-performance-control="pitch"
 		data-testid={`pitch-fader-deck-${deck.deck_id}`}
+		data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
 		use:wheelAdjust={{
 			step: WHEEL_STEP.pitch,
 			get: () => value,
@@ -162,6 +166,9 @@
 	>
 		<div class="rb-fader-track"></div>
 		<div class="center-tick"></div>
+		{#if takeoverGhost !== null}
+			<div class="rb-fader-ghost" style={`top: ${ghostTopPx}px;`}></div>
+		{/if}
 		<div class="rb-fader-thumb" style={`top: ${thumbTopPx}px;`}></div>
 	</div>
 
@@ -211,6 +218,15 @@
 		height: 1px;
 		margin-top: -0.5px;
 		background: var(--rb-text-dim);
+		pointer-events: none;
+	}
+	.rb-fader-ghost {
+		position: absolute;
+		left: 2px;
+		right: 2px;
+		height: 10px;
+		border: 1px dashed #f2b84b;
+		border-radius: 2px;
 		pointer-events: none;
 	}
 	.range-buttons {

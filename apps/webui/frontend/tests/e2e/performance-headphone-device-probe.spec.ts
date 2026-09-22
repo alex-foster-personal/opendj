@@ -20,6 +20,8 @@ test('browser headphone output acquisition starts from the visible I/O gesture',
 	// Accessible name is aria-label="SHOW AUDIO I/O" (AGENT-09 / CUEOUT-06), not the "I/O" glyph.
 	const ioButton = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
 	await ioButton.click({ timeout: 5_000 });
+	await expect(page.getByRole('dialog', { name: 'Audio I/O settings' })).toBeVisible();
+	await page.getByRole('button', { name: 'Choose output / allow device access' }).click();
 	await page.waitForFunction(() => {
 		const state = window.musicDjToolsPerformance?.query();
 		const headphones = state?.mixer.headphones;

@@ -184,6 +184,7 @@ before(async () => {
 });
 
 after(async () => {
+	uiState?.detachMidiGlueForRouteUnmount();
 	await vite.close();
 	globalThis.fetch = realFetch;
 	backendProc?.kill();
@@ -212,6 +213,7 @@ const DOC_B = {
 };
 
 beforeEach(async () => {
+	uiState.detachMidiGlueForRouteUnmount();
 	webmidi._resetMidiForTests();
 	installed._resetInstalledMapsForTests();
 	eventsBus._resetForTests();

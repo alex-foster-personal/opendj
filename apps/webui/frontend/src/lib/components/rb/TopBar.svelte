@@ -62,6 +62,7 @@
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -308,6 +309,7 @@
 	// armAudioContextWatchdog's arm predicate (anyDeckPlaying is the one
 	// shared source of truth for "is this session live").
 	const masterMeterActive = $derived(anyDeckPlaying());
+	const masterTakeoverGhost = $derived(midiTakeoverGhost('mixer:global:master'));
 
 	/** Stage overlay target: first playing/audible loaded deck, else first loaded deck. */
 	const stageTarget = $derived.by((): { deck: StageDeck; stableId: string } | null => {
@@ -709,6 +711,7 @@
 			aria-valuemax={1}
 			aria-valuenow={mixerState.master}
 			tabindex="0"
+			data-takeover-ghost={masterTakeoverGhost === null ? undefined : masterTakeoverGhost.value}
 			use:wheelAdjust={{
 				step: WHEEL_STEP.fader,
 				get: () => mixerState.master,
@@ -721,6 +724,9 @@
 		>
 			<div class="master-track"></div>
 			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+			{#if masterTakeoverGhost !== null}
+				<div class="master-takeover-ghost" style={`left: calc(${masterTakeoverGhost.value * 100}% - 4px);`}></div>
+			{/if}
 			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 		</div>
 
@@ -1475,6 +1481,15 @@
 		border-radius: 50%;
 		background: var(--rb-chrome);
 		border: 1px solid var(--rb-border);
+	}
+	.master-takeover-ghost {
+		position: absolute;
+		top: 3px;
+		width: 8px;
+		height: 8px;
+		border: 1px dashed #f2b84b;
+		border-radius: 50%;
+		pointer-events: none;
 	}
 	.master-slider:focus-visible .master-thumb {
 		box-shadow: 0 0 4px var(--rb-accent-glow);

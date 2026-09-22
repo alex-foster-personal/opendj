@@ -9,7 +9,7 @@
  * disagree with what AutoPlay really does.
  */
 
-import { camelotKeysAreCompatible, parseCamelotKey } from '$lib/rb/audio-engine.svelte';
+import { camelotKeysAreCompatible, parseCamelotKey } from '$lib/player/key/camelot';
 import {
 	bpmWithinPhaseLockRange,
 	simulateAutoPlayChain,

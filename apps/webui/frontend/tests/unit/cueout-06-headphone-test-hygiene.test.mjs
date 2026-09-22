@@ -15,8 +15,10 @@ test('HeadphoneCluster and the device probe agree on the I/O accessible name', (
 	const cluster = readFileSync(CLUSTER, 'utf8');
 	const probe = readFileSync(PROBE, 'utf8');
 	assert.match(cluster, new RegExp(`aria-label="${ACCESSIBLE_NAME}"`));
-	assert.match(cluster, />I\/O</);
+	assert.match(cluster, /onclick=\{openIo\}/, 'I/O opens the panel without acquiring a device');
+	assert.match(cluster, /Choose output \/ allow device access/, 'device access stays an explicit panel action');
 	assert.match(probe, new RegExp(`name: '${ACCESSIBLE_NAME}'`));
+	assert.match(probe, /name: 'Choose output \/ allow device access'/);
 	assert.doesNotMatch(
 		probe,
 		/name: '\+ OUT'/,

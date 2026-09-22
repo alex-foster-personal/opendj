@@ -48,6 +48,22 @@ def test_broken_wiring_emits_999() -> None:
     assert value == 999.0
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    ["command.exclusive", "undefined, command.exclusive", "command.exclusive, pressT0Ms"],
+)
+def test_stem_solo_requires_timestamp_in_fourth_position(arguments: str) -> None:
+    """[if] solo loses or moves its timestamp [then] the wiring gate rejects it, [else stop]."""
+    sources = quality_latency._read_sources(REPO)
+    ipc_path = "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+    prefix = "engine.setStemSolo(command.deck, command.stem, command.solo, "
+    actual = prefix + "pressT0Ms, command.exclusive)"
+    assert actual in sources[ipc_path]
+    sources[ipc_path] = sources[ipc_path].replace(actual, prefix + arguments + ")")
+    failures = quality_latency._wiring_failures(sources)
+    assert "performance-ipc does not forward pressT0Ms into setStemSolo" in failures
+
+
 def test_missing_baseline_key_raises(tmp_path: Path) -> None:
     """[if] baseline has no latency floor [then] evaluate raises, [else stop]."""
     (tmp_path / "ops" / "quality").mkdir(parents=True)

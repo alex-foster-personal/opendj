@@ -153,7 +153,7 @@ test('every transport quantize site reads the grid through the never-throwing he
 		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
-		'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
+		'	private async _setLoop(\n\t\tdeck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null\n\t): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(

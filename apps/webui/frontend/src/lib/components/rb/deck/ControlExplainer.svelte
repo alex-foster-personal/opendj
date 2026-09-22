@@ -26,6 +26,8 @@
 		placement = 'auto',
 		showDelayMs = 0,
 		pinOnClick = false,
+		compact = false,
+		disabled = false,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
@@ -53,6 +55,10 @@
 		/** Click pins the popover open until Escape or an outside click. Native
 		 * selects in the action slot need this; hover-only would close them. */
 		pinOnClick?: boolean;
+		/** Small one-line help, used by the I/O entry before the settings panel opens. */
+		compact?: boolean;
+		/** Suppress hover help while the control's separate persistent panel is open. */
+		disabled?: boolean;
 		children: Snippet;
 	} = $props();
 
@@ -64,7 +70,10 @@
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
+	const hasRich: boolean = $derived(!disabled && (bullets.length > 0 || warning !== null || action !== null || demo !== null));
+	$effect(() => {
+		if (disabled) _close();
+	});
 
 	function _estimateSize(): Size {
 		// Tall action menus (the I/O device pickers) must not be estimated as
@@ -104,7 +113,7 @@
 	}
 
 	function _placeFromPop(): void {
-		if (popEl === undefined) return;
+		if (popEl == null) return;
 		const width = popEl.offsetWidth;
 		const height = popEl.offsetHeight;
 		if (width <= 0 || height <= 0) return;
@@ -192,7 +201,7 @@
 	onDestroy(_close);
 
 	$effect(() => {
-		if (!open || popEl === undefined) return;
+		if (!open || popEl == null) return;
 		_placeFromPop();
 		const ro = new ResizeObserver(() => _placeFromPop());
 		ro.observe(popEl);
@@ -223,10 +232,11 @@
 		<div
 			class="pop"
 			class:has-action={action !== null}
+			class:compact
 			bind:this={popEl}
 			style={popStyle}
 			role={action === null ? 'tooltip' : 'dialog'}
-			aria-label={action === null ? undefined : title}
+			aria-label={title}
 			onpointerenter={_show}
 			onpointerleave={_hide}
 		>
@@ -294,6 +304,18 @@
 	}
 	.pop.has-action {
 		max-width: 280px;
+	}
+	.pop.compact {
+		max-width: 185px;
+		padding: 5px 7px;
+		font-size: 9px;
+	}
+	.pop.compact .head {
+		display: none;
+	}
+	.pop.compact ul {
+		list-style: none;
+		padding: 0;
 	}
 	.head {
 		margin: 0 0 4px;

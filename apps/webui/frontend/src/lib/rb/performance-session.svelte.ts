@@ -23,7 +23,8 @@ import {
 	type PerformanceSessionSnapshot,
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
-import type { StemControl } from '$lib/rb/stem-types';
+import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
+import { restoreStemControls } from '$lib/rb/stem-restore';
 import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
@@ -32,7 +33,7 @@ export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
 export const RESCUE_RESTORE_MAX_AGE_MS = 600_000;
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
+const STEM_CONTROLS = STEM_CONTROL_IDS;
 
 export interface PerformanceSessionRestoreOptions {
 	now?: () => number;
@@ -80,8 +81,9 @@ function _snapshotInputFromState(
 			assign: channel.assign,
 			stem_eq_mode: channel.stem_eq_mode
 		};
-		const deckStems = {} as Record<StemControl, { muted: boolean; solo: boolean; gain: number }>;
+		const deckStems = {} as PerformanceSessionSnapshotInput['stems'][DeckId];
 		for (const stem of STEM_CONTROLS) {
+			if ((stem === 'bass' || stem === 'other') && !deck.stems.available_controls.includes(stem)) continue;
 			deckStems[stem] = {
 				muted: deck.stems.controls[stem].muted,
 				solo: deck.stems.controls[stem].solo,
@@ -203,6 +205,7 @@ export function createSessionSnapshotWriter(opts: {
 
 async function _restoreDeck(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	deckId: DeckId,
 	stable_id: string,
 	position_ms: number,
@@ -215,7 +218,7 @@ async function _restoreDeck(
 			await dispatch({ type: 'seek', deck: deckId, position_ms });
 		}
 		if (snapshot === null) return;
-		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot);
+		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot, query);
 	} catch (exc) {
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
@@ -225,7 +228,8 @@ async function _restoreDeck(
 export async function restoreDeckConfigFromSnapshot(
 	dispatch: typeof dispatchPerformanceCommand,
 	deckId: DeckId,
-	snapshot: PerformanceSessionSnapshot | PerformanceRescueDeckConfigSource
+	snapshot: PerformanceSessionSnapshot | PerformanceRescueDeckConfigSource,
+	query: typeof queryPerformanceState = queryPerformanceState
 ): Promise<void> {
 	const deck = snapshot.decks[deckId];
 	const channel = snapshot.mixer.channels[deckId];
@@ -245,17 +249,10 @@ export async function restoreDeckConfigFromSnapshot(
 		{ type: 'assign', deck: deckId, assign: channel.assign },
 		{ type: 'stem_eq_mode', deck: deckId, enabled: channel.stem_eq_mode ?? false }
 	];
-	for (const stem of STEM_CONTROLS) {
-		const control = snapshot.stems[deckId][stem];
-		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
-		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
-		if (control.gain !== undefined) {
-			commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
-		}
-	}
 	for (const command of commands) {
 		await dispatch(command);
 	}
+	await restoreStemControls(dispatch, query, deckId, snapshot.stems[deckId]);
 }
 
 type PerformanceRescueDeckConfigSource = Pick<
@@ -265,6 +262,7 @@ type PerformanceRescueDeckConfigSource = Pick<
 
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	snapshot: PerformanceSessionSnapshot | null,
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
 	skipDeckRestore: boolean
@@ -284,7 +282,7 @@ async function _restoreSession(
 			snapshotDeck !== null && snapshotDeck.stable_id === stable_id
 				? snapshotDeck.position_ms
 				: 0;
-		await _restoreDeck(dispatch, deckId, stable_id, position_ms, snapshot);
+		await _restoreDeck(dispatch, query, deckId, stable_id, position_ms, snapshot);
 	}
 }
 
@@ -322,8 +320,17 @@ export function installPerformanceSessionRestore(
 	let writer: SessionSnapshotWriter | null = null;
 	activeSessionWriter = null;
 	const skipDeckRestore = opts.skipDeckRestore ?? false;
+	let disposed = false;
+	const assertActive = (): void => {
+		if (disposed) throw new Error('performance session restore was disposed');
+	};
 
-	void _restoreSession(dispatch, snapshot, urlDeckIds, skipDeckRestore).finally(() => {
+	void _restoreSession(
+		(command) => { assertActive(); return dispatch(command); },
+		() => { assertActive(); return query(); },
+		snapshot, urlDeckIds, skipDeckRestore
+	).finally(() => {
+		if (disposed) return;
 		writer = createSessionSnapshotWriter({
 			now: nowFn,
 			storage,
@@ -340,6 +347,7 @@ export function installPerformanceSessionRestore(
 	});
 
 	return () => {
+		disposed = true;
 		writer?.dispose();
 		writer = null;
 		activeSessionWriter = null;

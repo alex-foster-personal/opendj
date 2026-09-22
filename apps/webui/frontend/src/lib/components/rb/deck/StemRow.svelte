@@ -23,8 +23,12 @@
 	const STEMS: readonly { id: StemControl; label: string; color: string }[] = [
 		{ id: 'vocal', label: 'VOCAL', color: STEM_COLORS.vocal },
 		{ id: 'instrumental', label: 'INST', color: STEM_COLORS.instrumental },
-		{ id: 'drums', label: 'DRUMS', color: STEM_COLORS.drums }
+		{ id: 'drums', label: 'DRUMS', color: STEM_COLORS.drums },
+		{ id: 'bass', label: 'BASS', color: STEM_COLORS.bass },
+		{ id: 'other', label: 'HARM', color: STEM_COLORS.other }
 	];
+	const visibleStems = $derived(STEMS.filter((stem) =>
+		(stem.id !== 'bass' && stem.id !== 'other') || deck.stems.available_controls.includes(stem.id)));
 	const ready: boolean = $derived(deck.stems.status === 'ready');
 
 	/** A control this bundle's layout cannot drive. RoFormer's 2-stem split
@@ -50,7 +54,7 @@
 			);
 		}
 		const ctrl = deck.stems.controls[stem];
-		const state = ctrl.solo ? 'soloed now' : ctrl.muted ? 'muted now' : 'audible now';
+		const state = ctrl.solo ? 'solo selected' : ctrl.muted ? 'muted now' : 'unmuted (other solo/group controls still apply)';
 		return `${label} stem is ${state}. Click to mute, Shift+click to solo. ${statusTip}`;
 	}
 
@@ -62,7 +66,7 @@
 
 	<div class="stems" role="group" aria-label={`stem controls deck ${deck.deck_id}`} data-stems-status={deck.stems.status} title={statusTip}>
 	<span class="mute">MUTE</span>
-	{#each STEMS as stem (stem.id)}
+	{#each visibleStems as stem (stem.id)}
 		<button
 			class="chip"
 			class:muted={deck.stems.controls[stem.id].muted}
@@ -81,7 +85,7 @@
 			style={`--chip-color:${stem.color}`}
 			onclick={async (event) => await toggle(event, stem.id)}
 		>
-			{stem.label}
+			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
 		</button>
 	{/each}
 </div>

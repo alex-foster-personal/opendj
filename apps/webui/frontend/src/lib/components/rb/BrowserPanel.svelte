@@ -113,6 +113,13 @@
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
+	import { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
+	import {
+		browserNavigationMayHandle,
+		browserSelectionDelta,
+		moveBrowserFocus,
+		type BrowserFocusZone
+	} from '$lib/rb/browser-navigation';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -264,6 +271,12 @@
 		createPaneStore()
 	];
 	let activePane = $state(0);
+	/** IOPIN-01: ownership is application state, not incidental DOM focus. */
+	let browserFocus = $state<BrowserFocusZone>('tracks');
+	let browserDeckTarget = $state<DeckId>(1);
+	let browseScrollRevision = 0;
+	let browseScroll = $state<{ order: number; direction: -1 | 1; revision: number } | null>(null);
+	let lastTrackEnter: { at: number; stableId: string | null; pane: number } | null = null;
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
@@ -822,6 +835,10 @@
 				};
 			}
 		});
+		const unregisterMidiBrowser = registerBrowseAdapter({
+			moveSelection: _moveMidiSelection,
+			loadSelected: _loadMidiSelection
+		});
 		const url = new URL(window.location.href);
 		const lv1 = parseLv1(url.searchParams);
 		if (lv1.source === 'spotify') {
@@ -836,24 +853,86 @@
 			if (request.revision > 0) _setSearchNow(request.query, request);
 		});
 		const onKey = (e: KeyboardEvent): void => {
-			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-			if (e.key !== 'f' && e.key !== 'F') return;
-			// Don't steal from text fields outside the browser search box.
-			const t = e.target;
-			if (t instanceof HTMLElement) {
-				const tag = t.tagName;
-				const inSearch = t.closest('.rb-search') !== null;
-				if (
-					!inSearch &&
-					(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable)
-				) {
-					return;
+			if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+				// Don't steal Cmd/Ctrl+F from text fields outside the browser search box.
+				const t = e.target;
+				if (t instanceof HTMLElement && !t.closest('.rb-search') && _editableTarget(t)) return;
+				e.preventDefault();
+				if (e.shiftKey) openSearchMode('collection');
+				else if (searchFocused && searchMode === 'filter') openSearchMode('find');
+				else openSearchMode('filter');
+				return;
+			}
+
+			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+			if (!browserNavigationMayHandle({
+				editable: _editableTarget(e.target),
+				contextMenuOpen: document.querySelector('[data-testid="context-menu"]') !== null
+			})) return;
+
+			const delta = browserSelectionDelta(e.key);
+			if (delta !== null) {
+				lastTrackEnter = null;
+				e.preventDefault();
+				if (browserFocus === 'playlist') _movePlaylistSelection(delta);
+				else if (browserFocus === 'deck') {
+					browserDeckTarget = Math.max(1, Math.min(4, browserDeckTarget + delta)) as DeckId;
+					_focusBrowserZone();
 				}
+				else {
+					browserFocus = 'tracks';
+					_moveMidiSelection(delta);
+					_focusBrowserZone();
+				}
+				return;
+			}
+			const horizontal = e.key === 'a' || e.key === 'A' ? 'ArrowLeft'
+				: e.key === 'd' || e.key === 'D' ? 'ArrowRight' : e.key;
+			if (horizontal === 'ArrowLeft' || horizontal === 'ArrowRight') {
+				lastTrackEnter = null;
+				e.preventDefault();
+				browserFocus = moveBrowserFocus(browserFocus, horizontal);
+				_focusBrowserZone();
+				return;
+			}
+			if (e.key !== 'Enter') return;
+			// A directly focused playlist row already handles Enter in PlaylistTree;
+			// a native deck button activates itself. Neither is a track-row
+			// double-Enter, regardless of an earlier browserFocus state.
+			const target = e.target instanceof HTMLElement ? e.target : null;
+			if (target?.closest('[data-testid="playlist-row"], [data-testid="playlist-all-tracks"]')) {
+				lastTrackEnter = null;
+				browserFocus = 'playlist';
+				return;
+			}
+			const deckTarget = target?.closest<HTMLButtonElement>('button.deck-target');
+			if (deckTarget) {
+				lastTrackEnter = null;
+				browserFocus = 'deck';
+				const targets = Array.from(deckTarget.parentElement?.querySelectorAll('button.deck-target') ?? []);
+				const index = targets.indexOf(deckTarget);
+				if (index >= 0) browserDeckTarget = (index + 1) as DeckId;
+				return;
 			}
 			e.preventDefault();
-			if (e.shiftKey) openSearchMode('collection');
-			else if (searchFocused && searchMode === 'filter') openSearchMode('find');
-			else openSearchMode('filter');
+			if (browserFocus === 'playlist') {
+				(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.click();
+				return;
+			}
+			if (browserFocus === 'deck') {
+				_activateFocusedDeckTarget();
+				return;
+			}
+			const now = performance.now();
+			const stableId = panes[activePane].selected_id;
+			if (lastTrackEnter !== null && now - lastTrackEnter.at <= 500 &&
+				lastTrackEnter.stableId === stableId && lastTrackEnter.pane === activePane) {
+				lastTrackEnter = null;
+				_triggerTrackDoubleEnter();
+			} else {
+				lastTrackEnter = { at: now, stableId, pane: activePane };
+				_focusBrowserZone();
+			}
 		};
 		window.addEventListener('keydown', onKey);
 		// PERF-UI-01: first crossing into a short viewport collapses
@@ -932,6 +1011,7 @@
 
 		return () => {
 			uninstallBrowserSortIpc();
+			unregisterMidiBrowser();
 			unregisterPerformanceBrowser();
 			connAlive = false;
 			clearInterval(connTimer);
@@ -2651,7 +2731,10 @@
 	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
-		if (p.selected_id !== row.stable_id) _pushNav();
+		if (p.selected_id !== row.stable_id) {
+			lastTrackEnter = null;
+			_pushNav();
+		}
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
 		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
@@ -2667,6 +2750,103 @@
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
 		ensureAudioPrefetch(row.stable_id);
+	}
+
+	function _moveMidiSelection(delta: number): void {
+		// A context menu has its own arrow/Enter model. MIDI remains the usual
+		// owner regardless of prior mouse or keyboard focus, but never steals
+		// navigation while that menu is open (IOPIN-01).
+		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
+		if (visibleRows.length === 0 || delta === 0) return;
+		lastTrackEnter = null;
+		browserFocus = 'tracks';
+		const selected = panes[activePane].selected_id;
+		const current = selected === null
+			? -1
+			: visibleRows.findIndex((row) => row.stable_id === selected);
+		const next = current === -1
+			? (delta > 0 ? 0 : visibleRows.length - 1)
+			: Math.max(0, Math.min(visibleRows.length - 1, current + delta));
+		const row = visibleRows[next];
+		selectRow(row);
+		browseScrollRevision += 1;
+		browseScroll = { order: row.order, direction: delta > 0 ? 1 : -1, revision: browseScrollRevision };
+	}
+
+	function _editableTarget(target: EventTarget | null): boolean {
+		if (!(target instanceof HTMLElement)) return false;
+		const interactive = target.closest('button, a, [role="button"]');
+		if (interactive !== null && !interactive.matches(
+			'.deck-target, [data-testid="playlist-row"], [data-testid="playlist-all-tracks"]'
+		)) return true;
+		return (
+			target.closest('[role="slider"], [role="dialog"], dialog, [role="menu"]') !== null ||
+			target.tagName === 'INPUT' ||
+			target.tagName === 'TEXTAREA' ||
+			target.tagName === 'SELECT' ||
+			target.isContentEditable
+		);
+	}
+
+	function _selectedTrackElement(): HTMLElement | null {
+		const id = panes[activePane].selected_id;
+		if (id === null || typeof document === 'undefined') return null;
+		return document.querySelector<HTMLElement>(`[data-testid="track-row"][data-stable-id="${CSS.escape(id)}"]`);
+	}
+
+	function _focusBrowserZone(): void {
+		void tick().then(() => {
+			if (typeof document === 'undefined') return;
+			if (browserFocus === 'tracks') {
+				_selectedTrackElement()?.focus();
+				return;
+			}
+			if (browserFocus === 'playlist') {
+				document.querySelector<HTMLElement>('[data-testid="playlist-row"].selected, [data-testid="playlist-all-tracks"].selected')?.focus();
+				return;
+			}
+			const targets = _selectedTrackElement()?.querySelectorAll<HTMLButtonElement>('button.deck-target');
+			targets?.[browserDeckTarget - 1]?.focus();
+		});
+	}
+
+	function _movePlaylistSelection(delta: -1 | 1): void {
+		if (typeof document === 'undefined') return;
+		const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="playlist-all-tracks"], [data-testid="playlist-row"]'));
+		if (nodes.length === 0) return;
+		const active = document.activeElement;
+		const current = active instanceof HTMLElement ? nodes.indexOf(active) : -1;
+		const next = current < 0 ? (delta > 0 ? 0 : nodes.length - 1) : Math.max(0, Math.min(nodes.length - 1, current + delta));
+		nodes[next].click();
+		nodes[next].focus();
+	}
+
+	function _activateFocusedDeckTarget(): void {
+		const row = _selectedTrackElement();
+		if (row === null) return;
+		const targets = Array.from(row.querySelectorAll<HTMLButtonElement>('button.deck-target'));
+		targets[browserDeckTarget - 1]?.click();
+	}
+
+	function _triggerTrackDoubleEnter(): void {
+		const row = _selectedTrackElement();
+		if (row === null) return;
+		// Route through TrackTable's existing double-click handler so its deck
+		// reservation and master-deck safeguards stay the one implementation.
+		row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+	}
+
+	function _loadMidiSelection(deck: DeckId): void {
+		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
+		const selected = panes[activePane].selected_id;
+		const row = selected === null
+			? null
+			: visibleRows.find((candidate) => candidate.stable_id === selected) ?? null;
+		if (row === null) {
+			pushToast(`Deck ${deck}: select a track before pressing LOAD`, 'error');
+			return;
+		}
+		loadRow(row, deck);
 	}
 
 	/**
@@ -3395,6 +3575,7 @@
 			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
+			{browseScroll}
 			removable={editablePane}
 			reorderable={reorderablePane}
 			onscrollcursor={(top) => {

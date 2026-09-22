@@ -121,8 +121,28 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Hot cue ${action.slot} (deck ${action.deck})`;
 		case 'deck_beat_loop':
 			return `Beat loop ${action.beats} (deck ${action.deck})`;
+		case 'deck_auto_loop_toggle':
+			return `Auto loop toggle (deck ${action.deck})`;
 		case 'deck_loop_exit':
 			return `Loop exit (deck ${action.deck})`;
+		case 'deck_sync_toggle':
+			return `Beat sync (deck ${action.deck})`;
+		case 'deck_manual_loop_cycle':
+			return `Loop in / out / exit (deck ${action.deck})`;
+		case 'deck_loop_scale':
+			return `Loop ${action.factor === 0.5 ? 'half' : 'double'} (deck ${action.deck})`;
+		case 'deck_key_sync_toggle':
+			return `Key sync (deck ${action.deck})`;
+		case 'deck_stem_eq_toggle':
+			return `Stem EQ (deck ${action.deck})`;
+		case 'deck_key_nudge':
+			return `Key ${action.semitones < 0 ? 'down' : 'up'} (deck ${action.deck})`;
+		case 'deck_tempo_nudge':
+			return `Tempo ${action.direction < 0 ? '-0.1' : '+0.1'} BPM (deck ${action.deck})`;
+		case 'controller_pad_mode':
+			return `${action.mode.replaceAll('_', ' ')} mode (deck ${action.deck})`;
+		case 'controller_pad':
+			return `${action.shifted ? 'Shift ' : ''}pad ${action.pad} (deck ${action.deck})`;
 		case 'mixer_channel': {
 			if (action.target === 'trim') return `Trim (deck ${action.deck})`;
 			if (action.target === 'fader') return `Channel fader (deck ${action.deck})`;

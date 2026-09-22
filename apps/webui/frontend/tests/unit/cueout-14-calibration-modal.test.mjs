@@ -1,4 +1,4 @@
-// requirement: CUEOUT-14 (calibration state machine, injected effects, nothing performed)
+// requirement: CUEOUT-14, IOPIN-07 (calibration state machine, injected effects, nothing performed)
 // [if] the mic cannot hear the speakers [then] the modal fails at mic_check_master with the measured peak in the message, and paused decks resume
 // [if] the operator closes the modal mid-measurement [then] mic tracks are stopped, chirps stopped, decks resumed, mixer-config unchanged
 // [if] three runs spread more than 10 ms [then] nothing is applied
@@ -74,9 +74,11 @@ function harness({
 			const lag = lags[target][runs[target]];
 			runs[target] += 1;
 			const capture =
-				lag === null
-					? addGaussianNoise(new Float32Array(reference.length + 4000), 0.4, 7)
-					: delayedCapture(reference, lag, sampleRate, 40);
+				lag === 'silent'
+					? new Float32Array(reference.length + 4000)
+					: lag === null
+						? addGaussianNoise(new Float32Array(reference.length + 4000), 0.4, 7)
+						: delayedCapture(reference, lag, sampleRate, 40);
 			assert.ok(pendingRecord !== null, 'the controller must start recording BEFORE it plays the train');
 			const resolve = pendingRecord;
 			pendingRecord = null;
@@ -143,13 +145,14 @@ describe('createCueAlignController', () => {
 		assert.equal(h.calls.filter((c) => c === 'persist').length, 1);
 	});
 
-	test('the mic cannot hear the speakers: failed at mic_check_master, peak in the message, decks resumed, cue never chirped', async () => {
+	test('uncorrelated captured input: failed at mic_check_master with measured correlation, decks resumed, cue never chirped', async () => {
 		const h = harness({ lags: { master: [null, null, null], cue: [900, 900, 900] } });
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /The mic could not hear the speakers \(peak 0\.\d+ < 0\.35\)\. Turn the room up or move the laptop closer\./,
-			'if the failure does not carry the measured peak then the operator cannot tell "too quiet" from "broken" - broken');
+		assert.match(h.calibration.error, /captured input did not correlate with the speakers probe \(correlation 0\.\d+ < 0\.35; input peak \d\.\d{3}, rms 0\.\d{3}\)/,
+			'if the failure does not carry measured correlation and input levels then the operator cannot tell no-input from an incorrect route - broken');
+		assert.equal(h.calibration.diagnostics.failure, 'weak_correlation');
 		assert.equal(h.calibration.master_latency_ms, null);
 		assert.ok(!h.calls.includes('play:cue'), 'a failed speaker check must not go on to chirp the phones');
 		assert.ok(h.calls.includes('resume:1,3'), 'if a failed check leaves the decks paused then calibration stopped the set - broken');
@@ -157,14 +160,25 @@ describe('createCueAlignController', () => {
 		assert.ok(!h.calls.includes('persist'));
 	});
 
-	test('the mic cannot hear the headphones: failed at mic_check_cue naming the headphones', async () => {
+	test('uncorrelated headphone capture: failed at mic_check_cue naming the headphones', async () => {
 		const h = harness({ lags: { master: [200, 200, 200], cue: [null, null, null] } });
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /The mic could not hear the headphones \(peak 0\.\d+ < 0\.35\)/);
+		assert.match(h.calibration.error, /captured input did not correlate with the headphones probe/);
 		assert.equal(h.calibration.master_latency_ms, 200, 'the passing master check is kept for the report');
 		assert.ok(h.calls.includes('resume:1,3'));
+		assert.ok(!h.calls.includes('persist'));
+	});
+
+	test('silent capture is explicitly no-input, not blamed on room noise', async () => {
+		const h = harness({ lags: { master: ['silent', 'silent', 'silent'], cue: [900, 900, 900] } });
+		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
+		await controller.run({ interactive: false });
+		assert.equal(h.calibration.step, 'failed');
+		assert.match(h.calibration.error, /No input signal was captured while checking the speakers \(input peak 0\.000\)/);
+		assert.equal(h.calibration.diagnostics.failure, 'no_input_signal');
+		assert.doesNotMatch(h.calibration.error, /room noise/i);
 		assert.ok(!h.calls.includes('persist'));
 	});
 
@@ -173,7 +187,16 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /measurement unstable \(spread 15 ms\), try again with less room noise/);
+		assert.match(h.calibration.error, /inconsistent measurements \(spread 15 ms\); prior delay was kept/);
+		assert.doesNotMatch(h.calibration.error, /room noise/i, 'the run did not observe room noise, only disagreeing measurements');
+		assert.deepEqual(h.calibration.diagnostics, {
+			probe: 'chirp',
+			alternate_probe: 'unavailable',
+			failure: 'inconsistent_measurements',
+			master_measurements_ms: [200, 200, 200],
+			cue_measurements_ms: [900, 915, 900],
+			spread_ms: 15
+		});
 		assert.ok(!h.calls.includes('persist'), 'if an unstable measurement is applied then a noisy room writes a wrong room delay - broken');
 		assert.ok(h.calls.includes('resume:1,3'));
 	});
@@ -332,6 +355,10 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 			// the output mode sent a reader to the I/O pane to fix something that was
 			// not broken.
 			assert.match(calibration.error, /the audio graph is not built yet/);
+			assert.equal(calibration.diagnostics.failure, 'route_or_operation');
+			assert.deepEqual(calibration.diagnostics.master_measurements_ms, []);
+			assert.deepEqual(calibration.diagnostics.cue_measurements_ms, []);
+			assert.equal(calibration.diagnostics.spread_ms, null);
 		} finally {
 			uninstall();
 		}
