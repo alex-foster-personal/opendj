@@ -241,12 +241,14 @@ def _as_uv_stores_it(marker: str) -> str:
         ("os_name == 'nt' and sys_platform != 'linux'", "os_name == 'nt'", False),
         (
             "(os_name == 'nt' or os_name == 'posix') and sys_platform == 'linux'",
-            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'posix' and sys_platform == 'linux')",
+            "(os_name == 'nt' and sys_platform == 'linux')"
+            " or (os_name == 'posix' and sys_platform == 'linux')",
             True,
         ),
         (
             "os_name == 'nt' and (sys_platform == 'linux' or sys_platform == 'win32')",
-            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'nt' and sys_platform == 'win32')",
+            "(os_name == 'nt' and sys_platform == 'linux')"
+            " or (os_name == 'nt' and sys_platform == 'win32')",
             True,
         ),
     ],
