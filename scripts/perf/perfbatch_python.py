@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import io
+import re
 import tokenize
 from dataclasses import dataclass, field
 
@@ -81,12 +82,26 @@ def _docstring_lines(tree: ast.AST, per_line: dict[int, list[tokenize.TokenInfo]
     return lines
 
 
-def analyze(source: str) -> PythonFacts:
-    """Tokenize and parse ``source``; never raises, the failure lands in ``error``."""
+_BARE_CR = re.compile(rb"\r(?!\n)")
+
+
+def analyze(source: bytes) -> PythonFacts:
+    """Tokenize and parse ``source`` bytes; never raises, the failure lands in ``error``.
+
+    The encoding comes from Python's own cookie/BOM detection, never an
+    unconditional UTF-8, so a ``# coding: latin-1`` file is read the way the
+    interpreter reads it. A bare CR (not followed by LF) is refused: git
+    counts it as part of a line while the Python parser counts it as a line
+    break, so no line number could be trusted (both Codex P1s on #3804).
+    """
+    if _BARE_CR.search(source):
+        return PythonFacts(error="bare carriage return: git and Python disagree on line numbers")
     try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
-        tree = ast.parse(source)
-    except (tokenize.TokenError, SyntaxError, ValueError) as exc:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
+        text = source.decode(encoding)
+        tokens = list(tokenize.generate_tokens(io.StringIO(text, newline="\n").readline))
+        tree = ast.parse(text)
+    except (tokenize.TokenError, SyntaxError, ValueError, LookupError) as exc:
         return PythonFacts(error=f"{type(exc).__name__}: {exc}")
     strings: set[int] = set()
     per_line: dict[int, list[tokenize.TokenInfo]] = {}

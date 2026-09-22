@@ -21,8 +21,9 @@ from pathlib import Path
 
 from scripts.perf.perfbatch_python import PythonFacts, analyze
 
-#: path -> (source at the merge base or None if absent, source at the head or None)
-SourceReader = Callable[[str], tuple[str | None, str | None]]
+#: path -> (bytes at the merge base or None if absent, bytes at the head or None).
+#: Bytes, never text: the Python analyzer detects the source encoding itself.
+SourceReader = Callable[[str], tuple[bytes | None, bytes | None]]
 
 # ----------------------------------------------------------------------------
 # Unified diff parsing
@@ -89,7 +90,13 @@ def parse_unified_diff(text: str) -> dict[str, FileDiff]:
     files: dict[str, FileDiff] = {}
     current: FileDiff | None = None
     hunk: Hunk | None = None
-    for raw in text.splitlines():
+    # Records are split on LF only. str.splitlines() would also split on a
+    # bare CR (and on VT, FF and friends) inside a record, hiding the rest of
+    # a changed line from classification (Codex P1 on #3804).
+    records = text.split("\n")
+    if records and records[-1] == "":
+        records.pop()
+    for raw in records:
         header = _DIFF_HEADER.match(raw)
         if header:
             current = FileDiff(path=header.group("b"), old_path=header.group("a"))
@@ -190,6 +197,9 @@ _IMPORT_GUARD_EXCEPT_RE = re.compile(
     r"|\(\s*ModuleNotFoundError\s*,\s*ImportError\s*\))\s*:" + _TRAILING_COMMENT
 )
 _TOML_ASSIGNMENT_RE = re.compile(r"^[\w.-]+\s*=")
+# PEP 263 source-encoding cookie. It changes how every byte of the file is
+# read, so it is never a plain comment (Codex P1 on #3804).
+_CODING_COOKIE_RE = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*[-\w.]+")
 
 
 def _language(path: str) -> str | None:
@@ -203,6 +213,8 @@ def _is_hash_comment(text: str, *, python: bool) -> bool:
         return False
     if not python:
         return True
+    if _CODING_COOKIE_RE.match(text):
+        return False
     body = stripped[1:].strip()
     # PEP 723 inline metadata rides on comment lines and pins the model and
     # torch versions of the standalone workers: never a plain comment.

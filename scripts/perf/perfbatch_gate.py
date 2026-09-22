@@ -153,24 +153,21 @@ def quality_marker(body: str) -> bool:
 # Data sources
 
 
-def _run(argv: list[str], *, cwd: Path | None = None) -> str:
-    # git and gh emit UTF-8 regardless of the console code page; decoding with
-    # the Windows default (cp1252) raised inside the reader thread and left
-    # stdout empty, which the gate then read as "no diff text" (fail-closed,
-    # but for the wrong reason). Undecodable bytes become U+FFFD, which is
-    # never on the allowlist, so a garbled code line still fails closed.
-    proc = subprocess.run(
-        argv,
-        cwd=cwd,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=120,
-        check=False,
-    )
+def _run_bytes(argv: list[str], *, cwd: Path | None = None) -> bytes:
+    """Raw stdout. Text mode is never used: it would translate a bare CR inside a
+    diff record into a line break and hide the rest of that record (Codex P1 on
+    #3804), and the Windows default code page raised on non-ASCII bytes."""
+    proc = subprocess.run(argv, cwd=cwd, capture_output=True, timeout=120, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"{' '.join(argv)} failed rc={proc.returncode}: {proc.stderr.strip()}")
+        detail = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"{' '.join(argv)} failed rc={proc.returncode}: {detail}")
     return proc.stdout
+
+
+def _run(argv: list[str], *, cwd: Path | None = None) -> str:
+    # Undecodable bytes become U+FFFD, which is never on the allowlist, so a
+    # garbled code line still fails closed. No newline translation happens.
+    return _run_bytes(argv, cwd=cwd).decode("utf-8", errors="replace")
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
@@ -227,7 +224,7 @@ def local_sources(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> Sour
     """Whole-file sources for the Python classifier: merge-base blob and working-tree file."""
     merge_base = _merge_base(repo_root, base)
 
-    def read(path: str) -> tuple[str | None, str | None]:
+    def read(path: str) -> tuple[bytes | None, bytes | None]:
         exists = subprocess.run(
             ["git", "cat-file", "-e", f"{merge_base}:{path}"],
             cwd=repo_root,
@@ -235,12 +232,12 @@ def local_sources(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> Sour
             check=False,
         )
         old = (
-            _run(["git", "show", f"{merge_base}:{path}"], cwd=repo_root)
+            _run_bytes(["git", "show", f"{merge_base}:{path}"], cwd=repo_root)
             if exists.returncode == 0
             else None
         )
         target = repo_root / path
-        new = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
+        new = target.read_bytes() if target.is_file() else None
         return old, new
 
     return read
@@ -261,22 +258,21 @@ def pr_sources(pr: int, repo: str = DEFAULT_REPO, view: dict | None = None) -> S
     if not merge_base:
         raise RuntimeError(f"compare API returned no merge base for {compare}")
 
-    def contents(ref: str, path: str) -> str | None:
+    def contents(ref: str, path: str) -> bytes | None:
         proc = subprocess.run(
             ["gh", "api", f"repos/{repo}/contents/{path}?ref={ref}", "--jq", ".content"],
             capture_output=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=120,
             check=False,
         )
         if proc.returncode != 0:
-            if "HTTP 404" in proc.stderr:
+            detail = proc.stderr.decode("utf-8", errors="replace").strip()
+            if "HTTP 404" in detail:
                 return None
-            raise RuntimeError(f"contents API failed for {path}@{ref[:9]}: {proc.stderr.strip()}")
-        return base64.b64decode(proc.stdout).decode("utf-8", errors="replace")
+            raise RuntimeError(f"contents API failed for {path}@{ref[:9]}: {detail}")
+        return base64.b64decode(proc.stdout)
 
-    def read(path: str) -> tuple[str | None, str | None]:
+    def read(path: str) -> tuple[bytes | None, bytes | None]:
         return contents(merge_base, path), contents(head, path)
 
     return read
@@ -380,7 +376,13 @@ def _gate(  # noqa: PLR0913 -- every keyword is a test seam for one data source
         )
 
     file_diffs = parse_unified_diff(text) if text is not None else None
-    return verdict(paths, pr_body, file_diffs, sources)
+    # The source readers are lazy: a contents request or blob read that fails
+    # during classification is still a measurement failure, so it surfaces as
+    # UNKNOWN rather than a traceback (Codex P2 on #3804).
+    return _measure(
+        "could not read file sources during classification",
+        lambda: verdict(paths, pr_body, file_diffs, sources),
+    )
 
 
 def main(  # noqa: PLR0913 -- every keyword is a test seam for one data source
