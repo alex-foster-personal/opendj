@@ -31,7 +31,7 @@ def _run(
     event: str = "pull_request",
     updated: str = "2026-09-22T19:30:00Z",
     status: str = "completed",
-    conclusion: str = "success",
+    conclusion: str | None = "success",
 ) -> dict:
     return {
         "id": run_id,
