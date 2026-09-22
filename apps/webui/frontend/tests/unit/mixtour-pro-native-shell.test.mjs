@@ -33,6 +33,21 @@ test('installed-shell MIDI is a bounded CoreMIDI transport into the shared runti
 	assert.match(runtime, /_dispatch\(device, \{ data: new Uint8Array\(event\.payload\.data\) \}\)/);
 });
 
+test('remote shell authority exposes only the bounded MIDI commands and event listener', async () => {
+	const [buildScript, capabilityText] = await Promise.all([
+		read('../../desktop/src-tauri/build.rs'),
+		read('../../desktop/src-tauri/capabilities/midi.json')
+	]);
+	const capability = JSON.parse(capabilityText);
+	assert.match(buildScript, /commands\(&\["native_midi_snapshot", "native_midi_send"\]\)/);
+	assert.deepEqual(capability.permissions, [
+		'allow-native-midi-snapshot',
+		'allow-native-midi-send',
+		'core:event:allow-listen',
+		'core:event:allow-unlisten'
+	]);
+});
+
 test('four-channel graph assigns stereo master to 1/2 and stereo monitor to 3/4', async () => {
 	const engine = await read('src/lib/rb/audio-engine.svelte.ts');
 	assert.match(engine, /masterSplitter\.connect\(merger, 0, 0\)/);
