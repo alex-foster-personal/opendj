@@ -59,6 +59,29 @@ const _padModes = new Map<string, Record<DeckId, ControllerPadMode>>();
 // even when the same track is loaded again. Auto length is a deck preference.
 type LoopGesture = { generation: number; inMs: number | null; autoBeats: number };
 const _loopGestures = new Map<string, Partial<Record<DeckId, LoopGesture>>>();
+// The most recent held pad owns each deck's momentary loop. An older pad or
+// another controller cannot release it. SHIFT changes the wire bank, not the
+// physical pad identity, so a modifier change during a hold still releases.
+type BounceHold = { device: string; pad: number; generation: number };
+const _bounceHolds = new Map<DeckId, BounceHold>();
+
+function _releaseBounce(deck: DeckId, deviceId: string | undefined, pad?: number): void {
+	const hold = _bounceHolds.get(deck);
+	if (hold === undefined || hold.device !== _controllerKey(deviceId) ||
+		(pad !== undefined && hold.pad !== pad)) return;
+	_bounceHolds.delete(deck);
+	if (deckStates[deck].stable_id !== null && deckStates[deck].load_generation === hold.generation) {
+		_cmdLoopExit(deck);
+	}
+}
+
+/** Called only for an observed disconnected device, never inferred from a
+ * missing test input. Reconnection starts with a fresh controller surface. */
+export function releaseControllerDevice(deviceId: string): void {
+	for (const deck of _bounceHolds.keys()) _releaseBounce(deck, deviceId);
+	_padModes.delete(deviceId);
+	_loopGestures.delete(deviceId);
+}
 
 function _loopGesture(deviceId: string | undefined, deck: DeckId): LoopGesture {
 	const key = _controllerKey(deviceId);
@@ -95,6 +118,9 @@ export function controllerPadMode(deviceId: string | undefined, deck: DeckId): C
 }
 
 export function resetControllerPadRuntime(): void {
+	// Route unmount owns engine disposal; do not enqueue cleanup commands into
+	// the command session it is about to invalidate.
+	_bounceHolds.clear();
 	_padModes.clear();
 	_loopGestures.clear();
 }
@@ -196,6 +222,7 @@ export function selectControllerPadMode(
 	onModeChanged: () => void,
 	notify: Notify
 ): void {
+	if (controllerPadMode(deviceId, deck) !== mode) _releaseBounce(deck, deviceId);
 	_padModesFor(deviceId)[deck] = mode;
 	onModeChanged();
 	if (!['hot_cue', 'auto_loop', 'bounce_loop'].includes(mode)) {
@@ -212,6 +239,11 @@ export function runControllerPad(
 	notify: Notify,
 	pressT0Ms?: number
 ): void {
+	// A release belongs to its original gesture, even after mode/SHIFT changes.
+	if (!pressed) {
+		_releaseBounce(deck, deviceId, pad);
+		return;
+	}
 	const mode = controllerPadMode(deviceId, deck);
 	if (_deckIsEmpty(deck)) {
 		if (pressed) _toastEmptyDeck(deck, notify);
@@ -265,8 +297,8 @@ export function runControllerPad(
 		return;
 	}
 	if (mode === 'bounce_loop') {
-		if (pressed) _cmdBeatLoop(deck, CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1]);
-		else _cmdLoopExit(deck);
+		_bounceHolds.set(deck, { device: _controllerKey(deviceId), pad, generation: deckStates[deck].load_generation });
+		_cmdBeatLoop(deck, CONTROLLER_LOOP_BEATS.bounce_loop[pad - 1]);
 		return;
 	}
 	// Unsupported modes intentionally remain inert after the warning emitted

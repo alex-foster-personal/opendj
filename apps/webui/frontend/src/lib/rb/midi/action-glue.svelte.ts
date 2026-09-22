@@ -36,6 +36,7 @@
  *       a Note On with velocityOn is queued for that device
  */
 
+import { untrack } from 'svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	deckStates,
@@ -57,6 +58,7 @@ import type { DeviceMap, LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/
 import {
 	controllerPadMode,
 	cycleControllerManualLoop,
+	releaseControllerDevice,
 	resetControllerPadRuntime,
 	runControllerPad,
 	selectControllerPadMode,
@@ -70,6 +72,7 @@ import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapte
 
 export {
 	controllerPadMode,
+	releaseControllerDevice,
 	resetControllerPadRuntime as _resetControllerStateForTests
 } from '$lib/rb/midi/controller-pad-runtime.svelte';
 
@@ -543,7 +546,15 @@ export function attachMidiGlue(): () => void {
 	if (_attached) throw new Error('attachMidiGlue: already attached');
 	_attached = true;
 	registerActionHandler(handleMidiAction);
+	let connected = new Set(midiState.devices.map((device) => device.id));
 	const stopLeds = $effect.root(() => {
+		$effect(() => {
+			const current = new Set(midiState.devices.map((device) => device.id));
+			untrack(() => {
+				for (const id of connected) if (!current.has(id)) releaseControllerDevice(id);
+			});
+			connected = current;
+		});
 		$effect(() => {
 			_syncLeds();
 		});
