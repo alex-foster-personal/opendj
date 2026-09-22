@@ -4,6 +4,9 @@
   a failure that reads as a lockfile verdict, [else stop]
 - [if] the gate variable is set [then] the job runs on ubuntu-latest exactly as before,
   [else stop]
+- [if] the hosted job is skipped [then] the metadata half still runs, ungated, on the
+  self-hosted pool with no resolution, so a stale lock stays red (Codex P1, #3763),
+  [else stop]
 """
 
 from __future__ import annotations
@@ -26,3 +29,19 @@ def test_lockfile_check_is_gated_on_hosted_billing() -> None:
     )
     assert job["runs-on"] == "ubuntu-latest", "the check stays hosted (sdist exposure)"
     assert "uv lock --check" in job["steps"][-1]["run"]
+
+
+LINUX_POOL = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+
+
+def test_metadata_check_runs_ungated_on_the_pool() -> None:
+    """if the metadata job is gated or dropped then a billing block makes a stale lock
+    mergeable again, which is the #2740 incident this workflow exists to stop"""
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    assert "lock-metadata" in jobs, "the ungated metadata half is missing"
+    job = jobs["lock-metadata"]
+    assert "if" not in job, f"the metadata half must never be gated: {job.get('if')!r}"
+    assert job["runs-on"] == LINUX_POOL, job["runs-on"]
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any("python -m scripts.lock_metadata_check" in r for r in runs), runs
+    assert not any("uv lock" in r for r in runs), "no resolution on the persistent pool"
