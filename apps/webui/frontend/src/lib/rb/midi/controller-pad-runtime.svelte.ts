@@ -7,7 +7,6 @@
  * change one another's pad surface.
  */
 
-import { pushToast } from '$lib/stores.svelte';
 import { deckStates } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -17,6 +16,10 @@ import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
 const AUTO_LOOP_BEATS = [0.25, 0.5, 1, 2, 4, 8, 16, 32] as const;
 const BOUNCE_LOOP_BEATS = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8] as const;
+
+// The action adapter owns user notifications; pad state does not depend on
+// the application's global UI store.
+type Notify = (message: string, tone: 'info' | 'warn' | 'error') => void;
 
 const _padModes = new Map<string, Record<DeckId, ControllerPadMode>>();
 const _manualLoopInMs = new Map<string, Partial<Record<DeckId, number>>>();
@@ -48,8 +51,8 @@ function _deckIsEmpty(deck: DeckId): boolean {
 	return deckStates[deck].stable_id === null;
 }
 
-function _toastEmptyDeck(deck: DeckId): void {
-	pushToast(`Deck ${deck} is empty - load a track before using performance pads`, 'error');
+function _toastEmptyDeck(deck: DeckId, notify: Notify): void {
+	notify(`Deck ${deck} is empty - load a track before using performance pads`, 'error');
 }
 
 function _slotForPad(pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): HotCueSlot {
@@ -80,7 +83,11 @@ function _cmdLoopExit(deck: DeckId): void {
 	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
 }
 
-export function cycleControllerManualLoop(deck: DeckId, deviceId: string | undefined): void {
+export function cycleControllerManualLoop(
+	deck: DeckId,
+	deviceId: string | undefined,
+	notify: Notify
+): void {
 	const key = _controllerKey(deviceId);
 	let pending = _manualLoopInMs.get(key);
 	if (pending === undefined) {
@@ -95,7 +102,7 @@ export function cycleControllerManualLoop(deck: DeckId, deviceId: string | undef
 	const loopInMs = pending[deck];
 	if (loopInMs === undefined) {
 		pending[deck] = deckStates[deck].position_ms;
-		pushToast(`Deck ${deck}: loop in set`, 'info');
+		notify(`Deck ${deck}: loop in set`, 'info');
 		return;
 	}
 	if (!Number.isFinite(loopInMs)) {
@@ -105,7 +112,7 @@ export function cycleControllerManualLoop(deck: DeckId, deviceId: string | undef
 	}
 	const loopOutMs = deckStates[deck].position_ms;
 	if (loopOutMs <= loopInMs) {
-		pushToast(`Deck ${deck}: loop out must follow loop in`, 'error');
+		notify(`Deck ${deck}: loop out must follow loop in`, 'error');
 		return;
 	}
 	// Retain stage 2 until the next press even if the revisioned engine command
@@ -119,12 +126,13 @@ export function selectControllerPadMode(
 	deviceId: string | undefined,
 	deck: DeckId,
 	mode: ControllerPadMode,
-	onModeChanged: () => void
+	onModeChanged: () => void,
+	notify: Notify
 ): void {
 	_padModesFor(deviceId)[deck] = mode;
 	onModeChanged();
 	if (!['hot_cue', 'auto_loop', 'bounce_loop'].includes(mode)) {
-		pushToast(`Deck ${deck}: ${mode.replaceAll('_', ' ')} pads are not available yet`, 'warn');
+		notify(`Deck ${deck}: ${mode.replaceAll('_', ' ')} pads are not available yet`, 'warn');
 	}
 }
 
@@ -134,11 +142,12 @@ export function runControllerPad(
 	pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
 	shifted: boolean,
 	pressed: boolean,
+	notify: Notify,
 	pressT0Ms?: number
 ): void {
 	const mode = controllerPadMode(deviceId, deck);
 	if (_deckIsEmpty(deck)) {
-		if (pressed) _toastEmptyDeck(deck);
+		if (pressed) _toastEmptyDeck(deck, notify);
 		return;
 	}
 	if (mode === 'hot_cue') {
@@ -160,7 +169,7 @@ export function runControllerPad(
 			return;
 		}
 		if (!deckStates[deck].has_rb_mapping) {
-			pushToast(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
+			notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
 			return;
 		}
 		void dispatchPerformanceCommand({

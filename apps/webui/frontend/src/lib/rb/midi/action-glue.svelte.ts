@@ -285,7 +285,7 @@ export function handleMidiAction(
 		case 'deck_manual_loop_cycle': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
-			cycleControllerManualLoop(action.deck, _deviceId);
+			cycleControllerManualLoop(action.deck, _deviceId, pushToast);
 			return;
 		}
 		case 'deck_loop_scale': {
@@ -322,7 +322,7 @@ export function handleMidiAction(
 		}
 		case 'controller_pad_mode': {
 			if (!_pressed(value)) return;
-			selectControllerPadMode(_deviceId, action.deck, action.mode, _syncLeds);
+			selectControllerPadMode(_deviceId, action.deck, action.mode, _syncLeds, pushToast);
 			return;
 		}
 		case 'controller_pad': {
@@ -332,6 +332,7 @@ export function handleMidiAction(
 				action.pad,
 				action.shifted,
 				_pressed(value),
+				pushToast,
 				pressT0Ms
 			);
 			return;
