@@ -72,11 +72,7 @@ import {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
-import {
-	noteAbsoluteMidiApplied,
-	noteTakeoverSoftwareValue,
-	observeAbsoluteMidi
-} from '$lib/rb/midi/takeover-state.svelte';
+import { startTakeoverEngineSync, takeoverContinuous } from '$lib/rb/midi/takeover-engine-sync.svelte';
 
 export {
 	controllerPadMode,
@@ -114,67 +110,6 @@ function _pressed(value: MidiInputValue): boolean {
 		throw new Error(`button action received non-button input ${value.kind}`);
 	}
 	return value.pressed;
-}
-
-function _continuous01(value: MidiInputValue): number {
-	if (value.kind !== 'continuous' && value.kind !== 'continuous14') {
-		throw new Error(`continuous action received non-continuous input ${value.kind}`);
-	}
-	return value.value01;
-}
-
-/** Current engine-published scalar in the same 0..1 domain as the hardware.
- * This stays at the action boundary so pickup protects changes made by UI,
- * IPC, presets, or another MIDI device without giving the policy an engine
- * dependency. */
-function _softwareScalar(action: MidiAction): number | null {
-	switch (action.type) {
-		case 'mixer_channel':
-			if (action.target === 'trim') return mixerState.channels[action.deck].trim;
-			if (action.target === 'fader') return mixerState.channels[action.deck].fader;
-			if (action.target === 'filter') return mixerState.channels[action.deck].filter;
-			if (action.target === 'eq') {
-				if (action.band === undefined) throw new Error('mixer_channel eq action requires band (device map bug)');
-				return mixerState.channels[action.deck][`eq_${action.band}`];
-			}
-			return null;
-		case 'mixer_global':
-			return action.target === 'master' ? mixerState.master : mixerState.crossfader;
-		case 'headphone_mix':
-			return mixerState.headphones.mix;
-		case 'headphone_level':
-			return mixerState.headphones.level;
-		case 'deck_pitch': {
-			const range = pitchRanges[action.deck] / 100;
-			return range === 0 ? 0.5 : (deckStates[action.deck].pitch - (1 - range)) / (2 * range);
-		}
-		default:
-			return null;
-	}
-}
-
-/** Gate only physically identified absolute values. Direct programmatic calls
- * to handleMidiAction have no hardware position and remain immediate. */
-function _takeoverContinuous(
-	action: MidiAction,
-	value: MidiInputValue,
-	deviceId: string | undefined,
-	controlId: string | undefined
-): number | null {
-	const hardwareValue = _continuous01(value);
-	const softwareValue = _softwareScalar(action);
-	if (softwareValue === null) return hardwareValue;
-	const decision = observeAbsoluteMidi(
-		action,
-		hardwareValue,
-		value.kind === 'continuous14' ? 1 / 16383 : 1 / 127,
-		deviceId,
-		controlId,
-		softwareValue
-	);
-	if (decision !== null && !decision.apply) return null;
-	noteAbsoluteMidiApplied(action, hardwareValue, deviceId, controlId);
-	return hardwareValue;
 }
 
 /** Glue-local overlay while MASTER CUE is engaged (no IPC command). */
@@ -403,7 +338,7 @@ export function handleMidiAction(
 			return;
 		}
 		case 'mixer_channel': {
-			const v = _takeoverContinuous(action, value, _deviceId, physicalControlId);
+			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			if (action.target === 'trim') {
 				void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
@@ -423,7 +358,7 @@ export function handleMidiAction(
 			return;
 		}
 		case 'mixer_global': {
-			const v = _takeoverContinuous(action, value, _deviceId, physicalControlId);
+			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			if (action.target === 'crossfader') {
 				void dispatchPerformanceCommand({ type: 'crossfader', value: v }, pressT0Ms);
@@ -445,13 +380,13 @@ export function handleMidiAction(
 			return;
 		}
 		case 'headphone_mix': {
-			const v = _takeoverContinuous(action, value, _deviceId, physicalControlId);
+			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			_dispatchHeadphoneMix(v);
 			return;
 		}
 		case 'headphone_level': {
-			const v = _takeoverContinuous(action, value, _deviceId, physicalControlId);
+			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			void dispatchPerformanceCommand({
 				type: 'headphone_level',
@@ -474,7 +409,7 @@ export function handleMidiAction(
 			return;
 		}
 		case 'deck_pitch': {
-			const v = _takeoverContinuous(action, value, _deviceId, physicalControlId);
+			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
 			void dispatchPerformanceCommand({
@@ -635,26 +570,7 @@ export function attachMidiGlue(): () => void {
 			_syncLeds();
 		});
 	});
-	const stopTakeoverSync = $effect.root(() => {
-		$effect(() => {
-			for (const deck of [1, 2, 3, 4] as const) {
-				const channel = mixerState.channels[deck];
-				noteTakeoverSoftwareValue(`mixer:${deck}:trim`, channel.trim);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:high`, channel.eq_high);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:mid`, channel.eq_mid);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:low`, channel.eq_low);
-				noteTakeoverSoftwareValue(`mixer:${deck}:filter`, channel.filter);
-				noteTakeoverSoftwareValue(`mixer:${deck}:fader`, channel.fader);
-				const range = pitchRanges[deck] / 100;
-				const value = range === 0 ? 0.5 : (deckStates[deck].pitch - (1 - range)) / (2 * range);
-				noteTakeoverSoftwareValue(`deck:${deck}:pitch`, Math.min(1, Math.max(0, value)));
-			}
-			noteTakeoverSoftwareValue('mixer:global:crossfader', mixerState.crossfader);
-			noteTakeoverSoftwareValue('mixer:global:master', mixerState.master);
-			noteTakeoverSoftwareValue('headphones:mix', mixerState.headphones.mix);
-			noteTakeoverSoftwareValue('headphones:level', mixerState.headphones.level);
-		});
-	});
+	const stopTakeoverSync = startTakeoverEngineSync();
 	const meterTimer = setInterval(() => _syncMeters(), MIDI_METER_INTERVAL_MS);
 	return () => {
 		_syncMeters(true);
