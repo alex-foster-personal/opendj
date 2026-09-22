@@ -244,7 +244,9 @@ function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: nu
 		throw new Error('pitchbend values are built in _dispatch, not _valueFor');
 	}
 	if (binding.relative === true) {
-		return { kind: 'relative', delta: decodeRelative(d2) };
+		const decoded = decodeRelative(d2);
+		const unit = binding.relativeUnit === true && decoded !== 0 ? Math.sign(decoded) : decoded;
+		return { kind: 'relative', delta: binding.invert === true ? -unit : unit };
 	}
 	const value01 = d2 / 127;
 	return { kind: 'continuous', value01: binding.invert === true ? 1 - value01 : value01, raw: d2 };

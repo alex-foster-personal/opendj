@@ -37,16 +37,28 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import { deckStates, engine, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import {
+	deckStates,
+	engine,
+	mixerState,
+	peekDeckMeterReading,
+	pitchRanges
+} from '$lib/rb/audio-engine.svelte';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
 	midiState,
 	registerActionHandler,
+	sendCc,
 	sendLed,
 	unregisterActionHandler
 } from '$lib/rb/midi/webmidi.svelte';
-import type { LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
+import type {
+	ControllerPadMode,
+	LedTrigger,
+	MidiAction,
+	MidiInputValue
+} from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 
@@ -62,6 +74,40 @@ export interface BrowseAdapter {
 }
 
 let _browseAdapter: BrowseAdapter | null = null;
+
+const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
+const AUTO_LOOP_BEATS = [0.25, 0.5, 1, 2, 4, 8, 16, 32] as const;
+const BOUNCE_LOOP_BEATS = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8] as const;
+const MIDI_METER_INTERVAL_MS = 50;
+
+/** Controller-local state is keyed by WebMIDI input id. It never substitutes
+ * for engine state: it only describes which meaning a stateful pad surface
+ * currently exposes and a not-yet-complete manual-loop gesture. */
+const _padModes = new Map<string, Record<DeckId, ControllerPadMode>>();
+const _manualLoopInMs = new Map<string, Partial<Record<DeckId, number>>>();
+
+function _controllerKey(deviceId: string | undefined): string {
+	return deviceId ?? '__direct_test__';
+}
+
+function _padModesFor(deviceId: string | undefined): Record<DeckId, ControllerPadMode> {
+	const key = _controllerKey(deviceId);
+	let modes = _padModes.get(key);
+	if (modes === undefined) {
+		modes = { 1: PAD_DEFAULT_MODE, 2: PAD_DEFAULT_MODE, 3: PAD_DEFAULT_MODE, 4: PAD_DEFAULT_MODE };
+		_padModes.set(key, modes);
+	}
+	return modes;
+}
+
+export function controllerPadMode(deviceId: string | undefined, deck: DeckId): ControllerPadMode {
+	return _padModesFor(deviceId)[deck];
+}
+
+export function _resetControllerStateForTests(): void {
+	_padModes.clear();
+	_manualLoopInMs.clear();
+}
 
 export function registerBrowseAdapter(adapter: BrowseAdapter): void {
 	if (_browseAdapter !== null) {
@@ -169,6 +215,144 @@ function _cmdLoopExit(deck: DeckId): void {
 	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
 }
 
+function _slotForPad(pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): HotCueSlot {
+	return String.fromCharCode('A'.charCodeAt(0) + pad - 1) as HotCueSlot;
+}
+
+function _manualLoopCycle(deck: DeckId, deviceId: string | undefined): void {
+	const key = _controllerKey(deviceId);
+	let pending = _manualLoopInMs.get(key);
+	if (pending === undefined) {
+		pending = {};
+		_manualLoopInMs.set(key, pending);
+	}
+	if (deckStates[deck].loop?.engaged === true) {
+		delete pending[deck];
+		_cmdLoopExit(deck);
+		return;
+	}
+	const loopInMs = pending[deck];
+	if (loopInMs === undefined) {
+		pending[deck] = deckStates[deck].position_ms;
+		pushToast(`Deck ${deck}: loop in set`, 'info');
+		return;
+	}
+	if (!Number.isFinite(loopInMs)) {
+		delete pending[deck];
+		_cmdLoopExit(deck);
+		return;
+	}
+	const loopOutMs = deckStates[deck].position_ms;
+	if (loopOutMs <= loopInMs) {
+		pushToast(`Deck ${deck}: loop out must follow loop in`, 'error');
+		return;
+	}
+	// Retain stage 2 until the next press even if the revisioned engine command
+	// has not presented yet; rapid IN/OUT/EXIT cannot accidentally start a new
+	// loop-in gesture while LOOP OUT is still queued.
+	pending[deck] = Number.NaN;
+	void dispatchPerformanceCommand({ type: 'loop', deck, loop: { in_ms: loopInMs, out_ms: loopOutMs } });
+}
+
+function _scaleLoop(deck: DeckId, factor: 0.5 | 2): void {
+	const loop = deckStates[deck].loop;
+	if (loop === null || !loop.engaged) {
+		pushToast(`Deck ${deck}: no active loop to ${factor === 0.5 ? 'halve' : 'double'}`, 'info');
+		return;
+	}
+	const lengthMs = loop.out_ms - loop.in_ms;
+	void dispatchPerformanceCommand({
+		type: 'loop',
+		deck,
+		loop: { in_ms: loop.in_ms, out_ms: loop.in_ms + lengthMs * factor }
+	});
+}
+
+function _tempoNudge(deck: DeckId, direction: -1 | 1): void {
+	const bpm = deckStates[deck].bpm;
+	if (bpm === null || bpm <= 0) {
+		pushToast(`Deck ${deck}: tempo nudge needs a measured BPM`, 'error');
+		return;
+	}
+	const ratio = deckStates[deck].pitch + (direction * 0.1) / bpm;
+	const range = pitchRanges[deck] / 100;
+	if (Math.abs(ratio - 1) > range + 1e-9) {
+		pushToast(`Deck ${deck}: tempo nudge exceeds the selected pitch range`, 'error');
+		return;
+	}
+	void dispatchPerformanceCommand({ type: 'tempo', deck, ratio });
+}
+
+function _selectPadMode(
+	deviceId: string | undefined,
+	deck: DeckId,
+	mode: ControllerPadMode
+): void {
+	_padModesFor(deviceId)[deck] = mode;
+	_syncLeds();
+	if (!['hot_cue', 'auto_loop', 'bounce_loop'].includes(mode)) {
+		pushToast(`Deck ${deck}: ${mode.replaceAll('_', ' ')} pads are not available yet`, 'warn');
+	}
+}
+
+function _runControllerPad(
+	deviceId: string | undefined,
+	deck: DeckId,
+	pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+	shifted: boolean,
+	pressed: boolean,
+	pressT0Ms?: number
+): void {
+	const mode = controllerPadMode(deviceId, deck);
+	if (_deckIsEmpty(deck)) {
+		if (pressed) _toastEmptyDeck(deck, 'using performance pads');
+		return;
+	}
+	if (mode === 'hot_cue') {
+		if (!pressed) return;
+		const slot = _slotForPad(pad);
+		const cue = _findHotCue(deck, slot);
+		if (shifted) {
+			if (cue === null) return;
+			void dispatchPerformanceCommand({
+				type: 'hot_cue_clear',
+				deck,
+				slot,
+				revision: deckStates[deck].hot_cue_revisions[slot]
+			});
+			return;
+		}
+		if (cue !== null) {
+			_cmdHotCue(deck, slot, pressT0Ms);
+			return;
+		}
+		if (!deckStates[deck].has_rb_mapping) {
+			pushToast(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
+			return;
+		}
+		void dispatchPerformanceCommand({
+			type: 'hot_cue_save',
+			deck,
+			slot,
+			in_ms: deckStates[deck].position_ms,
+			revision: deckStates[deck].hot_cue_revisions[slot]
+		});
+		return;
+	}
+	if (shifted) return;
+	if (mode === 'auto_loop') {
+		if (pressed) _cmdBeatLoop(deck, AUTO_LOOP_BEATS[pad - 1]);
+		return;
+	}
+	if (mode === 'bounce_loop') {
+		if (pressed) _cmdBeatLoop(deck, BOUNCE_LOOP_BEATS[pad - 1]);
+		else _cmdLoopExit(deck);
+		return;
+	}
+	// Unsupported modes intentionally remain inert after the warning emitted
+	// when selected. Never fall through to a surprising hot-cue action.
+}
+
 // ------------------------------------------------------------ action switch
 
 /** The action switch. Exported for unit tests; production wiring goes
@@ -214,6 +398,70 @@ export function handleMidiAction(
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
 			_cmdLoopExit(action.deck);
+			return;
+		}
+		case 'deck_sync_toggle': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'syncing');
+			void dispatchPerformanceCommand({
+				type: 'beat_sync',
+				deck: action.deck,
+				enabled: !deckStates[action.deck].beat_sync_enabled
+			});
+			return;
+		}
+		case 'deck_manual_loop_cycle': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
+			_manualLoopCycle(action.deck, _deviceId);
+			return;
+		}
+		case 'deck_loop_scale': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'resizing a loop');
+			_scaleLoop(action.deck, action.factor);
+			return;
+		}
+		case 'deck_key_sync_toggle': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'key sync');
+			void dispatchPerformanceCommand({
+				type: 'key_sync',
+				deck: action.deck,
+				enabled: !deckStates[action.deck].key_sync_enabled
+			});
+			return;
+		}
+		case 'deck_key_nudge': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'changing key');
+			void dispatchPerformanceCommand({
+				type: 'key_nudge',
+				deck: action.deck,
+				semitones: action.semitones
+			});
+			return;
+		}
+		case 'deck_tempo_nudge': {
+			if (!_pressed(value)) return;
+			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'nudging tempo');
+			_tempoNudge(action.deck, action.direction);
+			return;
+		}
+		case 'controller_pad_mode': {
+			if (!_pressed(value)) return;
+			_selectPadMode(_deviceId, action.deck, action.mode);
+			return;
+		}
+		case 'controller_pad': {
+			_runControllerPad(
+				_deviceId,
+				action.deck,
+				action.pad,
+				action.shifted,
+				_pressed(value),
+				pressT0Ms
+			);
 			return;
 		}
 		case 'mixer_channel': {
@@ -336,7 +584,7 @@ export function pitchRatioFromFader(value01: number, rangePct: number): number {
 
 /** True when a LedRule's watched state is currently active. Reads ONLY
  * reactive stores so the caller's $effect re-runs on change. */
-export function ledTriggerActive(trigger: LedTrigger): boolean {
+export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolean {
 	if (trigger.kind === 'deck_playing') {
 		return deckStates[trigger.deck].playing;
 	} else if (trigger.kind === 'deck_loaded') {
@@ -344,8 +592,15 @@ export function ledTriggerActive(trigger: LedTrigger): boolean {
 	} else if (trigger.kind === 'loop_engaged') {
 		const loop = deckStates[trigger.deck].loop;
 		return loop !== null && loop.engaged;
+	} else if (trigger.kind === 'beat_sync_enabled') {
+		return deckStates[trigger.deck].beat_sync_enabled;
+	} else if (trigger.kind === 'pad_mode_selected') {
+		return controllerPadMode(deviceId, trigger.deck) === trigger.mode;
 	} else if (trigger.kind === 'hot_cue_present') {
-		return deckStates[trigger.deck].hot_cues.some((c) => c.slot === trigger.slot);
+		return (
+			(trigger.padMode === undefined || controllerPadMode(deviceId, trigger.deck) === trigger.padMode) &&
+			deckStates[trigger.deck].hot_cues.some((c) => c.slot === trigger.slot)
+		);
 	} else if (trigger.kind === 'channel_cue_enabled') {
 		return mixerState.channels[trigger.deck].cue_enabled;
 	}
@@ -363,10 +618,33 @@ function _syncLeds(): void {
 			continue;
 		}
 		for (const rule of map.leds) {
-			const on = ledTriggerActive(rule.trigger);
+			const on = ledTriggerActive(rule.trigger, device.id);
 			sendLed(device.id, rule.out.ch, rule.out.note, on ? rule.out.velocityOn : rule.out.velocityOff);
 		}
 	}
+}
+
+function _syncMeters(forceZero = false): void {
+	for (const device of midiState.devices) {
+		const map = getDeviceMap(device.id);
+		if (map === null || map.meters === undefined || map.meters.length === 0) continue;
+		if (!device.hasOutput) continue;
+		for (const meter of map.meters) {
+			const segments = forceZero ? 0 : peekDeckMeterReading(meter.deck).segments;
+			const value = midiMeterValue(segments, meter.out.maxValue);
+			sendCc(device.id, meter.out.ch, meter.out.cc, value);
+		}
+	}
+}
+
+export function midiMeterValue(segments: number, maxValue: number): number {
+	if (!Number.isInteger(segments) || segments < 0 || segments > 10) {
+		throw new RangeError(`midiMeterValue: segments must be an integer in 0..10, got ${segments}`);
+	}
+	if (!Number.isInteger(maxValue) || maxValue < 1 || maxValue > 127) {
+		throw new RangeError(`midiMeterValue: maxValue must be an integer in 1..127, got ${maxValue}`);
+	}
+	return Math.round((segments / 10) * maxValue);
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -386,7 +664,10 @@ export function attachMidiGlue(): () => void {
 			_syncLeds();
 		});
 	});
+	const meterTimer = setInterval(() => _syncMeters(), MIDI_METER_INTERVAL_MS);
 	return () => {
+		_syncMeters(true);
+		clearInterval(meterTimer);
 		stopLeds();
 		// Release the handler webmidi holds, not just this module's latch.
 		// registerActionHandler() throws while one is registered, so leaving it
@@ -396,6 +677,8 @@ export function attachMidiGlue(): () => void {
 		// way out. unregisterActionHandler()'s docstring already said the
 		// teardown calls it; only the call was missing.
 		unregisterActionHandler();
+		_padModes.clear();
+		_manualLoopInMs.clear();
 		_attached = false;
 	};
 }

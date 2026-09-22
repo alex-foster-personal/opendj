@@ -169,6 +169,13 @@ test('pitchRatioFromFader maps 0..1 onto the +-range window', () => {
 	assert.throws(() => glue.pitchRatioFromFader(Number.NaN, 16), RangeError);
 });
 
+test('midiMeterValue maps the real ten-segment meter onto Mixtour Pro 0..6', () => {
+	assert.equal(glue.midiMeterValue(0, 6), 0);
+	assert.equal(glue.midiMeterValue(5, 6), 3);
+	assert.equal(glue.midiMeterValue(10, 6), 6);
+	assert.throws(() => glue.midiMeterValue(11, 6), RangeError);
+});
+
 test('transport action on an empty deck toasts instead of throwing', () => {
 	const beforeCount = stores.toasts.length;
 	glue.handleMidiAction(
@@ -282,6 +289,52 @@ test('ledTriggerActive reflects deck store state', () => {
 	// Restore the empty-deck state for any later tests.
 	audioEngine.deckStates[1].stable_id = null;
 	audioEngine.deckStates[1].hot_cues = [];
+});
+
+test('controller pad mode is per device/deck and drives mode LED truth', () => {
+	glue._resetControllerStateForTests();
+	assert.equal(glue.controllerPadMode('pro-a', 1), 'hot_cue');
+	glue.handleMidiAction(
+		{ type: 'controller_pad_mode', deck: 1, mode: 'auto_loop' },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	assert.equal(glue.controllerPadMode('pro-a', 1), 'auto_loop');
+	assert.equal(glue.controllerPadMode('pro-a', 2), 'hot_cue');
+	assert.equal(glue.controllerPadMode('pro-b', 1), 'hot_cue');
+	assert.equal(
+		glue.ledTriggerActive({ kind: 'pad_mode_selected', deck: 1, mode: 'auto_loop' }, 'pro-a'),
+		true
+	);
+	assert.equal(
+		glue.ledTriggerActive({ kind: 'pad_mode_selected', deck: 1, mode: 'hot_cue' }, 'pro-a'),
+		false
+	);
+	glue._resetControllerStateForTests();
+});
+
+test('unsupported pad mode warns once and pad input stays inert', () => {
+	glue._resetControllerStateForTests();
+	const beforeCount = stores.toasts.length;
+	glue.handleMidiAction(
+		{ type: 'controller_pad_mode', deck: 2, mode: 'instant_fx' },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	assert.equal(stores.toasts.length, beforeCount + 1);
+	assert.match(lastToast().message, /instant fx pads are not available/);
+	const afterWarning = stores.toasts.length;
+	glue.handleMidiAction(
+		{ type: 'controller_pad', deck: 2, pad: 1, shifted: false },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	// Empty-deck protection remains visible, but no unrelated hot-cue or loop
+	// action is dispatched. A loaded deck is covered by the static mode/action
+	// map test and physical acceptance.
+	assert.equal(stores.toasts.length, afterWarning + 1);
+	assert.match(lastToast().message, /Deck 2 is empty/);
+	glue._resetControllerStateForTests();
 });
 
 test('browse actions without a BrowseAdapter are loud (toast), not silent', () => {

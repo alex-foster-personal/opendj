@@ -14,12 +14,8 @@
  *   [SPIKE 2b] Mixtour transport is plain Note/CC, VU meter feedback is
  *        Note-On velocity = signal level (0x00-0x7F).
  *
- * MIXTOUR PRO WARNING (Tue 22 Sep 2026): this legacy map currently matches
- * `Mixtour Pro`, but that is now known unsafe rather than intentional. The Pro
- * uses different transport, load, mixer, pad and global addresses; some of its
- * real controls dispatch unrelated legacy actions through this map. The first
- * implementation tranche in specs/mixtour-pro-hardening.md must make this
- * identity classic-only and quarantine the Pro before adding Pro behavior.
+ * MIXTOUR PRO: deliberately excluded by nameMatch. Its transport, load,
+ * mixer, pad and global addresses differ and live in reloop-mixtour-pro.ts.
  *
  * Requirements (mini-PRD):
  *   ✔︎ 2-deck transport (play/cue), 4 hot cues per deck, beat-loop +
@@ -189,10 +185,11 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
 
 // -------------------------------------------------------------- device map
 
-/** Reloop Mixtour classic P0 map. Known unsafe for Pro until Package 0 lands. */
+/** Reloop Mixtour classic P0 map. The negative lookahead is a safety boundary:
+ * broad `Mixtour` matching used to route Pro SYNC as classic LOAD. */
 export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
-	nameMatch: 'Mixtour',
+	nameMatch: '\\bMixtour\\b(?!\\s+Pro\\b)',
 	bindings: [..._deckBindings(1, 1), ..._deckBindings(2, 2), ..._GLOBAL_BINDINGS],
 	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
 	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]

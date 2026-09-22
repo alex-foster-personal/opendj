@@ -237,7 +237,13 @@ test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
 	webmidi._resetMidiForTests();
 	registry._resetMapsRegistryForTests();
 	const names = registry.DEVICE_MAP_REGISTRY.map((m) => m.nameMatch);
-	assert.deepEqual(names, ['DDJ-FLX10', 'DDJ-400', 'Mixtour', 'DDJ-FLX4']);
+	assert.deepEqual(names, [
+		'DDJ-FLX10',
+		'DDJ-400',
+		'\\bMixtour\\s+Pro\\b',
+		'\\bMixtour\\b(?!\\s+Pro\\b)',
+		'DDJ-FLX4'
+	]);
 	registry.registerAllDeviceMaps();
 	registry.registerAllDeviceMaps(); // second call must no-op, not throw
 	webmidi._resetMidiForTests();
