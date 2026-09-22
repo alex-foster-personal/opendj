@@ -20,7 +20,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 STABLE_EVIDENCE = REPO / ".github" / "workflows" / "stable-evidence.yml"
 TRUNK_JOB_VERDICT = REPO / ".github" / "workflows" / "trunk-job-verdict.yml"
-CI_COST_GUARD = REPO / ".github" / "workflows" / "ci-cost-guard.yml"
+CI_COST_GUARD = REPO / ".github" / "workflows" / "error-sink.yml"  # carries the assess job
 
 CANCELLED_SKIP = "github.event.workflow_run.conclusion != 'cancelled'"
 

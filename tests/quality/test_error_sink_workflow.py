@@ -3,7 +3,7 @@
 Reads the shipped workflow, not a second hand-maintained representation.
 
 Regression lines:
-  - if a failed CI/E2E/Full CI/macOS packaging run cannot reach the poster,
+  - if a failed CI/E2E/Full CI (on-demand)/macOS Packaging run cannot reach the poster,
     then broken
   - if the poster does not invoke post_build_failure, then broken
   - if the workflow edits runner-switch variables, then broken
@@ -11,6 +11,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -20,7 +21,22 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / ".github" / "workflows" / "error-sink.yml"
 
-WATCHED = ["CI", "E2E", "Full CI", "macOS packaging"]
+# The trigger list is the union of what the sink posts for and what the cost
+# guard prices (one observer run per completion, Tue 22 Sep 2026, #2196).
+WATCHED = [
+    "CI",
+    "E2E",
+    "Full CI (on-demand)",
+    "macOS Desktop Compile",
+    "macOS Native Companion",
+    "macOS Packaging",
+    "Periodic checks",
+    "Windows Parity (on-demand)",
+]
+# What the sink itself posts for, named in its job gate. Until Tue 22 Sep 2026
+# the list read `Full CI` and `macOS packaging`, names no workflow has, so
+# the sink had never fired for either.
+SINK_POSTS_FOR = ["CI", "E2E", "Full CI (on-demand)", "macOS Packaging"]
 
 
 def _workflow() -> dict:
@@ -39,7 +55,7 @@ def _assert_watched(workflow: dict) -> None:
 
 
 def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
-    """if CI, E2E, Full CI, or macOS packaging fails then the sink job runs."""
+    """if CI, E2E, Full CI (on-demand), or macOS Packaging fails then the sink job runs."""
     workflow = _workflow()
     _assert_watched(workflow)
     trigger = workflow[True]["workflow_run"]
@@ -48,6 +64,11 @@ def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
     job = workflow["jobs"]["post_build_failure"]
     condition = " ".join(str(job["if"]).split())
     assert "github.event.workflow_run.conclusion == 'failure'" in condition
+    posted = f"contains(fromJSON('{json.dumps(SINK_POSTS_FOR)}'), github.event.workflow_run.name)"
+    assert posted in condition, (
+        "the sink job must name exactly the workflows it posts for, since the "
+        "trigger list is wider than its own watch set"
+    )
     command = "\n".join(
         step.get("run", "") for step in job["steps"] if isinstance(step, dict)
     )

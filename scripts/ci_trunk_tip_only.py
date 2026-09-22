@@ -64,7 +64,6 @@ except ModuleNotFoundError as exc:
 GATING_WORKFLOW = "CI"
 BOOKKEEPING_WORKFLOWS = frozenset(
     {
-        "CI Cost Guard",
         "Stable evidence",
         "Error sink",
     }

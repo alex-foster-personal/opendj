@@ -27,7 +27,9 @@ import yaml
 from scripts.ci_cost_guard import infer_standard_sku
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
-GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+# The cost guard is the `assess` job of error-sink.yml since Tue 22 Sep 2026
+# (one observer run per completion, issue #2196).
+GUARD = WORKFLOW_DIR / "error-sink.yml"
 MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
@@ -337,6 +339,31 @@ def event_set(condition: str, variable: str) -> set[str]:
     return events
 
 
+_UNPRICED_PREFIX = re.compile(r"^github\.event\.workflow_run\.name != '([^']+)' && ")
+
+
+def unpriced_names(condition: str) -> tuple[set[str], str]:
+    """Workflows the guard's gate excludes by name, and the gate that remains.
+
+    The only shape read is a leading run of `github.event.workflow_run.name !=
+    '<workflow>' &&` clauses followed by one parenthesized group. A name
+    exclusion can only REMOVE runs, so stripping it is fail-closed in the same
+    way `event_set`'s `!cancelled()` widening is. Any other shape is left for
+    the strict parsers below to refuse.
+    """
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    names: set[str] = set()
+    while (match := _UNPRICED_PREFIX.match(stripped)):
+        names.add(match.group(1))
+        stripped = stripped[match.end():]
+    if names:
+        assert stripped.startswith("(") and stripped.endswith(")"), (
+            f"a name exclusion must be followed by one parenthesized gate: {condition}"
+        )
+        stripped = stripped[1:-1].strip()
+    return names, stripped
+
+
 def e2e_priced_events(condition: str) -> set[str]:
     """The events the guard prices FOR E2E, read from its `assess` gate.
 
@@ -346,7 +373,7 @@ def e2e_priced_events(condition: str) -> set[str]:
     everything after it goes through the strict parser above, so a fourth
     disjunct of any other shape reddens this rather than being skipped.
     """
-    stripped = re.sub(r"\s+", " ", condition).strip()
+    _, stripped = unpriced_names(condition)
     escape = "github.event.workflow_run.name != 'E2E'"
     head, sep, tail = stripped.partition("||")
     assert head.strip() == escape and sep, (

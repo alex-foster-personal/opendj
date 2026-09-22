@@ -67,7 +67,7 @@ def test_bookkeeping_for_superseded_sha_is_cancelled() -> None:
     """If bookkeeping head_sha is not retained then it is scheduled for cancellation."""
     runs = [
         _run(10, name="Stable evidence", head_sha=OTHER_SHA),
-        _run(11, name="CI Cost Guard", head_sha=TRUNK_TIP),
+        _run(11, name="Error sink", head_sha=TRUNK_TIP),
         _run(12, name="Error sink", head_sha=OTHER_SHA),
     ]
     plan = mod.build_sweep_plan(TRUNK_TIP, runs)
@@ -133,10 +133,10 @@ def test_execute_sweep_posts_cancel_when_not_dry_run(monkeypatch: pytest.MonkeyP
 
 def test_cancel_log_line_includes_superseded_by() -> None:
     """Cancellation logs name the superseding trunk tip SHA."""
-    run = _run(32, name="CI Cost Guard", head_sha=OTHER_SHA)
+    run = _run(32, name="Error sink", head_sha=OTHER_SHA)
     line = mod._cancel_log_line(run, TRUNK_TIP)
     assert "superseded_by=" + TRUNK_TIP in line
-    assert "workflow=CI Cost Guard" in line
+    assert "workflow=Error sink" in line
     assert f"run_id={run.run_id}" in line
 
 

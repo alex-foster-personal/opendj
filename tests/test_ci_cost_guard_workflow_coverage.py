@@ -29,6 +29,7 @@ from tests.ci_cost_guard_workflow_reader import (
     e2e_priced_events,
     guard_threshold,
     top_level_disjuncts,
+    unpriced_names,
     workflow_docs,
 )
 
@@ -51,7 +52,17 @@ def test_every_workflow_that_can_trip_the_guard_is_watched() -> None:
     """
     threshold = guard_threshold()
     workflows = workflow_docs()
-    watched = set(yaml.safe_load(GUARD.read_text())[True]["workflow_run"]["workflows"])
+    guard = yaml.safe_load(GUARD.read_text())
+    triggered = set(guard[True]["workflow_run"]["workflows"])
+    # The guard shares its workflow with the error sink (one observer run per
+    # completion, Tue 22 Sep 2026), so the trigger list is the union of both
+    # jobs' needs and the guard's gate excludes by name what only the sink
+    # watches. An excluded name that is not triggered is dead text, so fail.
+    unpriced, _ = unpriced_names(guard["jobs"]["assess"]["if"])
+    assert unpriced <= triggered, (
+        f"the guard excludes names it is not triggered by: {sorted(unpriced - triggered)}"
+    )
+    watched = triggered - unpriced
 
     can_trip = {n: c for n, d in workflows.items() if (c := ceiling_usd(d)) > threshold}
     assert can_trip, (

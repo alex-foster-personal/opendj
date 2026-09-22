@@ -15,7 +15,6 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
-    "CI Cost Guard": REPO / ".github" / "workflows" / "ci-cost-guard.yml",
     "Stable evidence": REPO / ".github" / "workflows" / "stable-evidence.yml",
     "Error sink": REPO / ".github" / "workflows" / "error-sink.yml",
 }
@@ -33,8 +32,10 @@ def test_bookkeeping_workflows_use_agentbox_runner_pool() -> None:
     """Each bookkeeping workflow still resolves runs-on through CI_RUNS_ON_LINUX."""
     for name, path in WORKFLOWS.items():
         workflow = _workflow(path)
-        job = next(iter(workflow["jobs"].values()))
-        assert job["runs-on"] == RUNS_ON_EXPR, f"{name} must stay on CI_RUNS_ON_LINUX"
+        for job_id, job in workflow["jobs"].items():
+            assert job["runs-on"] == RUNS_ON_EXPR, (
+                f"{name} job {job_id} must stay on CI_RUNS_ON_LINUX"
+            )
 
 
 def test_bookkeeping_workflows_keep_cancel_in_progress_false() -> None:
