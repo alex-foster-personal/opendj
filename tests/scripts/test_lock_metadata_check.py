@@ -13,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from scripts.lock_metadata_check import EXIT_OK, EXIT_STALE, EXIT_UNKNOWN, canonical_version, check
+from scripts.lock_metadata_check import (
+    EXIT_OK,
+    EXIT_STALE,
+    EXIT_UNKNOWN,
+    canonical_version,
+    check,
+    markers_equivalent,
+)
 
 PYPROJECT = """
 [project]
@@ -208,6 +215,82 @@ def test_an_unparseable_project_version_is_unknown_not_clean(tmp_path: Path) -> 
     )
     assert code == EXIT_UNKNOWN
     assert "not a PEP 440 version" in message
+
+
+def test_a_python_version_marker_matches_uv_s_python_full_version_rewrite(tmp_path: Path) -> None:
+    """if pyproject.toml says `python_version < '3.11'` and uv recorded
+    `python_full_version < '3.11'` then 0: same meaning, different spelling"""
+    pyproject = PYPROJECT.replace(
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\"",
+        "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin' and python_version < '3.11'\"",
+    )
+    lock = LOCK.replace(
+        "marker = \"sys_platform == 'darwin'\"",
+        "marker = \"python_full_version < '3.11' and sys_platform == 'darwin'\"",
+    )
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+    # CONTROL: a marker that MEANS something else is still stale, spelled either way.
+    code, message = _run(tmp_path, pyproject.replace("< '3.11'", "< '3.12'"), lock)
+    assert code == EXIT_STALE
+    assert "python_version < '3.12'" in message
+
+
+def test_a_parenthesized_specifier_matches_the_bare_lock_specifier(tmp_path: Path) -> None:
+    """if pyproject.toml writes `numpy (>=1.26)` and uv recorded `>=1.26` then 0"""
+    code, message = _run(tmp_path, PYPROJECT.replace('"numpy>=1.26"', '"numpy (>=1.26)"'))
+    assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("spelled", "recorded", "same"),
+    [
+        ("python_version < '3.11'", "python_full_version < '3.11'", True),
+        ("python_version >= '3.10'", "python_full_version >= '3.10'", True),
+        ("python_version <= '3.10'", "python_full_version < '3.11'", True),
+        ("python_version > '3.10'", "python_full_version >= '3.11'", True),
+        ("python_version == '3.10'", "python_full_version == '3.10.*'", True),
+        (
+            "python_version == '3.10'",
+            "python_full_version >= '3.10' and python_full_version < '3.11'",
+            True,
+        ),
+        ("python_version != '3.10'", "python_full_version != '3.10.*'", True),
+        (
+            "(sys_platform == 'win32' or sys_platform == 'darwin') and extra == 'dev'",
+            "(extra == 'dev' and sys_platform == 'darwin') or (extra == 'dev' and sys_platform == 'win32')",
+            True,
+        ),
+        ("python_version < '3.11'", "python_full_version < '3.12'", False),
+        ("sys_platform == 'darwin'", "sys_platform != 'darwin'", False),
+        (
+            "sys_platform == 'darwin'",
+            "sys_platform == 'darwin' or platform_machine == 'arm64'",
+            False,
+        ),
+        ("python_full_version < '3.11.3'", "python_full_version < '3.11.4'", False),
+    ],
+)
+def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> None:
+    from packaging.markers import Marker
+
+    assert markers_equivalent((spelled,), (recorded,)) is same
+    # ORACLE for the true cases: packaging agrees on a hand-picked environment grid.
+    if same:
+        for full in ("3.9.7", "3.10.0", "3.10.12", "3.11.0", "3.11.3", "3.12.1"):
+            for platform in ("darwin", "win32", "linux"):
+                env = {
+                    "python_full_version": full,
+                    "python_version": full.rsplit(".", 1)[0],
+                    "sys_platform": platform,
+                    "platform_machine": "x86_64",
+                    "extra": "dev",
+                }
+                assert Marker(spelled).evaluate(env) == Marker(recorded).evaluate(env), (
+                    spelled,
+                    recorded,
+                    env,
+                )
 
 
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
