@@ -1516,6 +1516,41 @@ def _resolve_base() -> tuple[str | None, str]:
     return sha, ""
 
 
+def _link_node_modules(base_fe: Path) -> None:
+    """Expose this run's node_modules to the merge-base worktree, read-only.
+
+    A symlink needs SeCreateSymbolicLinkPrivilege on Windows (Developer Mode
+    or an elevated shell), so the merge-base run died with WinError 1314 on
+    bifrost2 (Tue 22 Sep 2026) right after the pnpm launch was fixed. A
+    directory junction needs no privilege and Node resolves through it the
+    same way; it is also how pnpm itself links on Windows. `mklink` is a
+    cmd.exe builtin, hence the `cmd /c`; `check=True` keeps a failure loud.
+    """
+    link = base_fe / "node_modules"
+    if sys.platform == "win32":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(FRONTEND / "node_modules")],
+            capture_output=True, text=True, check=True,
+        )
+    else:
+        link.symlink_to(FRONTEND / "node_modules", target_is_directory=True)
+
+
+def _unlink_node_modules(base_fe: Path) -> None:
+    """Drop the link before git or rmtree walk the throwaway tree.
+
+    Measured Tue 22 Sep 2026: `os.rmdir` on a junction removes the link and
+    never its target, and Python 3.8+ `shutil.rmtree` does not descend into
+    one either. Doing it explicitly keeps the real node_modules safe without
+    relying on either walker's reparse-point handling.
+    """
+    link = base_fe / "node_modules"
+    if link.is_symlink():
+        link.unlink()
+    elif link.is_dir():
+        os.rmdir(link)  # a junction: pathlib reports it as a plain directory
+
+
 def _measure_owners_at_base(
     sha: str, owners: list[str]
 ) -> tuple[dict[str, float] | None, str]:
@@ -1557,9 +1592,7 @@ def _measure_owners_at_base(
             # instead of running pnpm install on a throwaway tree.
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
-                (base_fe / "node_modules").symlink_to(
-                    FRONTEND / "node_modules", target_is_directory=True
-                )
+                _link_node_modules(base_fe)
         out_json = base_dir / "metrics.json"
         cmd = [
             sys.executable, "-m", "scripts.quality_gate",
@@ -1581,8 +1614,11 @@ def _measure_owners_at_base(
             )
         return json.loads(out_json.read_text()), ""
     finally:
-        # Remove the worktree entry first so the shared .git does not accumulate
-        # orphans, then clear any leftover files whether or not git agreed.
+        # Drop the node_modules link first so neither git nor rmtree can walk
+        # into the real install, then remove the worktree entry so the shared
+        # .git does not accumulate orphans, then clear any leftover files
+        # whether or not git agreed.
+        _unlink_node_modules(base_dir / "apps" / "webui" / "frontend")
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(base_dir)],
             capture_output=True, text=True, check=False,
