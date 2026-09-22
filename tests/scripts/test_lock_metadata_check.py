@@ -101,6 +101,38 @@ def test_requires_python_drift_is_stale(tmp_path: Path) -> None:
     assert "requires-python" in message
 
 
+def test_requires_python_removed_without_uv_lock_is_stale(tmp_path: Path) -> None:
+    """if pyproject.toml drops requires-python and the lock still carries it then 1, not 0"""
+    code, message = _run(tmp_path, PYPROJECT.replace('requires-python = ">=3.11"\n', ""))
+    assert code == EXIT_STALE
+    assert "requires-python: pyproject.toml None, uv.lock '>=3.11'" in message
+
+
+def test_a_version_only_bump_without_uv_lock_is_stale(tmp_path: Path) -> None:
+    """if [project].version moves and the lock's root package version does not then 1"""
+    code, message = _run(
+        tmp_path,
+        PYPROJECT.replace('name = "Demo_Project"', 'name = "Demo_Project"\nversion = "0.2.0"'),
+    )
+    assert code == EXIT_STALE
+    assert "[project] version: pyproject.toml '0.2.0', uv.lock root '0.1.0'" in message
+    code, message = _run(
+        tmp_path,
+        PYPROJECT.replace('name = "Demo_Project"', 'name = "Demo_Project"\nversion = "0.1.0"'),
+    )
+    assert code == EXIT_OK, message
+
+
+def test_an_extra_named_with_underscores_matches_its_normalized_marker(tmp_path: Path) -> None:
+    """if the optional-dependency key is `foo_bar` then uv's `extra == 'foo-bar'` marker matches"""
+    pyproject = PYPROJECT.replace("dev = [", "dev_tools = [").replace("[dev]", "[dev_tools]")
+    lock = LOCK.replace("extra == 'dev'", "extra == 'dev-tools'").replace(
+        'extras = ["dev"]', 'extras = ["dev-tools"]'
+    )
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+
+
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
     code, message = _run(
         tmp_path, lock=LOCK.replace('name = "demo-project"', 'name = "someone-else"')
