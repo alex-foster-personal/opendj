@@ -43,3 +43,21 @@ test('IOPIN-06: Jump is explicit override; reconnect and layer switches rearm wi
 	assert.deepEqual(policy.ghostForFunction('mixer:1:trim'), { value: 0.1, target: 0.1 });
 	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.2, softwareValue: 0.8 }).apply, false);
 });
+
+test('IOPIN-06: returning to a bank rearms its old physical control state', () => {
+	// [if] a bank returns [then] its prior hardware position must pick up, [else stop].
+	const policy = new AbsoluteTakeoverPolicy();
+	// controlId is the binding key: the shift/layer bit deliberately keeps each
+	// binding separate even when the physical CC number is the same.
+	const bankA = makeTakeoverIdentity('mixtour-a', '0|1|cc|11', trim);
+	const bankB = makeTakeoverIdentity('mixtour-a', '1|1|cc|11', {
+		type: 'mixer_channel', deck: 2, target: 'trim'
+	});
+	assert.equal(policy.observeAbsolute({ identity: bankA, hardwareValue: 0.2, softwareValue: 0.2 }).apply, true);
+	policy.rearmDevice('mixtour-a'); // bank A -> B
+	assert.equal(policy.observeAbsolute({ identity: bankB, hardwareValue: 0.8, softwareValue: 0.8 }).apply, true);
+	policy.rearmDevice('mixtour-a'); // bank B -> A
+	const returned = policy.observeAbsolute({ identity: bankA, hardwareValue: 0.8, softwareValue: 0.2 });
+	assert.equal(returned.apply, false, 'bank A must not jump from bank B\'s last physical value');
+	assert.deepEqual(returned.ghost, { value: 0.8, target: 0.2 });
+});

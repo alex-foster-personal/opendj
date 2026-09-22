@@ -35,6 +35,8 @@ interface TakeoverState extends TakeoverIdentity {
 	target: number;
 	lastHardwareValue: number;
 	armed: boolean;
+	/** A reconnected or newly selected layer has no trustworthy prior sample. */
+	crossingEligible: boolean;
 }
 
 const VALUE_EPSILON = 1e-9;
@@ -130,7 +132,15 @@ export class AbsoluteTakeoverPolicy {
 		const key = identityKey(identity);
 		let state = this.#states.get(key);
 		if (state === undefined) {
-			state = { ...identity, target: softwareValue, lastHardwareValue: hardwareValue, armed: true };
+			state = {
+				...identity,
+				target: softwareValue,
+				lastHardwareValue: hardwareValue,
+				armed: true,
+				// The first observation is stored above; the next input can be
+				// compared against it unless a later layer/reconnect rearm resets it.
+				crossingEligible: true
+			};
 			this.#states.set(key, state);
 		} else {
 			if (Math.abs(state.target - softwareValue) > VALUE_EPSILON) {
@@ -145,11 +155,17 @@ export class AbsoluteTakeoverPolicy {
 				return { apply: true, ghost: null };
 			}
 			if (!state.armed) return { apply: true, ghost: null };
-			if (Math.abs(hardwareValue - state.target) <= step + VALUE_EPSILON || crosses(previous, hardwareValue, state.target)) {
+			if (
+				Math.abs(hardwareValue - state.target) <= step + VALUE_EPSILON ||
+				(state.crossingEligible && crosses(previous, hardwareValue, state.target))
+			) {
 				state.target = hardwareValue;
 				state.armed = false;
 				return { apply: true, ghost: null };
 			}
+			// This is now a second observation in the active layer, so a real
+			// movement across the target can safely complete pickup next time.
+			state.crossingEligible = true;
 			return { apply: false, ghost: { value: hardwareValue, target: state.target } };
 		}
 
@@ -184,12 +200,18 @@ export class AbsoluteTakeoverPolicy {
 		state.target = value;
 		state.lastHardwareValue = value;
 		state.armed = false;
+		state.crossingEligible = true;
 	}
 
 	/** Disconnect and layer transitions require a fresh physical pickup. */
 	rearmDevice(deviceId: string): void {
 		for (const state of this.#states.values()) {
-			if (state.deviceId === deviceId) state.armed = true;
+			if (state.deviceId === deviceId) {
+				state.armed = true;
+				// A previous sample belonged to the old physical layer / session.
+				// Do not call a discontinuous first value a real crossing.
+				state.crossingEligible = false;
+			}
 		}
 	}
 
