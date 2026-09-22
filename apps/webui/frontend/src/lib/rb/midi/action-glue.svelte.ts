@@ -63,6 +63,9 @@ import {
 } from '$lib/rb/midi/controller-pad-runtime.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
+
+export { registerBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
 
 export {
 	controllerPadMode,
@@ -71,40 +74,17 @@ export {
 
 // ------------------------------------------------------- browse delegation
 
-/** The browser-panel unit registers this so hardware browse controls drive
- * ITS selection state (selection is not engine state). */
-export interface BrowseAdapter {
-	/** Move the highlighted row by delta (encoder ticks, signed). */
-	moveSelection(delta: number): void;
-	/** Load the highlighted track onto a deck (LOAD button). */
-	loadSelected(deck: DeckId): void;
-}
-
-let _browseAdapter: BrowseAdapter | null = null;
-
 const MIDI_METER_INTERVAL_MS = 50;
 
-export function registerBrowseAdapter(adapter: BrowseAdapter): () => void {
-	if (_browseAdapter !== null) {
-		throw new Error('registerBrowseAdapter: an adapter is already registered');
-	}
-	_browseAdapter = adapter;
-	return () => {
-		if (_browseAdapter !== adapter) {
-			throw new Error('registerBrowseAdapter: adapter ownership changed before cleanup');
-		}
-		_browseAdapter = null;
-	};
-}
-
 function _requireBrowseAdapter(what: string): BrowseAdapter | null {
-	if (_browseAdapter === null) {
+	const adapter = getBrowseAdapter();
+	if (adapter === null) {
 		// Loud, not fatal: hardware works before the browser panel mounts.
 		console.error(`[midi-glue] ${what} arrived but no BrowseAdapter is registered`);
 		pushToast('Browse control ignored - track browser not ready', 'error');
 		return null;
 	}
-	return _browseAdapter;
+	return adapter;
 }
 
 // ---------------------------------------------------------------- _helpers

@@ -113,7 +113,7 @@
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import { registerBrowseAdapter } from '$lib/rb/midi/action-glue.svelte';
+	import { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
