@@ -442,6 +442,69 @@ def test_uv_s_malformed_record_of_an_apostrophe_literal_is_unknown(tmp_path: Pat
     assert "posix's" in message
 
 
+def _with_source(source_line: str | None, lock_entry: str) -> tuple[str, str]:
+    """The fixture pair with numpy replaced by a local `localdep` requirement: the
+    pyproject side gets `[tool.uv.sources]` (or none), the lock side the entry given."""
+    pyproject = PYPROJECT.replace('"numpy>=1.26"', '"localdep"')
+    if source_line is not None:
+        pyproject += f"\n[tool.uv.sources]\nlocaldep = {source_line}\n"
+    lock = LOCK.replace('{ name = "numpy", specifier = ">=1.26" }', lock_entry)
+    assert pyproject != PYPROJECT and lock != LOCK
+    return pyproject, lock
+
+
+@pytest.mark.parametrize(
+    ("source_line", "lock_entry", "code"),
+    [
+        # Measured with uv 0.8.17: the forms uv records for a path source.
+        ('{ path = "./localdep/" }', '{ name = "localdep", directory = "localdep" }', EXIT_OK),
+        (
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", editable = "localdep" }',
+            EXIT_OK,
+        ),
+        (
+            '{ path = "localdep", package = false }',
+            '{ name = "localdep", virtual = "localdep" }',
+            EXIT_OK,
+        ),
+        # A source edited without `uv lock` is stale: path swapped, editability
+        # flipped, package-ness flipped, source removed, source added.
+        ('{ path = "elsewhere" }', '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
+        (
+            '{ path = "localdep", editable = true }',
+            '{ name = "localdep", directory = "localdep" }',
+            EXIT_STALE,
+        ),
+        (
+            '{ path = "localdep", package = false }',
+            '{ name = "localdep", directory = "localdep" }',
+            EXIT_STALE,
+        ),
+        (None, '{ name = "localdep", directory = "localdep" }', EXIT_STALE),
+        ('{ path = "localdep" }', '{ name = "localdep" }', EXIT_STALE),
+        # Sources this check does not model are UNKNOWN, never a verdict.
+        ('{ git = "https://example.test/x.git" }', '{ name = "localdep" }', EXIT_UNKNOWN),
+        ("{ workspace = true }", '{ name = "localdep", editable = "localdep" }', EXIT_UNKNOWN),
+        (
+            None,
+            '{ name = "localdep", git = "https://example.test/x.git?tag=1" }',
+            EXIT_UNKNOWN,
+        ),
+        (None, '{ name = "localdep", index = "https://pypi.org/simple" }', EXIT_UNKNOWN),
+    ],
+)
+def test_a_path_source_is_compared_with_the_form_uv_records(
+    tmp_path: Path, source_line: str | None, lock_entry: str, code: int
+) -> None:
+    """if `[tool.uv.sources]` names a path source and uv recorded it (directory,
+    editable or virtual, which it does) then 0; a source changed without `uv lock` is
+    1; a git, url, index or workspace source is 2, not a verdict (Codex P2 on #3763,
+    round 13)"""
+    got, message = _run(tmp_path, *_with_source(source_line, lock_entry))
+    assert got == code, (source_line, lock_entry, message)
+
+
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
     code, message = _run(
         tmp_path, lock=LOCK.replace('name = "demo-project"', 'name = "someone-else"')

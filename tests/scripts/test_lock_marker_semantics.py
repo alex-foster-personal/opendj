@@ -147,6 +147,12 @@ def _as_uv_stores_it(marker: str) -> str:
         ("sys_platform == 'zz-no-literal-mentions-this'", "", False),
         ("sys_platform in 'zz-no-literal-mentions-this-and-more'", "", False),
         ("sys_platform != 'zz-no-literal-mentions-this'", "", False),
+        # The probe above the largest literal is derived from it, so a boundary past
+        # the old fixed ceiling still gets a probe above it (round 13).
+        ("python_full_version <= '10000'", "", False),
+        ("python_full_version > '9999'", "", False),
+        ("python_full_version < '99999'", "python_full_version < '99998'", False),
+        ("python_full_version >= '10000'", "python_full_version > '9999.9'", False),
         # uv drops an epoch too (measured, same table).
         ("python_full_version <= '1!3'", "python_full_version <= '3'", True),
         ("python_full_version >= '1!3.11'", "python_full_version >= '3.11'", True),

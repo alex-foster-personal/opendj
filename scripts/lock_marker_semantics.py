@@ -437,13 +437,16 @@ def _version_probes(literals: set[str]) -> list[str]:
         else:
             points.add(_version_key(release))
     ordered = [".".join(map(str, key[1])) for key in sorted(points)]
-    probes = ["0", *ordered, "9999"]
+    # `0` is the smallest release there is. The ceiling is DERIVED, the next
+    # major above the largest point, or a literal beyond a fixed ceiling would
+    # have no probe above it (Codex P2 on #3763, round 13).
+    ceiling = str(max(points)[1][0] + 1)
+    probes = ["0", *ordered, ceiling]
     for lower, upper in itertools.pairwise(ordered):
         probes.append(_between(lower, upper))
     if _version_key(ordered[0]) > _version_key("0"):
         probes.append(_between("0", ordered[0]))
-    if _version_key(ordered[-1]) < _version_key("9999"):
-        probes.append(_between(ordered[-1], "9999"))
+    probes.append(_between(ordered[-1], ceiling))
     return sorted(set(probes), key=_version_key)
 
 
