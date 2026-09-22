@@ -28,6 +28,10 @@ jobs:
   dispatch-fast-tier:
     name: Dispatch fast tier on current main
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # One `gh workflow run`; without an explicit cap the cost guard's ceiling
+    # for this workflow is GitHub's 360-minute default and its arithmetic is
+    # meaningless (tests/test_ci_cost_guard_workflow_coverage.py).
+    timeout-minutes: 2
     steps:
       - name: Dispatch CI against main
         env:
@@ -40,6 +44,9 @@ jobs:
   measure-base-freshness:
     name: Measure open PR base freshness
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # A checkout plus one read-only GitHub API sweep; capped so the cost guard
+    # can price this workflow (tests/test_ci_cost_guard_workflow_coverage.py).
+    timeout-minutes: 10
     steps:
       - name: Reclaim workspace ownership before checkout
         run: |
