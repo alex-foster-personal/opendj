@@ -86,13 +86,15 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     Idempotent. Every unapplied migration step runs inside its own
     transaction and records a row in ``schema_meta`` on success.
 
-    The version is re-read inside each ``BEGIN IMMEDIATE`` so concurrent
-    boot processes opening the same stale db observe the winner's
-    ``schema_meta`` row before choosing DDL (issue #791).
+    A db already at :data:`SCHEMA_VERSION` takes no write lock: the version
+    is read outside any transaction, which WAL permits while another process
+    holds a long write. Only a stale db enters the ``BEGIN IMMEDIATE`` loop,
+    and there the version is re-read under the lock so concurrent boots
+    observe the winner's ``schema_meta`` row before choosing DDL (issue #791).
     """
     _ensure_meta(conn)
 
-    while True:
+    while _current_version(conn) < SCHEMA_VERSION:
         conn.execute("BEGIN IMMEDIATE")
         try:
             current = _current_version(conn)

@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from tests.test_schema_time_travel import _verified_v5_sql
 from tests.webui.pre_v7_state import build_pre_v7_state_db
@@ -357,12 +358,25 @@ def _inspect_migrated_db(db_path: Path, *, expected_track_count: int) -> None:
 def test_concurrent_make_backend_migrates_stale_db_without_sqlite_race(
     tmp_path: Path,
 ) -> None:
-    """[if] concurrent stale-db boots race on the same state.db [then] all reach the current schema without raw SQLite migration errors, [else stop]."""
+    """[if] concurrent stale-db boots race on the same state.db [then] all
+    reach the current schema without raw SQLite migration errors, [else stop].
+    """
     source = tmp_path / "source-v6.db"
     build_pre_v7_state_db(source)
 
-    pre_conn = sqlite3.connect(str(source))
+    pre_conn = sqlite3.connect(str(source), isolation_level=None)
     try:
+        # Every state.db the app has ever written is WAL: ``open_rw`` pins
+        # ``journal_mode = WAL`` and SQLite persists that in the file header,
+        # so a real stale db arrives at boot already in WAL. The raw fixture
+        # is in rollback mode, and switching to WAL needs an EXCLUSIVE lock
+        # that SQLite hands out without consulting the busy handler; N
+        # processes doing that first-ever switch at once is a different
+        # race (measured 10 of 64 boots on this fixture, none of them inside
+        # apply_migrations) than the one this test pins. See
+        # .planning/debt/3527.md.
+        journal_mode = pre_conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        assert journal_mode == "wal"
         pre_version = pre_conn.execute(
             "SELECT MAX(version) FROM schema_meta"
         ).fetchone()[0]
@@ -384,3 +398,34 @@ def test_concurrent_make_backend_migrates_stale_db_without_sqlite_race(
 
     current_results = _run_concurrent_make_backend(shared_db)
     _assert_concurrent_boot_results(current_results, label="current-db")
+
+
+def test_current_db_boot_takes_no_write_lock_behind_a_long_writer(
+    tmp_path: Path,
+) -> None:
+    """[if] a db already at SCHEMA_VERSION is opened while another connection
+    holds a long write transaction [then] apply_migrations returns without
+    waiting for or failing on the writer, [else stop].
+
+    Codex P2 on PR #3527: an unconditional ``BEGIN IMMEDIATE`` made every
+    boot against a CURRENT db contend for the writer lock, so a writer held
+    longer than ``busy_timeout`` turned ordinary boots into a raw
+    ``database is locked``. The contender below sets ``busy_timeout = 0`` so
+    any write-lock attempt fails instantly instead of hiding behind the
+    five-second wait.
+    """
+    db_path = tmp_path / "state.db"
+    build_pre_v7_state_db(db_path)
+    state_db.open_rw(db_path).close()
+
+    holder = state_db.open_rw(db_path)
+    contender = sqlite3.connect(str(db_path), isolation_level=None)
+    try:
+        holder.execute("BEGIN IMMEDIATE")
+        contender.execute("PRAGMA busy_timeout = 0")
+        assert state_schema.apply_migrations(contender) == state_schema.SCHEMA_VERSION
+        assert not contender.in_transaction
+    finally:
+        contender.close()
+        holder.execute("ROLLBACK")
+        holder.close()
