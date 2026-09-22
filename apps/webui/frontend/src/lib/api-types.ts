@@ -7522,6 +7522,12 @@ export interface components {
             /** Created At */
             created_at: string;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
+            /** Fixed At */
+            fixed_at?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
+            /** Harvested At */
+            harvested_at?: string | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -7574,6 +7580,8 @@ export interface components {
         CommentUpdateIn: {
             /** Agent Note */
             agent_note?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
             /** Issue Url */
             issue_url?: string | null;
             /** Status */
@@ -7616,6 +7624,8 @@ export interface components {
         };
         /** ConsentOut */
         ConsentOut: {
+            /** Consent Required */
+            consent_required: boolean;
             /** Decided At */
             decided_at: string | null;
             /**
@@ -17549,7 +17559,9 @@ export interface operations {
     };
     list_comments_api_v1_feedback_comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                state?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -17563,6 +17575,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
