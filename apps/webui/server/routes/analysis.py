@@ -48,6 +48,7 @@ from pydantic import BaseModel
 
 from apps.analysis.auto_cues import propose_cues
 from apps.analysis.canonical import canonical_pointer
+from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.shared.paths import STATE_DB
 
@@ -199,15 +200,13 @@ def _load_latest_record(
 
 def _canonical_own_beatgrid_lane(
     db_path: Path, stable_id: str,
-) -> "LaneResult | None":
+) -> LaneResult | None:
     """The canonical own ``beatgrid`` lane result, or None when unset.
 
     Reads through the production read-only state-db path and the stored
     ``analysis_canonical`` pointer. A pointer naming a missing row or a row
     without its named lane is corruption and propagates as ``RuntimeError``.
     """
-    from apps.analysis.lanes import LaneResult
-
     conn = _open_analysis_ro(db_path)
     try:
         pointer = canonical_pointer(conn, stable_id, "beatgrid")
@@ -229,11 +228,12 @@ def _canonical_own_beatgrid_lane(
                 f"canonical beatgrid record {pointer[0]}@{pointer[1]} for "
                 f"{stable_id} carries no 'beatgrid' lane"
             )
-        return result
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc):
             return None
         raise
+    else:
+        return result
     finally:
         conn.close()
 
