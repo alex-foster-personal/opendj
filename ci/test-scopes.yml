@@ -8,7 +8,7 @@
 # `tests/scripts/test_ci_plan_config.py` fails when a tracked test module is claimed by
 # no scope and matched by no `always` entry, which is how a new test directory is stopped
 # from becoming a silently unrun one.
-version: 1
+version: 2
 
 # A change here means the selection itself cannot be trusted to narrow.
 full_triggers:
@@ -24,51 +24,6 @@ full_triggers:
   - "tests/fixtures/**"
   - "tests/helpers/**"
   - "apps/shared/**"
-  # Derived, not hand-written: a GLOBAL pytest helper (a conftest or a module matched by
-  # `always`) imports these scopes, and such a helper is loaded by suites across the whole
-  # tree, so a change here has to run everything. `helper_carried_scopes` in
-  # scripts/ci_plan.py derives the set and a test holds this list to it. Stated as full
-  # triggers rather than as dependent edges because that is one line per scope instead of
-  # roughly 1600, and it says the same thing more plainly.
-  - "apps/adapters/"
-  - "apps/agentbox/"
-  - "apps/analysis/"
-  - "apps/analysis_beatgrid/"
-  - "apps/analysis_bench/"
-  - "apps/analysis_key/"
-  - "apps/analysis_waveform/"
-  - "apps/audit/"
-  - "apps/cloud/"
-  - "apps/database/"
-  - "apps/dedup/"
-  - "apps/dj_copilot/"
-  - "apps/engine_core/"
-  - "apps/entitlements/"
-  - "apps/launcher/"
-  - "apps/loudness/"
-  - "apps/lyrics/"
-  - "apps/mik/"
-  - "apps/open_dj/"
-  - "apps/play_analytics/"
-  - "apps/reconcile/"
-  - "apps/sets/"
-  - "apps/shared/"
-  - "apps/smartlists/"
-  - "apps/spotify/"
-  - "apps/stems/"
-  - "apps/sync/"
-  - "apps/sync_hub/"
-  - "apps/vocals/"
-  - "apps/voice/"
-  - "apps/webui/"
-  - "ops/beatbench/"
-  - "ops/perf/"
-  - "ops/quality/"
-  - "scripts/"
-  - "scripts/beatbench/"
-  - "scripts/lyrics_alignment/"
-  - "scripts/perf/"
-  - "scripts/quality/"
   # CI INPUTS that are not source. `ci.yml`'s own path filter RE-INCLUDES
   # `.planning/REQUIREMENTS.md` after excluding `.planning/**`, which is that workflow
   # saying the path is an input rather than documentation: `reqs.json` is generated from it
@@ -81,6 +36,15 @@ full_triggers:
   - "reqs.json"
   - ".mergify.yml"
   - "ci/**"
+
+# Scopes a GLOBAL pytest helper (a conftest, or a support module matched by `always`)
+# imports or mentions. Such a helper is loaded by suites across the whole tree, so a
+# change to a path one of these scopes OWNS runs everything. DERIVED, not hand-written:
+# `helper_carried_scopes` in scripts/ci_plan.py recomputes the set and a test holds this
+# list to it. Named by scope rather than written as path triggers because ownership is
+# longest-prefix (`apps/webui/frontend/` is its own scope inside `apps/webui/`), and a
+# prefix trigger on the parent would swallow the child. Round 9.
+helper_carried: ["adapters", "agentbox", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "audit", "beatbench", "cloud", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "launcher", "loudness", "lyrics", "mik", "open_dj", "play_analytics", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "sync", "sync_hub", "vocals", "voice", "webui"]
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
 always:
@@ -244,6 +208,16 @@ scopes:
     sources: ["apps/webui/"]
     tests: ["tests/webui/"]
     dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice"]
+  - name: webui_frontend
+    # The Svelte/TypeScript app under apps/webui/. No Python imports it, so its consumers
+    # are the pytest inputs that MENTION it: tests that build it, read its files, or run
+    # its toolchain name the path in their text. The bare word is deliberately included:
+    # computed paths (`WEBUI / "frontend"`) name only that. Measured Tue 22 Sep 2026:
+    # 53 test modules name the full path, 18 more only the bare word, across 13 scopes.
+    sources: ["apps/webui/frontend/"]
+    tests: []
+    dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "stems", "webui"]
+    mentions: ["apps/webui/frontend", "frontend"]
   - name: agentic_testing
     sources: ["ops/agentic_testing/"]
     tests: ["tests/agentic_testing/"]
@@ -256,19 +230,30 @@ scopes:
     tests: ["tests/cloudsync/"]
   - name: fixtures
     sources: ["scripts/fixtures/"]
+    # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
+    # the mention reader keeps a test that spawns or reads it by name as a consumer.
+    mentions: ["scripts/fixtures", "scripts.fixtures"]
     tests: ["tests/fixtures/"]
   - name: lyrics_alignment
     sources: ["scripts/lyrics_alignment/"]
+    # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
+    # the mention reader keeps a test that spawns or reads it by name as a consumer.
+    mentions: ["scripts/lyrics_alignment", "scripts.lyrics_alignment"]
     tests: ["tests/lyrics_alignment/"]
-    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
   - name: perf
     sources: ["ops/perf/", "scripts/perf/"]
+    # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
+    # the mention reader keeps a test that spawns or reads it by name as a consumer.
+    mentions: ["ops/perf", "scripts/perf", "scripts.perf"]
     tests: ["tests/perf/"]
-    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
+    dependents: ["scripts"]
   - name: quality
     sources: ["ops/quality/", "scripts/quality/"]
+    # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
+    # the mention reader keeps a test that spawns or reads it by name as a consumer.
+    mentions: ["ops/quality", "scripts/quality/", "scripts.quality."]
     tests: ["tests/quality/"]
-    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
+    dependents: ["scripts"]
   - name: scripts
     sources: ["scripts/"]
     tests: ["tests/scripts/"]
