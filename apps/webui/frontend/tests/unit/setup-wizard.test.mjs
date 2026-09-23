@@ -28,6 +28,8 @@ const API_BASE = 'https://setup.example.test';
 
 let mod;
 let wizard;
+/** The singleton's source as CONSTRUCTED, read before any _resetForTests. */
+let constructedSource;
 let originalFetch;
 let requests;
 
@@ -145,6 +147,7 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	wizard = mod.setupWizard;
+	constructedSource = wizard.source;
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = async () => jsonResponse(engineHealth());
 	assert.equal(await mod.capabilities.probe(), 'engine');
@@ -173,11 +176,27 @@ test('the steps run welcome -> detect -> confirm -> progress -> stems -> done', 
 	]);
 });
 
+test('an unselected source never visits confirm', () => {
+	const route = mod.visibleSteps(null);
+	assert.ok(!route.includes('confirm'), 'confirm requires an explicit rekordbox choice');
+});
+
+test('selecting rekordbox explicitly restores the confirm route', () => {
+	const route = mod.visibleSteps('rekordbox');
+	assert.ok(route.includes('confirm'));
+	assert.equal(mod.nextStepFor('detect', 'rekordbox'), 'confirm');
+});
+
 test('next and previous clamp at both ends rather than falling off', () => {
 	assert.equal(mod.previousStep('welcome'), 'welcome');
 	assert.equal(mod.nextStep('done'), 'done');
 	assert.equal(mod.nextStep('welcome'), 'detect');
 	assert.equal(mod.previousStep('done'), 'stems');
+});
+
+test('detect refuses Next until a source is chosen', () => {
+	const ctx = { source: null, detection: detection(), folderScan: null, job: null };
+	assert.match(mod.advanceRefusal('detect', ctx), /choose an import source/);
 });
 
 test('detect refuses Next until detection has answered', () => {
@@ -280,6 +299,38 @@ test('load fills status and detection from one status request', async () => {
 	assert.equal(wizard.error, null);
 });
 
+test('STANDALONE-08: the wizard is constructed with NO source, before any reset', () => {
+	// Mutation guard: _resetForTests() nulls the source before every test, so
+	// only the value captured at load time proves the class field itself
+	// defaults to null. Reverting the initial state to 'rekordbox' fails here.
+	assert.equal(constructedSource, null, 'a freshly built wizard must not assume rekordbox');
+});
+
+test('STANDALONE-08: detection alone leaves source unselected and makes no import POST', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+
+	await wizard.load();
+
+	assert.equal(wizard.source, null, 'detection must not select rekordbox');
+	const importPosts = requests.filter(
+		(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
+	);
+	assert.equal(importPosts.length, 0, 'detection alone must not enqueue an import');
+
+	wizard.useSource('rekordbox');
+	assert.equal(wizard.source, 'rekordbox', 'the explicit pick is the only way to select it');
+	// The import that follows the explicit pick is NOT driven here: a fabricated
+	// 202 for /api/v1/setup/import would be simulated API success (AGENTS.md,
+	// Codex P1 on #3561). The real endpoint is exercised by the browser test
+	// 'STANDALONE-08: rekordbox detection alone does not opt in or import'.
+});
+
+test('_resetForTests leaves source unselected', () => {
+	wizard.useSource('rekordbox');
+	wizard._resetForTests();
+	assert.equal(wizard.source, null);
+});
+
 test('a failed load records the server message and KEEPS what was on screen', async () => {
 	routeFetch({ '/api/v1/setup/status': status() });
 	await wizard.load();
@@ -365,8 +416,25 @@ test('useSource folder triggers loadFolderCandidates once', async () => {
 
 // ------------------------------------------------------------------- imports
 
+test('beginImport refuses without rekordbox source and makes no import POST', async () => {
+	routeFetch({ '/api/v1/setup/import': () => jsonResponse(job(), 202) });
+
+	await wizard.beginImport();
+
+	assert.equal(wizard.jobId, null);
+	assert.equal(wizard.step, 'welcome');
+	assert.equal(wizard.error, 'choose rekordbox import before starting');
+	assert.equal(
+		requests.filter(
+			(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
+		).length,
+		0
+	);
+});
+
 test('beginImport advances to progress and records the job id', async () => {
 	routeFetch({ '/api/v1/setup/import': () => jsonResponse(job(), 202) });
+	wizard.useSource('rekordbox');
 
 	await wizard.beginImport();
 
@@ -388,6 +456,7 @@ test('a refused import leaves the step alone and shows the server sentence', asy
 				409
 			)
 	});
+	wizard.useSource('rekordbox');
 	wizard.goTo('confirm');
 
 	await wizard.beginImport();
@@ -405,6 +474,7 @@ test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async
 			return jsonResponse(job(), 202);
 		}
 	});
+	wizard.useSource('rekordbox');
 
 	await wizard.beginImport({ refreshDecrypt: true });
 
@@ -494,13 +564,28 @@ test('skip persists engine-side rather than in this tab', async () => {
 	assert.equal(wizard.status.should_show_wizard, false);
 });
 
+test('STANDALONE-08: declining clears the source, so every reopen door is neutral', async () => {
+	// Codex P2 on #3561: the incomplete chip's "Run setup" raises the overlay
+	// WITHOUT setupWizard.reopen(), so the reset has to happen on the way out.
+	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: true }) });
+	wizard.useSource('rekordbox');
+
+	await wizard.skip();
+
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.status.dismissed, true);
+	assert.equal(wizard.source, null, 'a declined import must not survive as a selection');
+});
+
 test('reopen re-arms the wizard and returns it to the first step', async () => {
 	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: false }) });
+	wizard.useSource('rekordbox');
 	wizard.goTo('done');
 
 	await wizard.reopen();
 
 	assert.equal(wizard.step, 'welcome');
+	assert.equal(wizard.source, null, 'reopen must clear the prior source choice');
 	assert.equal(wizard.status.dismissed, false);
 });
 

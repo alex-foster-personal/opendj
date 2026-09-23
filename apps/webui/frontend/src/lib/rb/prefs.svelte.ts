@@ -161,7 +161,7 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	jog_radial_waveform: boolean;
 	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
 	show_agent_pins: boolean;
-	/** DECKUX-18: per-stem mini-waveforms under deck wavestack rows. Default off. */
+	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.

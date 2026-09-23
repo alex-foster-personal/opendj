@@ -10,4 +10,4 @@
  * state upgradeDeckBeatgrid reads.
  */
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-upgrade';
-export { analysisSourceState } from '$lib/rb/analysis-source.svelte';
+export { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';

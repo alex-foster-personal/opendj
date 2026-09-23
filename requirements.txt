@@ -143,6 +143,10 @@ pytest-xdist>=3.6
 # .github/workflows/ci.yml). Balanced by the committed `.test_durations`;
 # without the plugin every shard would run the whole suite.
 pytest-split>=0.10
+# Per-test wall clock for the CI pytest lanes (`--timeout=N` in ci.yml): a hung
+# test fails by name instead of its whole leg dying at the step's wall budget.
+# CI installs THIS file with `uv pip install --exact`, not the dev extra.
+pytest-timeout>=2.3,<3
 # Stateful property testing for the CloudSync fleet simulation (plan W18,
 # tests/cloudsync/test_sim_property.py). Same spec as the pyproject ``dev``
 # extra; without it here every CI shard dies collecting that module.

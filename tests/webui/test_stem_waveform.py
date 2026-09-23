@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server.routes.stems import router
 
 pytestmark = pytest.mark.requirement(
-    "DECKUX-18",
+    "DECKUX-19",
     "if stem waveform endpoint missing [then stop] else envelope contract holds.",
 )
 

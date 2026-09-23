@@ -25,6 +25,7 @@ import {
 	resumeCloudsyncSchedulerOwedJob
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
+import { setLiveTransportProbe } from '$lib/client-error-reporting';
 import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
@@ -101,10 +102,35 @@ let _xrunsAtPrevious = 0;
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
+	// Every client error from here on carries the page's own transport read,
+	// so the engine can hold the Sentry forward while a deck is live. Wired
+	// here rather than in client-error-reporting because that module boots
+	// before the audio engine and must not import it.
+	setLiveTransportProbe(anyDeckPlaying);
 	if (uiPrefs.perf_tier !== 'auto') {
 		applyExplicitPerfTierPref(uiPrefs.perf_tier);
 	}
 	scheduler.defer('perf-tier:fetch', () => fetchPerfTier());
+	// Diagnostics consent (OBS-05) and, after acceptance, session replay
+	// (OBS-06). Deferred like every other boot request, and gated on the same
+	// live-transport read as error reporting so a replay never records a mix.
+	// The module is imported inside the deferred task on purpose: it is not
+	// on the first-paint path, and a static import would charge it (and the
+	// dialog) to the library page's bundle budget.
+	let stopTelemetryConsent: (() => void) | null = null;
+	scheduler.defer('telemetry-consent:fetch', () =>
+		Promise.all([
+			import('$lib/telemetry-consent'),
+			import('$lib/rb/live-transport-watch.svelte')
+		]).then(([consent, watch]) => {
+			stopTelemetryConsent = consent.bootTelemetryConsent({
+				isLive: anyDeckPlaying,
+				// Stops a replay in the microtask a deck goes live, ahead of any
+				// flush timer; the poll inside is only the fallback.
+				watchLive: watch.watchLiveTransport
+			});
+		})
+	);
 	const stopBootScheduler = scheduler.start();
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 	const stopReloadCountdown = installReloadCountdown();
@@ -161,6 +187,8 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	});
 
 	return () => {
+		stopTelemetryConsent?.();
+		setLiveTransportProbe(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);

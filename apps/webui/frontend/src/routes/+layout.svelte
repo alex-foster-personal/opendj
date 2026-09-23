@@ -291,6 +291,9 @@
      shell, and the cheatsheet has to work there too. -->
 <HotkeysOverlay />
 <QuitConfirmOverlay />
+<!-- The diagnostics consent dialog (OBS-05) is mounted by $lib/telemetry-consent
+     from a deferred boot task, so neither it nor its module is on the
+     first-paint path or in the library page's bundle budget. -->
 
 <ToastStack items={toasts} />
 <BrandLaunch />

@@ -479,6 +479,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "apps/webui/frontend/tests/e2e/fixtures/preflight-gate-broken-data/",
         "apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/",
         "apps/webui/frontend/tests/e2e/fixtures/performance-playwright-data/",
+        "apps/webui/frontend/tests/e2e/fixtures/playlist-switch-latency-data/",
         "apps/webui/frontend/tests/e2e/fixtures/comment-hotkey-gate-data/",
         "apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/",
         "apps/webui/frontend/tests/e2e/fixtures/autoplay-error-hunt-data/",

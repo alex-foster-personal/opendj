@@ -41,7 +41,7 @@
 	--rb-topbar-h: 28px;         /* section 1 */
 	--rb-waverow-h: 43px;        /* section 2, per deck row - 2/3 of the old 64px so
 	                                the library gets the 84px back (4 rows x 21px) */
-	--rb-stemwave-h: 12px;       /* DECKUX-18: one stem mini-waveform row */
+	--rb-stemwave-h: 12px;       /* DECKUX-19: one stem mini-waveform row */
 	--rb-stemwave-stack-extra: 0px;
 	--rb-deck-art: 75px;         /* deck header artwork thumb */
 	--rb-strip-h: 28px;          /* deck overview strip (tightened for 75px art) */

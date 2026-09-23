@@ -13,6 +13,7 @@
 //   if mixer_global master 0.5 doesn't hit mixerState.master then broken
 //   if eq action without band doesn't throw then broken
 //   if ledTriggerActive(deck_loaded) is true on an empty deck then broken
+//   if the glue teardown leaves the action handler registered then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -29,7 +30,8 @@ let webmidi; // webmidi.svelte.ts module
 let glue; // action-glue.svelte.ts module
 let stores; // $lib/stores.svelte
 let audioEngine; // $lib/rb/audio-engine.svelte
-let performanceIpc; // $lib/rb/performance-ipc.svelte
+let performanceIpc;
+let uninstallPerformanceIpc;
 
 before(async () => {
 	vite = await createServer({
@@ -49,10 +51,20 @@ before(async () => {
 	stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
 	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
 	performanceIpc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
+	globalThis.window = {};
+	uninstallPerformanceIpc = performanceIpc.installPerformanceBrowserIpc();
 });
 
+// A failed before() leaves later fields unset. The Vite server must still
+// close, or its open handles keep node --test alive and hang the whole unit
+// suite (Tue 15 Sep 2026: a module that failed to load did exactly that).
 after(async () => {
-	await vite.close();
+	try {
+		uninstallPerformanceIpc?.();
+		delete globalThis.window;
+	} finally {
+		await vite?.close();
+	}
 });
 
 // ------------------------------------------------------------ wire decode
@@ -185,151 +197,40 @@ test('hot cue press on an empty slot toasts the missing-slot state', () => {
 	assert.match(lastToast().message, /Deck 3 is empty/);
 });
 
-test('mixer_global actions drive mixerState directly', () => {
+test('mixer_global actions dispatch through the performance command bus', async () => {
 	glue.handleMidiAction(
 		{ type: 'mixer_global', target: 'master' },
 		{ kind: 'continuous', value01: 0.5, raw: 64 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.master, 0.5);
 	glue.handleMidiAction(
 		{ type: 'mixer_global', target: 'crossfader' },
 		{ kind: 'continuous', value01: 0.25, raw: 32 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.crossfader, 0.25);
 });
 
-test('mixer_channel actions drive the channel strip state', () => {
+test('mixer_channel actions dispatch through the performance command bus', async () => {
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 2, target: 'trim' },
 		{ kind: 'continuous', value01: 0.75, raw: 95 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[2].trim, 0.75);
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 2, target: 'eq', band: 'low' },
 		{ kind: 'continuous', value01: 0.1, raw: 13 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[2].eq_low, 0.1);
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 4, target: 'fader' },
 		{ kind: 'continuous14', value01: 0.5, raw: 8192 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
-});
-
-// Regression: channel_cue used to call engine.setChannelCue directly,
-// bypassing the shared performance dispatcher - so a controller press could
-// mutate PFL state while a preset lifecycle lock had every other deck-scoped
-// command rejected. Route it through the dispatcher (same command
-// Mixer.svelte's on-screen CUE button sends) and prove a held lock now
-// rejects the press exactly like it would a UI click, instead of applying
-// silently underneath it.
-//   if channel_cue still flips mixerState while a preset lock is held then
-//   the direct-call bypass is back
-test('channel_cue press is routed through the dispatcher and respects the preset lifecycle lock', async () => {
-	audioEngine.mixerState.channels[2].cue_enabled = false;
-	const beforeToasts = stores.toasts.length;
-
-	// The dispatcher requires an active command session (same precondition a
-	// real /performance mount satisfies via installPerformanceBrowserIpc) -
-	// without it dispatchPerformanceCommand throws for an unrelated "no
-	// session" reason and the preset-lock assertion below would be vacuous.
-	globalThis.window = {};
-	const uninstallIpc = performanceIpc.installPerformanceBrowserIpc();
-	try {
-		await performanceIpc.preparePerformancePresetTransaction(
-			'test-778-channel-cue-lock',
-			async () => {
-				glue.handleMidiAction(
-					{ type: 'channel_cue', deck: 2 },
-					{ kind: 'button', pressed: true, velocity: 127 }
-				);
-				// handleMidiAction fires the dispatch and returns without awaiting
-				// it (same fire-and-forget shape as every other UI click handler);
-				// give its rejection a couple of microtask turns to land before
-				// checking that the lock actually held.
-				await Promise.resolve();
-				await Promise.resolve();
-				assert.equal(
-					audioEngine.mixerState.channels[2].cue_enabled,
-					false,
-					'a direct engine call would have flipped cue_enabled even under an active preset lock'
-				);
-			}
-		);
-		// Clean, real release path (mirrors an aborted preset boot) so the
-		// claim does not leak into later tests in this file.
-		performanceIpc.abortPreparedPerformancePreset('test-778-channel-cue-lock', 'test cleanup');
-
-		assert.equal(
-			audioEngine.mixerState.channels[2].cue_enabled,
-			false,
-			'the rejected command must never have applied, lock released or not'
-		);
-		assert.match(
-			performanceIpc.performanceCommandStatus.deck_errors[2] ?? '',
-			/owns controls/,
-			'the dispatcher never even saw the command, so nothing proves it was routed there'
-		);
-		// +2: the routed-and-rejected channel_cue command, then the cleanup
-		// abort above - each rejection surfaces its own toast.
-		assert.equal(
-			stores.toasts.length,
-			beforeToasts + 2,
-			'a routed-and-rejected command must surface a toast'
-		);
-	} finally {
-		uninstallIpc();
-		delete globalThis.window;
-	}
-});
-
-// Regression: the deck-command adapters (_cmdPlayToggle/_cmdPressCue/
-// _cmdHotCue/_cmdBeatLoop/_cmdLoopExit) used to call engine.play/pause/
-// pressCue/cueJump/engageBeatLoop/setLoop directly, the same bypass fixed
-// for channel_cue above. Prove each is routed through the dispatcher by the
-// same preset-lifecycle-lock probe: a direct call would never touch the
-// dispatcher, so deck_errors[deck] would stay unset instead of recording
-// the lock rejection.
-//   if any of the five stop reaching the dispatcher then this goes red
-test('deck command adapters are routed through the dispatcher and respect the preset lifecycle lock', async () => {
-	audioEngine.deckStates[1].stable_id = 'a'.repeat(40);
-	audioEngine.deckStates[1].hot_cues = [
-		{ slot: 'A', in_ms: 1000, out_ms: null, is_loop: false, color_table_index: null, comment: null }
-	];
-	const actions = [
-		{ type: 'deck_play_toggle', deck: 1 },
-		{ type: 'deck_cue', deck: 1 },
-		{ type: 'deck_hot_cue', deck: 1, slot: 'A' },
-		{ type: 'deck_beat_loop', deck: 1, beats: 4 },
-		{ type: 'deck_loop_exit', deck: 1 }
-	];
-
-	globalThis.window = {};
-	const uninstallIpc = performanceIpc.installPerformanceBrowserIpc();
-	try {
-		await performanceIpc.preparePerformancePresetTransaction(
-			'test-511-deck-command-lock',
-			async () => {
-				for (const action of actions) {
-					performanceIpc.performanceCommandStatus.deck_errors[1] = null;
-					glue.handleMidiAction(action, { kind: 'button', pressed: true, velocity: 127 });
-					await Promise.resolve();
-					await Promise.resolve();
-					assert.match(
-						performanceIpc.performanceCommandStatus.deck_errors[1] ?? '',
-						/owns controls/,
-						`${action.type}: the dispatcher never saw the command, so a direct engine call is back`
-					);
-				}
-			}
-		);
-		performanceIpc.abortPreparedPerformancePreset('test-511-deck-command-lock', 'test cleanup');
-	} finally {
-		uninstallIpc();
-		delete globalThis.window;
-		audioEngine.deckStates[1].stable_id = null;
-		audioEngine.deckStates[1].hot_cues = [];
-	}
 });
 
 test('eq action without band fails fast', () => {
@@ -408,65 +309,119 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
 });
 
-// ---------------------------------------------------- glue lifecycle (pump)
+function _restoreCueGlueState() {
+	audioEngine.mixerState.channels[2].cue_enabled = false;
+	audioEngine.mixerState.headphones.mix = 0.5;
+	audioEngine.mixerState.headphones.level = 0.5;
+	glue._resetMasterCueForTests();
+}
 
-// Regression, Sat 29 Aug 2026: the channel-meter pump used to be a bare
-// setInterval started at attach time. That is a real host timer, so with no
-// controller plugged in it kept the event loop alive for the whole session -
-// tests/unit/midi-panel.test.mjs passed all 21 subtests and then timed out at
-// the FILE level, and in the browser it burned 30 Hz forever once MIDI was
-// enabled (midi-ui-state calls attachMidiGlue and discards its teardown).
-//
-// This reads glue._meterPumpArmedForTests() - production-owned observable
-// state, exported for exactly this purpose - rather than replacing
-// globalThis.setInterval/clearInterval. The repo's fail-closed test contract
-// prohibits monkeypatching the host runtime (AGENTS.md), and a replaced
-// setInterval only proves a call was MADE, not that the pump is armed (or
-// not) for the right reason.
-//
-// This file's vite.ssrLoadModule harness compiles every .svelte.ts module in
-// SSR mode (confirmed empirically: a minimal $effect.root probe never runs
-// its effect body here, sync or after a flushSync/tick, because SSR Svelte
-// has no DOM to schedule against). _syncMeterPump only runs from inside that
-// $effect, so a hotplug-arms-the-pump case cannot be driven through the real
-// reactive path in THIS harness; midi-hotplug.test.mjs already exercises the
-// underlying plug/unplug -> midiState.devices machinery this effect reads,
-// and an e2e/manual pass is what actually proves the pump arms in a browser.
-//
-//   if attachMidiGlue starts a timer with no meter-capable device connected
-//   then broken (midi-panel.test.mjs will hang again)
-test('attachMidiGlue starts no meter pump while no device is connected', () => {
-	webmidi._resetMidiForTests();
-	const detach = glue.attachMidiGlue();
-	assert.equal(
-		glue._meterPumpArmedForTests(),
-		false,
-		'no timer may be armed with an empty device list'
+test('channel_cue press toggles cue_enabled; release is ignored', async () => {
+	_restoreCueGlueState();
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, false);
+	glue.handleMidiAction(
+		{ type: 'channel_cue', deck: 2 },
+		{ kind: 'button', pressed: true, velocity: 127 }
 	);
-	detach();
-	assert.equal(glue._meterPumpArmedForTests(), false, 'detach must leave the pump disarmed');
-	webmidi._resetMidiForTests();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, true);
+	glue.handleMidiAction(
+		{ type: 'channel_cue', deck: 2 },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, true);
+	assert.equal(glue.ledTriggerActive({ kind: 'channel_cue_enabled', deck: 2 }), true);
+	_restoreCueGlueState();
 });
 
-// Regression, PR #509 review thread r3913374758 ("Reattach MIDI glue after
-// returning to performance"): detachMidiGlueForRouteUnmount() only ever
-// stopped the LED effect + meter pump, never webmidi's action-handler
-// registration - so a SECOND attachMidiGlue() call (leaving and returning to
-// /performance while MIDI stays granted) re-invoked registerActionHandler()
-// and threw "a handler is already registered", leaving every mapped control
-// dead until a full page reload.
-//
-//   if a second attachMidiGlue() call after a prior detach throws
-//   then broken (returning to /performance permanently kills MIDI)
-test('attachMidiGlue can reattach after a prior detach without throwing', () => {
-	webmidi._resetMidiForTests();
-	const detach1 = glue.attachMidiGlue();
-	detach1();
-	assert.doesNotThrow(() => {
-		const detach2 = glue.attachMidiGlue();
-		detach2();
-	}, 'a second attachMidiGlue() after detach must not throw');
-	webmidi._resetMidiForTests();
+// ---------------------------------------------------- glue lifecycle
+
+// Meter pump regression guard intentionally absent on main (issue #3670):
+// host-driven VU meter CC output is planned (controller-onboarding.md,
+// unlanded bdf50f0e) but not implemented. Restoring the deleted test would
+// require building the pump, not restoring coverage. Track there, not here.
+
+test('headphone_mix and headphone_level dispatch through the performance command bus', async () => {
+	_restoreCueGlueState();
+	glue.handleMidiAction(
+		{ type: 'headphone_mix' },
+		{ kind: 'continuous', value01: 0.25, raw: 32 }
+	);
+	glue.handleMidiAction(
+		{ type: 'headphone_level' },
+		{ kind: 'continuous', value01: 0.75, raw: 95 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.25);
+	assert.equal(audioEngine.mixerState.headphones.level, 0.75);
+	_restoreCueGlueState();
+});
+
+test('master_cue latch forces mix to 1 then restores on second press', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.3;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.3);
+	_restoreCueGlueState();
+});
+
+test('master_cue hold engages on press and restores on release', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.4;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'hold' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'hold' },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.4);
+	_restoreCueGlueState();
+});
+
+test('headphone_mix while master_cue latched updates saved restore mix only', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.2;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'headphone_mix' },
+		{ kind: 'continuous', value01: 0.8, raw: 102 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.8);
+	_restoreCueGlueState();
 });
 
 // -------------------------------------------- tiered registry (installed maps)
@@ -487,6 +442,10 @@ const _testMap = (vendor, nameMatch, note) => ({
 	nameMatch,
 	bindings: [{ source: { ch: 1, kind: 'note', id: note }, action: { type: 'deck_cue', deck: 1 } }]
 });
+
+// Kept from 76dcf21ba (#3643): these cover installed-maps.ts, which that
+// commit really did add. The rest of this file is 76dcf21ba~1's, because the
+// same commit re-imported an older copy over it (see the PR description).
 
 test('installed maps shadow builtin maps regardless of registration order', () => {
 	webmidi._resetMidiForTests();
@@ -512,6 +471,16 @@ test('listDeviceMaps reports tier so the UI can name what shadows what', () => {
 	webmidi._resetMidiForTests();
 });
 
+test('registerDeviceMap rejects a second map on the same nameMatch AND tier', () => {
+	webmidi._resetMidiForTests();
+	webmidi.registerDeviceMap(_testMap('FirstCo', 'TieredTest', 11), 'installed');
+	assert.throws(
+		() => webmidi.registerDeviceMap(_testMap('SecondCo', 'TieredTest', 12), 'installed'),
+		/already registered/
+	);
+	webmidi._resetMidiForTests();
+});
+
 test('unregisterDeviceMap removes one tier and reveals the map it shadowed', () => {
 	webmidi._resetMidiForTests();
 	webmidi.registerDeviceMap(_testMap('BuiltinCo', 'TieredTest', 11), 'builtin');
@@ -530,24 +499,39 @@ test('unregisterDeviceMap returns false rather than pretending it removed one', 
 	webmidi._resetMidiForTests();
 });
 
-test('registerDeviceMap rejects a second map on the same nameMatch AND tier', () => {
+// A MIDI-enabled user who leaves /performance and comes back is the whole
+// point of these two: detachMidiGlueForRouteUnmount() drops the glue, and
+// the next requestMidiAccess() re-attaches. unregisterActionHandler()'s own
+// docstring says the teardown calls it, and for a while nothing did, so the
+// second attach hit registerActionHandler()'s already-registered throw. That
+// throw surfaces inside requestMidiAccess()'s catch, which also runs
+// setMidiEnabledChoice(false) -- so the remount did not merely fail, it
+// silently forgot the user's MIDI opt-in and mapped controls stayed dead
+// until a full page reload.
+test('the glue teardown releases the action handler, not just its own latch', () => {
 	webmidi._resetMidiForTests();
-	webmidi.registerDeviceMap(_testMap('FirstCo', 'TieredTest', 11), 'installed');
-	assert.throws(
-		() => webmidi.registerDeviceMap(_testMap('SecondCo', 'TieredTest', 12), 'installed'),
-		/already registered/
+	const detach = glue.attachMidiGlue();
+	// Asserted on BOTH sides on purpose: against the post-detach check alone,
+	// an accessor stubbed to a flat false passes while proving nothing.
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		true,
+		'attach must register a handler for the teardown assertion below to mean anything'
+	);
+	detach();
+	assert.equal(
+		webmidi._actionHandlerRegisteredForTests(),
+		false,
+		'teardown must release the handler webmidi holds, or the next attach throws'
 	);
 	webmidi._resetMidiForTests();
 });
 
-test('unregisterActionHandler lets the glue re-attach after a teardown', () => {
+test('attachMidiGlue can reattach after a detach, as a route remount does', () => {
 	webmidi._resetMidiForTests();
-	const detach = glue.attachMidiGlue();
-	detach();
-	// Before unregisterActionHandler existed this threw: the teardown cleared
-	// its own latch but left the handler registered, so a /performance remount
-	// could never re-attach.
-	const again = glue.attachMidiGlue();
-	again();
+	glue.attachMidiGlue()();
+	assert.doesNotThrow(() => {
+		glue.attachMidiGlue()();
+	}, 'returning to /performance must re-attach rather than throw');
 	webmidi._resetMidiForTests();
 });

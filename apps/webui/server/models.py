@@ -192,6 +192,10 @@ class TrackListItemOut(TrackOut):
     lyrics: LyricsRowSummaryOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
+    # STANDALONE-05: inline genre for state-only rows; genre_reason names why
+    # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
+    genre: str | None = None
+    genre_reason: str | None = None
 
 
 class LyricLineOut(BaseModel):
@@ -291,6 +295,7 @@ class TrackRowOut(BaseModel):
     rating: int | None
     duration_ms: int | None
     genre: str | None
+    genre_reason: str | None = None
     comments: str | None
     etag: str
     preview_b64: str | None
