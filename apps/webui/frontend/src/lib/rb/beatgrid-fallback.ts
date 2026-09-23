@@ -186,3 +186,21 @@ export function toSyntheticAnlzData(
 		beatgrid_own_unavailable_reason: null
 	};
 }
+
+/** What the wavestack painter and bars-label consume (WaveRow.svelte): the
+ * real ANLZ payload when present (its own grid, or the fallback grid merged
+ * into it), else a synthesized beatgrid-only payload, else null.
+ *
+ * hasAnlzBeatgrid is re-asked rather than inferred from the fallback gate: a
+ * stale cache entry can report ANALYSIS_NOT_FOUND while the deck still holds
+ * a real grid, and withFallbackBeatgrid throws on that - which a Svelte
+ * `$derived` must never do. A real ANLZ grid wins here exactly as it does in
+ * the gate. */
+export function resolvePaintAnlz(
+	anlz: AnlzData | null,
+	fallback: BeatgridFallbackOut | null
+): AnlzData | null {
+	if (anlz === null) return fallback !== null ? toSyntheticAnlzData(fallback) : null;
+	if (fallback === null || hasAnlzBeatgrid(anlz)) return anlz;
+	return withFallbackBeatgrid(anlz, fallback);
+}

@@ -4,7 +4,7 @@
 	// deck identity, artwork, and a readable track title. Empty deck is named,
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
-	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -22,12 +22,7 @@
 		unregisterAnlzConsumer
 	} from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
-	import {
-		hasAnlzBeatgrid,
-		shouldUseBeatgridFallback,
-		toSyntheticAnlzData,
-		withFallbackBeatgrid
-	} from '$lib/rb/beatgrid-fallback';
+	import { resolvePaintAnlz, shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
 	import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
@@ -64,6 +59,7 @@
 	import LyricLanes from './LyricLanes.svelte';
 	import StemWaveStack from './StemWaveStack.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
+	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
@@ -135,20 +131,8 @@
 		const entry = getBeatgridFallbackEntry(deck.stable_id);
 		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
 	});
-	// What the painter/bars-label actually consume: the real ANLZ payload when
-	// present (its own grid, or the fallback grid merged into it), else a
-	// synthesized beatgrid-only payload, else null.
-	const paintAnlz = $derived.by(() => {
-		if (anlzData === null) {
-			return beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null;
-		}
-		// hasAnlzBeatgrid is re-asked rather than inferred from the gate: a stale
-		// cache entry can report ANALYSIS_NOT_FOUND while deck.anlz still holds a
-		// real grid, and withFallbackBeatgrid throws on that - which a $derived
-		// must never do. A real ANLZ grid wins here exactly as it does in the gate.
-		if (beatgridFallback === null || hasAnlzBeatgrid(anlzData)) return anlzData;
-		return withFallbackBeatgrid(anlzData, beatgridFallback);
-	});
+	// What the painter/bars-label actually consume (see resolvePaintAnlz).
+	const paintAnlz = $derived(resolvePaintAnlz(anlzData, beatgridFallback));
 
 	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
 	const barsLabel = $derived(
@@ -192,18 +176,8 @@
 		return tone ?? 'now';
 	});
 
-	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): bars are
-	// painted by render.ts for 'rekordbox' and 'demucs'; the barless
-	// states get an explicit tooltip so absence is never ambiguous, and
-	// demucs bars declare their non-rekordbox provenance.
-	const vocalsTitle = $derived.by((): string | null => {
-		if (anlzData === null) return null;
-		const v = vocalsOf(anlzData);
-		if (v.status === 'no_vocals') return 'no vocals detected';
-		else if (v.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
-		else if (v.status === 'demucs') return 'vocals: local detection';
-		else return null; // rekordbox: the blue bars speak for themselves
-	});
+	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): see vocals-title.ts.
+	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
 
 	const showStems = $derived(uiPrefs.show_stems);
 
