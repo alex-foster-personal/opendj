@@ -201,7 +201,7 @@ test('a fatal blocker refuses Continue and says so in words', () => {
 	const refusal = mod.advanceRefusal('detect', {
 		source: 'rekordbox',
 		detection: nothingFound(),
-		folderScan: null,
+		folderRows: [{ id: 'row-1', path: '', scan: null }],
 		job: null
 	});
 	assert.match(refusal, /rekordbox_not_found/);
@@ -210,17 +210,23 @@ test('a fatal blocker refuses Continue and says so in words', () => {
 		mod.advanceRefusal('detect', {
 			source: 'folder',
 			detection: nothingFound(),
-			folderScan: {
-				path: '/Users/dj/Music',
-				exists: true,
-				readable: true,
-				denied: false,
-				detail: 'readable',
-				audio_files: 12,
-				icloud_placeholders: 0,
-				how_to_grant: '',
-				sample: []
-			},
+			folderRows: [
+				{
+					id: 'row-1',
+					path: '/Users/dj/Music',
+					scan: {
+						path: '/Users/dj/Music',
+						exists: true,
+						readable: true,
+						denied: false,
+						detail: 'readable',
+						audio_files: 12,
+						icloud_placeholders: 0,
+						how_to_grant: '',
+						sample: []
+					}
+				}
+			],
 			job: null
 		}),
 		null
@@ -431,7 +437,7 @@ test('the folder step offers a native picker beside the path field', () => {
 	assert.match(overlay, /class="folder-path-row"/);
 	assert.match(overlay, /type="button"\s*\n\s*class="folder-pick"/);
 	assert.match(overlay, /aria-label="Choose a folder"/);
-	assert.match(overlay, /bind:value=\{folderInput\}/);
+	assert.match(overlay, /bind:value=\{row\.path\}/);
 	assert.match(overlay, /aria-label="Folder to import"/);
 });
 
@@ -441,7 +447,19 @@ test('the folder picker guards on the Tauri runtime and opens a directory dialog
 	assert.match(overlay, /canUseNativeFolderPicker/);
 	assert.match(overlay, /await import\('@tauri-apps\/plugin-dialog'\)/);
 	assert.match(overlay, /directory: true,\s*\n\s*multiple: false/);
-	assert.match(overlay, /if \(typeof selected === 'string'\) \{\s*\n\s*folderInput = selected;/);
+	assert.match(
+		overlay,
+		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.folderRows = setupWizard\.folderRows\.map/
+	);
+});
+
+test('the folder step can add and remove rows once a path is entered', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /setupWizard\.addFolderRow\(\)/);
+	assert.match(overlay, /aria-label="Add another folder"/);
+	assert.match(overlay, /setupWizard\.removeFolderRow\(row\.id\)/);
+	assert.match(overlay, /aria-label="Remove folder"/);
+	assert.match(overlay, /\{#if folderRows\.length > 1\}/);
 });
 
 test('the folder path placeholder is dim and italic, not the input itself', () => {
@@ -464,7 +482,7 @@ test('the folder picker is a real control, and says so when it cannot run', () =
 	// pretends to work where it cannot.
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /class="folder-pick"/);
-	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(\)\}/);
+	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(row\.id\)\}/);
 	// outside the desktop shell there is no native picker, and the control says
 	// which app can do it rather than failing silently
 	assert.match(overlay, /!nativeFolderPicker/);

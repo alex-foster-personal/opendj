@@ -15,9 +15,9 @@
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
-//   within 80 bytes of the limit, and +1 KiB Wed 23 Sep 2026 (PR #3645) for
-//   the show_stems pref and settings row, with main at 284 bytes of
-//   headroom. Any further move is a deliberate act with
+//   within 80 bytes of the limit, and +1 KiB Wed 23 Sep 2026 (PR #3681) for
+//   the multiple-folder rows in the statically imported SetupOverlay, with
+//   main at 277 bytes of headroom. Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -140,7 +140,7 @@ test('the library limit is exactly 258048: the inherited 256000 plus two reviewe
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3645/, 'the raise must carry its note');
+  assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

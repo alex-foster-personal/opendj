@@ -153,18 +153,19 @@ const BUDGETS = [
   // CI before this PR, the same "no headroom left" state the performance
   // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
   // reduction retires this KiB, not the consent code.
-  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3645, DECKUX-19 stem mini-waveforms):
-  // the show_stems pref (prefs.svelte.ts default + blob validation + setter,
-  // prefs-hydrate, the settings catalog row and apply case) and the
-  // perf-tier stem-waveform cache scalers are app-level first-paint weight.
-  // The envelope fetch itself was moved out of api-rb.ts into the
-  // /performance-only cache module (-54 bytes) before raising. Clean
-  // origin/main 7a0a7d948 measured 256,740 locally (284 bytes of headroom);
-  // this PR measured 257,073 locally, +333 bytes. Payback: lazy-loading the
-  // settings catalog (it renders only while the settings overlay is open)
-  // retires this KiB. PR #3681 raises this same entry to 258048 for its own
-  // +766; whichever lands second keeps one raise that covers both.
-  { name: 'library', limit: 258048, measured: 257073, note: 'initial load of "/"' },
+  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3681, multiple-folder first-run setup):
+  // SetupOverlay is imported statically by +layout.svelte, so the folder-row
+  // list (add/remove rows, per-row check, stale-scan guard) is first-paint
+  // weight. Clean origin/main cb401fbee measured 256,747 locally (277 bytes of
+  // headroom); this PR measured 257,513 locally and 257,523 on CI, +766 bytes.
+  // Payback: lazy-loading SetupOverlay (it renders only while the first-run
+  // overlay is open) retires this KiB and the one above.
+  // PR #3645 (DECKUX-19 stem mini-waveforms) adds +333 bytes of first-paint
+  // weight (the show_stems pref, settings row and perf-tier cache scalers)
+  // and lands AFTER #3681, so it takes no raise of its own: both fit under
+  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally,
+  // 161 bytes of headroom left.
+  { name: 'library', limit: 258048, measured: 257887, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

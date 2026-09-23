@@ -29,7 +29,13 @@ before(async () => {
 });
 
 function ctx(overrides = {}) {
-	return { source: 'rekordbox', detection: null, folderScan: null, job: null, ...overrides };
+	return {
+		source: 'rekordbox',
+		detection: null,
+		folderRows: [{ id: 'row-1', path: '', scan: null }],
+		job: null,
+		...overrides
+	};
 }
 
 // ----------------------------------------------------------------- back
