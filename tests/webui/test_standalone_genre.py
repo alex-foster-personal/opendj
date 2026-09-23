@@ -109,6 +109,36 @@ def test_mapped_track_ignores_conflicting_local_genre(tmp_path: Path) -> None:
     assert "rekordbox" in track["axis_title"].lower()
 
 
+def test_mapped_track_without_live_rekordbox_content_uses_local_genre(tmp_path: Path) -> None:
+    """[if] vendor id has no live rekordbox content [then] local genre is used, [else stop]."""
+    state_db = tmp_path / "state.db"
+    master_db = tmp_path / "master.plain.db"
+    _make_state_db(
+        state_db,
+        tracks=[
+            {
+                "stable_id": "t-stale-mapping",
+                "title": "Stale Mapping",
+                "artists": ["Artist G"],
+                "file_path": "/music/stale-mapping.mp3",
+            },
+        ],
+        memberships=[],
+        playlists=[],
+        vendor_ids={"t-stale-mapping": "v-gone"},
+        track_fields=[
+            {"stable_id": "t-stale-mapping", "field_name": "genre", "value_json": '"House"'},
+        ],
+    )
+    _make_master_db(master_db, content=[])
+    result = query_library_wheel(state_db, master_db, axis="play_count")
+    assert result["unclassified_track_count"] == 0
+    track = _find_track(result, "t-stale-mapping")
+    assert track["genre"] == "House"
+    assert result["families"][0]["name"] == "house"
+    assert "rekordbox" not in track["axis_title"].lower().replace("no rekordbox", "")
+
+
 def test_tombstoned_state_genre_counts_as_unclassified(tmp_path: Path) -> None:
     """[if] local genre field is tombstoned [then] wheel unclassified, [else stop]."""
     state_db = tmp_path / "state.db"
@@ -189,6 +219,58 @@ def test_tracks_listing_carries_state_only_genre(state_only_client: TestClient) 
     row = {item["stable_id"]: item for item in resp.json()["items"]}[STATE_ONLY_SID]
     assert row["genre"] == "House"
     assert row.get("genre_reason") is None
+
+
+@pytest.fixture
+def tombstoned_genre_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    state_path = tmp_path / "state.db"
+    master_path = tmp_path / "master.plain.db"
+    _make_state_db(
+        state_path,
+        tracks=[
+            {
+                "stable_id": "t-tombstoned",
+                "title": "Cleared Genre",
+                "artists": [],
+                "file_path": "/music/cleared.mp3",
+            },
+        ],
+        memberships=[],
+        playlists=[],
+        vendor_ids={},
+        track_fields=[
+            {
+                "stable_id": "t-tombstoned",
+                "field_name": "genre",
+                "value_json": '"House"',
+                "deleted_at": "2026-01-02T00:00:00Z",
+            },
+        ],
+    )
+    monkeypatch.setattr(shared_paths, "STATE_DB", state_path)
+    monkeypatch.setattr(shared_paths, "REKORDBOX_PLAIN_DB", master_path)
+    monkeypatch.setattr(rb_config, "STATE_DB", state_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", master_path)
+    app = create_app(
+        backend=SqliteBackend(state_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state_path),
+        mount_frontend=False,
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+def test_tracks_listing_hides_tombstoned_genre(tombstoned_genre_client: TestClient) -> None:
+    """[if] the genre field is tombstoned [then] /tracks has no genre and a reason, [else stop]."""
+    resp = tombstoned_genre_client.get("/api/v1/tracks")
+    assert resp.status_code == 200, resp.text
+    row = resp.json()["items"][0]
+    assert row["genre"] is None
+    assert row["genre_reason"] in (GENRE_REASON_NO_FILE_TAG, GENRE_REASON_TAGS_EXTRA_MISSING)
 
 
 @pytest.fixture

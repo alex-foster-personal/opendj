@@ -247,11 +247,14 @@ def _build_genre_tree(library: _LoadedLibrary) -> _GenreTree:
 
     for stable_id, track in library.tracks.items():
         vendor_id = library.vendor_id_by_stable_id.get(stable_id)
-        if vendor_id is not None:
-            content = library.genre_and_plays.get(vendor_id)
-            genre_tag, play_count = content if content is not None else (None, 0)
+        content = library.genre_and_plays.get(vendor_id) if vendor_id is not None else None
+        if content is not None:
+            # Live rekordbox content wins over any local track_fields genre.
+            genre_tag, play_count = content
             play_count_source = "rekordbox"
         else:
+            # No mapping, or a mapping whose djmdContent row is gone/deleted:
+            # bulk_rb_meta treats that as unmapped, so the wheel does too.
             genre_tag = library.local_genre_by_stable_id.get(stable_id)
             play_count = 0
             play_count_source = "local"
