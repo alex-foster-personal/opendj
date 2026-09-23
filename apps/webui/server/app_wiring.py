@@ -65,6 +65,7 @@ from .request_guard import (
     origin_guard_middleware,
 )
 from .routes import analysis as analysis_routes
+from .routes import audio_output_health as audio_output_health_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
@@ -535,6 +536,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         relocate_routes.router,
         copilot_routes.router,
         analysis_routes.router,
+        audio_output_health_routes.router,
         analysis_backfill_routes.router,
         analysis_queue_routes.router,
         library_jobs_routes.router,

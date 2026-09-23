@@ -286,6 +286,11 @@ _VERBS: tuple[Verb, ...] = (
     # RESCUE-01 HTTP parity (not command-bus verbs):
     #   opendj api GET /api/v1/performance/rescue-snapshots/latest
     #   opendj api POST /api/v1/performance/rescue-snapshots --json @snapshot.json
+    # AUDIO-DEVICE-01 HTTP parity (issue #923, not command-bus verbs):
+    #   opendj audio_output_health
+    #   opendj audio_switch_output --confirm
+    #   opendj api GET /api/v1/audio/output-health
+    #   opendj api POST /api/v1/audio/switch-output
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",

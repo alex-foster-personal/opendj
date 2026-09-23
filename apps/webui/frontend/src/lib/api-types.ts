@@ -600,6 +600,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio/output-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Output Health */
+        get: operations["get_output_health_api_v1_audio_output_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio/switch-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Switch Output */
+        post: operations["post_switch_output_api_v1_audio_switch_output_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/callback": {
         parameters: {
             query?: never;
@@ -6312,6 +6346,40 @@ export interface components {
             size_bytes: number;
             /** Url */
             url: string;
+        };
+        /** AudioOutputHealthOut */
+        AudioOutputHealthOut: {
+            /** Checked At */
+            checked_at: string;
+            /** Default Device Name */
+            default_device_name?: string | null;
+            /** Default Device Uid */
+            default_device_uid?: string | null;
+            /** Device Delivering */
+            device_delivering: boolean | null;
+            /** Hal Overload Recent */
+            hal_overload_recent?: boolean | null;
+            /** Io Cycles Advanced */
+            io_cycles_advanced?: boolean | null;
+            /** Probe Available */
+            probe_available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AudioSwitchOutputOut */
+        AudioSwitchOutputOut: {
+            /** Cycled */
+            cycled: boolean;
+            /** Error */
+            error?: string | null;
+            /** From */
+            from?: string | null;
+            /** Restored */
+            restored?: string | null;
+            /** Via */
+            via?: string | null;
         };
         /**
          * AutoAnalyzeOut
@@ -15651,6 +15719,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    get_output_health_api_v1_audio_output_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioOutputHealthOut"];
+                };
+            };
+        };
+    };
+    post_switch_output_api_v1_audio_switch_output_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioSwitchOutputOut"];
                 };
             };
         };

@@ -1136,6 +1136,153 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioOutputHealthOut": {
+        "properties": {
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "default_device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Device Name"
+          },
+          "default_device_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Device Uid"
+          },
+          "device_delivering": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Delivering"
+          },
+          "hal_overload_recent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hal Overload Recent"
+          },
+          "io_cycles_advanced": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Io Cycles Advanced"
+          },
+          "probe_available": {
+            "title": "Probe Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_delivering",
+          "verdict",
+          "probe_available",
+          "checked_at"
+        ],
+        "title": "AudioOutputHealthOut",
+        "type": "object"
+      },
+      "AudioSwitchOutputOut": {
+        "properties": {
+          "cycled": {
+            "title": "Cycled",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "restored": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored"
+          },
+          "via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via"
+          }
+        },
+        "required": [
+          "cycled"
+        ],
+        "title": "AudioSwitchOutputOut",
+        "type": "object"
+      },
       "AutoAnalyzeOut": {
         "description": "State of the daemon's auto-drain reconcile loop.",
         "properties": {
@@ -23990,6 +24137,48 @@
         "summary": "Assistant Status",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/audio/output-health": {
+      "get": {
+        "operationId": "get_output_health_api_v1_audio_output_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioOutputHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Output Health",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/switch-output": {
+      "post": {
+        "operationId": "post_switch_output_api_v1_audio_switch_output_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSwitchOutputOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Switch Output",
+        "tags": [
+          "audio"
         ]
       }
     },

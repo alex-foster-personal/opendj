@@ -19,6 +19,10 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
   opendj api GET /api/v1/tracks/{stable_id}
   opendj track key-segments <stable_id>
 
+audio output health (AUDIO-DEVICE-01, issue #923):
+  opendj audio_output_health
+  opendj audio_switch_output --confirm
+
 installed app shell navigation (AGENT-12, issue #2866):
   opendj open performance
   opendj open /performance
