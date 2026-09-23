@@ -154,6 +154,11 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import {
+		formatHideBrokenCheckboxTooltip,
+		hydrateRuntimePolicy,
+		playlistMostlyBroken
+	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
@@ -239,18 +244,9 @@
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
-	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
-	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
-
 	function playlistBrokenCount(p: PlaylistSummaryHydrated): number {
 		if (p.available_count < 0) return 0;
 		return p.track_count - p.available_count;
-	}
-
-	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
-		if (p.available_count < 0) return false;
-		if (p.track_count === 0) return p.available_count === 0;
-		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
 
 	// Pane state lives in the typed contract (pane-contract.svelte.ts):
@@ -870,10 +866,6 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
-		// Reconcile accounting must not wait on playlist boot init (#3727): _init()
-		// throws when the fast playlist prefetch fails validation, and the Missing
-		// Tracks count comes from GET /api/v1/reconcile/summary, not from the tree.
-		void _loadReconcileSummary();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1076,6 +1068,7 @@
 		const healthPromise = getHealthAtBoot(getHealth);
 		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
+			await hydrateRuntimePolicy();
 			if (bootAllTracksEarly) {
 				await bootTracksPrefetch().prefsPromise.catch(() => {});
 				const healthRes = await healthPromise;
@@ -1139,6 +1132,9 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+			// Reconcile runs in finally so it never races the boot tree/pane but still
+			// resolves when playlist boot throws (#3750).
+			void _loadReconcileSummary();
 		}
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
@@ -3255,10 +3251,7 @@
 						/>
 					</svg>
 				</button>
-				<label
-					class="hide-broken"
-					title="Show tracks whose audio file is missing on disk. Unchecking also hides playlists with fewer than 30% playable tracks, including empty ones."
-				>
+				<label class="hide-broken" title={formatHideBrokenCheckboxTooltip()}>
 					<input
 						type="checkbox"
 						aria-label="Show broken links"
