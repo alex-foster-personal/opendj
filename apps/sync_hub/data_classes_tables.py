@@ -228,6 +228,16 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         (fk("library-tracks"),),
     ),
     fixed(
+        "path-availability-index",
+        "Library path disk-truth index",
+        state_tables("path_availability"),
+        "machine_local",
+        "Stat answers for rekordbox library paths on THIS machine's disk, keyed "
+        "by a resolver namespace that includes the machine id (migrations_v18.py, "
+        "issue #1037). Syncing it would tell another machine its files are present.",
+        (),
+    ),
+    fixed(
         "launcher-derived",
         "Launcher search index and frecency",
         state_tables(
