@@ -7,6 +7,7 @@
 	// for ColumnBrowser - self-contained (own library fetch), same pattern
 	// as the smartlist self-fetch below.
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { formatMostlyBrokenTooltip } from '$lib/rb/runtime-policy.svelte';
 	import ColumnBrowser from './ColumnBrowser.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
 	import {
@@ -138,10 +139,6 @@
 		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
 	}
 
-	function _mostlyBrokenTitle(_node: PlaylistNode): string {
-		return 'Fewer than 30% of tracks in this playlist are playable';
-	}
-
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
 	}
@@ -261,7 +258,7 @@
 					data-testid="playlist-row"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
-					title={node.mostly_broken ? _mostlyBrokenTitle(node) : undefined}
+					title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
 					class:drop-target={dropTargetId === node.playlist_id}
 					class:tint-deck={_tintOf(node) === 'deck'}
 					class:tint-multi={_tintOf(node) === 'multi'}
@@ -294,7 +291,7 @@
 							onblur={() => void rename.commit()}
 						/>
 					{:else}
-						<span class="name" title={node.mostly_broken ? _mostlyBrokenTitle(node) : node.name}>{node.name}</span>
+						<span class="name" title={node.mostly_broken ? formatMostlyBrokenTooltip() : node.name}>{node.name}</span>
 					{/if}
 					{#if onrenameplaylist}
 						<button
