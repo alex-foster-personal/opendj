@@ -10,7 +10,6 @@
 	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
-	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
 	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
@@ -279,8 +278,15 @@
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
      root for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the one surface a brand new user meets cannot be missing there
-     of all places. -->
-<SetupOverlay />
+     of all places. Imported lazily (the payback named in
+     scripts/bundle-budget.mjs): the wizard renders only while the overlay is
+     open, and its own effects early-return while closed, so keeping it off the
+     first paint changes nothing a user or an agent can observe. -->
+{#if setupOpen}
+	{#await import('$lib/components/setup/SetupOverlay.svelte') then { default: SetupOverlay }}
+		<SetupOverlay />
+	{/await}
+{/if}
 <!-- The account panel, mounted at the root for the same reason as the two
      above: the user bauble is drawn on /performance too, and its Account door
      must open something there. -->
