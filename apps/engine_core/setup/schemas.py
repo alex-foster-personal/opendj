@@ -299,7 +299,6 @@ __all__ = [
     "FileProbeOut",
     "FolderCandidatesOut",
     "FolderImportIn",
-    "normalize_setup_folder_path",
     "FolderLastImportOut",
     "FolderScanOut",
     "LastImportOut",
@@ -310,4 +309,5 @@ __all__ = [
     "SetupStatusOut",
     "StemTierOut",
     "StemsSetupOut",
+    "normalize_setup_folder_path",
 ]

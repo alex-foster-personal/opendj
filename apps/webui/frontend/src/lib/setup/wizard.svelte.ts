@@ -34,7 +34,6 @@ import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
 	finalSetupRefusal,
-	folderIsImportable,
 	getFolderCandidates,
 	getSetupStatus,
 	isFatalBlocker,
@@ -45,10 +44,15 @@ import {
 	startFolderImport,
 	startImport,
 	type FolderCandidates,
-	type FolderScan,
 	type RekordboxDetection,
 	type SetupStatus,
 } from './setup-api';
+import {
+	folderAdvanceRefusal,
+	importableFolderPathsFromRows,
+	newFolderRow,
+	type FolderRow,
+} from './folder-rows';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -81,17 +85,6 @@ export type ImportSourceSelection = ImportSource | null;
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
 
 const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
-
-/** One folder path row on the first-run folder-import step. */
-export type FolderRow = {
-	id: string;
-	path: string;
-	scan: FolderScan | null;
-};
-
-function _newFolderRow(): FolderRow {
-	return { id: crypto.randomUUID(), path: '', scan: null };
-}
 
 // ------------------------------------------------------------- pure rules
 
@@ -186,33 +179,6 @@ export interface AdvanceContext {
 }
 
 /**
- * The row's scan, but only while it still describes the path in the text box.
- *
- * `bind:value` edits `row.path` in place and leaves `row.scan` alone, so a row
- * checked as /Music/A and then retyped as /Music/B would otherwise import B on
- * the strength of A's scan. The server echoes the path it scanned, normalized
- * the same way (`normalize_setup_folder_path`), so a mismatch means stale.
- */
-export function currentFolderScan(row: FolderRow): FolderScan | null {
-	if (row.scan === null) return null;
-	return normalizeSetupFolderPath(row.path) === row.scan.path ? row.scan : null;
-}
-
-/** Non-empty folder rows that passed check and are importable, normalized and deduped. */
-export function importableFolderPathsFromRows(rows: FolderRow[]): string[] {
-	const paths: string[] = [];
-	const seen = new Set<string>();
-	for (const row of rows) {
-		if (row.path.trim() === '' || !folderIsImportable(currentFolderScan(row))) continue;
-		const canon = normalizeSetupFolderPath(row.path);
-		if (seen.has(canon)) continue;
-		seen.add(canon);
-		paths.push(canon);
-	}
-	return paths;
-}
-
-/**
  * Why Next is refused on this step, or null when it is allowed.
  *
  * The progress step refuses while the job is still live on purpose: a wizard
@@ -228,33 +194,7 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 	if (step === 'detect' && ctx.source === null) {
 		return 'choose an import source first';
 	}
-	if (step === 'detect' && ctx.source === 'folder') {
-		const nonEmpty = ctx.folderRows.filter((row) => row.path.trim() !== '');
-		const anyChecked = ctx.folderRows.some((row) => currentFolderScan(row) !== null);
-		if (!anyChecked) return 'no folder has been checked yet';
-
-		for (const row of nonEmpty) {
-			const scan = currentFolderScan(row);
-			if (scan === null) return `check ${row.path.trim()} first`;
-			if (scan.denied) {
-				return 'macOS is blocking that folder; grant access and check again';
-			}
-			if (!folderIsImportable(scan)) {
-				return `nothing importable in ${scan.path}`;
-			}
-		}
-
-		const importable = importableFolderPathsFromRows(ctx.folderRows);
-		if (importable.length === 0) return 'no folder has been checked yet';
-
-		const normalized = nonEmpty
-			.filter((row) => folderIsImportable(currentFolderScan(row)))
-			.map((row) => normalizeSetupFolderPath(row.path));
-		if (new Set(normalized).size !== normalized.length) {
-			return 'remove duplicate folder paths before importing';
-		}
-		return null;
-	}
+	if (step === 'detect' && ctx.source === 'folder') return folderAdvanceRefusal(ctx.folderRows);
 	if (step === 'detect') {
 		if (ctx.detection === null) return 'detection has not answered yet';
 		const fatal = fatalBlockers(ctx.detection);
@@ -294,7 +234,7 @@ class SetupWizard {
 	status = $state<SetupStatus | null>(null);
 	detection = $state<RekordboxDetection | null>(null);
 	/** Folder-import rows: path input plus the daemon scan for that path. */
-	folderRows = $state<FolderRow[]>([_newFolderRow()]);
+	folderRows = $state<FolderRow[]>([newFolderRow()]);
 	/** The id of the job this wizard started. The row itself lives in
 	 * jobsStore; duplicating it here would give the UI two truths. */
 	jobId = $state<string | null>(null);
@@ -448,11 +388,11 @@ class SetupWizard {
 	}
 
 	resetFolderRows(): void {
-		this.folderRows = [_newFolderRow()];
+		this.folderRows = [newFolderRow()];
 	}
 
 	addFolderRow(): void {
-		this.folderRows = [...this.folderRows, _newFolderRow()];
+		this.folderRows = [...this.folderRows, newFolderRow()];
 	}
 
 	removeFolderRow(id: string): void {
