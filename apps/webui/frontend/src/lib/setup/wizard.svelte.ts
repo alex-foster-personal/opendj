@@ -179,12 +179,25 @@ export interface AdvanceContext {
 	job: Job | null;
 }
 
+/**
+ * The row's scan, but only while it still describes the path in the text box.
+ *
+ * `bind:value` edits `row.path` in place and leaves `row.scan` alone, so a row
+ * checked as /Music/A and then retyped as /Music/B would otherwise import B on
+ * the strength of A's scan. The server echoes the path it scanned, normalized
+ * the same way (`normalize_setup_folder_path`), so a mismatch means stale.
+ */
+export function currentFolderScan(row: FolderRow): FolderScan | null {
+	if (row.scan === null) return null;
+	return normalizeSetupFolderPath(row.path) === row.scan.path ? row.scan : null;
+}
+
 /** Non-empty folder rows that passed check and are importable, normalized and deduped. */
 export function importableFolderPathsFromRows(rows: FolderRow[]): string[] {
 	const paths: string[] = [];
 	const seen = new Set<string>();
 	for (const row of rows) {
-		if (row.path.trim() === '' || !folderIsImportable(row.scan)) continue;
+		if (row.path.trim() === '' || !folderIsImportable(currentFolderScan(row))) continue;
 		const canon = normalizeSetupFolderPath(row.path);
 		if (seen.has(canon)) continue;
 		seen.add(canon);
@@ -207,16 +220,17 @@ export function importableFolderPathsFromRows(rows: FolderRow[]): string[] {
 export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
 	if (step === 'detect' && ctx.source === 'folder') {
 		const nonEmpty = ctx.folderRows.filter((row) => row.path.trim() !== '');
-		const anyChecked = ctx.folderRows.some((row) => row.scan !== null);
+		const anyChecked = ctx.folderRows.some((row) => currentFolderScan(row) !== null);
 		if (!anyChecked) return 'no folder has been checked yet';
 
 		for (const row of nonEmpty) {
-			if (row.scan === null) return `check ${row.path.trim()} first`;
-			if (row.scan.denied) {
+			const scan = currentFolderScan(row);
+			if (scan === null) return `check ${row.path.trim()} first`;
+			if (scan.denied) {
 				return 'macOS is blocking that folder; grant access and check again';
 			}
-			if (!folderIsImportable(row.scan)) {
-				return `nothing importable in ${row.scan.path}`;
+			if (!folderIsImportable(scan)) {
+				return `nothing importable in ${scan.path}`;
 			}
 		}
 
@@ -224,7 +238,7 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 		if (importable.length === 0) return 'no folder has been checked yet';
 
 		const normalized = nonEmpty
-			.filter((row) => folderIsImportable(row.scan))
+			.filter((row) => folderIsImportable(currentFolderScan(row)))
 			.map((row) => normalizeSetupFolderPath(row.path));
 		if (new Set(normalized).size !== normalized.length) {
 			return 'remove duplicate folder paths before importing';

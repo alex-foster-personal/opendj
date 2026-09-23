@@ -279,6 +279,36 @@ test('the folder branch refuses a non-empty row that was not checked', () => {
 	assert.match(mod.advanceRefusal('detect', ctx), /check \/Users\/dj\/Other first/);
 });
 
+test('a checked row whose path was retyped is no longer importable (#3681 P1)', () => {
+	// [if] a row checked as one folder is edited to another [then] its old scan
+	// no longer vouches for it: Next asks for a check and nothing is imported,
+	// [else stop]. bind:value edits row.path in place and leaves row.scan alone.
+	const rows = [folderRow('/Users/dj/Other', folderScan({ path: '/Users/dj/Music' }))];
+	const ctx = { source: 'folder', detection: null, folderRows: rows, job: null };
+	assert.equal(mod.currentFolderScan(rows[0]), null);
+	assert.match(mod.advanceRefusal('detect', ctx), /no folder has been checked yet/);
+	assert.deepEqual(mod.importableFolderPathsFromRows(rows), []);
+
+	const mixed = [
+		folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+		folderRow('/Users/dj/Other', folderScan({ path: '/Users/dj/Elsewhere' }), 'row-2')
+	];
+	assert.match(
+		mod.advanceRefusal('detect', { ...ctx, folderRows: mixed }),
+		/check \/Users\/dj\/Other first/
+	);
+	assert.deepEqual(mod.importableFolderPathsFromRows(mixed), ['/Users/dj/Music']);
+});
+
+test('an edit that normalizes to the scanned path keeps the scan (#3681 control)', () => {
+	// [if] the retyped path differs only by a trailing separator [then] the scan
+	// still describes it and the row stays importable, [else stop].
+	const rows = [folderRow('/Users/dj/Music/', folderScan())];
+	const ctx = { source: 'folder', detection: null, folderRows: rows, job: null };
+	assert.equal(mod.advanceRefusal('detect', ctx), null);
+	assert.deepEqual(mod.importableFolderPathsFromRows(rows), ['/Users/dj/Music']);
+});
+
 test('progress refuses Next while the import is still live', () => {
 	const ctx = { source: 'rekordbox', detection: detection(), folderRows: emptyFolderRows() };
 	assert.match(
