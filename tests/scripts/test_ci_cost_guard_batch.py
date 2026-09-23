@@ -11,10 +11,9 @@ id, which is what makes re-pricing an overlap harmless.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-
-import re
 
 import pytest
 
