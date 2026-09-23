@@ -4,13 +4,16 @@
  */
 import {
 	decideIngestUpload,
+	getIngestRefreshStatus,
 	materializeIngestBatch,
 	startIngestRefresh,
 	uploadIngestFiles,
 	type UploadFileResult,
 	type UploadOut
 } from '$lib/rb/api-ingest';
+import { RbApiError } from '$lib/rb/api-rb-error';
 import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
+import { pushToast } from '$lib/stores.svelte';
 import {
 	addPlaylistItems,
 	createPlaylist,
@@ -27,7 +30,16 @@ export type FolderDropResult = {
 	added: number;
 	staged: number;
 	skippedDup: number;
+	/** 'started': this drop's batch refresh is running. 'queued': another
+	 * refresh held the one slot, so this batch's refresh starts when it frees.
+	 * 'none': nothing was staged, so there is nothing to analyze. */
+	analysis: 'started' | 'queued' | 'none';
 };
+
+/** How often a queued batch refresh re-checks the one refresh slot. */
+const REFRESH_REQUEUE_POLL_MS = 2_000;
+/** How long a queued batch refresh waits for the slot before it says so. */
+const REFRESH_REQUEUE_DEADLINE_MS = 30 * 60_000;
 
 export type PossibleDupDecision = 'accept' | 'reject';
 
@@ -67,22 +79,72 @@ export async function ingestFolderToNewPlaylist(opts: {
 				r.verdict === 'skipped_duplicate' ||
 				(r.verdict === 'possible_duplicate' && decisions.get(r.filename) === 'reject')
 		).length;
-		if (staged > 0) {
-			await startIngestRefresh(upload.dest_dir);
-		}
+		const analysis = staged > 0 ? await startOrQueueBatchRefresh(upload.dest_dir) : 'none';
 		await refreshIngestPending();
 
 		return {
 			playlistId,
 			added: stableIds.length,
 			staged,
-			skippedDup
+			skippedDup,
+			analysis
 		};
 	} catch (err) {
 		if (playlistId !== null) {
 			await _deleteIfEmpty(playlistId);
 		}
 		throw err;
+	}
+}
+
+/** The refresh endpoint's 409: a refresh job already holds the one slot. */
+function _isRefreshBusy(err: unknown): boolean {
+	return err instanceof RbApiError && err.status === 409;
+}
+
+/**
+ * Start the batch-scoped refresh for a drop's staging dir, or queue it.
+ *
+ * A 409 means another refresh (typically the previous drop's) holds the one
+ * job slot. That is not a failed drop: the playlist is already created and
+ * filled. But the running job cannot pick this batch up either, because a
+ * batch-scope job enumerates ITS OWN batch_dir once, when its worker starts
+ * (`_batch_targets` in apps/webui/server/routes/ingest.py). So the refresh is
+ * re-requested when the slot frees, in the background; only a failure of
+ * that later request, or a slot that never frees, is surfaced as an error.
+ * Any other refresh error still fails the drop.
+ */
+export async function startOrQueueBatchRefresh(destDir: string): Promise<'started' | 'queued'> {
+	try {
+		await startIngestRefresh(destDir);
+		return 'started';
+	} catch (err) {
+		if (!_isRefreshBusy(err)) throw err;
+	}
+	void _startWhenSlotFrees(destDir).catch((err: unknown) => {
+		pushToast(`analysis for dropped folder not started: ${String(err)}`, 'error');
+	});
+	return 'queued';
+}
+
+async function _startWhenSlotFrees(destDir: string): Promise<void> {
+	const deadline = Date.now() + REFRESH_REQUEUE_DEADLINE_MS;
+	for (;;) {
+		await new Promise((resolve) => setTimeout(resolve, REFRESH_REQUEUE_POLL_MS));
+		if (!(await getIngestRefreshStatus()).running) {
+			try {
+				await startIngestRefresh(destDir);
+				return;
+			} catch (err) {
+				if (!_isRefreshBusy(err)) throw err;
+			}
+		}
+		if (Date.now() > deadline) {
+			throw new Error(
+				`a refresh job still held the slot after ${REFRESH_REQUEUE_DEADLINE_MS / 60_000} min; ` +
+					`run Refresh analysis to analyze ${destDir}`
+			);
+		}
 	}
 }
 

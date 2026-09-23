@@ -2,6 +2,8 @@
 // [if] a folder is dropped on the playlist tree [then] a playlist named after it is created, new files are
 // ingested and exact library duplicates are linked, both as members in folder order [else fail].
 // [if] the same folder is dropped again [then] it succeeds into a fresh batch instead of a 409 [else fail].
+// [if] a drop meets a refresh job already running [then] it reports success and its own batch refresh starts
+// once the slot frees, while any other refresh error still fails the drop visibly [else fail].
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,7 +112,36 @@ async function livePlaylistIds(request: APIRequestContext): Promise<Set<string>>
 	return new Set(((await r.json()) as Summary[]).map((p) => p.playlist_id));
 }
 
-type LibrarySnapshot = { tracks: Set<string>; playlists: Set<string> };
+async function ingestStepsEnabled(request: APIRequestContext): Promise<Record<string, boolean>> {
+	const r = await request.get('/api/v1/ingest/config');
+	expect(r.ok(), await r.text()).toBe(true);
+	const cfg = (await r.json()) as { steps: { id: string; enabled: boolean }[] };
+	return Object.fromEntries(cfg.steps.map((s) => [s.id, s.enabled]));
+}
+
+type RefreshStatus = {
+	running: boolean;
+	phase: string;
+	started_at: number | null;
+	log_tail: string[];
+};
+
+async function refreshStatus(request: APIRequestContext): Promise<RefreshStatus> {
+	const r = await request.get('/api/v1/ingest/refresh/status');
+	expect(r.ok(), await r.text()).toBe(true);
+	return (await r.json()) as RefreshStatus;
+}
+
+/** The toast tray's current text; toasts render into the one `.toast-stack`. */
+function toastStack(page: Page) {
+	return page.locator('.toast-stack');
+}
+
+type LibrarySnapshot = {
+	tracks: Set<string>;
+	playlists: Set<string>;
+	steps: Record<string, boolean>;
+};
 let before: LibrarySnapshot | null = null;
 
 test.describe('playlist folder drop', () => {
@@ -124,15 +155,25 @@ test.describe('playlist folder drop', () => {
 	// as it found it: playlists and tracks it created are removed, and no
 	// refresh job is left running.
 	test.beforeEach(async ({ request }) => {
-		before = { tracks: await liveTrackIds(request), playlists: await livePlaylistIds(request) };
+		before = {
+			tracks: await liveTrackIds(request),
+			playlists: await livePlaylistIds(request),
+			steps: await ingestStepsEnabled(request)
+		};
 	});
 
-	test.afterEach(async ({ request }, testInfo) => {
+	test.afterEach(async ({ page, request }, testInfo) => {
 		// The hook shares the test's budget; give the refresh wait its own.
 		testInfo.setTimeout(testInfo.timeout + 75_000);
+		// Close the page first: a drop that met a busy refresh slot queues its
+		// batch refresh IN the page, and that poller must not start a job
+		// after the idle wait below has already passed.
+		await page.close();
 		const snapshot = before;
 		before = null;
 		expect(snapshot, 'beforeEach did not snapshot the library').not.toBeNull();
+		const put = await request.put('/api/v1/ingest/config', { data: { enabled: snapshot!.steps } });
+		expect(put.ok(), await put.text()).toBe(true);
 		for (const id of await livePlaylistIds(request)) {
 			if (snapshot!.playlists.has(id)) continue;
 			const detail = await request.get(`/api/v1/playlists/${id}`);
@@ -162,6 +203,7 @@ test.describe('playlist folder drop', () => {
 		// Positive proof of the hand-back, not an absence of errors.
 		expect(await livePlaylistIds(request)).toEqual(snapshot!.playlists);
 		expect(await liveTrackIds(request)).toEqual(snapshot!.tracks);
+		expect(await ingestStepsEnabled(request)).toEqual(snapshot!.steps);
 	});
 
 	test('file drag over playlist tree does not open generic ingest overlay', async ({ page }) => {
@@ -229,5 +271,69 @@ test.describe('playlist folder drop', () => {
 		await dropFolderOnPlaylistTree(page, 'Agnes Obel', [fresh, dup]);
 		const again = await awaitDropPlaylist(page, 'Agnes Obel', [mixed]);
 		expect(await playlistItems(page, again.playlist_id)).toEqual(items);
+	});
+
+	test('a drop that meets a running refresh succeeds and queues its own batch refresh', async ({
+		page
+	}) => {
+		test.setTimeout(150_000); // two real drops, then the queued refresh's own run
+		const refreshPosts: number[] = [];
+		page.on('response', (r) => {
+			if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh') {
+				refreshPosts.push(r.status());
+			}
+		});
+		await page.goto('/performance');
+		await expect(page.getByTestId('playlist-tree-panel')).toBeVisible({ timeout: 15_000 });
+
+		// Back to back, as a user drops two folders: the first drop's batch
+		// refresh (a real analysis subprocess) still holds the one slot when
+		// the second drop asks for its own.
+		await dropFolderOnPlaylistTree(page, 'E2E Busy First', [fixtureFile(DUP_SOURCE)]);
+		await awaitDropPlaylist(page, 'E2E Busy First');
+		await dropFolderOnPlaylistTree(page, 'E2E Busy Second', [fixtureFile(NEW_SOURCE)]);
+		await awaitDropPlaylist(page, 'E2E Busy Second');
+
+		// The drop reports success, not "folder drop failed".
+		await expect(toastStack(page)).toContainText('Created "E2E Busy Second"', { timeout: 20_000 });
+		expect(
+			refreshPosts,
+			'precondition: the second drop never met a busy refresh slot, so this run proves nothing'
+		).toContain(409);
+
+		// The running job cannot see the second batch (a batch job enumerates
+		// only its own batch_dir), so the queued request must start a job over
+		// the second drop's batch once the slot frees, and that job must end.
+		await expect
+			.poll(
+				async () => {
+					const s = await refreshStatus(page.request);
+					return (
+						!s.running &&
+						s.log_tail.some((l) => l.includes('batch scope:') && l.includes('E2E Busy Second-'))
+					);
+				},
+				{ timeout: 100_000, message: 'no refresh ever ran over the second drop\'s batch' }
+			)
+			.toBe(true);
+		expect(refreshPosts.slice(refreshPosts.indexOf(409))).toContain(202);
+		await expect(toastStack(page)).not.toContainText('folder drop failed');
+	});
+
+	test('a refresh that fails for a real reason still fails the drop visibly', async ({ page }) => {
+		// Control for the queued path above: only the busy-slot 409 is benign.
+		// With every ingest step disabled the refresh endpoint answers 422
+		// "no steps enabled", and that must still surface as a failed drop.
+		expect(before, 'beforeEach did not snapshot the ingest config').not.toBeNull();
+		const off = Object.fromEntries(Object.keys(before!.steps).map((id) => [id, false]));
+		const put = await page.request.put('/api/v1/ingest/config', { data: { enabled: off } });
+		expect(put.ok(), await put.text()).toBe(true);
+		await page.goto('/performance');
+		await expect(page.getByTestId('playlist-tree-panel')).toBeVisible({ timeout: 15_000 });
+
+		await dropFolderOnPlaylistTree(page, 'E2E No Steps', [fixtureFile(NEW_SOURCE)]);
+		await expect(toastStack(page)).toContainText('folder drop failed', { timeout: 30_000 });
+		await expect(toastStack(page)).toContainText('no steps enabled');
+		await expect(toastStack(page)).not.toContainText('Created "E2E No Steps"');
 	});
 });
