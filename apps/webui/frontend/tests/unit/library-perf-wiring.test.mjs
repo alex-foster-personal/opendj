@@ -134,7 +134,18 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(src, /getReconcileSummary/);
 	assert.match(src, /allTracksNonBrokenCount = summary\.total_tracks - summary\.total_broken/);
 	assert.match(src, /broken_count: playlistBrokenCount\(p\)/);
-	assert.match(src, /void _loadReconcileSummary\(\);/);
+	assert.match(
+		src,
+		/finally \{\s*playlistsLoading = false;[\s\S]*?void _loadReconcileSummary\(\);[\s\S]*?\}/,
+		'reconcile must run from _init finally after boot settles, not on the mount critical path'
+	);
+	const onMountBlock = src.match(/onMount\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] ?? '';
+	assert.match(onMountBlock, /void _init\(\);/);
+	assert.doesNotMatch(
+		onMountBlock,
+		/void _loadReconcileSummary\(\);/,
+		'onMount must not fire reconcile in parallel with _init'
+	);
 	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
