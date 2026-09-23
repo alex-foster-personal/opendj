@@ -72,6 +72,8 @@
 		drawStemWaveRow(ctx, {
 			envelope,
 			scrollPx,
+			durationMs: deck.duration_ms,
+			pitch: deck.pitch,
 			width: canvasWidth,
 			height: cssH,
 			color: stemWaveRowColor(stem)
