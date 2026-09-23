@@ -203,9 +203,8 @@ export function noteMasterSilence(
  * Wed 2 Sep 2026 incident, where the HAL clock kept advancing).
  */
 function _noteOutputDeviceLiveness(playing: boolean, masterRms: number, tMs: number): void {
-	const outputLatencyDead =
-		audioOutputHealth.snapshot?.browser?.verdict === 'dead' ||
-		audioOutputHealth.snapshot?.browser?.verdict === 'dead-escalated';
+	const browserVerdict = audioOutputHealth.snapshot?.browser?.verdict;
+	const outputLatencyDead = browserVerdict === 'dead' || browserVerdict === 'dead-escalated';
 	_deviceLivenessState = foldDeviceLivenessSample(_deviceLivenessState, {
 		playing,
 		masterRms,

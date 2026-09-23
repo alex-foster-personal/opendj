@@ -268,9 +268,11 @@ describe('wiring (source guard)', () => {
 
 	it('armAudioContextWatchdog wires liveness snapshots into the merged output-health store (pin 93c82bb36eb7)', () => {
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+		// Loaded lazily to keep it out of the first-paint chunk; that it really
+		// installs is proven behaviorally in device-output-probe-arm.test.mjs.
 		assert.ok(
-			src.includes('installDeviceOutputProbe('),
-			'if the OS output probe is not installed then the bar cannot show device delivery faults - broken'
+			src.includes("import('$lib/rb/device-output-probe-browser')"),
+			'if the OS output probe is not loaded at graph build then the bar cannot show device delivery faults - broken'
 		);
 		assert.ok(
 			src.includes('onSnapshot: (snapshot) =>'),

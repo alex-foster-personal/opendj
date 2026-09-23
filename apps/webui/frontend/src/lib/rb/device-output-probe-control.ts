@@ -7,6 +7,11 @@ export function registerDeviceOutputProbe(handle: DeviceOutputProbeHandle | null
 	_handle = handle;
 }
 
+/** The installed probe, or null before its lazy install and after disarm. */
+export function registeredDeviceOutputProbe(): DeviceOutputProbeHandle | null {
+	return _handle;
+}
+
 export async function switchDeviceOutput(): Promise<void> {
 	await _handle?.switchOutput();
 }

@@ -1,5 +1,7 @@
 /**
  * [if] device stops delivering while playing [then] probe surfaces not_delivering within 10 s
+ * [if] the browser verdict turns dead or escalates [then] the probe requests one OS probe
+ *   per edge, including a dead verdict that predates install, [else stop].
  */
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
@@ -113,6 +115,71 @@ describe('installDeviceOutputProbe SLA', () => {
 		assert.equal(typeof faultAt, 'number', updates.map((entry) => `${entry.at}:${entry.combined}`).join(', '));
 		assert.ok(faultAt <= DEVICE_PROBE_SLA_MS, `fault at ${faultAt}ms exceeds ${DEVICE_PROBE_SLA_MS}ms SLA`);
 
+		handle.uninstall();
+	});
+});
+
+describe('installDeviceOutputProbe browser dead-verdict edge', () => {
+	let installDeviceOutputProbe;
+
+	before(async () => {
+		installDeviceOutputProbe = (await loadTypeScriptModule('src/lib/rb/device-output-probe.ts'))
+			.installDeviceOutputProbe;
+	});
+
+	/** A probe whose debounced OS requests are counted, driven by `verdict`. */
+	function harness(initialVerdict) {
+		const state = { verdict: initialVerdict, requests: 0 };
+		const handle = installDeviceOutputProbe(
+			() => (state.verdict === null ? null : { verdict: state.verdict }),
+			() => false,
+			() => false,
+			() => 0,
+			{
+				fetchHealth: async () => {
+					throw new Error('not reached: timers are never fired here');
+				},
+				switchOutput: async () => ({ cycled: true }),
+				setInterval: () => 1,
+				clearInterval: () => {},
+				// requestProbe is the only caller: one call is one OS probe request.
+				setTimeout: () => {
+					state.requests += 1;
+					return state.requests;
+				},
+				clearTimeout: () => {},
+				now: () => 0,
+				onUpdate: () => {}
+			}
+		);
+		return { state, handle };
+	}
+
+	it('requests an OS probe once when the browser verdict turns dead, not on every publish', () => {
+		const { state, handle } = harness('ok');
+		handle.republish();
+		assert.equal(state.requests, 0, 'if an ok browser verdict requests an OS probe then every tick probes - broken');
+		state.verdict = 'dead';
+		handle.republish();
+		assert.equal(state.requests, 1, 'if a dead browser verdict does not ask the OS then gate C cannot tell device from browser - broken');
+		handle.republish();
+		handle.republish();
+		assert.equal(state.requests, 1, 'if every publish of a still-dead verdict re-requests then the probe hammers CoreAudio - broken');
+		state.verdict = 'dead-escalated';
+		handle.republish();
+		assert.equal(state.requests, 2, 'if the escalation edge does not re-probe then a stuck device is never re-checked - broken');
+		handle.uninstall();
+	});
+
+	it('acts on a dead verdict that was already standing when the probe installed', () => {
+		const { state, handle } = harness('dead');
+		assert.equal(state.requests, 0, 'install alone must not publish');
+		handle.republish();
+		assert.equal(
+			state.requests,
+			1,
+			'if a dead verdict seen before the lazy install is ignored then that outage never reaches the OS probe - broken'
+		);
 		handle.uninstall();
 	});
 });

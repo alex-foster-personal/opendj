@@ -23,7 +23,6 @@ import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
-import type { DeviceDeliverySnapshot } from './device-output-delivering';
 import type { LyricsRowSummary } from './lyrics/types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
@@ -1120,33 +1119,5 @@ export async function analyzeVocalsFromStems(stable_id: string): Promise<VocalsA
 		body: JSON.stringify({ stable_ids: [stable_id], mode: 'from-stems' })
 	});
 	if (!r.ok) await _throwRbApiError(r);
-	return await r.json();
-}
-
-// --------------------------------------------- OS output-device delivery (AUDIO-DEVICE-01, #923)
-
-/** GET /audio/output-health - macOS shell probe proxied through the engine. */
-export async function fetchAudioOutputHealth(): Promise<DeviceDeliverySnapshot> {
-	return _fetchJson<DeviceDeliverySnapshot>('/api/v1/audio/output-health');
-}
-
-export interface AudioSwitchOutputResult {
-	cycled: boolean;
-	from?: string;
-	via?: string;
-	restored?: string;
-	error?: string;
-}
-
-/** POST /audio/switch-output - cycle default macOS output away and back. */
-export async function postAudioSwitchOutput(): Promise<AudioSwitchOutputResult> {
-	const r = await fetch(`${RB_API_BASE}/api/v1/audio/switch-output`, {
-		method: 'POST',
-		headers: { Accept: 'application/json' }
-	});
-	if (!r.ok) {
-		const detail = await r.json().catch(() => ({}));
-		return { cycled: false, error: typeof detail?.detail?.error === 'string' ? detail.detail.error : r.statusText };
-	}
 	return await r.json();
 }

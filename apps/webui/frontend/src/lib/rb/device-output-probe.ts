@@ -7,7 +7,6 @@ import {
 	foldDeviceDelivery
 } from './device-output-delivering';
 import type { AudioOutputSnapshot, LivenessVerdict } from './audio-output-liveness';
-import { fetchAudioOutputHealth, postAudioSwitchOutput } from './api-rb';
 import { SILENCE_RMS_FLOOR } from './silence-watchdog';
 
 export const DEVICE_PROBE_POLL_MS = 2_000;
@@ -53,7 +52,11 @@ export interface DeviceOutputProbeEffects {
 
 export interface DeviceOutputProbeHandle {
 	requestProbe: (reason: string) => void;
-	/** Recompute combined verdict from the latest browser snapshot without fetching OS. */
+	/**
+	 * Recompute combined verdict from the latest browser snapshot without
+	 * fetching OS. A browser verdict that has just turned dead (or escalated)
+	 * also requests a probe, once per edge.
+	 */
 	republish: () => void;
 	switchOutput: () => Promise<void>;
 	uninstall: () => void;
@@ -70,11 +73,23 @@ export function installDeviceOutputProbe(
 	let debounceHandle: unknown = null;
 	let deviceProbe: DeviceDeliverySnapshot | null = null;
 	let lastToastVerdict: CombinedOutputHealthVerdict | null = null;
+	let lastBrowserLiveness: LivenessVerdict | null = null;
 	let switchInFlight = false;
 
 	const publish = (): void => {
 		const browser = getBrowserSnapshot();
 		const browserLiveness: LivenessVerdict = browser?.verdict ?? 'idle';
+		// The browser context reports a dead output: ask the OS whether the
+		// device itself is delivering. Owned here rather than by the caller so a
+		// dead verdict that arrived before this probe was installed (it is loaded
+		// lazily) is still acted on at the first publish.
+		if (
+			(browserLiveness === 'dead' || browserLiveness === 'dead-escalated') &&
+			lastBrowserLiveness !== browserLiveness
+		) {
+			requestProbe('browser-liveness-dead');
+		}
+		lastBrowserLiveness = browserLiveness;
 		const combined = foldDeviceDelivery({
 			playing: getPlaying(),
 			masterMuted: getMasterMuted(),
@@ -170,11 +185,3 @@ export function installDeviceOutputProbe(
 		}
 	};
 }
-
-export const defaultDeviceProbeEffects = (): Pick<
-	DeviceOutputProbeEffects,
-	'fetchHealth' | 'switchOutput'
-> => ({
-	fetchHealth: fetchAudioOutputHealth,
-	switchOutput: postAudioSwitchOutput
-});
