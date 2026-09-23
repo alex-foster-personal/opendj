@@ -600,6 +600,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio/output-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Output Health */
+        get: operations["get_output_health_api_v1_audio_output_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio/switch-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Switch Output */
+        post: operations["post_switch_output_api_v1_audio_switch_output_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/callback": {
         parameters: {
             query?: never;
@@ -1995,6 +2029,27 @@ export interface paths {
         get: operations["host_info_api_v1_host_info_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/batch/{batch}/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Batch
+         * @description [if] batch is staged under the ingest inbox [then] folder-ingest writes
+         *     tracks and returns stable_ids [else stop].
+         */
+        post: operations["materialize_batch_api_v1_ingest_batch__batch__materialize_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5282,11 +5337,10 @@ export interface paths {
          *     a beatgrid is never invented.
          *
          *     A caller naming ``backend=`` gets exactly what it named. The default
-         *     newest-row lookup instead defers to native-analysis v1 first: when v1
-         *     has already settled a beatgrid determination for this track (a
-         *     canonical own pointer exists, whatever it resolved to), this endpoint
-         *     preserves that gridless/failed state rather than silently substituting
-         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+         *     newest-row lookup instead refuses a superseded pre-v1 legacy row only
+         *     when the canonical own beatgrid lane is ``failed``; a successful native
+         *     backfill does not disable the legacy row while own is not yet serving
+         *     (STANDALONE-04).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -5549,6 +5603,26 @@ export interface paths {
          *     retry rather than hang forever on this one request.
          */
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/{part}/waveform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Waveform
+         * @description Return a downsampled mono peak envelope for one validated stem part.
+         */
+        get: operations["get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6272,6 +6346,40 @@ export interface components {
             size_bytes: number;
             /** Url */
             url: string;
+        };
+        /** AudioOutputHealthOut */
+        AudioOutputHealthOut: {
+            /** Checked At */
+            checked_at: string;
+            /** Default Device Name */
+            default_device_name?: string | null;
+            /** Default Device Uid */
+            default_device_uid?: string | null;
+            /** Device Delivering */
+            device_delivering: boolean | null;
+            /** Hal Overload Recent */
+            hal_overload_recent?: boolean | null;
+            /** Io Cycles Advanced */
+            io_cycles_advanced?: boolean | null;
+            /** Probe Available */
+            probe_available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AudioSwitchOutputOut */
+        AudioSwitchOutputOut: {
+            /** Cycled */
+            cycled: boolean;
+            /** Error */
+            error?: string | null;
+            /** From */
+            from?: string | null;
+            /** Restored */
+            restored?: string | null;
+            /** Via */
+            via?: string | null;
         };
         /**
          * AutoAnalyzeOut
@@ -10026,6 +10134,22 @@ export interface components {
              */
             use_fingerprint: boolean;
         };
+        /** MaterializeOut */
+        MaterializeOut: {
+            /** Batch */
+            batch: string;
+            /** Tracks */
+            tracks: components["schemas"]["MaterializedTrack"][];
+        };
+        /** MaterializedTrack */
+        MaterializedTrack: {
+            /** Inserted */
+            inserted: boolean;
+            /** Relative Path */
+            relative_path: string;
+            /** Stable Id */
+            stable_id: string;
+        };
         /** MeOut */
         MeOut: {
             /** Signed In */
@@ -12209,10 +12333,17 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -12825,6 +12956,27 @@ export interface components {
             status: "unavailable";
         };
         /**
+         * StemWaveformOut
+         * @description Mono peak envelope for one stem part (issue #1036).
+         */
+        StemWaveformOut: {
+            /** Envelope */
+            envelope: number[];
+            /** Layout */
+            layout: string;
+            /** Part */
+            part: string;
+            /** Points */
+            points: number;
+            /**
+             * Schema
+             * @default 1
+             */
+            schema: number;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -13357,7 +13509,8 @@ export interface components {
          *     preview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per
          *     column (null = no ANLZ analysis). preview_max: per-track max band value
          *     for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
-         *     file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+         *     file_availability: typed disk-truth lane including AVAILABILITY_PENDING.
+         *     file_exists: present/absent only; null while availability is pending.
          *     quality: venue rung from apps.shared.audio_quality (same stat pass, so
          *     no extra cost per row); venue/rank are null when it cannot be measured.
          *     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
@@ -13394,10 +13547,19 @@ export interface components {
             energy_reason: string;
             /** Energy Source */
             energy_source: "mik" | null;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13607,10 +13769,17 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13822,6 +13991,11 @@ export interface components {
              */
             show_agent_pins: boolean;
             /**
+             * Show Stems
+             * @default false
+             */
+            show_stems: boolean;
+            /**
              * Technically Working Animate
              * @default true
              */
@@ -13890,6 +14064,8 @@ export interface components {
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
+            /** Show Stems */
+            show_stems?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
@@ -15585,6 +15761,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    get_output_health_api_v1_audio_output_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioOutputHealthOut"];
+                };
+            };
+        };
+    };
+    post_switch_output_api_v1_audio_switch_output_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioSwitchOutputOut"];
                 };
             };
         };
@@ -18193,6 +18409,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    materialize_batch_api_v1_ingest_batch__batch__materialize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterializeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -24484,6 +24731,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                part: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemWaveformOut"];
+                };
             };
             /** @description Validation Error */
             422: {

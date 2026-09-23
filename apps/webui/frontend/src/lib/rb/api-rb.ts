@@ -24,6 +24,7 @@ import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
+import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -48,6 +49,13 @@ export type {
 export const RB_API_BASE: string = API_BASE;
 
 export { RbApiError } from './api-rb-error';
+
+export type FileAvailabilityStatus =
+	| 'present'
+	| 'absent'
+	| 'AVAILABILITY_PENDING'
+	| 'streaming'
+	| 'awaiting_volume';
 
 export type TrackLyrics = {
 	stable_id: string;
@@ -95,6 +103,10 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
 }
+
+/** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
+ * that keep their endpoint helpers out of this first-paint module. */
+export { _fetchJson as fetchRbJson };
 
 function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
@@ -370,11 +382,14 @@ export interface PlaylistTrackRowWire {
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
+	/** When genre is null, names why (missing tags extra, no file tag, etc.). */
+	genre_reason?: string | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	is_streaming: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
@@ -569,17 +584,19 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
 	return summary;
 }
 
-/** Track listing item + contract point 1's per-row fields. is_streaming
- * and genre are NOT in the listing contract (playlist rows only), hence
- * absent here - the browser falls back to lazy rb-meta for those. */
+/** Track listing item + contract point 1's per-row fields. STANDALONE-05
+ * adds inline genre/genre_reason; is_streaming is still lazy via rb-meta. */
 export type TrackListItemWire = Track & {
+	genre?: string | null;
+	genre_reason?: string | null;
 	duration_ms?: number | null;
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
@@ -618,10 +635,18 @@ export async function listTracksHydrated(params: {
 		.join('&');
 	const page = await _fetchJson<TracksPageHydrated>(`/api/v1/tracks${qs === '' ? '' : '?' + qs}`);
 	for (const item of page.items) {
-		if (typeof item.file_exists !== 'boolean') {
+		if (
+			item.file_availability !== 'AVAILABILITY_PENDING' &&
+			typeof item.file_exists !== 'boolean'
+		) {
 			throw new Error(
 				`track ${String(item.stable_id)}: listing row has no file_exists - ` +
 					'backend contract point 1 not met'
+			);
+		}
+		if (typeof item.file_availability !== 'string') {
+			throw new Error(
+				`track ${String(item.stable_id)}: listing row has no file_availability`
 			);
 		}
 		// Loud, not falsy-defaulted: an absent flag would silently read as
@@ -639,7 +664,7 @@ export async function listTracksHydrated(params: {
 // ------------------------------------------------- the 4 new endpoints
 
 /** GET /tracks/{sid}/anlz - waveforms, beatgrid, cues, phrases + vocals.
- * points: 100..38400, default 38400 (server downsamples detail bands).
+ * points bounds and default come from GET /api/v1/settings (runtime policy).
  * Validates the contract's vocals field up front (and primes the
  * vocalsOf memo) so paint code can trust it.
  * Concurrent callers with the same sid+points share one in-flight fetch so
@@ -661,7 +686,7 @@ const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
  * handed a promise some unrelated in-flight call is already waiting on. */
 export async function fetchAnlz(
 	stable_id: string,
-	points = 38400,
+	points: number | null = defaultAnlzPoints(),
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
 	const gen = currentAnlzFetchGeneration();
@@ -671,7 +696,7 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, gen)}`,
 		'no-store'
 	).then((data) => {
 		vocalsOf(data);
@@ -708,10 +733,10 @@ export async function fetchAnlz(
  * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
-	points = 38400
+	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`,
 		'reload'
 	);
 	vocalsOf(data);
