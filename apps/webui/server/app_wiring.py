@@ -255,10 +255,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         jobs_watcher.start()
         from . import path_availability_refresh
 
-        db = Path(app.state.state_db_path)
-        data_dir = db.parent.parent if db.parent.name == "state" else db.parent
-        path_availability_refresh.configure(data_dir=data_dir, state_db_path=db)
-        path_availability_refresh.start()
+        path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
         from . import path_availability_refresh

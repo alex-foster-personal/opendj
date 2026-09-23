@@ -2,20 +2,28 @@
 
 Resolver-namespaced rows in ``path_availability`` cache rekordbox listing stat
 answers across process restarts. Request handlers bulk-load the index, serve
-hits immediately, and delegate over-budget refresh to
+hits immediately, and hand over-budget or stale paths to
 :mod:`apps.webui.server.path_availability_refresh`.
+
+Lives in the web UI layer, not ``apps.shared.state``: it reads the rekordbox
+adapter's path resolver and is fed by a web UI thread, and ``apps.shared``
+imports nothing else from ``apps`` (the ``shared-is-the-stable-core``
+import-linter contract). The table DDL itself stays in the shared ladder
+(``apps/shared/state/migrations_v18.py``) because the schema is shared.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from apps.adapters.rekordbox.config import FILE_EXISTS_TTL_S
+from apps.adapters.rekordbox.paths import resolve_asset_path
+from apps.shared import fs_residency
 from apps.shared.platform_paths import load_path_map
 from apps.shared.state import machine_identity
 
@@ -40,12 +48,26 @@ def _parse_checked_at(raw: str) -> datetime:
 
 def _checked_at_iso(when: datetime | None = None) -> str:
     stamp = (when or datetime.now(UTC)).astimezone(UTC)
-    return stamp.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return stamp.isoformat(timespec="microseconds")
 
 
 def _is_stale(checked_at: datetime, *, now: datetime | None = None) -> bool:
     anchor = now or datetime.now(UTC)
     return anchor - checked_at > timedelta(seconds=FILE_EXISTS_TTL_S)
+
+
+def stat_logical_path(path: str) -> int | None:
+    """Materialised size of a library path after containment mapping.
+
+    None when the path does not resolve, is missing, is not a file, or is a
+    dataless stub. This is the background refresher's stat; request handlers
+    stat through ``track_rows._stat_size`` so the per-request budget stays
+    observable in one place.
+    """
+    resolved = resolve_asset_path(path).resolved
+    if resolved is None:
+        return None
+    return fs_residency.materialised_size(resolved)
 
 
 def resolver_namespace(data_dir: Path) -> str:
@@ -71,7 +93,7 @@ def bulk_lookup(
     if not wanted:
         return {}
     now = datetime.now(UTC)
-    out: dict[str, IndexEntry | None] = {path: None for path in wanted}
+    out: dict[str, IndexEntry | None] = dict.fromkeys(wanted)
     for offset in range(0, len(wanted), _SQL_CHUNK):
         chunk = wanted[offset : offset + _SQL_CHUNK]
         placeholders = ",".join("?" * len(chunk))
@@ -109,24 +131,14 @@ def upsert_rows(
         "ON CONFLICT(resolver_namespace, logical_path) DO UPDATE SET "
         "materialised_size = excluded.materialised_size, "
         "checked_at = excluded.checked_at",
-        [
-            (namespace, path, size, checked_at)
-            for path, size in rows
-        ],
+        [(namespace, path, size, checked_at) for path, size in rows],
     )
-
-
-def schedule_background_refresh(paths: Iterable[str]) -> None:
-    """Enqueue ``paths`` for async stat + upsert (non-blocking)."""
-    from apps.webui.server import path_availability_refresh
-
-    path_availability_refresh.schedule(paths)
 
 
 __all__ = [
     "IndexEntry",
     "bulk_lookup",
     "resolver_namespace",
-    "schedule_background_refresh",
+    "stat_logical_path",
     "upsert_rows",
 ]

@@ -11,9 +11,9 @@ import threading
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from apps.adapters.rekordbox.paths import resolve_asset_path
 from apps.shared.state import db as state_db
-from apps.shared.state import path_availability as path_index
+
+from .rb_vendor_pkg import path_index
 
 log = logging.getLogger(__name__)
 
@@ -79,13 +79,8 @@ class PathAvailabilityRefresher:
             self._flush(batch)
 
     def _flush(self, paths: Sequence[str]) -> None:
-        from apps.webui.server.rb_vendor_pkg import track_rows
-
         namespace = path_index.resolver_namespace(self._data_dir)
-        rows: list[tuple[str, int | None]] = []
-        for path in paths:
-            mapped = resolve_asset_path(path)
-            rows.append((path, track_rows._stat_size(mapped.resolved)))
+        rows = [(path, path_index.stat_logical_path(path)) for path in paths]
         if not rows:
             return
         conn = state_db.open_rw(self._state_db_path)
@@ -99,32 +94,43 @@ class PathAvailabilityRefresher:
                 self._pending.discard(path)
 
 
-_refresher: PathAvailabilityRefresher | None = None
+# The process's one refresher, held in a container rather than rebound
+# through ``global`` so configure/start/stop share it by reference.
+_ACTIVE: dict[str, PathAvailabilityRefresher] = {}
 
 
 def configure(*, data_dir: Path, state_db_path: Path) -> None:
-    global _refresher
-    _refresher = PathAvailabilityRefresher(
+    _ACTIVE["refresher"] = PathAvailabilityRefresher(
         data_dir=data_dir,
         state_db_path=state_db_path,
     )
 
 
 def start() -> None:
-    if _refresher is None:
+    refresher = _ACTIVE.get("refresher")
+    if refresher is None:
         raise RuntimeError("path availability refresher is not configured")
-    _refresher.start()
+    refresher.start()
+
+
+def start_for_state_db(state_db_path: Path) -> None:
+    """Configure and start against ``<data_dir>/state/state.db``."""
+    db = Path(state_db_path)
+    data_dir = db.parent.parent if db.parent.name == "state" else db.parent
+    configure(data_dir=data_dir, state_db_path=db)
+    start()
 
 
 def stop() -> None:
-    if _refresher is not None:
-        _refresher.stop()
+    refresher = _ACTIVE.get("refresher")
+    if refresher is not None:
+        refresher.stop()
 
 
 def schedule(paths: Iterable[str]) -> None:
-    if _refresher is None:
-        return
-    _refresher.schedule(paths)
+    refresher = _ACTIVE.get("refresher")
+    if refresher is not None:
+        refresher.schedule(paths)
 
 
-__all__ = ["configure", "schedule", "start", "stop"]
+__all__ = ["configure", "schedule", "start", "start_for_state_db", "stop"]

@@ -188,8 +188,8 @@ def test_build_track_rows_sets_is_remote_from_track_locations(
     monkeypatch.setattr(track_rows, "bulk_rb_meta", lambda stable_ids: {})
     monkeypatch.setattr(
         track_rows,
-        "bulk_availability",
-        lambda *a, **k: {SID_REMOTE: False, SID_LOCAL: True},
+        "bulk_availability_status",
+        lambda *a, **k: {SID_REMOTE: "absent", SID_LOCAL: "present"},
     )
     monkeypatch.setattr(
         track_rows, "bulk_quality", lambda *a, **k: {t.stable_id: {} for t in tracks}

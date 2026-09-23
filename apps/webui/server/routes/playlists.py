@@ -1,8 +1,8 @@
 """Playlist endpoints + diff viewer -- CAT-05 (+ parity contract items 2/4)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -69,7 +69,7 @@ def _playlist_summaries(
     ):
         order = rb_vendor.playlist_order_index()
 
-    member_availability: dict[str, str] = {}
+    member_availability: Mapping[str, str] = {}
     if availability != "skip":
         # available_count (FR-1 item 4): index-backed availability across every
         # playlist member with zero in-request filesystem stats (PERF-RB-01).
