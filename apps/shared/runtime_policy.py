@@ -7,6 +7,7 @@ policy (not ui-prefs toggles).
 """
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -43,6 +44,10 @@ def _env_float(
             value = float(raw)
         except ValueError as exc:
             raise ValueError(f"{name} must be a float, got {raw!r}") from exc
+    # float() accepts "nan" and "inf", and every range comparison below is
+    # False for NaN, so a non-finite value would slip through them all.
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {raw!r}")
     if gt_zero and value <= 0:
         raise ValueError(f"{name} must be > 0, got {value}")
     if gt is not None and value <= gt:

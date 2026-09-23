@@ -24,7 +24,7 @@ import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
-import { defaultAnlzPoints } from './runtime-policy-points';
+import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -662,7 +662,7 @@ const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
  * handed a promise some unrelated in-flight call is already waiting on. */
 export async function fetchAnlz(
 	stable_id: string,
-	points = defaultAnlzPoints(),
+	points: number | null = defaultAnlzPoints(),
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
 	const gen = currentAnlzFetchGeneration();
@@ -672,7 +672,7 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, gen)}`,
 		'no-store'
 	).then((data) => {
 		vocalsOf(data);
@@ -709,10 +709,10 @@ export async function fetchAnlz(
  * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
-	points = defaultAnlzPoints()
+	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`,
 		'reload'
 	);
 	vocalsOf(data);
