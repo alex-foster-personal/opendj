@@ -32,3 +32,20 @@ test('Genre reason branch is not rendered as a clickable genre filter tag', () =
 	const tagIdx = cell.indexOf('genre-tag', reasonIdx);
 	assert.equal(tagIdx, -1, 'genre-reason must not use the genre-tag filter button');
 });
+
+function genreReasonRule() {
+	const start = table.indexOf('.genre-reason {');
+	assert.notEqual(start, -1, 'no .genre-reason style rule in TrackTable');
+	return table.slice(start, table.indexOf('}', start));
+}
+
+test('Genre reason keeps the fixed row height: it must not wrap inside the cell', () => {
+	// tbody rows are `height: var(--tt-row-h)` because the virtualization
+	// window math needs a constant height. A wrapping reason grew every
+	// state-only row from 22.5px to 25px, which moved the right-click point
+	// and pushed the Show in playlists popover past the viewport edge
+	// (track-playlists.spec.ts red 3 of 3 on CI). The td already clips with
+	// nowrap + ellipsis, and the full text is the hover title.
+	const rule = genreReasonRule();
+	assert.doesNotMatch(rule, /white-space\s*:\s*(normal|pre-wrap|pre-line|break-spaces)/, 'genre-reason must not override the td nowrap');
+});

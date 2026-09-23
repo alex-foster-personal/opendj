@@ -2593,11 +2593,13 @@
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
 	}
+	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
+	 * fixed-height row (22.5px -> 25px), which the virtualization math and
+	 * right-click anchored popovers both assume never happens. */
 	.genre-reason {
 		color: var(--text-muted, #8b949e);
 		font-size: 0.85em;
 		font-style: italic;
-		white-space: normal;
 	}
 	.genre-tag.active {
 		color: var(--rb-text);
