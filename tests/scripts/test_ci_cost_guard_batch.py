@@ -11,12 +11,15 @@ id, which is what makes re-pricing an overlap harmless.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+
+import re
 
 import pytest
 
 from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
-from scripts.ci_run_batch import batch_since
+from scripts.ci_run_batch import RESULT_CAP, batch_since, created_slices, fetch_completed_runs
 
 pytestmark = pytest.mark.requirement("OPS-36")
 
@@ -113,3 +116,51 @@ def test_the_summary_lists_every_priced_run_and_alerts_only_above_threshold_or_u
     assert alerts[0]["title"] == "CI cost alert: run 2 estimated at $0.400"
     assert alerts[1]["title"] == "CI cost telemetry alert: unpriced runner in run 3"
     assert alerts[0]["report_file"] == "r2.md"
+
+
+# ----- the listing: sliced below GitHub's 1,000-result cap on filtered searches ------
+
+
+def test_created_slices_cover_the_window_end_to_end() -> None:
+    now = datetime(2026, 9, 22, 22, 30, tzinfo=UTC)
+    slices = created_slices("2026-09-22T20:00:00Z", now, timedelta(hours=1))
+    assert slices == [
+        ("2026-09-22T20:00:00Z", "2026-09-22T21:00:00Z"),
+        ("2026-09-22T21:00:00Z", "2026-09-22T22:00:00Z"),
+        ("2026-09-22T22:00:00Z", "2026-09-22T22:30:00Z"),
+    ]
+
+
+def _pages(per_slice: int) -> Callable[[str], dict]:
+    """A fake GET: `per_slice` runs per one-hour creation slice, 100 per page, ids
+    unique per slice except that each later slice's first id repeats the previous
+    slice's last (the boundary second is inclusive on both ends)."""
+
+    def get_json(url: str) -> dict:
+        query = re.search(r"&page=(\d+)&created=(\d{4}-\d\d-\d\dT(\d\d))", url)
+        assert query, url
+        page, slice_index = int(query.group(1)), int(query.group(3))
+        first = slice_index * per_slice
+        ids = list(range(first, first + per_slice))
+        if slice_index:
+            ids[0] = first - 1
+        chunk = ids[(page - 1) * 100 : page * 100]
+        return {"workflow_runs": [{"id": run_id} for run_id in chunk]}
+
+    return get_json
+
+
+def test_listing_dedupes_the_inclusive_slice_boundary() -> None:
+    now = datetime(2026, 9, 22, 2, 0, tzinfo=UTC)
+    runs = fetch_completed_runs(
+        "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_pages(150)
+    )
+    assert len(runs) == len({run["id"] for run in runs}) == 299
+
+
+def test_listing_fails_closed_when_a_slice_reaches_the_result_cap() -> None:
+    now = datetime(2026, 9, 22, 1, 0, tzinfo=UTC)
+    with pytest.raises(RuntimeError, match=str(RESULT_CAP)):
+        fetch_completed_runs(
+            "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_pages(RESULT_CAP)
+        )

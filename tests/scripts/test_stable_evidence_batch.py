@@ -9,7 +9,7 @@ nothing.
 Regression lines:
   - if a cancelled run or a `CI` workflow_dispatch run is recorded, then broken
   - if a completion since the mark of a recorded workflow is dropped, then broken
-  - if two completions for one sha and suite land newest first, then broken
+  - if two completions for one sha and suite both reach the file, then broken
   - if re-applying an already recorded run bumps written_at_utc, then broken
 
 [if] a cancelled or dispatch run is recorded, or a completion is dropped [then] fail, [else stop].
@@ -82,22 +82,38 @@ def test_a_ci_dispatch_run_is_never_recorded_but_a_dispatched_full_ci_is() -> No
     assert [run["id"] for run in select_suite_runs(runs, SINCE)] == [2, 3]
 
 
-def test_selection_is_oldest_first_so_the_last_completion_wins() -> None:
+def test_one_completion_per_sha_and_suite_the_newest(tmp_path: Path) -> None:
+    """Two completions for one sha and suite in one window coalesce to the newest
+    BEFORE any write, so a pass that dies mid-batch never leaves the older result
+    in the file (Codex P1 on #3844)."""
     runs = [
-        _run(2, "CI", updated_at="2026-09-22T19:40:00Z", conclusion="success"),
-        _run(1, "CI", updated_at="2026-09-22T19:20:00Z", conclusion="failure"),
+        _run(1, "CI", updated_at="2026-09-22T19:20:00Z", conclusion="success"),
+        _run(2, "CI", updated_at="2026-09-22T19:40:00Z", conclusion="failure"),
+        _run(3, "E2E", updated_at="2026-09-22T19:30:00Z"),
     ]
-    assert [run["id"] for run in select_suite_runs(runs, SINCE)] == [1, 2]
+    chosen = select_suite_runs(runs, SINCE)
+    assert [run["id"] for run in chosen] == [3, 2]
+    written = append_suite_runs(tmp_path, chosen, "github-actions")
+    assert [run["id"] for run, _ in written] == [3, 2]
+    body = load_evidence(evidence_path(tmp_path, SHA))
+    assert body["suites"]["fast_lane"] == {"run_id": "2", "conclusion": "failure"}
+
+
+def test_a_rerun_of_the_same_run_id_replaces_its_earlier_attempt() -> None:
+    runs = [
+        _run(1, "CI", updated_at="2026-09-22T19:20:00Z", conclusion="failure"),
+        _run(1, "CI", updated_at="2026-09-22T19:50:00Z", conclusion="success"),
+    ]
+    assert [run["conclusion"] for run in select_suite_runs(runs, SINCE)] == ["success"]
 
 
 def test_append_suite_runs_records_each_run_under_its_sha_and_suite(tmp_path: Path) -> None:
     runs = [
-        _run(1, "CI", updated_at="2026-09-22T19:20:00Z", conclusion="failure"),
         _run(2, "CI", updated_at="2026-09-22T19:40:00Z", conclusion="success"),
         _run(3, "E2E", updated_at="2026-09-22T19:30:00Z", head_sha=OTHER_SHA),
     ]
     written = append_suite_runs(tmp_path, select_suite_runs(runs, SINCE), "github-actions")
-    assert [run["id"] for run, _ in written] == [1, 3, 2]
+    assert [run["id"] for run, _ in written] == [3, 2]
     body = load_evidence(evidence_path(tmp_path, SHA))
     assert body["suites"]["fast_lane"] == {"run_id": "2", "conclusion": "success"}
     assert body["written_by"] == "github-actions:CI"

@@ -46,10 +46,20 @@ def _is_recordable(run: dict[str, Any]) -> bool:
 
 
 def select_suite_runs(runs: Iterable[dict[str, Any]], since: str) -> list[dict[str, Any]]:
-    """Recordable completions updated at or after `since`, oldest first so the
-    last completion for a sha and suite is the one left in the file."""
+    """The newest recordable completion per sha and suite, updated at or after
+    `since`, oldest first.
+
+    Coalescing happens BEFORE any write: two completions for one sha and suite
+    in one window would otherwise be written in turn, and a pass that dies
+    between the two leaves the older result in the file (Codex P1 on #3844).
+    A re-run of the same run id is a later completion of that id and wins.
+    """
     chosen = [r for r in runs if _is_recordable(r) and str(r.get("updated_at") or "") >= since]
-    return sorted(chosen, key=lambda r: (str(r.get("updated_at")), int(r["id"])))
+    chosen.sort(key=lambda r: (str(r.get("updated_at")), int(r["id"])))
+    newest: dict[tuple[str, str], dict[str, Any]] = {}
+    for run in chosen:
+        newest[(str(run["head_sha"]), suite_for_workflow(str(run["name"])))] = run
+    return sorted(newest.values(), key=lambda r: (str(r.get("updated_at")), int(r["id"])))
 
 
 def _already_recorded(evidence_dir: Path, run: dict[str, Any], suite: str) -> bool:
