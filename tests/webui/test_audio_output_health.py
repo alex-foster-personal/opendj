@@ -1,4 +1,5 @@
 """AUDIO-DEVICE-01 shell output-health proxy (issue #923)."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,12 @@ from apps.webui.server.shell_output_health import ShellOutputHealthClient
 class _FakeShellClient:
     def __init__(self, get_payload: dict, post_payload: dict | None = None) -> None:
         self._get_payload = get_payload
-        self._post_payload = post_payload or {"cycled": True, "from": "A", "via": "B", "restored": "A"}
+        self._post_payload = post_payload or {
+            "cycled": True,
+            "from": "A",
+            "via": "B",
+            "restored": "A",
+        }
 
     def get_output_health(self) -> dict:
         return self._get_payload
@@ -25,7 +31,7 @@ class _FakeShellClient:
 
 @pytest.mark.requirement("AUDIO-DEVICE-01")
 def test_get_unknown_when_shell_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] no .engine.shell.json [then] GET returns verdict unknown."""
+    """[if] no .engine.shell.json [then] GET returns verdict unknown, [else stop]."""
     from apps.webui.server.routes import audio_output_health as routes
 
     fake = _FakeShellClient(
@@ -59,7 +65,7 @@ def test_get_unknown_when_shell_unavailable(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.requirement("AUDIO-DEVICE-01")
 def test_get_passes_through_shell_not_delivering(monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] fake shell returns device_delivering false [then] engine passes through."""
+    """[if] fake shell returns device_delivering false [then] engine passes it on, [else stop]."""
     from apps.webui.server.routes import audio_output_health as routes
 
     fake = _FakeShellClient(
@@ -88,7 +94,7 @@ def test_get_passes_through_shell_not_delivering(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.requirement("AUDIO-DEVICE-01")
 def test_shell_client_unknown_without_shell_json(tmp_path: Path) -> None:
-    """[if] shell json missing [then] client returns unknown, not an exception."""
+    """[if] shell json missing [then] client returns unknown not an exception, [else stop]."""
     client = ShellOutputHealthClient(data_dir=tmp_path)
     payload = client.get_output_health()
     assert payload["verdict"] == "unknown"
@@ -97,6 +103,7 @@ def test_shell_client_unknown_without_shell_json(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("AUDIO-DEVICE-01")
 def test_post_switch_output_503_when_shell_refuses(tmp_path: Path) -> None:
+    """[if] the shell refuses to cycle the output [then] POST returns 503, [else stop]."""
     from apps.webui.server.routes import audio_output_health as routes
 
     fake = _FakeShellClient(
@@ -114,6 +121,7 @@ def test_post_switch_output_503_when_shell_refuses(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("AUDIO-DEVICE-01")
 def test_shell_client_reads_health_port(tmp_path: Path) -> None:
+    """[if] .engine.shell.json names a health_port [then] the client reads it, [else stop]."""
     shell_json = tmp_path / ".engine.shell.json"
     shell_json.write_text(json.dumps({"health_port": 59999, "shell_pid": 1}), encoding="utf-8")
     client = ShellOutputHealthClient(data_dir=tmp_path)
