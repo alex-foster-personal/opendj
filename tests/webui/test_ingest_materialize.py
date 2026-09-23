@@ -1,11 +1,9 @@
 """LIBUX-16: materialize staged ingest batch into state.db (issue #3182).
 
-[if] a staged batch contains new audio [then] materialize returns stable_ids [else stop].
-[if] upload skips an exact duplicate and stages a new file [then] both resolve
-after materialize [else stop].
-[if] any staged file yields no track row [then] materialize commits nothing and
-names it [else stop].
-[if] nested files share a basename [then] both stage and materialize as distinct tracks [else stop].
+[if] a staged batch contains new audio [then] materialize returns stable_ids, [else stop].
+[if] an exact duplicate is skipped and a new file staged [then] both resolve, [else stop].
+[if] any staged file yields no track row [then] nothing is committed, [else stop].
+[if] nested files share a basename [then] they stay distinct tracks, [else stop].
 """
 from __future__ import annotations
 
