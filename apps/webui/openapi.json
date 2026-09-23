@@ -17891,6 +17891,48 @@
         "title": "StemUnavailableOut",
         "type": "object"
       },
+      "StemWaveformOut": {
+        "description": "Mono peak envelope for one stem part (issue #1036).",
+        "properties": {
+          "envelope": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Envelope",
+            "type": "array"
+          },
+          "layout": {
+            "title": "Layout",
+            "type": "string"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "schema": {
+            "default": 1,
+            "title": "Schema",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "part",
+          "layout",
+          "points",
+          "envelope"
+        ],
+        "title": "StemWaveformOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -20597,6 +20639,11 @@
             "title": "Show Agent Pins",
             "type": "boolean"
           },
+          "show_stems": {
+            "default": false,
+            "title": "Show Stems",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
@@ -20916,6 +20963,17 @@
               }
             ],
             "title": "Show Agent Pins"
+          },
+          "show_stems": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Stems"
           },
           "technically_working_animate": {
             "anyOf": [
@@ -36666,6 +36724,64 @@
           }
         },
         "summary": "Get Stem File",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/{part}/waveform": {
+      "get": {
+        "description": "Return a downsampled mono peak envelope for one validated stem part.",
+        "operationId": "get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part",
+            "required": true,
+            "schema": {
+              "title": "Part",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemWaveformOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
+          }
+        },
+        "summary": "Get Stem Waveform",
         "tags": [
           "stems"
         ]

@@ -5556,6 +5556,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/stems/{part}/waveform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Waveform
+         * @description Return a downsampled mono peak envelope for one validated stem part.
+         */
+        get: operations["get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}:remove": {
         parameters: {
             query?: never;
@@ -12800,6 +12820,27 @@ export interface components {
             status: "unavailable";
         };
         /**
+         * StemWaveformOut
+         * @description Mono peak envelope for one stem part (issue #1036).
+         */
+        StemWaveformOut: {
+            /** Envelope */
+            envelope: number[];
+            /** Layout */
+            layout: string;
+            /** Part */
+            part: string;
+            /** Points */
+            points: number;
+            /**
+             * Schema
+             * @default 1
+             */
+            schema: number;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -13803,6 +13844,11 @@ export interface components {
              */
             show_agent_pins: boolean;
             /**
+             * Show Stems
+             * @default false
+             */
+            show_stems: boolean;
+            /**
              * Technically Working Animate
              * @default true
              */
@@ -13871,6 +13917,8 @@ export interface components {
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
+            /** Show Stems */
+            show_stems?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
@@ -24465,6 +24513,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                part: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemWaveformOut"];
+                };
             };
             /** @description Validation Error */
             422: {
