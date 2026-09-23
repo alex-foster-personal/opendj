@@ -217,6 +217,7 @@ def test_non_wav_with_mdt_ffmpeg_passes_the_decoder_preflight(tmp_path: Path) ->
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         pytest.skip("UNAVAILABLE: no ffmpeg on this host to point MDT_FFMPEG at")
+        return  # the scored mypy run has no pytest stubs, so skip() does not narrow
     bare_path = _empty_path_dir(tmp_path)
     environ = {"PATH": bare_path, vocals_cli.FFMPEG_OVERRIDE_ENV: ffmpeg}
 
