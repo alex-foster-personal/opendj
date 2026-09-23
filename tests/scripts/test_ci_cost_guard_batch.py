@@ -15,7 +15,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scripts.ci_cost_guard import batch_since, render_batch_summary, select_batch_runs
+from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
+from scripts.ci_run_batch import batch_since
 
 pytestmark = pytest.mark.requirement("OPS-36")
 

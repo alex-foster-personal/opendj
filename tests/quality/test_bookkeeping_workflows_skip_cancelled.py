@@ -3,7 +3,8 @@
 Reads the shipped workflows, not a second hand-maintained representation.
 
 Regression lines:
-  - if stable-evidence append runs on a cancelled CI/E2E run, then broken
+  - if stable-evidence's batch pass filters on nothing but status, reads its mark from
+    a cache, or can fail to overlap the previous pass, then broken
   - if trunk-job-verdict verdict runs on a cancelled trunk run, then broken
   - if ci-cost-guard's batch pass filters on conclusion or reads its mark from a
     cache, then broken
@@ -40,14 +41,42 @@ def _job_if(workflow: dict, job_name: str) -> str:
     return " ".join(str(job["if"]).split())
 
 
-def test_stable_evidence_append_skips_cancelled_triggering_run() -> None:
-    """if CI or E2E is cancelled then stable-evidence append does not allocate a runner."""
-    workflow = _workflow(STABLE_EVIDENCE)
-    trigger = workflow[True]["workflow_run"]
-    assert trigger["types"] == ["completed"]
+def _cadence_minutes(cron: str) -> int:
+    match = re.fullmatch(r"(?:\*|\d+-59)/(\d+) \* \* \* \*", cron)
+    assert match, f"not an every-N-minutes schedule: {cron}"
+    return int(match.group(1))
 
-    condition = _job_if(workflow, "append")
-    assert CANCELLED_SKIP in condition
+
+def _assert_batch_pass(
+    workflow: dict, job_name: str, workflow_file: str, lookback_floor_min: int
+) -> None:
+    """One scheduled pass, the mark read from GitHub's record of this workflow, overlap
+    of at least two cadences, one concurrency group with no expression in it."""
+    steps = workflow["jobs"][job_name]["steps"]
+    mark = next(step for step in steps if step.get("id") == "mark")
+    assert f"workflows/{workflow_file}/runs" in mark["run"]
+    assert "run_started_at" in mark["run"]
+    cadence = _cadence_minutes(workflow[True]["schedule"][0]["cron"])
+    env = workflow["jobs"][job_name]["env"]
+    assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence
+    assert int(env["LOOKBACK_HOURS"]) * 60 >= lookback_floor_min
+    concurrency = workflow["concurrency"]
+    assert concurrency["cancel-in-progress"] is False
+    assert "${{" not in str(concurrency["group"]), "one pass at a time, one group"
+
+
+def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
+    """The cancelled and `CI` dispatch exclusions live in select_suite_runs (pinned by
+    tests/scripts/test_stable_evidence_batch.py); the workflow hands the script no
+    conclusion, no event, and no per-run job condition."""
+    workflow = _workflow(STABLE_EVIDENCE)
+    assert "workflow_run" not in workflow[True]
+    job = workflow["jobs"]["append"]
+    assert "if" not in job
+    batch = next(step for step in job["steps"] if step.get("id") == "batch")
+    assert "scripts.stable_evidence_batch" in batch["run"]
+    assert "conclusion" not in batch["run"]
+    _assert_batch_pass(workflow, "append", "stable-evidence.yml", 240)
 
 
 def test_trunk_job_verdict_skips_cancelled_triggering_run() -> None:
@@ -86,16 +115,6 @@ def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:
     The overlap floor (OVERLAP_MINUTES) must be at least twice the cron
     cadence, and the run creation lookback (LOOKBACK_HOURS) must exceed the
     longest watched workflow timeout, or a run created before the mark and
-    completed after it is never priced.
+    completed after it is never priced. E2E's extended job alone can run 45 + 30 min.
     """
-    workflow = _workflow(CI_COST_GUARD)
-    cron = workflow[True]["schedule"][0]["cron"]
-    match = re.fullmatch(r"\*/(\d+) \* \* \* \*", cron)
-    assert match, f"the guard's cron is not an every-N-minutes schedule: {cron}"
-    cadence = int(match.group(1))
-    env = workflow["jobs"]["assess"]["env"]
-    assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence
-    assert int(env["LOOKBACK_HOURS"]) * 60 >= 120, "E2E's extended job alone can run 45 + 30 min"
-    concurrency = workflow["concurrency"]
-    assert concurrency["cancel-in-progress"] is False
-    assert "${{" not in str(concurrency["group"]), "one pass at a time, one group"
+    _assert_batch_pass(_workflow(CI_COST_GUARD), "assess", "ci-cost-guard.yml", 120)

@@ -1,22 +1,37 @@
 name: Stable evidence
 
-# OPS-18. After CI / Full CI / E2E / macOS Packaging complete, merge-append
-# that run's conclusion onto ops/stable/<head_sha>.json on the runner.
-# workflow_run uses the default-branch definition; never execute the
-# triggering SHA (it may be an untrusted PR). The recorded sha is
-# github.event.workflow_run.head_sha, not github.sha.
+# OPS-18. Merge-append each completed CI / Full CI / E2E / macOS Packaging
+# run's conclusion onto ops/stable/<head_sha>.json on the runner.
+#
+# One scheduled pass, not one job per completion (RUN-COUNT round 2, issue
+# #2196). The Actions queue is per job: a workflow_run job that fired on every
+# completion held one queued job per completion ahead of PR CI whenever the
+# pool was saturated (75 runs, 61 jobs in a 208-minute window on Tue 22 Sep
+# 2026). Each pass lists every completed run since the previous pass's start
+# (the mark, read back from GitHub's own record of this workflow, floored by
+# OVERLAP_MINUTES so two passes always overlap) and appends the ones the
+# per-completion job used to append, oldest first. Re-applying an overlap
+# writes nothing: a run already recorded identically is left alone. The cost
+# is one cadence of delay on the evidence file; release.sh gates on that file
+# from a human's terminal, and workflow_dispatch below is the catch-up before
+# a release. Rejected alternatives and the measurement are in
+# docs/decisions/ADR-NEW-stable-evidence-one-scheduled-pass.md.
+#
+# The pass runs this branch's code against run METADATA only; it never
+# executes a recorded sha (it may be an untrusted PR).
 
 on:
-  workflow_run:
-    workflows: [CI, Full CI (on-demand), E2E, macOS Packaging]
-    types: [completed]
+  schedule:
+    # Offset from ci-cost-guard.yml's */15 so the two passes never queue together.
+    - cron: "7-59/15 * * * *"
+  workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: stable-evidence-${{ github.event.workflow_run.head_sha }}
+  group: stable-evidence-batch
   cancel-in-progress: false
 
 env:
@@ -30,26 +45,16 @@ env:
 
 jobs:
   append:
-    name: Append suite result
-    # A cancelled CI/E2E run has no suite result to append: on Mon 14 Sep 2026,
-    # 27 of 27 Stable evidence runs in one hour were cancelled while 39/39
-    # self-hosted runners were busy, burning a runner slot for nothing.
-    #
-    # A `CI` run started by workflow_dispatch is never evidence for its sha
-    # (Codex P1 on PR #3651, issue #3582): main-control.yml dispatches
-    # `tier: fast` on main every six hours, which runs ONLY the pytest fast
-    # tier and still completes under the workflow name `CI`, so recording it
-    # as `fast_lane` would overwrite a failed complete push run for the same
-    # sha with a green partial one. The workflow_run payload carries the
-    # event but not the dispatch inputs, and ci.yml already treats any
-    # dispatch run as a supplementary check rather than a substitute for the
-    # push/PR verdict, so every `CI` dispatch is excluded, `tier: full` too.
-    # Pinned by tests/quality/test_main_control_workflow.py.
-    if: >-
-      github.event.workflow_run.conclusion != 'cancelled'
-      && !(github.event.workflow_run.name == 'CI' && github.event.workflow_run.event == 'workflow_dispatch')
+    name: Append suite results
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
+    env:
+      # At least two cadences, so a late or failed pass loses nothing.
+      OVERLAP_MINUTES: "30"
+      # The listing filters on created_at; a Full CI run has taken 100 minutes
+      # before a cancel (Fri 11 Sep 2026), so a run created this long before
+      # the mark and completed after it is still listed.
+      LOOKBACK_HOURS: "6"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
       - name: Reclaim workspace ownership before checkout
@@ -111,19 +116,35 @@ jobs:
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
-      - name: Append suite result for the triggering head_sha
+      - name: Preflight - required runner executables present
+        run: scripts/ci_runner_preflight.sh python3 gh
+
+      - name: Read the high-water mark from the last completed pass
+        id: mark
         env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          THIS_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          previous=$(gh api "repos/$REPOSITORY/actions/workflows/stable-evidence.yml/runs?status=completed&per_page=5" \
+            --jq '[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber)) | select(.conclusion == "success" or .conclusion == "failure")][0].run_started_at // empty')
+          echo "[mark] previous completed pass started at: ${previous:-none, using the overlap floor}"
+          echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Append every recorded completion since the mark
+        id: batch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
         run: |
           set -euo pipefail
           export OPENDJ_STABLE_EVIDENCE_DIR="${OPENDJ_STABLE_EVIDENCE_DIR:-$HOME/jobs/state/stable-evidence}"
           mkdir -p "$OPENDJ_STABLE_EVIDENCE_DIR"
-          python3 -m scripts.stable_evidence append-suite \
-            --sha "$HEAD_SHA" \
-            --workflow-name "$WORKFLOW_NAME" \
-            --run-id "$RUN_ID" \
-            --conclusion "$CONCLUSION" \
-            --written-by "github-actions:${WORKFLOW_NAME}"
+          python3 -m scripts.stable_evidence_batch \
+            --repository "$REPOSITORY" \
+            --previous-started "$PREVIOUS_STARTED" \
+            --overlap-minutes "$OVERLAP_MINUTES" \
+            --lookback-hours "$LOOKBACK_HOURS" \
+            --written-by github-actions

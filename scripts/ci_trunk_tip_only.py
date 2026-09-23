@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Cancel superseded queued trunk CI and bookkeeping workflow runs.
 
-Issue #2922: workflow_run followers (CI Cost Guard, Stable evidence, Error sink)
+Issue #2922: workflow_run followers (Error sink; CI Cost Guard and Stable evidence until
+Tue 22 Sep 2026, when each became a scheduled batch pass)
 queue on the self-hosted agentbox pool with per-upstream concurrency groups that
 never coalesce across superseded main pushes. This sweeper keeps only the trunk
 tip and the oldest/newest queued CI push runs, then cancels queued bookkeeping
@@ -62,14 +63,10 @@ except ModuleNotFoundError as exc:
     raise
 
 GATING_WORKFLOW = "CI"
-# CI Cost Guard left this set on Tue 22 Sep 2026: it is a scheduled batch pass
-# now, not a per-SHA follower, so there is nothing of it to supersede.
-BOOKKEEPING_WORKFLOWS = frozenset(
-    {
-        "Stable evidence",
-        "Error sink",
-    }
-)
+# CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
+# scheduled batch pass now, not a per-SHA follower, so there is nothing of them
+# to supersede.
+BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
 
 _NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
