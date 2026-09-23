@@ -23,6 +23,7 @@ mod engine;
 mod engine_log;
 mod launch;
 mod midi;
+mod output_health;
 mod shell_health;
 mod supervisor;
 

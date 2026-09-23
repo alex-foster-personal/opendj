@@ -28,8 +28,6 @@
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
-		parseStemSummary,
-		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
@@ -85,13 +83,14 @@
 		clearSelection,
 		pruneSelection,
 		fetchAllPages,
+		rowFromListWire as _rowFromListWire,
+		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
 		SearchHitWire,
-		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -161,8 +160,23 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
+	import {
+		formatHideBrokenCheckboxTooltip,
+		hydrateRuntimePolicy,
+		playlistMostlyBroken
+	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import type { UploadFileResult } from '$lib/rb/api-ingest';
+	import {
+		collectDroppedAudioFiles,
+		collectDroppedFolderName
+	} from '$lib/rb/ingest-drop-files';
+	import {
+		ingestFolderToNewPlaylist,
+		type PossibleDupDecision
+	} from '$lib/rb/playlist-folder-drop';
+	import PlaylistFolderDupModal from './PlaylistFolderDupModal.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
 		removeFromLibraryConfirmMessage,
@@ -246,18 +260,9 @@
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
-	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
-	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
-
 	function playlistBrokenCount(p: PlaylistSummaryHydrated): number {
 		if (p.available_count < 0) return 0;
 		return p.track_count - p.available_count;
-	}
-
-	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
-		if (p.available_count < 0) return false;
-		if (p.track_count === 0) return p.available_count === 0;
-		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
 
 	// Pane state lives in the typed contract (pane-contract.svelte.ts):
@@ -949,10 +954,6 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
-		// Reconcile accounting must not wait on playlist boot init (#3727): _init()
-		// throws when the fast playlist prefetch fails validation, and the Missing
-		// Tracks count comes from GET /api/v1/reconcile/summary, not from the tree.
-		void _loadReconcileSummary();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1156,6 +1157,7 @@
 		const healthPromise = getHealthAtBoot(getHealth);
 		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
+			await hydrateRuntimePolicy();
 			if (bootAllTracksEarly) {
 				await bootTracksPrefetch().prefsPromise.catch(() => {});
 				const healthRes = await healthPromise;
@@ -1219,6 +1221,9 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+			// Reconcile runs in finally so it never races the boot tree/pane but still
+			// resolves when playlist boot throws (#3750).
+			void _loadReconcileSummary();
 		}
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
@@ -1817,6 +1822,51 @@
 		}
 	}
 
+	let folderDupPrompt = $state<{
+		rows: UploadFileResult[];
+		resolve: (decisions: Map<string, PossibleDupDecision> | null) => void;
+	} | null>(null);
+
+	function askPossibleDups(
+		rows: UploadFileResult[]
+	): Promise<Map<string, PossibleDupDecision> | null> {
+		return new Promise((resolve) => {
+			folderDupPrompt = { rows, resolve };
+		});
+	}
+
+	async function folderDropOnPlaylistTree(event: DragEvent): Promise<void> {
+		const dt = event.dataTransfer;
+		if (dt === null) return;
+		// Read the folder name BEFORE the first await: the drag data store is
+		// only readable while the drop event is being dispatched.
+		const droppedFolder = collectDroppedFolderName(dt);
+		const files = await collectDroppedAudioFiles(dt);
+		if (files.length === 0) {
+			pushToast('No audio files in that drop', 'error');
+			return;
+		}
+		const folderName =
+			droppedFolder ?? files[0]?.name.split('/')[0]?.trim() ?? 'New playlist';
+		try {
+			const result = await ingestFolderToNewPlaylist({
+				files,
+				folderName,
+				onPossibleDups: (rows) => askPossibleDups(rows),
+				onQueuedRefreshError: (err) =>
+					pushToast(`analysis for "${folderName.trim()}" not started: ${String(err)}`, 'error')
+			});
+			await _refreshPlaylists();
+			await _selectPlaylistFromCommand(result.playlistId);
+			pushToast(
+				`Created "${folderName.trim()}" with ${result.added} track(s) (${result.staged} new, ${result.skippedDup} linked duplicate(s))`,
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`folder drop failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
@@ -2039,110 +2089,8 @@
 		};
 	}
 
-	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (
-			typeof wire.stable_id !== 'string' ||
-			typeof wire.file_exists !== 'boolean' ||
-			typeof wire.has_rb_mapping !== 'boolean'
-		) {
-			throw new Error(
-				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
-			);
-		}
-		return {
-			stable_id: wire.stable_id,
-			item_id: wire.item_id ?? null,
-			order,
-			title: wire.title,
-			artist: wire.artist,
-			key: wire.key,
-			bpm: wire.bpm,
-			rating: wire.rating,
-			etag: wire.etag,
-			comments: wire.comments,
-			duration_ms: wire.duration_ms,
-			genre: wire.genre,
-			energy: wire.energy,
-			energy_source: wire.energy_source,
-			energy_reason: wire.energy_reason,
-			key_status: wire.key_status ?? 'ok',
-			key_reason: wire.key_reason ?? null,
-			loudness_status: wire.loudness_status ?? 'ok',
-			loudness_reason: wire.loudness_reason ?? null,
-			file_exists: wire.file_exists,
-			is_streaming: wire.is_streaming,
-			is_remote: wire.is_remote === true,
-			has_remote_copy: wire.has_remote_copy === true,
-			cloud_transfer: wire.cloud_transfer ?? null,
-			spotify_pending:
-				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
-			quality: wire.quality ?? null,
-			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
-			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
-			vocals: parseVocals(wire.vocals),
-			stems: parseStemSummary(wire.stems),
-			has_rb_mapping: wire.has_rb_mapping,
-			artwork_available: wire.artwork_available,
-			artwork_status: wire.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: wire.lyrics ?? null,
-			is_remix: wire.is_remix ?? null,
-			is_radio_edit: wire.is_radio_edit ?? null
-		};
-	}
-
 	function _rowFromSearchHit(wire: SearchHitWire, order: number): BrowserRow {
 		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
-	}
-
-	function _rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
-		if (typeof track.stable_id !== 'string') {
-			throw new Error(`tracks endpoint returned a non-track payload at row ${order}`);
-		}
-		return {
-			stable_id: track.stable_id,
-			item_id: null,
-			order,
-			// TrackOut spells its nullable fields optional; a BrowserRow wants one
-			// spelling of "unknown", so absent collapses onto null here.
-			title: track.title ?? null,
-			artist: track.artist ?? null,
-			key: track.key ?? null,
-			bpm: track.bpm ?? null,
-			rating: track.rating ?? null,
-			// List items carry no ETag; rating edits lazily fetch one.
-			etag: '',
-			comments: track.notes ?? null,
-			duration_ms: track.duration_ms ?? null,
-			// genre/is_streaming are NOT in the listing contract (point 1) -
-			// null here means 'fall back to lazily fetched rb-meta'.
-			genre: null,
-			energy: track.energy,
-			energy_source: track.energy_source,
-			energy_reason: track.energy_reason,
-			file_exists: track.file_exists,
-			is_streaming: null,
-			is_remote: track.is_remote === true,
-			has_remote_copy: track.has_remote_copy === true,
-			cloud_transfer: track.cloud_transfer ?? null,
-			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
-			quality: track.quality ?? null,
-			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
-			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
-			vocals: parseVocals(track.vocals),
-			stems: parseStemSummary(track.stems),
-			has_rb_mapping: track.has_rb_mapping,
-			artwork_available: track.artwork_available,
-			artwork_status: track.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: track.lyrics ?? null,
-			is_remix: track.is_remix ?? null,
-			is_radio_edit: track.is_radio_edit ?? null
-		};
 	}
 
 	async function _fetchAllRows(
@@ -2298,7 +2246,14 @@
 
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
+		file_availability?: BrowserRow['file_availability'];
 	};
+
+	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
+	 * its own reason, never reported as a missing file. */
+	function _availabilityPending(row: LoadableRow): boolean {
+		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
+	}
 
 	function loadRow(
 		row: LoadableRow,
@@ -2384,7 +2339,9 @@
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
-				file_exists: r.file_exists,
+				// Pending (null) is not playable yet; AutoPlay skips it like a
+				// missing row until the disk probe settles it.
+				file_exists: r.file_exists === true,
 				title: r.title,
 				artist: r.artist
 			})),
@@ -2538,6 +2495,10 @@
 			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
+		if (_availabilityPending(row)) {
+			pushToast('preview: availability still checking (wait for disk probe)', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2574,6 +2535,10 @@
 		try {
 			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
+				return;
+			}
+			if (_availabilityPending(row)) {
+				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
 				return;
 			}
 			if (!row.file_exists) {
@@ -3349,6 +3314,7 @@
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
+				onfolderdrop={(e) => void folderDropOnPlaylistTree(e)}
 			/>
 		{/if}
 	</div>
@@ -3435,10 +3401,7 @@
 						/>
 					</svg>
 				</button>
-				<label
-					class="hide-broken"
-					title="Show tracks whose audio file is missing on disk. Unchecking also hides playlists with fewer than 30% playable tracks, including empty ones."
-				>
+				<label class="hide-broken" title={formatHideBrokenCheckboxTooltip()}>
 					<input
 						type="checkbox"
 						aria-label="Show broken links"
@@ -3726,6 +3689,21 @@
 	onpick={(node) => void addTracksToPlaylist(node)}
 	onclose={() => (addToPlaylistIds = null)}
 />
+
+{#if folderDupPrompt !== null}
+	<PlaylistFolderDupModal
+		rows={folderDupPrompt.rows}
+		ondone={(decisions) => {
+			folderDupPrompt?.resolve(decisions);
+			folderDupPrompt = null;
+		}}
+		oncancel={() => {
+			folderDupPrompt?.resolve(null);
+			folderDupPrompt = null;
+			pushToast('Folder drop held duplicates unresolved; playlist may be partial', 'error');
+		}}
+	/>
+{/if}
 
 <style>
 	.rb-browser {

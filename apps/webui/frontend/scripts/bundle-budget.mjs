@@ -153,13 +153,38 @@ const BUDGETS = [
   // CI before this PR, the same "no headroom left" state the performance
   // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
   // reduction retires this KiB, not the consent code.
+  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3681, multiple-folder first-run setup):
+  // SetupOverlay is imported statically by +layout.svelte, so the folder-row
+  // list (add/remove rows, per-row check, stale-scan guard) is first-paint
+  // weight. Clean origin/main cb401fbee measured 256,747 locally (277 bytes of
+  // headroom); this PR measured 257,513 locally and 257,523 on CI, +766 bytes.
+  // Payback: lazy-loading SetupOverlay (it renders only while the first-run
+  // overlay is open) retires this KiB and the one above.
+  // PR #3645 (DECKUX-19 stem mini-waveforms) adds +333 bytes of first-paint
+  // weight (the show_stems pref, settings row and perf-tier cache scalers)
+  // and lands AFTER #3681, so it takes no raise of its own: both fit under
+  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally;
+  // after #3739 (main 47324919a) it measured 257,987, 61 bytes of headroom left.
   // RAISED Mon 22 Sep 2026 (+1 KiB, PR #3836, MIDI-01): controller discovery
   // and the Mixtour Pro's shared indicator runtime are reachable from the main
   // Rekordbox workspace. The merge build measured 257,027 bytes gzip, three
   // bytes above the prior inherited ceiling; local builds varied by over 100
   // gzip bytes, so a one-KiB ratchet is the smallest reliable reviewable step.
   // Payback: the next library-route weight reduction retires this KiB.
-  { name: 'library', limit: 258048, measured: 257027, note: 'initial load of "/"' },
+  // RAISED Wed 23 Sep 2026 (+4 KiB, PR #3837, merging main into the Mixtour/IO
+  // comment-pin branch): the two +1 KiB raises above were taken against main
+  // INDEPENDENTLY, each believing it was spending the same single KiB of
+  // headroom, and the 252 KiB ceiling can only honour one of them. This merge
+  // carries BOTH payloads at once. The merged tree measured 261,577 gzip
+  // locally, 3,529 over the 258,048 ceiling, so the smallest ceiling that
+  // holds it is 256 KiB (262,144), leaving 567 bytes of headroom. Neither
+  // lane's own figure applies to the merged tree (257,027 on #3836,
+  // 257,987 on main); both were measured without the other.
+  // Payback, in the order it should be taken: lazy-load SetupOverlay (it
+  // renders only while the first-run overlay is open) retires the #3681 KiB,
+  // and moving controller discovery plus the shared indicator runtime behind
+  // the MIDI route retires the #3836 KiB. Taking both returns this to 254 KiB.
+  { name: 'library', limit: 262144, measured: 261577, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

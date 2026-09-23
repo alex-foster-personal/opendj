@@ -20,7 +20,7 @@ test('the real playable count is the final row item after actions and selection 
 	assert.match(source, /return `\$\{node\.track_count - node\.broken_count\} playable tracks, \$\{node\.broken_count\} broken tracks`;/);
 	assert.match(
 		source,
-		/<span class="name" title=\{node\.mostly_broken \? _mostlyBrokenTitle\(node\) : node\.name\}>\{node\.name\}<\/span>/
+		/<span class="name" title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : node\.name\}>\{node\.name\}<\/span>/
 	);
 });
 
