@@ -279,6 +279,8 @@ _VERBS: tuple[Verb, ...] = (
         arg("panel", "enum", enum_value(PANEL_VALUES), "next|recommended"),
         arg("collapsed", "bool", bool_value, "true|false"),
     )),
+    Verb("show_stems", "show_stems", (_ENABLED,),
+         note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):
