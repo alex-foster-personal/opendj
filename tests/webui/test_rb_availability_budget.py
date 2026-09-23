@@ -1,4 +1,7 @@
-"""Acceptance tests for issue #1037 / PERF-RB-01 path availability budgets."""
+"""Acceptance tests for issue #1037 / PERF-RB-01 path availability budgets.
+
+[if] a listing exceeds its stat budget or calls pending present [then] fail, [else stop].
+"""
 from __future__ import annotations
 
 import json
