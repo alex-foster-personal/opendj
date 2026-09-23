@@ -1427,7 +1427,7 @@
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
-						fileExists: row.file_exists,
+						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
 						transfer:
@@ -1473,6 +1473,9 @@
 							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
+						title={row.file_availability === 'AVAILABILITY_PENDING'
+							? 'availability still checking (wait for disk probe)'
+							: undefined}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}

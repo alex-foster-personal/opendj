@@ -28,8 +28,6 @@
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
-		parseStemSummary,
-		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
@@ -85,13 +83,14 @@
 		clearSelection,
 		pruneSelection,
 		fetchAllPages,
+		rowFromListWire as _rowFromListWire,
+		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
 		SearchHitWire,
-		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -1959,110 +1958,8 @@
 		};
 	}
 
-	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (
-			typeof wire.stable_id !== 'string' ||
-			typeof wire.file_exists !== 'boolean' ||
-			typeof wire.has_rb_mapping !== 'boolean'
-		) {
-			throw new Error(
-				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
-			);
-		}
-		return {
-			stable_id: wire.stable_id,
-			item_id: wire.item_id ?? null,
-			order,
-			title: wire.title,
-			artist: wire.artist,
-			key: wire.key,
-			bpm: wire.bpm,
-			rating: wire.rating,
-			etag: wire.etag,
-			comments: wire.comments,
-			duration_ms: wire.duration_ms,
-			genre: wire.genre,
-			genre_reason: wire.genre_reason ?? null,
-			energy: wire.energy,
-			energy_source: wire.energy_source,
-			energy_reason: wire.energy_reason,
-			key_status: wire.key_status ?? 'ok',
-			key_reason: wire.key_reason ?? null,
-			loudness_status: wire.loudness_status ?? 'ok',
-			loudness_reason: wire.loudness_reason ?? null,
-			file_exists: wire.file_exists,
-			is_streaming: wire.is_streaming,
-			is_remote: wire.is_remote === true,
-			has_remote_copy: wire.has_remote_copy === true,
-			cloud_transfer: wire.cloud_transfer ?? null,
-			spotify_pending:
-				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
-			quality: wire.quality ?? null,
-			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
-			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
-			vocals: parseVocals(wire.vocals),
-			stems: parseStemSummary(wire.stems),
-			has_rb_mapping: wire.has_rb_mapping,
-			artwork_available: wire.artwork_available,
-			artwork_status: wire.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: wire.lyrics ?? null,
-			is_remix: wire.is_remix ?? null,
-			is_radio_edit: wire.is_radio_edit ?? null
-		};
-	}
-
 	function _rowFromSearchHit(wire: SearchHitWire, order: number): BrowserRow {
 		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
-	}
-
-	function _rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
-		if (typeof track.stable_id !== 'string') {
-			throw new Error(`tracks endpoint returned a non-track payload at row ${order}`);
-		}
-		return {
-			stable_id: track.stable_id,
-			item_id: null,
-			order,
-			// TrackOut spells its nullable fields optional; a BrowserRow wants one
-			// spelling of "unknown", so absent collapses onto null here.
-			title: track.title ?? null,
-			artist: track.artist ?? null,
-			key: track.key ?? null,
-			bpm: track.bpm ?? null,
-			rating: track.rating ?? null,
-			// List items carry no ETag; rating edits lazily fetch one.
-			etag: '',
-			comments: track.notes ?? null,
-			duration_ms: track.duration_ms ?? null,
-			genre: track.genre ?? null,
-			genre_reason: track.genre_reason ?? null,
-			energy: track.energy,
-			energy_source: track.energy_source,
-			energy_reason: track.energy_reason,
-			file_exists: track.file_exists,
-			is_streaming: null,
-			is_remote: track.is_remote === true,
-			has_remote_copy: track.has_remote_copy === true,
-			cloud_transfer: track.cloud_transfer ?? null,
-			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
-			quality: track.quality ?? null,
-			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
-			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
-			vocals: parseVocals(track.vocals),
-			stems: parseStemSummary(track.stems),
-			has_rb_mapping: track.has_rb_mapping,
-			artwork_available: track.artwork_available,
-			artwork_status: track.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: track.lyrics ?? null,
-			is_remix: track.is_remix ?? null,
-			is_radio_edit: track.is_radio_edit ?? null
-		};
 	}
 
 	async function _fetchAllRows(
@@ -2218,7 +2115,14 @@
 
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
+		file_availability?: BrowserRow['file_availability'];
 	};
+
+	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
+	 * its own reason, never reported as a missing file. */
+	function _availabilityPending(row: LoadableRow): boolean {
+		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
+	}
 
 	function loadRow(
 		row: LoadableRow,
@@ -2304,7 +2208,9 @@
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
-				file_exists: r.file_exists,
+				// Pending (null) is not playable yet; AutoPlay skips it like a
+				// missing row until the disk probe settles it.
+				file_exists: r.file_exists === true,
 				title: r.title,
 				artist: r.artist
 			})),
@@ -2458,6 +2364,10 @@
 			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
+		if (_availabilityPending(row)) {
+			pushToast('preview: availability still checking (wait for disk probe)', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2494,6 +2404,10 @@
 		try {
 			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
+				return;
+			}
+			if (_availabilityPending(row)) {
+				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
 				return;
 			}
 			if (!row.file_exists) {

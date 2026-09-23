@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "capture": {
+    "kind": "webui-playlist-detail-tracks",
+    "source": "GET /api/v1/playlists/pl-big (tracks array) from create_app over SqliteBackend",
+    "captured_on": "2026-09-23",
+    "scenario": "40-track playlist, every path in the path_availability index older than FILE_EXISTS_TTL_S, row-hydration budget 16: 16 rows stat'ed present, 24 rows AVAILABILITY_PENDING with file_exists null (PR #3644, PERF-RB-01). Seeded by tests/webui/test_rb_availability_budget.py helpers _seed_library/_seed_index.",
+    "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture and independently review any source change."
+  },
+  "files": {
+    "playlist-pending-availability-captured.json": {
+      "bytes": 44447,
+      "sha256": "477772fec2259c57494b8f7bebad42d29c81ba7f2e45fc57073620376f70a1be"
+    }
+  }
+}

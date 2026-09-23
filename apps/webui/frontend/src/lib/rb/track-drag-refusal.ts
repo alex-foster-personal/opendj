@@ -13,12 +13,7 @@
  * give the same answer in the same words, rather than one path being mute.
  */
 
-export type FileAvailabilityStatus =
-	| 'present'
-	| 'absent'
-	| 'AVAILABILITY_PENDING'
-	| 'streaming'
-	| 'awaiting_volume';
+import type { FileAvailabilityStatus } from './api-rb';
 
 export interface DraggableRow {
 	file_exists: boolean | null;
