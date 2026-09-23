@@ -2,7 +2,11 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
+import {
+	engineBlockAfter,
+	readFrontendSource as readSource,
+	SCHEDULE_DECK_SERIAL_ANCHOR
+} from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -338,17 +342,7 @@ test('SABOTAGE: one pitch-fader drag can no longer evict the press row', async (
 //-----------------------------------------------------------------------------
 
 test('the engine labels the row from the SAME context it read the clock from', () => {
-	const body = engineBlockAfter(`async function _scheduleDeckSerial(
-	deck: DeckId,
-	when: number,
-	inputSec: number | ((effectiveWhen: number) => number),
-	active: boolean,
-	tempoRatio: number | undefined,
-	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined
-): Promise<number> {`);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 	// The facts are DERIVED FROM scheduleStages, so the floor terms the labels
 	// call absent are the same ones the row itself omits. A second read of the
 	// context could disagree with the row printed beside it.
@@ -641,11 +635,48 @@ test('a hot-cue jump against an already-playing synced follower carries the pres
 	);
 	// And the re-anchor/blend helpers those branches call must actually SPEND
 	// it, not just receive it - both funnel through the shared _scheduleSyncDeck.
+	// Anchored on the two facts, not on the parameter ORDER: #3653 added a
+	// `reanchorGeneration` argument after `pressT0Ms` in both signatures, which
+	// a regex requiring `pressT0Ms` to be last read as the stamp having been
+	// dropped. What must hold is that the helper takes the stamp and hands it
+	// to `_scheduleDeck`.
+	const syncDeck = body.slice(
+		body.indexOf('function _scheduleSyncDeck('),
+		body.indexOf('\n}', body.indexOf('function _scheduleSyncDeck(')) + 2
+	);
 	assert.ok(
-		/function _scheduleSyncDeck\([^)]*pressT0Ms\?: number\)[^{]*\{\s*return _scheduleDeck\([^)]*pressT0Ms\);/.test(
-			body
-		),
+		syncDeck.startsWith('function _scheduleSyncDeck('),
+		'_scheduleSyncDeck must exist for this guard to pin anything'
+	);
+	assert.ok(
+		/\bpressT0Ms\?: number\b/.test(syncDeck),
+		'_scheduleSyncDeck must still receive the press stamp'
+	);
+	assert.ok(
+		/return _scheduleDeck\([^;]*\bpressT0Ms\b[^;]*\);/.test(syncDeck),
 		'_scheduleSyncDeck must spend the stamp it was given, not just receive it'
+	);
+	// ...and in the press slot specifically. Both parameters take a number, so
+	// `undefined, pressT0Ms` would send the stamp as reanchorGeneration, drop
+	// it from the press slot, and leave the assertion above green with nothing
+	// type checking would catch (P2 r4055758675). Pinned RELATIVE to the
+	// generation argument rather than by absolute position, so #3653's next
+	// equivalent -- another argument appended -- does not read as a regression.
+	const forwarded = syncDeck.slice(
+		syncDeck.indexOf('_scheduleDeck('),
+		syncDeck.indexOf(');', syncDeck.indexOf('_scheduleDeck('))
+	);
+	const pressAt = forwarded.indexOf('pressT0Ms');
+	const generationAt = forwarded.indexOf('reanchorGeneration');
+	assert.ok(
+		generationAt >= 0,
+		'reanchorGeneration must still be forwarded for this ordering guard to mean anything'
+	);
+	assert.ok(
+		pressAt >= 0 && pressAt < generationAt,
+		'the press stamp must occupy the press slot, ahead of reanchorGeneration, ' +
+			'not be swapped into the generation slot: ' +
+			forwarded.replace(/\s+/g, ' ')
 	);
 	// NEGATIVE CONTROL: 'master-max' fills reanchorDecks with the OTHER
 	// followers, never the pressed master - a re-anchored bystander must not
@@ -677,6 +708,16 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 	assert.ok(
 		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
 		'the receipt stamp must reach the glue layer'
+	);
+	// Pinned on the registration signature, not on the whole file, and on
+	// either optionality: main tightened the slot to a required `number`
+	// (d0b0840b) after this guard was written against the optional form.
+	const registerAt = midi.indexOf('export function registerActionHandler(');
+	assert.ok(registerAt >= 0, 'registerActionHandler must exist for this guard to pin anything');
+	const registerSig = midi.slice(registerAt, midi.indexOf('): void {', registerAt));
+	assert.ok(
+		/\bpressT0Ms\??: number\b/.test(registerSig),
+		'registerActionHandler must accept the receipt stamp as a fourth parameter'
 	);
 	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
 	assert.ok(

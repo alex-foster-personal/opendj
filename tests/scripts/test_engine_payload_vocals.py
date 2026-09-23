@@ -1,4 +1,7 @@
-"""The desktop payload carries the local Demucs worker script."""
+"""The desktop payload carries the local Demucs worker script.
+
+[if] the payload stages app source [then] it carries the vocal worker byte-identical, [else stop].
+"""
 
 from __future__ import annotations
 

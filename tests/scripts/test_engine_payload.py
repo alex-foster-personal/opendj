@@ -358,6 +358,8 @@ torch==2.5.1
     # via music-dj-tools
 torchaudio==2.5.1
     # via music-dj-tools
+sentry-sdk==2.66.1
+    # via music-dj-tools
 """
 
 
@@ -392,6 +394,8 @@ def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
         "demucs",
         "torch",
         "torchaudio",
+        # the requested "observability" extra (OBS-04): the dmg ships the SDK
+        "sentry-sdk",
     }
 
 
@@ -596,9 +600,25 @@ def _verify_report(**overrides: object) -> dict[str, object]:
             "import_error": None,
             "auto_analyze_arms": True,
         },
+        "telemetry": {"sdk_version": "2.66.1", "sdk_import_error": None},
     }
     report.update(overrides)
     return report
+
+
+def test_a_payload_that_cannot_import_sentry_sdk_stops_the_build() -> None:
+    """OBS-04: the bundled DSN is decoration without the SDK, and the payload
+    omitted the SDK for its whole life before Mon 21 Sep 2026, so this is
+    the regression that actually shipped."""
+    with pytest.raises(PayloadBuildError, match="cannot import sentry_sdk"):
+        assert_verify_report(
+            _verify_report(
+                telemetry={
+                    "sdk_version": None,
+                    "sdk_import_error": "ModuleNotFoundError: No module named 'sentry_sdk'",
+                }
+            )
+        )
 
 
 def test_a_healthy_verify_report_passes() -> None:

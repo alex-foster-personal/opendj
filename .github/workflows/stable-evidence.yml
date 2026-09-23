@@ -34,7 +34,20 @@ jobs:
     # A cancelled CI/E2E run has no suite result to append: on Mon 14 Sep 2026,
     # 27 of 27 Stable evidence runs in one hour were cancelled while 39/39
     # self-hosted runners were busy, burning a runner slot for nothing.
-    if: github.event.workflow_run.conclusion != 'cancelled'
+    #
+    # A `CI` run started by workflow_dispatch is never evidence for its sha
+    # (Codex P1 on PR #3651, issue #3582): main-control.yml dispatches
+    # `tier: fast` on main every six hours, which runs ONLY the pytest fast
+    # tier and still completes under the workflow name `CI`, so recording it
+    # as `fast_lane` would overwrite a failed complete push run for the same
+    # sha with a green partial one. The workflow_run payload carries the
+    # event but not the dispatch inputs, and ci.yml already treats any
+    # dispatch run as a supplementary check rather than a substitute for the
+    # push/PR verdict, so every `CI` dispatch is excluded, `tier: full` too.
+    # Pinned by tests/quality/test_main_control_workflow.py.
+    if: >-
+      github.event.workflow_run.conclusion != 'cancelled'
+      && !(github.event.workflow_run.name == 'CI' && github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:

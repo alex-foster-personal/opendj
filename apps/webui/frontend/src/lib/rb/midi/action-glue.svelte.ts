@@ -43,7 +43,8 @@ import {
 	getDeviceMap,
 	midiState,
 	registerActionHandler,
-	sendLed
+	sendLed,
+	unregisterActionHandler
 } from '$lib/rb/midi/webmidi.svelte';
 import type { LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -387,6 +388,14 @@ export function attachMidiGlue(): () => void {
 	});
 	return () => {
 		stopLeds();
+		// Release the handler webmidi holds, not just this module's latch.
+		// registerActionHandler() throws while one is registered, so leaving it
+		// behind made the next attach (a /performance remount) throw from
+		// inside requestMidiAccess(), whose catch also calls
+		// setMidiEnabledChoice(false) -- losing the user's MIDI opt-in on the
+		// way out. unregisterActionHandler()'s docstring already said the
+		// teardown calls it; only the call was missing.
+		unregisterActionHandler();
 		_attached = false;
 	};
 }

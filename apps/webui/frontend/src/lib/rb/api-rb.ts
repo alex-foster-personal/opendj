@@ -370,6 +370,8 @@ export interface PlaylistTrackRowWire {
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
+	/** When genre is null, names why (missing tags extra, no file tag, etc.). */
+	genre_reason?: string | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;
@@ -569,10 +571,11 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
 	return summary;
 }
 
-/** Track listing item + contract point 1's per-row fields. is_streaming
- * and genre are NOT in the listing contract (playlist rows only), hence
- * absent here - the browser falls back to lazy rb-meta for those. */
+/** Track listing item + contract point 1's per-row fields. STANDALONE-05
+ * adds inline genre/genre_reason; is_streaming is still lazy via rb-meta. */
 export type TrackListItemWire = Track & {
+	genre?: string | null;
+	genre_reason?: string | null;
 	duration_ms?: number | null;
 	energy: number | null;
 	energy_source: 'mik' | null;
