@@ -18,7 +18,9 @@ import {
 	getPlaylistTracksEtag
 } from '$lib/rb/playlist-write';
 
+/** Mirrors the server's BATCH_RE in apps/webui/server/routes/ingest.py. */
 const BATCH_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/;
+const BATCH_MAX_LEN = 80;
 
 export type FolderDropResult = {
 	playlistId: string;
@@ -41,7 +43,7 @@ export async function ingestFolderToNewPlaylist(opts: {
 		throw new Error('playlist name is empty');
 	}
 
-	const batch = _batchNameFromFolder(name);
+	const batch = batchNameFromFolder(name);
 	let playlistId: string | null = null;
 
 	try {
@@ -60,7 +62,11 @@ export async function ingestFolderToNewPlaylist(opts: {
 				r.verdict === 'new' ||
 				(r.verdict === 'possible_duplicate' && decisions.get(r.filename) === 'accept')
 		).length;
-		const skippedDup = upload.results.filter((r) => r.verdict === 'skipped_duplicate').length;
+		const skippedDup = upload.results.filter(
+			(r) =>
+				r.verdict === 'skipped_duplicate' ||
+				(r.verdict === 'possible_duplicate' && decisions.get(r.filename) === 'reject')
+		).length;
 		if (staged > 0) {
 			await startIngestRefresh(upload.dest_dir);
 		}
@@ -80,24 +86,43 @@ export async function ingestFolderToNewPlaylist(opts: {
 	}
 }
 
-function _defaultBatch(): string {
-	const d = new Date();
+/** UTC stamp to the second, e.g. 20260923-141503. */
+function _utcStamp(d: Date): string {
 	const p = (n: number) => String(n).padStart(2, '0');
-	return `drop-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+	return (
+		`${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+		`-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`
+	);
 }
 
-export function batchNameFromFolder(folderName: string): string {
-	const trimmed = folderName.trim();
-	const slug = trimmed
+/** 8 hex chars of cryptographic entropy. */
+function _entropy(): string {
+	const bytes = new Uint8Array(4);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A FRESH batch name for every drop: a readable folder-derived prefix plus a
+ * UTC second stamp and random entropy. A batch is a persistent staging dir
+ * under the ingest inbox (files stay there for the Rekordbox import), and
+ * /ingest/upload answers 409 for any filename already staged in it, so a
+ * batch derived from the folder name alone makes every re-drop or retry of
+ * the same folder fail.
+ */
+export function batchNameFromFolder(folderName: string, now: Date = new Date()): string {
+	const suffix = `${_utcStamp(now)}-${_entropy()}`;
+	const slug = folderName
+		.trim()
 		.replace(/[^A-Za-z0-9._ -]+/g, '-')
-		.replace(/^-+/, '')
-		.replace(/-+$/, '');
-	if (slug !== '' && BATCH_RE.test(slug)) return slug;
-	return _defaultBatch();
-}
-
-function _batchNameFromFolder(folderName: string): string {
-	return batchNameFromFolder(folderName);
+		.replace(/^[^A-Za-z0-9]+/, '')
+		.slice(0, BATCH_MAX_LEN - suffix.length - 1)
+		.replace(/[ .-]+$/, '');
+	const name = slug === '' ? `drop-${suffix}` : `${slug}-${suffix}`;
+	if (!BATCH_RE.test(name)) {
+		throw new Error(`generated batch name ${JSON.stringify(name)} fails BATCH_RE`);
+	}
+	return name;
 }
 
 async function _resolvePossibleDups(
@@ -138,55 +163,46 @@ async function _resolvePossibleDups(
 	return decisions;
 }
 
+function _needsMaterialize(
+	row: UploadFileResult,
+	decisions: Map<string, PossibleDupDecision>
+): boolean {
+	return (
+		row.verdict === 'new' ||
+		(row.verdict === 'possible_duplicate' && decisions.get(row.filename) === 'accept')
+	);
+}
+
+/**
+ * Playlist members in the folder walk's order (the order upload.results
+ * carries): a linked duplicate resolves to its existing track, a staged file
+ * to the stable_id materialize wrote for it. One ordered pass, deduplicated.
+ */
 async function _stableIdsFromUpload(
 	upload: UploadOut,
 	decisions: Map<string, PossibleDupDecision>
 ): Promise<string[]> {
+	let byPath = new Map<string, string>();
+	if (upload.results.some((r) => _needsMaterialize(r, decisions))) {
+		const materialized = await materializeIngestBatch(upload.batch);
+		byPath = new Map(materialized.tracks.map((t) => [t.relative_path, t.stable_id]));
+	}
+
 	const out: string[] = [];
 	const seen = new Set<string>();
-	const possibleByName = new Map(
-		upload.results
-			.filter((r) => r.verdict === 'possible_duplicate')
-			.map((r) => [r.filename, r] as const)
-	);
-
-	const add = (id: string | undefined | null): void => {
-		if (!id || seen.has(id)) return;
+	for (const row of upload.results) {
+		let id: string | null | undefined = null;
+		if (_needsMaterialize(row, decisions)) {
+			id = byPath.get(row.filename);
+		} else if (
+			row.verdict === 'skipped_duplicate' ||
+			(row.verdict === 'possible_duplicate' && decisions.get(row.filename) === 'reject')
+		) {
+			id = row.duplicate_of?.stable_id;
+		}
+		if (!id || seen.has(id)) continue;
 		seen.add(id);
 		out.push(id);
-	};
-
-	for (const row of upload.results) {
-		if (row.verdict === 'skipped_duplicate') {
-			add(row.duplicate_of?.stable_id ?? null);
-		}
-	}
-
-	for (const [filename, action] of decisions) {
-		const original = possibleByName.get(filename);
-		if (action === 'reject') {
-			add(original?.duplicate_of?.stable_id ?? null);
-		}
-	}
-
-	const needsMaterialize = upload.results.some(
-		(r) =>
-			r.verdict === 'new' ||
-			(r.verdict === 'possible_duplicate' && decisions.get(r.filename) === 'accept')
-	);
-	if (!needsMaterialize) return out;
-
-	const materialized = await materializeIngestBatch(upload.batch);
-	const byPath = new Map(materialized.tracks.map((t) => [t.relative_path, t.stable_id]));
-
-	for (const row of upload.results) {
-		if (row.verdict === 'new') {
-			add(byPath.get(row.filename) ?? null);
-			continue;
-		}
-		if (row.verdict === 'possible_duplicate' && decisions.get(row.filename) === 'accept') {
-			add(byPath.get(row.filename) ?? null);
-		}
 	}
 	return out;
 }

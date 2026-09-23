@@ -52,14 +52,55 @@ def _stable_id_for_path(conn, file_path: Path) -> str | None:
     return None if row is None else str(row[0])
 
 
+def _resolve_staged(
+    conn, dest_dir: Path, staged: list[Path], before_ids: set[str]
+) -> list[MaterializedTrack]:
+    """Resolve every staged path to its track row, or raise 422 naming the misses.
+
+    Runs inside the still-open write transaction so the caller commits only
+    when all of them resolved. A staged file the folder adapter rejected (an
+    allowlisted extension over an unplayable payload) would otherwise leave its
+    valid peers durable while the caller is told the whole call failed.
+    """
+    tracks: list[MaterializedTrack] = []
+    unresolved: list[str] = []
+    for path in staged:
+        rel = str(path.relative_to(dest_dir))
+        stable_id = _stable_id_for_path(conn, path)
+        if stable_id is None:
+            unresolved.append(rel)
+            continue
+        tracks.append(
+            MaterializedTrack(
+                relative_path=rel,
+                stable_id=stable_id,
+                inserted=stable_id not in before_ids,
+            )
+        )
+    if unresolved:
+        raise HTTPException(
+            422,
+            {
+                "code": "MATERIALIZE_UNRESOLVED",
+                "message": (
+                    "materialize wrote no track row for staged file(s) "
+                    f"{unresolved!r}; nothing was committed"
+                ),
+                "unresolved": unresolved,
+            },
+        )
+    return tracks
+
+
 @router.post("/batch/{batch}/materialize", response_model=MaterializeOut)
 def materialize_batch(batch: str, request: Request) -> MaterializeOut:
-    """[if] batch is staged under the ingest inbox [then] folder-ingest writes tracks and returns stable_ids [else stop]."""
+    """[if] batch is staged under the ingest inbox [then] folder-ingest writes
+    tracks and returns stable_ids [else stop]."""
     if not ingest_cfg.BATCH_RE.match(batch):
         raise HTTPException(
             422, f"invalid batch name {batch!r} (need {ingest_cfg.BATCH_RE.pattern})"
         )
-    dest_dir = ingest_cfg.INGEST_INBOX / batch
+    dest_dir = (ingest_cfg.INGEST_INBOX / batch).resolve()
     if not dest_dir.is_dir():
         raise HTTPException(404, f"batch {batch!r} not found")
 
@@ -88,24 +129,10 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
         conn.execute("BEGIN IMMEDIATE")
         with StateWriter(conn, actor="webui") as writer:
             folder_ingest.ingest_folder(writer, [dest_dir], dry_run=False)
-        conn.commit()
 
-        tracks: list[MaterializedTrack] = []
-        for path in staged:
-            rel = str(path.relative_to(dest_dir.resolve()))
-            stable_id = _stable_id_for_path(conn, path)
-            if stable_id is None:
-                raise HTTPException(
-                    500,
-                    f"materialize wrote no track row for staged file {rel!r}",
-                )
-            tracks.append(
-                MaterializedTrack(
-                    relative_path=rel,
-                    stable_id=stable_id,
-                    inserted=stable_id not in before_ids,
-                )
-            )
+        # Commit only after EVERY staged path resolved (see _resolve_staged).
+        tracks = _resolve_staged(conn, dest_dir, staged, before_ids)
+        conn.commit()
         return MaterializeOut(batch=batch, tracks=tracks)
     except Exception:
         conn.rollback()

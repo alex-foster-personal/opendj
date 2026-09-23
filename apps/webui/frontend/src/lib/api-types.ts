@@ -2012,7 +2012,8 @@ export interface paths {
         put?: never;
         /**
          * Materialize Batch
-         * @description [if] batch is staged under the ingest inbox [then] folder-ingest writes tracks and returns stable_ids [else stop].
+         * @description [if] batch is staged under the ingest inbox [then] folder-ingest writes
+         *     tracks and returns stable_ids [else stop].
          */
         post: operations["materialize_batch_api_v1_ingest_batch__batch__materialize_post"];
         delete?: never;

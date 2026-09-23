@@ -16,6 +16,7 @@
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
 	import { trackDrag } from '$lib/rb/track-drag.svelte';
+	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
@@ -82,12 +83,8 @@
 		ondroptracks(node.playlist_id, ids);
 	}
 
-	function _isFileDrag(event: DragEvent): boolean {
-		return event.dataTransfer?.types.includes('Files') === true;
-	}
-
 	function _onFolderDragOver(event: DragEvent): void {
-		if (trackDrag.active || onfolderdrop === undefined || !_isFileDrag(event)) return;
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
@@ -95,12 +92,12 @@
 	}
 
 	function _onFolderDragLeave(event: DragEvent): void {
-		if (!_isFileDrag(event)) return;
+		if (!isOsFileDrag(event)) return;
 		folderDropActive = false;
 	}
 
 	function _onFolderDrop(event: DragEvent): void {
-		if (trackDrag.active || onfolderdrop === undefined || !_isFileDrag(event)) return;
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		folderDropActive = false;

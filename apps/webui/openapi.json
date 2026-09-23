@@ -27256,7 +27256,7 @@
     },
     "/api/v1/ingest/batch/{batch}/materialize": {
       "post": {
-        "description": "[if] batch is staged under the ingest inbox [then] folder-ingest writes tracks and returns stable_ids [else stop].",
+        "description": "[if] batch is staged under the ingest inbox [then] folder-ingest writes\ntracks and returns stable_ids [else stop].",
         "operationId": "materialize_batch_api_v1_ingest_batch__batch__materialize_post",
         "parameters": [
           {

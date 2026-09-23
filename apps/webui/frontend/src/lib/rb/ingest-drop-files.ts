@@ -91,6 +91,16 @@ export async function collectDroppedAudioFiles(dt: DataTransfer): Promise<File[]
 	return Array.from(dt.files ?? []).filter((f) => isAudioName(f.name));
 }
 
+/**
+ * True for an OS file/folder drag (Finder, Explorer). The standard `Files`
+ * type is exposed during dragover in every engine, WebKit included; it is
+ * only CUSTOM MIME types (the in-app track drag) that WebKit hides, which is
+ * why in-app TRACK drops accept on drag state instead (track-drag.svelte).
+ */
+export function isOsFileDrag(event: DragEvent): boolean {
+	return event.dataTransfer?.types.includes('Files') === true;
+}
+
 /** First top-level directory name from a Finder folder drop, or null for flat files. */
 export function collectDroppedFolderName(dt: DataTransfer): string | null {
 	const items = dt.items;

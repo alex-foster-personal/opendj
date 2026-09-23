@@ -14,11 +14,10 @@
 		oncancel: () => void;
 	} = $props();
 
-	const decisions = $state<Map<string, PossibleDupDecision>>(new Map());
+	let decisions = $state<Map<string, PossibleDupDecision>>(new Map());
 
 	function setDecision(row: UploadFileResult, action: PossibleDupDecision): void {
-		decisions.set(row.filename, action);
-		decisions = new Map(decisions);
+		decisions = new Map(decisions).set(row.filename, action);
 	}
 
 	function finish(): void {

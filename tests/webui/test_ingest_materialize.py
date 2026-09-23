@@ -1,18 +1,22 @@
 """LIBUX-16: materialize staged ingest batch into state.db (issue #3182).
 
 [if] a staged batch contains new audio [then] materialize returns stable_ids [else stop].
-[if] upload skips an exact duplicate and stages a new file [then] both resolve after materialize [else stop].
+[if] upload skips an exact duplicate and stages a new file [then] both resolve
+after materialize [else stop].
+[if] any staged file yields no track row [then] materialize commits nothing and
+names it [else stop].
+[if] nested files share a basename [then] both stage and materialize as distinct tracks [else stop].
 """
 from __future__ import annotations
 
 import sqlite3
+import wave
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.fingerprints import ChromaprintMissing
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.shared.state.db import open_rw as open_state_rw
 from apps.webui.server.routes import ingest as ingest_mod
@@ -48,27 +52,6 @@ def client(app):
     return TestClient(app)
 
 
-def _seed_track(app, sid, path, duration_ms=200_000):
-    conn = sqlite3.connect(app.state.state_db)
-    conn.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
-        "duration_ms, file_path, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (
-            sid,
-            "inferred",
-            f"t-{sid}",
-            "[]",
-            duration_ms,
-            str(path),
-            "2026-08-28T00:00:00Z",
-            "2026-08-28T00:00:00Z",
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
 @pytest.mark.requires_audio_stack
 def test_materialize_returns_stable_ids(client, app):
     src = FIXTURES / "src-128.mp3"
@@ -98,46 +81,64 @@ def test_materialize_returns_stable_ids(client, app):
     assert row is not None
 
 
-@pytest.mark.requires_audio_stack
-def test_materialize_mixed_new_and_exact_duplicate(client, app, monkeypatch):
-    dup_src = FIXTURES / "src-128.mp3"
-    new_src = FIXTURES / "src-320.mp3"
-    import mutagen
-
-    dur_ms = int(mutagen.File(dup_src).info.length * 1000)
-    _seed_track(app, "dup01", dup_src, duration_ms=dur_ms)
-
-    real_compute = ingest_upload_mod.compute
-
-    def _compute(path):
-        if Path(path).name == dup_src.name:
-            return real_compute(dup_src)
-        raise ChromaprintMissing()
-
-    monkeypatch.setattr(ingest_upload_mod, "compute", _compute)
-
-    up = client.post(
+def _upload(client, batch, sources):
+    """POST real fixture bytes to the production upload route."""
+    return client.post(
         "/api/v1/ingest/upload",
         files=[
-            ("files", (dup_src.name, dup_src.read_bytes(), "audio/mpeg")),
-            ("files", (new_src.name, new_src.read_bytes(), "audio/mpeg")),
+            ("files", (name, src.read_bytes(), "audio/mpeg")) for name, src in sources
         ],
-        data={"batch": "mixed-folder"},
+        data={"batch": batch},
+    )
+
+
+def _track_rows_under(app, root: Path) -> list[tuple[str, str]]:
+    conn = sqlite3.connect(app.state.state_db)
+    try:
+        return conn.execute(
+            "SELECT stable_id, file_path FROM tracks WHERE file_path LIKE ?",
+            (f"{root.resolve()}%",),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+@pytest.mark.requires_audio_stack
+@pytest.mark.requires_fpcalc
+def test_materialize_mixed_new_and_exact_duplicate(client, app):
+    # No stubbed fingerprinting: the duplicate is made a library track through
+    # the production upload + materialize path (a first folder drop), then the
+    # second drop fingerprints it for real with chromaprint.
+    dup_src = FIXTURES / "other-silent-intro.mp3"
+    new_src = FIXTURES / "src-128.mp3"
+
+    first = _upload(client, "first-drop", [(dup_src.name, dup_src)])
+    assert first.status_code == 200
+    assert first.json()["results"][0]["verdict"] == "new"
+    first_mat = client.post("/api/v1/ingest/batch/first-drop/materialize")
+    assert first_mat.status_code == 200
+    dup_id = first_mat.json()["tracks"][0]["stable_id"]
+
+    up = _upload(
+        client,
+        "mixed-folder",
+        [(dup_src.name, dup_src), (new_src.name, new_src)],
     )
     assert up.status_code == 200
     results = up.json()["results"]
     dup_row = next(r for r in results if r["filename"] == dup_src.name)
     new_row = next(r for r in results if r["filename"] == new_src.name)
     assert dup_row["verdict"] == "skipped_duplicate"
-    assert dup_row["duplicate_of"]["stable_id"] == "dup01"
+    assert dup_row["duplicate_of"]["stable_id"] == dup_id
+    assert dup_row["duplicate_of"]["method"] == "chromaprint"
     assert new_row["verdict"] == "new"
 
-    batch = up.json()["batch"]
-    mat = client.post(f"/api/v1/ingest/batch/{batch}/materialize")
+    mat = client.post("/api/v1/ingest/batch/mixed-folder/materialize")
     assert mat.status_code == 200
     tracks = {t["relative_path"]: t for t in mat.json()["tracks"]}
-    assert new_src.name in tracks
+    assert set(tracks) == {new_src.name}
     assert tracks[new_src.name]["inserted"] is True
+    assert tracks[new_src.name]["stable_id"] != dup_id
 
     dest = Path(up.json()["dest_dir"])
     staged = [
@@ -147,5 +148,60 @@ def test_materialize_mixed_new_and_exact_duplicate(client, app, monkeypatch):
         and not p.name.endswith(".part")
         and p.suffix.lower() in AUDIO_EXTENSIONS
     ]
-    assert len(staged) == 1
-    assert staged[0].name == new_src.name
+    assert [p.name for p in staged] == [new_src.name]
+
+
+def _write_header_only_wav(path: Path) -> None:
+    """A RIFF/WAVE file with no PCM frames: an allowlisted extension over an
+    unplayable payload, which upload stages and the folder adapter rejects."""
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(b"")
+
+
+@pytest.mark.requires_audio_stack
+def test_materialize_commits_nothing_when_a_staged_file_is_unplayable(
+    client, app, tmp_path
+):
+    good = FIXTURES / "src-128.mp3"
+    broken = tmp_path / "broken.wav"
+    _write_header_only_wav(broken)
+
+    up = _upload(client, "mixed-broken", [(good.name, good), (broken.name, broken)])
+    assert up.status_code == 200
+    verdicts = {r["filename"]: r["verdict"] for r in up.json()["results"]}
+    assert verdicts == {good.name: "new", broken.name: "new"}
+    dest = Path(up.json()["dest_dir"])
+
+    mat = client.post("/api/v1/ingest/batch/mixed-broken/materialize")
+    assert mat.status_code == 422
+    detail = mat.json()["detail"]
+    assert detail["code"] == "MATERIALIZE_UNRESOLVED"
+    assert detail["unresolved"] == [broken.name]
+    # The playable peer must NOT be durable: the failure is all-or-nothing.
+    assert _track_rows_under(app, dest) == []
+
+
+@pytest.mark.requires_audio_stack
+def test_materialize_nested_same_basename_files_stay_distinct(client, app):
+    # A multi-disc folder: two files share a basename in different subfolders.
+    # The folder walker sends each as its path relative to the drop root, so
+    # both stage and materialize as distinct tracks (no 409 collision).
+    a = FIXTURES / "src-128.mp3"
+    b = FIXTURES / "other-silent-intro.mp3"
+    up = _upload(
+        client,
+        "multi-disc",
+        [("Album/Disc 1/01.mp3", a), ("Album/Disc 2/01.mp3", b)],
+    )
+    assert up.status_code == 200, up.text
+    names = [r["filename"] for r in up.json()["results"]]
+    assert names == ["Album/Disc 1/01.mp3", "Album/Disc 2/01.mp3"]
+
+    mat = client.post("/api/v1/ingest/batch/multi-disc/materialize")
+    assert mat.status_code == 200
+    paths = sorted(t["relative_path"] for t in mat.json()["tracks"])
+    assert paths == ["Album/Disc 1/01.mp3", "Album/Disc 2/01.mp3"]
+    assert len({t["stable_id"] for t in mat.json()["tracks"]}) == 2

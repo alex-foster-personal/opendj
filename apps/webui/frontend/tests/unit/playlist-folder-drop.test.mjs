@@ -1,9 +1,17 @@
 // requirement: LIBUX-16
-// [if] upload returns duplicate and new rows [then] stable_ids resolve for playlist add [else stop].
+// [if] the same folder is dropped twice, or a failed drop is retried [then] each drop stages into a fresh batch, never one a prior drop already filled [else stop].
+//
+// The orchestration itself (playlist create, upload, materialize, membership)
+// is exercised against the real engine and a real browser drop in
+// tests/e2e/playlist-folder-drop.spec.ts, not against simulated fetch here.
 
 import assert from 'node:assert/strict';
-import { before, describe, it, mock } from 'node:test';
+import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// Mirrors apps/webui/server/routes/ingest.py BATCH_RE, the server's own gate.
+const SERVER_BATCH_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/;
+const NOW = new Date(Date.UTC(2026, 8, 23, 14, 15, 3));
 
 let folderDrop;
 
@@ -12,89 +20,30 @@ before(async () => {
 });
 
 describe('batchNameFromFolder', () => {
-	it('uses a sanitized folder name when it matches BATCH_RE', () => {
-		assert.equal(folderDrop.batchNameFromFolder('Agnes Obel'), 'Agnes Obel');
+	it('keeps a readable folder prefix plus a UTC second stamp and entropy', () => {
+		const name = folderDrop.batchNameFromFolder('Agnes Obel', NOW);
+		assert.match(name, /^Agnes Obel-20260923-141503-[0-9a-f]{8}$/);
+		assert.match(name, SERVER_BATCH_RE);
 	});
 
-	it('falls back to drop- timestamp for invalid batch names', () => {
-		const name = folderDrop.batchNameFromFolder('!!!');
-		assert.match(name, /^drop-\d{8}-\d{4}$/);
+	it('never reuses a batch for the same folder, even within one second', () => {
+		const names = new Set();
+		for (let i = 0; i < 50; i += 1) {
+			names.add(folderDrop.batchNameFromFolder('Agnes Obel', NOW));
+		}
+		assert.equal(names.size, 50);
 	});
-});
 
-describe('ingestFolderToNewPlaylist', () => {
-	it('links duplicates and materializes new files', async () => {
-		const calls = [];
-		global.fetch = mock.fn(async (url, init) => {
-			calls.push({ url: String(url), init });
-			if (String(url).endsWith('/api/v1/playlists') && init?.method === 'POST') {
-				return new Response(JSON.stringify({ playlist_id: 'pl-1', name: 'Mix', items: [] }), {
-					status: 201,
-					headers: { etag: '"e1"' }
-				});
-			}
-			if (String(url).endsWith('/api/v1/ingest/upload')) {
-				return new Response(
-					JSON.stringify({
-						batch: 'mix',
-						dest_dir: '/tmp/_ingest/mix',
-						results: [
-							{
-								filename: 'dup.mp3',
-								staged_path: null,
-								skipped_duplicate: true,
-								verdict: 'skipped_duplicate',
-								duplicate_of: { stable_id: 'dup-id', title: 'Dup', artist: null, method: 'chromaprint', score: 0.99 },
-								duration_s: 200,
-								fingerprint_method: 'chromaprint'
-							},
-							{
-								filename: 'new.mp3',
-								staged_path: '/tmp/_ingest/mix/new.mp3',
-								skipped_duplicate: false,
-								verdict: 'new',
-								duplicate_of: null,
-								duration_s: 200,
-								fingerprint_method: 'chromaprint'
-							}
-						]
-					}),
-					{ status: 200 }
-				);
-			}
-			if (String(url).includes('/materialize')) {
-				return new Response(
-					JSON.stringify({
-						batch: 'mix',
-						tracks: [{ relative_path: 'new.mp3', stable_id: 'new-id', inserted: true }]
-					}),
-					{ status: 200 }
-				);
-			}
-			if (String(url).includes('/items:add')) {
-				return new Response(JSON.stringify({ playlist_id: 'pl-1', items: ['dup-id', 'new-id'] }), {
-					status: 200,
-					headers: { etag: '"e2"' }
-				});
-			}
-			if (String(url).endsWith('/api/v1/ingest/refresh')) {
-				return new Response(JSON.stringify({ running: true, phase: 'queued' }), { status: 200 });
-			}
-			if (String(url).endsWith('/api/v1/ingest/pending')) {
-				return new Response(JSON.stringify({ batches: [] }), { status: 200 });
-			}
-			throw new Error(`unexpected fetch ${url}`);
-		});
+	it('falls back to a drop- prefix when nothing of the name survives sanitizing', () => {
+		const name = folderDrop.batchNameFromFolder('!!!', NOW);
+		assert.match(name, /^drop-20260923-141503-[0-9a-f]{8}$/);
+	});
 
-		const file = new File(['x'], 'new.mp3', { type: 'audio/mpeg' });
-		const result = await folderDrop.ingestFolderToNewPlaylist({
-			files: [file],
-			folderName: 'Mix'
-		});
-		assert.equal(result.playlistId, 'pl-1');
-		assert.equal(result.added, 2);
-		assert.equal(result.staged, 1);
-		assert.equal(result.skippedDup, 1);
-		assert.ok(calls.some((c) => String(c.url).includes('/materialize')));
+	it('sanitizes and truncates long or exotic names into a server-valid batch', () => {
+		for (const folder of ['Björk / Homogenic (1997)', '...hidden', 'x'.repeat(200), ' . - ']) {
+			const name = folderDrop.batchNameFromFolder(folder, NOW);
+			assert.match(name, SERVER_BATCH_RE, `${folder} -> ${name}`);
+			assert.ok(name.length <= 80, `${name.length} > 80`);
+		}
 	});
 });

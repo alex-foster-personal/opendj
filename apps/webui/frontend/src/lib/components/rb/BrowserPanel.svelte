@@ -1763,13 +1763,16 @@
 	async function folderDropOnPlaylistTree(event: DragEvent): Promise<void> {
 		const dt = event.dataTransfer;
 		if (dt === null) return;
+		// Read the folder name BEFORE the first await: the drag data store is
+		// only readable while the drop event is being dispatched.
+		const droppedFolder = collectDroppedFolderName(dt);
 		const files = await collectDroppedAudioFiles(dt);
 		if (files.length === 0) {
 			pushToast('No audio files in that drop', 'error');
 			return;
 		}
 		const folderName =
-			collectDroppedFolderName(dt) ?? files[0]?.name.split('/')[0]?.trim() ?? 'New playlist';
+			droppedFolder ?? files[0]?.name.split('/')[0]?.trim() ?? 'New playlist';
 		try {
 			const result = await ingestFolderToNewPlaylist({
 				files,
