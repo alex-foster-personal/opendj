@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 const FIXTURE_DIR = path.resolve(
 	fileURLToPath(new URL('.', import.meta.url)),
@@ -89,7 +89,81 @@ async function awaitDropPlaylist(page: Page, name: string, before: Summary[] = [
 	}
 }
 
+/** Every live track id in the library, walked through the cursor pages. */
+async function liveTrackIds(request: APIRequestContext): Promise<Set<string>> {
+	const ids = new Set<string>();
+	let cursor: string | null = null;
+	do {
+		const query: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+		const r = await request.get(`/api/v1/tracks?limit=1000${query}`);
+		expect(r.ok(), await r.text()).toBe(true);
+		const page = (await r.json()) as { items: { stable_id: string }[]; next_cursor: string | null };
+		for (const t of page.items) ids.add(t.stable_id);
+		cursor = page.next_cursor;
+	} while (cursor !== null);
+	return ids;
+}
+
+async function livePlaylistIds(request: APIRequestContext): Promise<Set<string>> {
+	const r = await request.get('/api/v1/playlists?availability=skip');
+	expect(r.ok(), await r.text()).toBe(true);
+	return new Set(((await r.json()) as Summary[]).map((p) => p.playlist_id));
+}
+
+type LibrarySnapshot = { tracks: Set<string>; playlists: Set<string> };
+let before: LibrarySnapshot | null = null;
+
 test.describe('playlist folder drop', () => {
+	// This spec runs inside the ROOT suite's one shared engine and library, so
+	// whatever a drop adds is seen by every spec after it. Left behind, the
+	// 3 s and 6 s fixture tracks joined the library rows that later specs load
+	// by index, which then asserted 5 s and 20 s seeks inside a 3 s file
+	// (preview-cue-library) and fed autoplay tracks with no beat grid, while
+	// the drop's extra playlists and analysis job outlived the spec (PR #3683
+	// e2e run 35833610668). So every test here hands the library back exactly
+	// as it found it: playlists and tracks it created are removed, and no
+	// refresh job is left running.
+	test.beforeEach(async ({ request }) => {
+		before = { tracks: await liveTrackIds(request), playlists: await livePlaylistIds(request) };
+	});
+
+	test.afterEach(async ({ request }, testInfo) => {
+		// The hook shares the test's budget; give the refresh wait its own.
+		testInfo.setTimeout(testInfo.timeout + 75_000);
+		const snapshot = before;
+		before = null;
+		expect(snapshot, 'beforeEach did not snapshot the library').not.toBeNull();
+		for (const id of await livePlaylistIds(request)) {
+			if (snapshot!.playlists.has(id)) continue;
+			const detail = await request.get(`/api/v1/playlists/${id}`);
+			expect(detail.ok(), await detail.text()).toBe(true);
+			const etag = detail.headers().etag;
+			expect(etag, `playlist ${id} detail carries no ETag`).toBeTruthy();
+			const del = await request.delete(`/api/v1/playlists/${id}`, { headers: { 'If-Match': etag } });
+			expect(del.ok(), await del.text()).toBe(true);
+		}
+		for (const id of await liveTrackIds(request)) {
+			if (snapshot!.tracks.has(id)) continue;
+			const removed = await request.post(`/api/v1/tracks/${id}:remove`);
+			expect(removed.ok(), await removed.text()).toBe(true);
+		}
+		// Removal empties the analyze-on-import backlog; wait out any drain
+		// already running over it so no analysis subprocess leaks forward.
+		await expect
+			.poll(
+				async () => {
+					const r = await request.get('/api/v1/ingest/refresh/status');
+					expect(r.ok(), await r.text()).toBe(true);
+					return ((await r.json()) as { running: boolean }).running;
+				},
+				{ timeout: 60_000, message: 'a refresh job the drop started never settled' }
+			)
+			.toBe(false);
+		// Positive proof of the hand-back, not an absence of errors.
+		expect(await livePlaylistIds(request)).toEqual(snapshot!.playlists);
+		expect(await liveTrackIds(request)).toEqual(snapshot!.tracks);
+	});
+
 	test('file drag over playlist tree does not open generic ingest overlay', async ({ page }) => {
 		await page.goto('/performance');
 		await expect(page.getByTestId('refresh-analysis')).toBeVisible({ timeout: 15_000 });
