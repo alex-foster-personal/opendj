@@ -1,4 +1,7 @@
-"""Stem mini-waveform envelope route (issue #1036)."""
+"""Stem mini-waveform envelope route (issue #1036).
+
+[if] the stem waveform endpoint serves a peak envelope [then] its contract holds, [else stop].
+"""
 
 from __future__ import annotations
 
@@ -11,10 +14,7 @@ from fastapi.testclient import TestClient
 
 from apps.webui.server.routes.stems import router
 
-pytestmark = pytest.mark.requirement(
-    "DECKUX-19",
-    "if stem waveform endpoint missing [then stop] else envelope contract holds.",
-)
+pytestmark = pytest.mark.requirement("DECKUX-19")
 
 
 def _manifest(stable_id: str) -> dict:
