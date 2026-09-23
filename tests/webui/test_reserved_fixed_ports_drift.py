@@ -199,8 +199,8 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.playlist-switch-latency.config.ts",
-        "process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8701",
-        8701,
+        "process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8713",
+        8713,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.hotcue-mapping-gate.config.ts",
@@ -242,6 +242,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",
         "const DEFAULT_FRONTEND_PORT = 9408;",
         9408,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
+        "const DEFAULT_BACKEND_PORT = 8690;",
+        8690,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/midi-maps-e2e-endpoints.ts",
+        "const DEFAULT_FRONTEND_PORT = 9410;",
+        9410,
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.play-analytics.config.ts",

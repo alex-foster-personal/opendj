@@ -131,6 +131,35 @@ async function _waitForGenerationPast(from) {
 	}
 }
 
+/** Polls `getAnlzEntry(stableId)` until `predicate(entry)` is true. Uses
+ * setImmediate rather than a wall-clock guess so settlement is observed on the
+ * next microtask turn; the 5000 ms ceiling matches sibling wait helpers. */
+async function _waitForAnlzEntry(stableId, predicate, label) {
+	const deadline = Date.now() + 5000;
+	for (;;) {
+		const entry = analysisSource.getAnlzEntry(stableId);
+		if (predicate(entry)) return entry;
+		if (Date.now() > deadline) {
+			throw new Error(`${label}: timed out with entry status=${entry?.status ?? 'absent'}`);
+		}
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+}
+
+async function holdNextAnlz(stableId) {
+	const res = await fetch(`${apiBase}/test/hold-next-anlz`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ stable_id: stableId })
+	});
+	assert.equal(res.status, 200, 'fixture server rejected hold-next-anlz');
+}
+
+async function releaseHeldAnlz() {
+	const res = await fetch(`${apiBase}/test/release-held-anlz`, { method: 'POST' });
+	assert.equal(res.status, 200, 'fixture server rejected release-held-anlz');
+}
+
 async function _waitForRunnerLog(expected, label) {
 	const deadline = Date.now() + 5000;
 	for (;;) {
@@ -690,10 +719,12 @@ test('a first adoption whose value changes invalidates an in-flight prefetch eve
 	analysisSource.invalidateAnlzCacheEntry('real-track-a-own-grid');
 
 	// Seed the daemon under the PRE-switch source, then start a prefetch and
-	// catch it while still 'loading' - `_fetchAndPublish` writes that status
-	// synchronously before its real HTTP request to the fixture server ever
-	// resolves, so nothing needs to be raced here.
+	// hold its real /anlz request on the fixture server until we choose to
+	// release it. `_fetchAndPublish` writes 'loading' synchronously before the
+	// HTTP round-trip, so the hold gives a deterministic in-flight window
+	// instead of a wall-clock poll that races shared-runner scheduling.
 	await daemonSelect('rbx');
+	await holdNextAnlz('real-track-a-own-grid');
 	analysisSource.ensureAnlz('real-track-a-own-grid');
 	assert.equal(
 		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status,
@@ -701,30 +732,44 @@ test('a first adoption whose value changes invalidates an in-flight prefetch eve
 		'the prefetch must still be in flight for this test to prove anything'
 	);
 
+	const prefetchGen = analysisSource.currentAnlzFetchGeneration();
+
 	// Flip the daemon and let THIS module's first-ever adopt see the changed
-	// value while that prefetch is still unresolved. Nothing is loaded on any
-	// deck, so this is the fast (no-refresh) `_adopt` path, and
+	// value while that prefetch is still held on the wire. Nothing is loaded on
+	// any deck, so this is the fast (no-refresh) `_adopt` path, and
 	// `evictAnlzCacheEntriesServingOtherSource` cannot see a 'loading' entry -
 	// it does not yet know what source it will resolve to. Only a generation
 	// bump stops the settling fetch from publishing stale rekordbox bytes
 	// under the toggle's new own answer.
 	await daemonSelect('own');
 	await analysisSource.loadAnalysisSource();
+	await _waitForGenerationPast(prefetchGen);
 
-	// Give the in-flight prefetch time to actually settle.
-	const deadline = Date.now() + 500;
-	while (
-		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status === 'loading' &&
-		Date.now() < deadline
-	) {
-		await new Promise((resolve) => setTimeout(resolve, 5));
-	}
+	await releaseHeldAnlz();
 
-	assert.notEqual(
-		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status,
-		'ready',
-		'a discarded, superseded fetch must never publish - a ready entry here can only be the ' +
-			'stale rekordbox-sourced response leaking through after the switch to own'
+	const entry = await _waitForAnlzEntry(
+		'real-track-a-own-grid',
+		(e) => {
+			if (!e) return true;
+			if (e.status === 'loading') return false;
+			if (e.status === 'ready' && e.data.beatgrid_source === 'rekordbox') {
+				throw new Error(
+					'a discarded, superseded fetch must never publish rekordbox bytes - ' +
+						'stale response leaked through after the switch to own'
+				);
+			}
+			if (e.status === 'ready' && e.data.beatgrid_source === 'own') return true;
+			if (e.status === 'error') return true;
+			return false;
+		},
+		'superseded prefetch settlement'
+	);
+
+	assert.equal(
+		entry,
+		undefined,
+		'a discarded, superseded fetch must leave no ready entry - _discardSuperseded ' +
+			'should not restart a fetch without a registered consumer'
 	);
 });
 
@@ -1041,6 +1086,84 @@ test(
 				'the superseded refresh must not have published into the shared cache either'
 			);
 		} finally {
+			analysisSource.deckStates[1].stable_id = null;
+			analysisSource.deckStates[1].anlz = null;
+			await daemonSelect('own');
+		}
+	}
+);
+
+test(
+	'a superseded switch whose /tracks fetch lands after the faster switch reverted the daemon ' +
+		'discards quietly instead of throwing (nucbox-wsl-23, run 35731185371)',
+	async () => {
+		// The test above wins its race with the sibling /tracks/{id} fetch answered
+		// under the SAME daemon toggle as /anlz. On a loaded runner the two parallel
+		// fetches are served on different sides of the second switch's PUT, and the
+		// refresh's cross-source guard fired BEFORE its supersession check: the
+		// slower switch, whose answer was going to be discarded anyway, rejected
+		// setAnalysisSource with "the two parallel fetches landed on different sides
+		// of a source switch". Here the fixture holds GET /tracks/{id} until the
+		// faster switch has landed, so that ordering is the only one possible.
+		await daemonSelect('rbx');
+		analysisSource.analysisSourceState.features = mirrorFeatures();
+		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+		analysisSource.invalidateAnlzCacheEntry('real-track-slow-own-grid');
+		analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
+		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: -1, beats: [] } };
+		const armed = await fetch(`${apiBase}/test/hold-next-track`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ stable_id: 'real-track-slow-own-grid' })
+		});
+		assert.equal(armed.status, 200, 'fixture server refused to hold the next /tracks fetch');
+		try {
+			const before_ = await requestLog();
+			const switchToOwn = analysisSource.setAnalysisSource('beatgrid', 'own');
+			// Both of the refresh's parallel fetches have reached the server (the
+			// access log is appended before either handler runs, and before the
+			// /tracks one is held); the daemon still reads 'own' for /anlz.
+			const deadline = Date.now() + 2000;
+			for (;;) {
+				const seen = (await requestLog()).slice(before_.length);
+				if (
+					seen.some((url) => url.includes('/real-track-slow-own-grid/anlz')) &&
+					seen.some((url) => url.endsWith('/tracks/real-track-slow-own-grid'))
+				) {
+					break;
+				}
+				if (Date.now() > deadline) {
+					throw new Error('the slow deck refresh never reached the server');
+				}
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			// The faster switch reverts the daemon and wins outright (no loaded deck
+			// disagrees with 'rekordbox' yet, so it fetches nothing).
+			await analysisSource.setAnalysisSource('beatgrid', 'rekordbox');
+			// Only now does the held /tracks/{id} run its handler: bpm provenance
+			// comes back from 'rekordbox' while /anlz was served under 'own'.
+			const released = await fetch(`${apiBase}/test/release-held-track`, { method: 'POST' });
+			assert.equal(released.status, 200);
+			await switchToOwn; // superseded: must resolve, discarding, not reject
+
+			assert.equal(
+				analysisSource.deckStates[1].anlz?.beatgrid.beat_count,
+				-1,
+				'the superseded switch must not have published onto the deck'
+			);
+			assert.equal(
+				analysisSource.analysisSourceState.deckFeatures.beatgrid,
+				'rekordbox',
+				'the faster switch is what the mirror must report'
+			);
+			assert.equal(
+				analysisSource.getAnlzEntry('real-track-slow-own-grid'),
+				undefined,
+				'the superseded refresh must not have published into the shared cache either'
+			);
+		} finally {
+			await fetch(`${apiBase}/test/release-held-track`, { method: 'POST' });
 			analysisSource.deckStates[1].stable_id = null;
 			analysisSource.deckStates[1].anlz = null;
 			await daemonSelect('own');

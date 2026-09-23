@@ -4,9 +4,8 @@ The legacy FastAPI composition is REUSED, not reimplemented: this module
 calls ``apps.webui.server.app.create_app`` and then applies three
 chassis-level edits.
 
-1. The progress router is removed. The engine does not serve the fan-out
-   ledger, and boot refuses outright if a progress-tree.yaml is sitting in
-   the data dir.
+1. The legacy progress router stays mounted. Read and write for the fan-out
+   ledger share ``apps/webui/server/routes/progress.py``.
 2. ``/api/v1/health`` is replaced by a wrapper that calls the legacy handler
    and adds contract_rev / engine_version / boot_id. The legacy route
    function is untouched -- only the response is extended.
@@ -48,7 +47,6 @@ from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
     EngineConfig,
-    assert_no_progress_ledger,
     prepare_layout,
 )
 from apps.engine_core.contract import compute_contract_rev
@@ -118,7 +116,6 @@ def create_app(
     cfg: EngineConfig, *, lock: EngineLock | None = None
 ) -> FastAPI:
     """Build the engine app. No import-time construction, no globals."""
-    assert_no_progress_ledger(cfg.data_dir)
     assert_sync_bind_allowed(cfg.host)
     assert_request_guard_bind_allowed(cfg.host)
     prepare_layout(cfg)
@@ -126,7 +123,6 @@ def create_app(
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())
     app = _compose_legacy(cfg)
 
-    _drop_or_raise(app, PROGRESS_PREFIX, "legacy progress router")
     _drop_or_raise(app, HEALTH_PATH, "legacy health route")
     _add_health_route(app)
 
@@ -189,6 +185,7 @@ def create_app(
     add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    app.state.engine_cfg = cfg
     add_rescue_routes(app)
 
     _drop_root_placeholder(app)
@@ -196,8 +193,6 @@ def create_app(
 
     contract_rev = compute_contract_rev(app.openapi())
     hub = WsHub(contract_rev=contract_rev, engine_version=ENGINE_VERSION)
-
-    app.state.engine_cfg = cfg
     app.state.engine_boot_id = boot_id
     app.state.contract_rev = contract_rev
     app.state.jobs_store = store

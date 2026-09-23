@@ -1002,10 +1002,17 @@
 	   two tiers that never yielded at all give up their read-only status
 	   surfaces. Swept at 5px granularity across [780px, 1920px]: before this
 	   change the shipped ladder overflows at 160 of 229 widths, worst 184px,
-	   in bands 780-1105 / 1215-1390 / 1405-1505 / 1535-1715; after it, at 0 of
+	   in bands 780-1105 / 1215-1390 / 1405-1505 / 1535-1715; 	   after it, at 0 of
 	   229. The bands above the old thresholds are exactly where the label did
 	   not fit, which is why the thresholds - not the selectors - are what
 	   moved.
+
+	   RE-VERIFIED Thu 18 Sep 2026 (issue #1365): the 1530px and 1740px tiers
+	   above already close the >1400px crush this issue filed - a fresh 5px
+	   elementFromPoint sweep across [1400px, 1920px] (105 widths) reports zero
+	   failures with the current ladder, so no further threshold move was needed
+	   here; tests/e2e/performance-topbar-responsive.spec.ts now guards
+	   PERF-UI-06 at the ladder boundaries.
 
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the

@@ -118,6 +118,10 @@ def add_reply(comment_id: str, body: CommentReplyIn, request: Request) -> Commen
             if body.author == "agent":
                 merged["agent_note"] = text
             merged["updated_at"] = now
+            if merged.get("fixed_in_sha") and (
+                merged.get("status") in {"fixed", "merged"} or body.author == "operator"
+            ):
+                merged["status"] = "open"
             validated = CommentOut.model_validate(merged)
             items[i] = validated.model_dump()
             _save(path, "comments", items)

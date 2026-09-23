@@ -51,7 +51,11 @@ class RescueStore:
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
 
-    def list_entries(self, *, _now_ms: int) -> list[RescueRingEntry]:
+    def list_entries(
+        self,
+        *,
+        now_ms: int,  # noqa: ARG002 - retained for the caller's keyword contract
+    ) -> list[RescueRingEntry]:
         index = read_index(self._data_dir)
         rows: list[RescueRingEntry] = []
         for offset in range(RING_SIZE):

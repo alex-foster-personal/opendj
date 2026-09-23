@@ -76,6 +76,7 @@ def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
     _stub_rb_vendor(monkeypatch)
     backend = InMemoryBackend()
     _seed_1k_playlist(backend, tmp_path)
+
     def _fail_paths_bulk(*_args, **_kwargs):
         raise AssertionError("fast list must not call get_file_paths_bulk")
 
@@ -85,6 +86,9 @@ def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
         lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
     )
     with TestClient(app) as c:
+        # First GET pays TestClient/FastAPI startup; time the skip path itself.
+        warm = c.get("/api/v1/playlists", params={"availability": "skip"})
+        assert warm.status_code == 200
         t0 = time.perf_counter()
         r = c.get("/api/v1/playlists", params={"availability": "skip"})
         elapsed = time.perf_counter() - t0
@@ -92,4 +96,7 @@ def test_list_playlists_availability_skip_is_fast(monkeypatch, tmp_path: Path):
     pl = next(p for p in r.json() if p["playlist_id"] == "pl-perf-1k")
     assert pl["available_count"] == -1
     assert pl["track_count"] == 1000
-    assert elapsed < 0.5
+    assert elapsed < 0.5, (
+        f"warmed availability=skip took {elapsed:.3f}s; skip must stay under "
+        "0.5s once TestClient startup is paid"
+    )

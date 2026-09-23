@@ -129,7 +129,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
         8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
-        8701,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
+        8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
@@ -141,6 +141,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
+        9410,  # tests/e2e/midi-maps-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
         9428,  # tests/e2e/playwright.library-wheel.config.ts engine port
         9473,  # tests/e2e/playwright.desktop-setup.config.ts DEAD_ENGINE_PORT

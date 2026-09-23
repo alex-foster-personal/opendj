@@ -3664,6 +3664,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description Full parsed tree + ledger-file git provenance + per-area rollups.
+         */
+        get: operations["get_progress_api_v1_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/progress/nodes/{node_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Progress Node
+         * @description Guarded partial update of one node; atomic YAML rewrite, no git commit.
+         */
+        patch: operations["patch_progress_node_api_v1_progress_nodes__node_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/progress/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress Schema
+         * @description Agent-discoverable node schema, allowed statuses, and PATCH rules.
+         */
+        get: operations["get_progress_schema_api_v1_progress_schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/queues/{kind}": {
         parameters: {
             query?: never;
@@ -5001,6 +5061,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/telemetry/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Consent */
+        get: operations["get_consent_api_v1_telemetry_consent_get"];
+        /** Put Consent */
+        put: operations["put_consent_api_v1_telemetry_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/telemetry/heartbeat": {
         parameters: {
             query?: never;
@@ -5238,11 +5316,10 @@ export interface paths {
          *     a beatgrid is never invented.
          *
          *     A caller naming ``backend=`` gets exactly what it named. The default
-         *     newest-row lookup instead defers to native-analysis v1 first: when v1
-         *     has already settled a beatgrid determination for this track (a
-         *     canonical own pointer exists, whatever it resolved to), this endpoint
-         *     preserves that gridless/failed state rather than silently substituting
-         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+         *     newest-row lookup instead refuses a superseded pre-v1 legacy row only
+         *     when the canonical own beatgrid lane is ``failed``; a successful native
+         *     backfill does not disable the legacy row while own is not yet serving
+         *     (STANDALONE-04).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -6918,6 +6995,25 @@ export interface components {
             source: "payload" | "repo";
         };
         /**
+         * BuildPatchIn
+         * @description Partial 'build' object; only supplied fields are merged (see PATCH_RULES).
+         *
+         *     'updated' is never accepted from the client -- the server always stamps
+         *     it on any build PATCH, so there is no ambiguity about who wrote it.
+         */
+        BuildPatchIn: {
+            /** Branch */
+            branch?: string | null;
+            /** Pr */
+            pr?: string | null;
+            /** Stage */
+            stage?: string | null;
+            /** State */
+            state?: ("active" | "idle" | "blocked" | "hanging") | null;
+            /** Worktree */
+            worktree?: string | null;
+        };
+        /**
          * BuildStampOut
          * @description Provenance of the build that recorded a piece of feedback.
          *
@@ -6933,6 +7029,23 @@ export interface components {
             git_sha?: string | null;
             /** Source */
             source?: string | null;
+        };
+        /**
+         * BuildableIn
+         * @description Buildability classification; both fields required, replaces wholesale.
+         *
+         *     tier says WHERE the node's iterative build loop can run (cloud/hybrid/
+         *     local); reason is a one-line justification grounded in what the node
+         *     touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+         */
+        BuildableIn: {
+            /** Reason */
+            reason: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "cloud" | "hybrid" | "local";
         };
         /** BulkEditIn */
         BulkEditIn: {
@@ -7049,6 +7162,8 @@ export interface components {
         };
         /** ClientErrorIn */
         ClientErrorIn: {
+            /** Any Deck Live */
+            any_deck_live?: boolean | null;
             /** Audio Worklet Available */
             audio_worklet_available: boolean;
             /** Client Event Id */
@@ -7474,6 +7589,12 @@ export interface components {
             /** Created At */
             created_at: string;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
+            /** Fixed At */
+            fixed_at?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
+            /** Harvested At */
+            harvested_at?: string | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -7526,12 +7647,21 @@ export interface components {
         CommentUpdateIn: {
             /** Agent Note */
             agent_note?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
             /** Issue Url */
             issue_url?: string | null;
             /** Status */
             status?: string | null;
             /** Text */
             text?: string;
+        };
+        /** CommitIn */
+        CommitIn: {
+            /** Note */
+            note: string;
+            /** Sha */
+            sha: string;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -7548,6 +7678,47 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
+        };
+        /** ConsentIn */
+        ConsentIn: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "declined";
+            /** Terms Version */
+            terms_version: string;
+        };
+        /** ConsentOut */
+        ConsentOut: {
+            /** Consent Required */
+            consent_required: boolean;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "undecided" | "accepted" | "declined";
+            /** Environment */
+            environment: string | null;
+            /** Release */
+            release: string | null;
+            /** Replay Loader Url */
+            replay_loader_url: string | null;
+            /**
+             * Replay On Error Sample Rate
+             * @default 1
+             */
+            replay_on_error_sample_rate: number;
+            /** Replay Session Sample Rate */
+            replay_session_sample_rate: number;
+            /** Telemetry Active */
+            telemetry_active: boolean;
+            /** Terms Current Version */
+            terms_current_version: string;
+            /** Terms Version */
+            terms_version: string | null;
         };
         /** CopilotTrackOut */
         CopilotTrackOut: {
@@ -8231,6 +8402,11 @@ export interface components {
              * @constant
              */
             source: "own";
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -9461,6 +9637,18 @@ export interface components {
             ok: boolean;
         };
         /**
+         * LinksPatchIn
+         * @description Partial 'links' object; each supplied key REPLACES that key's list.
+         */
+        LinksPatchIn: {
+            /** Issues */
+            issues?: string[] | null;
+            /** Refs */
+            refs?: string[] | null;
+            /** Specs */
+            specs?: string[] | null;
+        };
+        /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
          */
@@ -10292,6 +10480,30 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** NodePatch */
+        NodePatch: {
+            build?: components["schemas"]["BuildPatchIn"] | null;
+            buildable?: components["schemas"]["BuildableIn"] | null;
+            /** Commits Append */
+            commits_append?: components["schemas"]["CommitIn"][] | null;
+            links?: components["schemas"]["LinksPatchIn"] | null;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status?: ("missing" | "spiked" | "building" | "partial" | "built" | "verified" | "merged" | "user-finalized" | "working") | null;
+            /** Tests Append */
+            tests_append?: string[] | null;
+            verified?: components["schemas"]["VerifiedIn"] | null;
+        };
+        /** NodePatchOut */
+        NodePatchOut: {
+            /** Meta Updated */
+            meta_updated: string;
+            /** Node */
+            node: {
+                [key: string]: unknown;
+            };
         };
         /** OpsErrorBody */
         OpsErrorBody: {
@@ -12042,6 +12254,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13227,6 +13441,10 @@ export interface components {
             file_exists: boolean;
             /** File Path */
             file_path?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13440,6 +13658,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13991,6 +14211,13 @@ export interface components {
             target_path?: string | null;
             /** Vendor */
             vendor: string;
+        };
+        /** VerifiedIn */
+        VerifiedIn: {
+            /** By */
+            by: string;
+            /** Method */
+            method: string;
         };
         /** VocalsAnalyzeIn */
         VocalsAnalyzeIn: {
@@ -17447,7 +17674,9 @@ export interface operations {
     };
     list_comments_api_v1_feedback_comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                state?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -17461,6 +17690,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20835,6 +21073,114 @@ export interface operations {
             };
         };
     };
+    get_progress_api_v1_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    patch_progress_node_api_v1_progress_nodes__node_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodePatchOut"];
+                };
+            };
+            /** @description If-Match is stale; refresh the ledger before retrying */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact progress ledger bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match header is required for every progress write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Writes are disabled because the cloud lock is unavailable or held by a peer */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_progress_schema_api_v1_progress_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     get_queue_api_v1_queues__kind__get: {
         parameters: {
             query?: never;
@@ -23300,6 +23646,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageClientsOut"];
+                };
+            };
+        };
+    };
+    get_consent_api_v1_telemetry_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+        };
+    };
+    put_consent_api_v1_telemetry_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
