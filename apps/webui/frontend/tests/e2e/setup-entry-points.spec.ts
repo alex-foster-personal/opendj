@@ -153,7 +153,7 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 }
 
 test.describe('setup entry points', () => {
-	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page, request }) => {
+	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
 		// No rb-meta allowlist here on purpose. This suite's library is entirely
 		// locally imported, so every listing row reports has_rb_mapping false and
 		// the browser issues no rb-meta request at all. The 404 that used to be
@@ -181,23 +181,14 @@ test.describe('setup entry points', () => {
 		await runSetupButton(page).click();
 		await expectWizard(page);
 
+		// BuildIdentity's update check must have been issued and answered by the
+		// engine with the endpoint it is configured to read. The manifest behind
+		// that endpoint lives on github.com and is validated in its own test
+		// below, so an outage there cannot discard this test's local evidence.
 		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
 			endpoint: string;
 		};
-		const manifestResponse = await request.get(updateCheckBody.endpoint);
-		expect(manifestResponse.status()).toBe(200);
-		const manifest = (await manifestResponse.json()) as {
-			version?: string;
-			platforms?: Record<string, { url?: string; signature?: string }>;
-		};
-		expect(typeof manifest.version).toBe('string');
-		expect((manifest.version ?? '').length).toBeGreaterThan(0);
-		expect(manifest.platforms).toBeTruthy();
-		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
-		expect(typeof darwinEntry?.url).toBe('string');
-		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
-		expect(typeof darwinEntry?.signature).toBe('string');
-		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
+		expect(updateCheckBody.endpoint).toMatch(/^https:\/\//);
 
 		// The USB panel's 503 is a DESIGNED refusal, not a fault, and it is the
 		// one console error this page can legitimately emit on a CI host.
@@ -217,6 +208,41 @@ test.describe('setup entry points', () => {
 		expect(
 			errors.filter((e) => !e.includes('favicon') && !usbCapabilityRefusal.test(e))
 		).toEqual([]);
+	});
+
+	test('the release manifest the engine names is reachable and well-formed', async ({ request }) => {
+		// Separate from the setup-flow test above on purpose (Codex P2 on #3732):
+		// the endpoint is the release manifest on github.com, not this engine, so
+		// a 5xx here is the CDN or the runner's egress failing to answer, which
+		// says nothing about the build under test. Retry a few times, then report
+		// UNMEASURED (a skip naming the status) rather than a red verdict, without
+		// taking any local assertion down with it. A 200 is asserted in full and a
+		// 404 (a missing manifest) still fails.
+		const updateCheck = await request.get('/api/v1/update/check');
+		expect(updateCheck.status()).toBe(200);
+		const { endpoint } = (await updateCheck.json()) as { endpoint: string };
+		let manifestResponse = await request.get(endpoint);
+		for (let attempt = 1; attempt < 4 && manifestResponse.status() >= 500; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+			manifestResponse = await request.get(endpoint);
+		}
+		test.skip(
+			manifestResponse.status() >= 500,
+			`UNMEASURED: release manifest ${endpoint} answered ${manifestResponse.status()} after 4 attempts`
+		);
+		expect(manifestResponse.status()).toBe(200);
+		const manifest = (await manifestResponse.json()) as {
+			version?: string;
+			platforms?: Record<string, { url?: string; signature?: string }>;
+		};
+		expect(typeof manifest.version).toBe('string');
+		expect((manifest.version ?? '').length).toBeGreaterThan(0);
+		expect(manifest.platforms).toBeTruthy();
+		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
+		expect(typeof darwinEntry?.url).toBe('string');
+		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
+		expect(typeof darwinEntry?.signature).toBe('string');
+		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
@@ -328,6 +354,7 @@ test.describe('setup entry points', () => {
 		const dialog = setupDialog(page);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog.getByRole('radio', { name: 'A rekordbox collection on this machine' }).check();
 
 		// The scanning state must resolve into a verdict, never stick.
 		await expect(dialog.locator('.probes li').first()).toBeVisible();
@@ -380,6 +407,84 @@ test.describe('setup entry points', () => {
 		await expect(setupDialog(page).locator('.steps .step.current')).toContainText(
 			'Find your music'
 		);
+	});
+
+	test('STANDALONE-08: rekordbox detection alone does not opt in or import', async ({
+		page
+	}) => {
+		// Mutation guard: reverting the initial source to rekordbox must fail here.
+		const importPosts: string[] = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && request.url().includes('/api/v1/setup/import')) {
+				importPosts.push(request.url());
+			}
+		});
+
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		const rekordboxRadio = dialog.getByRole('radio', {
+			name: 'A rekordbox collection on this machine'
+		});
+		const folderRadio = dialog.getByRole('radio', { name: /folder of audio files/ });
+		await expect(rekordboxRadio).not.toBeChecked();
+		await expect(folderRadio).not.toBeChecked();
+		await expect(importPosts).toEqual([]);
+
+		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
+		await expect(continueButton).toBeDisabled();
+		await expect(dialog.locator('.why')).toContainText('choose an import source');
+
+		await rekordboxRadio.check();
+		await expect(rekordboxRadio).toBeChecked();
+		await expect(dialog.locator('.probes li').first()).toBeVisible();
+		await expect(importPosts).toEqual([]);
+		await expect(dialog.locator('.steps .step.current')).toContainText('Find your music');
+
+		const fatal = await fatalBlockers(page);
+		if (fatal.length === 0) {
+			await expect(continueButton).toBeEnabled();
+			await continueButton.click();
+			await expect(dialog.locator('.steps .step.current')).toContainText('Confirm the import');
+		}
+	});
+
+	test('STANDALONE-08: declining import completes setup and is not re-offered', async ({
+		page
+	}) => {
+		// Mutation guard: making dismissed-empty libraries reopen must fail here.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Continue without importing', exact: true })
+			.click();
+
+		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		const statusAfterDismiss = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/setup/status');
+			return (await response.json()) as { dismissed: boolean; should_show_wizard: boolean };
+		});
+		expect(statusAfterDismiss.dismissed).toBe(true);
+		expect(statusAfterDismiss.should_show_wizard).toBe(false);
+
+		await page.reload();
+		await page.waitForFunction(
+			() => typeof (window as unknown as { __mdtPerfLog?: unknown }).__mdtPerfLog === 'function',
+			undefined,
+			{ timeout: 30_000 }
+		);
+		await expect(setupDialog(page)).toHaveCount(0);
+
+		// Re-arm for the next test.
+		await page.keyboard.press(SETTINGS_CHORD);
+		await runSetupButton(page).click();
+		await expectWizard(page);
 	});
 
 	test('continuing without importing closes into an honest empty state', async ({ page }) => {

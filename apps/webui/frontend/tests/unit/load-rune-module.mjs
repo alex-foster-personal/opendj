@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-let moduleSequence = 0;
 
 /**
  * Vite's `?url` suffix, modelled for the test bundler. Same contract as the one
@@ -88,9 +89,8 @@ export async function loadRuneModule(entrySource) {
 		filename: 'rune-entry.svelte.js'
 	});
 	const linked = await _bundle(compiled.js.code, { stdin: true });
-	const source = Buffer.from(linked.outputFiles[0].text).toString('base64');
-	moduleSequence += 1;
-	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
+	// A temp file, not a data: URL: see import-bundled-source.mjs.
+	return importBundledSource(linked.outputFiles[0].text, 'rune-entry');
 }
 
 /**

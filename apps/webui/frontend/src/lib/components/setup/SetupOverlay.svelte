@@ -381,10 +381,10 @@
 					{#if step === 'welcome'}
 						<div class="panel">
 							<p>
-								This engine has a library database of its own. Setting it up means
-								reading your existing rekordbox collection into it: tracks,
-								playlists, BPM, key and rating. Nothing in rekordbox is written to
-								or changed -- the import only ever reads a copy.
+								This engine has a library database of its own. You can populate it
+								from a rekordbox collection or a folder of audio files, but only
+								when you choose to start that import. Nothing in rekordbox is
+								written to or changed -- a rekordbox import only ever reads a copy.
 							</p>
 							{#if status !== null}
 								<p class="counts">
@@ -456,6 +456,56 @@
 									A folder of audio files (no rekordbox needed)
 								</label>
 							</fieldset>
+						</div>
+					{/if}
+
+					{#if step === 'detect' && source === null}
+						<div class="panel">
+							<p class="muted">
+								Choose an import source above. Nothing is imported until you pick
+								one and explicitly start it.
+							</p>
+							<div class="actions">
+								{@render backButton()}
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => setupWizard.redetect()}
+									title={ESCAPE_ACTIONS[0].title}
+								>
+									{ESCAPE_ACTIONS[0].label}
+								</button>
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => setupWizard.useSource('folder')}
+									title={ESCAPE_ACTIONS[1].title}
+								>
+									{ESCAPE_ACTIONS[1].label}
+								</button>
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => void dismissAndClose()}
+									disabled={setupWizard.busy}
+									title={ESCAPE_ACTIONS[2].title}
+								>
+									{ESCAPE_ACTIONS[2].label}
+								</button>
+								<button
+									type="button"
+									onclick={() => setupWizard.next()}
+									disabled={nextRefusal !== null || setupWizard.busy}
+									title={nextRefusal ?? 'Continue to the import'}
+								>
+									Continue
+								</button>
+							</div>
+							{#if nextRefusal !== null}
+								<p class="why" role="status">
+									Continue is not available: {nextRefusal}.
+								</p>
+							{/if}
 						</div>
 					{/if}
 

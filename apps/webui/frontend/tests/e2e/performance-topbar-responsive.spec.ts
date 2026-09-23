@@ -181,6 +181,38 @@ test('the performance top bar keeps a labelled, hittable sign-in control at ever
 	}
 });
 
+// requirement: PERF-UI-06
+// [if] /performance is at a width where the command entry is offered [then]
+// its centre passes a real elementFromPoint hit test and the top bar does not
+// overflow horizontally, [else stop].
+const CMD_ENTRY_WIDTHS = [1400, 1440, 1530, 1535, 1740, 1745, 1920] as const;
+
+test('the performance top bar keeps the command entry hittable across the 1400px-plus ladder', async ({
+	page
+}) => {
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+
+	const commandInput = page.locator('input[aria-label="text command entry"]');
+
+	for (const width of CMD_ENTRY_WIDTHS) {
+		await page.setViewportSize({ width, height: 800 });
+		await expect(commandInput).toBeVisible();
+		await expect
+			.poll(async () => (await _hitTarget(page, 'input[aria-label="text command entry"]')).hit, {
+				message: `${width}px command entry did not settle on its own hit target`
+			})
+			.toBe(true);
+		const overflow = await page.locator('header.rb-topbar').evaluate(
+			(bar) => bar.scrollWidth - bar.clientWidth
+		);
+		expect(
+			overflow,
+			`${width}px: the top bar overflows by ${overflow}px while the command entry is offered`
+		).toBeLessThanOrEqual(0);
+	}
+});
+
 test('loaded deck Stage opens the performance karaoke overlay and closes cleanly', async ({ page }) => {
 	test.skip(
 		!HAS_MANIFEST,
