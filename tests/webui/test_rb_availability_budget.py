@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -427,3 +428,66 @@ def test_file_exists_is_null_only_while_pending() -> None:
     for status in ("absent", "streaming", "awaiting_volume"):
         assert availability.status_to_file_exists(status) is False
     assert availability.status_to_file_exists("AVAILABILITY_PENDING") is None
+
+
+def _refresh_now(data_dir: Path, state_db_path: Path, paths: list[str]) -> None:
+    """Run one real background refresh on its own thread, to completion.
+
+    stop() drops whatever is still queued, so wait for the thread to flush
+    every scheduled path (a flush clears it from the pending set) first."""
+    refresher = path_availability_refresh.PathAvailabilityRefresher(
+        data_dir=data_dir, state_db_path=state_db_path
+    )
+    refresher.start()
+    refresher.schedule(paths)
+    deadline = time.monotonic() + 10.0
+    while refresher._pending and time.monotonic() < deadline:
+        time.sleep(0.05)
+    refresher.stop()
+    assert not refresher._pending, "background refresh did not flush in 10 s"
+
+
+@pytest.mark.requirement("PERF-RB-01")
+def test_background_refresh_never_creates_the_state_db(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] there is no state.db [then ⛔️] the refresher does not create one,
+    and its answers still reach the L1 cache.
+
+    open_rw makes the file before the tables, so a background create raced
+    requests gating on STATE_DB.exists() into "no such table: tracks" (pytest
+    fast tier leg 3 at fd74174bf, test_playlist_tracks_page)."""
+    data_dir = tmp_path / "data"
+    state_db_path = _configure_data_dir(monkeypatch, data_dir)
+    present = tmp_path / "music" / "here.mp3"
+    present.parent.mkdir(parents=True)
+    present.write_bytes(b"ID3" + b"\x00" * 128)
+    missing = str(tmp_path / "music" / "gone.mp3")
+
+    _refresh_now(data_dir, state_db_path, [str(present), missing])
+
+    assert not state_db_path.exists()
+    assert rb_config._FILE_EXISTS_CACHE[str(present)][1] == 131
+    assert rb_config._FILE_EXISTS_CACHE[missing][1] is None
+
+
+@pytest.mark.requirement("PERF-RB-01")
+def test_background_refresh_persists_into_an_existing_state_db(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] state.db exists [then ⛔️] refreshed answers are persisted to the
+    index (control for the no-create rule: it must not stop ALL writes)."""
+    data_dir = tmp_path / "data"
+    state_db_path = _configure_data_dir(monkeypatch, data_dir)
+    _sids, paths = _seed_library(state_db_path, track_count=2)
+
+    _refresh_now(data_dir, state_db_path, paths)
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        index = path_index.bulk_lookup(conn, path_index.resolver_namespace(data_dir), paths)
+    finally:
+        conn.close()
+    assert all(entry is not None and entry.materialised_size == 131 for entry in index.values())

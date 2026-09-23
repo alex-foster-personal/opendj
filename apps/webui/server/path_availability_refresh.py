@@ -8,9 +8,11 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from apps.adapters.rekordbox import config
 from apps.shared.state import db as state_db
 
 from .rb_vendor_pkg import path_index
@@ -79,19 +81,36 @@ class PathAvailabilityRefresher:
             self._flush(batch)
 
     def _flush(self, paths: Sequence[str]) -> None:
-        namespace = path_index.resolver_namespace(self._data_dir)
+        now = time.monotonic()
         rows = [(path, path_index.stat_logical_path(path)) for path in paths]
         if not rows:
             return
+        self._persist(rows)
+        with config._FILE_EXISTS_LOCK:
+            for path, size in rows:
+                config._FILE_EXISTS_CACHE[path] = (now, size)
+        with self._lock:
+            for path in paths:
+                self._pending.discard(path)
+
+    def _persist(self, rows: Sequence[tuple[str, int | None]]) -> None:
+        """Upsert into an EXISTING state.db only, as the request path does.
+
+        Never creates it: ``open_rw`` on a missing file makes the file first
+        and the tables after, so a background create races every request
+        that gates on ``STATE_DB.exists()`` into "no such table" (and would
+        leave a state layer on a machine that never had one). The answers
+        still land in the L1 cache above either way.
+        """
+        if not self._state_db_path.exists():
+            return
+        namespace = path_index.resolver_namespace(self._data_dir)
         conn = state_db.open_rw(self._state_db_path)
         try:
             path_index.upsert_rows(conn, namespace, rows)
             conn.commit()
         finally:
             conn.close()
-        with self._lock:
-            for path in paths:
-                self._pending.discard(path)
 
 
 # The process's one refresher, held in a container rather than rebound
