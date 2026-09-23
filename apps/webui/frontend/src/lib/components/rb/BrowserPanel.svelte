@@ -161,6 +161,16 @@
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import type { UploadFileResult } from '$lib/rb/api-ingest';
+	import {
+		collectDroppedAudioFiles,
+		collectDroppedFolderName
+	} from '$lib/rb/ingest-drop-files';
+	import {
+		ingestFolderToNewPlaylist,
+		type PossibleDupDecision
+	} from '$lib/rb/playlist-folder-drop';
+	import PlaylistFolderDupModal from './PlaylistFolderDupModal.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
 		removeFromLibraryConfirmMessage,
@@ -1733,6 +1743,51 @@
 		}
 	}
 
+	let folderDupPrompt = $state<{
+		rows: UploadFileResult[];
+		resolve: (decisions: Map<string, PossibleDupDecision> | null) => void;
+	} | null>(null);
+
+	function askPossibleDups(
+		rows: UploadFileResult[]
+	): Promise<Map<string, PossibleDupDecision> | null> {
+		return new Promise((resolve) => {
+			folderDupPrompt = { rows, resolve };
+		});
+	}
+
+	async function folderDropOnPlaylistTree(event: DragEvent): Promise<void> {
+		const dt = event.dataTransfer;
+		if (dt === null) return;
+		// Read the folder name BEFORE the first await: the drag data store is
+		// only readable while the drop event is being dispatched.
+		const droppedFolder = collectDroppedFolderName(dt);
+		const files = await collectDroppedAudioFiles(dt);
+		if (files.length === 0) {
+			pushToast('No audio files in that drop', 'error');
+			return;
+		}
+		const folderName =
+			droppedFolder ?? files[0]?.name.split('/')[0]?.trim() ?? 'New playlist';
+		try {
+			const result = await ingestFolderToNewPlaylist({
+				files,
+				folderName,
+				onPossibleDups: (rows) => askPossibleDups(rows),
+				onQueuedRefreshError: (err) =>
+					pushToast(`analysis for "${folderName.trim()}" not started: ${String(err)}`, 'error')
+			});
+			await _refreshPlaylists();
+			await _selectPlaylistFromCommand(result.playlistId);
+			pushToast(
+				`Created "${folderName.trim()}" with ${result.added} track(s) (${result.staged} new, ${result.skippedDup} linked duplicate(s))`,
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`folder drop failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
@@ -3165,6 +3220,7 @@
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
+				onfolderdrop={(e) => void folderDropOnPlaylistTree(e)}
 			/>
 		{/if}
 	</div>
@@ -3538,6 +3594,21 @@
 	onpick={(node) => void addTracksToPlaylist(node)}
 	onclose={() => (addToPlaylistIds = null)}
 />
+
+{#if folderDupPrompt !== null}
+	<PlaylistFolderDupModal
+		rows={folderDupPrompt.rows}
+		ondone={(decisions) => {
+			folderDupPrompt?.resolve(decisions);
+			folderDupPrompt = null;
+		}}
+		oncancel={() => {
+			folderDupPrompt?.resolve(null);
+			folderDupPrompt = null;
+			pushToast('Folder drop held duplicates unresolved; playlist may be partial', 'error');
+		}}
+	/>
+{/if}
 
 <style>
 	.rb-browser {

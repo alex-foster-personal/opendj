@@ -10584,6 +10584,50 @@
         "title": "MatchRequest",
         "type": "object"
       },
+      "MaterializeOut": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/MaterializedTrack"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "tracks"
+        ],
+        "title": "MaterializeOut",
+        "type": "object"
+      },
+      "MaterializedTrack": {
+        "properties": {
+          "inserted": {
+            "title": "Inserted",
+            "type": "boolean"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "stable_id",
+          "inserted"
+        ],
+        "title": "MaterializedTrack",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "signed_in": {
@@ -27207,6 +27251,49 @@
         "summary": "Host Info",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/ingest/batch/{batch}/materialize": {
+      "post": {
+        "description": "[if] batch is staged under the ingest inbox [then] folder-ingest writes\ntracks and returns stable_ids [else stop].",
+        "operationId": "materialize_batch_api_v1_ingest_batch__batch__materialize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "title": "Batch",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterializeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Materialize Batch",
+        "tags": [
+          "ingest"
         ]
       }
     },

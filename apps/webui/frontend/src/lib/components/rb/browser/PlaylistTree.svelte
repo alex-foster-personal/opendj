@@ -16,6 +16,8 @@
 		endTrackDrag
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
+	import { trackDrag } from '$lib/rb/track-drag.svelte';
+	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
@@ -50,11 +52,13 @@
 		ondeleteplaylist,
 		onduplicateplaylist,
 		ondroptracks,
-		oncreatesmartlist
+		oncreatesmartlist,
+		onfolderdrop
 	}: PlaylistTreeProps = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
+	let folderDropActive = $state(false);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
@@ -78,6 +82,27 @@
 		endTrackDrag();
 		if (ids.length === 0) return;
 		ondroptracks(node.playlist_id, ids);
+	}
+
+	function _onFolderDragOver(event: DragEvent): void {
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+		folderDropActive = true;
+	}
+
+	function _onFolderDragLeave(event: DragEvent): void {
+		if (!isOsFileDrag(event)) return;
+		folderDropActive = false;
+	}
+
+	function _onFolderDrop(event: DragEvent): void {
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		folderDropActive = false;
+		onfolderdrop(event);
 	}
 
 	/** Make a playlist row draggable onto the pane tab bar. */
@@ -167,7 +192,7 @@
 	const foldTracker = new TreeFoldTracker();
 </script>
 
-<div class="tree-root">
+<div class="tree-root" data-testid="playlist-tree-panel">
 	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
 	{#if mode === 'tree'}
@@ -191,9 +216,13 @@
 	<div
 		class="tree-scroll"
 		class:hidden={mode === 'column'}
+		class:folder-drop-target={folderDropActive}
 		bind:this={foldTracker.scrollEl}
 		bind:clientHeight={foldTracker.viewportHeight}
 		onscroll={foldTracker.onScroll}
+		ondragover={_onFolderDragOver}
+		ondragleave={_onFolderDragLeave}
+		ondrop={_onFolderDrop}
 	>
 		<div
 			class="row"
@@ -420,6 +449,9 @@
 	}
 	.row.drop-target {
 		box-shadow: inset 0 0 0 1px var(--rb-accent);
+	}
+	.tree-scroll.folder-drop-target {
+		box-shadow: inset 0 0 0 2px var(--rb-accent);
 	}
 	.row svg {
 		flex: none;

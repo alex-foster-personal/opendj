@@ -2001,6 +2001,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/batch/{batch}/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Batch
+         * @description [if] batch is staged under the ingest inbox [then] folder-ingest writes
+         *     tracks and returns stable_ids [else stop].
+         */
+        post: operations["materialize_batch_api_v1_ingest_batch__batch__materialize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingest/config": {
         parameters: {
             query?: never;
@@ -9998,6 +10019,22 @@ export interface components {
              * @default false
              */
             use_fingerprint: boolean;
+        };
+        /** MaterializeOut */
+        MaterializeOut: {
+            /** Batch */
+            batch: string;
+            /** Tracks */
+            tracks: components["schemas"]["MaterializedTrack"][];
+        };
+        /** MaterializedTrack */
+        MaterializedTrack: {
+            /** Inserted */
+            inserted: boolean;
+            /** Relative Path */
+            relative_path: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /** MeOut */
         MeOut: {
@@ -18174,6 +18211,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    materialize_batch_api_v1_ingest_batch__batch__materialize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterializeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
