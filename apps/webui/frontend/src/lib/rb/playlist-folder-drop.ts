@@ -13,7 +13,6 @@ import {
 } from '$lib/rb/api-ingest';
 import { RbApiError } from '$lib/rb/api-rb-error';
 import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
-import { pushToast } from '$lib/stores.svelte';
 import {
 	addPlaylistItems,
 	createPlaylist,
@@ -49,6 +48,10 @@ export async function ingestFolderToNewPlaylist(opts: {
 	onPossibleDups?: (
 		rows: UploadFileResult[]
 	) => Promise<Map<string, PossibleDupDecision> | null>;
+	/** Called if a refresh queued behind a busy slot later fails to start.
+	 * Required: by then the drop has already reported success, so this is
+	 * the only place that failure can surface. */
+	onQueuedRefreshError: (err: unknown) => void;
 }): Promise<FolderDropResult> {
 	const name = opts.folderName.trim();
 	if (name === '') {
@@ -79,7 +82,10 @@ export async function ingestFolderToNewPlaylist(opts: {
 				r.verdict === 'skipped_duplicate' ||
 				(r.verdict === 'possible_duplicate' && decisions.get(r.filename) === 'reject')
 		).length;
-		const analysis = staged > 0 ? await startOrQueueBatchRefresh(upload.dest_dir) : 'none';
+		const analysis =
+			staged > 0
+				? await startOrQueueBatchRefresh(upload.dest_dir, opts.onQueuedRefreshError)
+				: 'none';
 		await refreshIngestPending();
 
 		return {
@@ -111,19 +117,20 @@ function _isRefreshBusy(err: unknown): boolean {
  * batch-scope job enumerates ITS OWN batch_dir once, when its worker starts
  * (`_batch_targets` in apps/webui/server/routes/ingest.py). So the refresh is
  * re-requested when the slot frees, in the background; only a failure of
- * that later request, or a slot that never frees, is surfaced as an error.
+ * that later request, or a slot that never frees, reaches onQueuedRefreshError.
  * Any other refresh error still fails the drop.
  */
-export async function startOrQueueBatchRefresh(destDir: string): Promise<'started' | 'queued'> {
+async function startOrQueueBatchRefresh(
+	destDir: string,
+	onQueuedRefreshError: (err: unknown) => void
+): Promise<'started' | 'queued'> {
 	try {
 		await startIngestRefresh(destDir);
 		return 'started';
 	} catch (err) {
 		if (!_isRefreshBusy(err)) throw err;
 	}
-	void _startWhenSlotFrees(destDir).catch((err: unknown) => {
-		pushToast(`analysis for dropped folder not started: ${String(err)}`, 'error');
-	});
+	void _startWhenSlotFrees(destDir).catch(onQueuedRefreshError);
 	return 'queued';
 }
 

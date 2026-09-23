@@ -1777,7 +1777,9 @@
 			const result = await ingestFolderToNewPlaylist({
 				files,
 				folderName,
-				onPossibleDups: (rows) => askPossibleDups(rows)
+				onPossibleDups: (rows) => askPossibleDups(rows),
+				onQueuedRefreshError: (err) =>
+					pushToast(`analysis for "${folderName.trim()}" not started: ${String(err)}`, 'error')
 			});
 			await _refreshPlaylists();
 			await _selectPlaylistFromCommand(result.playlistId);
