@@ -92,7 +92,11 @@ test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs pre
 	assert.match(WIDGET, /show_agent_pins/);
 	assert.match(WIDGET, /setShowAgentPins/);
 	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
-	assert.match(WIDGET, /p\.author !== 'agent' \|\| uiPrefs\.show_agent_pins/);
+	// #3790 rewrote the filter as an early return; either spelling is the same gate.
+	assert.match(
+		WIDGET,
+		/p\.author !== 'agent' \|\| uiPrefs\.show_agent_pins|p\.author === 'agent' && !uiPrefs\.show_agent_pins/
+	);
 });
 
 test('"show other users\' pins" is stubbed: rb-inert, explains why, never actually toggles', () => {

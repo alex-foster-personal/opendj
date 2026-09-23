@@ -55,6 +55,27 @@ from tests.opendj_cli.conftest import Engine, PerformancePage, blank_mirror
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Settle values in this file are asymmetric on purpose, and the asymmetry is the
+# point rather than an accident of tuning.
+#
+# A test asserting EXIT_UNCONFIRMED wants a deadline it is CERTAIN to miss, so it
+# passes a fraction of a second and a loaded runner only makes it surer. Those
+# stay exactly as they are.
+#
+# A test asserting EXIT_CONFIRMED wants the opposite. The claim is "this settles",
+# never "this settles quickly", and `--settle` is a MAXIMUM wait rather than a
+# sleep, so a generous ceiling costs a passing run nothing while a tight one turns
+# runner load into a false failure. Shard 1 of 5 returned EXIT_UNCONFIRMED on
+# agentbox for a 0.5s case that passed 5 of 5 locally clean and again under a load
+# average of 14 on 10 cores; the four other live confirm cases sat at 0.3s,
+# strictly more fragile than the one that actually broke.
+#
+# Every live confirm case therefore waits on this, and nothing in this file
+# asserts elapsed time. One pair is worth knowing about: the same
+# `unload 1` argv appears twice, once expecting confirmed and once expecting
+# unconfirmed, so the second one's short deadline is load-bearing and stays.
+SETTLE_CONFIRM = "30"
+
 
 def _argv(engine: Engine, *tokens: str) -> list[str]:
     return ["--lock", str(engine.lock_path), *tokens]
@@ -471,7 +492,7 @@ def test_unload_is_confirmed_when_the_deck_title_goes_null(
         assert main(_argv(engine, "load", "1", "track-a")) == EXIT_CONFIRMED
         assert page.mirror["decks"]["1"]["stable_id"] == "track-a"
 
-        assert main(_argv(engine, "--settle", "0.3", "unload", "1")) == EXIT_CONFIRMED
+        assert main(_argv(engine, "--settle", SETTLE_CONFIRM, "unload", "1")) == EXIT_CONFIRMED
         assert page.mirror["decks"]["1"]["title"] is None
         assert page.mirror["decks"]["1"]["stable_id"] is None
     finally:
@@ -528,7 +549,9 @@ def test_a_script_that_writes_one_control_twice_confirms_the_last_write(
     page = engine.page()
     page.start()
     try:
-        exit_code = main(_argv(engine, "--settle", "0.3", "do", "play 1", "then", "pause 1"))
+        exit_code = main(
+            _argv(engine, "--settle", SETTLE_CONFIRM, "do", "play 1", "then", "pause 1")
+        )
         assert exit_code == EXIT_CONFIRMED
         assert page.mirror["decks"]["1"]["playing"] is False
     finally:
@@ -960,7 +983,9 @@ def test_play_then_unload_confirms_although_unload_clears_playing(
     try:
         assert main(_argv(engine, "load", "1", "a-track")) == EXIT_CONFIRMED
         capsys.readouterr()
-        exit_code = main(_argv(engine, "--settle", "0.3", "do", "play 1", "then", "unload 1"))
+        exit_code = main(
+            _argv(engine, "--settle", SETTLE_CONFIRM, "do", "play 1", "then", "unload 1")
+        )
         assert exit_code == EXIT_CONFIRMED
         assert page.mirror["decks"]["1"]["playing"] is False
         assert page.mirror["decks"]["1"]["stable_id"] is None
@@ -1137,6 +1162,11 @@ def test_a_finite_deadline_is_still_accepted(
     real instruction unlike a negative one. It is asserted at parse level
     because a zero settle also races the page's republish, so a verdict is not
     what it pins.
+
+    The live half below is where shard 1 of 5 failed on agentbox with
+    EXIT_UNCONFIRMED: it used `--settle 0.5` and lost a sub-second mirror
+    deadline to runner load. It now waits on SETTLE_CONFIRM, where the
+    reasoning for every live confirm case in this file is stated once.
     """
 
     assert main(["--settle", "0", "--timeout", "0", "--list-verbs"]) == EXIT_CONFIRMED
@@ -1145,9 +1175,9 @@ def test_a_finite_deadline_is_still_accepted(
     page = engine.page()
     page.start()
     try:
-        assert main(_argv(engine, "--settle", "0.5", "--timeout", "30", "play", "1")) == (
-            EXIT_CONFIRMED
-        )
+        assert main(
+            _argv(engine, "--settle", SETTLE_CONFIRM, "--timeout", "30", "play", "1")
+        ) == EXIT_CONFIRMED
     finally:
         page.stop()
 
@@ -1202,7 +1232,7 @@ def test_a_script_whose_groups_confirm_runs_all_of_them(
     page.start()
     try:
         exit_code = main(
-            _argv(engine, "--settle", "0.3", "do", "load 1 new-id", "then", "play 1")
+            _argv(engine, "--settle", SETTLE_CONFIRM, "do", "load 1 new-id", "then", "play 1")
         )
         assert exit_code == EXIT_CONFIRMED
         claimed = [order["payload"]["type"] for order in page.orders]

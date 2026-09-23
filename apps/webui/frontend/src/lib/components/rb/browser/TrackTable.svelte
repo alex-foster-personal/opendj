@@ -1766,29 +1766,33 @@
 							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
-							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
-								{#if i > 0}<span class="genre-sep">, </span>{/if}
-								<button
-									type="button"
-									class="genre-tag"
-									class:active={/^genre:~?/i.test(searchQuery.trim()) &&
-										searchQuery
-											.trim()
-											.replace(/^genre:~?/i, '')
-											.toLowerCase() === tag.toLowerCase()}
-									style={genreTagStyle(tag)}
-									title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
-									onclick={(e) => onGenreTagClick(e, tag)}
-									ondblclick={(e) => {
-										e.stopPropagation();
-										e.preventDefault();
-									}}
-								>
-									{#each hl(tag) as part, j (j)}
-										{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-									{/each}
-								</button>
-							{/each}
+							{#if splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '').length > 0}
+								{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
+									{#if i > 0}<span class="genre-sep">, </span>{/if}
+									<button
+										type="button"
+										class="genre-tag"
+										class:active={/^genre:~?/i.test(searchQuery.trim()) &&
+											searchQuery
+												.trim()
+												.replace(/^genre:~?/i, '')
+												.toLowerCase() === tag.toLowerCase()}
+										style={genreTagStyle(tag)}
+										title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
+										onclick={(e) => onGenreTagClick(e, tag)}
+										ondblclick={(e) => {
+											e.stopPropagation();
+											e.preventDefault();
+										}}
+									>
+										{#each hl(tag) as part, j (j)}
+											{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+										{/each}
+									</button>
+								{/each}
+							{:else if row.genre_reason}
+								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
+							{/if}
 						</td>
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
@@ -2601,6 +2605,14 @@
 		text-shadow:
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
+	}
+	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
+	 * fixed-height row (22.5px -> 25px), which the virtualization math and
+	 * right-click anchored popovers both assume never happens. */
+	.genre-reason {
+		color: var(--text-muted, #8b949e);
+		font-size: 0.85em;
+		font-style: italic;
 	}
 	.genre-tag.active {
 		color: var(--rb-text);

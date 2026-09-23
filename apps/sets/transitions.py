@@ -151,7 +151,7 @@ def find_transitions(
 def compute_features(
     transition: Transition,
     *,
-    _outgoing_load: Event | None,
+    outgoing_load: Event | None,  # noqa: ARG001 - kept for its keyword callers
     incoming_load: Event | None,
     outgoing_last: Event | None,
     prev_change_ts: float | None,
