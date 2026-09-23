@@ -17,6 +17,7 @@ import {
 	setHideBrokenLinks,
 	setHideTodoSettings,
 	setJogRadialWaveform,
+	setShowStems,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -69,6 +70,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_todo_settings',
 	'technically_working_animate',
 	'jog_radial_waveform',
+	'show_stems',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -131,6 +133,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
 			return uiPrefs.jog_radial_waveform;
+		case 'show_stems':
+			return uiPrefs.show_stems;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -237,6 +241,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'jog_radial_waveform':
 			setJogRadialWaveform(_asBool(value, key));
+			return;
+		case 'show_stems':
+			setShowStems(_asBool(value, key));
 			return;
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {

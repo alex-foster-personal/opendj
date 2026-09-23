@@ -161,6 +161,8 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	jog_radial_waveform: boolean;
 	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
 	show_agent_pins: boolean;
+	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
+	show_stems: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -209,6 +211,7 @@ const DEFAULTS: RbUiPrefs = {
 	technically_working_animate: true,
 	jog_radial_waveform: false,
 	show_agent_pins: true,
+	show_stems: false,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -384,6 +387,12 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.show_stems !== undefined && typeof parsed.show_stems !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (show_stems is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
@@ -429,6 +438,7 @@ function _load(): RbUiPrefs {
 		preview_beat_sync: parsed.preview_beat_sync ?? DEFAULTS.preview_beat_sync,
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
+		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -576,6 +586,12 @@ export function setShowAgentPins(next: boolean): void {
 	uiPrefs.show_agent_pins = next;
 	_persist();
 	void _syncDiskPrefs({ show_agent_pins: next });
+}
+
+export function setShowStems(next: boolean): void {
+	uiPrefs.show_stems = next;
+	_persist();
+	void _syncDiskPrefs({ show_stems: next });
 }
 
 export const {

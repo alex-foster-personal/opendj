@@ -97,6 +97,10 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	return (await r.json()) as T;
 }
 
+/** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
+ * that keep their endpoint helpers out of this first-paint module. */
+export { _fetchJson as fetchRbJson };
+
 function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
 	const lyrics = raw as { stable_id?: unknown; source?: unknown; lines?: unknown };
