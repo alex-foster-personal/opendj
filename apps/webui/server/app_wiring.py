@@ -93,6 +93,7 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
@@ -547,6 +548,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         auth_routes.router,
         ingest_routes.router,
         ingest_upload_routes.router,
+        ingest_materialize_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
         lifecycle_routes.router,
