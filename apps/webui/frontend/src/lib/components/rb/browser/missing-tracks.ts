@@ -47,6 +47,7 @@ export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): Brow
 		duration_ms: track.duration_ms ?? null,
 		genre: null,
 		file_exists: false,
+		file_availability: 'absent',
 		quality: null,
 		play_count: 0,
 		is_streaming: false,

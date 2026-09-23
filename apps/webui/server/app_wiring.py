@@ -255,8 +255,14 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.library_jobs_watcher = jobs_watcher
         jobs_watcher.start()
+        from . import path_availability_refresh
+
+        path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
+        from . import path_availability_refresh
+
+        path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)

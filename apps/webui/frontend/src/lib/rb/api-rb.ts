@@ -50,6 +50,13 @@ export const RB_API_BASE: string = API_BASE;
 
 export { RbApiError } from './api-rb-error';
 
+export type FileAvailabilityStatus =
+	| 'present'
+	| 'absent'
+	| 'AVAILABILITY_PENDING'
+	| 'streaming'
+	| 'awaiting_volume';
+
 export type TrackLyrics = {
 	stable_id: string;
 	source: string;
@@ -381,7 +388,8 @@ export interface PlaylistTrackRowWire {
 	etag: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	is_streaming: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
@@ -587,7 +595,8 @@ export type TrackListItemWire = Track & {
 	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
@@ -626,10 +635,18 @@ export async function listTracksHydrated(params: {
 		.join('&');
 	const page = await _fetchJson<TracksPageHydrated>(`/api/v1/tracks${qs === '' ? '' : '?' + qs}`);
 	for (const item of page.items) {
-		if (typeof item.file_exists !== 'boolean') {
+		if (
+			item.file_availability !== 'AVAILABILITY_PENDING' &&
+			typeof item.file_exists !== 'boolean'
+		) {
 			throw new Error(
 				`track ${String(item.stable_id)}: listing row has no file_exists - ` +
 					'backend contract point 1 not met'
+			);
+		}
+		if (typeof item.file_availability !== 'string') {
+			throw new Error(
+				`track ${String(item.stable_id)}: listing row has no file_availability`
 			);
 		}
 		// Loud, not falsy-defaulted: an absent flag would silently read as

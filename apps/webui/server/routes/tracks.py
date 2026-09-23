@@ -52,10 +52,12 @@ router = APIRouter(prefix="/tracks", tags=["tracks"])
 AvailableFilter = Literal["all", "true", "false"]
 
 
-def keep_by_availability(available: AvailableFilter, file_exists: bool) -> bool:
+def keep_by_availability(available: AvailableFilter, file_exists: bool | None) -> bool:
     """True when a row passes the ?available filter (explicit three-state)."""
     if available == "all":
         return True
+    if file_exists is None:
+        return False
     if available == "true":
         return file_exists
     if available == "false":
@@ -272,7 +274,7 @@ def list_tracks(
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
     for track, row in zip(page.items, rows, strict=False):
-        if not keep_by_availability(available, row["file_exists"]):
+        if not keep_by_availability(available, row.get("file_exists")):
             continue
         base = _track_to_out(
             track,
@@ -288,6 +290,7 @@ def list_tracks(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
+                file_availability=row["file_availability"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
                 has_remote_copy=bool(row["has_remote_copy"]),

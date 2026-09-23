@@ -318,6 +318,24 @@ machines:
   foreign_keys: []
 ```
 
+## `path_availability`
+
+```yaml
+path_availability:
+  description: 'Resolver-namespaced cache of disk-truth answers for rekordbox library paths (FolderPath / track file_path strings before containment mapping). Keys are (resolver_namespace, logical_path); materialised_size is NULL when the path is missing or a dataless stub. Written by bounded listing hydration and a background refresher (issue #1037, PERF-RB-01); survives process restarts.'
+  columns:
+    resolver_namespace: SHA-256 fingerprint of the active path-map entries plus this machine's machine-id file. Rows from an old namespace are ignored after a path-map change.
+    logical_path: Library path string before containment resolution (rekordbox FolderPath, tracks.file_path, or track_locations path).
+    materialised_size: Materialised st_size in bytes from fs_residency, or NULL when the resolved path is missing, not a file, or a dataless stub.
+    checked_at: RFC 3339 UTC timestamp when this row was last probed or written.
+  schema:
+    resolver_namespace: TEXT PRIMARY KEY NOT NULL
+    logical_path: TEXT PRIMARY KEY NOT NULL
+    materialised_size: INTEGER
+    checked_at: TEXT NOT NULL
+  foreign_keys: []
+```
+
 ## `playlist_memberships`
 
 ```yaml

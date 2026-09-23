@@ -924,6 +924,7 @@
 		// wording as the double-click path (pins 8ba0b15d975b, 72be3e505510).
 		const refusal = trackDragRefusal({
 			file_exists: row.file_exists,
+			file_availability: row.file_availability,
 			// All Tracks rows start row.is_streaming at null and hydrate the
 			// real value into row.rb_meta later - same effective flag
 			// _loadOntoDeck already checks, so the two refusal paths agree.
@@ -1426,7 +1427,7 @@
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
-						fileExists: row.file_exists,
+						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
 						transfer:
@@ -1464,11 +1465,17 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={!row.file_exists &&
+						class:broken={row.file_exists === false &&
+							row.file_availability !== 'AVAILABILITY_PENDING' &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
 							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
+						class:rb-row-availability-pending={row.file_availability ===
+							'AVAILABILITY_PENDING'}
+						title={row.file_availability === 'AVAILABILITY_PENDING'
+							? 'availability still checking (wait for disk probe)'
+							: undefined}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -2544,6 +2551,15 @@
 			animation: none;
 			opacity: 0.75;
 		}
+	}
+
+	/* PERF-RB-01: pending rows stay neutral while disk truth is probed. */
+	tbody tr.rb-row-availability-pending td {
+		color: var(--rb-text);
+	}
+	tbody tr.rb-row-availability-pending .c-art img,
+	tbody tr.rb-row-availability-pending .art-slate {
+		opacity: 0.85;
 	}
 
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay

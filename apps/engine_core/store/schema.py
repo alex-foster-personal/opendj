@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 6
+SCHEMA_VERSION: int = 7
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -697,6 +697,29 @@ _FEEDBACK: tuple[str, ...] = (
 
 
 # ==========================================================================
+# DOMAIN: path_index -- resolver-namespaced disk-truth cache for listing rows
+# Legacy source: apps/shared/state/migrations_v18.py (_V18, issue #1037,
+# PERF-RB-01). Reproduced verbatim so a database born through this runner can
+# serve the same budgeted availability reads as one born through the legacy
+# ladder.
+# ==========================================================================
+
+_PATH_INDEX: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS path_availability (
+        resolver_namespace TEXT NOT NULL,
+        logical_path       TEXT NOT NULL,
+        materialised_size  INTEGER,
+        checked_at         TEXT NOT NULL,
+        PRIMARY KEY (resolver_namespace, logical_path)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_path_availability_checked "
+    "ON path_availability(checked_at)",
+)
+
+
+# ==========================================================================
 # DOMAIN: curation -- pairing-memory edges + smartlist rules
 # Legacy source: apps/shared/pairings/schema_sql.py (ensure_phase08_tables,
 # called from the pairings repo AND the smartlists repo on construction)
@@ -1046,6 +1069,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "analysis_retention": _ANALYSIS_RETENTION,
     "lyrics": _LYRICS,
     "feedback": _FEEDBACK,
+    "path_index": _PATH_INDEX,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -1078,6 +1102,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "analysis_retention": "apps/shared/state/schema.py",
     "lyrics": "apps/shared/state/migrations_v10.py",
     "feedback": "apps/shared/state/migrations_v12.py",
+    "path_index": "apps/shared/state/migrations_v18.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -1136,6 +1161,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     ),
     "lyrics": ("lyric_verdict",),
     "feedback": ("feedback_pins",),
+    "path_index": ("path_availability",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -1172,7 +1198,10 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 #: its own rung. Named here rather than inline so the exclusion and the rung
 #: that compensates for it cannot drift apart silently.
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
-    {"native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback"}
+    {
+        "native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback",
+        "path_index",
+    }
 )
 
 _V1: list[str] = [
@@ -1224,7 +1253,13 @@ _V6: list[str] = list(_FEEDBACK)
 Its own rung for the reason _V2 and _V3 spell out. ``LEGACY_SHARED_STATE_VERSION``
 stays where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6]
+_V7: list[str] = list(_PATH_INDEX)
+"""6 -> 7: the persisted path availability index (legacy ladder v18, PERF-RB-01).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v6 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
