@@ -24,6 +24,7 @@ import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
+import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -642,7 +643,7 @@ export async function listTracksHydrated(params: {
 // ------------------------------------------------- the 4 new endpoints
 
 /** GET /tracks/{sid}/anlz - waveforms, beatgrid, cues, phrases + vocals.
- * points: 100..38400, default 38400 (server downsamples detail bands).
+ * points bounds and default come from GET /api/v1/settings (runtime policy).
  * Validates the contract's vocals field up front (and primes the
  * vocalsOf memo) so paint code can trust it.
  * Concurrent callers with the same sid+points share one in-flight fetch so
@@ -664,7 +665,7 @@ const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
  * handed a promise some unrelated in-flight call is already waiting on. */
 export async function fetchAnlz(
 	stable_id: string,
-	points = 38400,
+	points: number | null = defaultAnlzPoints(),
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
 	const gen = currentAnlzFetchGeneration();
@@ -674,7 +675,7 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, gen)}`,
 		'no-store'
 	).then((data) => {
 		vocalsOf(data);
@@ -711,10 +712,10 @@ export async function fetchAnlz(
  * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
-	points = 38400
+	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`,
 		'reload'
 	);
 	vocalsOf(data);
