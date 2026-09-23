@@ -57,6 +57,11 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
+	// The first-run wizard is a separate chunk (see the bundle-budget note on
+	// SetupOverlay). The fetch starts as soon as the shell script runs, so an
+	// "Open setup" click, or the first-run boot gate, awaits a chunk that is
+	// already in flight instead of a cold request made at click time.
+	const setupOverlayModule = import('$lib/components/setup/SetupOverlay.svelte');
 	const yieldBootGate = $derived(
 		bootGateYielded({
 			setup: setupOpen,
@@ -283,7 +288,7 @@
      open, and its own effects early-return while closed, so keeping it off the
      first paint changes nothing a user or an agent can observe. -->
 {#if setupOpen}
-	{#await import('$lib/components/setup/SetupOverlay.svelte') then { default: SetupOverlay }}
+	{#await setupOverlayModule then { default: SetupOverlay }}
 		<SetupOverlay />
 	{/await}
 {/if}
