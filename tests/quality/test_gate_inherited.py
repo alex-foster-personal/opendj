@@ -10,8 +10,8 @@ inherited. This suite pins the two ways the gate must tell the cases apart:
     and the message names main as the owner (a trunk regression, not yours).
   - base main measured BELOW this run's value        -> the change made an
     already-bad number worse, so it stays a hard REGRESSION and the run fails.
-  - the merge base cannot be measured                -> message unchanged, and
-    the run says why out loud. Never a silent downgrade, never a silent pass.
+  - the merge base cannot be measured                -> base_compare UNKNOWN
+    (exit 2), never REGRESSION; the run says why out loud. Never a silent pass.
 
 Regression lines:
   - if main is already over at this run's value but the run reports REGRESSION
@@ -20,8 +20,8 @@ Regression lines:
   - if this run adds to an over-allowance metric (base below the run) but the
     gate passes or prints INHERITED then it over-shot in the other direction
     and let a real regression through, so broken
-  - if the merge-base main cannot be measured but the gate guesses or passes
-    silently instead of failing with a why, so broken
+  - if the merge-base main cannot be measured but the gate prints REGRESSION or
+    passes silently instead of UNKNOWN with a why, so broken
 """
 
 from __future__ import annotations
@@ -164,26 +164,97 @@ def test_a_green_run_never_pays_for_the_merge_base_re_measure(
 # ----- undecidable base: never downgrade, never guess ----------------------
 
 
-def test_unmeasurable_merge_base_keeps_the_unqualified_regression(
+def test_unmeasurable_merge_base_reports_unknown_not_regression(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If the base tree cannot be measured, the line is unchanged and it fails."""
+    """[if] merge-base cannot be measured [then] UNKNOWN exit 2, [else stop]."""
     code, out = _run_gate(
         capsys, monkeypatch, metric_value=50.0, measure_error="the base tree has no apps/ to scan",
     )
-    assert code == 1, (
-        "if the merge-base main cannot be measured then the gate must still "
-        f"fail, but it exited {code}\n{out}"
+    assert code == 2, (
+        "if the merge-base main cannot be measured then the gate must exit 2 "
+        f"(UNKNOWN), but it exited {code}\n{out}"
     )
-    assert "REGRESSION" in out, (
-        "the message must stay exactly as today when the base cannot be "
-        f"measured, but it was relabeled\n{out}"
+    assert "UNKNOWN: base_compare:" in out, (
+        "the run must report base_compare as UNKNOWN rather than a verdict\n"
+        f"{out}"
     )
+    assert "REGRESSION" not in out, (
+        "inheritance-eligible metrics must not print REGRESSION when the base "
+        f"compare is undecidable\n{out}"
+    )
+    assert "FAIL:" not in out
     assert "INHERITED" not in out
     assert "cannot re-measure fake on merge-base main" in out, (
         "the run must say why it could not classify the metric rather than "
         f"passing silently\n{out}"
     )
+
+
+def test_resolve_base_git_failure_is_unknown_not_regression(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] merge-base git fails [then] UNKNOWN exit 2, [else stop]."""
+    code, out = _run_gate(
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        resolve=(None, "git merge-base HEAD origin/main failed (exit 1)"),
+    )
+    assert code == 2, f"expected UNKNOWN exit 2, got {code}\n{out}"
+    assert "UNKNOWN: base_compare:" in out
+    assert "REGRESSION" not in out
+    assert "FAIL:" not in out
+
+
+def test_hard_zero_regression_still_fails_when_base_compare_unknown(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] HARD_ZERO regresses and base is unknown [then] exit 1, [else stop]."""
+    hard_zero = next(iter(qg.HARD_ZERO))
+
+    def _fake_eval() -> list[qg.Metric]:
+        return [
+            qg.Metric(hard_zero, 1.0, "broken"),
+            _m(50.0),
+        ]
+
+    def _measure(_sha: str, _owners: list[str]) -> tuple[dict[str, float] | None, str]:
+        return None, "worktree add failed"
+
+    monkeypatch.setattr(qg, "EVALUATORS", (qg.Evaluator("fake", "fake title", _fake_eval),))
+    monkeypatch.setattr(
+        qg, "_load_baseline", lambda: {hard_zero: 0.0, _METRIC_KEY: _ALLOWANCE}
+    )
+    monkeypatch.setattr(qg, "_load_slack", dict)
+    monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
+    monkeypatch.setattr(qg, "_resolve_base", lambda: (_BASE_SHORT, ""))
+    monkeypatch.setattr(qg, "_measure_owners_at_base", _measure)
+
+    code = qg.main(["--only", "fake"])
+    out = capsys.readouterr().out
+    assert code == 1, (
+        "a measured HARD_ZERO regression must still fail even when base_compare "
+        f"is UNKNOWN, but it exited {code}\n{out}"
+    )
+    assert "REGRESSION" in out
+    assert "FAIL: 1 metric(s) got worse." in out
+    assert "UNKNOWN: base_compare:" in out
+
+
+def test_worktree_add_failure_includes_stderr_in_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] worktree add fails [then] stderr is in the reason, [else stop]."""
+    monkeypatch.setattr(
+        qg,
+        "_run_capture",
+        lambda *args, **kwargs: (1, "", "fatal: worktree path already exists"),
+    )
+    values, reason = qg._measure_owners_at_base("abc123def456", ["size"])
+    assert values is None
+    assert "fatal: worktree path already exists" in reason
+    assert "exit 1" in reason
 
 
 def test_head_is_on_main_so_there_is_nothing_to_inherit_from(

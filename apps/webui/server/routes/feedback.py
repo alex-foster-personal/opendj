@@ -59,6 +59,8 @@ from apps.shared.paths import DATA_DIR, PROJECT_ROOT
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
+_COMMENT_STATE_FILTERS = frozenset({"regressed", "harvested"})
+
 _TODOS_FILE = "review-todos.json"
 _COMMENTS_FILE = "comments.json"
 _GENERAL_FILE = "general-note.json"
@@ -194,10 +196,13 @@ class CommentOut(BaseModel):
     # question in agent_note, never blocked. Its agent_note starts with
     # `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
     # `product-fork: the maintainer must ...` to say what the maintainer must provide.
-    status: str | None = None  # open | issued | blocked | fixed | merged | archived
+    status: str | None = None  # open | issued | blocked | fixed | merged | harvested | archived
     issue_url: str | None = None
     agent_note: str | None = None
     updated_at: str | None = None
+    fixed_in_sha: str | None = None
+    fixed_at: str | None = None
+    harvested_at: str | None = None
     # PIN-AGENT-01: older operator pins retain their original identity when
     # read through this newer contract.
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
@@ -491,10 +496,34 @@ def patch_todo(todo_id: str, body: TodoPatchIn, request: Request) -> TodoOut:
 
 
 # ----- comments -----------------------------------------------------------
+def _filter_comments_by_state(
+    items: list[dict[str, Any]], state: str | None
+) -> list[dict[str, Any]]:
+    if state is None:
+        return items
+    if state not in _COMMENT_STATE_FILTERS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "FEEDBACK_INVALID_STATE",
+                "message": f"state must be one of {sorted(_COMMENT_STATE_FILTERS)!r}, not {state!r}",
+            },
+        )
+    if state == "harvested":
+        return [c for c in items if c.get("status") == "harvested"]
+    return [
+        c
+        for c in items
+        if c.get("fixed_in_sha")
+        and (c.get("updated_at") or "") > (c.get("fixed_at") or "")
+    ]
+
+
 @router.get("/comments", response_model=CommentListOut)
-def list_comments(request: Request) -> CommentListOut:
+def list_comments(request: Request, state: str | None = None) -> CommentListOut:
     items = _load(_dir(request) / _COMMENTS_FILE, "comments")
-    return CommentListOut(comments=[CommentOut.model_validate(c) for c in items])
+    filtered = _filter_comments_by_state(items, state)
+    return CommentListOut(comments=[CommentOut.model_validate(c) for c in filtered])
 
 
 @router.post("/comments", response_model=CommentOut, status_code=201)
@@ -537,89 +566,6 @@ def put_general(body: GeneralNotePutIn, request: Request) -> GeneralNoteOut:
 # ----- archive (the harvest's server side) --------------------------------
 @router.post("/archive", response_model=ArchiveOut)
 def archive_feedback(request: Request) -> ArchiveOut:
-    root = _dir(request)
-    todos_path = root / _TODOS_FILE
-    comments_path = root / _COMMENTS_FILE
-    general_path = root / _GENERAL_FILE
+    from .feedback_archive import perform_bulk_archive
 
-    with _COMMENTS_LOCK:
-        todos = _load(todos_path, "todos")
-        comments = _load(comments_path, "comments")
-        general = _load_general(general_path)
-
-        kept_todos: list[dict[str, Any]] = []
-        archived_todos: list[dict[str, Any]] = []
-        archived_feedback: list[dict[str, Any]] = []
-        for todo in todos:
-            if todo.get("done"):
-                archived_todos.append(todo)
-            elif todo.get("feedback"):
-                archived_feedback.append(
-                    {
-                        "todo_id": todo.get("id"),
-                        "title": todo.get("title"),
-                        "feedback": todo["feedback"],
-                        "chosen_option": todo.get("chosen_option"),
-                    }
-                )
-                kept_todos.append({**todo, "feedback": "", "updated_at": _now()})
-            else:
-                kept_todos.append(todo)
-
-        general_archived = bool(general["text"])
-        nothing_to_do = (
-            not archived_todos and not archived_feedback and not comments and not general_archived
-        )
-        if nothing_to_do:
-            return ArchiveOut(
-                archived_to=None,
-                todos_archived=0,
-                todo_feedback_archived=0,
-                comments_archived=0,
-                general_archived=False,
-            )
-
-        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        archive_path = root / f"archive-{stamp}.json"
-        if archive_path.exists():
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "FEEDBACK_ARCHIVE_COLLISION",
-                    "message": f"{archive_path} already exists; retry in 1s",
-                },
-            )
-        write_atomic(
-            archive_path,
-            json.dumps(
-                {
-                    "archived_at": _now(),
-                    "todos": archived_todos,
-                    "todo_feedback": archived_feedback,
-                    "comments": comments,
-                    "general": general if general_archived else None,
-                },
-                indent=2,
-            )
-            + "\n",
-        )
-
-        _save(todos_path, "todos", kept_todos)
-        _save(comments_path, "comments", [])
-        if general_archived:
-            write_atomic(
-                general_path,
-                json.dumps(
-                    {"text": "", "updated_at": _now(), "build": general.get("build")},
-                    indent=2,
-                )
-                + "\n",
-            )
-
-    return ArchiveOut(
-        archived_to=str(archive_path),
-        todos_archived=len(archived_todos),
-        todo_feedback_archived=len(archived_feedback),
-        comments_archived=len(comments),
-        general_archived=general_archived,
-    )
+    return perform_bulk_archive(_dir(request))

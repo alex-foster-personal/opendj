@@ -5282,11 +5282,10 @@ export interface paths {
          *     a beatgrid is never invented.
          *
          *     A caller naming ``backend=`` gets exactly what it named. The default
-         *     newest-row lookup instead defers to native-analysis v1 first: when v1
-         *     has already settled a beatgrid determination for this track (a
-         *     canonical own pointer exists, whatever it resolved to), this endpoint
-         *     preserves that gridless/failed state rather than silently substituting
-         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+         *     newest-row lookup instead refuses a superseded pre-v1 legacy row only
+         *     when the canonical own beatgrid lane is ``failed``; a successful native
+         *     backfill does not disable the legacy row while own is not yet serving
+         *     (STANDALONE-04).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -7522,6 +7521,12 @@ export interface components {
             /** Created At */
             created_at: string;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
+            /** Fixed At */
+            fixed_at?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
+            /** Harvested At */
+            harvested_at?: string | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -7574,6 +7579,8 @@ export interface components {
         CommentUpdateIn: {
             /** Agent Note */
             agent_note?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
             /** Issue Url */
             issue_url?: string | null;
             /** Status */
@@ -7616,6 +7623,8 @@ export interface components {
         };
         /** ConsentOut */
         ConsentOut: {
+            /** Consent Required */
+            consent_required: boolean;
             /** Decided At */
             decided_at: string | null;
             /**
@@ -17549,7 +17558,9 @@ export interface operations {
     };
     list_comments_api_v1_feedback_comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                state?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -17563,6 +17574,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

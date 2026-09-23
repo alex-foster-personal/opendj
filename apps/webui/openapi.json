@@ -4414,6 +4414,39 @@
               }
             ]
           },
+          "fixed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed At"
+          },
+          "fixed_in_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed In Sha"
+          },
+          "harvested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harvested At"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4578,6 +4611,19 @@
             ],
             "title": "Agent Note"
           },
+          "fixed_in_sha": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 7,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed In Sha"
+          },
           "issue_url": {
             "anyOf": [
               {
@@ -4693,6 +4739,10 @@
       },
       "ConsentOut": {
         "properties": {
+          "consent_required": {
+            "title": "Consent Required",
+            "type": "boolean"
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -4781,6 +4831,7 @@
           "terms_current_version",
           "decided_at",
           "telemetry_active",
+          "consent_required",
           "environment",
           "release",
           "replay_loader_url",
@@ -26317,6 +26368,24 @@
     "/api/v1/feedback/comments": {
       "get": {
         "operationId": "list_comments_api_v1_feedback_comments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -26327,6 +26396,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Comments",
@@ -35759,7 +35838,7 @@
     },
     "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
       "get": {
-        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead defers to native-analysis v1 first: when v1\nhas already settled a beatgrid determination for this track (a\ncanonical own pointer exists, whatever it resolved to), this endpoint\npreserves that gridless/failed state rather than silently substituting\na superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).",
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead refuses a superseded pre-v1 legacy row only\nwhen the canonical own beatgrid lane is ``failed``; a successful native\nbackfill does not disable the legacy row while own is not yet serving\n(STANDALONE-04).",
         "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
         "parameters": [
           {

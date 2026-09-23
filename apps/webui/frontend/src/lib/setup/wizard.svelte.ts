@@ -69,6 +69,10 @@ export const STEP_TITLES: Record<WizardStep, string> = {
 /** Which library the wizard is importing FROM. */
 export type ImportSource = 'rekordbox' | 'folder';
 
+/** Unselected until the operator picks a branch. STANDALONE-08: detection alone
+ * must not imply rekordbox. */
+export type ImportSourceSelection = ImportSource | null;
+
 /** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
 
@@ -100,29 +104,31 @@ export function previousStep(step: WizardStep): WizardStep {
  * rekordbox confirmation screen for a library the user is not importing, so
  * the route has to know which branch it is on.
  */
-export function visibleSteps(source: ImportSource): WizardStep[] {
-	if (source === 'folder') return WIZARD_STEPS.filter((step) => step !== 'confirm');
+export function visibleSteps(source: ImportSourceSelection): WizardStep[] {
+	if (source === 'folder' || source === null) {
+		return WIZARD_STEPS.filter((step) => step !== 'confirm');
+	}
 	return [...WIZARD_STEPS];
 }
 
 /** 1-based position of `step` in this branch's route, for "step 2 of 5". */
-export function stepPosition(step: WizardStep, source: ImportSource): number {
+export function stepPosition(step: WizardStep, source: ImportSourceSelection): number {
 	return visibleSteps(source).indexOf(step) + 1;
 }
 
 /** How many steps this branch has in total. */
-export function stepCount(source: ImportSource): number {
+export function stepCount(source: ImportSourceSelection): number {
 	return visibleSteps(source).length;
 }
 
-export function nextStepFor(step: WizardStep, source: ImportSource): WizardStep {
+export function nextStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
 	const route = visibleSteps(source);
 	const index = route.indexOf(step);
 	if (index === -1) return step;
 	return route[Math.min(index + 1, route.length - 1)];
 }
 
-export function previousStepFor(step: WizardStep, source: ImportSource): WizardStep {
+export function previousStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
 	const route = visibleSteps(source);
 	const index = route.indexOf(step);
 	if (index === -1) return step;
@@ -158,7 +164,7 @@ export function fatalBlockers(detection: RekordboxDetection | null): string[] {
 }
 
 export interface AdvanceContext {
-	source: ImportSource;
+	source: ImportSourceSelection;
 	detection: RekordboxDetection | null;
 	folderScan: FolderScan | null;
 	job: Job | null;
@@ -176,6 +182,10 @@ export interface AdvanceContext {
  * folder -- that is the whole point of the folder branch.
  */
 export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	// STANDALONE-08: [if] RB install detected [then] import only after explicit act, [else stop].
+	if (step === 'detect' && ctx.source === null) {
+		return 'choose an import source first';
+	}
 	if (step === 'detect' && ctx.source === 'folder') {
 		if (ctx.folderScan === null) return 'no folder has been checked yet';
 		if (ctx.folderScan.denied) {
@@ -220,8 +230,8 @@ function _message(exc: unknown): string {
 
 class SetupWizard {
 	step = $state<WizardStep>('welcome');
-	/** rekordbox by default; 'folder' is the no-rekordbox branch. */
-	source = $state<ImportSource>('rekordbox');
+	/** Unselected until the operator picks a branch. STANDALONE-08. */
+	source = $state<ImportSourceSelection>(null);
 	status = $state<SetupStatus | null>(null);
 	detection = $state<RekordboxDetection | null>(null);
 	/** The folder the operator typed, and what the daemon found in it. */
@@ -458,6 +468,10 @@ class SetupWizard {
 	 * the confirm step with the server's own sentence on it.
 	 */
 	async beginImport(options: { refreshDecrypt?: boolean } = {}): Promise<void> {
+		if (this.source !== 'rekordbox') {
+			this.error = 'choose rekordbox import before starting';
+			return;
+		}
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
@@ -479,6 +493,7 @@ class SetupWizard {
 	}
 
 	/** Skip the wizard. Persisted engine-side so a reload does not re-show it. */
+	// STANDALONE-08: [if] user declines import [then] finish setup without re-offer, [else stop].
 	async skip(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
@@ -488,6 +503,9 @@ class SetupWizard {
 		this.busy = true;
 		try {
 			this.status = await setDismissed(true);
+			// Declining is final for this run: any door that reopens the overlay
+			// without reopen() must still find a neutral wizard (Codex P2, #3561).
+			this.source = null;
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
@@ -511,6 +529,7 @@ class SetupWizard {
 		try {
 			this.status = await setDismissed(false);
 			this.step = 'welcome';
+			this.source = null;
 			this.error = null;
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
@@ -525,7 +544,7 @@ class SetupWizard {
 	/** Drop everything, for tests. */
 	_resetForTests(): void {
 		this.step = 'welcome';
-		this.source = 'rekordbox';
+		this.source = null;
 		this.status = null;
 		this.detection = null;
 		this.folderPath = '';
