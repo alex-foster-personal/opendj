@@ -39,10 +39,7 @@ def _request(
     *,
     lock: Path | None,
 ) -> dict[str, Any]:
-    try:
-        target = resolve_backend_base_url(lock_path=lock)
-    except UsageError as error:
-        raise EngineNotRunning(str(error)) from error
+    target = resolve_backend_base_url(lock_path=lock)
     url = f"{target.base_url.rstrip('/')}{path}"
     with httpx.Client(timeout=REQUEST_TIMEOUT_S) as client:
         response = client.request(method, url)
@@ -50,7 +47,7 @@ def _request(
         raise RuntimeError(f"{method} {path} returned {response.status_code}: {response.text}")
     payload = response.json()
     if not isinstance(payload, dict):
-        raise RuntimeError(f"{method} {path} returned non-object JSON")
+        raise TypeError(f"{method} {path} returned non-object JSON")
     return payload
 
 
@@ -68,10 +65,10 @@ def run_health(
             EXIT_FAILED,
         )
     try:
-        payload = _request("GET", OUTPUT_HEALTH_PATH, lock_path=lock)
-    except EngineNotRunning as error:
+        payload = _request("GET", OUTPUT_HEALTH_PATH, lock=lock)
+    except (UsageError, EngineNotRunning) as error:
         return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
-    except RuntimeError as error:
+    except (httpx.HTTPError, RuntimeError, TypeError) as error:
         return _fail(as_json, "request_failed", str(error), EXIT_FAILED)
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -94,7 +91,8 @@ def run_switch_output(
         return _fail(
             as_json,
             "usage",
-            "audio_switch_output refuses without --confirm; pass --confirm to cycle the default output",
+            "audio_switch_output refuses without --confirm; "
+            "pass --confirm to cycle the default output",
             EXIT_FAILED,
         )
     extra = [token for token in rest if token != "--confirm"]

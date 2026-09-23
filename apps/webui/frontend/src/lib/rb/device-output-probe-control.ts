@@ -7,10 +7,6 @@ export function registerDeviceOutputProbe(handle: DeviceOutputProbeHandle | null
 	_handle = handle;
 }
 
-export function requestDeviceOutputProbe(reason: string): void {
-	_handle?.requestProbe(reason);
-}
-
 export async function switchDeviceOutput(): Promise<void> {
 	await _handle?.switchOutput();
 }

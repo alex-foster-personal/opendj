@@ -126,3 +126,22 @@ def test_shell_client_reads_health_port(tmp_path: Path) -> None:
     shell_json.write_text(json.dumps({"health_port": 59999, "shell_pid": 1}), encoding="utf-8")
     client = ShellOutputHealthClient(data_dir=tmp_path)
     assert client.read_health_port() == 59999
+
+
+@pytest.mark.requirement("AUDIO-DEVICE-01")
+def test_cli_health_exits_no_engine_when_lock_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] audio_output_health has no engine [then] it exits 2 naming the lock, [else stop]."""
+    from apps.opendj_cli import EXIT_NO_ENGINE
+    from apps.opendj_cli.__main__ import main
+    from apps.webui import port_config
+
+    monkeypatch.delenv("MUSIC_DJ_BACKEND_PORT", raising=False)
+    monkeypatch.delenv("MUSIC_DJ_FRONTEND_PORT", raising=False)
+    monkeypatch.setattr(port_config, "WEBUI_ENV_FILE", tmp_path / "no.env")
+    missing = tmp_path / "absent" / ".engine.lock"
+    assert main(["--lock", str(missing), "audio_output_health"]) == EXIT_NO_ENGINE
+    assert str(missing) in capsys.readouterr().err

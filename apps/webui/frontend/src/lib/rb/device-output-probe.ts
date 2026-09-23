@@ -14,6 +14,13 @@ export const DEVICE_PROBE_POLL_MS = 2_000;
 export const DEVICE_PROBE_DEBOUNCE_MS = 500;
 export const DEVICE_PROBE_SLA_MS = 10_000;
 
+// Worst-case detection is one debounce plus one poll after the suspicion; it
+// must fit the 10 s acceptance SLA (issue #923, gate A), or the cadence
+// constants have drifted away from the promise the UI makes.
+if (DEVICE_PROBE_DEBOUNCE_MS + DEVICE_PROBE_POLL_MS > DEVICE_PROBE_SLA_MS) {
+	throw new Error('device output probe cadence exceeds its detection SLA');
+}
+
 const HAL_OVERLOAD_KIND = 'hal-overload';
 const HAL_OVERLOAD_MESSAGE_MARKERS = [
 	'skipping cycle due to overload',
