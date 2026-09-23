@@ -1,9 +1,7 @@
 """STANDALONE-05: genre works without rekordbox and never fails silently.
 
-- [if] a folder-imported GENRE tag exists and no rekordbox is present [then] the
-  wheel places it in a genre family, [else stop].
-- [if] the optional tags extra is not installed [then] the genre column names
-  that reason, [else stop].
+- [if] a folder GENRE tag and no rekordbox [then] the wheel files it in a family, [else stop].
+- [if] the optional tags extra is not installed [then] the genre column names it, [else stop].
 """
 from __future__ import annotations
 
