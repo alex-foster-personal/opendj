@@ -219,6 +219,8 @@ const TRACK = {
 	preview_b64: null,
 	preview_max: null,
 	file_exists: true,
+	// PERF-RB-01: the listing wire carries the typed status beside the bool.
+	file_availability: 'present',
 	quality: null,
 	play_count: 0,
 	vocals: { status: 'not_analyzed' },
