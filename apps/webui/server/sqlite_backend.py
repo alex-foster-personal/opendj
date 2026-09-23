@@ -379,7 +379,8 @@ def _fetch_fields(
             f"       modified_at "
             f"FROM track_fields "
             f"WHERE stable_id IN ({placeholders}) "
-            f"  AND field_name IN ({eav_placeholders})"
+            f"  AND field_name IN ({eav_placeholders}) "
+            f"  AND deleted_at IS NULL"
         )
         for row in conn.execute(sql, (*sub, *_EAV_FIELDS)):
             sid = row["stable_id"]

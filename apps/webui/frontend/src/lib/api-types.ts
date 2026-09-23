@@ -12186,6 +12186,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13371,6 +13373,10 @@ export interface components {
             file_exists: boolean;
             /** File Path */
             file_path?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13584,6 +13590,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */

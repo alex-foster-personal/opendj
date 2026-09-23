@@ -1982,6 +1982,7 @@
 			comments: wire.comments,
 			duration_ms: wire.duration_ms,
 			genre: wire.genre,
+			genre_reason: wire.genre_reason ?? null,
 			energy: wire.energy,
 			energy_source: wire.energy_source,
 			energy_reason: wire.energy_reason,
@@ -2036,9 +2037,8 @@
 			etag: '',
 			comments: track.notes ?? null,
 			duration_ms: track.duration_ms ?? null,
-			// genre/is_streaming are NOT in the listing contract (point 1) -
-			// null here means 'fall back to lazily fetched rb-meta'.
-			genre: null,
+			genre: track.genre ?? null,
+			genre_reason: track.genre_reason ?? null,
 			energy: track.energy,
 			energy_source: track.energy_source,
 			energy_reason: track.energy_reason,
