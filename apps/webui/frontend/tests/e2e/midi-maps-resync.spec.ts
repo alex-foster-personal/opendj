@@ -16,6 +16,29 @@ import { expect, test } from '@playwright/test';
 
 const API = process.env.MIDI_MAPS_E2E_API_BASE ?? '';
 
+/**
+ * Dev-server URLs for the modules the in-page callbacks below import.
+ *
+ * `page.evaluate` and `page.waitForFunction` bodies run in the browser, where
+ * `/src/lib/...` is a URL vite serves, not a module specifier resolvable from
+ * disk. TypeScript resolves a rooted specifier by PATH and never consults an
+ * ambient `declare module`, so the URLs cannot be declared away; written as
+ * string literals they produced seven `Cannot find module '/src/...'` errors
+ * under `svelte-check`, which is what kept the frontend job red once the unit
+ * tests ahead of it started passing again.
+ *
+ * Typing the values as `string` (not `as const`) is what stops that: `import()`
+ * on a non-literal yields `any`, so nothing is resolved at build time. The
+ * `as typeof import(...)` at each call site puts the types back, resolved from
+ * the real module, so renaming `getConnectionState`, `resolveMapForPort`,
+ * `requestMidiAccess` or `midiUi` still fails this check.
+ */
+const SRC: Record<'eventsBus' | 'webmidi' | 'midiUiState', string> = {
+	eventsBus: '/src/lib/api/events-bus.ts',
+	webmidi: '/src/lib/rb/midi/webmidi.svelte.ts',
+	midiUiState: '/src/lib/components/rb/midi/midi-ui-state.svelte.ts'
+};
+
 const DOC_A = {
 	schemaVersion: 1,
 	id: 'aaa-device',
@@ -68,26 +91,26 @@ test('installed maps reload after real WebSocket disconnect/reconnect', async ({
 	await expect(page.getByRole('button', { name: 'Jobs drawer' })).toBeEnabled();
 
 	// +layout.svelte calls connectEventsBus(); wait for the real socket to open.
-	await page.waitForFunction(async () => {
-		const { getConnectionState } = await import('/src/lib/api/events-bus.ts');
+	await page.waitForFunction(async (url) => {
+		const { getConnectionState } = (await import(url)) as typeof import('$lib/api/events-bus');
 		return getConnectionState() === 'open';
-	});
+	}, SRC.eventsBus);
 
 	// Arm installed-map listeners (same entry point the MIDI panel uses).
-	await page.evaluate(async () => {
-		const { requestMidiAccess } = await import(
-			'/src/lib/components/rb/midi/midi-ui-state.svelte.ts'
-		);
+	await page.evaluate(async (url) => {
+		const { requestMidiAccess } = (await import(
+			url
+		)) as typeof import('$lib/components/rb/midi/midi-ui-state.svelte');
 		await requestMidiAccess();
-	});
+	}, SRC.midiUiState);
 
 	const putA = await page.request.put(`${API}/api/v1/midi/maps/aaa-device`, { data: DOC_A });
 	expect(putA.status()).toBe(200);
 
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (url) => {
+		const { resolveMapForPort } = (await import(url)) as typeof import('$lib/rb/midi/webmidi.svelte');
 		return resolveMapForPort('AaaDevice 1') !== null;
-	});
+	}, SRC.webmidi);
 
 	// Disconnect the page's real WebSocket; the bus schedules reconnect.
 	await context.setOffline(true);
@@ -96,26 +119,28 @@ test('installed maps reload after real WebSocket disconnect/reconnect', async ({
 	expect(putB.status()).toBe(200);
 
 	// Map B was installed while the socket was down - not yet in the page registry.
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (url) => {
+		const { resolveMapForPort } = (await import(url)) as typeof import('$lib/rb/midi/webmidi.svelte');
 		return resolveMapForPort('BbbDevice 1') === null;
-	});
+	}, SRC.webmidi);
 
 	await context.setOffline(false);
 
-	await page.waitForFunction(async () => {
-		const { getConnectionState } = await import('/src/lib/api/events-bus.ts');
+	await page.waitForFunction(async (url) => {
+		const { getConnectionState } = (await import(url)) as typeof import('$lib/api/events-bus');
 		return getConnectionState() === 'open';
-	});
+	}, SRC.eventsBus);
 
-	await page.waitForFunction(async () => {
-		const { resolveMapForPort } = await import('/src/lib/rb/midi/webmidi.svelte.ts');
+	await page.waitForFunction(async (url) => {
+		const { resolveMapForPort } = (await import(url)) as typeof import('$lib/rb/midi/webmidi.svelte');
 		return resolveMapForPort('BbbDevice 1') !== null;
-	});
+	}, SRC.webmidi);
 
-	const installedMapsError = await page.evaluate(async () => {
-		const { midiUi } = await import('/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
+	const installedMapsError = await page.evaluate(async (url) => {
+		const { midiUi } = (await import(
+			url
+		)) as typeof import('$lib/components/rb/midi/midi-ui-state.svelte');
 		return midiUi.installedMapsError;
-	});
+	}, SRC.midiUiState);
 	expect(installedMapsError).toBeNull();
 });

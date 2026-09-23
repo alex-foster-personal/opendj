@@ -268,7 +268,7 @@ def _identify(
         report.files_rejected_unplayable += 1
         return None
     metadata = audio_files.read_metadata(entry.path)
-    if metadata is None:
+    if not _has_file_tags(metadata):
         report.files_without_tags += 1
     duration_ms = (
         int(metadata.duration_s * 1000)
@@ -288,6 +288,22 @@ def _identify(
         report.tracks_skipped += 1
         return None
     return stable_id, tier, duration_ms, metadata
+
+
+def _has_file_tags(metadata: audio_files.AudioMetadata | None) -> bool:
+    """True when mutagen (or a stub) supplied a user-facing tag, not just duration."""
+    if metadata is None:
+        return False
+    return any(
+        bool(value)
+        for value in (
+            metadata.title,
+            metadata.artist,
+            metadata.album,
+            metadata.genre,
+            metadata.comment,
+        )
+    )
 
 
 def _title(

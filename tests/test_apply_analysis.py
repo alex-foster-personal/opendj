@@ -20,8 +20,12 @@ import pytest
 
 from apps.analysis import selection
 from apps.shared import paths
+
+# _camelot_to_djay_key_idx is imported from its own module: apply_analysis
+# re-exported it only incidentally, and 17c7e99da (ruff F401 paydown) removed
+# that re-export, which broke collection of this module on every shard.
+from apps.sync.analysis_csv_live import _camelot_to_djay_key_idx
 from apps.sync.apply_analysis import (
-    _camelot_to_djay_key_idx,
     _csv_resolution_summary,
     _live_djay_db_path,
     _live_rb_db_path,

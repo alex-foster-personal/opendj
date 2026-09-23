@@ -5027,6 +5027,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/telemetry/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Consent */
+        get: operations["get_consent_api_v1_telemetry_consent_get"];
+        /** Put Consent */
+        put: operations["put_consent_api_v1_telemetry_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/telemetry/heartbeat": {
         parameters: {
             query?: never;
@@ -5264,11 +5282,10 @@ export interface paths {
          *     a beatgrid is never invented.
          *
          *     A caller naming ``backend=`` gets exactly what it named. The default
-         *     newest-row lookup instead defers to native-analysis v1 first: when v1
-         *     has already settled a beatgrid determination for this track (a
-         *     canonical own pointer exists, whatever it resolved to), this endpoint
-         *     preserves that gridless/failed state rather than silently substituting
-         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+         *     newest-row lookup instead refuses a superseded pre-v1 legacy row only
+         *     when the canonical own beatgrid lane is ``failed``; a successful native
+         *     backfill does not disable the legacy row while own is not yet serving
+         *     (STANDALONE-04).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -7077,6 +7094,8 @@ export interface components {
         };
         /** ClientErrorIn */
         ClientErrorIn: {
+            /** Any Deck Live */
+            any_deck_live?: boolean | null;
             /** Audio Worklet Available */
             audio_worklet_available: boolean;
             /** Client Event Id */
@@ -7502,6 +7521,12 @@ export interface components {
             /** Created At */
             created_at: string;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
+            /** Fixed At */
+            fixed_at?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
+            /** Harvested At */
+            harvested_at?: string | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -7554,6 +7579,8 @@ export interface components {
         CommentUpdateIn: {
             /** Agent Note */
             agent_note?: string | null;
+            /** Fixed In Sha */
+            fixed_in_sha?: string | null;
             /** Issue Url */
             issue_url?: string | null;
             /** Status */
@@ -7583,6 +7610,47 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
+        };
+        /** ConsentIn */
+        ConsentIn: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "declined";
+            /** Terms Version */
+            terms_version: string;
+        };
+        /** ConsentOut */
+        ConsentOut: {
+            /** Consent Required */
+            consent_required: boolean;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "undecided" | "accepted" | "declined";
+            /** Environment */
+            environment: string | null;
+            /** Release */
+            release: string | null;
+            /** Replay Loader Url */
+            replay_loader_url: string | null;
+            /**
+             * Replay On Error Sample Rate
+             * @default 1
+             */
+            replay_on_error_sample_rate: number;
+            /** Replay Session Sample Rate */
+            replay_session_sample_rate: number;
+            /** Telemetry Active */
+            telemetry_active: boolean;
+            /** Terms Current Version */
+            terms_current_version: string;
+            /** Terms Version */
+            terms_version: string | null;
         };
         /** CopilotTrackOut */
         CopilotTrackOut: {
@@ -8266,6 +8334,11 @@ export interface components {
              * @constant
              */
             source: "own";
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -17485,7 +17558,9 @@ export interface operations {
     };
     list_comments_api_v1_feedback_comments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                state?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -17499,6 +17574,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23446,6 +23530,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageClientsOut"];
+                };
+            };
+        };
+    };
+    get_consent_api_v1_telemetry_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+        };
+    };
+    put_consent_api_v1_telemetry_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

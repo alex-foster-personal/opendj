@@ -230,11 +230,14 @@ def test_archive_moves_never_deletes(fb: TestClient) -> None:
     assert archive["comments"][0]["text"] == "pin"
     assert archive["general"]["text"] == "general thoughts"
 
-    # The open todo survives with its harvested feedback reset, nothing else.
+    # The open todo survives with its harvested feedback reset; pins stay harvested.
     todos = fb.get("/api/v1/feedback/todos").json()["todos"]
     assert [t["title"] for t in todos] == ["still open"]
     assert todos[0]["feedback"] == ""
-    assert fb.get("/api/v1/feedback/comments").json()["comments"] == []
+    comments = fb.get("/api/v1/feedback/comments").json()["comments"]
+    assert len(comments) == 1
+    assert comments[0]["text"] == "pin"
+    assert comments[0]["status"] == "harvested"
     assert fb.get("/api/v1/feedback/general").json()["text"] == ""
 
 

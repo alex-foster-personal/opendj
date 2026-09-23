@@ -43,6 +43,13 @@ import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
 import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
+import { api } from '$lib/api/client';
+import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
+import {
+	MIDI_ENABLED_KEY,
+	onMidiEnabledHydrated,
+	persistMidiEnabled
+} from './midi-enabled-choice';
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -79,11 +86,6 @@ function _reloadInstalledMapsAfterLibraryChange(): void {
 // Kept here (rather than a module-scoped teardown inside action-glue itself)
 // because this is the one call site that attaches it.
 let _detachMidiGlue: (() => void) | null = null;
-
-/** localStorage key for the "user enabled MIDI" choice. Set once the user
- * successfully grants access; read on page load to auto-re-request without a
- * second click. Namespaced so it never collides with other app keys. */
-export const MIDI_ENABLED_KEY = 'dj:midi-enabled';
 
 export const midiUi: {
 	panelOpen: boolean;
@@ -130,16 +132,24 @@ export function toggleLogPopoutMinimized(): void {
 
 // --------------------------------------------------- enabled-choice persistence
 
-/** Persist (or clear) the user's MIDI-enabled choice. SSR/Node-safe: no-ops
- * where localStorage is absent, so importing this module server-side or in a
- * unit test never throws. */
-function _persistMidiEnabled(enabled: boolean): void {
-	if (typeof localStorage === 'undefined') return;
-	if (enabled) {
-		localStorage.setItem(MIDI_ENABLED_KEY, '1');
-	} else {
-		localStorage.removeItem(MIDI_ENABLED_KEY);
+// The localStorage half lives in midi-enabled-choice.ts so prefs hydration can
+// apply it without importing this module's MIDI runtime (see that file).
+const _syncMidiEnabledDisk = makeDiskWriteChain(async (patch: { midi_enabled: boolean }) => {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if daemon is down */
 	}
+});
+
+function _syncMidiEnabledToDisk(enabled: boolean): void {
+	void _syncMidiEnabledDisk({ midi_enabled: enabled });
+}
+
+/** Agent parity: set the persisted opt-in without requesting WebMIDI access. */
+export function setMidiEnabledChoice(enabled: boolean): void {
+	persistMidiEnabled(enabled);
+	_syncMidiEnabledToDisk(enabled);
 }
 
 /** True if the user previously enabled MIDI (persisted choice). */
@@ -157,6 +167,14 @@ export async function maybeAutoEnableMidi(): Promise<void> {
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
 }
+
+// The prefs GET lands after TopBar's mount-time maybeAutoEnableMidi() more
+// often than not, so a choice that lives only on disk needs this second run.
+// maybeAutoEnableMidi() is idempotent: it re-reads the persisted key and
+// declines while a request is pending.
+onMidiEnabledHydrated((enabled) => {
+	if (enabled) void maybeAutoEnableMidi();
+});
 
 /** Request WebMIDI access via the core runtime. The catch is NOT silent
  * handling: the error lands in midiUi.lastError (rendered red in the panel)
@@ -183,7 +201,7 @@ export async function requestMidiAccess(): Promise<void> {
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
-		_persistMidiEnabled(true);
+		setMidiEnabledChoice(true);
 		// Controllers onboarded in the app live in the daemon, not the bundle.
 		// Loaded AFTER initMidi and in its own catch on purpose: a daemon that
 		// cannot serve them must not cost the user the builtin maps mid-set.
@@ -217,7 +235,7 @@ export async function requestMidiAccess(): Promise<void> {
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		_persistMidiEnabled(false);
+		setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}

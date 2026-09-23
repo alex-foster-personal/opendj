@@ -185,6 +185,7 @@ def create_app(
     add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    app.state.engine_cfg = cfg
     add_rescue_routes(app)
 
     _drop_root_placeholder(app)
@@ -192,8 +193,6 @@ def create_app(
 
     contract_rev = compute_contract_rev(app.openapi())
     hub = WsHub(contract_rev=contract_rev, engine_version=ENGINE_VERSION)
-
-    app.state.engine_cfg = cfg
     app.state.engine_boot_id = boot_id
     app.state.contract_rev = contract_rev
     app.state.jobs_store = store

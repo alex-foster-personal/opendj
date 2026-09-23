@@ -74,7 +74,10 @@ function installBrowserGlobals() {
 	defineGlobal('crypto', { randomUUID: () => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
 	posted = [];
 	fetchedUrls = [];
-	globalThis.fetch = async (url, init) => {
+	globalThis.fetch = async (input, init) => {
+		// The typed openapi-fetch client (telemetry consent) passes a Request;
+		// the hand-rolled fetches pass a string. Same URL either way.
+		const url = typeof input === 'string' ? input : input.url;
 		fetchedUrls.push(url);
 		// The heartbeat POSTs a JSON body; the machine-pressure poll GETs with
 		// none, so only parse when one was actually sent.
@@ -160,8 +163,8 @@ test('the heartbeat and the pressure poll go through the same window, so neither
 	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
 	assert.equal(
 		manual.pending(),
-		4,
-		'the perf-tier fetch, heartbeat, pressure poll, and client samples are all queued, never dropped'
+		5,
+		'the perf-tier fetch, telemetry consent, heartbeat, pressure poll, and client samples are all queued, never dropped'
 	);
 
 	manual.release();
@@ -199,6 +202,19 @@ test('startAppInstruments arms the background demand shed', () => {
 		'utf8'
 	);
 	assert.match(source, /startBackgroundDemandShed/);
+});
+
+test('startAppInstruments registers the live-transport probe for client errors', () => {
+	// if startAppInstruments stops registering anyDeckPlaying as the probe then
+	// every client error carries any_deck_live: null and the engine's
+	// "never send to Sentry while a deck is live" rule falls back to the
+	// mirror read alone, which is stale for up to a second.
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /setLiveTransportProbe\(anyDeckPlaying\)/);
+	assert.match(source, /setLiveTransportProbe\(null\)/, 'teardown must clear the probe');
 });
 
 test('startAppInstruments wires silence dropout recovery', () => {

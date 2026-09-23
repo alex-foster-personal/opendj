@@ -22,7 +22,10 @@ pytestmark = pytest.mark.skipif(
     shutil.which("ffprobe") is None, reason="ffprobe not on PATH"
 )
 
-from apps.lyrics.register_stems import register_pair  # noqa: E402
+from apps.lyrics.register_stems import (  # noqa: E402
+    RegisterPairStorage,
+    register_pair,
+)
 from apps.stems.artifacts import load_stem_bundle  # noqa: E402
 
 from .conftest import use_local_mode  # noqa: E402
@@ -58,7 +61,7 @@ def test_register_pair_stamps_files_sha256_on_v3_manifest(tmp_path: Path) -> Non
         model_name="m",
         model_version="v",
         source_path=str(tmp_path / "x-vocals.wav"),
-        root=root,
+        storage=RegisterPairStorage(root=root),
     )
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["schema_version"] == 3
@@ -84,7 +87,7 @@ def test_register_pair_roundtrips_through_the_strict_loader(tmp_path: Path) -> N
         model_name="mel-band-roformer-test",
         model_version="ckpt-test",
         source_path=str(tmp_path / "x-vocals.wav"),
-        root=root,
+        storage=RegisterPairStorage(root=root),
     )
     assert out == root / "sid001"
     manifest = json.loads((out / "manifest.json").read_text())
@@ -107,7 +110,7 @@ def test_register_pair_refuses_misaligned_parts_and_leaves_nothing(tmp_path: Pat
             vocals=tmp_path / "y-vocals.wav",
             instrumental=tmp_path / "y-instrumental.wav",
             model_name="m", model_version="v",
-            source_path="unknown", root=root,
+            source_path="unknown", storage=RegisterPairStorage(root=root),
         )
     assert not (root / "sid002").exists(), "no partial bundle may remain"
 
@@ -121,7 +124,7 @@ def test_register_pair_refuses_mixed_codecs(tmp_path: Path) -> None:
             vocals=tmp_path / "z-vocals.wav",
             instrumental=tmp_path / "z-instrumental.flac",
             model_name="m", model_version="v",
-            source_path="unknown", root=tmp_path / "root",
+            source_path="unknown", storage=RegisterPairStorage(root=tmp_path / "root"),
         )
 
 
