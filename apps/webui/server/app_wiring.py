@@ -107,6 +107,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
+from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -489,6 +490,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     prefixed = (
         tracks_routes.router,
         client_errors_routes.router,
+        telemetry_consent_routes.router,
         error_feed_routes.router,
         client_events_routes.router,
         performance_telemetry_routes.router,

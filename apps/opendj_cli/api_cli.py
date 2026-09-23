@@ -3,8 +3,7 @@
 Resolves the backend from worktree ports when configured (``MUSIC_DJ_BACKEND_PORT``
 or the root ``.env``, same as ``just webui-ports``), otherwise from the installed
 app's ``.engine.lock`` (same discovery as ``opendj play``, ``opendj state``, and
-``opendj mcp``). Exit codes follow LIBM-13: 0 success, 1 failed, 2 usage,
-3 precondition failed (412), 4 conflict (409).
+``opendj mcp``). Exit codes: see :mod:`apps.opendj_cli` (canonical table).
 """
 
 from __future__ import annotations
@@ -18,6 +17,13 @@ from typing import Any, TextIO
 
 import httpx
 
+from apps.opendj_cli import (
+    EXIT_CONFLICT,
+    EXIT_FAILED,
+    EXIT_NO_ENGINE,
+    EXIT_OK,
+    EXIT_PRECONDITION,
+)
 from apps.opendj_cli.mcp_safety import SafetyRefusal, validate_api_path
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
 from apps.webui.port_config import PortConfigError, resolve_ports
@@ -25,12 +31,6 @@ from apps.webui.port_config import PortConfigError, resolve_ports
 HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 )
-
-EXIT_OK = 0
-EXIT_FAILED = 1
-EXIT_USAGE = 2
-EXIT_PRECONDITION = 3
-EXIT_CONFLICT = 4
 
 REQUEST_TIMEOUT_S = 60.0
 
@@ -51,10 +51,7 @@ def resolve_backend_base_url(
             base_url=resolve_ports(environ=environ).api_proxy_target,
         )
     except PortConfigError:
-        try:
-            origin = resolve_origin(lock_path, environ)
-        except EngineNotRunning as error:
-            raise UsageError(str(error)) from error
+        origin = resolve_origin(lock_path, environ)
         return _BackendTarget(base_url=origin.base_url, origin=origin)
 
 
@@ -147,7 +144,7 @@ def _emit_body_or_text(stream: TextIO, body: bytes) -> None:
 
 def _fail_usage(message: str) -> int:
     print(f"opendj api: {message}", file=sys.stderr)
-    return EXIT_USAGE
+    return EXIT_FAILED
 
 
 def _fail_structured(
@@ -282,6 +279,13 @@ def run(
             message=str(error),
             exit_code=EXIT_FAILED,
         )
+    except EngineNotRunning as error:
+        return _fail_structured(
+            as_json,
+            code="engine_not_running",
+            message=str(error),
+            exit_code=EXIT_NO_ENGINE,
+        )
     except UsageError as error:
         return _fail_usage(str(error))
 
@@ -299,6 +303,6 @@ def run(
     except (httpx.TransportError, httpx.TimeoutException) as error:
         if target.origin is not None:
             print(f"opendj api: {unreachable(target.origin, error)}", file=sys.stderr)
-            return EXIT_FAILED
+            return EXIT_NO_ENGINE
         return _fail_unreachable(base_url, port, error)
     return _write_response(response, url=url, as_json=as_json)

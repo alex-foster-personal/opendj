@@ -206,7 +206,8 @@ def local_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
     """
     versions = dict(_archived_versions(root, machine_id))
     for comment in _load(root / _COMMENTS_FILE, "comments"):
-        live = _version(comment, machine_id, archived=False)
+        harvested = comment.get("status") == "harvested"
+        live = _version(comment, machine_id, archived=False, harvested=harvested)
         archived = versions.get(live.doc["id"])
         if archived is None or live.updated_at >= archived.updated_at:
             versions[live.doc["id"]] = live
@@ -323,6 +324,14 @@ def _winning_side(
         return "import"
     if _same(mine, theirs):
         return "unchanged"
+    if theirs.archived and not mine.archived and mine.updated_at > theirs.updated_at:
+        log.info(
+            "feedback pins: rejected tombstone for %s: local %s > remote %s",
+            mine.doc.get("id"),
+            mine.updated_at,
+            theirs.updated_at,
+        )
+        return "export"
     if mine.harvested:
         return "import" if theirs.updated_at > mine.updated_at else "unchanged"
     if mine.updated_at == theirs.updated_at and theirs.origin_device_id != machine_id:

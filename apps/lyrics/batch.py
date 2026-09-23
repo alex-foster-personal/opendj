@@ -50,7 +50,12 @@ from apps.cloud.stem_source import resolve_stem_hydration_source
 from apps.lyrics import store
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.lyrics.ingest_state import ingest_state
-from apps.lyrics.register_stems import _corpus_pairs, _meta_model, register_pair
+from apps.lyrics.register_stems import (
+    RegisterPairStorage,
+    _corpus_pairs,
+    _meta_model,
+    register_pair,
+)
 from apps.shared.paths import PROJECT_ROOT, STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import locations as state_locations
@@ -453,7 +458,8 @@ def _register_pairs(stems_dir: Path, report: BatchReport, progress: Progress,
         try:
             register_pair(stable_id=plan.stable_id, vocals=voc, instrumental=ins,
                           model_name=model_name, model_version=model_version,
-                          source_path=source_path, root=stems_root)
+                          source_path=source_path,
+                          storage=RegisterPairStorage(root=stems_root))
         except Exception as exc:
             raise StageBlocked(f"register: {key} ({plan.stable_id}): {exc}") from exc
         registered_now += 1

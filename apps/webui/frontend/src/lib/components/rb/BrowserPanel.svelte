@@ -880,6 +880,10 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
+		// Reconcile accounting must not wait on playlist boot init (#3727): _init()
+		// throws when the fast playlist prefetch fails validation, and the Missing
+		// Tracks count comes from GET /api/v1/reconcile/summary, not from the tree.
+		void _loadReconcileSummary();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1149,9 +1153,6 @@
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
 		void _loadIngestCoverage();
-		// Reconcile accounting is likewise post-render: playlist navigation stays
-		// available while the authoritative playable totals settle.
-		void _loadReconcileSummary();
 	}
 
 	/**
@@ -2031,6 +2032,7 @@
 			comments: wire.comments,
 			duration_ms: wire.duration_ms,
 			genre: wire.genre,
+			genre_reason: wire.genre_reason ?? null,
 			energy: wire.energy,
 			energy_source: wire.energy_source,
 			energy_reason: wire.energy_reason,
@@ -2085,9 +2087,8 @@
 			etag: '',
 			comments: track.notes ?? null,
 			duration_ms: track.duration_ms ?? null,
-			// genre/is_streaming are NOT in the listing contract (point 1) -
-			// null here means 'fall back to lazily fetched rb-meta'.
-			genre: null,
+			genre: track.genre ?? null,
+			genre_reason: track.genre_reason ?? null,
 			energy: track.energy,
 			energy_source: track.energy_source,
 			energy_reason: track.energy_reason,

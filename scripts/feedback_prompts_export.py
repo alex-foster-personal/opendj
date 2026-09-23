@@ -82,7 +82,7 @@ def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
     """Validate every persisted ``CommentOut`` field without hook dependencies."""
     required_strings = ("id", "page", "text", "created_at")
     required_nullable_strings = ("anchor",)
-    optional_strings = ("status", "issue_url", "agent_note", "updated_at")
+    optional_strings = ("status", "issue_url", "agent_note", "updated_at", "fixed_in_sha", "fixed_at", "harvested_at")
     for field in required_strings:
         if not isinstance(pin.get(field), str):
             raise TypeError(f"feedback source {source} has a pin with invalid {field}")

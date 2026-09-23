@@ -246,6 +246,7 @@ def test_fallback_serves_an_anlz_shaped_grid_for_the_analyzed_track(
     beats = body["beatgrid"]["beats"]
     assert beats, "an analyzed track must yield beats, not an empty grid"
     assert body["beatgrid"]["beat_count"] == len(beats)
+    assert body["beatgrid"]["status"] == "ok"
     for beat in beats:
         assert set(beat) == {"n", "bpm", "t", "extrapolated"}
 

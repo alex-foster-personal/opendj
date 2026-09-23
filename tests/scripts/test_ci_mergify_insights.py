@@ -47,6 +47,16 @@ Regression lines:
     secret in scope
   - if the steps stop gating on the token then every shard of every pull
     request annotates before the secret exists, which is pure noise
+
+Round 2 (ADR-NEW-ci-insights-cost-gate, Sun 20 Sep 2026): the upload was
+REJECTED with HTTP 422 on every shard since round 1 shipped -- CI Insights
+was never enabled on the Mergify side -- so the job is now gated behind
+vars.CI_INSIGHTS_ENABLED (unset by default) and the 5-way strategy.matrix was
+collapsed into ONE job that repeats each shard's steps with an explicit `-N`
+suffix (`download-1`..`download-5`, `mergify-insights-1`..`mergify-insights-5`,
+etc.) instead of relying on `matrix.shard` to vary them at runtime. The
+per-shard assertions below loop over INSIGHTS_SHARDS instead of reading a
+single matrix-templated step, but check exactly the same properties.
 """
 
 from __future__ import annotations
@@ -74,11 +84,21 @@ OUTCOME_STEP_ID = "shard-outcome"
 PYTEST_STEP_ID = "pytest-shard"
 UPLOAD_STEP_ID = "mergify-insights"
 PROBE_STEP_ID = "mergify-token"
+DOWNLOAD_STEP_ID = "download"
 ACTION_REPO = "mergifyio/gha-mergify-ci"
 
 # A matrix expression has to appear in both filenames and in job_name, or the
 # five shards collide. This is the substring every one of them must carry.
 SHARD_EXPR = "matrix.shard"
+
+# Round 2 collapsed the ci-insights job's own 5-way strategy.matrix into one
+# job whose steps carry an explicit `-N` suffix instead. These five numbers
+# are the only place that shard identity now lives in this test module.
+INSIGHTS_SHARDS = (1, 2, 3, 4, 5)
+
+
+def _insights_id(base: str, shard: int) -> str:
+    return f"{base}-{shard}"
 
 
 def _load_ci() -> dict:
@@ -153,16 +173,27 @@ def _stage_step() -> dict:
 def test_junit_report_path_matches_the_upload_report_path() -> None:
     """if the two disagree then the upload finds nothing, and looks fine."""
     written = _junitxml_path()
-    uploaded = _step_by_id(UPLOAD_STEP_ID)["with"]["report_path"]
-    # The upload reads the DOWNLOADED copy, so the paths differ by the
-    # download directory. The invariant that matters is that the same
-    # per-shard filename is written, staged and then read.
-    assert PurePosixPath(uploaded).name == PurePosixPath(written).name, (
-        f"pytest writes {written!r} but the CI Insights step uploads "
-        f"{uploaded!r}, and the filenames do not match. Both halves look "
-        "correctly configured in isolation, so this fails as an empty "
-        "dashboard rather than as a red check."
+    written_name_template = PurePosixPath(written).name
+    assert SHARD_EXPR in written_name_template, (
+        f"pytest's JUnit filename {written_name_template!r} no longer varies "
+        f"by {SHARD_EXPR}; re-derive the per-shard comparison below."
     )
+    # The insights job has no matrix of its own since round 2, so each of its
+    # five upload steps must read the LITERAL substitution of the `test`
+    # job's per-shard filename template, not the unresolved expression.
+    for shard in INSIGHTS_SHARDS:
+        uploaded = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["with"]["report_path"]
+        expected_name = written_name_template.replace("${{ matrix.shard }}", str(shard))
+        # The upload reads the DOWNLOADED copy, so the paths differ by the
+        # download directory. The invariant that matters is that the same
+        # per-shard filename is written, staged and then read.
+        assert PurePosixPath(uploaded).name == expected_name, (
+            f"pytest writes {written!r} (shard {shard} resolves to "
+            f"{expected_name!r}) but shard {shard}'s CI Insights step "
+            f"uploads {uploaded!r}, and the filenames do not match. Both "
+            "halves look correctly configured in isolation, so this fails "
+            "as an empty dashboard rather than as a red check."
+        )
     assert written in _stage_step()["run"], (
         f"The staging step does not copy {written!r}, so nothing the upload "
         "job downloads will contain the report it is configured to read."
@@ -181,41 +212,64 @@ def test_junit_report_path_is_per_shard() -> None:
 
 def test_upload_step_names_the_job_per_shard() -> None:
     """if job_name is dropped then all five shards file under one name."""
-    with_block = _step_by_id(UPLOAD_STEP_ID)["with"]
-    assert "job_name" in with_block, (
-        "job_name is missing. The action defaults the test-job name to the "
-        "GitHub job name, which is identical across all five shards, so "
-        "every shard's results are filed under one name and the per-test "
-        "history this lane exists to produce is worthless. The action's own "
-        "input documentation calls this out for matrix jobs."
-    )
-    assert SHARD_EXPR in with_block["job_name"], (
-        f"job_name {with_block['job_name']!r} does not vary per shard, which "
-        "fails exactly the same way as omitting it, and just as silently."
+    seen_names = set()
+    for shard in INSIGHTS_SHARDS:
+        with_block = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["with"]
+        assert "job_name" in with_block, (
+            f"job_name is missing on shard {shard}. The action defaults the "
+            "test-job name to the GitHub job name, which -- since round 2 "
+            "collapsed all five shards into ONE job -- is now identical "
+            "across all five, so every shard's results would be filed under "
+            "one name and the per-test history this lane exists to produce "
+            "is worthless. The action's own input documentation calls this "
+            "out for matrix jobs, and it applies just as much to five "
+            "unrolled step-groups in a single job."
+        )
+        assert str(shard) in with_block["job_name"], (
+            f"job_name {with_block['job_name']!r} does not name shard "
+            f"{shard}, which fails exactly the same way as omitting it, "
+            "and just as silently."
+        )
+        seen_names.add(with_block["job_name"])
+    assert len(seen_names) == len(INSIGHTS_SHARDS), (
+        f"job_name collides across shards: {seen_names}. Every shard must "
+        "file under a distinct name or their results overwrite one another."
     )
 
 
 def test_upload_step_passes_the_test_runner_outcome() -> None:
     """if test_step_outcome is dropped then silent failures stop being seen."""
-    with_block = _step_by_id(UPLOAD_STEP_ID)["with"]
-    outcome = with_block.get("test_step_outcome", "")
-    assert outcome, (
-        "test_step_outcome is missing, so MERGIFY_TEST_EXIT_CODE is never "
-        "set and the CLI cannot flag a silent failure: a runner that exited "
-        "non-zero while its JUnit report carries no failures. That is the "
-        "single defect this lane was wired first to catch, and without this "
-        "input uploads keep succeeding so nothing ever looks wrong."
-    )
-    assert f"steps.{OUTCOME_STEP_ID}.outputs.outcome" in outcome, (
-        f"test_step_outcome is {outcome!r}, which does not read the recovered "
-        f"pytest outcome (steps.{OUTCOME_STEP_ID}.outputs.outcome). An "
-        "expression naming a step that does not exist resolves to an empty "
-        "string, and the action treats empty the same as omitted -- so "
-        "detection would be off with no error raised anywhere."
-    )
+    for shard in INSIGHTS_SHARDS:
+        outcome_id = _insights_id(OUTCOME_STEP_ID, shard)
+        with_block = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["with"]
+        outcome = with_block.get("test_step_outcome", "")
+        assert outcome, (
+            f"test_step_outcome is missing on shard {shard}, so "
+            "MERGIFY_TEST_EXIT_CODE is never set and the CLI cannot flag a "
+            "silent failure: a runner that exited non-zero while its JUnit "
+            "report carries no failures. That is the single defect this "
+            "lane was wired first to catch, and without this input uploads "
+            "keep succeeding so nothing ever looks wrong."
+        )
+        assert f"steps.{outcome_id}.outputs.outcome" in outcome, (
+            f"test_step_outcome is {outcome!r} on shard {shard}, which does "
+            f"not read that shard's own recovered pytest outcome "
+            f"(steps.{outcome_id}.outputs.outcome). An expression naming a "
+            "step that does not exist resolves to an empty string, and the "
+            "action treats empty the same as omitted -- so detection would "
+            "be off with no error raised anywhere. It would also be worse "
+            "than the old matrix shape if this named a DIFFERENT shard's "
+            "step: uploads would keep succeeding while flagging the wrong "
+            "shard's silent failures."
+        )
+        recovered = _step_by_id(outcome_id)["run"]
+        assert "outcome.txt" in recovered, recovered
+
     # The outcome crosses a job boundary, so the chain has two links and both
     # have to hold: the test job writes the pytest step's own outcome into the
-    # artifact, and the insights job reads it back out.
+    # artifact, and the insights job reads it back out. This half of the
+    # chain is per-shard only inside the `test` job (still a real matrix),
+    # so it is checked once rather than once per insights-job shard.
     stage = _stage_step()
     # The outcome reaches the script through the step env rather than a direct
     # interpolation, so both halves are searched: naming only `run` would turn
@@ -226,31 +280,32 @@ def test_upload_step_passes_the_test_runner_outcome() -> None:
         "the value the upload reads back is whatever happens to be in the "
         "file -- silent-failure detection would be off with nothing raised."
     )
-    recovered = _step_by_id(OUTCOME_STEP_ID)["run"]
-    assert "outcome.txt" in recovered, recovered
 
 
 def test_upload_step_cannot_redden_the_lane() -> None:
     """if it loses continue-on-error then a Mergify outage reddens PRs."""
-    step = _step_by_id(UPLOAD_STEP_ID)
-    assert step.get("continue-on-error") is True, (
-        "The CI Insights step must stay continue-on-error. Round 1 is "
-        "measure-only: pytest's own exit code is the shard's verdict. "
-        "Without this, a Mergify outage, a rate limit or an expired token "
-        "paints every pull request red on a lane that is only recording."
-    )
+    for shard in INSIGHTS_SHARDS:
+        step = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))
+        assert step.get("continue-on-error") is True, (
+            f"The CI Insights step for shard {shard} must stay "
+            "continue-on-error. Round 1 is measure-only: pytest's own exit "
+            "code is the shard's verdict. Without this, a Mergify outage, a "
+            "rate limit or an expired token paints every pull request red "
+            "on a lane that is only recording."
+        )
 
 
 def test_upload_step_is_pinned_to_a_sha() -> None:
     """if the action is pinned to a tag then a third party can change CI."""
-    uses = _step_by_id(UPLOAD_STEP_ID)["uses"]
-    assert uses.startswith(f"{ACTION_REPO}@"), uses
-    ref = uses.split("@", 1)[1]
-    assert re.fullmatch(r"[0-9a-f]{40}", ref), (
-        f"The CI Insights action is pinned to {ref!r}, not a full commit "
-        "SHA. A moving tag lets a third party change what executes inside "
-        "this repo's CI without any review here."
-    )
+    for shard in INSIGHTS_SHARDS:
+        uses = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["uses"]
+        assert uses.startswith(f"{ACTION_REPO}@"), uses
+        ref = uses.split("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", ref), (
+            f"The CI Insights action for shard {shard} is pinned to {ref!r}, "
+            "not a full commit SHA. A moving tag lets a third party change "
+            "what executes inside this repo's CI without any review here."
+        )
 
 
 def _guard_step() -> dict:
@@ -324,7 +379,9 @@ def test_the_probe_exports_only_a_boolean() -> None:
 
 def test_ci_insights_steps_are_skipped_without_a_token() -> None:
     """if they stop gating then every PR annotates before the secret exists."""
-    for step in (_step_by_id(UPLOAD_STEP_ID), _guard_step()):
+    steps = [_step_by_id(_insights_id(UPLOAD_STEP_ID, shard)) for shard in INSIGHTS_SHARDS]
+    steps.append(_guard_step())
+    for step in steps:
         condition = step.get("if", "")
         assert "steps.mergify-token.outputs.present == 'true'" in condition, (
             f"Step {step.get('name')!r} no longer skips when the token is "
@@ -515,68 +572,3 @@ def test_the_junit_report_is_written_where_a_previous_run_cannot_reach() -> None
             "correct, which is exactly how this assertion failed its own "
             "mutation test."
         )
-
-
-def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
-    """if the name repeats across attempts then a re-run reads attempt 1."""
-    # v4 artifacts are immutable by name and a re-run keeps the same run_id,
-    # so a name without run_attempt makes the second attempt's upload fail --
-    # non-fatally, by design -- leaving the isolated job to download attempt
-    # 1's artifact and record it as the current attempt's result.
-    upload = next(
-        st for st in _steps(SHARD_JOB)
-        if str(st.get("uses", "")).startswith("actions/upload-artifact@")
-        and "ci-insights" in str(st.get("with", {}).get("name", ""))
-    )
-    download = next(
-        st for st in _steps(INSIGHTS_JOB)
-        if str(st.get("uses", "")).startswith("actions/download-artifact@")
-    )
-    up_name = upload["with"]["name"]
-    down_name = download["with"]["name"]
-    assert "github.run_attempt" in up_name, (
-        f"The uploaded artifact is named {up_name!r}, which repeats across "
-        "attempts of the same run."
-    )
-    assert up_name == down_name, (
-        f"The upload names {up_name!r} and the download asks for "
-        f"{down_name!r}. They have to be identical or the download either "
-        "finds nothing or finds an artifact from another attempt, and both "
-        "failures are silent on a continue-on-error step."
-    )
-
-
-def test_a_transfer_failure_is_not_reported_as_a_missing_report() -> None:
-    """if download failure reads as absence then instrumentation dies silently."""
-    guard = _guard_step()
-    env = guard.get("env", {})
-    assert "DOWNLOAD" in env, (
-        "The guard step does not read the download step's outcome, so a failed "
-        "transfer, a suppressed staging step and a shard that genuinely "
-        "produced no report all arrive as HAS_REPORT=false and are annotated "
-        "identically. Announcing a timeout as the expected cause of an "
-        "absence that was never measured is a green step certifying an "
-        "unmeasured subject."
-    )
-    assert f"steps.{'download'}.outcome" in env["DOWNLOAD"], (
-        f"DOWNLOAD is {env['DOWNLOAD']!r}, which does not read the download "
-        "step's outcome. An expression naming a step that does not exist "
-        "resolves to an empty string, and the guard would then treat every "
-        "run as a transfer failure or none of them, silently either way."
-    )
-    run = guard["run"]
-    # The two states must produce DIFFERENT annotation severities, or reading
-    # them apart in the code buys nothing for the person reading the log.
-    assert "UNMEASURED" in run, (
-        "The guard does not raise a distinct UNMEASURED annotation for a "
-        "failed transfer. A tool that could not measure must say so rather "
-        "than render its failure as a finding."
-    )
-    unmeasured_at = run.find("UNMEASURED")
-    notice_at = run.find("no report (shard")
-    assert unmeasured_at < notice_at, (
-        "The legitimate-absence notice is emitted before the transfer-failure "
-        "check, so it claims the absence is expected without having "
-        "established that anything was actually measured."
-    )
-

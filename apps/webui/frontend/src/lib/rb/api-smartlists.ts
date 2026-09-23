@@ -62,6 +62,7 @@ export interface SmartlistTrackRow {
 	energy_reason: string;
 	duration_ms: number | null;
 	genre: string | null;
+	genre_reason?: string | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;
