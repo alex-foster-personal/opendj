@@ -359,7 +359,7 @@ def test_detect_folder_counts_what_is_there(
 def test_detect_folder_strips_trailing_slash(
     client: TestClient, library: Path
 ) -> None:
-    """[if] detect gets a trailing slash [then] path is canonical [else stop]."""
+    """[if] detect gets a trailing slash [then] path is canonical, [else stop]."""
     body = client.get(
         f"{API}/detect/folder", params={"path": f"{library}/"}
     ).json()
@@ -370,7 +370,7 @@ def test_detect_folder_strips_trailing_slash(
 def test_folder_import_rejects_duplicate_normalized_paths(
     client: TestClient, library: Path
 ) -> None:
-    """[if] folders differ only by trailing slash [then] 422 duplicate [else stop]."""
+    """[if] folders differ only by trailing slash [then] 422 duplicate, [else stop]."""
     response = client.post(
         f"{API}/import/folder",
         json={"folders": [f"{library}/", str(library)]},
@@ -382,7 +382,7 @@ def test_folder_import_rejects_duplicate_normalized_paths(
 def test_folder_import_accepts_multiple_roots(
     client: TestClient, tmp_path: Path, data_dir: Path
 ) -> None:
-    """[if] two library roots are posted [then] job carries both [else stop]."""
+    """[if] two library roots are posted [then] job carries both, [else stop]."""
     first = tmp_path / "library-a"
     second = tmp_path / "library-b"
     _write_wav(first / "one.wav")
