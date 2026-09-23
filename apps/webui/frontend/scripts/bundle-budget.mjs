@@ -163,9 +163,9 @@ const BUDGETS = [
   // PR #3645 (DECKUX-19 stem mini-waveforms) adds +333 bytes of first-paint
   // weight (the show_stems pref, settings row and perf-tier cache scalers)
   // and lands AFTER #3681, so it takes no raise of its own: both fit under
-  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally,
-  // 161 bytes of headroom left.
-  { name: 'library', limit: 258048, measured: 257887, note: 'initial load of "/"' },
+  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally;
+  // after #3739 (main 47324919a) it measured 257,987, 61 bytes of headroom left.
+  { name: 'library', limit: 258048, measured: 257987, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
