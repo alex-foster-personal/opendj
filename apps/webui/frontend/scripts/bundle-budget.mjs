@@ -153,7 +153,18 @@ const BUDGETS = [
   // CI before this PR, the same "no headroom left" state the performance
   // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
   // reduction retires this KiB, not the consent code.
-  { name: 'library', limit: 257024, measured: 256494, note: 'initial load of "/"' },
+  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3645, DECKUX-19 stem mini-waveforms):
+  // the show_stems pref (prefs.svelte.ts default + blob validation + setter,
+  // prefs-hydrate, the settings catalog row and apply case) and the
+  // perf-tier stem-waveform cache scalers are app-level first-paint weight.
+  // The envelope fetch itself was moved out of api-rb.ts into the
+  // /performance-only cache module (-54 bytes) before raising. Clean
+  // origin/main 7a0a7d948 measured 256,740 locally (284 bytes of headroom);
+  // this PR measured 257,073 locally, +333 bytes. Payback: lazy-loading the
+  // settings catalog (it renders only while the settings overlay is open)
+  // retires this KiB. PR #3681 raises this same entry to 258048 for its own
+  // +766; whichever lands second keeps one raise that covers both.
+  { name: 'library', limit: 258048, measured: 257073, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

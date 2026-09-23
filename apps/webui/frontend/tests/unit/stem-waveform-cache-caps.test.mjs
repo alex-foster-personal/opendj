@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let caps;
-
-afterEach(async () => {
-	if (caps !== undefined) caps.resetStemWaveformCapStateForTests();
-});
 
 test('stem waveform LRU evicts the oldest ready entry past the entry cap', async () => {
 	caps = await loadTypeScriptModule('src/lib/components/rb/wave/stem-waveform-cache-caps.ts');

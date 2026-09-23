@@ -16,7 +16,6 @@ before(async () => {
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	cache.resetStemWaveformCacheForTests();
 });
 
 function envelopeResponse(stableId, part) {

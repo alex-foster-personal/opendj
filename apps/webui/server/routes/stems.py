@@ -606,7 +606,9 @@ class StemWaveformOut(BaseModel):
 
 def _stem_waveform_cache_root(request: Request) -> Path:
     configured = getattr(request.app.state, "data_dir", None)
-    root = Path(configured) if configured is not None else Path(os.environ.get("MDT_DATA_DIR", "data"))
+    if configured is not None:
+        return Path(configured) / "state" / "stem-waveform-cache"
+    root = Path(os.environ.get("MDT_DATA_DIR", "data"))
     return root / "state" / "stem-waveform-cache"
 
 

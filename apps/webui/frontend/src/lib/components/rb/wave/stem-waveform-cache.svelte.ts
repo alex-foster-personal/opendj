@@ -3,15 +3,36 @@
  *
  * Fetches server-produced mono peaks only - never stem PCM or decodeAudioData.
  */
-import { fetchStemWaveform, RbApiError } from '$lib/rb/api-rb';
+import { fetchRbJson, RbApiError } from '$lib/rb/api-rb';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import {
 	applyStemWaveformCaps,
 	bindStemWaveformCapCache,
 	nextStemWaveformTouch,
-	resetStemWaveformCapStateForTests,
 	retouchStemWaveformReadyEntry
 } from './stem-waveform-cache-caps';
+
+interface StemWaveformEnvelope {
+	schema: number;
+	stable_id: string;
+	part: string;
+	layout: string;
+	points: number;
+	envelope: number[];
+}
+
+/** GET /tracks/{stable_id}/stems/{part}/waveform - server mono peak envelope.
+ * Lives here, not in api-rb.ts, so it ships with /performance rather than in
+ * the library page's first-paint bundle. */
+async function fetchStemWaveform(stable_id: string, part: string): Promise<StemWaveformEnvelope> {
+	const data = await fetchRbJson<StemWaveformEnvelope>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/stems/${encodeURIComponent(part)}/waveform`
+	);
+	if (!Array.isArray(data.envelope) || data.envelope.length === 0) {
+		throw new Error(`stem waveform ${stable_id}/${part}: empty envelope`);
+	}
+	return data;
+}
 
 export type StemWaveformEntry =
 	| { status: 'loading' }
@@ -56,24 +77,4 @@ export function ensureStemWaveform(stable_id: string, part: string): void {
 
 export function getStemWaveformEntry(stable_id: string, part: string): StemWaveformEntry | undefined {
 	return _cache[_cacheKey(stable_id, part)];
-}
-
-/** Test hook: reset cache and re-bind caps consumer state. */
-export function resetStemWaveformCacheForTests(): void {
-	for (const key of Object.keys(_cache)) delete _cache[key];
-	resetStemWaveformCapStateForTests();
-}
-
-/** Count of ready entries for bounded-cache tests. */
-export function stemWaveformCacheReadyCount(): number {
-	let count = 0;
-	for (const entry of Object.values(_cache)) {
-		if (entry.status === 'ready') count++;
-	}
-	return count;
-}
-
-/** Force cap eviction using current tier limits. */
-export function applyStemWaveformCacheCapsNow(): void {
-	applyStemWaveformCaps();
 }

@@ -13,11 +13,6 @@ export const STEM_WAVEFORM_ESTIMATE_BYTES = 4 * 1024;
 let _touchSeq = 0;
 let _boundCache: Record<string, StemWaveformLruEntry> | null = null;
 
-/** Test hook: reset LRU touch sequence between unit tests. */
-export function resetStemWaveformCapStateForTests(): void {
-	_touchSeq = 0;
-}
-
 export function bindStemWaveformCapCache(cache: Record<string, StemWaveformLruEntry>): void {
 	_boundCache = cache;
 }

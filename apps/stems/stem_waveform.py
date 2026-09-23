@@ -13,13 +13,13 @@ import os
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
 from apps.analysis_waveform.bands import _downsample_max
 from apps.analysis_waveform.decode import LocalDecodeUnavailable, decode_peaks
-from apps.stems.artifacts import StemArtifactError, StemBundle, StemBundleNotFoundError, load_stem_bundle
+from apps.stems.artifacts import StemArtifactError, StemBundle, StemPart, load_stem_bundle
 
 STEM_WAVEFORM_POINTS: int = 512
 STEM_WAVEFORM_SCHEMA: int = 1
@@ -32,10 +32,7 @@ _INSTRUMENTAL_PART = "instrumental"
 
 def _normalize_peaks(peaks: np.ndarray) -> list[float]:
     """Mono peaks in ``0..1``, length ``STEM_WAVEFORM_POINTS``."""
-    if peaks.ndim == 2:
-        mono = peaks.max(axis=1)
-    else:
-        mono = peaks.reshape(-1)
+    mono = peaks.max(axis=1) if peaks.ndim == 2 else peaks.reshape(-1)
     down = _downsample_max(mono.astype(np.float64), STEM_WAVEFORM_POINTS)
     peak = float(down.max()) if down.size else 0.0
     if peak <= 0:
@@ -108,20 +105,22 @@ def _bundle_part_path(bundle: StemBundle, part: str) -> Path:
     if part == _INSTRUMENTAL_PART:
         if bundle.layout != "demucs4":
             if part in bundle.parts:
-                return bundle.files[part]
+                return bundle.files[cast(StemPart, part)]
             raise StemArtifactError(
                 f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}"
             )
         bass = bundle.files.get("bass")
         other = bundle.files.get("other")
         if bass is None or other is None:
-            raise StemArtifactError(f"{bundle.layout} bundle missing bass/other for instrumental envelope")
+            raise StemArtifactError(
+                f"{bundle.layout} bundle missing bass/other for instrumental envelope"
+            )
         return bass  # fingerprint uses both files below
     if part not in bundle.parts:
         raise StemArtifactError(
             f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}"
         )
-    return bundle.files[part]
+    return bundle.files[cast(StemPart, part)]
 
 
 def _instrumental_fingerprint(bundle: StemBundle) -> str:

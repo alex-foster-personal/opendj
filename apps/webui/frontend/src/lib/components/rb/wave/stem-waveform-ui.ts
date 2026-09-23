@@ -32,11 +32,6 @@ export function stemWaveRowUnavailableTip(deck: DeckState, stem: StemControl): s
 	return null;
 }
 
-export function stemWaveRowCount(deck: DeckState, showStems: boolean): number {
-	if (!showStems || deck.stable_id === null) return 0;
-	return STEM_CONTROLS.length;
-}
-
 export function stemWaveRowColor(stem: StemControl): string {
 	return STEM_COLORS[stem];
 }
