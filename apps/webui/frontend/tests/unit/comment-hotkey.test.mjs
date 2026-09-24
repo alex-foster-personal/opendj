@@ -14,6 +14,9 @@ function read(rel) {
 }
 
 const hotkeys = read('src/lib/rb/performance-hotkeys.ts');
+// the m hotkey moved into its own module (comment-pin-hotkeys.ts), installed
+// from +layout.svelte, so it fires globally rather than only while the
+// performance-hotkeys handler is attached.
 const commentPinHotkeys = read('src/lib/rb/comment-pin-hotkeys.ts');
 const routing = read('src/lib/rb/performance-shortcut-routing.ts');
 // savePinDraft's textarea moved into its own component (Thu 3 Sep 2026,
