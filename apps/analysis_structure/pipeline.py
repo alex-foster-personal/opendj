@@ -46,6 +46,12 @@ PRODUCER = "allin1"
 PRODUCER_VERSION = "0.1.0"  # bump when the quantizer policy or runner pins change
 RUNNER = Path(__file__).with_name("allin1_runner.py")
 PHRASE_BARS = 4
+# Boundaries snap to downbeats, and phrase alignment is REPORTED, not forced:
+# on the SALAMI spike (4 tracks, annotator ceiling F@0.5 0.60) the downbeat
+# snap lifted All-In-One from 0.44 to 0.47, and moving a further bar onto a
+# 4-bar phrase dropped it to 0.29. Raise this only once phrase snapping beats
+# the downbeat snap against rekordbox PSSI on dance music.
+PHRASE_MAX_MOVE_BARS = 0
 
 
 def cache_dir(data_dir: Path) -> Path:
@@ -109,7 +115,9 @@ def build_sidecar(
     if not segments:
         return _failed(stable_id, "no_segments", versions=raw.get("versions"))
     duration_s = max(s[1] for s in segments)
-    q = quantize(segments, downbeats, phrase_bars=PHRASE_BARS)
+    q = quantize(
+        segments, downbeats, phrase_bars=PHRASE_BARS, max_phrase_move_bars=PHRASE_MAX_MOVE_BARS
+    )
     sections = q.sections(duration_s)
     if not sections:
         return _failed(stable_id, "no_boundaries", versions=raw.get("versions"))

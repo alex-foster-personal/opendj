@@ -4,8 +4,10 @@ WHY A LINEAR HEAD. The embedding (`clap_runner.py`) already separates genres;
 the classifier only has to draw lines between them. A linear softmax head
 trains in well under a second on a few thousand tracks, stores as a small JSON
 document with no pickle, and cannot memorize a library the way a deep head
-can. On the FMA spike (Thu 24 Sep 2026, 281 full tracks, 10 genres) a linear
-probe on CLAP beat zero-shot text prompts by a wide margin; the numbers are in
+can. On the FMA spike (Thu 24 Sep 2026, 278 embedded full tracks, 10
+genres, 5-fold CV) this head scored 0.62 accuracy against 0.45 for CLAP
+zero-shot text prompts, 0.11 for always guessing the biggest genre and 0.08
+with shuffled labels; details in
 `docs/research/segmentation-genre-spike-20260924.md`.
 
 WHY NUMPY AND NOT SCIKIT-LEARN. scikit-learn lives in the optional `ai` extra
@@ -121,11 +123,20 @@ def fit_softmax(
     y: np.ndarray,
     n_classes: int,
     *,
-    l2: float = 1e-3,
+    l2: float = 0.3,
     steps: int = 800,
     lr: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Class-balanced, L2-regularized softmax regression by full-batch gradient descent."""
+    """Class-balanced, L2-regularized softmax regression by full-batch gradient descent.
+
+    ``l2`` penalizes the weights in the scaled space below. 0.3 is measured,
+    not guessed: on the 278-track FMA spike, 5-fold accuracy was flat at
+    0.63 to 0.64 for any l2 from 0.1 to 2.3 (2.3 is scikit-learn's C=1
+    translated to this space) and fell to 0.57 at 1e-3, which also left
+    every prediction near-certain so no confidence threshold could filter
+    anything. At 0.3, predictions at confidence >= 0.6 cover 46 percent of
+    tracks at 0.80 accuracy.
+    """
     n, dim = x.shape
     counts = np.bincount(y, minlength=n_classes).astype(np.float64)
     sample_w = (n / (n_classes * counts))[y]  # "balanced", so a big class cannot swamp a small one
