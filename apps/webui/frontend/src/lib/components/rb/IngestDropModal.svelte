@@ -46,8 +46,12 @@
 		return e.dataTransfer?.types.includes('Files') === true;
 	}
 
+	function _isOverPlaylistTree(target: EventTarget | null): boolean {
+		return target instanceof Element && target.closest('[data-testid="playlist-tree-panel"]') !== null;
+	}
+
 	function onDragEnter(e: DragEvent): void {
-		if (!_isFileDrag(e)) return;
+		if (!_isFileDrag(e) || _isOverPlaylistTree(e.target)) return;
 		e.preventDefault();
 		dragDepth += 1;
 	}
@@ -62,7 +66,7 @@
 	}
 
 	async function onDrop(e: DragEvent): Promise<void> {
-		if (!_isFileDrag(e)) return;
+		if (!_isFileDrag(e) || _isOverPlaylistTree(e.target)) return;
 		e.preventDefault();
 		dragDepth = 0;
 		const dropped = await collectDroppedAudioFiles(e.dataTransfer!);

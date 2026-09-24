@@ -11,7 +11,7 @@
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
-	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
+	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';

@@ -173,6 +173,17 @@ export async function refreshAnalysisSourceDecks(
 			return { stableId, holders, fresh, track: row.track };
 		})
 	);
+	// Superseded while the fetches were in flight: the answer is discarded
+	// below whatever it holds, so it must not be JUDGED first. On a loaded
+	// runner the sibling /tracks/{id} fetch is served after a faster, later
+	// switch has already reverted the daemon, and the cross-source guards
+	// below then read that as a split and REJECT the superseded switch's
+	// promise (setAnalysisSource) instead of letting it discard quietly - a
+	// throw for a call whose result nobody was going to publish
+	// (analysis-source.test.mjs "discards quietly instead of throwing",
+	// nucbox-wsl-23, run 35731185371). The same check at the publish point
+	// below stays: this one runs before the guards, that one after them.
+	if (isSuperseded()) return null;
 	const served = new Set(staged.map(({ fresh }) => fresh.beatgrid_source));
 	if (served.size > 1) {
 		throw new Error(

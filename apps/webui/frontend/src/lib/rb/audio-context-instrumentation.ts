@@ -26,7 +26,11 @@ import {
 	installOutputStallRecovery,
 	type OutputStallRecoveryHandle
 } from '$lib/rb/audio-output-stall-recovery';
-import { clearAudioOutputHealth, setAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+import { clearAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+import { isMasterMuted } from '$lib/player/master-mute.svelte';
+// Type-only: the probe and its browser wiring are loaded with a dynamic import
+// in `armDeviceOutputProbe`, so they stay out of the first-paint "/" chunk.
+import type { DeviceOutputProbeHandle } from '$lib/rb/device-output-probe';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -186,6 +190,13 @@ export function armXrunSentinel(ctx: AudioContext): void {
 let _outputRebind: OutputRebindHandle | null = null;
 let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
 let _outputStallRecovery: OutputStallRecoveryHandle | null = null;
+let _deviceOutputProbe: DeviceOutputProbeHandle | null = null;
+/**
+ * Bumped by every arm and disarm, so a probe whose dynamic import resolves
+ * after its graph was disarmed or re-armed is never installed.
+ */
+let _deviceOutputProbeGeneration = 0;
+let _browserLivenessSnapshot: AudioOutputSnapshot | null = null;
 let _watchdogDetach: (() => void) | null = null;
 let _recoveryEdgesDetach: (() => void) | null = null;
 
@@ -229,6 +240,50 @@ function installRecoveryOpportunities(): void {
 	};
 }
 
+/**
+ * Issue #923: install the OS output-device probe for the armed graph.
+ *
+ * Loaded with a dynamic import so the probe leaves the first-paint "/" chunk
+ * (library bundle budget). Install therefore lands once that chunk has loaded
+ * rather than synchronously with the graph arm. Nothing depends on it being
+ * there sooner: every reader goes through `_deviceOutputProbe?.` or the
+ * control module's `_handle?.`, and the switch-output action is only offered
+ * once a device snapshot with `probe_available` exists, which only an
+ * installed probe can publish. `install` in `device-output-probe-browser.ts` registers the
+ * handle and republishes the latest snapshot at once, and the probe's own
+ * dead-verdict edge then catches a dead reading that arrived mid-import.
+ */
+function armDeviceOutputProbe(isAnyDeckPlaying: () => boolean): void {
+	const generation = dropDeviceOutputProbe();
+	// `probe.install`, not a destructured binding: Vite rewrites a destructured
+	// dynamic import into a wrapper that costs first-paint bytes.
+	void import('$lib/rb/device-output-probe-browser').then(
+		(probe) =>
+			// Disarmed or re-armed while the import was in flight: that graph is gone.
+			generation === _deviceOutputProbeGeneration &&
+			(_deviceOutputProbe = probe.install(
+				() => _browserLivenessSnapshot,
+				isAnyDeckPlaying,
+				isMasterMuted,
+				pushToast
+			)),
+		(error: unknown) =>
+			// Recorded, never swallowed: a probe that silently failed to load
+			// would leave the device bar reading "no data" forever.
+			recordPerfEvent('device-output-probe-failed', String(error), null, 'error')
+	);
+}
+
+/**
+ * Uninstall the current probe (which also unregisters it from the Switch
+ * output control) and supersede any arm still in flight.
+ */
+function dropDeviceOutputProbe(): number {
+	_deviceOutputProbe?.uninstall();
+	_deviceOutputProbe = null;
+	return ++_deviceOutputProbeGeneration;
+}
+
 export function disarmContextInstrumentation(): void {
 	setPlayingPositionReader(null);
 	detachXrunSentinel();
@@ -252,6 +307,8 @@ export function disarmContextInstrumentation(): void {
 	_outputLiveness?.uninstall();
 	_outputLiveness = null;
 	_outputStallRecovery = null;
+	dropDeviceOutputProbe();
+	_browserLivenessSnapshot = null;
 	// Same identity-scoped teardown as the two above. The watchdog's recovery
 	// listener sits on a module-level fan-out, so one left behind by a route
 	// unmount answers every later device change by resuming a CLOSED context.
@@ -357,6 +414,7 @@ export function armAudioContextWatchdog(
 	// A context can be `running`, advancing, and rendering into a dead device
 	// (Wed 2 Sep 2026 18:33: no sound, every other signal green). The only
 	// device-level tell the browser gives is outputLatency staying 0.
+	armDeviceOutputProbe(isAnyDeckPlaying);
 	_outputLiveness?.uninstall();
 	_outputLiveness = installOutputLiveness(
 		ctx,
@@ -369,7 +427,11 @@ export function armAudioContextWatchdog(
 			recoverOutput: () => {
 				void _outputStallRecovery?.recover();
 			},
-			onSnapshot: (snapshot) => setAudioOutputHealth(snapshot)
+			onSnapshot: (snapshot) => {
+				// The probe folds this into the bar and owns the dead-verdict edge.
+				_browserLivenessSnapshot = snapshot;
+				_deviceOutputProbe?.republish();
+			}
 		},
 		isAnyDeckPlaying
 	);

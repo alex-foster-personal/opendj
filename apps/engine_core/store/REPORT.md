@@ -16,6 +16,7 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 | `events` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | name collides, O-2 |
 | `track_locations` | `apps/shared/state/schema.py` | `apply_migrations` (v4/v5) | data backfill, O-14 |
 | `lyric_verdict` | `apps/shared/state/schema.py` | `apply_migrations` (v10) | consolidated rung v4, O-16 |
+| `path_availability` | `apps/shared/state/migrations_v18.py` | `apply_migrations` (v18) | consolidated rung v7, PERF-RB-01 |
 | `analysis` | `apps/analysis/store.py` | `_ensure_analysis_tables` | |
 | `analysis_events` | `apps/analysis/store.py` | `_ensure_analysis_tables` | index policy differs, O-11 |
 | `pairings` | `apps/shared/pairings/schema_sql.py` | `ensure_phase08_tables` | shape collides, O-6 |

@@ -109,11 +109,19 @@ test('calibration capture never constrains getUserMedia to a handsfree mic', () 
 	assert.equal(headphones.preferredAudioInputDeviceId(devices), 'builtin-mic');
 });
 
-test('the calibration chirp reaches the cue destination, not the delay line, and select no longer auto-chirps', () => {
-	const source = readFileSync(`${FRONTEND}/src/lib/player/headphones.ts`, 'utf8');
+test('the calibration chirp reaches the cue bridge input, not the delay line, and select no longer auto-chirps', () => {
+	// The calibration audio half lives in cue-align-audio.ts (loaded on demand), so the
+	// routing assertions read both files as one surface.
+	const source = ['headphones.ts', 'cue-align-audio.ts']
+		.map((name) => readFileSync(`${FRONTEND}/src/lib/player/${name}`, 'utf8'))
+		.join('\n');
 	assert.match(source, /cueAlignAudioEffects/);
 	assert.match(source, /unlockAudioInputConstraints/);
-	assert.match(source, /bus === 'master' \? ctx\.destination : nodes\.destination/);
+	assert.match(source, /bus === 'master' \? ctx\.destination : nodes\.bridgeInput/);
+	assert.match(source, /_applyCueSink/);
+	assert.match(source, /cue setSinkId/);
+	assert.doesNotMatch(source, /createMediaStreamDestination/);
+	assert.doesNotMatch(source, /new Audio\(/);
 	assert.doesNotMatch(source, /shouldCalibrateCueLatency|_calibratedCueIds|_calibratingCueId|measureCueLatencyMs/,
 		'CUEOUT-14: the first-select auto-chirp is gone; CALIBRATE is the only chirp path');
 	assert.match(source, /sinkSelectIsNoop/);
