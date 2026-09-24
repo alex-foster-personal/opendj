@@ -2,14 +2,16 @@
  * Trackify unsupervised single-deck autoplay controller (PERFMODE-15).
  */
 import { deckAudioClockPositionMs, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import type { DeckId } from '$lib/rb/deck-slots';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	pickNextTrackifyCandidate,
 	shouldAdvanceTrackify,
+	tempoBoundsForTrackify,
 	TRACKIFY_DECK_ID,
-	trackifyRemainingCandidates,
+	TRACKIFY_LOAD_SKIP_DEADLINE_MS,
 	type TrackifyDeckSnap
 } from '$lib/rb/trackify-autoplay';
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
@@ -52,13 +54,12 @@ function _syncEpoch(): void {
 }
 
 function _pickNext(feed: readonly AutoPlayTrackRow[], deck: TrackifyDeckSnap): string | null {
-	const bounds = { min: 0.84, max: 1.16 };
+	// Default matches the shared helper's own math at pitch=16 (%): a hardcoded
+	// stand-in for "no pitch range known", made explicit via the same
+	// tempoBoundsFromPitchRange formula the rest of the app uses instead of a
+	// second, independently-maintained copy of it.
 	const pitch = pitchRanges[TRACKIFY_DECK_ID];
-	if (Number.isFinite(pitch)) {
-		const range = pitch / 100;
-		bounds.min = Math.max(0.01, 1 - range);
-		bounds.max = 1 + range;
-	}
+	const bounds = tempoBoundsForTrackify(Number.isFinite(pitch) ? pitch : 16);
 	return pickNextTrackifyCandidate({
 		feed,
 		played_ids: _playedIds,
@@ -73,16 +74,47 @@ function _pickNext(feed: readonly AutoPlayTrackRow[], deck: TrackifyDeckSnap): s
 	});
 }
 
+/**
+ * Races `promise` against `TRACKIFY_LOAD_SKIP_DEADLINE_MS`. A dispatch that
+ * never settles (a stalled fetch, a decode that never resolves, a queue that
+ * never drains) must still surface as a load failure within the deadline so
+ * `_loadAndPlay`'s existing catch block can quarantine it and move on,
+ * instead of wedging `_inFlight` permanently (PERFMODE-15 P1).
+ */
+function _withLoadDeadline<T>(promise: Promise<T>): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			reject(
+				new Error(`Trackify load did not settle within ${TRACKIFY_LOAD_SKIP_DEADLINE_MS}ms`)
+			);
+		}, TRACKIFY_LOAD_SKIP_DEADLINE_MS);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error: unknown) => {
+				clearTimeout(timer);
+				reject(error);
+			}
+		);
+	});
+}
+
+async function _dispatchLoadSequence(deck: DeckId, nextId: string): Promise<void> {
+	if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
+		await dispatchPerformanceCommand({ type: 'unload', deck });
+	}
+	if (deckStates[deck].stable_id !== nextId) {
+		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
+	}
+	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
+}
+
 async function _loadAndPlay(nextId: string): Promise<void> {
 	const deck = TRACKIFY_DECK_ID;
 	try {
-		if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
-			await dispatchPerformanceCommand({ type: 'unload', deck });
-		}
-		if (deckStates[deck].stable_id !== nextId) {
-			await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
-		}
-		await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
+		await _withLoadDeadline(_dispatchLoadSequence(deck, nextId));
 		_queueHead = nextId;
 	} catch (error: unknown) {
 		_quarantinedIds.add(nextId);
@@ -119,6 +151,14 @@ async function _advance(reason: 'end' | 'skip'): Promise<void> {
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) return;
 	_syncEpoch();
+	// _inFlight MUST be checked before the skip latch is consumed. The latch
+	// (readTrackifySkipNext) is read-and-clear, so if a skip lands while an
+	// end-of-track advance from an earlier tick is still awaiting its
+	// load/play dispatches, reading it here would start a second, concurrent
+	// _advance and clear _inFlight early when that second call finishes
+	// (PERFMODE-15 P1). Leaving the latch untouched while in flight re-latches
+	// the request for a later tick instead of acting on it now.
+	if (_inFlight) return;
 	if (readTrackifySkipNext()) {
 		_inFlight = true;
 		try {
@@ -128,7 +168,6 @@ async function _tick(): Promise<void> {
 		}
 		return;
 	}
-	if (_inFlight) return;
 	const deck = _deckSnap();
 	if (deck.stable_id === null) {
 		const feed = getTrackifyFeedRows();

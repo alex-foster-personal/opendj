@@ -62,17 +62,6 @@ describe('trackify-autoplay pure logic', () => {
 		assert.equal(mutated.rows[0].stable_id, 'alpha');
 	});
 
-	it('load failures always quarantine instead of rethrowing after the skip deadline', async () => {
-		const { readFile } = await import('node:fs/promises');
-		const { fileURLToPath } = await import('node:url');
-		const { dirname, join } = await import('node:path');
-		const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-		const source = await readFile(join(root, 'src/lib/rb/trackify-autoplay.svelte.ts'), 'utf8');
-		assert.equal(source.includes('TRACKIFY_LOAD_SKIP_DEADLINE_MS'), false);
-		assert.equal(source.includes('throw error'), false);
-		assert.match(source, /_quarantinedIds\.add\(nextId\)/);
-	});
-
 	it('empty pre-hydration feed does not arm first pick', async () => {
 		const feed = await loadTypeScriptModule('src/lib/rb/trackify-feed.ts');
 		const controller = feed.createTrackifyFeedController();

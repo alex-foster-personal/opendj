@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import platform
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, TextIO
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
 from scripts.perf.capture_kpi_ledger import build_row, session_meta
@@ -29,6 +32,10 @@ _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
 _MIN_SAMPLE_S = 60
 _PROBE_INTERVAL_S = 15
+_PROBE_TIMEOUT_S = 10.0
+_TELEMETRY_PATH = "/api/v1/performance/telemetry/processes"
+_ROLE_FALLBACK = ("desktop-shell", "python-engine", "webkit-webcontent")
+_BROWSER_SERVICE_ID = "com.af.music-dj-tools.mode-ratio-browser"
 
 
 def _require_macos() -> None:
@@ -50,25 +57,71 @@ def _git_sha() -> str:
     return proc.stdout.strip()
 
 
-def _probe_once() -> dict[str, Any]:
-    proc = subprocess.run(
-        [sys.executable, "-m", "scripts.diagnostics.opendj_performance_probe", "--once", "--json"],
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(proc.stdout)
+def _telemetry_url(frontend: str) -> str:
+    return f"{frontend.rstrip('/')}{_TELEMETRY_PATH}"
 
 
-def _sample_steady(duration_s: int) -> dict[str, float]:
+def _footprint_mb_from_telemetry(body: dict[str, Any]) -> float:
+    totals = body.get("totals") if isinstance(body.get("totals"), dict) else {}
+    footprint = totals.get("physical_footprint_mb")
+    if isinstance(footprint, (int, float)) and math.isfinite(float(footprint)):
+        return float(footprint)
+    by_role = body.get("by_role_mb") if isinstance(body.get("by_role_mb"), dict) else {}
+    summed = 0.0
+    for role in _ROLE_FALLBACK:
+        value = by_role.get(role)
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            summed += float(value)
+    if summed <= 0:
+        raise RuntimeError("telemetry response missing physical_footprint_mb totals")
+    return summed
+
+
+def _cpu_percent_from_telemetry(body: dict[str, Any]) -> float:
+    totals = body.get("totals") if isinstance(body.get("totals"), dict) else {}
+    cpu = totals.get("cpu_percent")
+    if isinstance(cpu, (int, float)) and math.isfinite(float(cpu)):
+        return float(cpu)
+    raise RuntimeError("telemetry response missing cpu_percent totals")
+
+
+def _probe_once(frontend: str) -> dict[str, Any]:
+    url = _telemetry_url(frontend)
+    request = Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=_PROBE_TIMEOUT_S) as response:
+            status = response.status
+            raw = response.read().decode("utf-8")
+    except HTTPError as exc:
+        raise RuntimeError(f"telemetry probe failed ({exc.code}) for {url}") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"telemetry probe unreachable for {url}: {exc}") from exc
+    if status != 200:
+        raise RuntimeError(f"telemetry probe failed ({status}) for {url}")
+    body = json.loads(raw)
+    if not isinstance(body, dict):
+        raise RuntimeError(  # noqa: TRY004 -- one exception type for every probe failure
+            f"telemetry probe returned non-object JSON for {url}"
+        )
+    if body.get("available") is not True:
+        reason = body.get("reason", "telemetry unavailable")
+        raise RuntimeError(f"telemetry unavailable for {url}: {reason}")
+    return {
+        "totals": {
+            "physical_footprint_mb": _footprint_mb_from_telemetry(body),
+            "cpu_percent": _cpu_percent_from_telemetry(body),
+        }
+    }
+
+
+def _sample_steady(frontend: str, duration_s: int) -> dict[str, float]:
     if duration_s < _MIN_SAMPLE_S:
         raise ValueError(f"duration must be at least {_MIN_SAMPLE_S}s, got {duration_s}")
     footprints: list[float] = []
     cpus: list[float] = []
     deadline = time.monotonic() + duration_s
     while time.monotonic() < deadline:
-        sample = _probe_once()
+        sample = _probe_once(frontend)
         totals = sample.get("totals") if isinstance(sample.get("totals"), dict) else {}
         fp = totals.get("physical_footprint_mb")
         cpu = totals.get("cpu_percent")
@@ -86,13 +139,13 @@ def _sample_steady(duration_s: int) -> dict[str, float]:
     }
 
 
-def _sample_leak(duration_s: int) -> float:
+def _sample_leak(frontend: str, duration_s: int) -> float:
     elapsed: list[float] = []
     footprints: list[float] = []
     start = time.monotonic()
     deadline = start + duration_s
     while time.monotonic() < deadline:
-        sample = _probe_once()
+        sample = _probe_once(frontend)
         totals = sample.get("totals") if isinstance(sample.get("totals"), dict) else {}
         fp = totals.get("physical_footprint_mb")
         if isinstance(fp, (int, float)):
@@ -127,20 +180,23 @@ def _start_browser_session(frontend: str, mode: str) -> subprocess.Popen[str]:
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        env={**os.environ, "AF_SERVICE_ID": _BROWSER_SERVICE_ID},
     )
     if proc.stdout is None:
         raise RuntimeError("mode_ratio_browser stdout is not piped")
     return proc
 
 
-def _capture_gig_then_trackify(frontend: str, duration_s: int) -> tuple[dict[str, float], dict[str, float]]:
+def _capture_gig_then_trackify(
+    frontend: str, duration_s: int
+) -> tuple[dict[str, float], dict[str, float]]:
     proc = _start_browser_session(frontend, "gig-trackify")
     try:
         _read_browser_line(proc.stdout, "GIG_READY")
-        gig = _sample_steady(duration_s)
+        gig = _sample_steady(frontend, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "TRACKIFY_READY")
-        trackify = _sample_steady(duration_s)
+        trackify = _sample_steady(frontend, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "DONE")
         stderr = proc.stderr.read() if proc.stderr is not None else ""
@@ -157,7 +213,7 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
     proc = _start_browser_session(frontend, "trackify-leak")
     try:
         _read_browser_line(proc.stdout, "TRACKIFY_READY")
-        slope = _sample_leak(duration_s)
+        slope = _sample_leak(frontend, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "DONE")
         stderr = proc.stderr.read() if proc.stderr is not None else ""
@@ -170,7 +226,7 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
             proc.kill()
 
 
-_METHOD = "opendj_performance_probe steady-state sampling (PERFMODE-15)"
+_METHOD = "engine telemetry /performance/telemetry/processes steady-state sampling (PERFMODE-15)"
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -3,7 +3,7 @@
  */
 import { engine } from '$lib/rb/audio-engine.svelte';
 import { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
-import { setAppMode, setAutoPlayEnabled } from '$lib/rb/prefs.svelte';
+import { setAppMode, setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { installTrackifyAutoplay } from '$lib/rb/trackify-autoplay.svelte';
 import { installTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 import { installTrackifyBrowserIpc } from '$lib/rb/trackify-ipc.svelte';
@@ -11,6 +11,7 @@ import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
 
 export function installTrackifySession(): () => void {
+	const priorAutoPlayEnabled = uiPrefs.auto_play_enabled;
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
 	const uninstallFeed = installTrackifyFeed();
@@ -22,6 +23,7 @@ export function installTrackifySession(): () => void {
 		uninstallPerfIpc();
 		uninstallAutoplay();
 		uninstallFeed();
+		setAutoPlayEnabled(priorAutoPlayEnabled);
 		void dispatchPerformanceCommand({ type: 'play', deck: TRACKIFY_DECK_ID, playing: false }).catch(
 			() => undefined
 		);
