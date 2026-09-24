@@ -74,6 +74,8 @@ function neutralMixerState(fader: number): MixerState {
 				cue_latency_ms: null,
 				master_latency_ms: null,
 				offset_ms: null,
+				verify_residual_ms: null,
+				probe: null,
 				error: null
 			},
 			outputs: [],
