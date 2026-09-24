@@ -89,6 +89,12 @@ export type UiTheme = 'dark' | 'light';
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
+/** Crossfader curve selection (MIXUX-08). Only magic is live today. */
+export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
+
+/** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
+export type HorizontalWheelKnob = 'filter' | 'color';
+
 export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
@@ -189,6 +195,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	level_calibration: LevelCalibrationPrefs;
+	/** Crossfader curve name; unbuilt curves stay disabled in the UI. */
+	crossfade_curve: CrossfadeCurve;
+	/** Horizontal mouse wheel adjusts filter or color knob on selected channels. */
+	horizontal_wheel_knob: HorizontalWheelKnob;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -219,6 +229,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
+	crossfade_curve: 'magic',
+	horizontal_wheel_knob: 'filter',
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
@@ -393,6 +405,29 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	const crossfadeCurve = parsed.crossfade_curve;
+	if (
+		crossfadeCurve !== undefined &&
+		crossfadeCurve !== 'magic' &&
+		crossfadeCurve !== 'bass_swap' &&
+		crossfadeCurve !== 'linear'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (crossfade_curve must be magic|bass_swap|linear) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const horizontalWheelKnob = parsed.horizontal_wheel_knob;
+	if (
+		horizontalWheelKnob !== undefined &&
+		horizontalWheelKnob !== 'filter' &&
+		horizontalWheelKnob !== 'color'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (horizontal_wheel_knob must be filter|color) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
@@ -446,6 +481,8 @@ function _load(): RbUiPrefs {
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
+		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
+		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
 		...LYRICS_PREF_DEFAULTS,
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -592,6 +629,22 @@ export function setShowStems(next: boolean): void {
 	uiPrefs.show_stems = next;
 	_persist();
 	void _syncDiskPrefs({ show_stems: next });
+}
+
+export function setCrossfadeCurve(next: CrossfadeCurve): void {
+	if (next !== 'magic') {
+		throw new Error(`crossfade curve ${next} is not implemented - see PARITY-TODO`);
+	}
+	uiPrefs.crossfade_curve = next;
+	_persist();
+}
+
+export function setHorizontalWheelKnob(next: HorizontalWheelKnob): void {
+	if (next !== 'filter' && next !== 'color') {
+		throw new Error(`horizontal_wheel_knob must be filter|color, got ${next}`);
+	}
+	uiPrefs.horizontal_wheel_knob = next;
+	_persist();
 }
 
 export const {

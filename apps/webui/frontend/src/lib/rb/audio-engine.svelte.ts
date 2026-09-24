@@ -1282,14 +1282,14 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 		position_ms: positionMs,
 		context_state: _ctx?.state ?? 'uninitialized',
 		decoded_duration_ms: decodedDurationMs,
-		metadata_duration_ms: metadataDurationMs
+		metadata_duration_ms: metadataDurationMs,
+		cause_error: error
 	});
 	withPauseOrigin('worklet', () => {
 		_clearLoadedTrackState(st);
 		st.processor_error = message;
 		st.sync_error = message;
 	});
-	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
 }
 
 export function stretchScheduleChange(

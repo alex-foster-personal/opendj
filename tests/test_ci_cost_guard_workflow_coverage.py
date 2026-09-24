@@ -19,15 +19,15 @@ import pytest
 import yaml
 
 from tests.ci_cost_guard_workflow_reader import (
-    GUARD,
     MACOS_DESKTOP_COMPILE,
     MACOS_NATIVE_COMPANION,
     MACOS_PACKAGING,
     WORKFLOW_DIR,
     ceiling_usd,
     e2e_ceiling_on,
-    e2e_priced_events,
+    guard_e2e_priced_events,
     guard_threshold,
+    guard_watched,
     top_level_disjuncts,
     workflow_docs,
 )
@@ -51,7 +51,7 @@ def test_every_workflow_that_can_trip_the_guard_is_watched() -> None:
     """
     threshold = guard_threshold()
     workflows = workflow_docs()
-    watched = set(yaml.safe_load(GUARD.read_text())[True]["workflow_run"]["workflows"])
+    watched = guard_watched()
 
     can_trip = {n: c for n, d in workflows.items() if (c := ceiling_usd(d)) > threshold}
     assert can_trip, (
@@ -95,14 +95,10 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
     the gate at all: raise the always-on `gate` job's timeout, or add a second
     ungated job. Both are priced here.
     """
-    condition = yaml.safe_load(GUARD.read_text())["jobs"]["assess"]["if"]
-    assert "E2E" in condition, (
-        "the guard's gate no longer special-cases E2E, so which events it "
-        "prices can no longer be read here. Skipping would be fail-open: a "
-        "gate generalized to event names only would leave costly push and "
-        "pull_request runs unpriced while this test reports green. Re-derive "
-        f"the arithmetic against the new gate instead: {condition}"
-    )
+    # The rule is data on the batch job (E2E_PRICED_EVENTS) and is applied by
+    # scripts.ci_cost_guard.select_batch_runs, pinned in
+    # tests/test_ci_cost_guard_batch.py; this test checks the arithmetic the
+    # rule rests on.
 
     threshold = guard_threshold()
     doc = yaml.safe_load((WORKFLOW_DIR / "e2e.yml").read_text())
@@ -113,7 +109,7 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
     # character events and never for the real one, with this test still green.
     raw_on = doc[True] if True in doc else doc["on"]
     triggers = {raw_on} if isinstance(raw_on, str) else set(raw_on)
-    priced = e2e_priced_events(condition)
+    priced = guard_e2e_priced_events()
 
     skipped = triggers - priced
     assert skipped, (

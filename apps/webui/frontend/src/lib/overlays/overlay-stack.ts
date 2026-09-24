@@ -8,6 +8,8 @@
 export const OVERLAY_Z_INDEX = {
 	brandLaunch: 1200,
 	preflightBoot: 1000,
+	/** Armed comment-pin placement capture; above root modals, below boot gate. */
+	feedbackPinPlacement: 450,
 	hotkeys: 410,
 	settings: 400,
 	signIn: 390,
