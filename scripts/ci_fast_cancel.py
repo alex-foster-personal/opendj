@@ -26,8 +26,8 @@ Requirements (mini-PRD)
   the identity printed, [else stop] ✔︎ ✅ 🎯
 - [if] every failure in the log is also red on main [then] nothing is cancelled and each is
   printed as known, [else stop] ✔︎ ✅ 🎯
-- [if] no baseline is available [then] exit 3, print UNKNOWN, cancel nothing, [else stop]
-  ✔︎ ✅ 🎯
+- [if] no baseline is available, or fetching it is refused [then] exit 3, print UNKNOWN
+  naming the cause, cancel nothing, [else stop] ✔︎ ✅ 🎯
 - [if] the log names no failure at all (an infra-class death) [then] nothing is cancelled and
   that is said, because a cap kill is not a pull request defect, [else stop] ✔︎ ✅ 🎯
 - [if] ``--dry-run`` [then] the decision is printed and `gh` is never called, [else stop]
@@ -60,8 +60,8 @@ EXIT_UNKNOWN = 3
 __all__ = ["decide", "failed_identities", "main"]
 
 
-def _baseline(main_red_json: Path | None) -> frozenset[str] | None:
-    """Main's red identities, or None when no baseline can be had.
+def _baseline(main_red_json: Path | None) -> tuple[frozenset[str] | None, str]:
+    """Main's red identities (None when no baseline can be had), and where they came from.
 
     Only ``identities`` is read, by attribute or key, so the watcher's record can grow
     (it gained ``measured_sha`` on Wed 16 Sep 2026: the commit the identities are ABOUT,
@@ -71,13 +71,22 @@ def _baseline(main_red_json: Path | None) -> frozenset[str] | None:
     """
     if main_red_json is not None:
         if not main_red_json.is_file():
-            return None
-        return frozenset(json.loads(main_red_json.read_text(encoding="utf-8"))["identities"])
+            return None, f"--main-red-json {main_red_json} is not a file"
+        identities = json.loads(main_red_json.read_text(encoding="utf-8"))["identities"]
+        return frozenset(identities), f"--main-red-json {main_red_json}"
     try:
         from scripts.ci_main_red import cached_main_red  # optional, PR #3293
+        from scripts.review_gh import TriageError
     except ImportError:
-        return None
-    return frozenset(cached_main_red().identities)
+        return None, "scripts.ci_main_red not importable and no --main-red-json"
+    try:
+        return frozenset(cached_main_red().identities), "scripts.ci_main_red"
+    except TriageError as refused:
+        # A refused API read (Mon 21 Sep 2026: HTTP 403, the job lacked `checks: read`,
+        # granted since) is a missing baseline, not a crash: a traceback under
+        # continue-on-error reads as a successful step and hides that nothing was decided.
+        # 291 failed-leg executions Thu 17 to Mon 21 Sep announced zero decisions this way.
+        return None, f"scripts.ci_main_red could not fetch main's red set: {refused}"
 
 
 def decide(failed: frozenset[str], baseline: frozenset[str] | None) -> tuple[str, frozenset[str]]:
@@ -117,17 +126,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     failed = failed_identities(args.log.read_text(encoding="utf-8", errors="replace"))
-    verdict, genuine = decide(failed, _baseline(args.main_red_json))
+    baseline, source = _baseline(args.main_red_json)
+    verdict, genuine = decide(failed, baseline)
     if verdict == "UNKNOWN":
-        print(f"{LINE_PREFIX} UNKNOWN: no main-red baseline (scripts.ci_main_red not importable "
-              "and no --main-red-json); cancelling nothing")
+        print(f"{LINE_PREFIX} UNKNOWN: no main-red baseline ({source}); cancelling nothing")
         _announce(
             "warning",
             f"fast tier leg {args.leg}: cancel decision UNKNOWN",
             f"No main-red baseline on this head, so the {len(failed)} failing identities "
-            "could not be classified as known or genuine and nothing was cancelled. This is "
-            "NOT evidence about the cancel logic; the dry-run evidence period starts when "
-            "scripts.ci_main_red (PR #3293) is importable.",
+            f"could not be classified as known or genuine and nothing was cancelled ({source}). "
+            "This is NOT evidence about the cancel logic.",
         )
         return EXIT_UNKNOWN
     if verdict == "NONE":

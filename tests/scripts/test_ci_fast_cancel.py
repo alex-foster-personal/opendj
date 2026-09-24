@@ -8,6 +8,7 @@ Single-line intent:
   - if --dry-run calls gh then broken
   - if a GENUINE verdict under Actions leaves no annotation or summary then a cancelled job hides it
   - if an UNKNOWN verdict under Actions is not a warning then a missing baseline reads as evidence
+  - if a refused baseline fetch crashes instead of reporting UNKNOWN with its cause then broken
   - if this module's identities differ from scripts.ci_failure_ids' for one log then the
     subtraction is between two formats and every known trunk red reads GENUINE
 
@@ -285,3 +286,51 @@ def test_one_new_failure_beside_five_known_ones_is_still_genuine(
     out = capsys.readouterr().out
     assert "genuine FAILED tests/new/test_n.py::test_new" in out
     assert "test_strip_energy_prefix" not in out, "a known identity must not read as genuine"
+
+
+def test_a_refused_baseline_fetch_is_unknown_with_its_cause_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if a refused baseline fetch crashes instead of reporting UNKNOWN with its cause then broken
+
+    Live Mon 21 Sep 2026: the fast job's token had no `checks: read`, the watcher's
+    check-runs read got HTTP 403, and the traceback exited 1 under continue-on-error, so
+    every dry run from round 6a onward reported success and decided nothing. 291 failed-leg
+    executions Thu 17 to Mon 21 Sep announced zero decisions. The permission is granted on
+    main now; this keeps ANY refusal (rate limit, outage, a later scope change) an UNKNOWN
+    that names its cause rather than a crash a continue-on-error step renders as success.
+    """
+    from scripts import ci_main_red
+    from scripts.review_gh import TriageError
+
+    def _refused() -> object:
+        raise TriageError("gh api .../check-runs failed (1): Resource not accessible (HTTP 403)")
+
+    _forbid_gh(monkeypatch)
+    monkeypatch.setattr(ci_main_red, "cached_main_red", _refused)
+    rc = ci_fast_cancel.main(["--log", str(_log(tmp_path)), "--run-id", "777", "--dry-run"])
+    assert rc == ci_fast_cancel.EXIT_UNKNOWN
+    out = capsys.readouterr().out
+    assert "UNKNOWN" in out and "HTTP 403" in out
+
+
+def test_a_working_baseline_still_decides_after_the_refusal_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if catching the refusal also swallows a good fetch then the guard disarms the feature
+
+    The opposite direction of the test above: reporting UNKNOWN unconditionally satisfies
+    that one perfectly and decides nothing forever, which is the state this PR ends.
+    """
+    from scripts import ci_main_red
+
+    class _Record:
+        identities = ("FAILED tests/a/test_x.py::test_two",)
+
+    _forbid_gh(monkeypatch)
+    monkeypatch.setattr(ci_main_red, "cached_main_red", lambda: _Record())
+    rc = ci_fast_cancel.main(["--log", str(_log(tmp_path)), "--run-id", "777", "--dry-run"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "genuine ERROR tests/b/test_y.py::test_three[param-1]" in out
+    assert "scripts.ci_main_red" not in out, "a working fetch must not announce UNKNOWN"
