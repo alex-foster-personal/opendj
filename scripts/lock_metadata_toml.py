@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 
 from scripts.lock_marker_parser import Unknown, _MarkerParser
+from scripts.lock_marker_semantics import spelled_markers_equivalent
 from scripts.lock_specifier_semantics import norm_spec
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
@@ -461,6 +462,8 @@ def pyproject_source_shape(name: str, source: object) -> None:
             raise Unknown(f"{where} = [] names no source; uv rejects the file")
         for item in source:
             pyproject_source_shape(name, item)
+        if len(source) > 1:
+            _source_list_markers(where, source)
         return
     if not isinstance(source, dict):
         raise Unknown(f"{where} = {source!r} is not a source table; uv rejects the file")
@@ -473,6 +476,58 @@ def pyproject_source_shape(name: str, source: object) -> None:
         elif key != "marker":
             toml_string(value, f"{where} {key}")
     _source_entry_conflicts(where, source)
+
+
+_SCOPED_MARKER_RE = re.compile(r"\b(extra|dependency_groups)\b")
+
+
+def _source_list_markers(where: str, entries: list) -> None:
+    """A source LIST's cross-entry rule (measured uv 0.8.17, Codex P2 on #3763, round
+    56): among the entries sharing one scope (the same normalized `extra`, the same
+    `group`, or neither), two or more need a `marker` each ("When multiple sources are
+    provided, each source must include a platform marker") and those markers must be
+    pairwise disjoint ("Source markers must be disjoint, but the following markers
+    overlap"), each "Failed to parse: `pyproject.toml`", exit 2. `[{ path = "x" },
+    { path = "y" }]`, one marked and one not, the same marker twice or respelled,
+    `sys_platform == 'linux'` beside `python_version < '3.12'` or beside a subset of
+    itself, `platform_system == 'Linux'` beside `sys_platform == 'linux'`, and two
+    markers empty under requires-python (`python_version < '3.11'` and `< '3.10'`) are
+    refused; `sys_platform == 'linux'` beside `'darwin'` or `!= 'linux'`, a python
+    split (`python_full_version >= '3.12'` beside `python_version < '3.12'`),
+    `os_name == 'nt'` beside `sys_platform == 'linux'`, and entries in different scopes
+    (`extra = "dev"` beside a plain one, or beside `group = "g"`, or with the same
+    marker) are read. `extra == 'a'` and `extra == 'b'` OVERLAP for uv (extras are a
+    set), which the marker evaluator does not model, so such a marker is UNKNOWN.
+    Each entry had been checked on its own, so the list-level refusals had passed."""
+    scopes: dict[tuple[str, str], list[str | None]] = {}
+    for entry in entries:
+        extra = norm_name(entry["extra"]) if "extra" in entry else ""
+        group = norm_name(entry["group"]) if "group" in entry else ""
+        scopes.setdefault((extra, group), []).append(entry.get("marker"))
+    for markers in scopes.values():
+        if len(markers) < 2:
+            continue
+        if any(marker is None for marker in markers):
+            raise Unknown(
+                f"{where}: when multiple sources are provided, each source must include a"
+                " platform marker; uv rejects the file"
+            )
+        spelled = [marker for marker in markers if marker is not None]
+        for i, one in enumerate(spelled):
+            for other in spelled[i + 1 :]:
+                if _SCOPED_MARKER_RE.search(one) or _SCOPED_MARKER_RE.search(other):
+                    raise Unknown(
+                        f"{where}: markers {one!r} and {other!r} name an extra or group;"
+                        " their overlap is not compared by this check"
+                    )
+                if not spelled_markers_equivalent((f"({one})", f"({other})"), (_NEVER,)):
+                    raise Unknown(
+                        f"{where}: source markers must be disjoint, but {one!r} and"
+                        f" {other!r} overlap; uv rejects the file"
+                    )
+
+
+_NEVER = "python_version < '0'"  # the marker uv spells for "never" (its own hint text)
 
 
 def _source_kind(where: str, source: dict) -> str:
