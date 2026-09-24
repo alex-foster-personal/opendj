@@ -120,6 +120,8 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	/** Library list: keep only tracks with real word-level lyrics spanning
 	 * more than 5 derived lines (pane-contract VOCALS_FILTER_MIN_LINES). */
 	vocals_filter: boolean;
+	/** Library list: keep only tracks with local audio present. */
+	available_offline_filter: boolean;
 	/** Persisted independently so either collapsed rail entry can restore its panel. */
 	next_panel_collapsed: boolean;
 	recommended_panel_collapsed: boolean;
@@ -588,7 +590,8 @@ export const {
 	setNextOnlyFilter,
 	toggleNextOnlyFilter,
 	setRemixesFilter,
-	setVocalsFilter
+	setVocalsFilter,
+	setAvailableOfflineFilter
 } = makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setTheme(next: UiTheme): void {
