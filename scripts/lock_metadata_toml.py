@@ -11,7 +11,6 @@ below is UNKNOWN on the wrong type and returns the value typed on the right one.
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
 from scripts.lock_marker_parser import Unknown, _MarkerParser
 from scripts.lock_specifier_semantics import norm_spec
@@ -263,16 +262,67 @@ def _artifact_fields(record: dict, where: str) -> None:
         size = record["size"]
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
             raise Unknown(f"{where} size = {size!r} is not a byte count; uv rejects the file")
-    if "upload-time" in record:
-        stamp = toml_string(record["upload-time"], f"{where} upload-time")
-        try:
-            aware = datetime.fromisoformat(stamp).tzinfo is not None
-        except ValueError:
-            aware = False
-        if not aware:
+        if size > _U64_MAX:
+            raise Unknown(f"{where} size = {size} exceeds 64 bits; uv rejects the file")
+        if size > _I64_MAX:
+            # uv 0.8.17 reads a size up to 2**64-1; uv 0.7.22 stops at 2**63-1 ("number
+            # too large to fit in target type", Codex, round 55). Not certified either way.
             raise Unknown(
-                f"{where} upload-time = {stamp!r} is not a zoned timestamp; uv rejects it"
+                f"{where} size = {size} exceeds a signed 64-bit integer; uv 0.7.22 rejects it"
             )
+    if "upload-time" in record:
+        upload_time(toml_string(record["upload-time"], f"{where} upload-time"), where)
+
+
+_I64_MAX = 2**63 - 1
+_U64_MAX = 2**64 - 1
+# The timestamp grammar uv reads for `upload-time` (jiff, ISO 8601 / RFC 3339 / RFC 9557;
+# measured uv 0.8.17, Codex P2 on #3763, round 55): a 4-digit or signed 6-digit year,
+# month and day with or without dashes, `T`/`t`/space, an hour with optional minute,
+# second and 1-9 fraction digits (`.` or `,`), colons optional but consistent, then `Z`
+# or a `+HH[[:]MM[[:]SS]]` offset up to 25:59:59, then an optional `[...]` annotation.
+# `datetime.fromisoformat` had accepted a week date (`2024-W01-1T...`), which uv rejects,
+# and rejected the basic forms and `[UTC]`, which uv reads.
+_UPLOAD_TIME_RE = re.compile(
+    r"^(?P<year>\d{4}|[+-]\d{6})(?P<ds>-?)(?P<month>\d{2})(?P=ds)(?P<day>\d{2})"
+    r"[Tt ](?P<hour>\d{2})(?:(?P<ts>:?)(?P<minute>\d{2})"
+    r"(?:(?P=ts)(?P<second>\d{2})(?:[.,]\d{1,9})?)?)?"
+    r"(?P<zone>[Zz]|(?P<sign>[+-])(?P<oh>\d{2})(?::?(?P<om>\d{2})(?::?(?P<os>\d{2}))?)?)"
+    r"(?:\[[^\]]*\])?$"
+)
+
+
+def upload_time(stamp: str, where: str) -> None:
+    """`upload-time` as uv reads it (grammar at `_UPLOAD_TIME_RE`), on a real calendar
+    date, hour 0-23, minute 0-59, second 0-60 (a leap second is read), an offset of at
+    most 25:59:59, and a year 0000-9998: uv reads `0000-01-01T00:00:00+01:00` and
+    `9999-12-30T00:00:00Z` but not `9999-12-30T23:59:59Z`, the edge of its range, so
+    year 9999 and beyond, and a negative year, are not modeled here (measured round 55).
+    Everything else is "Failed to parse `uv.lock`", exit 2."""
+    match = _UPLOAD_TIME_RE.match(stamp)
+    if match is None:
+        raise Unknown(f"{where} upload-time = {stamp!r} is not a timestamp uv reads; uv rejects it")
+    year, month, day = (int(match.group(k)) for k in ("year", "month", "day"))
+    hour, minute, second = (int(match.group(k) or 0) for k in ("hour", "minute", "second"))
+    if not (1 <= month <= 12 and 1 <= day <= _days_in_month(year, month)):
+        raise Unknown(f"{where} upload-time = {stamp!r} is not a calendar date; uv rejects it")
+    if hour > 23 or minute > 59 or second > 60:
+        raise Unknown(f"{where} upload-time = {stamp!r} is not a time of day; uv rejects it")
+    if match.group("sign"):
+        offset = (int(match.group("oh")), int(match.group("om") or 0), int(match.group("os") or 0))
+        if offset[1] > 59 or offset[2] > 59 or offset > (25, 59, 59):
+            raise Unknown(f"{where} upload-time = {stamp!r} offset is past 25:59:59; uv rejects it")
+    if not 0 <= year <= 9998:
+        raise Unknown(
+            f"{where} upload-time = {stamp!r}: year {year} is at or past the edge of uv's"
+            " timestamp range, not modeled by this check"
+        )
+
+
+def _days_in_month(year: int, month: int) -> int:
+    if month == 2:
+        return 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28
+    return 30 if month in (4, 6, 9, 11) else 31
 
 
 def _wheel_record(wheel: object, name: str, where: str) -> None:

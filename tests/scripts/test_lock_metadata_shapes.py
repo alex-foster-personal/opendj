@@ -426,7 +426,7 @@ ARTIFACTS = f"{SDIST}\n{WHEELS}\n"
         (lambda t: t.replace('"2024-12-04T17:35:28.174Z"', "1"), "sdist upload-time = 1"),
         (lambda t: t.replace('"2024-12-04T17:35:28.174Z"', '"bad"'), "upload-time = 'bad'"),
         (lambda t: t.replace('"2024-12-04T17:35:28.174Z"', '"2024-12-04"'), "'2024-12-04'"),
-        (lambda t: t.replace('"2024-12-04T17:35:28.174Z"', '"2024-12-04T17:35:28"'), "zoned"),
+        (lambda t: t.replace('"2024-12-04T17:35:28.174Z"', '"2024-12-04T17:35:28"'), "uv reads"),
         (lambda t: t.replace(SDIST, 'sdist = "bad"'), "sdist = 'bad' is not a table"),
         (lambda t: t.replace(WHEELS, "wheels = {}"), "wheels = {}"),
         (lambda t: t.replace(WHEELS, "wheels = [1]"), "entry 1"),
