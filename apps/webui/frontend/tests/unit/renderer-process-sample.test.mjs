@@ -51,3 +51,18 @@ test('sumEngineFamilyFootprintMb throws rather than reading unavailable telemetr
 	assert.throws(() => sample.sumEngineFamilyFootprintMb({ available: false }), /available/);
 	assert.throws(() => sample.sumEngineFamilyFootprintMb({}), /available/);
 });
+
+test('sumEngineFamilyFootprintMb throws on a member with no finite footprint, rather than skipping it', () => {
+	assert.throws(
+		() =>
+			sample.sumEngineFamilyFootprintMb({
+				available: true,
+				members: [{ name: 'engine', rss_mb: 100 }, { name: 'stem-worker', rss_mb: null }]
+			}),
+		/finite rss_mb/
+	);
+	assert.throws(
+		() => sample.sumEngineFamilyFootprintMb({ available: true, members: ['not-an-object'] }),
+		/not an object/
+	);
+});

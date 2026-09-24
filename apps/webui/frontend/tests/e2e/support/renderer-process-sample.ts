@@ -50,7 +50,9 @@ export function sumEngineFamilyFootprintMb(body: ProcessTelemetryBody): number {
 	}
 	let total = 0;
 	for (const raw of body.members) {
-		if (typeof raw !== 'object' || raw === null) continue;
+		if (typeof raw !== 'object' || raw === null) {
+			throw new Error(`process telemetry member is not an object: ${JSON.stringify(raw)}`);
+		}
 		const member = raw as ProcessFamilyMember;
 		const mb =
 			typeof member.rss_mb === 'number'
@@ -58,7 +60,12 @@ export function sumEngineFamilyFootprintMb(body: ProcessTelemetryBody): number {
 				: typeof member.physical_footprint_mb === 'number'
 					? member.physical_footprint_mb
 					: null;
-		if (mb !== null && Number.isFinite(mb)) total += mb;
+		if (mb === null || !Number.isFinite(mb)) {
+			throw new Error(
+				`process telemetry member has no finite rss_mb/physical_footprint_mb: ${JSON.stringify(raw)}`
+			);
+		}
+		total += mb;
 	}
 	return total;
 }
