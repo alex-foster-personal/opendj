@@ -309,12 +309,22 @@ async function _tick(): Promise<void> {
 	// (PERFMODE-15 P1). Leaving the latch untouched while in flight re-latches
 	// the request for a later tick instead of acting on it now.
 	if (_inFlight) return;
+	// Captured before any await: teardown resets `_inFlight` to false
+	// unconditionally and bumps `_installEpoch`, but does not (and cannot)
+	// cancel THIS tick's own still-awaiting `_advance`. If a new session
+	// installs right after and sets `_inFlight = true` for its own advance,
+	// this tick's `finally` clearing it unconditionally would clear the NEW
+	// session's flag out from under it, letting a later tick of the new
+	// session start a second, overlapping advance (Sol review, PR #3676).
+	// Each `finally` below only clears `_inFlight` while it still owns the
+	// epoch it started under.
+	const ownEpoch = _installEpoch;
 	if (readTrackifySkipNext()) {
 		_inFlight = true;
 		try {
 			await _advance('skip');
 		} finally {
-			_inFlight = false;
+			if (_installEpoch === ownEpoch) _inFlight = false;
 		}
 		return;
 	}
@@ -327,7 +337,7 @@ async function _tick(): Promise<void> {
 			const first = _pickNext(feed, deck);
 			if (first !== null) await _loadAndPlay(first);
 		} finally {
-			_inFlight = false;
+			if (_installEpoch === ownEpoch) _inFlight = false;
 		}
 		return;
 	}
@@ -344,7 +354,7 @@ async function _tick(): Promise<void> {
 		try {
 			await _advance('end');
 		} finally {
-			_inFlight = false;
+			if (_installEpoch === ownEpoch) _inFlight = false;
 		}
 	}
 }

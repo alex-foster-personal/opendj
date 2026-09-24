@@ -483,6 +483,105 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 		}
 	});
 
+	it('a stale tick finishing after teardown does not clear a remounted session\'s own in-flight flag (Sol review, PR #3676)', async () => {
+		// The feed picker has no notion of "already claimed by an in-flight
+		// load": with only one candidate in the feed, BOTH session A and the
+		// session B that replaces it pick the same track. That is fine here --
+		// this test is not about which track gets picked, it is about whether
+		// A's stale tick can clear B's own `_inFlight` flag out from under it.
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const hungA = gate();
+		const hungFirstFromB = gate();
+		let uninstallB = null;
+		try {
+			const { log, loadGates } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('first')]);
+			loadGates.set('first', hungA.promise);
+
+			// Session A: empty-deck tick starts a load and hangs mid-dispatch.
+			const uninstallA = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, ['load first']);
+
+			// Torn down while that load is still in flight: teardown clears
+			// `_inFlight` and bumps the install epoch, but cannot cancel the
+			// still-suspended dispatcher call underneath.
+			uninstallA();
+
+			// A new session installs immediately. `_pickNext` reselects the same
+			// (only) candidate, and re-gate it so SESSION B's own load also hangs
+			// mid-dispatch, once it gets a turn -- the dispatcher serializes
+			// commands per deck, so B's own call cannot even reach the engine
+			// until A's stale one settles.
+			loadGates.set('first', hungFirstFromB.promise);
+			uninstallB = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+			// B's own dispatch has not even started yet -- it is still queued
+			// behind A's stale, still-hanging command.
+			assert.deepEqual(log, ['load first']);
+
+			// Session A's stale load finally lands. Its own generation check
+			// correctly stops it from publishing -- and, seeing itself
+			// superseded, retires (unloads) the track it just loaded. That part
+			// is not what this test is about (earlier tests already cover it);
+			// this test is about whether A's OWN tick's `finally` -- now running
+			// -- clears `_inFlight` unconditionally (bug) or only when it still
+			// owns the current install epoch (fix).
+			// B's own dispatch is free to start once A's chain settles, and
+			// hangs on the same re-gated promise -- both land within these
+			// same microtask flushes, so the retirement and B's own restart
+			// are checked together.
+			hungA.release();
+			await settle();
+			await settle();
+			await settle();
+			assert.deepEqual(log, ['load first', 'unload first', 'load first']);
+
+			// With the deck empty and B's own load still genuinely in flight,
+			// an extra poll tick fires. Without the fix, A's stale `finally`
+			// already cleared `_inFlight` to false, so this tick's
+			// `if (_inFlight) return;` guard does not fire -- it proceeds to
+			// pick the same candidate and dispatch a SECOND, overlapping
+			// `_loadAndPlay('first')` for a session whose own load has not
+			// even settled yet. That second call's own `engine.load` is
+			// itself serialized behind B's still-pending one at the
+			// dispatcher, so it does not yet show as a new log entry here --
+			// with or without the fix the log is unchanged at this exact
+			// point. This assertion documents that (a check that a mutation
+			// cannot make fail is not evidence by itself); the smoking gun is
+			// the DUPLICATE 'play first' below, once the shared gate releases
+			// both queued calls together.
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, ['load first', 'unload first', 'load first']);
+
+			// The smoking gun: releasing B's gate resolves BOTH the
+			// legitimate load and (with the bug) the extra overlapping one
+			// queued behind it, since they share the same re-gated promise.
+			// Without the fix this produces a duplicate 'play first' --
+			// two sessions' worth of `_loadAndPlay` reaching the play
+			// dispatch off a single `_inFlight` flag that was cleared too
+			// early. With the fix, only B's own call was ever in flight, so
+			// exactly one 'play first' is dispatched -- not a guard that
+			// wedges forever, only one that waits for its own owner.
+			hungFirstFromB.release();
+			await settle();
+			assert.deepEqual(
+				log,
+				['load first', 'unload first', 'load first', 'play first'],
+				'a stale tick settling late must not clear a remounted session\'s in-flight flag, or the ' +
+					'flag stops guarding against a second, overlapping advance for the same session'
+			);
+		} finally {
+			hungA.release();
+			hungFirstFromB.release();
+			if (uninstallB !== null) uninstallB();
+			mock.timers.reset();
+		}
+	});
+
 	it('a dispatcher command that never settles at all is eventually released by a hard ceiling, not wedged forever', async () => {
 		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
 		const foreverHung = gate();
