@@ -164,6 +164,12 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		// That fresh fetch resolves and DOES publish under the new scope.
 		await settle();
 		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['p1-row']);
+
+		// Guard against the exact anomaly a prior attempt at this fix hit
+		// (a mysterious unexplained THIRD fetch call): settle further and
+		// confirm nothing else fires.
+		for (let i = 0; i < 5; i += 1) await settle();
+		assert.equal(fetchCount, 2, 'no further fetch should fire beyond the rescheduled one');
 	});
 
 	it('control: an unchanged playlist selection still publishes normally once its own fetch resolves', async () => {
