@@ -291,7 +291,13 @@ async function _advance(reason: 'end' | 'skip'): Promise<void> {
 		if (feed.length > 0) {
 			pushToast('Trackify: no more playable tracks in this feed', 'info');
 		}
-		_triggeredFor = null;
+		// Latch on the track still loaded (unchanged by an exhausted
+		// advance), not null: `shouldAdvanceTrackify` treats null as
+		// "nothing triggered yet" and would fire again on the very next
+		// 250 ms poll, repeating this toast indefinitely until the deck's
+		// track or the feed epoch actually changes (both of which already
+		// clear this latch elsewhere) (Sol review, PR #3676).
+		_triggeredFor = deck.stable_id;
 		_queueHead = null;
 		return;
 	}
@@ -299,7 +305,16 @@ async function _advance(reason: 'end' | 'skip'): Promise<void> {
 }
 
 async function _tick(): Promise<void> {
-	if (!uiPrefs.auto_play_enabled) return;
+	if (!uiPrefs.auto_play_enabled) {
+		// Discard rather than leave latched: readTrackifySkipNext() is
+		// read-and-clear, and without this a Skip pressed while autoplay is
+		// disabled sits on the latch until autoplay is re-enabled, then
+		// fires against whatever track happens to be loaded at THAT later
+		// moment -- not the one the operator was looking at when they
+		// pressed it (Sol review, PR #3676).
+		readTrackifySkipNext();
+		return;
+	}
 	_syncEpoch();
 	// _inFlight MUST be checked before the skip latch is consumed. The latch
 	// (readTrackifySkipNext) is read-and-clear, so if a skip lands while an

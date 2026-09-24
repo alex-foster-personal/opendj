@@ -99,6 +99,73 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		);
 	});
 
+	it('a scope switch mid-fetch schedules its own hydrate immediately, not after the 60 s interval (Sol review, PR #3676)', async () => {
+		const held = gate();
+		const fetchedUrls = [];
+		let fetchCount = 0;
+		globalThis.fetch = async (url) => {
+			fetchCount += 1;
+			fetchedUrls.push(String(url));
+			if (fetchCount === 1) {
+				await held.promise;
+				return jsonResponse({
+					items: [
+						{
+							stable_id: 'stale-row',
+							key: '8A',
+							bpm: 120,
+							file_exists: true,
+							file_availability: 'AVAILABILITY_PRESENT',
+							has_rb_mapping: true
+						}
+					],
+					next_cursor: null
+				});
+			}
+			// The playlist-scope endpoint, unlike all_tracks, requires an ETag.
+			return new Response(
+				JSON.stringify({
+					tracks: [{ stable_id: 'p1-row', key: '8A', bpm: 120, file_exists: true }],
+					total: 1,
+					next_offset: null
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json', etag: 'p1-etag' } }
+			);
+		};
+
+		mod.uiPrefs.last_playlist = null; // all_tracks scope
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(fetchCount, 1, 'the initial hydrate must have started its fetch');
+
+		// Switch scope while that fetch is still in flight, then let it
+		// resolve and get discarded (already covered above).
+		mod.uiPrefs.last_playlist = { playlist_id: 'p1', name: 'Warmup', kind: 'playlist' };
+		held.release();
+		await settle();
+		await settle();
+
+		// The bug this guards against (Sol review, PR #3676): discarding the
+		// stale-scope response scheduled nothing for the newly selected
+		// scope, so the feed would sit empty until the 60 s interval timer
+		// fires. Without any further passage of time, a second fetch must
+		// already have gone out for the new scope.
+		assert.equal(
+			fetchCount,
+			2,
+			'discarding a stale-scope response must immediately schedule a hydrate for the current scope'
+		);
+		assert.match(
+			fetchedUrls[1],
+			/playlists\/p1/,
+			'the rescheduled hydrate must fetch the NEWLY selected scope, not repeat the old one'
+		);
+
+		// That fresh fetch resolves and DOES publish under the new scope.
+		await settle();
+		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['p1-row']);
+	});
+
 	it('control: an unchanged playlist selection still publishes normally once its own fetch resolves', async () => {
 		const held = gate();
 		globalThis.fetch = async () => {

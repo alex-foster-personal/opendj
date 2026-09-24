@@ -433,6 +433,100 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 		}
 	});
 
+	it('a skip requested while autoplay is disabled is discarded, not fired once re-enabled (Sol review, PR #3676)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: 10_000 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			entry.uiPrefs.auto_play_enabled = false;
+			entry.requestTrackifySkipNext();
+			// Several polls while disabled: none may consume the latch by
+			// acting on it, but none may leave it queued either.
+			for (let i = 0; i < 4; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			assert.deepEqual(log, [], 'disabled autoplay must not dispatch anything at all');
+
+			// Re-enabled well after the skip was pressed, against a track the
+			// operator never asked to leave. Without the fix, the still-set
+			// latch fires here and skips 'current' anyway.
+			entry.uiPrefs.auto_play_enabled = true;
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(
+				log,
+				[],
+				'a skip pressed while disabled must not fire once autoplay is re-enabled later'
+			);
+
+			// Control for the overshoot direction: a skip pressed AFTER
+			// re-enabling still works normally.
+			entry.requestTrackifySkipNext();
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, ['unload current', 'load next', 'play next']);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('feed exhaustion is latched to the current track, not retriggered every poll (Sol review, PR #3676)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			// Single-candidate feed, already the one loaded: _pickNext has
+			// nothing left once this track ends.
+			entry.e2ePrimeTrackifyFeed([row('current')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 250 });
+
+			const toastsBefore = entry.toasts.length;
+			uninstall = entry.installTrackifyAutoplay();
+			deck.position_ms = DURATION_MS;
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, [], 'an exhausted feed dispatches nothing');
+			assert.equal(
+				entry.toasts.length - toastsBefore,
+				1,
+				'exhaustion must toast exactly once, not be silent'
+			);
+
+			// Further polls with the same still-loaded, still-ended track: an
+			// unlatched `_triggeredFor` would satisfy shouldAdvanceTrackify
+			// again on every one of these and repeat the toast.
+			for (let i = 0; i < 6; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			assert.deepEqual(log, []);
+			assert.equal(
+				entry.toasts.length - toastsBefore,
+				1,
+				'feed exhaustion must latch on the current track, not repeat every 250 ms poll'
+			);
+
+			// Control for the overshoot direction: this is a latch, not a
+			// permanent stop -- a genuinely new feed (the PLAY-04 snapshot
+			// only re-publishes on a scope change, so switch playlists to
+			// force one) still un-sticks it via `_syncEpoch()`'s own reset.
+			entry.uiPrefs.last_playlist = { playlist_id: 'p2', name: 'p2', kind: 'playlist' };
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, ['unload current', 'load next', 'play next']);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
 	it('skip-next while in flight is re-latched instead of interleaving advances', async () => {
 		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
 		let uninstall = null;

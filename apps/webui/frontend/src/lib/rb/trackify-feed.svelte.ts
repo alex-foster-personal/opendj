@@ -51,6 +51,12 @@ export function noteTrackifySkipNext(): void {
 async function _hydrate(ownGeneration: number): Promise<void> {
 	if (_hydrating) return;
 	_hydrating = true;
+	// Set from inside the try below when this fetch's response is discarded
+	// because the operator picked a different playlist while it was in
+	// flight. Read only in `finally`, after `_hydrating` itself is cleared --
+	// calling `_hydrateOrToast` while `_hydrating` is still true would just
+	// no-op against its own in-flight guard.
+	let rehydrateForNewScope = false;
 	try {
 		// Captured ONCE, before the await: `uiPrefs.last_playlist` can change
 		// while this fetch is in flight (the operator picks a different
@@ -67,13 +73,23 @@ async function _hydrate(ownGeneration: number): Promise<void> {
 		// installed) while the fetch was in flight -- publishing here would
 		// write into a controller a newer/absent session already reset.
 		if (_installGeneration !== ownGeneration) return;
-		if (trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope) return;
+		if (trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope) {
+			rehydrateForNewScope = true;
+			return;
+		}
 		_lastSnapshot = _controller.step(true, lastPlaylist, viewRows);
 	} finally {
 		// Only this generation's own hydrate may clear the shared in-flight
 		// flag: a stale hydrate's finally must not clobber a newer session's
 		// own fetch that is genuinely still in flight.
-		if (_installGeneration === ownGeneration) _hydrating = false;
+		if (_installGeneration === ownGeneration) {
+			_hydrating = false;
+			// Nothing else scheduled a fetch for the newly selected scope
+			// above: without this the feed sits empty or on the old
+			// snapshot for up to 60 s, until the next interval tick (Sol
+			// review, PR #3676).
+			if (rehydrateForNewScope) _hydrateOrToast(ownGeneration);
+		}
 	}
 }
 
