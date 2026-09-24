@@ -15,12 +15,35 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import psutil
 import pytest
 
+from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf import capture_mode_ratios as cmr
+
+
+class _FakeNative:
+    """Duck-types `DarwinProcessMetrics` so these tests stay runnable off
+    macOS, matching this repo's existing DarwinProcessMetrics test
+    convention (test_probe_process_family.py's `_FakeNative`).
+    `phys_footprint`'s value is arbitrary here: these tests assert on
+    process-tree membership and cpu_percent, never on footprint magnitude.
+    """
+
+    def read(self, pid: int) -> SimpleNamespace:
+        return SimpleNamespace(phys_footprint=1024 * 1024)
+
+
+def _native() -> DarwinProcessMetrics:
+    """`_FakeNative` duck-types `DarwinProcessMetrics`; the cast tells mypy
+    what every test here already relies on, since the real class can only
+    be constructed on Darwin."""
+
+    return cast(DarwinProcessMetrics, _FakeNative())
 
 
 def _spawn_sleeper(seconds: float) -> subprocess.Popen[bytes]:
@@ -38,7 +61,7 @@ def test_live_tree_includes_a_spawned_child() -> None:
     """
     child = _spawn_sleeper(2.0)
     try:
-        sampler = cmr._ProcessTreeSampler(os.getpid())
+        sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
         tree_pids = {proc.pid for proc in sampler._live_tree()}
         assert child.pid in tree_pids
     finally:
@@ -51,7 +74,7 @@ def test_tracked_processes_are_forgotten_once_the_child_exits() -> None:
     """[if] a tracked child process exits [then] a later tree walk drops
     it from the persistent cache, [else stop]."""
     child = _spawn_sleeper(0.3)
-    sampler = cmr._ProcessTreeSampler(os.getpid())
+    sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
     sampler._live_tree()
     assert child.pid in sampler._tracked
 
@@ -67,7 +90,7 @@ def test_sample_raises_when_the_root_process_is_gone() -> None:
     """[if] the sampled root pid no longer exists [then] sample() raises
     loud rather than reporting a silent zero, [else stop]."""
     with patch.object(psutil, "Process", side_effect=psutil.NoSuchProcess(999999)):
-        sampler = cmr._ProcessTreeSampler(999999)
+        sampler = cmr._ProcessTreeSampler(999999, native=_native())
         with pytest.raises(RuntimeError, match="is not running"):
             sampler.sample()
 
@@ -86,9 +109,35 @@ def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
     control that catches a regression back to that shape (see the CPU-rises
     test below).
     """
-    sampler = cmr._ProcessTreeSampler(os.getpid())
+    sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
     first = sampler.sample()
     assert first["cpu_percent"] >= 0.0
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
+    """[if] the injected native reader reports a distinctive phys_footprint
+    [then] sample() reports exactly that value [else stop].
+
+    Direct regression test for the codex-review finding: summing
+    `psutil`'s `memory_info().rss` across a multi-process Chromium tree
+    double-counts pages the processes share, so footprint must come from
+    the real per-process `phys_footprint` counter (DarwinProcessMetrics)
+    instead. `distinctive_mb` is a value this test process's real RSS could
+    never coincidentally match, so this fails loud if the sampler reverts
+    to reading psutil's memory_info() for footprint.
+    """
+    distinctive_mb = 777.0
+
+    class _FixedFootprintNative:
+        def read(self, pid: int) -> SimpleNamespace:
+            return SimpleNamespace(phys_footprint=int(distinctive_mb * 1024 * 1024))
+
+    sampler = cmr._ProcessTreeSampler(
+        os.getpid(), native=cast(DarwinProcessMetrics, _FixedFootprintNative())
+    )
+    result = sampler.sample()
+    assert result["physical_footprint_mb"] == pytest.approx(distinctive_mb)
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -101,7 +150,7 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
     0.0 on its first call, so a sampler that rebuilt Process objects each
     call (the mutation) would fail this test by reporting 0.0 here too.
     """
-    sampler = cmr._ProcessTreeSampler(os.getpid())
+    sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
     sampler.sample()  # primes the cache
 
     deadline = time.monotonic() + 0.5

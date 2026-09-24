@@ -23,6 +23,7 @@ from typing import IO, Any
 import psutil
 
 from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
+from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf.capture_kpi_ledger import build_row, session_meta
 from scripts.perf.capture_ledger import append_ledger_rows
 
@@ -76,11 +77,26 @@ class _ProcessTreeSampler:
     `psutil.Process` per pid across samples rather than constructing a
     fresh one each time; a process that appears mid-capture (a new Chromium
     renderer) reads 0.0 CPU for its own first sample only, never after.
+
+    Footprint is read via `DarwinProcessMetrics.read(pid).phys_footprint`,
+    the same `proc_pid_rusage` counter Activity Monitor shows and the
+    packaged app's own diagnostics probe uses -- NOT `psutil`'s
+    `memory_info().rss`. Summing RSS across a multi-process Chromium tree
+    double-counts pages the processes share (GPU shared memory, sandboxed
+    IPC buffers, mapped V8 snapshot data), so a KPI card claiming
+    "physical_footprint_mb" while actually summing RSS could pass or fail
+    the PERFMODE-15 threshold on an artifact of that overcounting rather
+    than a real mode difference (Codex review, PR #3676).
     """
 
-    def __init__(self, root_pid: int) -> None:
+    def __init__(self, root_pid: int, *, native: DarwinProcessMetrics | None = None) -> None:
         self._root_pid = root_pid
         self._tracked: dict[int, psutil.Process] = {}
+        # Lazy real construction (ctypes, Darwin-only) so tests can inject a
+        # duck-typed fake and stay runnable off-macOS, matching this repo's
+        # existing DarwinProcessMetrics test convention (test_probe_process_
+        # family.py's _FakeNative).
+        self._native = native if native is not None else DarwinProcessMetrics()
 
     def _live_tree(self) -> list[psutil.Process]:
         try:
@@ -109,10 +125,10 @@ class _ProcessTreeSampler:
         live = 0
         for proc in self._live_tree():
             try:
-                footprint_mb += proc.memory_info().rss / (1024 * 1024)
+                footprint_mb += self._native.read(proc.pid).phys_footprint / (1024 * 1024)
                 cpu_percent += proc.cpu_percent(interval=None)
                 live += 1
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ProcessLookupError):
                 continue
         if live == 0:
             raise RuntimeError(
