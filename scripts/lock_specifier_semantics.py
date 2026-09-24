@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 
-from scripts.lock_marker_parser import tokenize_marker
+from scripts.lock_marker_parser import _MarkerParser, tokenize_marker
 from scripts.lock_marker_semantics import (
     _VERSION_RE,
     Unknown,
@@ -126,6 +126,11 @@ def norm_marker(marker: str | None) -> tuple[str, ...]:
     records that literal verbatim (Codex P2 on #3763, round 8)."""
     if marker is None or not marker.strip():
         return ()
+    # Parse before any spelling compare: a marker uv refuses ("Expected a quoted
+    # string or a valid marker name, found `made_up`", `uv lock --check` exit 2;
+    # measured uv 0.8.17, Codex P2 on #3763, round 31) that both files spell the
+    # same way matched exactly and never reached the parser.
+    _MarkerParser(marker).parse()
     toks = tokenize_marker(marker)
     if any(tok == ("word", "or") or tok[0] == "lp" for tok in toks):
         return (" ".join(text for _kind, text in toks),)

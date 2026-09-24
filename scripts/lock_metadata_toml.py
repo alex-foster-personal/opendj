@@ -14,8 +14,18 @@ import re
 
 from scripts.lock_marker_parser import Unknown
 
+_NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
+
 
 def norm_name(name: str) -> str:
+    """A package, extra or dependency-group name, normalized the way uv records it
+    (`Foo_Bar` -> `foo-bar`). A name uv refuses ("Not a valid package or extra name:
+    ... Names must start and end with a letter or digit and may only contain -, _, .,
+    and alphanumeric characters", `uv lock --check` exit 2; measured uv 0.8.17 for a
+    project name, an extra and a dependency group, Codex P2 on #3763, round 31) is
+    UNKNOWN before normalization, or the same invalid name in both files matched."""
+    if _NAME_RE.match(name) is None:
+        raise Unknown(f"{name!r} is not a valid package or extra name; uv rejects the file")
     return re.sub(r"[-_.]+", "-", name).lower()
 
 

@@ -267,3 +267,88 @@ def test_a_lock_container_or_path_target_of_the_wrong_type_is_unknown(
     code, message = _run_mini(tmp_path, lock, dep)
     assert code == EXIT_UNKNOWN, message
     assert named in message and "uv rejects the file" in message
+
+
+# A second pair `uv lock` wrote (uv 0.8.17, Thu 24 Sep 2026): one marked dependency
+# and one empty extra; six's `sdist` and `wheels` rows (hash URLs over 100 columns)
+# are dropped, the checker reads only the root package's metadata. Round 31: a marker
+# or a name uv refuses, spelled the SAME way in both files, matched exactly and never
+# reached the parser or the name rule.
+MARKED_PYPROJECT = """[project]
+name = "demo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["six; os_name == 'x'"]
+[project.optional-dependencies]
+ok = []
+"""
+MARKED_LOCK = """version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "six", marker = "os_name == 'x'" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "six", marker = "os_name == 'x'" }]
+provides-extras = ["ok"]
+
+[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+"""
+
+
+@pytest.mark.parametrize(
+    ("edit", "named"),
+    [
+        (
+            lambda text: text.replace("os_name == 'x'", "made_up == 'x'"),
+            "unknown marker variable 'made_up'",
+        ),
+        (
+            lambda text: text.replace('name = "demo"', 'name = "bad space"'),
+            "'bad space' is not a valid package or extra name",
+        ),
+        (
+            lambda text: text.replace("\nok = []", '\n"bad space" = []').replace(
+                'provides-extras = ["ok"]', 'provides-extras = ["bad space"]'
+            ),
+            "'bad space' is not a valid package or extra name",
+        ),
+        (
+            lambda text: text.replace("\nok = []", '\n"-lead" = []').replace(
+                'provides-extras = ["ok"]', 'provides-extras = ["-lead"]'
+            ),
+            "'-lead' is not a valid package or extra name",
+        ),
+    ],
+    ids=[
+        "marker-in-both",
+        "project-name-in-both",
+        "extra-in-both",
+        "extra-leading-dash",
+    ],
+)
+def test_an_invalid_marker_or_name_shared_by_both_files_is_unknown(
+    tmp_path: Path, edit, named: str
+) -> None:
+    """uv 0.8.17 on the pair: `made_up == 'x'` in both files is "Expected a quoted
+    string or a valid marker name, found `made_up`"; `name = "bad space"` in both,
+    the extra `"bad space"` in both and the extra `"-lead"` in both are "Not a valid
+    package or extra name"; each `uv lock --check` exit 2, while the gate's exact
+    spelling match had returned 0 (Codex P2 x2 on #3763, round 31)."""
+    code, message = _run(tmp_path, MARKED_PYPROJECT, MARKED_LOCK)
+    assert code == EXIT_OK, message  # the control: the pair as uv wrote it is clean
+    pyproject, lock = edit(MARKED_PYPROJECT), edit(MARKED_LOCK)
+    assert (pyproject, lock) != (MARKED_PYPROJECT, MARKED_LOCK)
+    assert pyproject != MARKED_PYPROJECT and lock != MARKED_LOCK  # edited on BOTH sides
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message
