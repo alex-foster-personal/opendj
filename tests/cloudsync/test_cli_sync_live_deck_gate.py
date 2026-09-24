@@ -24,6 +24,7 @@ import json
 import socket
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import uvicorn
@@ -46,6 +47,20 @@ def _free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
+
+
+@pytest.fixture(autouse=True)
+def _no_stray_lock_path_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test here that expects the data-dir lock to be used must not be
+    at the mercy of whatever the calling shell happens to export
+    (claude-review, PR #3831, P3): a developer or agent running this suite
+    from a live-debug shell with ``OPENDJ_LIVE_LOCK_PATH`` already set would
+    otherwise have those tests probe a real engine instead of the fixture,
+    making results depend on that engine's state rather than on the code
+    under test. The one test that deliberately sets the override does so
+    itself, after this autouse fixture has already cleared it.
+    """
+    monkeypatch.delenv(engine_origin.LOCK_PATH_ENV, raising=False)
 
 
 def _write_lock(data_dir: Path, *, port: int) -> None:
@@ -79,6 +94,37 @@ def test_fake_engine_409_body_matches_the_real_ui_mirror_route() -> None:
         response = client.get("/api/v1/state/ui-mirror")
     assert response.status_code == 409
     assert response.json() == {"client_open": False}
+
+
+def _real_playing_deck_mirror_body() -> dict[str, Any]:
+    """The EXACT 200 body the real ui-mirror route serves for a playing deck.
+
+    Ties the "playing deck" fixture to the real route's actual output
+    (claude-review, PR #3831, flagged across three review rounds): a
+    hand-written ``{"decks": {"1": {"playing": True}}}`` could silently drift
+    from what ``publish_ui_mirror``/``get_ui_mirror`` actually wrap it in
+    (``received_at`` is added server-side), leaving the fixtures below --
+    and the shipped claim they back -- divorced from production. This PUTs a
+    playing mirror through the real router and GETs it back, exactly like
+    ``test_fake_engine_409_body_matches_the_real_ui_mirror_route`` already
+    does for the closed-page case.
+    """
+    app = FastAPI()
+    app.include_router(ui_mirror_routes.router, prefix="/api/v1")
+    with TestClient(app) as client:
+        put_response = client.put(
+            "/api/v1/state/ui-mirror", json={"decks": {"1": {"playing": True}}}
+        )
+        assert put_response.status_code == 202
+        get_response = client.get("/api/v1/state/ui-mirror")
+    assert get_response.status_code == 200
+    return get_response.json()
+
+
+#: Computed once, at collection time, so every fixture and assertion below
+#: reads the SAME real-route body rather than a fresh (differently
+#: timestamped) round trip per use.
+_PLAYING_DECK_MIRROR_BODY = _real_playing_deck_mirror_body()
 
 
 def _fake_engine_app(mirror_status: int, mirror_body: dict) -> FastAPI:
@@ -120,12 +166,12 @@ def test_no_lock_file_means_nothing_can_be_playing(tmp_path: Path) -> None:
     assert maintenance._cli_live_ui_mirror(tmp_path) is None
 
 
-@pytest.mark.parametrize("live_engine", [(200, {"decks": {"1": {"playing": True}}})], indirect=True)
+@pytest.mark.parametrize("live_engine", [(200, _PLAYING_DECK_MIRROR_BODY)], indirect=True)
 def test_live_engine_mirror_is_read_when_verified(tmp_path: Path, live_engine: str) -> None:
     """[if] a verified live engine answers 200 [then] its mirror body is returned."""
     _write_lock(tmp_path, port=int(live_engine))
     mirror = maintenance._cli_live_ui_mirror(tmp_path)
-    assert mirror == {"decks": {"1": {"playing": True}}}
+    assert mirror == _PLAYING_DECK_MIRROR_BODY
 
 
 @pytest.mark.parametrize("live_engine", [(409, {"client_open": False})], indirect=True)
@@ -135,7 +181,7 @@ def test_no_open_page_means_nothing_can_be_playing(tmp_path: Path, live_engine: 
     assert maintenance._cli_live_ui_mirror(tmp_path) is None
 
 
-@pytest.mark.parametrize("live_engine", [(200, {"decks": {"1": {"playing": True}}})], indirect=True)
+@pytest.mark.parametrize("live_engine", [(200, _PLAYING_DECK_MIRROR_BODY)], indirect=True)
 def test_cli_sync_defers_for_a_playing_deck_seen_on_a_live_engine(
     tmp_path: Path, live_engine: str, capsys: pytest.CaptureFixture[str]
 ) -> None:

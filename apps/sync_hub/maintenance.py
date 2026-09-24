@@ -89,7 +89,11 @@ import httpx
 from apps.shared import engine_origin
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
-from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
+from apps.shared.sync_runtime_gates import (
+    SyncDeferredError,
+    any_deck_playing,
+    refuse_sync_round,
+)
 from apps.sync_hub import (
     capabilities,
     client,
@@ -597,9 +601,11 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 }
 
 
-#: Timeout for the CLI's best-effort probe of a live engine's UI mirror. Short
-#: on purpose: this runs on the ``sync`` critical path and a wedged engine
-#: must not turn an operator's sync command into a multi-second hang.
+#: Timeout for EACH of the CLI's best-effort probes of a live engine (the
+#: identity health check, then the UI-mirror GET). Short on purpose: this
+#: runs on the ``sync`` critical path. Sequential, not shared, so a wedged
+#: engine can hold the command for up to roughly 2x this value per lock
+#: checked, not just this value once (claude-review, PR #3831, P3).
 _LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
 
 
@@ -608,56 +614,62 @@ _LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
 DEFER_REASON_ENGINE_MIRROR_UNREACHABLE = "engine_mirror_unreachable"
 
 
-def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
-    """Best-effort ``ui_mirror`` for a standalone CLI invocation (CLOUDSYNC-14).
+def _candidate_lock_files(data_dir: Path) -> list[Path]:
+    """The lock file(s) that might describe the engine playing a deck.
 
-    The CLI is its own process, so it never has the in-process ``ui_mirror``
-    the running webui app keeps on ``Request.app.state`` -- that is only
-    populated by an open performance page pushing to ``PUT
-    /api/v1/state/ui-mirror`` inside THAT process. A deck can only be playing
-    while the engine that owns it is alive, so this reads the same engine
-    lock file (``<data_dir>/.engine.lock``, ``apps.engine_core.lock``) every
-    other CLI in this repo uses to find a live engine, verifies the process on
-    that port really is the identity-matched engine, then asks it for its
-    current mirror over loopback HTTP. ``OPENDJ_LIVE_LOCK_PATH`` (the same
-    override every other CLI in this repo honors via
-    ``apps.shared.engine_origin.lock_path``) takes precedence when set, so an
-    agent driving a sandboxed engine through the live-debug skill is not
-    invisible to this gate just because ``--data-dir`` names a different path
-    (claude-review, PR #3831, P2).
+    Normally just ``<data_dir>/.engine.lock``, the same file every other CLI
+    in this repo resolves through ``apps.shared.engine_origin.lock_path``'s
+    ``OPENDJ_LIVE_LOCK_PATH`` override. When that override is set AND names a
+    different file, BOTH are checked (claude-review, PR #3831, P2): the
+    override lets an agent drive a sandboxed engine, but a DJ's own real
+    engine at ``data_dir`` can be live at the same time, and its playing deck
+    is exactly what this gate must not miss.
+    """
+    data_dir_lock = data_dir / ".engine.lock"
+    override = os.environ.get(engine_origin.LOCK_PATH_ENV, "").strip()
+    if not override:
+        return [data_dir_lock]
+    override_lock = Path(override).expanduser()
+    if override_lock == data_dir_lock:
+        return [data_dir_lock]
+    return [data_dir_lock, override_lock]
 
-    Only ONE outcome reads as "nothing is playing" for certain: no lock file
-    at that path at all. Every other ``EngineNotRunning`` -- an unusable or
-    unreadable lock, a role/boot_id mismatch, a non-200 health status, or a
-    verified port that stopped answering -- is inconclusive, not permissive
+
+def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
+    """The ``ui_mirror`` a single lock file's engine reports, or None if safe.
+
+    A deck can only be playing while the engine that owns it is alive, so
+    this verifies the process the lock names really is the identity-matched
+    engine, then asks it for its current mirror over loopback HTTP.
+
+    Only TWO outcomes read as "nothing is playing" here, both because no
+    engine is reachable to own a playing deck: no lock file at this path at
+    all, or a verified-origin lookup whose failure cause is
+    ``httpx.ConnectError`` (the port outright refused the connection).
+    ``verify_engine_identity`` raises that case via ``unreachable(...) from
+    error``, so ``exc.__cause__`` names the original transport-error
+    subclass. Every OTHER ``EngineNotRunning`` -- an unusable or unreadable
+    lock, a role/boot_id mismatch, a non-200 health status, or (critically) a
+    ``httpx.TimeoutException`` from a port that accepted the connection and
+    then hung on ``/api/v1/health`` -- is inconclusive, not permissive
     (claude-review, PR #3831, P1/BLOCKING): the lock names a specific engine,
     so its failure to check out is a reason to defer, not a reason to assume
-    safety, EXCEPT for the one transport failure that itself proves no engine
-    is listening. ``verify_engine_identity`` raises that case via
-    ``unreachable(...) from error``, so ``exc.__cause__`` names the original
-    ``httpx.TransportError`` subclass; only ``httpx.ConnectError`` (the port
-    refused the connection) reads as safe. A ``httpx.TimeoutException`` (the
-    port accepted the connection and then hung on ``/api/v1/health``) is
-    exactly the "wedged during a live set" case this gate exists to catch, so
-    it defers like every other inconclusive outcome. A verified engine's own
-    409 with EXACTLY the documented ``{"client_open": False}`` body also
-    reads as safe: no open performance page means no deck is rendering audio
-    either.
+    safety, and a wedged-but-locked engine is exactly the "wedged during a
+    live set" case this gate exists to catch.
 
-    Everything else from a VERIFIED engine is inconclusive, not permissive
-    (claude-review, PR #3831, P1/BLOCKING x2 plus P3 x2): a non-200 status
-    other than that exact 409 is a genuine server error, not a "not playing"
-    signal; a transport failure on THIS specific request (unlike the identity
-    check above) means an engine we just confirmed is alive stopped answering
-    mid-probe -- exactly the "wedged during a live set" case this gate exists
-    to catch; and a response body that fails to parse as JSON at all must
-    defer rather than raise an uncaught decode error out of a sync command.
-    All of these raise `SyncDeferredError` so the CLI fails closed (refuses
-    the sync) rather than silently assuming it is safe to proceed, or crashing
-    instead of exiting with the documented deferred code.
+    A verified engine's own 409 with EXACTLY the documented
+    ``{"client_open": False}`` body also reads as safe: no open performance
+    page means no deck is rendering audio either. Everything else from a
+    VERIFIED engine is inconclusive, not permissive: a non-200 status other
+    than that exact 409 is a genuine server error, not a "not playing"
+    signal; a transport failure on the mirror GET itself (unlike the identity
+    check above) means an engine we just confirmed is alive stopped
+    answering mid-probe; and a response body that fails to parse as JSON at
+    all must defer rather than raise an uncaught decode error out of a sync
+    command. All of these raise `SyncDeferredError` so the CLI fails closed
+    (refuses the sync) rather than silently assuming it is safe to proceed,
+    or crashing instead of exiting with the documented deferred code.
     """
-    override = os.environ.get(engine_origin.LOCK_PATH_ENV, "").strip()
-    lock_file = Path(override).expanduser() if override else data_dir / ".engine.lock"
     try:
         origin = engine_origin.resolve_verified_origin(lock_file)
     except engine_origin.EngineNotRunning as exc:
@@ -684,6 +696,32 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     if not isinstance(body, dict):
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     return body
+
+
+def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
+    """Best-effort ``ui_mirror`` for a standalone CLI invocation (CLOUDSYNC-14).
+
+    The CLI is its own process, so it never has the in-process ``ui_mirror``
+    the running webui app keeps on ``Request.app.state`` -- that is only
+    populated by an open performance page pushing to ``PUT
+    /api/v1/state/ui-mirror`` inside THAT process. Every candidate lock file
+    from ``_candidate_lock_files`` is probed via ``_probe_engine_lock``,
+    which itself raises ``SyncDeferredError`` immediately for an inconclusive
+    engine, so an inconclusive answer on ANY candidate defers the whole
+    round. Among candidates that answer conclusively, a body showing a
+    playing deck always wins over one that doesn't (claude-review, PR #3831,
+    P2): otherwise a sandboxed engine named by ``OPENDJ_LIVE_LOCK_PATH`` that
+    happens to report first, with nothing playing, would hide a REAL playing
+    deck on the engine actually running against ``data_dir``.
+    """
+    first_body: Mapping[str, Any] | None = None
+    for lock_file in _candidate_lock_files(data_dir):
+        body = _probe_engine_lock(lock_file)
+        if body is not None and any_deck_playing(body):
+            return body
+        if first_body is None:
+            first_body = body
+    return first_body
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
