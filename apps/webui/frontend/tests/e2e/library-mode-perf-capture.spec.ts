@@ -1,12 +1,13 @@
 // requirement: PERFMODE-14
 // [if] Gig holds four decks then Library mode dwells 60s [then] emit footprint and CPU medians
 
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, test, type APIRequestContext, type CDPSession } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kpiCaptureTimeoutS } from './kpi-capture-timeouts.mjs';
 import { fixtureManifestExists, readFixtureManifest } from './support/fixture-manifest';
+import { sampleRendererProcessFootprint } from './support/renderer-process-sample';
 
 const RESULT_PATH = process.env.KPI_CAPTURE_RESULT;
 const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
@@ -16,13 +17,9 @@ const FIXTURE_MODE = process.env.PERFORMANCE_E2E_FIXTURE !== '0';
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
 const MANIFEST_PATH = join(DATA_DIR, 'fixture-manifest.json');
+const SAMPLE_INTERVAL_S = Number(process.env.KPI_CAPTURE_SAMPLE_INTERVAL_S ?? '5');
 const SAMPLING_METHOD =
-	'GET /api/v1/performance/telemetry/processes totals.physical_footprint_mb and totals.cpu_percent every 5s';
-
-interface TelemetrySample {
-	footprint_mb: number | null;
-	cpu_percent: number | null;
-}
+	`CDP SystemInfo.getProcessInfo selects Chrome renderer + gpu-process PIDs; ps -o rss=,%cpu= for footprint and CPU every ${SAMPLE_INTERVAL_S}s`;
 
 interface ModeCapture {
 	footprint_samples_mb: number[];
@@ -63,52 +60,8 @@ function median(values: number[]): number {
 	return sorted[mid];
 }
 
-function sumProcessFamilyFootprint(body: Record<string, unknown>): number | null {
-	const totals = body.totals as Record<string, unknown> | undefined;
-	const fromTotals = totals?.physical_footprint_mb;
-	if (typeof fromTotals === 'number' && Number.isFinite(fromTotals)) {
-		return fromTotals;
-	}
-	const byRole = body.by_role_mb as Record<string, unknown> | undefined;
-	if (byRole !== null && typeof byRole === 'object') {
-		const roles = ['desktop-shell', 'python-engine', 'webkit-webcontent'];
-		let sum = 0;
-		let found = false;
-		for (const role of roles) {
-			const mb = byRole[role];
-			if (typeof mb === 'number' && Number.isFinite(mb)) {
-				sum += mb;
-				found = true;
-			}
-		}
-		return found ? sum : null;
-	}
-	return null;
-}
-
-async function sampleTelemetry(
-	request: APIRequestContext,
-	apiBase: string
-): Promise<TelemetrySample> {
-	const response = await request.get(`${apiBase}/api/v1/performance/telemetry/processes`);
-	if (!response.ok()) {
-		return { footprint_mb: null, cpu_percent: null };
-	}
-	const body = (await response.json()) as Record<string, unknown>;
-	if (body.available !== true) {
-		return { footprint_mb: null, cpu_percent: null };
-	}
-	const totals = body.totals as Record<string, unknown> | undefined;
-	const cpu = totals?.cpu_percent;
-	return {
-		footprint_mb: sumProcessFamilyFootprint(body),
-		cpu_percent: typeof cpu === 'number' && Number.isFinite(cpu) ? cpu : null
-	};
-}
-
 async function dwellSample(
-	request: APIRequestContext,
-	apiBase: string,
+	cdp: CDPSession,
 	dwellSeconds: number,
 	intervalMs: number
 ): Promise<ModeCapture> {
@@ -116,7 +69,7 @@ async function dwellSample(
 	const cpuSamples: number[] = [];
 	const endAt = Date.now() + dwellSeconds * 1000;
 	while (Date.now() < endAt) {
-		const sample = await sampleTelemetry(request, apiBase);
+		const sample = await sampleRendererProcessFootprint(cdp);
 		if (sample.footprint_mb !== null) footprintSamples.push(sample.footprint_mb);
 		if (sample.cpu_percent !== null) cpuSamples.push(sample.cpu_percent);
 		await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -192,10 +145,11 @@ test('captures Gig vs Library steady-state footprint and CPU medians', async ({ 
 			);
 		}
 
-		const gig = await dwellSample(request, API_BASE, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
+		const cdp = await page.context().newCDPSession(page);
+		const gig = await dwellSample(cdp, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
 		await selectLibraryMode(page);
 		await page.waitForFunction(() => window.__mdtLibraryModeIdle === true);
-		const library = await dwellSample(request, API_BASE, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
+		const library = await dwellSample(cdp, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
 
 		writeResult({
 			ok: true,

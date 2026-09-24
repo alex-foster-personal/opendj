@@ -102,13 +102,21 @@ def _ledger_rows(
     library_footprint_mb: float,
     gig_cpu_percent: float,
     library_cpu_percent: float,
+    measured: bool = True,
 ) -> list[dict[str, Any]]:
     footprint_ratio = library_footprint_mb / gig_footprint_mb
     cpu_ratio = library_cpu_percent / gig_cpu_percent
-    note = (
-        f"capture_id={capture_id} app_build_sha={app_build_sha} "
-        "method=scripts/perf/capture_library_mode.py dwell_seconds=60"
-    )
+    if measured:
+        note = (
+            f"capture_id={capture_id} app_build_sha={app_build_sha} "
+            "method=scripts/perf/capture_library_mode.py dwell_seconds=60"
+        )
+    else:
+        note = (
+            f"capture_id={capture_id} app_build_sha={app_build_sha} "
+            "method=scripts/perf/capture_library_mode.py "
+            "values supplied by hand on the command line (not a dwell capture)"
+        )
     today = datetime.now(UTC).date().isoformat()
     return [
         {
@@ -120,7 +128,7 @@ def _ledger_rows(
             "machine": machine,
             "source": "capture_library_mode",
             "note": note,
-            "measured": True,
+            "measured": measured,
         },
         {
             "date": today,
@@ -131,7 +139,7 @@ def _ledger_rows(
             "machine": machine,
             "source": "capture_library_mode",
             "note": note,
-            "measured": True,
+            "measured": measured,
         },
     ]
 
@@ -284,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
             library_footprint_mb=float(args.library_footprint_mb),
             gig_cpu_percent=float(args.gig_cpu_percent),
             library_cpu_percent=float(args.library_cpu_percent),
+            measured=False,
         )
         append_entries(args.ledger, rows)
         for row in rows:

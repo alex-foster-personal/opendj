@@ -1,9 +1,42 @@
 import assert from 'node:assert/strict';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { loadTypeScriptModule } from './load-typescript.mjs';
+import { importBundledSource } from './import-bundled-source.mjs';
+import { bundleTypeScriptModule, loadTypeScriptModule } from './load-typescript.mjs';
 
+const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const runtime = await loadTypeScriptModule('src/lib/rb/library-mode-runtime.ts');
+
+const PROBE_ENTRY_REL = 'tests/unit/.tmp_library_mode_probe_entry.ts';
+
+async function loadRuntimeWithRegistry() {
+	const entryAbs = join(FRONTEND_ROOT, PROBE_ENTRY_REL);
+	writeFileSync(
+		entryAbs,
+		`export { readLibraryModeIdleProbe } from '$lib/rb/library-mode-runtime';
+export { registerAudioContext, resetAudioContextRegistryForTest } from '$lib/rb/audio-context-registry';
+`
+	);
+	try {
+		const text = await bundleTypeScriptModule(PROBE_ENTRY_REL);
+		return await importBundledSource(text, PROBE_ENTRY_REL);
+	} finally {
+		rmSync(entryAbs, { force: true });
+	}
+}
+
+test('readLibraryModeIdleProbe reports leaked audio contexts when engine state is uninitialized', async () => {
+	const mod = await loadRuntimeWithRegistry();
+	mod.resetAudioContextRegistryForTest();
+	mod.registerAudioContext({});
+	const probe = mod.readLibraryModeIdleProbe();
+	assert.equal(probe.audio_context_state, 'uninitialized');
+	assert.equal(probe.audio_context_count, 1);
+	mod.resetAudioContextRegistryForTest();
+});
 
 test('readLibraryModeIdleProbe returns serializable counts', () => {
 	const probe = runtime.readLibraryModeIdleProbe();

@@ -41,7 +41,7 @@ export function readLibraryModeIdleProbe(): LibraryModeIdleProbe {
 	const contextState = audioContextState();
 	return {
 		audio_context_state: contextState,
-		audio_context_count: contextState === 'uninitialized' ? 0 : countRegisteredAudioContexts(),
+		audio_context_count: countRegisteredAudioContexts(),
 		prefetch_ready_count: audioPrefetchReadyCount(),
 		anlz_cache_entry_count: anlzCacheEntryCount(),
 		stem_decoder_pooled_count: pooledCount() + activeStemWorkerCount(),
