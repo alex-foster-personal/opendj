@@ -598,8 +598,11 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 };
 
 /**
- * Channel level meter reading, taken POST-EQ and PRE-FADER through an
- * AudioWorklet tap: level, held peak, lit segment count and clip latch.
+ * Channel level meter reading, taken POST-TRIM, POST-EQ and POST-CHANNEL-FADER
+ * through an AudioWorklet tap: level, held peak, lit segment count and clip
+ * latch. The tap sits on the fader node's output (issue #3529), so pulling
+ * the channel fader down moves this reading the way it moves the audible
+ * channel level.
  *
  * REPLACED `peekDeckMeter`, which returned `Math.min(1, rms * 5.5)`: linear
  * amplitude against a magic constant, no dB scale, no ballistics, and tapped
