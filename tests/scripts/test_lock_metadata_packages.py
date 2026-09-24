@@ -200,18 +200,22 @@ def test_a_package_identity_recorded_twice_is_unknown(tmp_path: Path) -> None:
     """A second `[[package]]` with the same name, version and source is refused whether
     anything depends on it (`six`) or not (`ghost`), `uv lock --check` exit 2 (measured
     uv 0.8.17, Codex P2 on #3763, round 41); the name set had collapsed it. Controls:
-    one `ghost`, a second version of it, or the same version from another registry
-    are read (exit 0)."""
+    one `ghost` or a second version of it are read (exit 0); the same version from
+    another registry passes the identity check too, and is then UNKNOWN for its
+    registry alone (round 47)."""
     six = UNMARKED_LOCK[UNMARKED_LOCK.rindex("\n[[package]]") :]
     assert 'name = "six"' in six
     for twice in (six, GHOST + GHOST):
         code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + twice)
         assert code == EXIT_UNKNOWN, message
         assert "is recorded twice" in message
-    other_source = GHOST.replace("pypi.org", "example.com")
-    for once in (GHOST, GHOST + GHOST.replace('"1.0"', '"2.0"'), GHOST + other_source):
+    for once in (GHOST, GHOST + GHOST.replace('"1.0"', '"2.0"')):
         code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + once)
         assert code == EXIT_OK, message
+    other_source = GHOST.replace("pypi.org", "example.com")
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + GHOST + other_source)
+    assert code == EXIT_UNKNOWN, message
+    assert "recorded twice" not in message and "is not the default index" in message, message
 
 
 @pytest.mark.parametrize(

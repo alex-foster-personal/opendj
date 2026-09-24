@@ -217,6 +217,16 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
             None,
             "[tool.uv] dependency-metadata is not compared",
         ),
+        (
+            '[[tool.uv.index]]\nname = "mirror"\nurl = "https://mirror.example/simple"\n'
+            "default = true",
+            None,
+            "[tool.uv] index: index configuration is not compared",
+        ),
+        ('index-url = "https://mirror.example/simple"', None, "[tool.uv] index-url: index"),
+        ('extra-index-url = ["https://mirror.example/simple"]', None, "extra-index-url: index"),
+        ('find-links = ["wheels"]', None, "[tool.uv] find-links: index configuration"),
+        ("no-index = true", None, "[tool.uv] no-index: index configuration"),
     ],
     ids=[
         "resolution-int",
@@ -236,6 +246,11 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
         "lock-conflicts-string",
         "lock-members",
         "dependency-metadata",
+        "index-table",
+        "index-url",
+        "extra-index-url",
+        "find-links",
+        "no-index",
     ],
 )
 def test_a_setting_shape_uv_refuses_or_drops_is_unknown(
@@ -462,4 +477,33 @@ def test_the_order_uv_writes_a_conflict_set_in_keeps_the_verdict(tmp_path: Path)
     assert lock.count(REQUIRES) == 1
     lock = lock.replace(REQUIRES, REQUIRES + SORTED_CONFLICT)
     code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
+
+
+PYPI = 'source = { registry = "https://pypi.org/simple" }'
+
+
+def test_a_package_from_another_index_is_unknown(tmp_path: Path) -> None:
+    """A recorded package from a registry other than the default index was resolved
+    under index configuration this check does not compare (round 47): UNKNOWN, with
+    the package and registry named. CONTROL: the default index reads OK."""
+    assert UNMARKED_LOCK.count(PYPI) == 1
+    mirror = UNMARKED_LOCK.replace(PYPI, 'source = { registry = "https://mirror.example/simple" }')
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, mirror)
+    assert code == EXIT_UNKNOWN, message
+    assert "'six' registry 'https://mirror.example/simple' is not the default index" in message
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK)
+    assert code == EXIT_OK, message
+
+
+def test_a_uv_toml_beside_the_pyproject_is_unknown(tmp_path: Path) -> None:
+    """A `uv.toml` outranks `[tool.uv]` for every setting this check reads from the
+    pyproject (round 47), so its presence is UNKNOWN; CONTROL: without it the same
+    pair reads OK."""
+    (tmp_path / "uv.toml").write_text('resolution = "lowest-direct"\n', encoding="utf-8")
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert "uv.toml exists and is not read by this check" in message
+    (tmp_path / "uv.toml").unlink()
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK)
     assert code == EXIT_OK, message

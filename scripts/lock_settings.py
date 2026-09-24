@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import datetime
+from pathlib import Path
 
 from scripts.lock_marker_parser import Unknown
 from scripts.lock_metadata_toml import norm_name, toml_list, toml_strings
@@ -46,6 +47,12 @@ MANIFEST = (
 )
 ConflictSet = tuple[tuple[tuple[str, str], ...], ...]
 IGNORED = "uv drops every [tool.uv] setting with a warning and resolves with the defaults"
+# The index uv resolves registry requirements against when no `[[tool.uv.index]]`,
+# legacy `index-url` / `extra-index-url`, `find-links` or `no-index` names another;
+# index configuration changes what a fresh `uv lock` writes (round 47), and this
+# check does not compare it, so any of it on either side is UNKNOWN.
+DEFAULT_INDEX = "https://pypi.org/simple"
+INDEX_KEYS = ("index", "index-url", "extra-index-url", "find-links", "no-index")
 
 
 def _stamp(value: object, where: str) -> datetime:
@@ -136,8 +143,9 @@ def settings_delta(
 ) -> list[str]:
     """Stale lines for every setting pair; UNKNOWN on a shape uv refuses or drops.
     `spelled`/`recorded` turn one pyproject requirement string / one lock record into
-    the checker's comparable key. Workspace `members` and `dependency-metadata` on
-    either side are not compared: UNKNOWN."""
+    the checker's comparable key. Workspace `members`, `dependency-metadata` and index
+    configuration (a `[tool.uv]` index key, or a package recorded from a registry other
+    than the default index) on either side are not compared: UNKNOWN."""
     tool = uv_tool or {}
     options = lock.get("options", {})
     if not isinstance(options, dict):
@@ -154,6 +162,7 @@ def settings_delta(
     for key in ("members", "dependency-metadata"):
         if key in manifest:
             raise Unknown(f"uv.lock manifest {key} is not compared by this check")
+    _refuse_index_configuration(tool, lock)
     lines = [line for spec in OPTIONS if (line := _option(tool, options, spec)) is not None]
     for spelled_key, recorded_key in MANIFEST:
         # uv records a repeated or equivalent requirement ONCE (`six<2` beside `six<2.0`,
@@ -187,6 +196,30 @@ def settings_delta(
     if want_sets != have_sets:
         lines.append(f"  [tool.uv] conflicts: pyproject.toml {want_sets!r}, uv.lock {have_sets!r}")
     return lines
+
+
+def refuse_uv_toml(project_dir: Path) -> None:
+    """A `uv.toml` beside the pyproject outranks `[tool.uv]` for every setting this
+    check reads there (round 47): UNKNOWN."""
+    if (project_dir / "uv.toml").exists():
+        raise Unknown(f"{project_dir / 'uv.toml'} exists and is not read by this check")
+
+
+def _refuse_index_configuration(tool: dict[str, object], lock: dict[str, object]) -> None:
+    """A `[tool.uv]` index key, or a package recorded from a registry other than the
+    default index (resolved under index configuration from a uv.toml, an environment
+    variable or a since-removed key): UNKNOWN, round 47."""
+    for key in INDEX_KEYS:
+        if key in tool:
+            raise Unknown(f"[tool.uv] {key}: index configuration is not compared by this check")
+    for entry in toml_list(lock.get("package", []), "uv.lock package"):
+        registry = entry["source"].get("registry") if isinstance(entry, dict) else None
+        if isinstance(registry, str) and registry != DEFAULT_INDEX:
+            raise Unknown(
+                f"uv.lock [[package]] {entry['name']!r} registry {registry!r} is not the"
+                f" default index {DEFAULT_INDEX!r}; index configuration is not compared"
+                " by this check"
+            )
 
 
 def _once(keys: Iterable[Key]) -> Counter[Key]:
