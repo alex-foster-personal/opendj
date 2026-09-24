@@ -443,6 +443,33 @@ test('plainSyncFailureCause names common transport failures and never invents un
 	);
 });
 
+test('an unreachable hub on a live loop is a wait, never a red error (#3870)', () => {
+	/** if a live loop waiting for its hub renders the red Not synced headline then broken */
+	const waiting = status({
+		configured: true,
+		running: true,
+		reason: `${view.WAITING_FOR_HUB_PREFIX}: could not reach the hub machine. Sync retries in the background.`,
+		last_result: { status: 'error', message: 'could not reach the hub machine: [Errno 111] Connection refused' }
+	});
+	assert.equal(view.isWaitingForHub(waiting), true);
+	const headline = view.statusHeadline(waiting);
+	assert.equal(headline.tone, 'warn');
+	assert.match(headline.text, /^Waiting for hub: could not reach the hub machine/);
+	assert.doesNotMatch(headline.text, /Not synced/);
+	assert.equal(view.chipState(waiting), 'syncing');
+
+	/** if the same error without the backend's wait reason stops reading as an error then broken */
+	const notWaiting = status({ ...waiting, reason: null });
+	assert.equal(view.isWaitingForHub(notWaiting), false);
+	assert.equal(view.statusHeadline(notWaiting).tone, 'error');
+	assert.equal(view.chipState(notWaiting), 'error');
+
+	/** if a dead loop with the wait reason on file reads as syncing then broken */
+	const deadLoop = status({ ...waiting, running: false });
+	assert.equal(view.isWaitingForHub(deadLoop), false);
+	assert.equal(view.chipState(deadLoop), 'off');
+});
+
 test('statusHeadline leads with a plain sentence and a next step for every state', () => {
 	/** if an error result renders a bare word with no cause and no next step then broken */
 	const errorHeadline = view.statusHeadline(
