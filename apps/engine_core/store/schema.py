@@ -1675,13 +1675,18 @@ def _record(conn: sqlite3.Connection, version: int) -> None:
 
 def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
     for stmt in statements:
-        if stmt == "ALTER TABLE tracks ADD COLUMN audio_hash TEXT":
-            columns = {
-                str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")
-            }
-            if "audio_hash" in columns:
-                continue
         conn.execute(stmt)
+
+
+def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
+    """Return ladder DDL with an already-present v8 column add removed."""
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "audio_hash" not in columns:
+        return ALL_DDL
+    return [
+        stmt for stmt in ALL_DDL
+        if stmt != "ALTER TABLE tracks ADD COLUMN audio_hash TEXT"
+    ]
 
 
 def _rollback_without_masking(
@@ -1724,7 +1729,7 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
     was_missing = missing_tables(conn)
-    _create_all(conn, ALL_DDL)
+    _create_all(conn, _adoption_ddl(conn))
     for stmt in _ADOPTION_BACKFILL:
         conn.execute(stmt)
     return was_missing
