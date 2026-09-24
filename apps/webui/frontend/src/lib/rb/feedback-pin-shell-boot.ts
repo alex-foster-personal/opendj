@@ -23,8 +23,8 @@ export interface FeedbackPinShell {
 	installCommentPinHotkeys: () => () => void;
 }
 
-/** The real imports. Exported so a test can tell them apart from its own. */
-export async function loadFeedbackPinShell(): Promise<FeedbackPinShell> {
+/** The real imports; a test passes its own loader instead. */
+async function loadFeedbackPinShell(): Promise<FeedbackPinShell> {
 	const [layer, shellButton, pinHotkeys] = await Promise.all([
 		import('$lib/components/rb/FeedbackPinLayer.svelte'),
 		import('$lib/components/rb/FeedbackPinShellButton.svelte'),
