@@ -134,7 +134,18 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(src, /getReconcileSummary/);
 	assert.match(src, /allTracksNonBrokenCount = summary\.total_tracks - summary\.total_broken/);
 	assert.match(src, /broken_count: playlistBrokenCount\(p\)/);
-	assert.match(src, /void _loadReconcileSummary\(\);/);
+	assert.match(
+		src,
+		/finally \{\s*playlistsLoading = false;[\s\S]*?void _loadReconcileSummary\(\);[\s\S]*?\}/,
+		'reconcile must run from _init finally after boot settles, not on the mount critical path'
+	);
+	const onMountBlock = src.match(/onMount\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] ?? '';
+	assert.match(onMountBlock, /void _init\(\);/);
+	assert.doesNotMatch(
+		onMountBlock,
+		/void _loadReconcileSummary\(\);/,
+		'onMount must not fire reconcile in parallel with _init'
+	);
 	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
@@ -145,13 +156,17 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
 });
 
-test('BrowserPanel keeps the existing mostly-broken threshold and hides zero-track empty playlists', () => {
+test('BrowserPanel sources mostly-broken policy from runtime-policy and hydrates at boot', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0\.3;/);
+	assert.match(src, /from '\$lib\/rb\/runtime-policy\.svelte'/);
+	assert.match(src, /hydrateRuntimePolicy/);
+	assert.match(src, /playlistMostlyBroken/);
+	assert.doesNotMatch(src, /const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO/);
+	const policy = source('src/lib/rb/runtime-policy.svelte.ts');
 	assert.match(
-		src,
-		/function playlistMostlyBroken\(p: PlaylistSummaryHydrated\): boolean \{\s*if \(p\.available_count < 0\) return false;\s*if \(p\.track_count === 0\) return p\.available_count === 0;\s*return p\.available_count \/ p\.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;/,
-		'empty playlists must no longer escape the broken-link filter, while nonempty playlists retain the 30% policy'
+		policy,
+		/if \(p\.track_count === 0\) return p\.available_count === 0;/,
+		'empty playlists must no longer escape the broken-link filter'
 	);
 });
 
@@ -177,11 +192,13 @@ test('BrowserPanel keeps a playlist inside its create grace visible while broken
 	);
 });
 
-test('BrowserPanel tooltip states the real playlist threshold', () => {
+test('BrowserPanel tooltip states the real playlist threshold from runtime policy', () => {
 	// r3929355481: the tooltip claimed only playlists with no playable tracks
-	// vanish, but the predicate hides anything under 30% playable.
+	// vanish, but the predicate hides anything under the server min-available ratio.
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /hides playlists with fewer than 30% playable tracks, including empty ones/);
+	assert.match(src, /formatHideBrokenCheckboxTooltip\(\)/);
+	const policy = source('src/lib/rb/runtime-policy.svelte.ts');
+	assert.match(policy, /including empty ones/);
 });
 
 test('BrowserPanel presents the persisted hide preference as an affirmative Broken checkbox', () => {

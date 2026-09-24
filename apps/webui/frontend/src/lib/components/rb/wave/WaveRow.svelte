@@ -4,7 +4,7 @@
 	// deck identity, artwork, and a readable track title. Empty deck is named,
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
-	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -22,12 +22,7 @@
 		unregisterAnlzConsumer
 	} from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
-	import {
-		hasAnlzBeatgrid,
-		shouldUseBeatgridFallback,
-		toSyntheticAnlzData,
-		withFallbackBeatgrid
-	} from '$lib/rb/beatgrid-fallback';
+	import { resolvePaintAnlz, shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
 	import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
@@ -62,7 +57,11 @@
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
 	import LyricLanes from './LyricLanes.svelte';
+	import StemWaveStack from './StemWaveStack.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
+	import { waveRowVocalsTitle } from './vocals-title';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -132,20 +131,8 @@
 		const entry = getBeatgridFallbackEntry(deck.stable_id);
 		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
 	});
-	// What the painter/bars-label actually consume: the real ANLZ payload when
-	// present (its own grid, or the fallback grid merged into it), else a
-	// synthesized beatgrid-only payload, else null.
-	const paintAnlz = $derived.by(() => {
-		if (anlzData === null) {
-			return beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null;
-		}
-		// hasAnlzBeatgrid is re-asked rather than inferred from the gate: a stale
-		// cache entry can report ANALYSIS_NOT_FOUND while deck.anlz still holds a
-		// real grid, and withFallbackBeatgrid throws on that - which a $derived
-		// must never do. A real ANLZ grid wins here exactly as it does in the gate.
-		if (beatgridFallback === null || hasAnlzBeatgrid(anlzData)) return anlzData;
-		return withFallbackBeatgrid(anlzData, beatgridFallback);
-	});
+	// What the painter/bars-label actually consume (see resolvePaintAnlz).
+	const paintAnlz = $derived(resolvePaintAnlz(anlzData, beatgridFallback));
 
 	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
 	const barsLabel = $derived(
@@ -189,18 +176,10 @@
 		return tone ?? 'now';
 	});
 
-	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): bars are
-	// painted by render.ts for 'rekordbox' and 'demucs'; the barless
-	// states get an explicit tooltip so absence is never ambiguous, and
-	// demucs bars declare their non-rekordbox provenance.
-	const vocalsTitle = $derived.by((): string | null => {
-		if (anlzData === null) return null;
-		const v = vocalsOf(anlzData);
-		if (v.status === 'no_vocals') return 'no vocals detected';
-		else if (v.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
-		else if (v.status === 'demucs') return 'vocals: local detection';
-		else return null; // rekordbox: the blue bars speak for themselves
-	});
+	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): see vocals-title.ts.
+	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
+
+	const showStems = $derived(uiPrefs.show_stems);
 
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
@@ -243,6 +222,13 @@
 	function _paintPositionMs(): number {
 		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
 	}
+
+	const stemScrollPx = $derived(
+		paintScrollPx(_paintPositionMs(), deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch)
+	);
+	const stemRowExtraPx = $derived(
+		showStems && deck.stable_id !== null ? STEM_WAVE_ROW_MAX * STEM_WAVE_ROW_PX : 0
+	);
 
 	$effect(() => {
 		const el = canvasEl;
@@ -469,6 +455,7 @@
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
 	data-deck={deckId} data-wave-surface="row"
+	style={`--rb-waverow-stem-extra: ${stemRowExtraPx}px`}
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
@@ -480,56 +467,59 @@
 	}}
 >
 	<WaveGutter {deck} {deckId} {barsLabel} />
-	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
-		{#if finished}
-			<button
-				class="finished-eject"
-				title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
-				onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
-			>
-				⏏ {deck.title ?? 'Track'} - deck {deckId}
-			</button>
-		{/if}
-		{#if clockUntrusted}
-			<span
-				class="clock-stalled"
-				title="The audio device stopped reporting where playback is. The waveform is
+	<div class="wave-col">
+		<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+			{#if finished}
+				<button
+					class="finished-eject"
+					title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
+					onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
+				>
+					⏏ {deck.title ?? 'Track'} - deck {deckId}
+				</button>
+			{/if}
+			{#if clockUntrusted}
+				<span
+					class="clock-stalled"
+					title="The audio device stopped reporting where playback is. The waveform is
 estimated from the render clock and may run ahead of what you hear."
-			>
-				CLOCK
-			</span>
-		{/if}
-		<canvas
-			bind:this={canvasEl}
-			role="slider"
-			aria-label="deck {deckId} waveform seek"
-			aria-valuemin={0}
-			aria-valuemax={deck.duration_ms ?? 0}
-			aria-valuenow={Math.round(deck.position_ms)}
-			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
-			tabindex="-1"
-			data-hotkey-pointer-only
-			onpointerdown={onPointerDown}
-			onpointermove={onPointerMove}
-			onpointerup={onPointerUp}
-			onpointercancel={onPointerCancel}
-			onlostpointercapture={onLostPointerCapture}
-		></canvas>
-		<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
-		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
-			<span class="anlz-state" title={anlzErrorCode}>
-				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
-			</span>
-		{:else if deck.stable_id !== null && localDecodeFailure !== null && beatgridFallback === null}
-			<span class="anlz-state" title={localDecodeFailure}>NOT DECODED</span>
-		{:else if beatgridFallback !== null}
-			<span
-				class="anlz-state"
-				title="no rekordbox ANLZ - beatgrid from apps.analysis (fallback, never invented)"
-			>
-				BPM {beatgridFallback.bpm.toFixed(1)} (fallback)
-			</span>
-		{/if}
+				>
+					CLOCK
+				</span>
+			{/if}
+			<canvas
+				bind:this={canvasEl}
+				role="slider"
+				aria-label="deck {deckId} waveform seek"
+				aria-valuemin={0}
+				aria-valuemax={deck.duration_ms ?? 0}
+				aria-valuenow={Math.round(deck.position_ms)}
+				aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
+				tabindex="-1"
+				data-hotkey-pointer-only
+				onpointerdown={onPointerDown}
+				onpointermove={onPointerMove}
+				onpointerup={onPointerUp}
+				onpointercancel={onPointerCancel}
+				onlostpointercapture={onLostPointerCapture}
+			></canvas>
+			<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
+			{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
+				<span class="anlz-state" title={anlzErrorCode}>
+					{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
+				</span>
+			{:else if deck.stable_id !== null && localDecodeFailure !== null && beatgridFallback === null}
+				<span class="anlz-state" title={localDecodeFailure}>NOT DECODED</span>
+			{:else if beatgridFallback !== null}
+				<span
+					class="anlz-state"
+					title="no rekordbox ANLZ - beatgrid from apps.analysis (fallback, never invented)"
+				>
+					BPM {beatgridFallback.bpm.toFixed(1)} (fallback)
+				</span>
+			{/if}
+		</div>
+		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} />
 	</div>
 </div>
 
@@ -552,13 +542,19 @@ estimated from the render clock and may run ahead of what you hear."
 	}
 	.rb-waverow {
 		display: flex;
-		height: var(--rb-waverow-h);
+		height: calc(var(--rb-waverow-h) + var(--rb-waverow-stem-extra, 0px));
 		background: var(--rb-bg);
 		/* Strong channel separator so beat lines can be compared across rows. */
 		border-bottom: 2px solid #3d4652;
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
+	}
+	.wave-col {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
 	}
 	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
 	   mixer's translucent panel-raised mix, because the canvas is opaque. */
@@ -574,7 +570,8 @@ estimated from the render clock and may run ahead of what you hear."
 	}
 	.canvas-wrap {
 		position: relative;
-		flex: 1;
+		flex: 1 1 var(--rb-waverow-h);
+		min-height: var(--rb-waverow-h);
 		min-width: 0;
 	}
 	canvas {

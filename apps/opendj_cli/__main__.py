@@ -89,6 +89,8 @@ _STATUS_COMMAND = "status"
 _OPEN_COMMAND = "open"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
+_AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
+_AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
@@ -654,6 +656,24 @@ def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list
     return list(tokens[:index]), list(tokens[index + 1 :])
 
 
+_STANDALONE_COMMANDS = frozenset(
+    {_TRACK_COMMAND, _AUDIO_OUTPUT_HEALTH_COMMAND, _AUDIO_SWITCH_OUTPUT_COMMAND}
+)
+
+
+def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int:
+    """Run a subcommand whose own module parses ``rest``; keeps ``main`` under its branch cap."""
+    if head == _TRACK_COMMAND:
+        from apps.opendj_cli import track_cli
+
+        return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+    from apps.opendj_cli import audio_output_health_cli
+
+    if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
+        return audio_output_health_cli.run_health(rest, as_json=args.json, lock=args.lock)
+    return audio_output_health_cli.run_switch_output(rest, as_json=args.json, lock=args.lock)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
     mcp_split = _split_subcommand(tokens, _MCP_COMMAND)
@@ -710,10 +730,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return status_cli.run(rest, as_json=args.json, lock=args.lock)
         if head == _OPEN_COMMAND:
             return _run_open(args, resolve_verified_origin(args.lock), rest)
-        if head == _TRACK_COMMAND:
-            from apps.opendj_cli import track_cli
-
-            return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+        if head in _STANDALONE_COMMANDS:
+            return _run_standalone(head, rest, args)
         orders, over = _plan(args, head, rest)
         return _dispatch(args, resolve_verified_origin(args.lock), orders, over)
     except InvocationError as error:

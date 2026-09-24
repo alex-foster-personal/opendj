@@ -591,6 +591,58 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
     )
 
 
+class StemWaveformOut(BaseModel):
+    """Mono peak envelope for one stem part (issue #1036)."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    schema_version: int = Field(default=1, alias="schema")
+    stable_id: str
+    part: str
+    layout: str
+    points: int
+    envelope: list[float]
+
+
+def _stem_waveform_cache_root(request: Request) -> Path:
+    configured = getattr(request.app.state, "data_dir", None)
+    if configured is not None:
+        return Path(configured) / "state" / "stem-waveform-cache"
+    root = Path(os.environ.get("MDT_DATA_DIR", "data"))
+    return root / "state" / "stem-waveform-cache"
+
+
+@router.get(
+    "/{stable_id}/stems/{part}/waveform",
+    response_model=StemWaveformOut,
+    responses=STEM_PART_RESPONSES,
+)
+def get_stem_waveform(stable_id: str, part: str, request: Request) -> StemWaveformOut:
+    """Return a downsampled mono peak envelope for one validated stem part."""
+    from apps.stems.stem_waveform import load_stem_waveform_payload
+
+    try:
+        payload = load_stem_waveform_payload(
+            stable_id,
+            part,
+            stems_dir=_stems_dir(request),
+            cache_root=_stem_waveform_cache_root(request),
+            roots=_stem_roots(request),
+        )
+    except StemBundleNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STEM_BUNDLE_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except StemArtifactError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STEM_PART_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
+    return StemWaveformOut(**payload)
+
+
 @router.post("/{stable_id}/stems/deck-open")
 def mark_stem_deck_open(stable_id: str) -> dict[str, str]:
     """A deck has this bundle open. Protects it from eviction until closed.
@@ -618,5 +670,6 @@ __all__ = [
     "StemManifestOut",
     "StemPartOut",
     "StemUnavailableOut",
+    "StemWaveformOut",
     "router",
 ]

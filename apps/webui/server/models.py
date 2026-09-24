@@ -6,6 +6,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+FileAvailabilityStatus = Literal[
+    "present",
+    "absent",
+    "AVAILABILITY_PENDING",
+    "streaming",
+    "awaiting_volume",
+]
+
 
 class ProvenanceOut(BaseModel):
     """One field's value plus where it came from and whether it is real.
@@ -155,7 +163,8 @@ class TrackListItemOut(TrackOut):
     preview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per
     column (null = no ANLZ analysis). preview_max: per-track max band value
     for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
-    file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+    file_availability: typed disk-truth lane including AVAILABILITY_PENDING.
+    file_exists: present/absent only; null while availability is pending.
     quality: venue rung from apps.shared.audio_quality (same stat pass, so
     no extra cost per row); venue/rank are null when it cannot be measured.
     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
@@ -168,7 +177,8 @@ class TrackListItemOut(TrackOut):
 
     preview_b64: str | None
     preview_max: int | None
-    file_exists: bool
+    file_availability: FileAvailabilityStatus
+    file_exists: bool | None
     # LIBUX-07: our own audio in non-local storage, not streaming and not
     # awaiting-volume. False (the default) is the honest common case.
     is_remote: bool = False
@@ -192,6 +202,10 @@ class TrackListItemOut(TrackOut):
     lyrics: LyricsRowSummaryOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
+    # STANDALONE-05: inline genre for state-only rows; genre_reason names why
+    # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
+    genre: str | None = None
+    genre_reason: str | None = None
 
 
 class LyricLineOut(BaseModel):
@@ -251,8 +265,9 @@ class PlaylistSummary(BaseModel):
     name: str
     vendor: str
     track_count: int
-    # Members whose audio file exists on disk (FR-1 item 4): lets the tree
-    # hide all-broken playlists and render "29 (3 broken)" style counts.
+    # Members whose audio file is index-classified present (PERF-RB-01):
+    # index-backed and may lag disk by up to the path index TTL; pending
+    # members are excluded from this count.
     # ``-1`` means skipped (``GET /playlists?availability=skip``) for fast
     # tree paint; clients must not treat it as zero playable.
     available_count: int
@@ -291,11 +306,13 @@ class TrackRowOut(BaseModel):
     rating: int | None
     duration_ms: int | None
     genre: str | None
+    genre_reason: str | None = None
     comments: str | None
     etag: str
     preview_b64: str | None
     preview_max: int | None
-    file_exists: bool
+    file_availability: FileAvailabilityStatus
+    file_exists: bool | None
     is_streaming: bool
     # LIBUX-07: our own audio in non-local storage. False when unset.
     is_remote: bool = False
