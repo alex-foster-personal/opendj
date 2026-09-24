@@ -88,13 +88,14 @@ def test_probe_once_raises_when_telemetry_unavailable() -> None:
 @pytest.mark.requirement("PERFMODE-15")
 def test_probe_once_raises_on_non_200_http_status() -> None:
     """[if] telemetry HTTP status is not 200 [then] probe raises, [else stop]."""
+    from email.message import Message
     from urllib.error import HTTPError
 
     error = HTTPError(
         url="http://127.0.0.1:5273/api/v1/performance/telemetry/processes",
         code=503,
         msg="service unavailable",
-        hdrs=None,
+        hdrs=Message(),
         fp=io.BytesIO(b""),
     )
 

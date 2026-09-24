@@ -8,7 +8,7 @@ import {
 } from '$lib/rb/trackify-autoplay.svelte';
 import { e2ePrimeTrackifyFeed, readTrackifyFeedSnapshot } from '$lib/rb/trackify-feed.svelte';
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
-import { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
+import { setAutoPlayEnabled } from '$lib/rb/prefs.svelte';
 
 interface TrackifyBrowserIpc {
 	version: 1;
@@ -74,8 +74,4 @@ export function installTrackifyBrowserIpc(): () => void {
 		}
 		delete window.musicDjToolsTrackify;
 	};
-}
-
-export function readTrackifyAutoplayEnabled(): boolean {
-	return uiPrefs.auto_play_enabled;
 }

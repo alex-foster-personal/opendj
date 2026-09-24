@@ -9,7 +9,6 @@ import { pickNextStableId } from '$lib/rb/auto-play-chain';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
 	effectiveAutoPlayThresholdMs,
-	remainingAutoPlayCandidates,
 	remainingMs,
 	shouldTriggerAutoPlay,
 	tempoBoundsFromPitchRange,
@@ -76,20 +75,6 @@ export function shouldAdvanceTrackify(input: {
 		source_stable_id: input.deck.stable_id,
 		already_triggered_for: input.already_triggered_for,
 		in_flight: input.in_flight
-	});
-}
-
-export function trackifyRemainingCandidates(input: {
-	feed: readonly AutoPlayTrackRow[];
-	current_stable_id: string;
-	quarantined_ids: ReadonlySet<string>;
-	played_ids: ReadonlySet<string>;
-}): readonly AutoPlayTrackRow[] {
-	return remainingAutoPlayCandidates({
-		playlist: input.feed,
-		current_stable_id: input.current_stable_id,
-		exclude_ids: input.quarantined_ids,
-		played_ids: input.played_ids
 	});
 }
 

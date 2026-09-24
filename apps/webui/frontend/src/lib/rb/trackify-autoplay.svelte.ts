@@ -3,9 +3,8 @@
  */
 import { deckAudioClockPositionMs, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
-import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import { pushToast } from '$lib/stores.svelte';
 import {
 	pickNextTrackifyCandidate,
 	shouldAdvanceTrackify,

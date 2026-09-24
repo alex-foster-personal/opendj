@@ -19,7 +19,7 @@ import platform
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, TextIO
+from typing import IO, Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -61,12 +61,20 @@ def _telemetry_url(frontend: str) -> str:
     return f"{frontend.rstrip('/')}{_TELEMETRY_PATH}"
 
 
+def _dict_field(body: dict[str, Any], key: str) -> dict[str, Any]:
+    """Narrows `body[key]` to a dict, binding the isinstance-checked value
+    itself (rather than re-calling `.get()` in the branch) so mypy can
+    actually narrow it instead of inferring `dict | Any | None`."""
+    value = body.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def _footprint_mb_from_telemetry(body: dict[str, Any]) -> float:
-    totals = body.get("totals") if isinstance(body.get("totals"), dict) else {}
+    totals = _dict_field(body, "totals")
     footprint = totals.get("physical_footprint_mb")
     if isinstance(footprint, (int, float)) and math.isfinite(float(footprint)):
         return float(footprint)
-    by_role = body.get("by_role_mb") if isinstance(body.get("by_role_mb"), dict) else {}
+    by_role = _dict_field(body, "by_role_mb")
     summed = 0.0
     for role in _ROLE_FALLBACK:
         value = by_role.get(role)
@@ -78,7 +86,7 @@ def _footprint_mb_from_telemetry(body: dict[str, Any]) -> float:
 
 
 def _cpu_percent_from_telemetry(body: dict[str, Any]) -> float:
-    totals = body.get("totals") if isinstance(body.get("totals"), dict) else {}
+    totals = _dict_field(body, "totals")
     cpu = totals.get("cpu_percent")
     if isinstance(cpu, (int, float)) and math.isfinite(float(cpu)):
         return float(cpu)
@@ -122,7 +130,7 @@ def _sample_steady(frontend: str, duration_s: int) -> dict[str, float]:
     deadline = time.monotonic() + duration_s
     while time.monotonic() < deadline:
         sample = _probe_once(frontend)
-        totals = sample.get("totals") if isinstance(sample.get("totals"), dict) else {}
+        totals = _dict_field(sample, "totals")
         fp = totals.get("physical_footprint_mb")
         cpu = totals.get("cpu_percent")
         if isinstance(fp, (int, float)):
@@ -146,7 +154,7 @@ def _sample_leak(frontend: str, duration_s: int) -> float:
     deadline = start + duration_s
     while time.monotonic() < deadline:
         sample = _probe_once(frontend)
-        totals = sample.get("totals") if isinstance(sample.get("totals"), dict) else {}
+        totals = _dict_field(sample, "totals")
         fp = totals.get("physical_footprint_mb")
         if isinstance(fp, (int, float)):
             elapsed.append(time.monotonic() - start)
@@ -158,7 +166,9 @@ def _sample_leak(frontend: str, duration_s: int) -> float:
     return slope_per_hour / 6.0
 
 
-def _read_browser_line(stream: TextIO, expected: str) -> None:
+def _read_browser_line(stream: IO[Any] | None, expected: str) -> None:
+    if stream is None:
+        raise RuntimeError("mode_ratio_browser stdout is not piped")
     line = stream.readline().strip()
     if line != expected:
         raise RuntimeError(f"mode_ratio_browser expected {expected!r}, got {line!r}")
