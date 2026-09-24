@@ -20,6 +20,24 @@ function target(tagName, overrides = {}) {
 	};
 }
 
+// isNativeInteractiveTarget checks `instanceof Element`/`HTMLElement`, so the
+// plain-object target() stand-in above always reads as non-interactive to it
+// (which is why it never influences the existing M/Space cases below). Tab's
+// own tests need a target that genuinely is one, matching the fixture shape
+// restored in performance-hotkeys-target.test.mjs.
+class FakeElement {}
+class FakeHTMLElement extends FakeElement {}
+
+function nativeTarget(tagName, { role = null, tabindex = false, href = false } = {}) {
+	const el = new FakeHTMLElement();
+	el.tagName = tagName;
+	el.isContentEditable = false;
+	el.getAttribute = (name) => (name === 'role' ? role : name === 'tabindex' ? tabindex : null);
+	el.hasAttribute = (name) =>
+		name === 'href' ? href : name === 'tabindex' ? tabindex !== false : false;
+	return el;
+}
+
 function key(overrides = {}) {
 	let prevented = false;
 	return {
@@ -38,6 +56,8 @@ function key(overrides = {}) {
 }
 
 before(async () => {
+	globalThis.Element = FakeElement;
+	globalThis.HTMLElement = FakeHTMLElement;
 	routing = await loadTypeScriptModule('src/lib/rb/performance-shortcut-routing.ts');
 	feedbackStore = await loadTypeScriptModule('src/lib/rb/feedback-store.svelte.ts');
 	textEntry = await loadTypeScriptModule('src/lib/keyboard/text-entry-target.ts');
@@ -147,6 +167,61 @@ test('Space leaves a focused text input alone', () => {
 	);
 	assert.equal(event.wasPrevented(), false);
 	assert.deepEqual(calls, []);
+});
+
+// r3549 review P1 BLOCKING: the amended A11Y-01 gate narrowed Tab (like every
+// other key) to isTextEntryTarget alone, which let Tab fire - and
+// preventDefault - on a focused button, link, library row, or range slider.
+// Real Tab focus movement stopped working there, trapping a keyboard user on
+// the first control they landed on. Tab is the one key that still needs the
+// broader native-interactive exemption; Space/M/loop-resize deliberately do
+// not (A11Y-01 wants those to fire over buttons and sliders).
+test('Tab does not trap focus on a native-interactive target (P1 BLOCKING regression)', () => {
+	for (const focus of [
+		nativeTarget('BUTTON'),
+		nativeTarget('A', { href: true }),
+		nativeTarget('INPUT', { role: 'range' }),
+		nativeTarget('DIV', { tabindex: '0' }),
+		nativeTarget('TR', { role: 'row', tabindex: '0' })
+	]) {
+		const event = key({ code: 'Tab', key: 'Tab', target: focus });
+		assert.equal(
+			routing.resolvePerformanceShortcutAction(event),
+			null,
+			`Tab must not route on a focused ${focus.tagName}`
+		);
+		assert.equal(
+			routing.handlePerformanceShortcutKeydown(event, {
+				toggleRecentPlay: () => assert.fail('Space handler must not run for Tab'),
+				toggleNextOnlyFilter: () => assert.fail('Tab must not trap focus on a native control'),
+				resizeLast: () => assert.fail('loop resize must not run for Tab'),
+				exitLast: () => assert.fail('loop exit must not run for Tab'),
+				armPinPlacement: () => assert.fail('M handler must not run for Tab')
+			}),
+			false
+		);
+		assert.equal(event.wasPrevented(), false, `Tab must reach the browser's own focus move on ${focus.tagName}`);
+	}
+});
+
+test('Tab still toggles the next-only filter on non-interactive page chrome', () => {
+	for (const focus of [target('BODY'), target('DIV'), nativeTarget('DIV')]) {
+		const calls = [];
+		const event = key({ code: 'Tab', key: 'Tab', target: focus });
+		assert.deepEqual(routing.resolvePerformanceShortcutAction(event), { kind: 'tab' });
+		assert.equal(
+			routing.handlePerformanceShortcutKeydown(event, {
+				toggleRecentPlay: () => assert.fail('Space handler must not run for Tab'),
+				toggleNextOnlyFilter: () => calls.push('tab'),
+				resizeLast: () => assert.fail('loop resize must not run for Tab'),
+				exitLast: () => assert.fail('loop exit must not run for Tab'),
+				armPinPlacement: () => assert.fail('M handler must not run for Tab')
+			}),
+			true
+		);
+		assert.equal(event.wasPrevented(), true);
+		assert.deepEqual(calls, ['tab']);
+	}
 });
 
 test('performance-hotkeys uses the shared predicate via routing, not a second focus check', async () => {

@@ -1,4 +1,5 @@
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import { isNativeInteractiveTarget } from './performance-hotkeys-target';
 
 export type PerformanceShortcutAction =
 	| { kind: 'space'; quantize: boolean }
@@ -43,7 +44,16 @@ export function resolvePerformanceShortcutAction(
 		return { kind: 'space', quantize: false };
 	}
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
-	if (e.key === 'Tab') return { kind: 'tab' };
+	// Tab is the browser's own focus-traversal key: unlike Space/M/loop-resize
+	// (which A11Y-01 deliberately fires over buttons, sliders and rows), a
+	// native-interactive target still needs Tab to MOVE focus. Stealing it
+	// there traps keyboard users on the first control they land on (review
+	// r3549, P1 BLOCKING). Page chrome with no native keyboard behavior of
+	// its own keeps the next-only-filter binding.
+	if (e.key === 'Tab') {
+		if (isNativeInteractiveTarget(e.target)) return null;
+		return { kind: 'tab' };
+	}
 	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
 	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
