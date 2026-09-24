@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { WAVE_WINDOW_S } from './render';
-	import { activeLyricLineIndex, lyricLanePositionPercent, type LyricLine } from './lyrics-lane';
+	import {
+		activeLyricLineIndex,
+		lyricLaneGroups,
+		lyricLanePositionPercent,
+		type LyricLine
+	} from './lyrics-lane';
 
 	const {
 		lyrics,
@@ -17,26 +22,28 @@
 	const activeIndex = $derived(
 		lyrics === null ? -1 : activeLyricLineIndex(lyrics.lines, positionMs)
 	);
+	const groups = $derived(lyrics === null ? [] : lyricLaneGroups(lyrics.lines));
 </script>
 
 {#if loadError !== null}
 	<span class="lyrics-error" title={loadError.message}>LYRICS ERROR</span>
 {:else if lyrics !== null}
 	<div class="lyrics-lane" aria-label="Synced lyrics">
-		{#each lyrics.lines as line, index (line.start_ms)}
+		{#each groups as group (group.start_ms)}
+			{@const active = activeIndex >= group.firstIndex && activeIndex <= group.lastIndex}
 			{@const left = lyricLanePositionPercent({
-				lineStartMs: line.start_ms,
+				lineStartMs: group.start_ms,
 				positionMs,
 				pitch,
 				windowSeconds: WAVE_WINDOW_S
 			})}
 			{#if left >= -10 && left <= 110}
 				<span
-					class:active={index === activeIndex}
+					class:active
 					class="lyric-line"
 					style:left={`${left}%`}
-					aria-current={index === activeIndex ? 'true' : undefined}
-				>{line.text}</span>
+					aria-current={active ? 'true' : undefined}
+				>{group.text}</span>
 			{/if}
 		{/each}
 	</div>
