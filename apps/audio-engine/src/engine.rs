@@ -264,12 +264,44 @@ impl Engine {
         }
     }
 
+    /// Like `render`, and also writes each deck's own contribution (after its
+    /// strip, before the master gain) into `split[deck - 1]`, each the same
+    /// length as `out`. The mix is bit-identical to `render`'s, because decks
+    /// are summed in the same order from the same values.
+    pub fn render_split(&mut self, out: &mut [f32], split: &mut [&mut [f32]; MAX_DECKS]) {
+        debug_assert!(out.len().is_multiple_of(2));
+        debug_assert!(split.iter().all(|s| s.len() == out.len()));
+        let step = MAX_BLOCK * 2;
+        let mut off = 0;
+        while off < out.len() {
+            let end = (off + step).min(out.len());
+            let chunk = &mut out[off..end];
+            chunk.fill(0.0);
+            let sr = self.sr as f64;
+            for (d, s) in self.decks.iter_mut().zip(split.iter_mut()) {
+                let s = &mut s[off..end];
+                s.fill(0.0);
+                d.render_add(s, sr);
+                for (o, x) in chunk.iter_mut().zip(s.iter()) {
+                    *o += *x;
+                }
+            }
+            self.finish_block(chunk);
+            off = end;
+        }
+    }
+
     fn render_block(&mut self, out: &mut [f32]) {
         out.fill(0.0);
         let sr = self.sr as f64;
         for d in self.decks.iter_mut() {
             d.render_add(out, sr);
         }
+        self.finish_block(out);
+    }
+
+    /// Master gain and the frame count, shared by both render paths.
+    fn finish_block(&mut self, out: &mut [f32]) {
         for o in out.chunks_exact_mut(2) {
             let g = (self.master_gain.tick() * self.mute_gain.tick()) as f32;
             o[0] *= g;
@@ -452,6 +484,35 @@ mod tests {
         e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
         e.render(&mut buf);
         assert!(rms_db(&buf[48000..]) < -120.0, "master mute leaked");
+    }
+
+    #[test]
+    fn a_deck_starts_from_where_its_knobs_are_not_where_they_were() {
+        // Crossfade a stopped deck out, then start it. Web Audio keeps an idle
+        // channel's parameters moving, so its first frames are already
+        // faded out; a strip that only moved while playing would glide down
+        // from full volume and blip the deck in.
+        let peak = |b: &[f32]| b.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load { deck: 2, track: Arc::new(tone(48000, 1000.0, 3.0)) }).unwrap();
+        e.apply(EngineCmd::Assign { deck: 2, assign: Assign::B }).unwrap();
+        e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
+        let mut buf = vec![0.0f32; 48000 * 2];
+        e.render(&mut buf);
+        e.apply(EngineCmd::Play { deck: 2, playing: true }).unwrap();
+        let mut first = vec![0.0f32; 480 * 2];
+        e.render(&mut first);
+        assert!(peak(&first) < 1e-6, "deck blipped in at {}", peak(&first));
+        // Control, the other direction: an untouched deck is at full level
+        // from its first frames, so idling does not fade decks down.
+        let mut u = playing_tone(1000.0, 48000);
+        u.render(&mut first);
+        assert!(peak(&first) > 0.45, "untouched deck started at {}", peak(&first));
+        // And a stopped deck goes exactly silent once its tails are over.
+        u.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+        u.render(&mut buf);
+        u.render(&mut buf);
+        assert_eq!(peak(&buf), 0.0);
     }
 
     #[test]

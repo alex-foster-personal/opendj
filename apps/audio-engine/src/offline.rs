@@ -1,8 +1,12 @@
 //! Render a plan on the fake clock: as fast as the CPU allows, bit for bit the
 //! same every time.
 //!
-//! Blocks are split at every event frame and every ramp step, so what fires
-//! when never depends on the block size.
+//! Blocks are split at every event frame, every ramp step and every timeline
+//! step, so what fires when never depends on the block size.
+//!
+//! Besides the mix, a render reports what a transition scorer needs: which
+//! decks are heard over time, where they overlap and how long each plays alone
+//! either side, each deck's tempo, and optionally each deck's own audio.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
 use crate::decode::decode_file;
-use crate::engine::{Engine, EngineCmd, ErrorCode, KnobTarget};
+use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
 
@@ -23,10 +27,68 @@ pub const RAMP_STEP_FRAMES: u64 = 32;
 /// How close to a deck-relative target counts as reaching it, in source frames.
 pub const POS_EPS_FRAMES: f64 = 1e-3;
 
+/// Which decks are heard is sampled this often, and on every frame an event
+/// fires, so segment edges are exact for commands and within 10 ms for ramps.
+pub const TIMELINE_STEP_MS: u32 = 10;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fired {
     pub event: usize,
     pub frame: u64,
+}
+
+/// A span of output in which the same decks are heard (see `Deck::audible`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Segment {
+    pub start: u64,
+    pub end: u64,
+    /// Bit `d - 1` is set when deck `d` is heard.
+    pub decks: u8,
+}
+
+/// One deck heard alone, next to an overlap.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Solo {
+    pub deck: DeckId,
+    pub frames: u64,
+}
+
+/// A run of segments with two or more decks heard, and the solo segment on
+/// either side of it when there is one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Overlap {
+    pub start: u64,
+    pub end: u64,
+    /// Every deck heard at some point in the overlap, as in `Segment::decks`.
+    pub decks: u8,
+    pub solo_before: Option<Solo>,
+    pub solo_after: Option<Solo>,
+}
+
+/// A deck's tempo from `frame` on. `bpm` is the grid's local BPM (or the tag
+/// BPM) times the tempo, read where the playhead was at that frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TempoPoint {
+    pub deck: DeckId,
+    pub frame: u64,
+    pub tempo: f64,
+    pub bpm: Option<f64>,
+}
+
+/// One deck's own audio: after its channel strip, crossfader included, before
+/// the master gain. The decks' outputs sum to the mix before master gain.
+pub struct DeckOutput {
+    pub deck: DeckId,
+    /// Interleaved stereo, the same length as the mix.
+    pub pcm: Vec<f32>,
+    pub sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderOptions {
+    /// Also return each loaded deck's own audio (memory: one more mix-sized
+    /// buffer per deck).
+    pub deck_outputs: bool,
 }
 
 pub struct RenderOutput {
@@ -38,6 +100,11 @@ pub struct RenderOutput {
     pub sha256: String,
     pub decode_wall_s: f64,
     pub render_wall_s: f64,
+    pub timeline: Vec<Segment>,
+    pub overlaps: Vec<Overlap>,
+    pub tempo: Vec<TempoPoint>,
+    /// Empty unless `RenderOptions::deck_outputs`.
+    pub decks: Vec<DeckOutput>,
 }
 
 impl RenderOutput {
@@ -78,6 +145,112 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>,
 
 pub fn render_plan_files(plan: &Plan, base: &Path) -> Result<RenderOutput, ProtoError> {
     render_plan(plan, file_loader(base.to_path_buf()))
+}
+
+pub fn render_plan_files_with(plan: &Plan, base: &Path, opts: RenderOptions) -> Result<RenderOutput, ProtoError> {
+    render_plan_with(plan, file_loader(base.to_path_buf()), opts)
+}
+
+fn sha256_hex(pcm: &[f32]) -> String {
+    let mut h = Sha256::new();
+    for s in pcm {
+        h.update(s.to_le_bytes());
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Records which decks are heard and each deck's tempo as the render goes.
+struct Observer {
+    segments: Vec<Segment>,
+    tempo: Vec<TempoPoint>,
+    /// Last recorded (tempo, track identity) per deck.
+    last: [Option<(f64, usize)>; MAX_DECKS],
+}
+
+impl Observer {
+    fn new() -> Observer {
+        Observer { segments: Vec::new(), tempo: Vec::new(), last: [None; MAX_DECKS] }
+    }
+
+    fn observe(&mut self, engine: &Engine, now: u64) {
+        let mut mask = 0u8;
+        for i in 0..MAX_DECKS {
+            let id = i as DeckId + 1;
+            let Some(d) = engine.deck(id) else { continue };
+            if d.audible() {
+                mask |= 1 << i;
+            }
+            let key = d.track.as_ref().map(|t| (d.tempo, Arc::as_ptr(t) as usize));
+            if key.is_some() && key != self.last[i] {
+                let t = d.track.as_ref().expect("key is some");
+                self.tempo.push(TempoPoint {
+                    deck: id,
+                    frame: now,
+                    tempo: d.tempo,
+                    bpm: t.bpm_at(t.frames_to_ms(d.pos)).map(|b| b * d.tempo),
+                });
+            }
+            self.last[i] = key;
+        }
+        let seg = Segment { start: now, end: now, decks: mask };
+        match self.segments.last_mut() {
+            Some(l) if l.decks == mask => {}
+            // Changed twice on one frame: the earlier state lasted no time.
+            Some(l) if l.start == now => {
+                l.decks = mask;
+                let n = self.segments.len();
+                if n >= 2 && self.segments[n - 2].decks == mask {
+                    self.segments.pop();
+                }
+            }
+            Some(l) => {
+                l.end = now;
+                self.segments.push(seg);
+            }
+            None => self.segments.push(seg),
+        }
+    }
+
+    fn finish(mut self, end: u64) -> (Vec<Segment>, Vec<Overlap>, Vec<TempoPoint>) {
+        if let Some(l) = self.segments.last_mut() {
+            l.end = end;
+            if l.start == l.end {
+                self.segments.pop();
+            }
+        }
+        let overlaps = overlaps(&self.segments);
+        (self.segments, overlaps, self.tempo)
+    }
+}
+
+fn solo(seg: Option<&Segment>) -> Option<Solo> {
+    let s = seg?;
+    (s.decks.count_ones() == 1).then(|| Solo { deck: s.decks.trailing_zeros() as DeckId + 1, frames: s.end - s.start })
+}
+
+fn overlaps(segments: &[Segment]) -> Vec<Overlap> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < segments.len() {
+        if segments[i].decks.count_ones() < 2 {
+            i += 1;
+            continue;
+        }
+        let first = i;
+        let mut decks = 0u8;
+        while i < segments.len() && segments[i].decks.count_ones() >= 2 {
+            decks |= segments[i].decks;
+            i += 1;
+        }
+        out.push(Overlap {
+            start: segments[first].start,
+            end: segments[i - 1].end,
+            decks,
+            solo_before: solo(first.checked_sub(1).map(|k| &segments[k])),
+            solo_after: solo(segments.get(i)),
+        });
+    }
+    out
 }
 
 fn at_frame_of_ms(ms: f64, sr: u32) -> u64 {
@@ -131,16 +304,26 @@ fn fail(event: usize, e: ProtoError) -> ProtoError {
 /// Render `plan`, resolving each `load` through `load`.
 pub fn render_plan(
     plan: &Plan,
+    load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+) -> Result<RenderOutput, ProtoError> {
+    render_plan_with(plan, load, RenderOptions::default())
+}
+
+pub fn render_plan_with(
+    plan: &Plan,
     mut load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+    opts: RenderOptions,
 ) -> Result<RenderOutput, ProtoError> {
     let sr = plan.sample_rate;
     // Decode everything up front, so decode time is reported apart from render
     // time and the render loop itself never waits on IO.
     let decode_start = Instant::now();
     let mut loaded: HashMap<usize, Arc<Track>> = HashMap::new();
+    let mut loads_deck = [false; MAX_DECKS];
     for (i, ev) in plan.events.iter().enumerate() {
         if let Action::Cmd(Command::Load(spec)) = &ev.action {
             loaded.insert(i, load(spec).map_err(|e| fail(i, e))?);
+            loads_deck[spec.deck as usize - 1] = true;
         }
     }
     let decode_wall_s = decode_start.elapsed().as_secs_f64();
@@ -151,10 +334,15 @@ pub fn render_plan(
     let mut fired = Vec::new();
     let mut pcm: Vec<f32> = Vec::new();
     let max_frames = at_frame_of_ms(plan.max_ms, sr);
+    let tl_step = (sr as u64 * TIMELINE_STEP_MS as u64 / 1000).max(1);
+    let mut observer = Observer::new();
+    let mut scratch: [Vec<f32>; MAX_DECKS] = Default::default();
+    let mut deck_pcm: [Vec<f32>; MAX_DECKS] = Default::default();
     let render_start = Instant::now();
 
     loop {
         let now = engine.frame();
+        let fired_before = fired.len();
         // Fire every due event in plan order. Firing one can make another due
         // (a seek past a bar), so scan until nothing more fires.
         loop {
@@ -231,6 +419,10 @@ pub fn render_plan(
             k += 1;
         }
 
+        if now.is_multiple_of(tl_step) || fired.len() > fired_before {
+            observer.observe(&engine, now);
+        }
+
         if due_in(plan.end, &engine, now) == Some(0) {
             break;
         }
@@ -253,19 +445,40 @@ pub fn render_plan(
         if let Some(d) = due_in(plan.end, &engine, now) {
             n = n.min(d);
         }
+        n = n.min(tl_step - now % tl_step);
         n = n.min(max_frames - now).max(1);
 
         let start = pcm.len();
         pcm.resize(start + n as usize * 2, 0.0);
-        engine.render(&mut pcm[start..]);
+        if opts.deck_outputs {
+            for s in scratch.iter_mut() {
+                s.resize(n as usize * 2, 0.0);
+            }
+            let mut split = scratch.each_mut().map(|v| v.as_mut_slice());
+            engine.render_split(&mut pcm[start..], &mut split);
+            for i in 0..MAX_DECKS {
+                if loads_deck[i] {
+                    deck_pcm[i].extend_from_slice(&scratch[i]);
+                }
+            }
+        } else {
+            engine.render(&mut pcm[start..]);
+        }
     }
     let render_wall_s = render_start.elapsed().as_secs_f64();
 
-    let mut h = Sha256::new();
-    for s in &pcm {
-        h.update(s.to_le_bytes());
-    }
-    let sha256 = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let sha256 = sha256_hex(&pcm);
+    let (timeline, overlaps, tempo) = observer.finish(engine.frame());
+    let decks = if opts.deck_outputs {
+        deck_pcm
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| loads_deck[*i])
+            .map(|(i, pcm)| DeckOutput { deck: i as DeckId + 1, sha256: sha256_hex(&pcm), pcm })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Ok(RenderOutput {
         sample_rate: sr,
         frames: engine.frame(),
@@ -274,5 +487,9 @@ pub fn render_plan(
         sha256,
         decode_wall_s,
         render_wall_s,
+        timeline,
+        overlaps,
+        tempo,
+        decks,
     })
 }

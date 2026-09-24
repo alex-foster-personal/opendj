@@ -14,6 +14,10 @@ pub struct Beat {
     pub downbeat: bool,
 }
 
+/// Below this trim x fader x crossfader gain (-60 dB) a playing deck counts
+/// as not heard, for the render timeline.
+pub const AUDIBLE_GAIN: f64 = 1e-3;
+
 /// A decoded track. Immutable once built, shared into the audio thread as an
 /// `Arc` and handed back out when replaced, so it is never freed there.
 #[derive(Debug)]
@@ -79,6 +83,18 @@ impl Track {
         let hi = b.partition_point(|x| x.time_ms <= ms);
         let lo = hi - 1;
         Some(lo as f64 + (ms - b[lo].time_ms) / (b[hi].time_ms - b[lo].time_ms))
+    }
+
+    /// Local tempo of the grid at track time `ms`, from the beat interval
+    /// around it; the tag BPM when there is no grid.
+    pub fn bpm_at(&self, ms: f64) -> Option<f64> {
+        let b = &self.beats;
+        if b.len() < 2 {
+            return self.bpm;
+        }
+        let i = self.beat_index_at(ms)?.floor().clamp(0.0, (b.len() - 2) as f64) as usize;
+        let interval = b[i + 1].time_ms - b[i].time_ms;
+        (interval > 0.0).then(|| 60000.0 / interval)
     }
 
     /// Time of fractional beat index `idx`, the inverse of `beat_index_at`.
@@ -167,6 +183,11 @@ struct Strip {
     xf: Smoothed,
     /// Frames until filter coefficients are next recomputed while gliding.
     coeff_countdown: u32,
+    /// Frames rendered since the deck last played a frame of its track.
+    idle_run: u64,
+    /// After this many idle frames the filter tails are over: state is zeroed
+    /// and an idle strip at rest is skipped entirely.
+    quiet_after: u64,
 }
 
 /// Coefficients glide with their smoothed parameters, recomputed every
@@ -193,6 +214,9 @@ impl Strip {
             fader: s(1.0),
             xf: s(1.0),
             coeff_countdown: 0,
+            // A new strip has never carried audio, so it starts quiet.
+            idle_run: sr as u64,
+            quiet_after: sr as u64,
         };
         strip.recompute();
         strip
@@ -213,6 +237,35 @@ impl Strip {
             && self.eq_db[2].settled()
             && self.lp_hz.settled()
             && self.hp_hz.settled())
+    }
+
+    fn at_rest(&self) -> bool {
+        !self.coeffs_gliding()
+            && self.trim.settled()
+            && self.dry.settled()
+            && self.lp_wet.settled()
+            && self.hp_wet.settled()
+            && self.fader.settled()
+            && self.xf.settled()
+    }
+
+    /// One frame of a deck that is not playing its track. Web Audio keeps an
+    /// idle channel's parameters moving and its filters ringing out on
+    /// silence; so does this, frame by frame, so a deck that starts later
+    /// starts from where its knobs actually are. Returns None once the
+    /// tails are over and nothing is moving.
+    #[inline]
+    fn idle(&mut self) -> Option<(f64, f64)> {
+        if self.idle_run == self.quiet_after {
+            for bq in self.eq.iter_mut().chain([&mut self.lp, &mut self.hp]) {
+                bq.reset();
+            }
+        }
+        if self.idle_run >= self.quiet_after && self.at_rest() {
+            return None;
+        }
+        self.idle_run = self.idle_run.saturating_add(1).min(self.quiet_after + 1);
+        Some(self.process(0.0, 0.0))
     }
 
     #[inline]
@@ -428,6 +481,18 @@ impl Deck {
         self.strip.xf.set(g);
     }
 
+    /// The smoothed trim x fader x crossfader gain, as it stands now. EQ and
+    /// filter are left out on purpose: a deck with its lows killed is still
+    /// in the mix.
+    pub fn level_gain(&self) -> f64 {
+        self.strip.trim.value * self.strip.fader.value * self.strip.xf.value
+    }
+
+    /// Loaded, playing, and above `AUDIBLE_GAIN`: this deck is being heard.
+    pub fn audible(&self) -> bool {
+        self.track.is_some() && self.playing && self.level_gain() >= AUDIBLE_GAIN
+    }
+
     /// Source frames advanced per output frame.
     pub fn step(&self, engine_sr: f64) -> f64 {
         self.track.as_ref().map_or(0.0, |t| self.tempo * t.sample_rate as f64 / engine_sr)
@@ -436,10 +501,21 @@ impl Deck {
     /// Mix `out.len() / 2` frames of this deck into `out` (interleaved stereo).
     /// No allocation: reads the shared PCM and writes into the caller's buffer.
     pub fn render_add(&mut self, out: &mut [f32], engine_sr: f64) {
-        let Some(track) = self.track.as_ref() else { return };
-        if !self.playing {
-            return;
+        let done = self.render_track(out, engine_sr);
+        for o in out[done * 2..].chunks_exact_mut(2) {
+            let Some((l, r)) = self.strip.idle() else { break };
+            o[0] += l as f32;
+            o[1] += r as f32;
         }
+    }
+
+    /// Plays the track into `out` until it ends; returns frames played.
+    fn render_track(&mut self, out: &mut [f32], engine_sr: f64) -> usize {
+        let Some(track) = self.track.as_ref() else { return 0 };
+        if !self.playing {
+            return 0;
+        }
+        let mut done = 0;
         let pcm = &track.pcm[..];
         let frames = track.frames;
         let end = frames as f64;
@@ -459,6 +535,7 @@ impl Deck {
             let (l, r) = self.strip.process(l, r);
             o[0] += l as f32;
             o[1] += r as f32;
+            done += 1;
             self.run += 1;
             self.pos = self.anchor + step * self.run as f64;
             if let Some((a, b)) = self.looping {
@@ -469,7 +546,11 @@ impl Deck {
                 }
             }
         }
+        if done > 0 {
+            self.strip.idle_run = 0;
+        }
         self.rendered_pos = self.pos;
+        done
     }
 }
 

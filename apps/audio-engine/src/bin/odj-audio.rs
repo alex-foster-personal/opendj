@@ -1,10 +1,13 @@
 //! odj-audio command line.
 //!
-//!   odj-audio render --plan PLAN.json --out OUT.wav
+//!   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!   odj-audio version
 //!
-//! `render` prints one JSON summary line. `serve` speaks protocol v1 on
+//! `render` prints one JSON summary line: the plan it rendered, the output's
+//! sha256, when each event fired, which decks are heard when (the timeline
+//! and its overlaps), and each deck's tempo. `--decks-out` also writes each
+//! loaded deck's own audio as `deckN.wav`. `serve` speaks protocol v1 on
 //! stdin/stdout; see `src/protocol.rs`.
 
 use std::fs::File;
@@ -12,13 +15,14 @@ use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use odj_audio::offline::{file_loader, render_plan_files};
+use odj_audio::offline::{file_loader, render_plan_files_with, RenderOptions, Solo};
 use odj_audio::plan::parse_plan;
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 const USAGE: &str = "usage:
-  odj-audio render --plan PLAN.json --out OUT.wav
+  odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
   odj-audio version";
 
@@ -57,17 +61,54 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
 fn render(mut args: Args) -> Result<(), String> {
     let plan_path = PathBuf::from(args.take("--plan")?.ok_or("render needs --plan")?);
     let out_path = PathBuf::from(args.take("--out")?.ok_or("render needs --out")?);
+    let decks_out = args.take("--decks-out")?.map(PathBuf::from);
     args.done()?;
     let text = std::fs::read_to_string(&plan_path).map_err(|e| format!("cannot read {}: {e}", plan_path.display()))?;
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("{} is not JSON: {e}", plan_path.display()))?;
     let plan = parse_plan(&value).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
     let base = plan_path.parent().map(Path::to_path_buf).unwrap_or_default();
-    let out = render_plan_files(&plan, &base).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
-    let file = File::create(&out_path).map_err(|e| format!("cannot create {}: {e}", out_path.display()))?;
-    let mut w = BufWriter::new(file);
-    wav::write_f32(&mut w, out.sample_rate, &out.pcm).map_err(|e| e.to_string())?;
+    let opts = RenderOptions { deck_outputs: decks_out.is_some() };
+    let out = render_plan_files_with(&plan, &base, opts).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
+    write_wav(&out_path, out.sample_rate, &out.pcm)?;
+    let mut deck_files = Vec::new();
+    if let Some(dir) = &decks_out {
+        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        for d in &out.decks {
+            let p = dir.join(format!("deck{}.wav", d.deck));
+            write_wav(&p, out.sample_rate, &d.pcm)?;
+            deck_files.push(json!({"deck": d.deck, "out": p.display().to_string(), "sha256": d.sha256}));
+        }
+    }
+    let ms = |f: u64| f as f64 * 1000.0 / out.sample_rate as f64;
+    let decks_of = |mask: u8| -> Vec<u8> { (0..8).filter(|i| mask & (1 << i) != 0).map(|i| i + 1).collect() };
+    let solo = |s: &Option<Solo>| s.as_ref().map(|s| json!({"deck": s.deck, "frames": s.frames, "ms": ms(s.frames)}));
     let fired: Vec<_> = out.fired.iter().map(|f| json!({"event": f.event, "frame": f.frame})).collect();
+    let timeline: Vec<_> = out
+        .timeline
+        .iter()
+        .map(|s| json!({"start": s.start, "end": s.end, "decks": decks_of(s.decks)}))
+        .collect();
+    let overlaps: Vec<_> = out
+        .overlaps
+        .iter()
+        .map(|o| {
+            json!({
+                "start": o.start,
+                "end": o.end,
+                "ms": ms(o.end - o.start),
+                "decks": decks_of(o.decks),
+                "solo_before": solo(&o.solo_before),
+                "solo_after": solo(&o.solo_after),
+            })
+        })
+        .collect();
+    let tempo: Vec<_> = out
+        .tempo
+        .iter()
+        .map(|t| json!({"deck": t.deck, "frame": t.frame, "tempo": t.tempo, "bpm": t.bpm}))
+        .collect();
+    let plan_sha256: String = Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
     let summary = json!({
         "type": "render",
         "out": out_path.display().to_string(),
@@ -79,9 +120,22 @@ fn render(mut args: Args) -> Result<(), String> {
         "render_wall_s": out.render_wall_s,
         "realtime_factor": out.realtime_factor(),
         "fired": fired,
+        // v1 plays varispeed only: a tempo change moves pitch with it.
+        "master_tempo": false,
+        "tempo": tempo,
+        "timeline": timeline,
+        "overlaps": overlaps,
+        "deck_outputs": deck_files,
+        "plan_sha256": plan_sha256,
+        "plan": value,
     });
     println!("{summary}");
     Ok(())
+}
+
+fn write_wav(path: &Path, sr: u32, pcm: &[f32]) -> Result<(), String> {
+    let file = File::create(path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+    wav::write_f32(&mut BufWriter::new(file), sr, pcm).map_err(|e| e.to_string())
 }
 
 fn serve_cmd(mut args: Args) -> Result<(), String> {

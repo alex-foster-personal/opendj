@@ -42,6 +42,53 @@ fn render_writes_a_wav_and_a_summary() {
 }
 
 #[test]
+fn render_reports_what_a_scorer_needs() {
+    let d = temp_dir("cli-scorer");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 5.0));
+    write_wav(&d, "b.wav", 48000, &sine(48000, 660.0, 5.0));
+    let plan = json!({"end": {"ms": 3000}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}},
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 2, "path": "b.wav", "bpm": 124}},
+        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}},
+        {"at": {"ms": 1000}, "cmd": {"type": "play", "deck": 2, "playing": true}},
+        {"at": {"ms": 2000}, "cmd": {"type": "play", "deck": 1, "playing": false}}
+    ]});
+    let text = plan.to_string();
+    std::fs::write(d.join("plan.json"), &text).unwrap();
+    let o = Command::new(BIN)
+        .args(["render", "--plan"])
+        .arg(d.join("plan.json"))
+        .arg("--out")
+        .arg(d.join("mix.wav"))
+        .arg("--decks-out")
+        .arg(d.join("decks"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+    // The plan comes back with the render, verbatim and hashed.
+    assert_eq!(s["plan"], plan);
+    assert_eq!(s["plan_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(s["master_tempo"], false);
+    let spans: Vec<Value> = s["timeline"].as_array().unwrap().iter().map(|t| json!([t["start"], t["end"], t["decks"]])).collect();
+    assert_eq!(spans, vec![json!([0, 48000, [1]]), json!([48000, 96000, [1, 2]]), json!([96000, 144000, [2]])]);
+    let ov = &s["overlaps"][0];
+    assert_eq!(ov["decks"], json!([1, 2]));
+    assert_eq!(ov["ms"], 1000.0);
+    assert_eq!(ov["solo_before"], json!({"deck": 1, "frames": 48000, "ms": 1000.0}));
+    assert_eq!(ov["solo_after"], json!({"deck": 2, "frames": 48000, "ms": 1000.0}));
+    assert_eq!(s["tempo"][1], json!({"deck": 2, "frame": 0, "tempo": 1.0, "bpm": 124.0}));
+    // One WAV per loaded deck, each the length of the mix.
+    let files = s["deck_outputs"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    for (i, f) in files.iter().enumerate() {
+        assert_eq!(f["deck"], i + 1);
+        let back = odj_audio::decode::decode_file(std::path::Path::new(f["out"].as_str().unwrap())).unwrap();
+        assert_eq!(back.pcm.len(), 144000 * 2);
+    }
+}
+
+#[test]
 fn render_fails_loudly_on_a_bad_plan() {
     let d = temp_dir("cli-bad");
     std::fs::write(d.join("plan.json"), r#"{"end": {"ms": 10}, "events": [{"at": {"ms": 0}, "cmd": {"type": "eq", "deck": 1, "band": "low", "value": 3}}]}"#).unwrap();
