@@ -97,6 +97,10 @@ export default {
 		'src/service-worker.{js,ts}',
 		'tests/unit/**/*.test.mjs',
 		'tests/live/stem-decode-harness-entry.ts',
+		// Live cue alignment probes are run directly (node tests/live/<probe>.mjs
+		// --url ...) against real audio hardware, so each one is an entry point,
+		// not a module something is expected to import.
+		'tests/live/cue-{align,bridge}-*.mjs',
 		'tests/unit/fixtures/**/*.ts',
 		'tests/e2e/fixtures/**/*.ts',
 		'tests/manual/wkwebview-spike/inject.mjs',
