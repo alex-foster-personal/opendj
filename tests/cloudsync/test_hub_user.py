@@ -333,6 +333,8 @@ def test_provisioned_serve_unit_boots_under_enforce(tmp_path: Path) -> None:
         [sys.executable, *argv[4:]],
         cwd=REPO_ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
     )
+    stderr = proc.stderr
+    assert stderr is not None
     try:
         deadline = time.monotonic() + 60
         while True:
@@ -342,7 +344,7 @@ def test_provisioned_serve_unit_boots_under_enforce(tmp_path: Path) -> None:
                     break
             except (OSError, urllib.error.URLError) as exc:
                 if proc.poll() is not None:
-                    raise AssertionError(f"hub exited early: {proc.stderr.read()}") from exc
+                    raise AssertionError(f"hub exited early: {stderr.read()}") from exc
                 if time.monotonic() > deadline:
                     raise AssertionError("hub never answered /api/v1/health") from exc
                 time.sleep(0.5)
