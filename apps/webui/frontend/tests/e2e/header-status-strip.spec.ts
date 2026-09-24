@@ -65,16 +65,16 @@ test('only the CloudSync chip uses sync: in the app-shell header', async ({ page
 	await page.goto('/');
 
 	const strip = page.getByTestId('header-status-strip');
-	const chip = page.getByRole('link', { name: 'CloudSync status' });
+	const chip = page.getByRole('button', { name: 'CloudSync status' });
 
 	await expect(strip).toBeVisible();
 	await expect(chip).toBeVisible();
 	await expect(strip).not.toHaveText(/sync:/);
 	await expect(strip).not.toHaveText(/sync: n\/a/);
 	await expect(strip).not.toHaveText(/syncthing: n\/a/);
-	await expect(chip).toHaveAttribute('href', '/cloudsync');
 	await expect(chip.locator('.chip-label-full')).toHaveText(/sync:/);
 
 	await chip.click();
-	await expect(page).toHaveURL(/\/cloudsync/);
+	await expect(page.getByTestId('cloudsync-quick-actions-popover')).toBeVisible();
+	await expect(page).not.toHaveURL(/\/cloudsync/);
 });

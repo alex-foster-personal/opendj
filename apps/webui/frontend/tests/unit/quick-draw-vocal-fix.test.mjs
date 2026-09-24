@@ -13,7 +13,7 @@
  * - if data-wave-surface markers leave WaveRow / StripWaveform then
  *   QuickDraw cannot tell a vocal surface from the rest of the deck
  * - if FeedbackPinLayer stops consuming takePendingPinDraft then the queued
- *   draft never becomes a bubble
+ *   draft never becomes a bubble (moved out of FeedbackWidget in FB-16, #3888)
  * - if .qd loses data-testid="quick-draw-menu" then the e2e cannot find it
  */
 
