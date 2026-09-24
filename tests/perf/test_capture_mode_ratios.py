@@ -53,7 +53,7 @@ def _spawn_sleeper(seconds: float) -> subprocess.Popen[bytes]:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_live_tree_includes_a_spawned_child() -> None:
-    """[if] a child process is spawned under the sampled root [then] the tree walk finds it, [else stop].
+    """[if] a child spawns under the root [then] the tree walk finds it, [else stop].
 
     This is the direct regression test for the wrong-process defect: a
     sampler that queried a fixed HTTP endpoint instead of walking the OS
@@ -71,7 +71,7 @@ def test_live_tree_includes_a_spawned_child() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_tracked_processes_are_forgotten_once_the_child_exits() -> None:
-    """[if] a tracked child process exits [then] a later tree walk drops it from the persistent cache, [else stop]."""
+    """[if] a tracked child exits [then] the tree walk drops it, [else stop]."""
     child = _spawn_sleeper(0.3)
     sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
     sampler._live_tree()
@@ -86,7 +86,7 @@ def test_tracked_processes_are_forgotten_once_the_child_exits() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_raises_when_the_root_process_is_gone() -> None:
-    """[if] the sampled root pid no longer exists [then] sample() raises loud rather than reporting a silent zero, [else stop]."""
+    """[if] the root pid is gone [then] sample() raises loud, not zero, [else stop]."""
     with patch.object(psutil, "Process", side_effect=psutil.NoSuchProcess(999999)):
         sampler = cmr._ProcessTreeSampler(999999, native=_native())
         with pytest.raises(RuntimeError, match="is not running"):
@@ -95,7 +95,7 @@ def test_sample_raises_when_the_root_process_is_gone() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
-    """[if] a process is newly tracked [then] its first cpu_percent reading is primed (near-zero), [else stop].
+    """[if] a process is newly tracked [then] its first cpu reading is near-zero, [else stop].
 
     So a single busy-tick between construction and the first real sample is
     not misreported as a huge CPU spike.
@@ -123,7 +123,7 @@ def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
-    """[if] the injected native reader reports a distinctive phys_footprint [then] sample() reports exactly that value, [else stop].
+    """[if] the native reader reports a footprint [then] sample() reports it, [else stop].
 
     Direct regression test for the codex-review finding: summing
     `psutil`'s `memory_info().rss` across a multi-process Chromium tree
@@ -156,7 +156,7 @@ def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_excludes_the_root_launcher_pid_from_the_browser_only_kpi() -> None:
-    """[if] the root pid itself reports a distinctive footprint [then] sample() never includes it, only its descendants, [else stop].
+    """[if] the root pid reports a footprint [then] sample() excludes it, [else stop].
 
     Direct regression test for the Sol-review finding: `root_pid` is the
     Node `mode_ratio_browser.mjs` launcher that SPAWNS Chromium via
@@ -189,7 +189,7 @@ def test_sample_excludes_the_root_launcher_pid_from_the_browser_only_kpi() -> No
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
-    """[if] the same tracked process burns CPU between two samples [then] the second sample's cpu_percent reads above zero, [else stop].
+    """[if] a process burns CPU between samples [then] cpu_percent reads above zero, [else stop].
 
     Proves the persistent `dict[int, psutil.Process]` cache is load-bearing:
     `cpu_percent(interval=None)` on a FRESH Process object always returns
@@ -221,14 +221,14 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
-    """[if] duration_s is below the minimum sample window [then] _sample_steady raises before starting any capture, [else stop]."""
+    """[if] duration_s is below the floor [then] _sample_steady raises first, [else stop]."""
     with pytest.raises(ValueError, match="at least"):
         cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
 
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
-    """[if] leak-duration-s is below the requirement's 1h window [then] _sample_leak raises before writing a slope KPI over a shorter window, [else stop].
+    """[if] leak-duration-s is below 1h [then] _sample_leak raises first, [else stop].
 
     Direct regression test for the claude-review P3: a 30s run with two or
     three samples must not be allowed to write
@@ -254,7 +254,7 @@ def _fake_browser_proc(pid: int, lines: list[str]) -> MagicMock:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url() -> None:
-    """[if] a Gig/Trackify capture runs [then] it samples the browser subprocess's own pid, never the frontend URL string, [else stop].
+    """[if] a Gig/Trackify capture runs [then] it samples the browser pid, not the URL, [else stop].
 
     This is the call-shape regression test for the claude-review finding:
     the prior implementation threaded the frontend URL into an HTTP probe
@@ -281,7 +281,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() -> None:
-    """[if] a leak capture runs [then] it samples the browser subprocess's own pid, never the frontend URL string, [else stop]."""
+    """[if] a leak capture runs [then] it samples the browser pid, not the URL, [else stop]."""
     fake_proc = _fake_browser_proc(pid=98765, lines=["TRACKIFY_READY", "DONE"])
 
     with (
