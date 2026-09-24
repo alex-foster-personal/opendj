@@ -86,7 +86,7 @@ from typing import Any
 
 import httpx
 
-from apps.engine_core import origin as engine_origin
+from apps.shared import engine_origin
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
@@ -626,7 +626,7 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     (``EngineNotRunning``, which already covers a transport failure against
     ``/api/v1/health`` during identity verification -- connect-refused, a
     role/boot_id mismatch, or a timed-out health check are all folded into
-    that one exception upstream in ``apps.engine_core.origin``; splitting a
+    that one exception upstream in ``apps.shared.engine_origin``; splitting a
     locked-but-wedged health check out from a genuinely absent engine is
     tracked as debt against that shared module rather than fixed here, since
     every other CLI in this repo shares its exception taxonomy). A verified

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.engine_core.origin import (
+from apps.shared.engine_origin import (
     EngineIdentityMismatch,
     EngineNotRunning,
     EngineOrigin,
@@ -51,7 +51,7 @@ def _mock_health(monkeypatch: pytest.MonkeyPatch, boot_id: str) -> None:
         def get(self, url: str) -> _Response:
             return _Response()
 
-    monkeypatch.setattr("apps.engine_core.origin.httpx.Client", _Client)
+    monkeypatch.setattr("apps.shared.engine_origin.httpx.Client", _Client)
 
 
 def test_boot_id_mismatch_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +95,7 @@ def test_wrong_role_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
             called = True
             return _Response()
 
-    monkeypatch.setattr("apps.engine_core.origin.httpx.Client", _Client)
+    monkeypatch.setattr("apps.shared.engine_origin.httpx.Client", _Client)
 
     with pytest.raises(EngineIdentityMismatch) as excinfo:
         verify_engine_identity(origin)
