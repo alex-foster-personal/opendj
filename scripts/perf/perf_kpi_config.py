@@ -20,17 +20,6 @@ CEILING_FACTOR = 3.0
 CEILING_WINDOW_DAYS = 7
 LEDGER_PR_TITLE = "perf(kpi): nightly ledger"
 LEDGER_PR_BRANCH = "perf/kpi-nightly-ledger"
-#: Default only: a dedicated worktree for the ledger PR's git operations
-#: (issue #1506 / PR #3827 review), used only when no ``PerfKpiConfig`` is
-#: available. The nightly launchd job shares REPO_ROOT with whatever
-#: checkout is installed on that machine, so its ``git checkout -B`` must
-#: never run there directly -- that would switch branches out from under an
-#: operator's or agent's in-progress work. ``load_config()`` derives the
-#: real path from the configured ``state_dir`` (claude-review, PR #3827,
-#: P3): pinning it to ``DEFAULT_STATE_DIR`` at import time made two installs
-#: on one host with different ``--state-dir``/``MDT_PERF_KPI_STATE_DIR``
-#: values share -- and force-remove -- each other's in-flight worktree.
-LEDGER_WORKTREE_DIR = DEFAULT_STATE_DIR / "ledger-worktree"
 
 
 @dataclass(frozen=True)
@@ -68,6 +57,24 @@ def _require_stable_id(env_name: str, fallback: str | None) -> str:
     value = _env(env_name) or fallback
     if not value or value.startswith("REPLACE_"):
         raise ValueError(f"{env_name} must name a real library stable_id")
+    return value
+
+
+def _require_machine_label() -> str:
+    """No hidden "air" default (claude-review, PR #3827, round 3,
+    P1/BLOCKING): a plist that omits MDT_PERF_KPI_MACHINE -- because the
+    installer wasn't re-run after this fix, or because someone invokes
+    perf_kpi_job.py directly outside either installed launchd agent -- must
+    fail loudly rather than silently attribute a second Mac's KPI entries
+    to Air in the shared ledger."""
+    value = _env("MDT_PERF_KPI_MACHINE")
+    if not value:
+        raise ValueError(
+            "MDT_PERF_KPI_MACHINE must be set (the installed launchd plist "
+            "always sets it once --host-label is passed to "
+            "install_perf_kpi_launchd.sh; a manual invocation must export "
+            "it explicitly)"
+        )
     return value
 
 
@@ -114,7 +121,7 @@ def load_config() -> PerfKpiConfig:
         ),
         scratch_port=int(_env("MDT_PERF_KPI_SCRATCH_PORT") or DEFAULT_SCRATCH_PORT),
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
-        machine=_env("MDT_PERF_KPI_MACHINE") or "air",
+        machine=_require_machine_label(),
         tracks=tracks,
         ledger_worktree=state_dir / "ledger-worktree",
         data_dir=data_dir,

@@ -294,6 +294,7 @@ def test_install_render_includes_data_dir_and_path(
     monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
     monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
     monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
+    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "air")
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT)],
@@ -335,3 +336,28 @@ def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     )
 
     assert completed.returncode == 2
+
+
+def test_install_requires_host_label(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """No hidden 'air' default (claude-review, PR #3827, round 3, P1/BLOCKING):
+    an install without --host-label or MDT_PERF_KPI_MACHINE must refuse
+    rather than silently attributing a second Mac's runs to Air."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
+    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
+    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
+    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
+    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+
+    completed = subprocess.run(
+        [str(INSTALL_SCRIPT)],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "--host-label" in completed.stderr

@@ -5,7 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
-HOST_LABEL="${MDT_PERF_KPI_MACHINE:-air}"
+HOST_LABEL="${MDT_PERF_KPI_MACHINE:-}"
 
 while (($#)); do
   case "$1" in
@@ -28,6 +28,16 @@ require_env MDT_PERF_KPI_SMALL_STABLE_ID
 require_env MDT_PERF_KPI_LARGE_STABLE_ID
 require_env MDT_PERF_KPI_STEMMED_STABLE_ID
 require_env MDT_PERF_KPI_DATA_DIR
+
+# --host-label/MDT_PERF_KPI_MACHINE has no hidden default (claude-review,
+# PR #3827, round 3, P1/BLOCKING): a silent "air" fallback would attribute
+# a second Mac's perf-kpi runs to Air in the ledger with no error -- the
+# same corruption already fixed for the sibling dmg-smoke installer in
+# round 2 (see .planning/debt/3827.md).
+if [ -z "$HOST_LABEL" ]; then
+  echo "[ERROR] --host-label (or MDT_PERF_KPI_MACHINE) is required (e.g. --host-label air, --host-label silver)" >&2
+  exit 2
+fi
 
 mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents"
 

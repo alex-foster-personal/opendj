@@ -129,6 +129,25 @@ def _new_entries_since(base_entries: list, local_entries: list) -> list:
     return [entry for entry in local_entries if json.dumps(entry, sort_keys=True) not in seen]
 
 
+def _ledger_entries_at_ref(repo_root: Path, ref: str) -> list:
+    """``docs/perf/kpi-ledger.json``'s entries at ``ref``, or ``[]`` if it doesn't exist there.
+
+    Uses ``git show`` with the ref and path as separate argv elements
+    (never an interpolated ``f"{ref}:{path}"`` string), so there is no shell
+    to mis-parse the ``:`` separator.
+    """
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:docs/perf/kpi-ledger.json"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return []
+    return json.loads(completed.stdout)["entries"]
+
+
 def update_ledger_pr(
     repo_root: Path,
     ledger_path: Path,
@@ -200,11 +219,23 @@ def update_ledger_pr(
     try:
         dest = worktree_dir / "docs" / "perf" / "kpi-ledger.json"
         local_entries = load_ledger(ledger_path)["entries"]
-        if dest.exists():
-            new_entries = _new_entries_since(load_ledger(dest)["entries"], local_entries)
-        else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            new_entries = local_entries
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # Dedup against the UNION of the branch's entries and origin/main's
+        # (claude-review, PR #3827, round 3, P2), not the branch alone: an
+        # entry can reach main by another route after this branch was cut
+        # (another host's ledger PR already merged) while this host's
+        # REPO_ROOT has since pulled main and holds that entry locally too.
+        # Comparing only against the branch would re-append it, producing a
+        # duplicate once this branch also merges.
+        branch_entries = load_ledger(dest)["entries"] if dest.exists() else []
+        main_entries = _ledger_entries_at_ref(repo_root, "origin/main")
+        base_entries = branch_entries + [
+            entry
+            for entry in main_entries
+            if json.dumps(entry, sort_keys=True)
+            not in {json.dumps(e, sort_keys=True) for e in branch_entries}
+        ]
+        new_entries = _new_entries_since(base_entries, local_entries)
         if not new_entries:
             return
         append_entries(dest, new_entries, validate=False)
