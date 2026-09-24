@@ -143,10 +143,8 @@ function _revealPinsIfHidden(): void {
   // propagate so armPinPlacement never reaches placementArmed = true on a
   // reveal that did not actually happen, instead of failing silently.
   writePinsVisible(window.localStorage, true);
-  const twin = (window as unknown as Record<string, unknown>).__mdtPinsVisible as
-    | { set?: (value: boolean) => void }
-    | undefined;
-  twin?.set?.(true);
+  const w = window as Window & { __mdtPinsVisible?: { set?: (value: boolean) => void } };
+  w.__mdtPinsVisible?.set?.(true);
 }
 
 export function disarmPinPlacement(): void {
