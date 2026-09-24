@@ -390,8 +390,16 @@ def carry_forward_unqueried_host(prev_block: dict) -> dict:
         # Carry the ORIGINAL real error forward, not this pass's rendering
         # of it: if prev_block was itself already a carried block, its real
         # error is in last_known_error, not error (which is just the
-        # constant note by then).
-        last_known_error = prev_block.get("last_known_error") or prev_block.get("error")
+        # constant note by then). A previously-reachable host carried twice
+        # has last_known_error=None -- that None is the real state (found
+        # by claude-review, PR #3827, round 6, P3), so it must NOT then
+        # fall back to prev_block["error"], which by that point is only
+        # this same not_queried_note, and folding it into last_known_error
+        # would nest a non-measurement into a diagnosis.
+        if prev_block.get("error") == not_queried_note:
+            last_known_error = prev_block.get("last_known_error")
+        else:
+            last_known_error = prev_block.get("last_known_error") or prev_block.get("error")
     return {
         **prev_block,
         "reachable": False,

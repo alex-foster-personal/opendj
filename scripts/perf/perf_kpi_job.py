@@ -222,26 +222,58 @@ def update_ledger_pr(
     pr_already_open = completed.stdout.strip() not in ("", "[]")
     branch = LEDGER_PR_BRANCH
     subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
-    base_ref = "origin/main"
-    if pr_already_open:
-        subprocess.run(["git", "fetch", "origin", branch], check=True, cwd=repo_root)
-        base_ref = f"origin/{branch}"
-    # The push lease is taken HERE, right after the fetch(es) above, not
-    # from a fresh `git ls-remote` immediately before the push (claude-review,
-    # PR #3827, round 5, P1/BLOCKING): a lease re-checked right before
-    # pushing always matches whatever the remote currently is, which makes
-    # the "force-with-lease" push an unconditional force push -- exactly
-    # the concurrent-overwrite it was meant to prevent. The lease must
-    # reflect the ref this run's commit was actually BUILT on top of, so a
-    # push from the other host landing in between is detected and rejected.
-    lease_ls_remote = subprocess.run(
-        ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
-        check=True,
+    # The branch is now ALWAYS fetched, and the lease taken from THAT same
+    # fetched ref, whether or not a PR is currently open (claude-review, PR
+    # #3827, round 6, P2): round 5 only fetched the branch when
+    # pr_already_open, and derived the lease from a SEPARATE `git
+    # ls-remote` run after that fetch. In the no-PR-open path, another host
+    # could push a new entry -- or even open the PR itself -- between this
+    # host's `gh pr list` check above and that ls-remote, and this host
+    # would then take the other host's SHA as its own lease and force-push
+    # over it. Fetching the branch unconditionally and reading the lease
+    # via `git rev-parse` on the SAME fetched ref removes that window: the
+    # branch fetch that determines `base_ref` IS the fetch the lease comes
+    # from, not a second, later, independent round-trip to the remote.
+    branch_fetch = subprocess.run(
+        ["git", "fetch", "origin", branch],
+        cwd=repo_root,
         capture_output=True,
         text=True,
-        cwd=repo_root,
-    ).stdout.split()
-    lease_value = lease_ls_remote[0] if lease_ls_remote else ""
+        check=False,
+    )
+    if branch_fetch.returncode != 0 and "couldn't find remote ref" not in branch_fetch.stderr:
+        raise RuntimeError(f"git fetch origin {branch} failed: {branch_fetch.stderr.strip()}")
+    branch_exists_remotely = branch_fetch.returncode == 0
+    if pr_already_open and not branch_exists_remotely:
+        raise RuntimeError(
+            f"gh pr list found an open PR for {branch}, but git fetch could not find that "
+            "branch on origin -- inconsistent remote state, refusing to guess a base"
+        )
+    # Base on the branch whenever it EXISTS, not only when `gh pr list`
+    # already sees a PR for it (claude-review, PR #3827, round 6, P2,
+    # second half): the lease fix above only stops an UNNOTICED overwrite
+    # -- it does nothing if the lease correctly reflects a branch that
+    # moved, because a lease that matches reality lets the push through.
+    # Keying base_ref on pr_already_open instead of branch_exists_remotely
+    # meant a host that raced past `gh pr list` before another host both
+    # pushed the branch AND opened its PR would still build fresh off
+    # origin/main, take the other host's SHA as an accurate lease, and
+    # force-push straight over that host's entry -- the lease "worked" and
+    # the data loss happened anyway. Basing on the branch whenever it
+    # exists means this run's commit is built ON TOP of whatever is
+    # already there, so the push is a genuine fast-forward-shaped update
+    # rather than a sibling history the lease would otherwise wave through.
+    base_ref = f"origin/{branch}" if branch_exists_remotely else "origin/main"
+    if branch_exists_remotely:
+        lease_value = subprocess.run(
+            ["git", "rev-parse", f"origin/{branch}"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+        ).stdout.strip()
+    else:
+        lease_value = ""
     _remove_worktree_if_present(repo_root, worktree_dir)
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     # --detach, never `-B <branch>` (claude-review, PR #3827, round 5, P2):

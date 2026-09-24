@@ -175,6 +175,32 @@ def test_hosts_filter_carries_a_reachable_hosts_real_units_forward_as_stale(
     assert carried["last_known_error"] is None
 
 
+def test_hosts_filter_error_does_not_nest_for_a_reachable_host_carried_twice(
+) -> None:
+    """A previously-reachable host skipped by --hosts on two regens in a
+    row must keep last_known_error as None, not pick up the not-queried
+    note itself as if it were a real error (claude-review, PR #3827, round
+    6, P3): the round-4 test only covered a host that was unreachable with
+    a REAL error before the first carry, so it missed this case, where the
+    first carry's last_known_error is legitimately None and the second
+    carry's `None or prev_block["error"]` fallback grabs the constant note
+    instead of staying None."""
+    prev_block = {
+        "host": "agentbox",
+        "reachable": True,
+        "error": None,
+        "stale_as_of": None,
+        "generated_at_utc_of_block": "2026-09-20T00:27:53Z",
+        "units": [],
+    }
+    once = carry_forward_unqueried_host(prev_block)
+    twice = carry_forward_unqueried_host(once)
+    assert once["last_known_error"] is None
+    assert twice["last_known_error"] is None
+    assert twice["error"] == once["error"] == "not queried this pass (--hosts filter)"
+    assert twice["stale_as_of"] == once["stale_as_of"] == "2026-09-20T00:27:53Z"
+
+
 def test_hosts_filter_preserves_an_unreachable_hosts_real_error(
 ) -> None:
     """A host that was already unreachable before the --hosts filter skipped
