@@ -36,7 +36,7 @@ type PrefsHydrator = () => Promise<void>;
 let fetchBootTracksPage: FetchBootTracksPage = (limit) => listTracksHydrated({ limit });
 let fetchBootPlaylists: FetchBootPlaylists = () => listPlaylistsHydrated({ fast: true });
 let fallbackTracksFetch: FetchBootTracksPage = (limit) => listTracksHydrated({ limit });
-let fallbackPlaylistsFetch: FetchBootPlaylists = () => listPlaylistsHydrated();
+let fallbackPlaylistsFetch: FetchBootPlaylists = () => listPlaylistsHydrated({ fast: true });
 let prefsHydrator: PrefsHydrator = () => hydrateConfirmPrefsFromDisk();
 
 /** Test seam: inject a fake tracks fetch without mocking production api-rb. */
@@ -61,7 +61,7 @@ export function setFallbackTracksFetchForTests(fn: FetchBootTracksPage | null): 
 
 /** Test seam: inject the fallback playlists fetch used after prefetch rejection. */
 export function setFallbackPlaylistsFetchForTests(fn: FetchBootPlaylists | null): void {
-	fallbackPlaylistsFetch = fn ?? (() => listPlaylistsHydrated());
+	fallbackPlaylistsFetch = fn ?? (() => listPlaylistsHydrated({ fast: true }));
 }
 
 /** Test-only reset for the boot singleton and injected seams. */

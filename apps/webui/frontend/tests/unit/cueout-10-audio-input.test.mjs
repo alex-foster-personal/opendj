@@ -49,7 +49,7 @@ test('preferredAudioInputDeviceId returns null when every named input looks like
 	assert.equal(headphones.preferredAudioInputDeviceId([]), null);
 });
 
-test('unlockAudioInputConstraints prefers the selected input, then the safe default, never a handsfree mic', () => {
+test('unlockAudioInputConstraints requires the selected input exactly, falls back to the safe default, never a handsfree mic', () => {
 	const devices = [
 		{ kind: 'audioinput', deviceId: 'airpods-mic', label: 'AirPods Microphone' },
 		{ kind: 'audioinput', deviceId: 'builtin-mic', label: 'MacBook Pro Microphone' }
@@ -60,8 +60,11 @@ test('unlockAudioInputConstraints prefers the selected input, then the safe defa
 		noiseSuppression: false,
 		autoGainControl: false
 	});
+	// A selected input is EXACT. Chromium treats `ideal` as a hint and hands
+	// back the system default mic instead, which is how calibration listened
+	// to a closed-lid built-in mic while the MX Brio sat selected.
 	assert.deepEqual(headphones.unlockAudioInputConstraints(devices, 'builtin-mic'), {
-		deviceId: { ideal: 'builtin-mic' },
+		deviceId: { exact: 'builtin-mic' },
 		echoCancellation: false,
 		noiseSuppression: false,
 		autoGainControl: false

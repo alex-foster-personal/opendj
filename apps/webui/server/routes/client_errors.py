@@ -74,6 +74,8 @@ class ClientErrorIn(BaseModel):
 class ClientErrorOut(BaseModel):
     event_id: str
     stored: bool
+    error_id: str | None = None
+    sentry_event_id: str | None = None
 
 
 class ClientErrorTriageIn(BaseModel):
@@ -173,7 +175,7 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     # The browser does not report to Sentry itself -- see capture_browser_error
     # for why the engine owns this -- so this call is the only path a client
     # error has to an issue.
-    capture_browser_error(
+    sentry_event_id = capture_browser_error(
         message=payload.message,
         name=payload.name,
         stack=payload.stack,
@@ -188,7 +190,12 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
                  "audio_worklet_available": payload.audio_worklet_available,
                  "any_deck_live": payload.any_deck_live},
     )
-    return ClientErrorOut(event_id=event_id, stored=stored)
+    return ClientErrorOut(
+        event_id=event_id,
+        stored=stored,
+        error_id=str(record["error_id"]),
+        sentry_event_id=sentry_event_id,
+    )
 
 
 @router.get("", response_model=list[ClientErrorRecord])

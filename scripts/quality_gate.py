@@ -466,8 +466,33 @@ def _uv(
     return _run(cmd, allow_fail=allow_fail, env=env)
 
 
+def _pnpm_bin() -> str:
+    """Absolute path to pnpm, because a bare `pnpm` never launches on Windows.
+
+    npm's global install ships `pnpm.cmd` beside an extensionless `pnpm` shim
+    for POSIX shells. An argv list without `shell=True` goes straight to
+    `CreateProcess`, which appends `.exe` to a bare name and searches for
+    that alone; it never consults PATHEXT, so `pnpm.cmd` is invisible to it
+    and the launch raises `FileNotFoundError: [WinError 2]`. `shutil.which`
+    does honor PATHEXT and resolves `pnpm.CMD`, and launching that path
+    works. Measured Tue 22 Sep 2026 on bifrost2 from PowerShell and Git Bash
+    alike, so it is the process launcher, not the shell. `shell=True` would
+    also work but routes every argument through cmd.exe quoting, which the
+    SAST scan flags, so the resolved path is the fix.
+    """
+    path = shutil.which("pnpm")
+    if path is None:
+        raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
+    return path
+
+
+def _pnpm(*args: str, allow_fail: bool = False) -> tuple[int, str]:
+    """Run pnpm in the frontend tree by its resolved path (see `_pnpm_bin`)."""
+    return _run([_pnpm_bin(), *args], cwd=FRONTEND, allow_fail=allow_fail)
+
+
 def _pnpm_dlx(pkg: str, *args: str, allow_fail: bool = False) -> tuple[int, str]:
-    return _run(["pnpm", "dlx", pkg, *args], cwd=FRONTEND, allow_fail=allow_fail)
+    return _pnpm("dlx", pkg, *args, allow_fail=allow_fail)
 
 
 def _is_vendored(rel: str) -> bool:
@@ -869,7 +894,9 @@ _MYPY_ERROR_BUCKETS: tuple[str, ...] = ("apps", "tests", "scripts")
 
 def _mypy_bucket(rel: str) -> str:
     """Map a reported file to the metric that owns it, or refuse to guess."""
-    head = rel.split("/", 1)[0]
+    # mypy on Windows reports the path with the native separator; the scored
+    # roots are separator-free, so normalize before taking the head.
+    head = rel.replace("\\", "/").split("/", 1)[0]
     # conftest.py is the one scored root that is a file. It is test scaffolding,
     # so its debt is test debt rather than a fourth metric holding one number.
     if head == "conftest.py":
@@ -1094,7 +1121,7 @@ def _eval_frontend() -> list[Metric]:
             fan_in[dep] += 1
     fan_out = collections.Counter({k: len(v) for k, v in graph.items()})
 
-    _run(["pnpm", "exec", "svelte-kit", "sync"], cwd=FRONTEND, allow_fail=True)
+    _pnpm("exec", "svelte-kit", "sync", allow_fail=True)
     _, knip_raw = _pnpm_dlx(CFG.KNIP, "--reporter", "json", allow_fail=True)
     knip = json.loads(knip_raw[knip_raw.index("{"):])
     unused_files = [i["file"] for i in knip["issues"] if i.get("files")]
@@ -1491,6 +1518,41 @@ def _resolve_base() -> tuple[str | None, str]:
     return sha, ""
 
 
+def _link_node_modules(base_fe: Path) -> None:
+    """Expose this run's node_modules to the merge-base worktree, read-only.
+
+    A symlink needs SeCreateSymbolicLinkPrivilege on Windows (Developer Mode
+    or an elevated shell), so the merge-base run died with WinError 1314 on
+    bifrost2 (Tue 22 Sep 2026) right after the pnpm launch was fixed. A
+    directory junction needs no privilege and Node resolves through it the
+    same way; it is also how pnpm itself links on Windows. `mklink` is a
+    cmd.exe builtin, hence the `cmd /c`; `check=True` keeps a failure loud.
+    """
+    link = base_fe / "node_modules"
+    if sys.platform == "win32":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(FRONTEND / "node_modules")],
+            capture_output=True, text=True, check=True,
+        )
+    else:
+        link.symlink_to(FRONTEND / "node_modules", target_is_directory=True)
+
+
+def _unlink_node_modules(base_fe: Path) -> None:
+    """Drop the link before git or rmtree walk the throwaway tree.
+
+    Measured Tue 22 Sep 2026: `os.rmdir` on a junction removes the link and
+    never its target, and Python 3.8+ `shutil.rmtree` does not descend into
+    one either. Doing it explicitly keeps the real node_modules safe without
+    relying on either walker's reparse-point handling.
+    """
+    link = base_fe / "node_modules"
+    if link.is_symlink():
+        link.unlink()
+    elif link.is_dir():
+        os.rmdir(link)  # a junction: pathlib reports it as a plain directory
+
+
 def _measure_owners_at_base(
     sha: str, owners: list[str]
 ) -> tuple[dict[str, float] | None, str]:
@@ -1532,9 +1594,7 @@ def _measure_owners_at_base(
             # instead of running pnpm install on a throwaway tree.
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
-                (base_fe / "node_modules").symlink_to(
-                    FRONTEND / "node_modules", target_is_directory=True
-                )
+                _link_node_modules(base_fe)
         out_json = base_dir / "metrics.json"
         cmd = [
             sys.executable, "-m", "scripts.quality_gate",
@@ -1556,8 +1616,11 @@ def _measure_owners_at_base(
             )
         return json.loads(out_json.read_text()), ""
     finally:
-        # Remove the worktree entry first so the shared .git does not accumulate
-        # orphans, then clear any leftover files whether or not git agreed.
+        # Drop the node_modules link first so neither git nor rmtree can walk
+        # into the real install, then remove the worktree entry so the shared
+        # .git does not accumulate orphans, then clear any leftover files
+        # whether or not git agreed.
+        _unlink_node_modules(base_dir / "apps" / "webui" / "frontend")
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(base_dir)],
             capture_output=True, text=True, check=False,
@@ -1764,8 +1827,8 @@ def _write_trend_summary(trend_lines: list[str]) -> None:
 def _preflight(selected: list[Evaluator]) -> None:
     if shutil.which("uv") is None:
         raise RuntimeError("uv is not on PATH; see CLAUDE.md (uv, never pip)")
-    if any(e.needs_node for e in selected) and shutil.which("pnpm") is None:
-        raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
+    if any(e.needs_node for e in selected):
+        _pnpm_bin()  # the launch-time error, raised before any evaluator runs
 
 
 def _marker(metric: Metric, allowed: float | None, slack: float = 0.0) -> str:

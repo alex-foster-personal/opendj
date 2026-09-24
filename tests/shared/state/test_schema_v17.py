@@ -88,7 +88,8 @@ def test_fresh_ladder_reaches_v17() -> None:
     conn = sqlite3.connect(":memory:")
     state_schema.apply_migrations(conn)
     version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-    assert version == 17
+    # The ladder's head, which later steps (v18 path_availability) move past 17.
+    assert version == state_schema.SCHEMA_VERSION >= 17
     assert schema_markers.table_exists(conn, schema_markers.MARKER_TABLE)
     # The repair's hot lookup must be index-driven. Assert the property, not
     # the name of today's index: #3165 was an unindexed probe holding the
@@ -130,7 +131,10 @@ def test_v17_upgrade_from_v15_adds_marker_table(tmp_path: Path) -> None:
     state_db.open_rw(path).close()
     upgraded = sqlite3.connect(str(path))
     try:
-        assert upgraded.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 17
+        assert (
+            upgraded.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+            == state_schema.SCHEMA_VERSION
+        )
         assert schema_markers.table_exists(upgraded, schema_markers.MARKER_TABLE)
     finally:
         upgraded.close()

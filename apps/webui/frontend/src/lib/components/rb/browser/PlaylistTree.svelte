@@ -7,6 +7,7 @@
 	// for ColumnBrowser - self-contained (own library fetch), same pattern
 	// as the smartlist self-fetch below.
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { formatMostlyBrokenTooltip } from '$lib/rb/runtime-policy.svelte';
 	import ColumnBrowser from './ColumnBrowser.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
 	import {
@@ -15,6 +16,8 @@
 		endTrackDrag
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
+	import { trackDrag } from '$lib/rb/track-drag.svelte';
+	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
@@ -49,11 +52,13 @@
 		ondeleteplaylist,
 		onduplicateplaylist,
 		ondroptracks,
-		oncreatesmartlist
+		oncreatesmartlist,
+		onfolderdrop
 	}: PlaylistTreeProps = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
+	let folderDropActive = $state(false);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
@@ -77,6 +82,27 @@
 		endTrackDrag();
 		if (ids.length === 0) return;
 		ondroptracks(node.playlist_id, ids);
+	}
+
+	function _onFolderDragOver(event: DragEvent): void {
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+		folderDropActive = true;
+	}
+
+	function _onFolderDragLeave(event: DragEvent): void {
+		if (!isOsFileDrag(event)) return;
+		folderDropActive = false;
+	}
+
+	function _onFolderDrop(event: DragEvent): void {
+		if (trackDrag.active || onfolderdrop === undefined || !isOsFileDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		folderDropActive = false;
+		onfolderdrop(event);
 	}
 
 	/** Make a playlist row draggable onto the pane tab bar. */
@@ -138,10 +164,6 @@
 		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
 	}
 
-	function _mostlyBrokenTitle(_node: PlaylistNode): string {
-		return 'Fewer than 30% of tracks in this playlist are playable';
-	}
-
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
 	}
@@ -170,7 +192,7 @@
 	const foldTracker = new TreeFoldTracker();
 </script>
 
-<div class="tree-root">
+<div class="tree-root" data-testid="playlist-tree-panel">
 	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
 	{#if mode === 'tree'}
@@ -194,9 +216,13 @@
 	<div
 		class="tree-scroll"
 		class:hidden={mode === 'column'}
+		class:folder-drop-target={folderDropActive}
 		bind:this={foldTracker.scrollEl}
 		bind:clientHeight={foldTracker.viewportHeight}
 		onscroll={foldTracker.onScroll}
+		ondragover={_onFolderDragOver}
+		ondragleave={_onFolderDragLeave}
+		ondrop={_onFolderDrop}
 	>
 		<div
 			class="row"
@@ -261,7 +287,7 @@
 					data-testid="playlist-row"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
-					title={node.mostly_broken ? _mostlyBrokenTitle(node) : undefined}
+					title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
 					class:drop-target={dropTargetId === node.playlist_id}
 					class:tint-deck={_tintOf(node) === 'deck'}
 					class:tint-multi={_tintOf(node) === 'multi'}
@@ -294,7 +320,7 @@
 							onblur={() => void rename.commit()}
 						/>
 					{:else}
-						<span class="name" title={node.mostly_broken ? _mostlyBrokenTitle(node) : node.name}>{node.name}</span>
+						<span class="name" title={node.mostly_broken ? formatMostlyBrokenTooltip() : node.name}>{node.name}</span>
 					{/if}
 					{#if onrenameplaylist}
 						<button
@@ -423,6 +449,9 @@
 	}
 	.row.drop-target {
 		box-shadow: inset 0 0 0 1px var(--rb-accent);
+	}
+	.tree-scroll.folder-drop-target {
+		box-shadow: inset 0 0 0 2px var(--rb-accent);
 	}
 	.row svg {
 		flex: none;

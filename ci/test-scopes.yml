@@ -144,7 +144,7 @@ scopes:
   - name: opendj_cli
     sources: ["apps/opendj_cli/"]
     tests: ["tests/opendj_cli/"]
-    dependents: ["fleet_mcp"]
+    dependents: ["fleet_mcp", "webui"]
   - name: pairings
     sources: ["apps/pairings/"]
     tests: ["tests/pairings/"]

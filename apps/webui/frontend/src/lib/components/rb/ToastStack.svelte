@@ -1,35 +1,24 @@
 <!--
-	The app-wide toast tray.
+	The app-wide toast tray (UX-TOAST-01 + UX-TOAST-02, issue #3882).
 
-	Extracted from +layout.svelte for the same reason DeckErrorBanner was
-	extracted from Deck.svelte: +layout.svelte is a hotspot file several agents
-	touch at once, and the toast behavior belongs somewhere its own tests can
-	name it.
-
-	THREE BEHAVIORS, all of which exist because a toast that reported a real
-	failure could not be read in time:
-
-	  HOVER HOLDS. A pointer over a toast clears its dismissal timer, and
-	    leaving restarts the FULL delay rather than the remainder. Reading a
-	    message must not cost you the message.
-	  X DISMISSES. The autoplay error toast had no way out and sat there.
-	  CLICK COPIES. The body is a button that puts the message, its id, its
-	    timestamp and the environment on the clipboard, so reporting it is one
-	    click rather than a retype from a screenshot.
-
-	The X is nested inside the clickable body, so its click must stopPropagation
-	or dismissing would also copy.
+	Compact headlines, visible click-to-copy hints, expandable detail, gesture
+	dismiss, and telemetry ids in the clipboard payload.
 -->
 <script lang="ts">
-	import { copyToast, dismissToast, holdToast, releaseToast, type Toast } from '$lib/stores.svelte';
+	import { TOAST_SOLUTION_URL_PLACEHOLDER } from '$lib/toast-presentation';
+	import {
+		copyToast,
+		dismissToast,
+		holdToast,
+		releaseToast,
+		toggleToastExpanded,
+		type Toast
+	} from '$lib/stores.svelte';
 
-	// Presentational: the store owns the toast list and every action. Kept off
-	// $lib/rb/types.ts entirely (that module is at its fan-in ceiling), which
-	// costs nothing here because a toast has no deck identity to type.
 	let { items }: { items: readonly Toast[] } = $props();
 
-	/** Per-toast transient copy feedback, keyed by correlation id. */
 	let copyState = $state<Record<string, 'copied' | string>>({});
+	let touchStartX = $state<number | null>(null);
 
 	async function copy(toast: Toast): Promise<void> {
 		try {
@@ -39,10 +28,37 @@
 				delete copyState[toast.logId];
 			}, 1500);
 		} catch (exc) {
-			// Visible failure, per the repo's fail-fast rule: a copy that did
-			// nothing must never look like a copy that worked.
 			copyState[toast.logId] = exc instanceof Error ? exc.message : String(exc);
 		}
+	}
+
+	function hasExpandableDetail(toast: Toast): boolean {
+		if (toast.detail !== undefined && toast.detail !== toast.headline) return true;
+		return toast.kind === 'error' && toast.solutionHint !== undefined;
+	}
+
+	function onWheel(event: WheelEvent, logId: string): void {
+		if (event.deltaY === 0 && event.deltaX === 0) return;
+		event.preventDefault();
+		dismissToast(logId);
+	}
+
+	function onTouchStart(event: TouchEvent): void {
+		if (event.touches.length !== 1) return;
+		touchStartX = event.touches[0].clientX;
+	}
+
+	function onTouchMove(event: TouchEvent, logId: string): void {
+		if (touchStartX === null || event.touches.length !== 1) return;
+		const deltaX = event.touches[0].clientX - touchStartX;
+		if (Math.abs(deltaX) > 40) {
+			touchStartX = null;
+			dismissToast(logId);
+		}
+	}
+
+	function onTouchEnd(): void {
+		touchStartX = null;
 	}
 </script>
 
@@ -56,15 +72,36 @@
 			data-toast-id={toast.logId}
 			onmouseenter={() => holdToast(toast.logId)}
 			onmouseleave={() => releaseToast(toast.logId)}
+			onwheel={(event) => onWheel(event, toast.logId)}
+			ontouchstart={onTouchStart}
+			ontouchmove={(event) => onTouchMove(event, toast.logId)}
+			ontouchend={onTouchEnd}
 		>
 			<button
 				type="button"
 				class="toast-body"
 				data-toast-copy={toast.logId}
-				title={`Click to copy this message with its id (${toast.logId}), timestamp and environment. Hovering keeps it on screen.`}
+				title="Click to copy this message with its id, telemetry ids, timestamp and environment."
 				onclick={() => copy(toast)}
 			>
-				<span class="toast-message">{toast.message}</span>
+				<span class="toast-headline">{toast.headline}</span>
+				<span class="toast-copy-hint" data-toast-copy-hint={toast.logId}>Click to copy</span>
+				{#if hasExpandableDetail(toast) && toast.expanded === true}
+					{#if toast.detail !== undefined && toast.detail !== toast.headline}
+						<span class="toast-detail">{toast.detail}</span>
+					{/if}
+					{#if toast.kind === 'error' && toast.solutionHint !== undefined}
+						<span class="toast-solution">
+							{toast.solutionHint.replace(TOAST_SOLUTION_URL_PLACEHOLDER, '')}
+							<a
+								href={TOAST_SOLUTION_URL_PLACEHOLDER}
+								target="_blank"
+								rel="noopener noreferrer"
+								onclick={(event) => event.stopPropagation()}>read more (TBD)</a
+							>
+						</span>
+					{/if}
+				{/if}
 				{#if toast.count > 1}
 					<span class="toast-note" data-toast-count={toast.count}>Repeated {toast.count} times</span>
 				{/if}
@@ -89,6 +126,19 @@
 					</span>
 				{/if}
 			</button>
+			{#if hasExpandableDetail(toast)}
+				<button
+					type="button"
+					class="toast-expand"
+					data-toast-expand={toast.logId}
+					aria-expanded={toast.expanded === true}
+					title={toast.expanded === true ? 'Hide details' : 'Show details'}
+					onclick={(event) => {
+						event.stopPropagation();
+						toggleToastExpanded(toast.logId);
+					}}>{toast.expanded === true ? '▾' : '▸'}</button
+				>
+			{/if}
 			<button
 				type="button"
 				class="toast-dismiss"
@@ -105,18 +155,16 @@
 </div>
 
 <style>
-	/* Layout only. The .toast-stack / .toast palette stays in app.css, where it
-	   was, so an existing toast keeps looking like an existing toast. */
 	.toast {
 		display: flex;
 		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.35rem;
 	}
 	.toast-body {
 		flex: 1 1 auto;
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: 0.1rem;
 		border: none;
 		background: transparent;
 		color: inherit;
@@ -125,8 +173,29 @@
 		padding: 0;
 		cursor: pointer;
 	}
-	.toast-body:hover .toast-message {
+	.toast-body:hover .toast-headline {
 		text-decoration: underline dotted;
+	}
+	.toast-headline {
+		font-size: 0.92em;
+		line-height: 1.25;
+	}
+	.toast-copy-hint {
+		font-size: 0.72em;
+		opacity: 0.75;
+	}
+	.toast-detail {
+		font-size: 0.78em;
+		opacity: 0.9;
+		white-space: pre-wrap;
+	}
+	.toast-solution {
+		font-size: 0.78em;
+		opacity: 0.85;
+	}
+	.toast-solution a {
+		color: inherit;
+		text-decoration: underline;
 	}
 	.toast-note {
 		font-size: 0.75em;
@@ -135,6 +204,17 @@
 	.toast-note.failed {
 		color: var(--danger);
 		opacity: 1;
+	}
+	.toast-expand {
+		flex: 0 0 auto;
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		line-height: 1.1;
+		padding: 0 0.25rem;
+		cursor: pointer;
 	}
 	.toast-dismiss {
 		flex: 0 0 auto;

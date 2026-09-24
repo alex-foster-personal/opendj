@@ -87,6 +87,25 @@ let fallbackId = 0;
 let interceptingConsole = false;
 let consoleSampleGate: () => number = () => Math.random();
 
+export type ClientErrorAck = {
+	client_event_id: string;
+	server_event_id: string;
+	error_id?: string | null;
+	sentry_event_id?: string | null;
+};
+
+const ackListeners = new Set<(ack: ClientErrorAck) => void>();
+
+/** Register for successful POST acks so toasts can attach telemetry ids. */
+export function onClientErrorAck(listener: (ack: ClientErrorAck) => void): () => void {
+	ackListeners.add(listener);
+	return () => ackListeners.delete(listener);
+}
+
+function _notifyAck(ack: ClientErrorAck): void {
+	for (const listener of ackListeners) listener(ack);
+}
+
 export function __resetClientErrorReportingForTests(): void {
 	installed = false;
 }
@@ -142,10 +161,18 @@ async function flushQueue(): Promise<void> {
 			const queue = readQueue();
 			if (queue.length === 0) break;
 			const sent = queue[0];
-			await api.POST('/api/v1/client-errors', {
+			const response = await api.POST('/api/v1/client-errors', {
 				body: sent,
 				keepalive: true
 			});
+			if (response.data !== undefined) {
+				_notifyAck({
+					client_event_id: sent.client_event_id,
+					server_event_id: response.data.event_id,
+					error_id: response.data.error_id ?? null,
+					sentry_event_id: response.data.sentry_event_id ?? null
+				});
+			}
 			const remaining = readQueue();
 			const at = remaining.findIndex((row) => row.client_event_id === sent.client_event_id);
 			if (at >= 0) remaining.splice(at, 1);
@@ -286,11 +313,11 @@ export function reportClientError(
 	cause: unknown,
 	context: ClientErrorContext = {},
 	kind: ClientErrorKind = 'ui-error'
-): void {
-	if (typeof window === 'undefined') return;
+): string | undefined {
+	if (typeof window === 'undefined') return undefined;
 	const described = describe(cause);
 	const fingerprint = `${kind}:${context.source ?? ''}:${described.message}`;
-	if (!shouldReport(kind, fingerprint)) return;
+	if (!shouldReport(kind, fingerprint)) return undefined;
 	const now = Date.now();
 	const clientEventId =
 		typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -316,6 +343,7 @@ export function reportClientError(
 	queue.push(payload);
 	writeQueue(queue);
 	void flushQueue();
+	return clientEventId;
 }
 
 export function installClientErrorReporting(): void {
