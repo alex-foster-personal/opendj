@@ -20,12 +20,12 @@ UNKNOWN here, not a compare against the defaults.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 
 from scripts.lock_marker_parser import Unknown
 from scripts.lock_metadata_toml import norm_name, toml_list, toml_strings
-from scripts.lock_requirement_keys import Key, fmt_key, pair_by_meaning
+from scripts.lock_requirement_keys import Key, fmt_key, pair_by_meaning, same_requirement
 
 # (pyproject key, lock key under [options], uv's default, the values uv reads)
 OPTIONS: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
@@ -92,19 +92,33 @@ def _option(uv_tool: dict, options: dict, spec: tuple) -> str | None:
     return f"  [tool.uv] {spelled_key}: pyproject.toml {spelled!r}, uv.lock options {recorded!r}"
 
 
-def _conflicts(value: object, where: str, project: str) -> list[ConflictSet]:
-    """Each conflict set as a sorted tuple of (key, value) items with `package` filled in
-    the way uv records it; a shape uv refuses (`conflicts = "bad"`) is UNKNOWN."""
+def _conflicts(value: object, where: str, project: str, *, recorded: bool) -> list[ConflictSet]:
+    """Each conflict set as a sorted tuple of items, each item its sorted (key, value)
+    pairs with `package` filled in the way uv records it. An item names at most one
+    of `extra` / `group` (both is "Expected one of `extra` or `group` ... but found
+    both"), no other key than those and `package`, string values only, and a set on
+    either side holds at least two items; a recorded item carries `package`
+    (measured uv 0.8.17, Codex P2 on #3763, rounds 43 and 45). A package-only item is read. uv
+    writes each set sorted, and the spelled order does not matter, so both sides are
+    compared sorted."""
     sets: list[ConflictSet] = []
     for group in toml_list(value, where):
         items: list[tuple[tuple[str, str], ...]] = []
         for item in toml_list(group, f"{where} set"):
-            if not isinstance(item, dict) or not all(
-                isinstance(k, str) and isinstance(v, str) for k, v in item.items()
+            if (
+                not isinstance(item, dict)
+                or not all(isinstance(v, str) for v in item.values())
+                or not set(item) <= {"package", "extra", "group"}
             ):
-                raise Unknown(f"{where} item {item!r} is not a table of strings; uv rejects it")
+                raise Unknown(f"{where} item {item!r} is not a conflict selector; uv rejects it")
+            if "extra" in item and "group" in item:
+                raise Unknown(f"{where} item {item!r} names both extra and group; uv rejects it")
+            if recorded and "package" not in item:
+                raise Unknown(f"{where} item {item!r} names no package; uv rejects the file")
             filled = {"package": project, **item}
             items.append(tuple(sorted((k, norm_name(v)) for k, v in filled.items())))
+        if len(items) < 2:
+            raise Unknown(f"{where} set {group!r} holds fewer than two items; uv rejects it")
         sets.append(tuple(sorted(items)))
     return sorted(sets)
 
@@ -138,11 +152,14 @@ def settings_delta(
             raise Unknown(f"uv.lock manifest {key} is not compared by this check")
     lines = [line for spec in OPTIONS if (line := _option(tool, options, spec)) is not None]
     for spelled_key, recorded_key in MANIFEST:
-        want: Counter[Key] = Counter(
+        # uv records a repeated or equivalent requirement ONCE (`six<2` beside `six<2.0`,
+        # or beside itself under a `python_version` marker uv canonicalizes), and reads a
+        # lock that repeats one (round 45): both sides are compared as sets by meaning.
+        want = _once(
             spelled(text)
             for text in toml_strings(tool.get(spelled_key, []), f"[tool.uv] {spelled_key}")
         )
-        have: Counter[Key] = Counter(
+        have = _once(
             recorded(entry)
             for entry in toml_list(
                 manifest.get(recorded_key, []), f"uv.lock manifest {recorded_key}"
@@ -159,11 +176,22 @@ def settings_delta(
             f"  [tool.uv] {spelled_key}: in uv.lock manifest only: {fmt_key(k)}"
             for k in sorted(extra)
         )
-    want_sets = _conflicts(tool.get("conflicts", []), "[tool.uv] conflicts", project)
-    have_sets = _conflicts(lock.get("conflicts", []), "uv.lock conflicts", project)
+    want_sets = _conflicts(
+        tool.get("conflicts", []), "[tool.uv] conflicts", project, recorded=False
+    )
+    have_sets = _conflicts(lock.get("conflicts", []), "uv.lock conflicts", project, recorded=True)
     if want_sets != have_sets:
         lines.append(f"  [tool.uv] conflicts: pyproject.toml {want_sets!r}, uv.lock {have_sets!r}")
     return lines
+
+
+def _once(keys: Iterable[Key]) -> Counter[Key]:
+    """Each requirement once, the way uv records a repeated or equivalent spelling."""
+    seen: Counter[Key] = Counter()
+    for key in keys:
+        if not any(same_requirement(key, other) for other in seen):
+            seen[key] = 1
+    return seen
 
 
 def _refuse(message: str) -> bool:

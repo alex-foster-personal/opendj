@@ -55,6 +55,11 @@ def _pair(settings: str | None, recorded: str | None) -> tuple[str, str]:
             '[manifest]\nconstraints = [{ name = "six", specifier = "<3" }]\n',
             "[tool.uv] constraint-dependencies:",
         ),
+        (
+            'constraint-dependencies = ["six<2", "six>=1"]',
+            '[manifest]\nconstraints = [{ name = "six", specifier = "<2" }]\n',
+            "[tool.uv] constraint-dependencies: not in uv.lock manifest: six>=1",
+        ),
         ('override-dependencies = ["six>=1.16"]', None, "[tool.uv] override-dependencies:"),
         (
             'build-constraint-dependencies = ["setuptools<80"]',
@@ -73,6 +78,7 @@ def _pair(settings: str | None, recorded: str | None) -> tuple[str, str]:
         "constraints-unlocked",
         "constraints-removed",
         "constraints-changed",
+        "constraints-second-spec-unlocked",
         "overrides",
         "build-constraints",
         "conflicts-unlocked",
@@ -82,7 +88,8 @@ def _pair(settings: str | None, recorded: str | None) -> tuple[str, str]:
 def test_a_setting_that_disagrees_with_the_lock_is_stale(
     tmp_path: Path, settings: str | None, recorded: str | None, named: str
 ) -> None:
-    """Each pair is `uv lock --check` exit 1 (measured uv 0.8.17, round 43)."""
+    """Each pair is `uv lock --check` exit 1 (measured uv 0.8.17, round 43; the second
+    specifier on one name round 45, the control for pairing by meaning, not by name)."""
     code, message = _run(tmp_path, *_pair(settings, recorded))
     assert code == EXIT_STALE, message
     assert named in message, message
@@ -316,3 +323,139 @@ def test_a_legacy_dev_dependency_uv_cannot_read_is_unknown(
     got, message = _run(tmp_path, *_dev_pair(settings, None, None))
     assert got == EXIT_UNKNOWN, message
     assert named in message, message
+
+
+SORTED_CONFLICT = (
+    'conflicts = [[\n    { package = "demo", extra = "ok" },\n'
+    '    { package = "demo", group = "dev" },\n]]\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("settings", "recorded", "named"),
+    [
+        (
+            'conflicts = [[{ extra = "ok", group = "dev" }, { extra = "b" }]]',
+            None,
+            "names both extra and group",
+        ),
+        ('conflicts = [[{ bogus = "ok" }, { extra = "b" }]]', None, "is not a conflict selector"),
+        ('conflicts = [[{ extra = 1 }, { extra = "ok" }]]', None, "is not a conflict selector"),
+        ('conflicts = [[{ extra = "ok" }]]', None, "holds fewer than two items"),
+        (
+            f"conflicts = {CONFLICT}",
+            'conflicts = [[\n    { package = "demo", extra = "a", group = "dev" },\n'
+            '    { package = "demo", extra = "b" },\n]]\n',
+            "uv.lock conflicts item",
+        ),
+        (
+            f"conflicts = {CONFLICT}",
+            'conflicts = [[\n    { extra = "a" },\n    { package = "demo", extra = "b" },\n]]\n',
+            "names no package",
+        ),
+        (
+            f"conflicts = {CONFLICT}",
+            'conflicts = [[{ package = "demo", extra = "a" }]]\n',
+            "holds fewer than two items",
+        ),
+        (
+            f"conflicts = {CONFLICT}",
+            'conflicts = [[\n    { package = "demo", extra = "a", bogus = "x" },\n'
+            '    { package = "demo", extra = "b" },\n]]\n',
+            "is not a conflict selector",
+        ),
+    ],
+    ids=[
+        "extra-and-group",
+        "bogus-key",
+        "extra-int",
+        "single-item",
+        "lock-extra-and-group",
+        "lock-no-package",
+        "lock-single-item",
+        "lock-bogus-key",
+    ],
+)
+def test_a_conflict_selector_uv_refuses_is_unknown(
+    tmp_path: Path, settings: str, recorded: str | None, named: str
+) -> None:
+    """An item naming both `extra` and `group`, an unknown key, a non-string value or a
+    one-item set in `[tool.uv] conflicts`, and a recorded item with both selectors,
+    no `package` or an unknown key, or a recorded one-item set, are each `uv lock
+    --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 45); the all-strings
+    check had let them compare."""
+    code, message = _run(tmp_path, *_pair(settings, recorded))
+    assert code == EXIT_UNKNOWN, message
+    assert named in message, message
+
+
+@pytest.mark.parametrize(
+    ("settings", "recorded"),
+    [
+        (
+            'conflicts = [[{ package = "demo" }, { extra = "ok" }]]',
+            'conflicts = [[\n    { package = "demo" },\n'
+            '    { package = "demo", extra = "ok" },\n]]\n',
+        ),
+        (
+            'constraint-dependencies = ["six<2", "six<2"]',
+            '[manifest]\nconstraints = [{ name = "six", specifier = "<2" }]\n',
+        ),
+        (
+            'constraint-dependencies = ["six<2", "six<2.0"]',
+            '[manifest]\nconstraints = [{ name = "six", specifier = "<2" }]\n',
+        ),
+        (
+            "constraint-dependencies = [\"six<2; python_version < '3.12'\", "
+            "\"six<2; python_full_version < '3.12'\"]",
+            "[manifest]\nconstraints = [\n"
+            '    { name = "six", marker = "python_full_version < \'3.12\'", '
+            'specifier = "<2" },\n]\n',
+        ),
+        (
+            'constraint-dependencies = ["six<2"]',
+            '[manifest]\nconstraints = [\n    { name = "six", specifier = "<2" },\n'
+            '    { name = "six", specifier = "<2" },\n]\n',
+        ),
+        (
+            'constraint-dependencies = ["six<2", "six>=1"]',
+            '[manifest]\nconstraints = [\n    { name = "six", specifier = "<2" },\n'
+            '    { name = "six", specifier = ">=1" },\n]\n',
+        ),
+        (
+            'override-dependencies = ["six>=1.16", "six>=1.16"]',
+            '[manifest]\noverrides = [{ name = "six", specifier = ">=1.16" }]\n',
+        ),
+    ],
+    ids=[
+        "package-only-item",
+        "constraint-repeated",
+        "constraint-equivalent-spelling",
+        "constraint-equivalent-marker",
+        "lock-constraint-repeated",
+        "constraint-same-name-two-specs",
+        "override-repeated",
+    ],
+)
+def test_a_repeated_or_equivalent_setting_uv_records_once_keeps_the_verdict(
+    tmp_path: Path, settings: str, recorded: str
+) -> None:
+    """CONTROLS: uv reads a package-only conflict item; it records a repeated or
+    equivalent constraint or override ONCE, reads a lock that repeats one, and keeps
+    two specifiers on one name apart (each `uv lock --check` exit 0, measured uv
+    0.8.17, round 45); the Counter compare had reported the repeated spelling as stale,
+    and pairing by name alone would collapse the two specifiers."""
+    code, message = _run(tmp_path, *_pair(settings, recorded))
+    assert code == EXIT_OK, message
+
+
+def test_the_order_uv_writes_a_conflict_set_in_keeps_the_verdict(tmp_path: Path) -> None:
+    """CONTROL: uv writes each set's items sorted, extra before group, whatever order
+    the pyproject spells them in (`uv lock --check` exit 0, measured uv 0.8.17,
+    round 45), so both sides are compared sorted."""
+    pyproject, lock = _dev_pair(None, "[]", "[]")
+    pyproject += '[tool.uv]\nconflicts = [[{ group = "dev" }, { extra = "ok" }]]\n'
+    assert lock.count(REQUIRES) == 1
+    lock = lock.replace(REQUIRES, REQUIRES + SORTED_CONFLICT)
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_OK, message
