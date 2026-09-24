@@ -37,13 +37,14 @@
 
 	let {
 		getTrigger,
-		onclose
+		onclose,
+		popoverEl = $bindable(null)
 	}: {
 		getTrigger: () => HTMLElement | null;
 		onclose: () => void;
+		popoverEl?: HTMLDivElement | null;
 	} = $props();
 
-	let popoverEl = $state<HTMLDivElement | null>(null);
 	let config = $state<CloudSyncConfigOut | null>(null);
 	let uiMirror = $state<{ decks?: UiMirrorDecks } | null>(null);
 	let loadError = $state<string | null>(null);

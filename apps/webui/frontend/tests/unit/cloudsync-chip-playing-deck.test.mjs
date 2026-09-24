@@ -42,7 +42,6 @@ before(async () => {
 // requirement: CSUI-02
 // [if] deck 1 is playing [then] chip activation opens quick actions without route or transport change, [else stop]
 test('chip activation opens quick actions while a deck is playing without sync transport side effects', () => {
-	const routeBefore = '/performance';
 	const deckBefore = { playing: true, audible: true };
 	const playingGate = {
 		appPosture: 'prep',
@@ -52,14 +51,6 @@ test('chip activation opens quick actions while a deck is playing without sync t
 	const ordinary = view.syncNowRequest(config(), playingGate);
 	assert.equal(ordinary.kind, 'refuse');
 	assert.match(ordinary.reason, /deck_playing/);
-
-	let popoverOpen = false;
-	popoverOpen = !popoverOpen;
-
-	assert.equal(routeBefore, '/performance');
-	assert.equal(deckBefore.playing, true);
-	assert.equal(deckBefore.audible, true);
-	assert.equal(popoverOpen, true, 'chip activation must open the quick-actions popover');
 
 	assert.doesNotMatch(CHIP, /performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/);
 	assert.doesNotMatch(QUICK, /performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/);

@@ -395,18 +395,17 @@ export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
 export type UiMirrorDeck = { playing?: boolean };
 export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
 
-/** Best-effort ui-mirror read for Gig/playing-deck sync gates (HTTP parity with Status tab). */
+/**
+ * ui-mirror read for Gig/playing-deck sync gates (HTTP parity with Status tab).
+ * Fails closed: a fetch error propagates to the caller instead of being read
+ * as "no deck playing", so a transient failure never widens the sync gate.
+ */
 export async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
-	try {
-		const { data } = await api.GET('/api/v1/state/ui-mirror', {});
-		if (data !== undefined && typeof data === 'object') {
-			return data as { decks?: UiMirrorDecks };
-		}
-		return null;
-	} catch (exc) {
-		if (readApiErrorStatus(exc) === 409) return null;
-		return null;
+	const { data } = await api.GET('/api/v1/state/ui-mirror', {});
+	if (data !== undefined && typeof data === 'object') {
+		return data as { decks?: UiMirrorDecks };
 	}
+	return null;
 }
 
 export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {

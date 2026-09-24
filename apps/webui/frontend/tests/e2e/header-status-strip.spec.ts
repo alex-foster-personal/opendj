@@ -76,5 +76,5 @@ test('only the CloudSync chip uses sync: in the app-shell header', async ({ page
 
 	await chip.click();
 	await expect(page.getByTestId('cloudsync-quick-actions-popover')).toBeVisible();
-	await expect(page).toHaveURL(/\//);
+	await expect(page).not.toHaveURL(/\/cloudsync/);
 });

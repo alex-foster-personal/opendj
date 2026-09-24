@@ -19,6 +19,7 @@
 	let loadError = $state<string | null>(null);
 	let popoverOpen = $state(false);
 	let triggerEl = $state<HTMLButtonElement | null>(null);
+	let popoverEl = $state<HTMLDivElement | null>(null);
 
 	function chipState(): ReturnType<typeof chipStateOf> {
 		return chipStateOf(status);
@@ -58,8 +59,7 @@
 		const target = event.target;
 		if (!(target instanceof Node)) return;
 		if (triggerEl?.contains(target)) return;
-		const popover = document.querySelector('[data-testid="cloudsync-quick-actions-popover"]');
-		if (popover instanceof HTMLElement && popover.contains(target)) return;
+		if (popoverEl?.contains(target)) return;
 		closePopover();
 	}
 
@@ -113,7 +113,11 @@
 		<span class="chip-label-short">{shortLabel}</span>
 	</button>
 	{#if popoverOpen}
-		<CloudSyncQuickActions getTrigger={() => triggerEl} onclose={closePopover} />
+		<CloudSyncQuickActions
+			getTrigger={() => triggerEl}
+			onclose={closePopover}
+			bind:popoverEl
+		/>
 	{/if}
 </div>
 

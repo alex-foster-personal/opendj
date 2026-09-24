@@ -32,7 +32,7 @@ test('at 900px the CloudSync chip is a single-line quick-actions trigger', async
 
 	await chip.click();
 	await expect(page.getByTestId('cloudsync-quick-actions-popover')).toBeVisible();
-	await expect(page).toHaveURL(/\//);
+	await expect(page).not.toHaveURL(/\/cloudsync/);
 });
 
 test('at 1280px the CloudSync chip shows the full label in one line', async ({ page }) => {
