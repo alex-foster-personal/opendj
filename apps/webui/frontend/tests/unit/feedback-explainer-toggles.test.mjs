@@ -30,6 +30,12 @@ const VISIBILITY_ACTIONS = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackPinVisibilityActions.svelte', import.meta.url),
 	'utf8'
 );
+// #3892 moved the pins on the canvas (and the gates on them) into the
+// root-mounted pin layer; the topbar widget keeps the toggles.
+const LAYER = readFileSync(
+	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url),
+	'utf8'
+);
 const VISIBILITY_PREFERENCE = readFileSync(
 	new URL('../../src/lib/rb/feedback-pin-visibility.ts', import.meta.url),
 	'utf8'
@@ -68,24 +74,29 @@ test('the explainer bullets name the honest breakdown, including what is NOT tra
 });
 
 test('a working, per-viewer "show feedback comment pins" toggle defaults new viewers OFF', () => {
-	assert.match(WIDGET, /import\s*\{[^}]*readPinsVisible[^}]*\}\s*from\s*'\$lib\/rb\/feedback-pin-visibility'/s);
+	for (const src of [WIDGET, LAYER]) {
+		assert.match(src, /import\s*\{[^}]*readPinsVisible[^}]*\}\s*from\s*'\$lib\/rb\/feedback-pin-visibility'/s);
+		assert.match(
+			src,
+			/pinsVisible(?:\s*:\s*boolean)?\s*=\s*\$state\(false\)/,
+			'must default OFF before the stored value loads'
+		);
+	}
 	assert.match(VISIBILITY_PREFERENCE, /parsePinsVisible/);
 	assert.match(VISIBILITY_PREFERENCE, /serializePinsVisible/);
-	assert.match(
-		WIDGET,
-		/pinsVisible(?:\s*:\s*boolean)?\s*=\s*\$state\(false\)/,
-		'must default OFF before the stored value loads'
-	);
+	// The widget's toggle and the layer's gate are separate components, so the
+	// layer must follow a change made in the widget rather than read it once.
+	assert.match(LAYER, /onPinsVisibleChanged\(/);
 	// The visible pins on the canvas must actually be gated by the toggle -
 	// otherwise the checkbox is decorative and every viewer still sees pins.
-	const pagePinsAt = WIDGET.indexOf('const pagePins = $derived(');
+	const pagePinsAt = LAYER.indexOf('const pagePins = $derived(');
 	assert.notEqual(pagePinsAt, -1);
-	const pagePinsBody = WIDGET.slice(pagePinsAt, pagePinsAt + 250);
+	const pagePinsBody = LAYER.slice(pagePinsAt, pagePinsAt + 250);
 	assert.match(pagePinsBody, /pinsVisible/, 'pagePins must be gated on pinsVisible, or the toggle does nothing');
 });
 
 test('the "show feedback comment pins" toggle has an agent-facing programmatic twin, like pinSeen does', () => {
-	assert.match(WIDGET, /__mdtPinsVisible/, 'the pins-visible preference lives only in the browser, so it needs a twin');
+	assert.match(LAYER, /__mdtPinsVisible/, 'the pins-visible preference lives only in the browser, so it needs a twin');
 });
 
 test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs preference', () => {
@@ -94,7 +105,7 @@ test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs pre
 	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
 	// #3790 rewrote the filter as an early return; either spelling is the same gate.
 	assert.match(
-		WIDGET,
+		LAYER,
 		/p\.author !== 'agent' \|\| uiPrefs\.show_agent_pins|p\.author === 'agent' && !uiPrefs\.show_agent_pins/
 	);
 });

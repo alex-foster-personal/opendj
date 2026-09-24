@@ -31,6 +31,9 @@ function read(rel) {
 }
 
 const hotkeys = read('src/lib/rb/performance-hotkeys.ts');
+// #3892 moved the `m` pin hotkey out of the /performance-only handler into its
+// own window-wide installer, so pins can be dropped on every route.
+const pinHotkeys = read('src/lib/rb/comment-pin-hotkeys.ts');
 const widget = read('src/lib/components/rb/FeedbackWidget.svelte');
 // savePinDraft's textarea moved into its own component (Thu 3 Sep 2026,
 // pin review v2) to bring FeedbackWidget.svelte back under the 600-line
@@ -38,8 +41,11 @@ const widget = read('src/lib/components/rb/FeedbackWidget.svelte');
 const draftBubble = read('src/lib/components/rb/FeedbackPinDraftBubble.svelte');
 
 test("'m' arms comment pin placement", () => {
-	assert.match(hotkeys, /e\.key === 'm' \|\| e\.key === 'M'/);
-	assert.match(hotkeys, /armPinPlacement\(\)/);
+	assert.match(pinHotkeys, /e\.key !== 'm' && e\.key !== 'M'\) return;/);
+	assert.match(pinHotkeys, /if \(e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) return;/);
+	assert.match(pinHotkeys, /if \(isNativeInteractiveTarget\(e\.target\)\) return;/);
+	assert.match(pinHotkeys, /armPinPlacement\(\)/);
+	assert.doesNotMatch(hotkeys, /armPinPlacement/, 'one owner for the m key, or it arms twice');
 });
 
 test('no shortcut fires while a text field has focus, or with a modifier held', () => {
