@@ -229,19 +229,31 @@ test('a silent tap posts nothing, so idle decks cost no main-thread work', async
 // onward.
 // ---------------------------------------------------------------------------
 
+/** esbuild plugin resolving Vite's `?url` worklet import to the built asset. */
+const viteUrlSuffixPlugin = {
+	name: 'vite-url-suffix',
+	setup(esbuild: import('esbuild').PluginBuild) {
+		esbuild.onResolve({ filter: /\?url$/ }, (args) => ({
+			path: args.path,
+			namespace: 'vite-url-suffix'
+		}));
+		esbuild.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, () => ({
+			contents: `export default ${JSON.stringify(meterProcessorAssetPath())};`,
+			loader: 'js'
+		}));
+	}
+};
+
 /**
- * Bundle the real `meter-tap.ts` for the browser, with its `?url` worklet
- * import resolved to the hashed asset THIS build emitted.
+ * Bundle a meter-artifact browser entry, with its `?url` worklet import
+ * resolved to the hashed asset THIS build emitted.
  *
  * esbuild rather than Vite for the same reason `tests/unit/load-typescript.mjs`
  * uses it: one entry, in memory, no long-lived dependency-optimizer handles.
- * The `?url` suffix is Vite's, so it is modelled the same way that helper
- * models it - except the value here is the real emitted asset path, because the
- * browser is going to `addModule()` it for real.
  */
-async function bundleMasterMeterHarness(): Promise<string> {
+async function bundleMeterHarnessEntry(relativeEntry: string): Promise<string> {
 	const result = await build({
-		entryPoints: [`${FRONTEND_ROOT}tests/e2e/fixtures/master-meter-browser-entry.ts`],
+		entryPoints: [`${FRONTEND_ROOT}${relativeEntry}`],
 		absWorkingDir: FRONTEND_ROOT,
 		alias: { $lib: `${FRONTEND_ROOT}src/lib` },
 		bundle: true,
@@ -249,27 +261,21 @@ async function bundleMasterMeterHarness(): Promise<string> {
 		logLevel: 'silent',
 		platform: 'browser',
 		target: 'chrome120',
-		plugins: [
-			{
-				name: 'vite-url-suffix',
-				setup(esbuild) {
-					esbuild.onResolve({ filter: /\?url$/ }, (args) => ({
-						path: args.path,
-						namespace: 'vite-url-suffix'
-					}));
-					esbuild.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, () => ({
-						contents: `export default ${JSON.stringify(meterProcessorAssetPath())};`,
-						loader: 'js'
-					}));
-				}
-			}
-		],
+		plugins: [viteUrlSuffixPlugin],
 		write: false
 	});
 	if (result.outputFiles.length !== 1) {
 		throw new Error(`expected one bundled harness output, got ${result.outputFiles.length}`);
 	}
 	return result.outputFiles[0].text;
+}
+
+async function bundleMasterMeterHarness(): Promise<string> {
+	return bundleMeterHarnessEntry('tests/e2e/fixtures/master-meter-browser-entry.ts');
+}
+
+async function bundleChannelMeterHarness(): Promise<string> {
+	return bundleMeterHarnessEntry('tests/e2e/fixtures/channel-meter-browser-entry.ts');
 }
 
 /** Load the built app page and install the production meter module on it. */
@@ -476,6 +482,66 @@ test('a real worklet arm failure marks the meters unavailable, and only for its 
 	// true when the real failure landed, false again when the remount armed:
 	// this is what lets an idle component learn about a failure with no poll.
 	expect(result.notifications).toEqual([true, false]);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #3529: the per-DECK channel meter must follow the channel fader.
+//
+// Source-level grep that `source: fader` exists would stay green if the tap
+// were moved back to `high` in a refactor that kept the string elsewhere. This
+// block drives the shipped `buildDeckChannelGraph` + `readMeterTap` through a
+// real AudioContext so a misplaced tap or a disconnected fader goes red.
+// ---------------------------------------------------------------------------
+
+async function pageWithChannelMeterModule(page: import('@playwright/test').Page): Promise<void> {
+	await page.goto('/index.html');
+	await page.addScriptTag({ content: await bundleChannelMeterHarness(), type: 'module' });
+	await page.waitForFunction(() => window.__channelMeterHarness !== undefined);
+}
+
+test('the production channel meter reads a real level at unity fader', async ({ page }) => {
+	await pageWithChannelMeterModule(page);
+	const floor = await page.evaluate(() => window.__channelMeterHarness!.SILENT_METER_READING.db);
+	const { readings } = await page.evaluate(async () => {
+		const harness = window.__channelMeterHarness!;
+		return harness.readChannelMeterAtFaderGains([1]);
+	});
+	expect(readings[0], `unity fader should read above the floor (${readings})`).toBeGreaterThan(
+		floor + 1
+	);
+});
+
+test('the production channel meter floors on the next observation when the channel fader closes', async ({
+	page
+}) => {
+	await pageWithChannelMeterModule(page);
+	const floor = await page.evaluate(() => window.__channelMeterHarness!.SILENT_METER_READING.db);
+	const result = await page.evaluate(async () => {
+		const harness = window.__channelMeterHarness!;
+		return harness.readChannelMeterFloorsOnNextObservation();
+	});
+	expect(result.unityDb, 'unity fader must establish a non-floor reading first').toBeGreaterThan(
+		floor + 1
+	);
+	expect(
+		result.closedObservationPeak,
+		`a closed channel fader must post silence on the first silent worklet observation (peak=${result.closedObservationPeak})`
+	).toBeLessThanOrEqual(1e-6);
+	expect(
+		result.closedObservationDb,
+		`the next observation after a silent metering window must floor (${result.closedObservationDb} dBFS)`
+	).toBeLessThanOrEqual(floor + 0.5);
+});
+
+test('halving the production channel fader drops the reading by about 6 dB', async ({ page }) => {
+	await pageWithChannelMeterModule(page);
+	const { readings } = await page.evaluate(async () => {
+		const harness = window.__channelMeterHarness!;
+		return harness.readChannelMeterAtFaderGains([1, 0.5]);
+	});
+	const delta = readings[0] - readings[1];
+	expect(delta, `half fader should be ~6 dB below unity (${readings})`).toBeGreaterThan(5);
+	expect(delta, `half fader overshot the -6 dB target (${readings})`).toBeLessThan(7);
 });
 
 // ---------------------------------------------------------------------------
