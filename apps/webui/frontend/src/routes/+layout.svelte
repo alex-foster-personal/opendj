@@ -47,7 +47,7 @@
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 	import type { Component } from 'svelte';
-	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 
 	let { children } = $props();
 
@@ -180,18 +180,12 @@
 		const uninstallShellCommands = installShellCommandPoll();
 		let unmounted = false;
 		let uninstallCommentPinHotkeys: (() => void) | null = null;
-		bootScheduler.defer('feedback-pin-layer:mount', () =>
-			void Promise.all([
-				import('$lib/components/rb/FeedbackPinLayer.svelte'),
-				import('$lib/components/rb/FeedbackPinShellButton.svelte'),
-				import('$lib/rb/comment-pin-hotkeys')
-			]).then(([layer, shellButton, pinHotkeys]) => {
-				if (unmounted) return;
-				FeedbackPinLayer = layer.default;
-				FeedbackPinShellButton = shellButton.default;
-				uninstallCommentPinHotkeys = pinHotkeys.installCommentPinHotkeys();
-			})
-		);
+		deferFeedbackPinShell((shell) => {
+			if (unmounted) return;
+			FeedbackPinLayer = shell.layer;
+			FeedbackPinShellButton = shell.shellButton;
+			uninstallCommentPinHotkeys = shell.installCommentPinHotkeys();
+		});
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
