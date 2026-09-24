@@ -151,33 +151,13 @@ def quantize(
     if phrase_bars < 1:
         raise ValueError("phrase_bars must be >= 1")
     grid = sorted(float(t) for t in downbeats)
-    starts = sorted(
-        (float(s), str(label))
-        for s, _e, label in segments
-        if float(s) > 0.0 and str(label) not in EDGE_LABELS
-    )
+    starts = _model_starts(segments)
     if len(grid) < 2:
         # No grid to snap to: keep the model's times and say so.
         raw = [Boundary(s, s, lab, None, 0.0, False, "unsnapped") for s, lab in starts]
         return Structure(raw, phrase_bars, None, 0, ["no_downbeat_grid"] if starts else [])
-    fallback_bar = median(b - a for a, b in pairwise(grid))
-
-    first: list[tuple[float, str, int | None]] = []
-    for s, lab in starts:
-        i = _nearest(grid, s)
-        if abs(grid[i] - s) > max_move_bars * _local_bar(grid, i, fallback_bar):
-            first.append((s, lab, None))
-        else:
-            first.append((s, lab, i))
-
-    offset: int | None = None
-    if phrase_bars > 1:
-        snapped_bars = [i for _s, _l, i in first if i is not None]
-        offset = (
-            phrase_offset
-            if phrase_offset is not None
-            else (vote_phrase_offset(snapped_bars, phrase_bars) if snapped_bars else 0)
-        )
+    first = _downbeat_snap(starts, grid, max_move_bars)
+    offset = _phrase_offset(first, phrase_bars, phrase_offset)
 
     out: list[Boundary] = []
     seen_bars: set[int] = set()
@@ -186,11 +166,7 @@ def quantize(
         if downbeat is None:
             out.append(Boundary(s, s, lab, None, 0.0, False, "unsnapped"))
             continue
-        bar, aligned = downbeat, phrase_bars == 1
-        if phrase_bars > 1 and offset is not None:
-            j = offset + round((downbeat - offset) / phrase_bars) * phrase_bars
-            if 0 <= j < len(grid) and abs(j - downbeat) <= max_phrase_move_bars:
-                bar, aligned = j, True
+        bar, aligned = _phrase_snap(downbeat, len(grid), phrase_bars, offset, max_phrase_move_bars)
         if bar in seen_bars:
             merged += 1  # two model boundaries collapsed onto one bar; keep the first
             continue
@@ -199,6 +175,51 @@ def quantize(
     out.sort(key=lambda b: b.time_s)
 
     return Structure(out, phrase_bars, offset, merged, _implausible(out, grid))
+
+
+def _model_starts(segments: Sequence[tuple[float, float, str]]) -> list[tuple[float, str]]:
+    """Section starts inside the song: the track's own start and the silence labels drop out."""
+    return sorted(
+        (float(s), str(label))
+        for s, _e, label in segments
+        if float(s) > 0.0 and str(label) not in EDGE_LABELS
+    )
+
+
+def _downbeat_snap(
+    starts: Sequence[tuple[float, str]], grid: Sequence[float], max_move_bars: float
+) -> list[tuple[float, str, int | None]]:
+    """Each start with its nearest downbeat index, or None when that is too far to move."""
+    fallback_bar = median(b - a for a, b in pairwise(grid))
+    first: list[tuple[float, str, int | None]] = []
+    for s, lab in starts:
+        i = _nearest(grid, s)
+        near = abs(grid[i] - s) <= max_move_bars * _local_bar(grid, i, fallback_bar)
+        first.append((s, lab, i if near else None))
+    return first
+
+
+def _phrase_offset(
+    first: Sequence[tuple[float, str, int | None]], phrase_bars: int, pinned: int | None
+) -> int | None:
+    if phrase_bars == 1:
+        return None
+    if pinned is not None:
+        return pinned
+    snapped_bars = [i for _s, _l, i in first if i is not None]
+    return vote_phrase_offset(snapped_bars, phrase_bars) if snapped_bars else 0
+
+
+def _phrase_snap(
+    downbeat: int, n_bars: int, phrase_bars: int, offset: int | None, max_move: int
+) -> tuple[int, bool]:
+    """(bar, phrase_aligned) after moving at most ``max_move`` bars onto a phrase start."""
+    if phrase_bars == 1 or offset is None:
+        return downbeat, phrase_bars == 1
+    j = offset + round((downbeat - offset) / phrase_bars) * phrase_bars
+    if 0 <= j < n_bars and abs(j - downbeat) <= max_move:
+        return j, True
+    return downbeat, False
 
 
 def _implausible(bounds: Sequence[Boundary], grid: Sequence[float]) -> list[str]:

@@ -171,6 +171,33 @@ def macro_f1(y: np.ndarray, pred: np.ndarray, n_classes: int) -> float:
     return float(np.mean(scores))
 
 
+def _split_classes(
+    counts: Mapping[str, int], min_per_class: int
+) -> tuple[list[str], dict[str, int]]:
+    """(genres kept for training, genres dropped with their counts); refuses fewer than 2 kept."""
+    kept = sorted(c for c, n in counts.items() if n >= min_per_class)
+    dropped = {c: n for c, n in sorted(counts.items()) if n < min_per_class}
+    if len(kept) < 2:
+        raise ValueError(
+            f"need at least 2 genres with >= {min_per_class} labeled, embedded tracks; "
+            f"have {dict(counts)}"
+        )
+    return kept, dropped
+
+
+def _cross_validate(
+    x: np.ndarray, y: np.ndarray, n_classes: int, k: int, seed: int
+) -> tuple[float, float]:
+    """(accuracy, macro F1) with every track predicted by a head that never saw it."""
+    pred = np.empty_like(y)
+    for test in _stratified_folds(y, k, seed):
+        train_mask = np.ones(len(y), dtype=bool)
+        train_mask[test] = False
+        w, b = fit_softmax(x[train_mask], y[train_mask], n_classes)
+        pred[test] = np.argmax(x[test] @ w.T + b, axis=1)
+    return float(np.mean(pred == y)), macro_f1(y, pred, n_classes)
+
+
 def train(
     vectors: Mapping[str, Sequence[float]],
     labels: Mapping[str, str],
@@ -184,28 +211,14 @@ def train(
     """Fit on every track that has both a vector and a label; cross-validate first."""
     ids = sorted(set(vectors) & set(labels))
     counts = Counter(labels[i] for i in ids)
-    kept = sorted(c for c, n in counts.items() if n >= min_per_class)
-    dropped = {c: n for c, n in sorted(counts.items()) if n < min_per_class}
-    if len(kept) < 2:
-        raise ValueError(
-            f"need at least 2 genres with >= {min_per_class} labeled, embedded tracks; "
-            f"have {dict(counts)}"
-        )
+    kept, dropped = _split_classes(counts, min_per_class)
     ids = [i for i in ids if labels[i] in kept]
     index = {c: k for k, c in enumerate(kept)}
     x = _normalize(np.asarray([vectors[i] for i in ids], dtype=np.float64))
     y = np.asarray([index[labels[i]] for i in ids])
 
-    cv_acc = cv_f1 = None
     k = min(folds, int(np.bincount(y).min()))
-    if k >= 2:
-        pred = np.empty_like(y)
-        for test in _stratified_folds(y, k, seed):
-            train_mask = np.ones(len(y), dtype=bool)
-            train_mask[test] = False
-            w, b = fit_softmax(x[train_mask], y[train_mask], len(kept))
-            pred[test] = np.argmax(x[test] @ w.T + b, axis=1)
-        cv_acc, cv_f1 = float(np.mean(pred == y)), macro_f1(y, pred, len(kept))
+    cv_acc, cv_f1 = _cross_validate(x, y, len(kept), k, seed) if k >= 2 else (None, None)
 
     w, b = fit_softmax(x, y, len(kept))
     digest = hashlib.sha256(

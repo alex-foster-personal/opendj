@@ -55,8 +55,8 @@ def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]
     return labels, unlabeled
 
 
-def _cmd_embed(args: argparse.Namespace) -> int:
-    data_dir, state, _master = _paths(args)
+def _embed_targets(args: argparse.Namespace, state: Path, data_dir: Path) -> dict[str, Path | None]:
+    """Selected stable_ids with their local audio path, None where the audio is not here."""
     vectors, failures, _m, _r = store.load_embeddings(data_dir)
     conn = state_db.open_ro(state)
     try:
@@ -68,18 +68,13 @@ def _cmd_embed(args: argparse.Namespace) -> int:
         ]
         if args.missing:
             ids = [i for i in ids if i not in vectors and i not in failures]
-        ids = ids[: args.limit]
-        paths = bulk_local_audio_paths(conn, ids)
+        return dict(bulk_local_audio_paths(conn, ids[: args.limit]))
     finally:
         conn.close()
-    manifest = [{"stable_id": i, "path": str(p)} for i, p in paths.items() if p is not None]
-    not_local = [i for i, p in paths.items() if p is None]
-    if not manifest:
-        print(
-            f"nothing to embed ({len(not_local)} selected tracks have no local audio)",
-            file=sys.stderr,
-        )
-        return 2
+
+
+def _run_clap(manifest: list[dict[str, str]], threads: int) -> list[dict]:
+    """Run the PEP 723 CLAP runner over ``manifest`` and return its rows."""
     with tempfile.TemporaryDirectory(prefix="clap-") as tmp:
         mf, out = Path(tmp) / "m.jsonl", Path(tmp) / "out.jsonl"
         mf.write_text("\n".join(json.dumps(m) for m in manifest))
@@ -95,11 +90,25 @@ def _cmd_embed(args: argparse.Namespace) -> int:
                 "--out",
                 str(out),
                 "--threads",
-                str(args.threads),
+                str(threads),
             ],
             check=True,
         )
-        rows = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        return [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+
+
+def _cmd_embed(args: argparse.Namespace) -> int:
+    data_dir, state, _master = _paths(args)
+    paths = _embed_targets(args, state, data_dir)
+    manifest = [{"stable_id": i, "path": str(p)} for i, p in paths.items() if p is not None]
+    not_local = [i for i, p in paths.items() if p is None]
+    if not manifest:
+        print(
+            f"nothing to embed ({len(not_local)} selected tracks have no local audio)",
+            file=sys.stderr,
+        )
+        return 2
+    rows = _run_clap(manifest, args.threads)
     store.append_embeddings(data_dir, rows)
     ok = sum(r["status"] == "ok" for r in rows)
     print(
