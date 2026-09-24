@@ -78,6 +78,7 @@ from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
+from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart, library_jobs_autostart
@@ -418,7 +419,11 @@ def _wrap_lifespan(
         try:
             # The CloudSync scheduler idles until cloudsync-config.json (or
             # its env overrides) turns it on, and never starts on the hub.
+            # First run (#3870): a build that names a default hub writes that
+            # file once, so a test user's install syncs with no prompt. An
+            # existing file always wins; no default means nothing changes.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
+            cloudsync_first_run.seed_default_config(cloudsync_dir, env=os.environ)
             async with legacy_lifespan(instance), scheduler_lifespan(
                 cloudsync_dir,
                 ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
