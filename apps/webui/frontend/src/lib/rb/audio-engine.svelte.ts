@@ -86,6 +86,10 @@ import {
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import {
+	registerAudioContext,
+	unregisterAudioContext
+} from '$lib/rb/audio-context-registry';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
 	beginDeckLoad,
@@ -755,6 +759,7 @@ function _ensureGraph(): AudioContext {
 	// Construction options travel through ONE named constant so a future
 	// user-facing buffer/latency setting has a single place to write to.
 	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+	registerAudioContext(_ctx);
 	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
@@ -2973,12 +2978,13 @@ class RbAudioEngine implements AudioEngine {
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
+		const closingContext = _ctx;
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
 			nodes,
 			masterGain: _masterGain,
-			context: _ctx
+			context: closingContext
 		});
 
 		_rafId = null;
@@ -2990,6 +2996,7 @@ class RbAudioEngine implements AudioEngine {
 		_masterMuteGain = null;
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
+		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';
@@ -4376,6 +4383,11 @@ class RbAudioEngine implements AudioEngine {
 
 /** The singleton engine every /performance unit imports. */
 export const engine: RbAudioEngine = new RbAudioEngine();
+
+/** PERFMODE-14: whether the Gig deck graph is still armed. */
+export function gigDeckGraphIsPresent(): boolean {
+	return _ctx !== null;
+}
 
 export function getMasterMode(): MasterMode {
 	return _masterMode;

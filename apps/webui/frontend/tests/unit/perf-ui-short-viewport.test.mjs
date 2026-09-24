@@ -163,8 +163,8 @@ test('BrowserPanel auto-collapses Next/Recommended at the same 799px breakpoint 
 	);
 	assert.match(
 		panel,
-		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-right[\s\S]*?flex-wrap:\s*nowrap/,
-		'.header-right must not wrap at short height'
+		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-controls-cluster[\s\S]*?flex-wrap:\s*nowrap/,
+		'.header-controls-cluster must not wrap at short height'
 	);
 });
 

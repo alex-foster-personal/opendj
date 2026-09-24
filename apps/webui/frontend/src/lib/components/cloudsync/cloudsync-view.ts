@@ -173,9 +173,29 @@ export const STATUS_CHANGED_EVENT = 'cloudsync:status-changed';
  * `configured` is only intent, so neither config nor an old ok result can
  * light the chip without a live loop.
  */
+/**
+ * The backend's reason prefix while a LIVE scheduler cannot reach the hub
+ * and is retrying (apps/sync_hub/status.py WAITING_FOR_HUB_PREFIX, #3870).
+ * A first run that was turned on by the build's default hub may start before
+ * that hub answers; that is a wait, never a red error. The backend decides
+ * (it needs the heartbeat and the transport classification); the UI mirrors.
+ */
+export const WAITING_FOR_HUB_PREFIX = 'Waiting for hub';
+
+export function isWaitingForHub(status: CloudSyncStatus | null): boolean {
+	return (
+		status !== null &&
+		status.configured &&
+		status.running &&
+		status.reason !== null &&
+		status.reason.startsWith(WAITING_FOR_HUB_PREFIX)
+	);
+}
+
 export function chipState(status: CloudSyncStatus | null): ChipState {
 	if (status === null || !status.configured || !status.running) return 'off';
 	if (status.update_required !== null) return 'update_required';
+	if (isWaitingForHub(status)) return 'syncing';
 	if (status.last_result?.status === 'error') return 'error';
 	// Its own state, never folded into 'ok': the sync completed but its
 	// digest compare excluded rows, so agreement was not verified.
@@ -637,6 +657,9 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 				tone: 'warn',
 				text: `${status.credential_notice.action}.`
 			};
+		}
+		if (isWaitingForHub(status)) {
+			return { tone: 'warn', text: `${status.reason} No action is needed on this machine.` };
 		}
 		return {
 			tone: 'error',

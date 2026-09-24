@@ -43,8 +43,8 @@ import { fileURLToPath } from 'node:url';
 import { before, describe, it, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const widget = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackWidget.svelte', import.meta.url)),
+const pinLayer = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)),
 	'utf8'
 );
 const markers = readFileSync(

@@ -22,6 +22,10 @@ const WIDGET = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackWidget.svelte', import.meta.url),
 	'utf8'
 );
+const PIN_LAYER = readFileSync(
+	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url),
+	'utf8'
+);
 const EXPLAINER = readFileSync(
 	new URL('../../src/lib/components/rb/deck/ControlExplainer.svelte', import.meta.url),
 	'utf8'
