@@ -20,11 +20,16 @@ CEILING_FACTOR = 3.0
 CEILING_WINDOW_DAYS = 7
 LEDGER_PR_TITLE = "perf(kpi): nightly ledger"
 LEDGER_PR_BRANCH = "perf/kpi-nightly-ledger"
-#: A dedicated worktree for the ledger PR's git operations (issue #1506 /
-#: PR #3827 review): the nightly launchd job shares REPO_ROOT with whatever
+#: Default only: a dedicated worktree for the ledger PR's git operations
+#: (issue #1506 / PR #3827 review), used only when no ``PerfKpiConfig`` is
+#: available. The nightly launchd job shares REPO_ROOT with whatever
 #: checkout is installed on that machine, so its ``git checkout -B`` must
 #: never run there directly -- that would switch branches out from under an
-#: operator's or agent's in-progress work.
+#: operator's or agent's in-progress work. ``load_config()`` derives the
+#: real path from the configured ``state_dir`` (claude-review, PR #3827,
+#: P3): pinning it to ``DEFAULT_STATE_DIR`` at import time made two installs
+#: on one host with different ``--state-dir``/``MDT_PERF_KPI_STATE_DIR``
+#: values share -- and force-remove -- each other's in-flight worktree.
 LEDGER_WORKTREE_DIR = DEFAULT_STATE_DIR / "ledger-worktree"
 
 
@@ -48,6 +53,7 @@ class PerfKpiConfig:
     samples: int
     machine: str
     tracks: tuple[TrackProfile, ...]
+    ledger_worktree: Path
     data_dir: Path | None = None
 
 
@@ -110,6 +116,7 @@ def load_config() -> PerfKpiConfig:
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
         machine=_env("MDT_PERF_KPI_MACHINE") or "air",
         tracks=tracks,
+        ledger_worktree=state_dir / "ledger-worktree",
         data_dir=data_dir,
     )
 

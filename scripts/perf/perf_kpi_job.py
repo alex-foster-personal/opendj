@@ -13,10 +13,12 @@ Requirements (issue #1506):
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
+from scripts.perf.kpi_ledger_append import append_entries, load_ledger
 from scripts.perf.perf_kpi_config import (
     LEDGER_PR_BRANCH,
     LEDGER_PR_TITLE,
@@ -80,7 +82,7 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
             file_issue=not skip_pr,
         )
         if not skip_pr:
-            update_ledger_pr(REPO_ROOT, config.ledger_path)
+            update_ledger_pr(REPO_ROOT, config.ledger_path, config.ledger_worktree)
         return outcome.exit_code
     finally:
         if proc is not None:
@@ -88,17 +90,40 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
 
 
 def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
-    """Best-effort cleanup of a leftover ledger worktree from a prior run."""
+    """Best-effort cleanup of a leftover ledger worktree from a prior run.
+
+    Fails loud rather than silently discarding a removal error (claude-review,
+    PR #3827, P2): the old code ran ``git worktree remove`` with
+    ``check=False`` and captured output, then force-``rmtree``'d the
+    directory regardless of whether that removal actually succeeded. If
+    ``git worktree remove`` failed for a real reason and rmtree then deleted
+    the directory out from under it, git kept the worktree registered at a
+    path that no longer existed -- the NEXT run's ``git worktree add`` at
+    that same path then failed with a "missing but already registered"
+    error, far from the actual cause. This still tolerates the ordinary
+    case (nothing registered, or a clean removal) but surfaces everything
+    else, and prunes git's own bookkeeping after a manual rmtree so the
+    next ``add`` never inherits a stale registration.
+    """
     if not worktree_dir.exists():
         return
-    subprocess.run(
+    removed = subprocess.run(
         ["git", "worktree", "remove", "--force", str(worktree_dir)],
         check=False,
         cwd=repo_root,
         capture_output=True,
+        text=True,
     )
-    if worktree_dir.exists():
-        shutil.rmtree(worktree_dir, ignore_errors=True)
+    if removed.returncode == 0:
+        return
+    shutil.rmtree(worktree_dir)
+    subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
+
+
+def _new_entries_since(base_entries: list, local_entries: list) -> list:
+    """Entries in ``local_entries`` whose exact content isn't already in ``base_entries``."""
+    seen = {json.dumps(entry, sort_keys=True) for entry in base_entries}
+    return [entry for entry in local_entries if json.dumps(entry, sort_keys=True) not in seen]
 
 
 def update_ledger_pr(
@@ -114,6 +139,27 @@ def update_ledger_pr(
     ``git checkout -B <branch> origin/main`` run directly in it would switch
     that checkout's branch out from under any in-progress work the moment
     the job fires at 04:00.
+
+    MERGES the ledger rather than overwriting it (claude-review, PR #3827,
+    P1/BLOCKING): silver and Air both publish through this one standing
+    branch. The old code replaced the branch's (or origin/main's)
+    ``kpi-ledger.json`` outright with a copy of REPO_ROOT's local file, so
+    whichever host ran second -- or ran against a REPO_ROOT that hadn't
+    pulled the other host's already-merged entries -- silently deleted them.
+    This instead diffs the LOCAL ledger's entries against the branch's (or
+    origin/main's) current entries by exact content and appends only what's
+    genuinely new, through the same byte-preserving ``append_entries`` the
+    nightly capture itself uses, so a concurrent writer's history is never
+    at risk.
+
+    Also UPDATES an already-open ledger PR instead of skipping it
+    (claude-review, PR #3827, P2): the old code returned as soon as ``gh pr
+    list`` found one open, so whichever host's nightly run found a PR
+    already open (from the other host, or from its own prior night) never
+    published -- its entries sat only in that host's REPO_ROOT until the PR
+    merged and a later run happened to find none open. This checks out the
+    EXISTING branch instead of origin/main when one is open, so every
+    night's new entries reach it either way.
     """
     completed = subprocess.run(
         ["gh", "pr", "list", "--repo", REPOSITORY, "--head", LEDGER_PR_BRANCH, "--json", "number"],
@@ -121,49 +167,65 @@ def update_ledger_pr(
         capture_output=True,
         text=True,
     )
-    if completed.returncode == 0 and completed.stdout.strip() not in ("", "[]"):
-        return
+    pr_already_open = completed.returncode == 0 and completed.stdout.strip() not in ("", "[]")
     branch = LEDGER_PR_BRANCH
     subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
+    base_ref = "origin/main"
+    if pr_already_open:
+        subprocess.run(["git", "fetch", "origin", branch], check=True, cwd=repo_root)
+        base_ref = f"origin/{branch}"
     _remove_worktree_if_present(repo_root, worktree_dir)
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["git", "worktree", "add", "-B", branch, str(worktree_dir), "origin/main"],
+        ["git", "worktree", "add", "-B", branch, str(worktree_dir), base_ref],
         check=True,
         cwd=repo_root,
     )
     try:
         dest = worktree_dir / "docs" / "perf" / "kpi-ledger.json"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(ledger_path.read_text(encoding="utf-8"), encoding="utf-8")
+        local_entries = load_ledger(ledger_path)["entries"]
+        if dest.exists():
+            new_entries = _new_entries_since(load_ledger(dest)["entries"], local_entries)
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            new_entries = local_entries
+        if not new_entries:
+            return
+        append_entries(dest, new_entries, validate=False)
         subprocess.run(["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir)
         subprocess.run(
-            ["git", "commit", "-m", "perf(kpi): nightly ledger append\n\n-Codex"],
+            [
+                "git",
+                "commit",
+                "-m",
+                f"perf(kpi): nightly ledger append ({len(new_entries)} new)\n\n-Codex",
+            ],
             check=True,
             cwd=worktree_dir,
         )
         subprocess.run(["git", "push", "-u", "origin", branch], check=True, cwd=worktree_dir)
     finally:
         _remove_worktree_if_present(repo_root, worktree_dir)
-    subprocess.run(
-        [
-            "gh",
-            "pr",
-            "create",
-            "--repo",
-            REPOSITORY,
-            "--base",
-            "main",
-            "--head",
-            branch,
-            "--title",
-            LEDGER_PR_TITLE,
-            "--body",
-            "Standing docs PR for nightly perf KPI ledger appends. Never merges by itself.",
-        ],
-        check=True,
-        cwd=repo_root,
-    )
+    if not pr_already_open:
+        subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--repo",
+                REPOSITORY,
+                "--base",
+                "main",
+                "--head",
+                branch,
+                "--title",
+                LEDGER_PR_TITLE,
+                "--body",
+                "Standing docs PR for nightly perf KPI ledger appends. Never merges by itself.",
+            ],
+            check=True,
+            cwd=repo_root,
+        )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
