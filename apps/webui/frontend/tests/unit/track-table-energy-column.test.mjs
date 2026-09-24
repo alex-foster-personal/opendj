@@ -36,7 +36,13 @@ test('Energy header is a lightning icon with an accessible hover explainer', () 
 	const header = energyHeader();
 	assert.match(header, /title="[^"]*Energy[^"]*1-9[^"]*Mixed In Key[^"]*"/i);
 	assert.match(header, /aria-label="[^"]*Energy[^"]*1-9[^"]*Mixed In Key[^"]*"/i);
-	assert.match(header, /[⚡⚡]/, 'header does not carry a lightning glyph');
+	// CHROME-01 (issue #3886): the lightning is an SVG icon, never the emoji.
+	assert.match(
+		header,
+		/<svg class="energy-icon" aria-hidden="true"[^>]*><path d="M13 2 3 14h7l-1 8 10-12h-7z"/,
+		'header does not carry the lightning icon'
+	);
+	assert.doesNotMatch(header, /\p{Extended_Pictographic}/u, 'header carries an emoji glyph');
 });
 
 test('Energy header sits immediately before the Genre header in column order', () => {

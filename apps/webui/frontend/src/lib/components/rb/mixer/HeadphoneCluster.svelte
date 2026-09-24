@@ -16,6 +16,8 @@
 	import { RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -152,6 +154,18 @@
 			onmode('split_cable');
 		}
 	}
+
+	// MIDI status moved here with MIDI connect (CHROME-07): the entry keeps the
+	// gray / amber / green / red reading the top-bar MIDI label used to carry.
+	// Logic lives in midi-format.ts (pure, unit-tested); this is the plumbing.
+	const midiMappedCount = $derived(midiState.devices.filter((d) => d.mapVendor !== null).length);
+	const midiStatus = $derived(
+		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
+	);
+	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
+	const midiTitle = $derived(
+		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	);
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -221,26 +235,35 @@
 			class="hp-btn"
 			aria-label="SHOW AUDIO I/O"
 			aria-expanded={state.supported || ioSurface.open}
-			onclick={() => {
-				openIoView();
-				onacquire();
-			}}>I/O</button
+			onclick={onacquire}>I/O</button
 		>
 	</ControlExplainer>
 	<ControlExplainer
 		title="MIDI"
-		bullets={['Open the MIDI panel to connect controllers and view the learn log.']}
+		bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
 		showDelayMs={60}
 	>
 		<button
 			type="button"
-			class="hp-btn"
+			class="hp-btn midi-btn"
+			class:st-grey={midiStatus === 'grey'}
+			class:st-green={midiStatus === 'green'}
+			class:st-amber={midiStatus === 'amber'}
+			class:st-red={midiStatus === 'red'}
 			aria-label="Open MIDI panel"
 			aria-expanded={midiUi.panelOpen}
 			onclick={() => {
 				openIoView();
 				if (!midiUi.panelOpen) toggleMidiPanel();
-			}}>MIDI</button
+			}}
+			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
+					><path
+						d={midiGlyph === 'tick' ? 'M2 6.2 L5 9.2 L10 3' : 'M3 3 L9 9 M9 3 L3 9'}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+					/></svg
+				>{/if}</button
 		>
 	</ControlExplainer>
 	<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={60}>
@@ -396,6 +419,32 @@
 		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
+	}
+	.midi-btn.st-grey {
+		opacity: 0.6;
+	}
+	.midi-btn.st-green {
+		color: var(--rb-green);
+	}
+	.midi-btn.st-red {
+		color: var(--rb-red);
+	}
+	.midi-btn.st-amber {
+		color: var(--rb-orange);
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
+	}
+	.midi-glyph {
+		margin-left: 3px;
+		vertical-align: middle;
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);

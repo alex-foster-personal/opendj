@@ -17,7 +17,8 @@ const SCOPED_FILES = [
 	'components/rb/midi/midi-format.ts',
 	'components/rb/TopBar.svelte',
 	'components/rb/RefreshAnalysisButton.svelte',
-	'components/rb/deck/HotCueBank.svelte'
+	'components/rb/deck/HotCueBank.svelte',
+	'components/rb/deck/PadModeMenu.svelte'
 ];
 
 const BANNED_GLYPHS = ['✓', '✗', '⚡', '★', '☆', '▲', '▼', '↻', '✅', '🤖'];

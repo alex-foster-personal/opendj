@@ -96,6 +96,7 @@
 	import MinorIssueSquare from './MinorIssueSquare.svelte';
 	import SortArrowIcon from './SortArrowIcon.svelte';
 	import { minorIssuesFor } from '$lib/rb/track-minor-issues';
+	import { PLAY_TRIANGLE_PATH } from '$lib/ui/icon-glyphs';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -1415,7 +1416,7 @@
 					>
 						<span class="th-label"
 							><svg class="plays-icon" aria-hidden="true" viewBox="0 0 14 14"
-								><path d="M4 3 L4 13 L12 8 Z" fill="currentColor" /></svg
+								><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg
 							>{#if sortKey === 'plays'}<SortArrowIcon asc={sortDir === 1} />{/if}</span
 						>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->

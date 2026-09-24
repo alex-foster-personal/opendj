@@ -37,3 +37,16 @@ test('openIoView pins the headphone I/O menu without auto-opening MIDI drawer', 
 	assert.match(cluster, /programmaticOpen=\{ioSurface\.open\}/);
 	assert.match(cluster, /onProgrammaticClose=\{closeIoView\}/);
 });
+
+test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to show', () => {
+	const cluster = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(cluster, /midiLabelStatus\(midiState\.permission, midiUi\.requestPending, midiMappedCount > 0\)/);
+	for (const status of ['grey', 'green', 'amber', 'red']) {
+		assert.match(cluster, new RegExp(`class:st-${status}=\\{midiStatus === '${status}'\\}`));
+	}
+	assert.match(cluster, /bullets=\{\[midiTitle, /, 'the MIDI explainer must say why the color is what it is');
+	assert.match(cluster, /midiGlyph === 'tick'/);
+});
