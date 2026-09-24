@@ -51,10 +51,26 @@ import {
 	wheelSensitivity,
 	type WheelInputKind
 } from '$lib/rb/wheel-adjust';
+// The leaf, not midi-ui-state: this module is on the library page's first-paint
+// path (SettingsOverlay), and midi-ui-state statically pulls in the WebMIDI
+// runtime, action glue and every device map (about 27 KB minified) that only
+// /performance otherwise loads. See the rb.midi_enabled case below.
 import {
 	midiEnabledPersisted,
-	setMidiEnabledChoice
-} from '$lib/components/rb/midi/midi-ui-state.svelte';
+	persistMidiEnabled
+} from '$lib/components/rb/midi/midi-enabled-choice';
+
+/** The rb.midi_enabled disk sync (PUT /api/v1/ui-prefs) lives in midi-ui-state,
+ * which is loaded on demand here rather than charging the MIDI runtime to first
+ * paint. Destructured so knip still sees which export is used. */
+async function _syncMidiEnabledChoice(enabled: boolean): Promise<void> {
+	try {
+		const { setMidiEnabledChoice } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
+		setMidiEnabledChoice(enabled);
+	} catch (exc: unknown) {
+		console.error('[settings] rb.midi_enabled: MIDI state module failed to load', exc);
+	}
+}
 
 export const ALLOWED_SETTING_KEYS = [
 	'theme',
@@ -349,9 +365,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setAppPosture(value as AppPosturePref);
 			return;
 		}
-		case 'rb.midi_enabled':
-			setMidiEnabledChoice(_asBool(value, key));
+		case 'rb.midi_enabled': {
+			const enabled = _asBool(value, key);
+			// The local choice lands now, so readSettingValue() reflects it at once.
+			persistMidiEnabled(enabled);
+			void _syncMidiEnabledChoice(enabled);
 			return;
+		}
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);

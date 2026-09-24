@@ -46,10 +46,12 @@ import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 import {
-	MIDI_ENABLED_KEY,
+	midiEnabledPersisted,
 	onMidiEnabledHydrated,
 	persistMidiEnabled
 } from './midi-enabled-choice';
+
+export { midiEnabledPersisted };
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -166,12 +168,6 @@ function _syncMidiEnabledToDisk(enabled: boolean): void {
 export function setMidiEnabledChoice(enabled: boolean): void {
 	persistMidiEnabled(enabled);
 	_syncMidiEnabledToDisk(enabled);
-}
-
-/** True if the user previously enabled MIDI (persisted choice). */
-export function midiEnabledPersisted(): boolean {
-	if (typeof localStorage === 'undefined') return false;
-	return localStorage.getItem(MIDI_ENABLED_KEY) === '1';
 }
 
 /** On page load, re-run the access request IFF the user opted in before. Goes

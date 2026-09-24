@@ -34,6 +34,14 @@ export function persistMidiEnabled(enabled: boolean): void {
 	}
 }
 
+/** True if the user previously enabled MIDI (persisted choice). Lives in this
+ * leaf so first-paint code (settings/apply.ts) can read the choice without
+ * importing midi-ui-state and, through it, the WebMIDI runtime and device maps. */
+export function midiEnabledPersisted(): boolean {
+	if (typeof localStorage === 'undefined') return false;
+	return localStorage.getItem(MIDI_ENABLED_KEY) === '1';
+}
+
 let _hydratedListener: ((enabled: boolean) => void) | null = null;
 
 /** Register THE listener for a disk-hydrated choice. midi-ui-state registers
