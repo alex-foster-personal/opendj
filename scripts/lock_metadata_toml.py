@@ -101,6 +101,12 @@ def lock_schema(lock: dict) -> None:
     if isinstance(version, bool) or version != 1:
         raise Unknown(f"uv.lock schema version = {version!r}; only 1 is readable by uv")
     resolution_markers(lock, "uv.lock")
+    if "revision" in lock:
+        # `revision = "3"`, `true`, `-1`, `1.5` and 2**32 are "invalid type ... expected
+        # u32", exit 2; absent, 0, 3 and 2**32 - 1 are read (round 41).
+        revision = lock["revision"]
+        if isinstance(revision, bool) or not isinstance(revision, int) or not 0 <= revision < 2**32:
+            raise Unknown(f"uv.lock revision = {revision!r} is not a u32; uv rejects the file")
 
 
 _SOURCE_KEYS = ("registry", "git", "url", "path", "directory", "editable", "virtual")
@@ -220,15 +226,28 @@ def package_records(lock: dict) -> list[dict]:
         for field in ("name", "source"):
             if field not in entry:
                 raise Unknown(f"uv.lock [[package]] entry without {field!r}: {entry!r}")
-    names = frozenset(
-        norm_name(toml_string(entry["name"], "uv.lock [[package]] name")) for entry in packages
-    )
+    by_name: dict[str, list[dict]] = {}
     for entry in packages:
         name = toml_string(entry["name"], "uv.lock [[package]] name")
         source_table(entry["source"], name)
         if "version" in entry:
             toml_string(entry["version"], f"uv.lock [[package]] {name!r} version")
-        dependency_records(entry, name, names)
+        # Two records of one identity (name, version, source) are refused whether or
+        # not anything depends on them, while a second version or source of the same
+        # name is read (round 41); a name set had collapsed the duplicate.
+        twins = by_name.setdefault(norm_name(name), [])
+        if any(
+            p.get("version") == entry.get("version") and p["source"] == entry["source"]
+            for p in twins
+        ):
+            raise Unknown(
+                f"uv.lock [[package]] {name!r} {entry.get('version')!r} {entry['source']!r} "
+                "is recorded twice; uv rejects the file"
+            )
+        twins.append(entry)
+    for entry in packages:
+        name = toml_string(entry["name"], "uv.lock [[package]] name")
+        dependency_records(entry, name, by_name)
         artifact_records(entry, name)
         resolution_markers(entry, f"uv.lock [[package]] {name!r}")
         metadata_records(entry, name)
@@ -298,18 +317,21 @@ def artifact_records(entry: dict, name: str) -> None:
             _wheel_record(wheel, name, where)
 
 
-def dependency_records(entry: dict, name: str, packages: frozenset[str]) -> None:
+def dependency_records(entry: dict, name: str, packages: dict[str, list[dict]]) -> None:
     """A package's `dependencies` uv can read: absent, or a list of tables each with a
-    valid `name` that (normalized) is a package of the lock, a string `marker` if
-    present and a list of valid names `extra` if present. `dependencies = {}`, `[1]`,
-    `[{}]`, `[{ name = 1 }]`, `extra = 1`, `marker = 1` and `marker = "bad"` are each
-    "Failed to parse `uv.lock`", exit 2 (measured uv 0.8.17, Codex P2 on #3763, round
-    37), as are `name = "bad space"`, `name = "-lead"`, `extra = ["bad space"]` ("Not a
-    valid package or extra name") and a valid name no package carries ("has missing
-    `source` field but has more than one matching package"; round 40), while an unknown
-    key beside a valid record, `name = "SIX"` for the package `six` and an extra that
-    nothing provides or is not normalized are read. The marker is parsed, not
-    compared: only the root's requirements are compared by meaning."""
+    valid `name` that (normalized, with any `version` and `source` the record carries)
+    matches exactly ONE package of the lock, a string `marker` if present and a list
+    of valid names `extra` if present. `dependencies = {}`, `[1]`, `[{}]`,
+    `[{ name = 1 }]`, `extra = 1`, `marker = 1` and `marker = "bad"` are each "Failed
+    to parse `uv.lock`", exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 37), as
+    are `name = "bad space"`, `name = "-lead"`, `extra = ["bad space"]` ("Not a valid
+    package or extra name"), a valid name no package carries, a bare name two
+    packages carry, `version = 1`, `source = "bad"`, and a version or source no
+    package of that name carries (rounds 40-41), while an unknown key beside a valid
+    record, `name = "SIX"` for the package `six`, a record whose `version` and
+    `source` pick one of two, and an extra that nothing provides or is not normalized
+    are read. The marker is parsed, not compared: only the root's requirements are
+    compared by meaning."""
     if "dependencies" not in entry:
         return
     where = f"uv.lock [[package]] {name!r} dependencies"
@@ -317,8 +339,20 @@ def dependency_records(entry: dict, name: str, packages: frozenset[str]) -> None
         if not isinstance(record, dict) or "name" not in record:
             raise Unknown(f"{where} record {record!r} is not a table with a name")
         dep = norm_name(toml_string(record["name"], f"{where} name"))
-        if dep not in packages:
+        candidates = packages.get(dep, [])
+        if "version" in record:
+            version = toml_string(record["version"], f"{where} {dep!r} version")
+            candidates = [p for p in candidates if p.get("version") == version]
+        if "source" in record:
+            source_table(record["source"], dep)
+            candidates = [p for p in candidates if p["source"] == record["source"]]
+        if not candidates:
             raise Unknown(f"{where} names {dep!r}, which no [[package]] of the lock carries")
+        if len(candidates) > 1:
+            raise Unknown(
+                f"{where} names {dep!r}, which {len(candidates)} [[package]] records match; "
+                "uv needs the version and source that pick one"
+            )
         if "marker" in record:
             parsed_marker(record["marker"], f"{where} {dep!r} marker")
         for extra in toml_strings(record.get("extra", []), f"{where} {dep!r} extra"):

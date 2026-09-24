@@ -170,3 +170,85 @@ def test_a_dependency_record_name_that_uv_refuses_is_unknown(
         lock = UNMARKED_LOCK.replace(SIX_DEP, f"dependencies = [\n    {control},\n]")
         code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
         assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize("value", ['"3"', "true", "-1", "1.5", str(2**32)])
+def test_a_lock_revision_that_is_not_a_u32_is_unknown(tmp_path: Path, value: str) -> None:
+    """`revision = "3"`, `true`, `-1`, `1.5` and 2**32 are "invalid type ... expected
+    u32", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 41),
+    while `lock_schema` had read only `version`. Controls: absent, 0, 3 and 2**32 - 1
+    are read (exit 0)."""
+    assert UNMARKED_LOCK.count("revision = 3\n") == 1
+    code, message = _run(
+        tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3", f"revision = {value}")
+    )
+    assert code == EXIT_UNKNOWN, message
+    assert "uv.lock revision" in message and "is not a u32" in message
+    for control in ("", "revision = 0\n", "revision = 3\n", f"revision = {2**32 - 1}\n"):
+        code, message = _run(
+            tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3\n", control)
+        )
+        assert code == EXIT_OK, (control, message)
+
+
+PYPI = 'source = { registry = "https://pypi.org/simple" }'
+GHOST = f'\n[[package]]\nname = "ghost"\nversion = "1.0"\n{PYPI}\n'
+SIX_16 = f'\n[[package]]\nname = "six"\nversion = "1.16.0"\n{PYPI}\n'
+
+
+def test_a_package_identity_recorded_twice_is_unknown(tmp_path: Path) -> None:
+    """A second `[[package]]` with the same name, version and source is refused whether
+    anything depends on it (`six`) or not (`ghost`), `uv lock --check` exit 2 (measured
+    uv 0.8.17, Codex P2 on #3763, round 41); the name set had collapsed it. Controls:
+    one `ghost`, a second version of it, or the same version from another registry
+    are read (exit 0)."""
+    six = UNMARKED_LOCK[UNMARKED_LOCK.rindex("\n[[package]]") :]
+    assert 'name = "six"' in six
+    for twice in (six, GHOST + GHOST):
+        code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + twice)
+        assert code == EXIT_UNKNOWN, message
+        assert "is recorded twice" in message
+    other_source = GHOST.replace("pypi.org", "example.com")
+    for once in (GHOST, GHOST + GHOST.replace('"1.0"', '"2.0"'), GHOST + other_source):
+        code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + once)
+        assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("record", "appended", "named"),
+    [
+        ('{ name = "six" }', SIX_16, "2 [[package]] records match"),
+        ('{ name = "six", version = "9.9" }', "", "no [[package]] of the lock carries"),
+        (
+            '{ name = "six", source = { registry = "https://example.com/simple" } }',
+            "",
+            "no [[package]] of the lock carries",
+        ),
+        ('{ name = "six", version = 1 }', "", "'six' version = 1 is not a string"),
+        ('{ name = "six", source = "bad" }', "", "source = 'bad' is not a source table"),
+    ],
+    ids=["ambiguous", "version-unmatched", "source-unmatched", "version-int", "source-string"],
+)
+def test_a_dependency_record_that_matches_no_single_package_is_unknown(
+    tmp_path: Path, record: str, appended: str, named: str
+) -> None:
+    """A bare record naming a package the lock records in two versions, a `version` or
+    `source` no record of that name carries, `version = 1` and `source = "bad"` are
+    each `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 41).
+    Controls: `version` and `source` that pick one of the two, and `version` alone
+    against one record, are read (exit 0); `source` alone against two of one registry
+    is still ambiguous (exit 2, covered by the bare case's guard)."""
+    lock = UNMARKED_LOCK.replace(SIX_DEP, f"dependencies = [\n    {record},\n]") + appended
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message, message
+    picked = (
+        '{ name = "six", version = "1.17.0", source = { registry = "https://pypi.org/simple" } }'
+    )
+    for control, extra in (
+        (picked, SIX_16),
+        ('{ name = "six", version = "1.17.0" }', ""),
+    ):
+        lock = UNMARKED_LOCK.replace(SIX_DEP, f"dependencies = [\n    {control},\n]") + extra
+        code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+        assert code == EXIT_OK, (control, message)
