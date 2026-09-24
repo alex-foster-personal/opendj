@@ -40,12 +40,17 @@ before(async () => {
 });
 
 // requirement: CSUI-02
-// [if] deck 1 is playing [then] chip activation opens quick actions without route or transport change, [else stop]
-test('chip activation opens quick actions while a deck is playing without sync transport side effects', () => {
-	const deckBefore = { playing: true, audible: true };
+// [if] deck 1 is playing [then] ordinary sync is refused and the chip's own
+// source never wires a navigation or performance-transport call [else stop]
+//
+// This is the gate-refusal plus source-contract half only; it cannot observe
+// route or transport state at runtime (no jsdom mount here - see the file
+// docstring). That half is covered by performance-cloudsync-quick-actions.spec.ts
+// against a real deck on the Air (review finding, PR #3551).
+test('sync now is refused while a deck is playing, and the chip never wires a nav/transport call', () => {
 	const playingGate = {
 		appPosture: 'prep',
-		uiMirror: { decks: { '1': deckBefore } }
+		uiMirror: { decks: { '1': { playing: true } } }
 	};
 
 	const ordinary = view.syncNowRequest(config(), playingGate);

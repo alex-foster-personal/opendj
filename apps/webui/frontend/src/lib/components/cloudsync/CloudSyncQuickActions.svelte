@@ -95,7 +95,13 @@
 		try {
 			await getStatus();
 			await loadGateData();
-			notice = { kind: 'ok', text: 'CloudSync status refreshed.' };
+			// loadGateData catches its own errors (into loadError) so a failed
+			// gate reload does not throw here - check it explicitly, or a failed
+			// reload still reports "refreshed" next to its own error alert.
+			notice =
+				loadError === null
+					? { kind: 'ok', text: 'CloudSync status refreshed.' }
+					: { kind: 'error', text: `Failed to refresh status: ${loadError}` };
 			announceStatusChanged();
 		} catch (exc) {
 			notice = { kind: 'error', text: `Failed to refresh status: ${message(exc)}` };
@@ -170,10 +176,12 @@
 		<button
 			type="button"
 			data-testid="cloudsync-quick-sync-now"
-			disabled={syncing || refreshing || syncDecision.kind === 'refuse'}
-			title={syncDecision.kind === 'refuse'
-				? syncDecision.reason
-				: 'Run one push and pull now (POST /api/v1/cloudsync/sync)'}
+			disabled={syncing || refreshing || loadError !== null || syncDecision.kind === 'refuse'}
+			title={loadError !== null
+				? `Gate data failed to load: ${loadError}`
+				: syncDecision.kind === 'refuse'
+					? syncDecision.reason
+					: 'Run one push and pull now (POST /api/v1/cloudsync/sync)'}
 			onclick={() => void syncNow()}
 		>
 			{syncing ? 'Syncing...' : SYNC_NOW_LABEL}
@@ -182,8 +190,10 @@
 			<button
 				type="button"
 				data-testid="cloudsync-quick-force-sync"
-				disabled={syncing || refreshing || forceSyncDecision.kind === 'refuse'}
-				title={`${FORCE_SYNC_LABEL} (POST /api/v1/cloudsync/sync with force=true)`}
+				disabled={syncing || refreshing || loadError !== null || forceSyncDecision.kind === 'refuse'}
+				title={loadError !== null
+					? `Gate data failed to load: ${loadError}`
+					: `${FORCE_SYNC_LABEL} (POST /api/v1/cloudsync/sync with force=true)`}
 				onclick={() => void forceSyncNow()}
 			>
 				{syncing ? 'Syncing...' : FORCE_SYNC_LABEL}
