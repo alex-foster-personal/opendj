@@ -375,19 +375,36 @@ def _dependency_list(records: object, where: str, packages: dict[str, list[dict]
             norm_name(extra)
 
 
-_PYPROJECT_SOURCE_KINDS = ("git", "url", "path", "index")
+# The keys uv 0.8.17 reads on a `[tool.uv.sources]` entry, per source kind (Codex P2 on
+# #3763, round 51; every rejected pair below is "Failed to parse: `pyproject.toml`",
+# exit 2, and every allowed one is read, measured on an entry no requirement uses):
+# an unknown key is "unknown field"; `git`/`url` reject `editable` and `package`;
+# `path`/`url`/`index` reject `rev`, `tag` and `branch`; `index` rejects `editable` and
+# `package`; `workspace` rejects `package`; `git` takes at most one of `rev`/`tag`/
+# `branch`; `editable = true` with `package = false` is a conflict; `extra` and `group`
+# never both. `subdirectory` is read on every kind, `editable` on `workspace` too.
+_PYPROJECT_SOURCE_KEYS: dict[str, frozenset[str]] = {
+    "git": frozenset({"git", "subdirectory", "rev", "tag", "branch"}),
+    "url": frozenset({"url", "subdirectory"}),
+    "path": frozenset({"path", "subdirectory", "editable", "package"}),
+    "index": frozenset({"index", "subdirectory"}),
+    "workspace": frozenset({"workspace", "subdirectory", "editable"}),
+}
+_PYPROJECT_SOURCE_COMMON = frozenset({"marker", "extra", "group"})
+_PYPROJECT_SOURCE_FLAGS = ("editable", "package", "workspace")
 
 
 def pyproject_source_shape(name: str, source: object) -> None:
     """One `[tool.uv.sources]` entry uv can read, declared or not: a table with exactly
-    one of git/url/path/index holding a string, or `workspace` holding a bool, with
-    any `editable`/`package` a bool and any `marker` a string; or a non-empty list of
-    such tables. `{ path = 1 }`, `"bad"`, `{}`, `{ bogus = "x" }`, `{ git = 1 }`,
-    `{ path = ..., git = ... }`, `[]`, `[{ path = 1 }]`, `editable = 1` and
-    `marker = 1` are each "Failed to parse: `pyproject.toml`", exit 2, while
-    `{ workspace = false }`, an unresolvable path and `[{ path = "dep" }]` are read
-    (measured uv 0.8.17, Codex P2 on #3763, round 37); an entry with no requirement
-    had passed unread."""
+    one of git/url/path/index holding a string, or `workspace` holding a bool, carrying
+    only the keys `_PYPROJECT_SOURCE_KEYS` allows that kind plus `marker`/`extra`/
+    `group`, each typed (strings; `editable`/`package`/`workspace` bools; `marker`
+    parsed); or a non-empty list of such tables. `{ path = 1 }`, `"bad"`, `{}`,
+    `{ bogus = "x" }`, `{ git = 1 }`, `{ path = ..., git = ... }`, `[]`, `[{ path = 1 }]`,
+    `editable = 1` and `marker = 1` are each "Failed to parse: `pyproject.toml`", exit 2,
+    while `{ workspace = false }`, an unresolvable path and `[{ path = "dep" }]` are read
+    (measured uv 0.8.17, rounds 37, 38 and 51); an entry with no requirement had
+    passed unread, then an extra key beside a valid kind had."""
     where = f"[tool.uv.sources] {name}"
     if isinstance(source, list):
         if not source:
@@ -397,17 +414,40 @@ def pyproject_source_shape(name: str, source: object) -> None:
         return
     if not isinstance(source, dict):
         raise Unknown(f"{where} = {source!r} is not a source table; uv rejects the file")
-    kinds = [k for k in _PYPROJECT_SOURCE_KINDS if k in source] + (
-        ["workspace"] if "workspace" in source else []
-    )
+    kind = _source_kind(where, source)
+    for key in sorted(set(source) - _PYPROJECT_SOURCE_KEYS[kind] - _PYPROJECT_SOURCE_COMMON):
+        raise Unknown(f"{where} = {source!r}: cannot specify both {kind!r} and {key!r}")
+    for key, value in source.items():
+        if key in _PYPROJECT_SOURCE_FLAGS:
+            toml_flag(source, key, where)
+        elif key != "marker":
+            toml_string(value, f"{where} {key}")
+    _source_entry_conflicts(where, source)
+
+
+def _source_kind(where: str, source: dict) -> str:
+    """The one source kind an entry names; an unknown key or zero/several kinds is a
+    file uv refuses to parse."""
+    known = _PYPROJECT_SOURCE_COMMON.union(*_PYPROJECT_SOURCE_KEYS.values())
+    unknown = sorted(set(source) - known)
+    if unknown:
+        raise Unknown(f"{where} = {source!r}: unknown field {unknown[0]!r}; uv rejects the file")
+    kinds = [k for k in _PYPROJECT_SOURCE_KEYS if k in source]
     if len(kinds) != 1:
         raise Unknown(f"{where} = {source!r} names {len(kinds)} source kinds, not one")
-    if kinds[0] == "workspace":
-        toml_flag(source, "workspace", where)
-    else:
-        toml_string(source[kinds[0]], f"{where} {kinds[0]}")
-    toml_flag(source, "editable", where)
-    toml_flag(source, "package", where)
+    return kinds[0]
+
+
+def _source_entry_conflicts(where: str, source: dict) -> None:
+    """The pairs uv refuses on one entry whose keys are each allowed for its kind."""
+    if sum(k in source for k in ("rev", "tag", "branch")) > 1:
+        raise Unknown(f"{where} = {source!r}: expected at most one of rev, tag, or branch")
+    if source.get("editable") is True and source.get("package") is False:
+        raise Unknown(
+            f"{where} = {source!r}: cannot specify both editable = true and package = false"
+        )
+    if "extra" in source and "group" in source:
+        raise Unknown(f"{where} = {source!r}: cannot specify both extra and group")
     if "marker" in source:
         # `marker = ""` and `marker = "bad"` on any entry, used or not, are "Expected
         # marker value", exit 2 (round 38); typing it as a string had let both through.
