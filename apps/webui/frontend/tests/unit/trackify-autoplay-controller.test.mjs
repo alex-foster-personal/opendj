@@ -657,4 +657,107 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			mock.timers.reset();
 		}
 	});
+
+	it('a stale sequence retirement queued behind a newer, already-dispatched load does not unload it (Sol review round 3)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const badGate = gate();
+		const goodGate = gate();
+		try {
+			const { log, loadGates } = installFakeTransport();
+			// 'bad' quarantines into a retry to 'good' via the existing catch
+			// block, so 'good' is a genuinely SEPARATE, later-generation
+			// sequence -- not a manually-issued second call -- matching the
+			// real shape Sol's finding describes.
+			entry.e2ePrimeTrackifyFeed([row('bad'), row('good')]);
+			loadGates.set('bad', badGate.promise);
+			// Gated too, so 'good's own engine.load call reaches the fake
+			// transport (claiming the queue tail and logging) but does not
+			// publish stable_id='good' until released below -- this pins the
+			// window in which bad's own late retirement check can still see
+			// `stable_id === 'bad'` while 'good' already holds the tail,
+			// which is the exact shape the finding describes: the stable-id
+			// check happens at submission time, not at the unload's actual,
+			// later execution time.
+			loadGates.set('good', goodGate.promise);
+
+			const done = entry.e2eForceTrackifyLoad('bad');
+			await settle();
+			assert.deepEqual(log, ['load bad']);
+
+			// 'bad' times out on its own 2 s deadline. Its retry ('good')
+			// starts, but blocks on `_lastSequenceSettled` -- still 'bad's own
+			// raw dispatcher call, which `badGate` deliberately withholds.
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			assert.match(
+				entry.readTrackifyAutoplayState().last_skip_reason ?? '',
+				/^skipped bad: .*did not settle within/
+			);
+			assert.deepEqual(
+				log,
+				['load bad'],
+				"the retry to 'good' must not have dispatched yet, still gated on bad's stale settle"
+			);
+
+			// The hard ceiling (30 s) releases `_lastSequenceSettled` while
+			// bad's OWN dispatcher call is STILL pending -- 'good's load
+			// SUBMITS and claims the scope's current tail while bad's own
+			// command is still the one it must queue behind.
+			mock.timers.tick(30_000);
+			await settle();
+			assert.deepEqual(
+				log,
+				['load bad'],
+				"'good' must have submitted its load (claiming the queue tail) but not yet reached the engine -- still queued behind bad's own still-pending command"
+			);
+
+			// bad's own dispatcher call lands late. 'good's queued load then
+			// reaches the fake engine (claiming the tail's own execution slot
+			// and logging), and parks on `goodGate` before publishing its
+			// stable_id -- deliberately BEFORE bad's own, longer round trip
+			// back through the command session/scheduler wrapping resumes its
+			// controller code and re-checks `deckStates[deck].stable_id`.
+			badGate.release();
+			await settle();
+			await settle();
+			assert.deepEqual(
+				log,
+				['load bad', 'load good'],
+				"'good' must have reached the engine (parked on its own gate) before bad's stale retirement check runs"
+			);
+
+			// Release 'good' last: its own load publishes stable_id='good'
+			// and its sequence proceeds to play it.
+			goodGate.release();
+			await settle();
+			await settle();
+
+			await Promise.race([
+				done,
+				new Promise((resolve) => {
+					const guard = realSetTimeout(resolve, 500);
+					if (typeof guard.unref === 'function') guard.unref();
+				})
+			]);
+
+			// The bug this guards against: bad's retirement reads
+			// `deckStates[deck].stable_id === 'bad'` at SUBMISSION time (true
+			// -- 'good' has not yet published its own stable_id) and queues
+			// an unconditional unload behind the scope's CURRENT tail, which
+			// is by then 'good's own load, not bad's. That unload only
+			// executes once 'good' has already loaded (and possibly played),
+			// and unloads whatever is on the deck AT THAT POINT: 'good'.
+			assert.ok(
+				!log.includes('unload good'),
+				`a stale sequence's late retirement must never unload a newer, already-dispatched track, got ${JSON.stringify(log)}`
+			);
+			const state = entry.readTrackifyAutoplayState();
+			assert.equal(state.deck.stable_id, 'good');
+			assert.equal(state.deck.playing, true);
+		} finally {
+			badGate.release();
+			goodGate.release();
+			mock.timers.reset();
+		}
+	});
 });

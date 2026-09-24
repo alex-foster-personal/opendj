@@ -161,7 +161,33 @@ function _withHardCeiling(promise: Promise<void>): Promise<void> {
 	});
 }
 
-async function _retireSupersededLoad(deck: DeckId, nextId: string): Promise<void> {
+/**
+ * The generation of the most recent `_dispatchLoadSequence` call to have
+ * STARTED submitting commands for this deck, set at the top of that
+ * function -- before any of its own `await`s. A stale sequence's retirement
+ * checks this immediately before its own unload dispatch (Sol review, PR
+ * #3676: the dispatcher offers no cancel, so a superseded sequence's own
+ * commands can still be sitting mid-queue when it finally settles late).
+ * `deckStates[deck].stable_id` is checked at SUBMISSION time, not at the
+ * unload's actual EXECUTION time (whenever the scheduler gets to it), so a
+ * newer sequence that has ALREADY started dispatching by the time a stale
+ * one retires can have its own load command queued behind, then execute,
+ * AFTER the stale check passed but BEFORE the stale unload actually runs --
+ * the stale unload would then run last and tear the newer, now-current
+ * track back off. Once a newer generation has started dispatching, this
+ * deck's single slot is that newer sequence's own load to manage (it always
+ * replaces whatever was there); a superseded sequence retiring anyway would
+ * only ever be racing that newer command for a queue position it cannot win
+ * safely.
+ */
+let _lastDispatchedGeneration = -1;
+
+async function _retireSupersededLoad(
+	deck: DeckId,
+	nextId: string,
+	generation: number
+): Promise<void> {
+	if (generation !== _lastDispatchedGeneration) return;
 	if (deckStates[deck].stable_id === nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
 	}
@@ -172,17 +198,18 @@ async function _dispatchLoadSequence(
 	nextId: string,
 	generation: number
 ): Promise<void> {
+	_lastDispatchedGeneration = generation;
 	const superseded = (): boolean => generation !== _loadGeneration;
 	if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
-		if (superseded()) return _retireSupersededLoad(deck, nextId);
+		if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
-		if (superseded()) return _retireSupersededLoad(deck, nextId);
+		if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
 	}
 	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
-	if (superseded()) return _retireSupersededLoad(deck, nextId);
+	if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
 }
 
 async function _loadAndPlay(nextId: string): Promise<void> {
