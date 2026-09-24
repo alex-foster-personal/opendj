@@ -242,7 +242,10 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
 
 _METHOD = (
     "process-tree RSS/CPU sampling of the Playwright-launched Chromium running "
-    "Gig/Trackify (PERFMODE-15) -- not the packaged app's telemetry endpoint"
+    "Gig/Trackify (PERFMODE-15) -- browser/renderer process family only, same scope "
+    "as capture_library_mode.py's PERFMODE-14 ratios, not the packaged app's "
+    "telemetry endpoint and not the python engine (no per-process CPU is exposed "
+    "for that family by any existing endpoint)"
 )
 
 
