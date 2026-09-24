@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
+	import { pointFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import { ApiError, readApiErrorStatus } from '$lib/api/client';
 	import { listTrackPlaylists, type TrackPlaylistHit } from '$lib/rb/track-playlists';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
@@ -13,28 +13,24 @@
 	} = $props();
 
 	let menu = $state<HTMLDivElement | null>(null);
-	let position = $state({ x: 0, y: 0 });
 	let loading = $state(true);
 	let hits = $state<TrackPlaylistHit[]>([]);
 	let errorMessage = $state<string | null>(null);
 
-	async function placeMenu(): Promise<void> {
+	// Placement is pointFloatingAction's job, not a one-shot clamp here: the
+	// menu opens on a single loading row and grows once its items arrive, so
+	// a clamp measured at open left the grown menu hanging off the viewport
+	// bottom (unclickable - a fixed node cannot be scrolled into view). The
+	// action re-clamps from (x, y) on every size change.
+	async function focusMenu(): Promise<void> {
 		await tick();
-		if (menu === null) return;
-		const rect = menu.getBoundingClientRect();
-		position = clampToViewport(
-			x,
-			y,
-			{ width: rect.width, height: rect.height },
-			{ width: window.innerWidth, height: window.innerHeight }
-		);
-		menu.focus();
+		menu?.focus();
 	}
 
 	$effect(() => {
 		void x;
 		void y;
-		void placeMenu();
+		void focusMenu();
 	});
 
 	onMount(() => {
@@ -82,7 +78,7 @@
 	data-testid="track-playlists-menu"
 	role="menu"
 	tabindex="-1"
-	style={`left:${position.x}px;top:${position.y}px`}
+	use:pointFloatingAction={{ x, y }}
 >
 	{#if loading}
 		<button type="button" role="menuitem" disabled>Loading playlists...</button>
