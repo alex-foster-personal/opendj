@@ -3408,9 +3408,31 @@
       },
       "ClientErrorOut": {
         "properties": {
+          "error_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
+          },
+          "sentry_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentry Event Id"
           },
           "stored": {
             "title": "Stored",
@@ -20920,6 +20942,11 @@
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
+          "available_offline_filter": {
+            "default": false,
+            "title": "Available Offline Filter",
+            "type": "boolean"
+          },
           "beat_sync_max": {
             "default": true,
             "title": "Beat Sync Max",
@@ -21128,6 +21155,17 @@
                 "type": "null"
               }
             ]
+          },
+          "available_offline_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Offline Filter"
           },
           "beat_sync_max": {
             "anyOf": [

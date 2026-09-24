@@ -2,14 +2,14 @@
 // Dispatches through the performance IPC so the history panel buttons and
 // an agent over window.musicDjToolsPerformance share one path.
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
-import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 export function installPlaylistHistoryHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
 		if (e.repeat) return;
 		if (isSettingsOpen()) return;
-		if (isNativeInteractiveTarget(e.target)) return;
+		if (isTextEntryTarget(e.target)) return;
 		if (!(e.metaKey || e.ctrlKey)) return;
 		if (e.key !== 'z' && e.key !== 'Z') return;
 		e.preventDefault();

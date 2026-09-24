@@ -65,6 +65,7 @@ _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
+    "available_offline_filter": False,
 }
 _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
 _DEFAULT_MIDI_ENABLED = False
@@ -641,6 +642,7 @@ class UiPrefsOut(BaseModel):
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
+    available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
 
@@ -676,6 +678,7 @@ class UiPrefsPatch(BaseModel):
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
+    available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
 

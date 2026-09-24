@@ -86,6 +86,7 @@ def _track_row(stable_id: str, *, updated_at: str, deleted_at: str | None) -> di
             "duration_ms": None,
             "file_path": None,
             "content_hash": None,
+            "audio_hash": None,
             "created_at": _T0,
             "updated_at": updated_at,
             "origin_device_id": _DEV_A,

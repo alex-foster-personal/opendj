@@ -119,6 +119,21 @@ test('clicking a toast copies a report whose id matches the logged id', async ({
 // - if warn paints the same border as info the fold is invisible -> broken.
 // - if warn paints the same border as error then a lock that SUCCEEDED still
 //   reads as a failure, which is the thing the pin asked to stop -> broken.
+test('a warn toast shows a visible click-to-copy hint', async ({ page }) => {
+	const id = await raise(page, 'folded lock warning', 'warn');
+	const hint = page.locator(`[data-toast-copy-hint="${id}"]`);
+	await expect(hint).toBeVisible();
+	await expect(hint).toHaveText('Click to copy');
+});
+
+test('wheeling over a toast dismisses it', async ({ page }) => {
+	const id = await raise(page, 'wheel dismiss me', 'warn', 60_000);
+	const toast = page.locator(`[data-toast-id="${id}"]`);
+	await expect(toast).toBeVisible();
+	await toast.dispatchEvent('wheel', { deltaY: 120 });
+	await expect(toast).toHaveCount(0);
+});
+
 test('a warn toast paints its own colour, between info and error', async ({ page }) => {
 	const info = await raise(page, 'plain note', 'info');
 	const warn = await raise(page, 'folded lock', 'warn');

@@ -261,7 +261,9 @@ def test_a_presentation_clock_that_never_catches_up_is_not_confirmed(
     page.settle = False
     page.start()
     try:
-        assert main(_argv(engine, "--settle", "0.3", "deck", "1", "play")) == EXIT_UNCONFIRMED
+        # `--settle 0.3` expired on loaded CI before the post-result republish
+        # landed, so the CLI reported playing=False instead of the unpresented clock.
+        assert main(_argv(engine, "--settle", "3", "deck", "1", "play")) == EXIT_UNCONFIRMED
         assert page.mirror["decks"]["1"]["playing"] is True
     finally:
         page.stop()
