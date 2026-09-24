@@ -2,6 +2,7 @@
  * Trackify route session installer: engine lifecycle + feed + autoplay + IPC.
  */
 import { engine } from '$lib/rb/audio-engine.svelte';
+import { noteGigRuntimeMounted } from '$lib/rb/library-mode-runtime';
 import { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
 import { setAppMode, setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { installTrackifyAutoplay } from '$lib/rb/trackify-autoplay.svelte';
@@ -11,6 +12,17 @@ import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.s
 import { TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
 
 export function installTrackifySession(): () => Promise<void> {
+	// Navigating straight from /performance (Gig) to /music-player fires
+	// Gig's own teardown (releaseGigRuntime, PERFMODE-14) fire-and-forget on
+	// unmount -- the SvelteKit route transition never awaits it. That release
+	// yields mid-flight (disposing stem pools) before it calls
+	// engine.dispose() on the SAME singleton this session is about to start
+	// using, and only a generation bump changing since it started aborts it.
+	// noteGigRuntimeMounted() is exactly that signal Gig's own remount uses
+	// to supersede a stale release; sending it here makes a Trackify mount
+	// supersede one too, so the stale Gig teardown retires before disposing
+	// an engine Trackify has since claimed (Codex review, PR #3676).
+	noteGigRuntimeMounted();
 	const priorAutoPlayEnabled = uiPrefs.auto_play_enabled;
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
