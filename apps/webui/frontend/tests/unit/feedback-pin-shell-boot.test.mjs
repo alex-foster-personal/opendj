@@ -18,6 +18,18 @@
  *   on the first paint and the bundle budget pays for it again
  * - if the layout stops wiring `onError` to an error toast and a marked slot
  *   then the failure is caught here and dropped there
+ *
+ * WHAT THIS FILE IS, AND IS NOT. It runs `deferFeedbackPinShell` itself for
+ * real, through the loader and scheduler seams that are its production
+ * signature; the components a loader resolves to and the boot window are
+ * handed in, because node:test can mount neither a Svelte component nor a
+ * browser idle frame, and the last test pins the layout's wiring by source
+ * shape. None of that mounts the layout, runs the real boot scheduler, or
+ * fetches the real chunk. The proof through that path, a real browser, the
+ * real scheduler, the real `import()` and a chunk request that fails at the
+ * network layer, is tests/e2e/lazy-chunk-failures.spec.ts (Codex review of
+ * #3862, P1). This file is the fast contract of the seam, kept because it
+ * names each regression line in one process and fails in under a second.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

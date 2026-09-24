@@ -30,7 +30,7 @@
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
 	import { settingsOverlay } from '$lib/settings/overlay.svelte';
 	import { finalSetupRefusal } from '$lib/setup/setup-api';
-	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { SETUP_HOST_ROUTE, SETUP_ROUTE } from '$lib/setup/run-setup';
 	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
@@ -78,7 +78,28 @@
 	// SetupOverlay). The fetch starts as soon as the shell script runs, so an
 	// "Open setup" click, or the first-run boot gate, awaits a chunk that is
 	// already in flight instead of a cold request made at click time.
+	//
+	// A chunk that cannot be fetched (a stale client after a deploy, a dropped
+	// connection) must not strand first run: `setupOpen` makes the preflight
+	// gate yield to the wizard, so a rejected promise left in place would show
+	// nothing at all, and reopening would await the same rejection. So the
+	// failure is reported the way the pin shell's is (an error toast, which
+	// also reaches the client-error log with the cause attached), and the
+	// await below renders a retry surface from its catch branch.
 	const setupOverlayModule = import('$lib/components/setup/SetupOverlay.svelte');
+	setupOverlayModule.catch((error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error);
+		pushToast(`Setup failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+	});
+	// The retry is a fresh document, not a second import(): the browser keeps
+	// a failed module fetch in its module map, so re-importing the same URL
+	// rejects again without touching the network (measured in Chromium, Thu 24
+	// Sep 2026: the second import() put no request on the wire). /setup is the
+	// door that reopens the wizard in the new document, and in the stale-deploy
+	// case the new document also carries the new chunk URLs.
+	function retrySetupOverlay(): void {
+		window.location.assign(SETUP_ROUTE);
+	}
 	const yieldBootGate = $derived(
 		bootGateYielded({
 			setup: setupOpen,
@@ -337,6 +358,18 @@
 {#if setupOpen}
 	{#await setupOverlayModule then { default: SetupOverlay }}
 		<SetupOverlay />
+	{:catch error}
+		<!-- The chunk did not arrive. Same backdrop the wizard uses, so the ask
+		     still sits over the app rather than vanishing, and one action that
+		     fetches the chunk again (see retrySetupOverlay). -->
+		<div class="setup-load-failed-backdrop" role="presentation">
+			<div class="setup-load-failed" role="alertdialog" aria-label="Setup failed to load">
+				<p class="setup-load-failed-reason">
+					Setup failed to load: {error instanceof Error ? error.message : String(error)}
+				</p>
+				<button type="button" class="setup-load-retry" onclick={retrySetupOverlay}>Reload and retry</button>
+			</div>
+		</div>
 	{/await}
 {/if}
 <!-- The account panel, mounted at the root for the same reason as the two
@@ -427,5 +460,33 @@
 		color: var(--danger);
 		font-weight: 700;
 		cursor: help;
+	}
+	/* Same box and layer as SetupOverlay's .su-backdrop / .su-panel, minus the
+	   wizard: what the user sees when the wizard's chunk could not be fetched. */
+	.setup-load-failed-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 380;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 3vh 1rem;
+		background: rgba(0, 0, 0, 0.55);
+	}
+	.setup-load-failed {
+		display: grid;
+		gap: 0.75rem;
+		max-width: 32rem;
+		padding: 1.25rem 1.5rem;
+		border: 1px solid var(--danger);
+		border-radius: 8px;
+		background: var(--surface, #121720);
+	}
+	.setup-load-failed-reason {
+		margin: 0;
+		color: var(--danger);
+	}
+	.setup-load-retry {
+		justify-self: start;
 	}
 </style>
