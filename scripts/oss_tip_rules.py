@@ -244,6 +244,18 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
 
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 
+# Different reason from MAILBOX_EXEMPT_PATHS above: these paths do not publish
+# anyone's real mailbox, they are pytest-split's own generated node-ID cache.
+# Its bracketed parametrize suffixes re-embed test INPUT VALUES verbatim,
+# including the exact lookalike-TLD addresses
+# test_a_mailbox_at_a_delegated_unit_lookalike_tld_is_still_reported uses to
+# prove this audit's OWN "still reported" behavior -- so recording a
+# previously-uncollected parametrization of that test (or any test like it)
+# trips the tracked-tree gate for text nobody wrote and no mailbox exists
+# behind. Scoped to consumer-mailbox only: a real path or tailnet name here
+# would still be worth catching.
+GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})
+
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the
 # agentbox README and `.env.sample`; no Tailscale network carries it. Enumerated,
