@@ -11,9 +11,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=spec 'dist-test/test/*.test.js'",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap 'dist-test/test/*.test.js'",
     "start": "tsc -p tsconfig.json && electron .",
-    "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=spec --test-concurrency=1 'dist-test/e2e/*.e2e.js'"
+    "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap --test-concurrency=1 'dist-test/e2e/*.e2e.js'"
   },
   "dependencies": {
     "electron-updater": "6.8.9"
