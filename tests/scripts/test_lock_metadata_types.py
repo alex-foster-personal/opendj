@@ -163,3 +163,107 @@ def test_a_lock_root_version_that_is_not_a_string_is_unknown(tmp_path: Path) -> 
     assert 'version = "0.1.0"' in PYPROJECT
     code, message = _run(tmp_path, PYPROJECT.replace('version = "0.1.0"', 'version = "0.1"'), lock)
     assert code == EXIT_UNKNOWN, message
+
+
+# A pair `uv lock` wrote (uv 0.8.17, Thu 24 Sep 2026) for a root with one path
+# dependency, one EMPTY extra named "1" and one EMPTY dependency group: the shapes
+# whose lock containers, once malformed, still iterate to nothing and so matched an
+# empty declaration (Codex P2 x4 on #3763, round 30). Each edit below was fed to
+# `uv lock --check --offline` on that pair and rejected with the quoted error.
+MINI_PYPROJECT = """[project]
+name = "demo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["localdep"]
+[project.optional-dependencies]
+"1" = []
+[dependency-groups]
+foo = []
+[tool.uv.sources]
+localdep = { path = "dep" }
+"""
+MINI_DEP_PYPROJECT = '[project]\nname = "localdep"\nversion = "0.1.0"\n'
+MINI_LOCK = """version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "localdep" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "localdep", directory = "dep" }]
+provides-extras = ["1"]
+
+[package.metadata.requires-dev]
+foo = []
+
+[[package]]
+name = "localdep"
+version = "0.1.0"
+source = { directory = "dep" }
+"""
+
+
+def _run_mini(
+    tmp_path: Path, lock: str = MINI_LOCK, dep: str = MINI_DEP_PYPROJECT
+) -> tuple[int, str]:
+    (tmp_path / "dep").mkdir(exist_ok=True)
+    (tmp_path / "dep" / "pyproject.toml").write_text(dep, encoding="utf-8")
+    return _run(tmp_path, MINI_PYPROJECT, lock)
+
+
+@pytest.mark.parametrize(
+    ("lock_edit", "dep_edit", "named"),
+    [
+        (
+            lambda lock: lock.replace(
+                'requires-dist = [{ name = "localdep", directory = "dep" }]', "requires-dist = {}"
+            ),
+            None,
+            "uv.lock requires-dist = {} is not a list",
+        ),
+        (
+            lambda lock: lock.replace("foo = []", "foo = {}"),
+            None,
+            "uv.lock requires-dev foo = {} is not a list",
+        ),
+        (
+            lambda lock: lock.replace('provides-extras = ["1"]', "provides-extras = [1]"),
+            None,
+            "uv.lock provides-extras = [1] is not a list of strings",
+        ),
+        (
+            None,
+            lambda dep: dep + '[tool]\nuv = "bad"\n',
+            "dep/pyproject.toml [tool] uv = 'bad' is not a table",
+        ),
+    ],
+    ids=[
+        "requires-dist-table",
+        "requires-dev-group-table",
+        "provides-extras-integer",
+        "target-tool-uv-string",
+    ],
+)
+def test_a_lock_container_or_path_target_of_the_wrong_type_is_unknown(
+    tmp_path: Path, lock_edit, dep_edit, named: str
+) -> None:
+    """uv 0.8.17: `requires-dist = {}` and a group `= {}` are "invalid type: map,
+    expected a sequence", `provides-extras = [1]` is "invalid type: integer `1`,
+    expected a string", and a path target's `[tool] uv = "bad"` is "expected struct
+    ToolUv"; each `uv lock --check` exit 2. The checker had iterated the empty
+    mappings to nothing, str()'d the integer to the declared "1", and read the
+    target's non-table as no [tool.uv]."""
+    code, message = _run_mini(tmp_path)
+    assert code == EXIT_OK, message  # the control: the pair as uv wrote it is clean
+    lock = MINI_LOCK if lock_edit is None else lock_edit(MINI_LOCK)
+    dep = MINI_DEP_PYPROJECT if dep_edit is None else dep_edit(MINI_DEP_PYPROJECT)
+    assert (lock, dep) != (MINI_LOCK, MINI_DEP_PYPROJECT)
+    code, message = _run_mini(tmp_path, lock, dep)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message and "uv rejects the file" in message
