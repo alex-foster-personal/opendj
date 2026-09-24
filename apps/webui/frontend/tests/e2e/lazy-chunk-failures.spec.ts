@@ -25,6 +25,21 @@
  *   the promise, drew a second toast, and never touched the network)
  */
 import { expect, test, type Page } from '@playwright/test';
+import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS, DECK_LOAD_YIELD_MAX_MS } from '../../src/lib/rb/boot-scheduler';
+
+/** How long the failure surface may take to appear after the shell is up.
+ *
+ * The scheduler releases deferred boot work only after BOOT_QUIET_MS, an
+ * idle frame capped at BOOT_IDLE_TIMEOUT_MS, and up to DECK_LOAD_YIELD_MAX_MS
+ * of yielding while decks are loading (the Performance page restores decks
+ * on boot), so the chunk request itself starts up to that sum after the
+ * shell is ready; the abort then rejects it. The margin on top is for the
+ * request under a loaded CI box: the first shape of this spec allowed 20 s
+ * inside the suite's 30 s per-test budget and the abort landed at the
+ * deadline on CI (run 36007918940) while passing locally every time. */
+const SHELL_RELEASE_BOUND_MS = BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS + DECK_LOAD_YIELD_MAX_MS;
+const FAILURE_SURFACE_MS = SHELL_RELEASE_BOUND_MS + 30_000;
+const TEST_BUDGET_MS = 90_000;
 
 /** See setup-entry-points.spec.ts: the root layout installs `__mdtPerfLog`
  * from the same onMount that arms everything this suite waits on. */
@@ -61,6 +76,7 @@ const SETUP_OVERLAY_CHUNK = '**/SetupOverlay*';
 
 test.describe('lazy root-layout chunks fail visibly', () => {
 	test('a pin-shell chunk that cannot be fetched raises an error toast and marks the slot', async ({ page }) => {
+		test.setTimeout(TEST_BUDGET_MS);
 		const aborted: string[] = [];
 		await page.route(PIN_LAYER_CHUNK, (route) => {
 			aborted.push(route.request().url());
@@ -68,10 +84,12 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 		});
 		await gotoShellReady(page, '/');
 
-		// The shell loads behind the boot window (BOOT_QUIET_MS plus an idle
-		// frame), so this waits on the real scheduler, not on a sleep.
+		// The shell loads behind the boot window (SHELL_RELEASE_BOUND_MS), so
+		// this waits on the real scheduler, not on a sleep. The slot is marked
+		// in the same callback that raises the toast, and it stays: the toast
+		// dismisses itself, so the slot is the durable thing to wait on first.
 		const slot = page.getByRole('img', { name: 'Comment pins failed to load' });
-		await expect(slot).toBeVisible({ timeout: 20_000 });
+		await expect(slot).toBeVisible({ timeout: FAILURE_SURFACE_MS });
 		await expect(slot).toHaveAttribute('title', /^Comment pins failed to load: .+Reload the page to retry\.$/);
 		await expect(page.locator('.toast-stack .toast.error')).toBeVisible();
 		await expect
@@ -83,6 +101,7 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 	});
 
 	test('a setup chunk that cannot be fetched shows a retry surface, and the retry fetches it again', async ({ page }) => {
+		test.setTimeout(TEST_BUDGET_MS);
 		let aborted = 0;
 		await page.route(SETUP_OVERLAY_CHUNK, (route) => {
 			aborted += 1;
@@ -94,7 +113,7 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 		await gotoShellReady(page, '/setup');
 
 		const failed = page.getByRole('alertdialog', { name: 'Setup failed to load' });
-		await expect(failed).toBeVisible({ timeout: 20_000 });
+		await expect(failed).toBeVisible({ timeout: FAILURE_SURFACE_MS });
 		await expect(failed).toContainText('Setup failed to load:');
 		await expect(page.locator('.toast-stack .toast.error')).toBeVisible();
 		await expect
