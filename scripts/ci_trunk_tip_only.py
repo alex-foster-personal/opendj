@@ -173,26 +173,29 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
 def _paginated_runs(
     path: str, fetch_json: Callable[[str], object] | None = None
 ) -> list[QueuedRun]:
-    """Every run the listing holds, or a PreconditionError: never a partial census.
+    """Every run the listing serves, paged until a page comes back short.
 
-    GitHub answers the count and each page from a queue that keeps moving, so a
-    run leaving or joining it between the two makes total_count disagree with what
-    paging collected. That is not a paging defect, and it was read as one: the
-    sweeper went red with every test job green on main runs 35730977563 (13:03Z),
-    35723785363, 35722075764 and 35721772426 (Tue 22 Sep 2026), 4 of its 11 red
-    runs in the last 30. A listing that disagrees with its own count is listed
-    ONCE more; the second one agreeing with its own count is the census, two that
-    do not are the error, naming both. `fetch_json` is the GitHub GET; a test hands
-    in captured real payloads keyed by the path this asks (no monkeypatching)."""
+    GitHub answers total_count from an index that lags the listing: measured live
+    at ~3 s for ten minutes on Tue 22 Sep 2026, 41 of 480 responses (8.5%) carried
+    a count their own runs did not add up to, and during a merge or cancel burst
+    the lag held across consecutive listings (15 over 14 twice; 18 over 17 then
+    20 over 15). Reading that as a paging defect made the sweeper red with every
+    test job green (main runs 35730977563, 35723785363, 35722075764 and
+    35721772426 that day, 4 of its 11 red runs in the last 30), and listing again
+    (#3825) did not cure it. So the pages are the census and the count is only a
+    warning: paging stops at the first page shorter than PAGE_SIZE, which is
+    complete by construction, and a run the queue gained or lost meanwhile only
+    lowers the cancellation count (it is never cancelled by mistake, because a
+    run is cancelled only when its head_sha is not retained, and an unlisted run
+    cannot be retained). `fetch_json` is the GitHub GET; a test hands in captured
+    real payloads keyed by the path this asks (no monkeypatching)."""
     fetch = _gh_api_json if fetch_json is None else fetch_json
-    first_runs, first_total = _list_runs_once(path, fetch)
-    if len(first_runs) == first_total:
-        return first_runs
     runs, total_count = _list_runs_once(path, fetch)
     if len(runs) != total_count:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs,"
-            f" twice (the first listing: total_count={first_total} against {len(first_runs)})"
+        print(
+            f"[WARN] {path} reported total_count={total_count} but its pages hold"
+            f" {len(runs)} runs; the count lags the listing, the pages are the census",
+            file=sys.stderr,
         )
     return runs
 
@@ -213,10 +216,8 @@ def _list_runs_once(
             if not isinstance(total_count, int):
                 raise PreconditionError(f"{path} response has no integer total_count")
         page_items = payload["workflow_runs"]
-        if not page_items:
-            break
         runs.extend(_parse_queued_run(item) for item in page_items)
-        if len(runs) >= total_count:
+        if len(page_items) < PAGE_SIZE:
             break
         page += 1
     return runs, total_count
