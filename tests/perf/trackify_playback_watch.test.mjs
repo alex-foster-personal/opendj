@@ -154,6 +154,92 @@ test('production default tolerance absorbs a single normal poll-interval gap wit
 	}
 });
 
+test('a low duty cycle from many short gaps invalidates a Trackify capture even though no single gap is sustained (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+	try {
+		// Idle for 3 polls, playing for 1, repeating -- every individual gap
+		// recovers well within the single-gap tolerance (2 s, versus a 3 s
+		// tolerance here), so the sustained-gap check alone would pass this.
+		// But the deck spends 75% of the window not playing, which no real
+		// Trackify handoff pattern looks like.
+		const page = fakePage([
+			false, false, false, true,
+			false, false, false, true,
+			false, false, false, true
+		]);
+		const signal = gate();
+		const done = watchContinuousPlaybackUntil(page, signal.promise, {
+			pollMs: 1_000,
+			tolerateGapsUnderMs: 3_000,
+			maxIdleDutyCycle: 0.5
+		});
+		await settle();
+		for (let i = 0; i < 11; i += 1) {
+			mock.timers.tick(1_000);
+			await settle();
+		}
+		signal.release();
+		await assert.rejects(done, /not continuously playing/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('control: a healthy duty cycle with a couple of isolated brief handoffs does not invalidate a Trackify capture (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+	try {
+		// Mostly playing, with two isolated single-poll handoffs scattered
+		// through a longer window -- representative of Trackify's real
+		// operation across several track boundaries, and a control for the
+		// duty-cycle check above: it must not fire on ordinary usage.
+		const sequence = [
+			true, true, true, false, true, true, true, true,
+			true, true, false, true, true, true, true, true
+		];
+		const page = fakePage(sequence);
+		const signal = gate();
+		const done = watchContinuousPlaybackUntil(page, signal.promise, {
+			pollMs: 1_000,
+			tolerateGapsUnderMs: 3_000,
+			maxIdleDutyCycle: 0.15
+		});
+		await settle();
+		for (let i = 0; i < sequence.length - 1; i += 1) {
+			mock.timers.tick(1_000);
+			await settle();
+		}
+		signal.release();
+		await assert.doesNotReject(done);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('production default duty cycle catches the same thrashing pattern with no overrides (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+	try {
+		// No override: locks in the actual shipped default
+		// (TRACKIFY_MAX_IDLE_DUTY_CYCLE) against the real production pollMs
+		// default.
+		const page = fakePage([
+			false, false, false, true,
+			false, false, false, true,
+			false, false, false, true
+		]);
+		const signal = gate();
+		const done = watchContinuousPlaybackUntil(page, signal.promise, { pollMs: 1_000 });
+		await settle();
+		for (let i = 0; i < 11; i += 1) {
+			mock.timers.tick(1_000);
+			await settle();
+		}
+		signal.release();
+		await assert.rejects(done, /not continuously playing/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
 test('Gig: all four decks stay playing at every poll then the watch resolves without throwing', async () => {
 	mock.timers.enable({ apis: ['setTimeout'] });
 	try {

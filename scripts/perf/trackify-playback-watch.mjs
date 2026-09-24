@@ -29,6 +29,23 @@
 const TRACKIFY_HANDOFF_TOLERANCE_MS = 8_000;
 
 /**
+ * Ceiling on the fraction of polls that may see "not playing" once enough
+ * samples exist to judge it, even when no SINGLE gap ever exceeds
+ * `TRACKIFY_HANDOFF_TOLERANCE_MS` (Sol review round 11, PR #3676: "a run
+ * that is idle for seven seconds, plays for one poll, and repeats can pass
+ * the 8 s tolerance while spending most of the measured window idle").
+ * Real Trackify handoff overhead across a set of multi-minute tracks should
+ * be a small fraction of total playback time; 15% gives generous headroom
+ * over that while still catching a duty-cycle pattern like the one quoted
+ * above (which idles roughly 3 times as often as it plays).
+ */
+const TRACKIFY_MAX_IDLE_DUTY_CYCLE = 0.15;
+
+/** Minimum polls observed before judging a duty cycle at all, so one early
+ * handoff cannot look like 100% idle against a near-empty sample. */
+const _MIN_DUTY_CYCLE_SAMPLE_POLLS = 8;
+
+/**
  * Shared poll loop: calls `isPlayingInPage` (a zero-arg function run via
  * `page.evaluate`) on an interval until `signal` settles.
  *
@@ -39,8 +56,14 @@ const TRACKIFY_HANDOFF_TOLERANCE_MS = 8_000;
  *    even if it recovers well before `signal` settles.
  *  - a number (used by the Trackify variant): a gap that recovers within
  *    that many ms is forgiven as a normal handoff; only a gap SUSTAINED
- *    past it invalidates the capture, and a sustained failure is never
- *    un-recorded by a later recovery.
+ *    past it invalidates the capture immediately. Separately, when
+ *    `maxIdleDutyCycle` is also set, the OVERALL not-playing fraction across
+ *    every poll in the whole window is checked once at the end -- a
+ *    duty cycle is a property of the whole window, not a point-in-time
+ *    snapshot, so an early cluster of gaps that the rest of a long capture
+ *    dilutes back down must not be judged before all the samples are in
+ *    (unlike a sustained-gap failure, which stays failed once true). A
+ *    sustained-gap failure is never un-recorded by a later recovery.
  *
  * Either mode treats a rejected `evaluate` (e.g. the page navigated or
  * closed) as an unconditional, non-tolerated failure: that is a stronger
@@ -51,13 +74,15 @@ async function _watchUntil(
 	signal,
 	isPlayingInPage,
 	invalidMessage,
-	{ pollMs = 2_000, tolerateGapsUnderMs = null, evaluateArg } = {}
+	{ pollMs = 2_000, tolerateGapsUnderMs = null, maxIdleDutyCycle = null, evaluateArg } = {}
 ) {
 	let stopped = false;
 	let gapAt = null; // zero-tolerance mode: sticky, first gap ever seen.
 	let gapStartedAt = null; // bounded-tolerance mode: reset whenever playback resumes.
 	let sustainedGapAt = null; // bounded-tolerance mode: sticky once a gap exceeds the bound.
 	let evaluateFailedAt = null;
+	let totalPolls = 0;
+	let notPlayingPolls = 0;
 	// Chained off `signal` (not just flipped by the caller after `await
 	// signal` resolves) so a poll iteration currently sleeping between polls
 	// wakes IMMEDIATELY once the caller's own wait ends, via the `Promise.race`
@@ -76,6 +101,8 @@ async function _watchUntil(
 				playing = false;
 				if (evaluateFailedAt === null) evaluateFailedAt = Date.now();
 			}
+			totalPolls += 1;
+			if (!playing) notPlayingPolls += 1;
 			if (tolerateGapsUnderMs === null) {
 				if (!playing && gapAt === null) gapAt = Date.now();
 			} else if (playing) {
@@ -106,6 +133,16 @@ async function _watchUntil(
 			`${invalidMessage} (stalled for over ${tolerateGapsUnderMs}ms starting ${new Date(sustainedGapAt).toISOString()}); this capture is invalid`
 		);
 	}
+	if (
+		maxIdleDutyCycle !== null &&
+		totalPolls >= _MIN_DUTY_CYCLE_SAMPLE_POLLS &&
+		notPlayingPolls / totalPolls > maxIdleDutyCycle
+	) {
+		const pct = Math.round((notPlayingPolls / totalPolls) * 100);
+		throw new Error(
+			`${invalidMessage} (not playing on ${pct}% of ${totalPolls} polls, exceeding the ${Math.round(maxIdleDutyCycle * 100)}% idle budget); this capture is invalid`
+		);
+	}
 }
 
 export async function watchContinuousPlaybackUntil(page, signal, opts = {}) {
@@ -119,7 +156,11 @@ export async function watchContinuousPlaybackUntil(page, signal, opts = {}) {
 			return state.deck.stable_id !== null && state.deck.playing === true;
 		},
 		'Trackify was not continuously playing throughout the measured interval',
-		{ tolerateGapsUnderMs: TRACKIFY_HANDOFF_TOLERANCE_MS, ...opts }
+		{
+			tolerateGapsUnderMs: TRACKIFY_HANDOFF_TOLERANCE_MS,
+			maxIdleDutyCycle: TRACKIFY_MAX_IDLE_DUTY_CYCLE,
+			...opts
+		}
 	);
 }
 
