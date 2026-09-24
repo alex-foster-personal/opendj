@@ -13,7 +13,10 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
-import { watchContinuousPlaybackUntil } from '../../scripts/perf/trackify-playback-watch.mjs';
+import {
+	watchContinuousPlaybackUntil,
+	watchGigDecksPlayingUntil
+} from '../../scripts/perf/trackify-playback-watch.mjs';
 
 /** Drains the microtask queue; setImmediate is never in the mocked timer APIs. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -91,6 +94,86 @@ test('control: a page that never plays at all also rejects (not just the mid-win
 		await settle();
 		signal.release();
 		await assert.rejects(done, /not continuously playing/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('Gig: all four decks stay playing at every poll then the watch resolves without throwing', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		const page = fakePage([true, true, true]);
+		const signal = gate();
+		const done = watchGigDecksPlayingUntil(page, signal.promise, [1, 2, 3, 4], { pollMs: 1_000 });
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		signal.release();
+		await assert.doesNotReject(done);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('Gig: one deck stops mid-window (e.g. its track ended) and recovers before the signal fires then the watch still rejects, naming all four decks', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		// The bug this guards against: GIG_READY only proves the four decks
+		// were playing before the wait started -- a deck whose short track
+		// ends mid-window (then perhaps loops or gets replaced) would sample
+		// as a valid four-deck steady state under an endpoint-only check.
+		const page = fakePage([true, false, true]);
+		const signal = gate();
+		const done = watchGigDecksPlayingUntil(page, signal.promise, [1, 2, 3, 4], { pollMs: 1_000 });
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		signal.release();
+		await assert.rejects(done, /Gig was not continuously playing on all four decks/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('Gig control: a page that never has all four decks playing also rejects', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		const page = fakePage([false, false]);
+		const signal = gate();
+		const done = watchGigDecksPlayingUntil(page, signal.promise, [1, 2, 3, 4], { pollMs: 1_000 });
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		signal.release();
+		await assert.rejects(done, /Gig was not continuously playing on all four decks/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('Gig: the deck id list is threaded through to each page.evaluate call', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		const seenArgs = [];
+		const page = {
+			evaluate: async (_fn, arg) => {
+				seenArgs.push(arg);
+				return true;
+			}
+		};
+		const signal = gate();
+		const done = watchGigDecksPlayingUntil(page, signal.promise, [1, 2, 3, 4], { pollMs: 1_000 });
+		await settle();
+		signal.release();
+		await done;
+		assert.ok(seenArgs.length > 0, 'evaluate must have been called at least once');
+		for (const arg of seenArgs) {
+			assert.deepEqual(arg, [1, 2, 3, 4]);
+		}
 	} finally {
 		mock.timers.reset();
 	}

@@ -11,7 +11,19 @@
  * `mode_ratio_browser.mjs` itself, whose top-level `await`s make it
  * unimportable outside a real browser run.
  */
-export async function watchContinuousPlaybackUntil(page, signal, { pollMs = 2_000 } = {}) {
+/**
+ * Shared poll loop: calls `isPlayingInPage` (a zero-arg function run via
+ * `page.evaluate`) on an interval until `signal` settles, and throws
+ * `invalidMessage` if any poll (or a rejected `evaluate`, e.g. the page
+ * navigated or closed) ever saw "not playing".
+ */
+async function _watchUntil(
+	page,
+	signal,
+	isPlayingInPage,
+	invalidMessage,
+	{ pollMs = 2_000, evaluateArg } = {}
+) {
 	let stopped = false;
 	let gapAt = null;
 	// Chained off `signal` (not just flipped by the caller after `await
@@ -25,14 +37,7 @@ export async function watchContinuousPlaybackUntil(page, signal, { pollMs = 2_00
 	});
 	const poller = (async () => {
 		while (!stopped) {
-			const playing = await page
-				.evaluate(() => {
-					const ipc = window.musicDjToolsTrackify;
-					if (ipc === undefined) return false;
-					const state = ipc.query();
-					return state.deck.stable_id !== null && state.deck.playing === true;
-				})
-				.catch(() => false);
+			const playing = await page.evaluate(isPlayingInPage, evaluateArg).catch(() => false);
 			if (!playing && gapAt === null) gapAt = Date.now();
 			if (stopped) break;
 			await Promise.race([stopSignal, new Promise((resolve) => setTimeout(resolve, pollMs))]);
@@ -41,9 +46,49 @@ export async function watchContinuousPlaybackUntil(page, signal, { pollMs = 2_00
 	await signal;
 	await poller;
 	if (gapAt !== null) {
-		throw new Error(
-			'Trackify was not continuously playing throughout the measured interval ' +
-				`(first gap detected at ${new Date(gapAt).toISOString()}); this capture is invalid`
-		);
+		throw new Error(`${invalidMessage} (first gap detected at ${new Date(gapAt).toISOString()}); this capture is invalid`);
 	}
+}
+
+export async function watchContinuousPlaybackUntil(page, signal, opts = {}) {
+	await _watchUntil(
+		page,
+		signal,
+		() => {
+			const ipc = window.musicDjToolsTrackify;
+			if (ipc === undefined) return false;
+			const state = ipc.query();
+			return state.deck.stable_id !== null && state.deck.playing === true;
+		},
+		'Trackify was not continuously playing throughout the measured interval',
+		opts
+	);
+}
+
+/**
+ * Gig-side counterpart (Sol review round 6, PR #3676): `GIG_READY` only
+ * proves four load/play commands were issued before the initial wait --
+ * nothing verified all four decks were STILL playing while
+ * `capture_mode_ratios.py`'s process-tree sampler actually ran, so a deck
+ * whose track ended mid-window could sample a partially idle Gig session as
+ * a measured four-deck steady state. Mirrors `watchContinuousPlaybackUntil`
+ * exactly, checking every deck in `deckIds` via the Performance IPC instead
+ * of the single Trackify deck.
+ */
+export async function watchGigDecksPlayingUntil(page, signal, deckIds, opts = {}) {
+	await _watchUntil(
+		page,
+		signal,
+		(decks) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) return false;
+			const state = ipc.query();
+			return decks.every((deckId) => {
+				const deck = state.decks[deckId];
+				return deck !== undefined && deck.stable_id !== null && deck.playing === true;
+			});
+		},
+		'Gig was not continuously playing on all four decks throughout the measured interval',
+		{ ...opts, evaluateArg: deckIds }
+	);
 }

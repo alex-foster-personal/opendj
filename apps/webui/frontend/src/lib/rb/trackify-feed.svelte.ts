@@ -14,6 +14,15 @@ import { pushToast } from '$lib/rb/performance-ipc.svelte';
 let _controller = createTrackifyFeedController();
 let _hydrating = false;
 let _skipNext = false;
+// Bumped by installTrackifyFeed() on both install and its own teardown, so a
+// hydrate started by one session can never publish into (or clear the
+// in-flight flag of) a session that has since torn down or been replaced
+// (Sol review, PR #3676): teardown resets `_controller`, but neither
+// cancelled nor invalidated the fetch itself, so a pending hydrate could
+// resolve after unmount and write into the just-reset controller, or its
+// `finally` could clear `_hydrating` out from under a brand-new session's
+// own in-flight fetch.
+let _installGeneration = 0;
 let _lastSnapshot: TrackifyFeedSnapshot = {
 	scope: '',
 	epoch: 0,
@@ -39,7 +48,7 @@ export function noteTrackifySkipNext(): void {
 	_skipNext = true;
 }
 
-async function _hydrate(): Promise<void> {
+async function _hydrate(ownGeneration: number): Promise<void> {
 	if (_hydrating) return;
 	_hydrating = true;
 	try {
@@ -54,32 +63,47 @@ async function _hydrate(): Promise<void> {
 		const lastPlaylist = uiPrefs.last_playlist;
 		const requestedScope = trackifyPlaylistScope(lastPlaylist);
 		const viewRows = await fetchTrackifyViewRows(lastPlaylist);
+		// Discard outright if this session has since torn down (or a new one
+		// installed) while the fetch was in flight -- publishing here would
+		// write into a controller a newer/absent session already reset.
+		if (_installGeneration !== ownGeneration) return;
 		if (trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope) return;
 		_lastSnapshot = _controller.step(true, lastPlaylist, viewRows);
 	} finally {
-		_hydrating = false;
+		// Only this generation's own hydrate may clear the shared in-flight
+		// flag: a stale hydrate's finally must not clobber a newer session's
+		// own fetch that is genuinely still in flight.
+		if (_installGeneration === ownGeneration) _hydrating = false;
 	}
 }
 
 /** Surfaces a failed hydration instead of leaving an unhandled rejection
  * with the feed silently stuck empty (PERFMODE-15 review finding). */
-function _hydrateOrToast(): void {
-	_hydrate().catch((error: unknown) => {
+function _hydrateOrToast(ownGeneration: number): void {
+	_hydrate(ownGeneration).catch((error: unknown) => {
+		if (_installGeneration !== ownGeneration) return;
 		const reason = error instanceof Error ? error.message : String(error);
 		pushToast(`Trackify: could not load the feed (${reason})`, 'error');
 	});
 }
 
 export function installTrackifyFeed(): () => void {
-	_hydrateOrToast();
+	_installGeneration += 1;
+	const ownGeneration = _installGeneration;
+	_hydrateOrToast(ownGeneration);
 	const interval = setInterval(() => {
-		_hydrateOrToast();
+		_hydrateOrToast(ownGeneration);
 	}, 60_000);
 	return () => {
 		clearInterval(interval);
+		// Invalidates THIS session's own generation too, not just a future
+		// one: a hydrate already in flight when teardown runs must never
+		// publish into the controller reset below, even if nothing remounts.
+		_installGeneration += 1;
 		_controller = createTrackifyFeedController();
 		_lastSnapshot = { scope: '', epoch: 0, rows: [], snapshotted: false };
 		_skipNext = false;
+		_hydrating = false;
 	};
 }
 

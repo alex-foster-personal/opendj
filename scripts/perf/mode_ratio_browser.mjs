@@ -7,7 +7,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-import { watchContinuousPlaybackUntil } from "./trackify-playback-watch.mjs";
+import {
+  watchContinuousPlaybackUntil,
+  watchGigDecksPlayingUntil,
+} from "./trackify-playback-watch.mjs";
 
 async function loadChromium() {
   const resolver = createRequire(path.join(process.cwd(), "package.json"));
@@ -156,7 +159,13 @@ if (mode === "gig-trackify") {
     const gigPage = await gigContext.newPage();
     await loadGigSteadyState(gigPage);
     console.log("GIG_READY");
-    await waitForLine();
+    // GIG_READY only proves the four load/play commands were issued before
+    // the wait started; nothing else verifies all four decks are STILL
+    // playing throughout the window capture_mode_ratios.py's process-tree
+    // sampler actually runs in (a short track ending mid-window would sample
+    // a partially idle Gig session as a measured four-deck steady state --
+    // Sol review round 6, PR #3676).
+    await watchGigDecksPlayingUntil(gigPage, waitForLine(), [1, 2, 3, 4]);
   } finally {
     await gigBrowser.close();
   }

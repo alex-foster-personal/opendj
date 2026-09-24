@@ -131,4 +131,102 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		// changed the selection here.
 		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['steady-row']);
 	});
+
+	it('a hydration in flight at teardown does not publish into the controller a remount resets (Sol review round 6)', async () => {
+		const held = gate();
+		let fetchCount = 0;
+		globalThis.fetch = async () => {
+			fetchCount += 1;
+			await held.promise;
+			return jsonResponse({
+				items: [
+					{
+						stable_id: 'stale-row',
+						key: '8A',
+						bpm: 120,
+						file_exists: true,
+						file_availability: 'AVAILABILITY_PRESENT',
+						has_rb_mapping: true
+					}
+				],
+				next_cursor: null
+			});
+		};
+
+		mod.uiPrefs.last_playlist = null;
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(fetchCount, 1, 'the initial hydrate must have started its fetch');
+
+		// Teardown fires WHILE the hydrate above is still in flight. The bug
+		// this guards against (Sol review, PR #3676): the cleanup resets
+		// `_controller` but neither cancels nor invalidates the pending
+		// fetch, so it can later publish into the just-reset controller.
+		uninstall();
+		uninstall = undefined;
+
+		held.release();
+		await settle();
+		await settle();
+
+		assert.deepEqual(
+			mod.getTrackifyFeedRows(),
+			[],
+			'a hydrate started before teardown must not publish into the controller teardown reset'
+		);
+	});
+
+	it('a fresh install right after teardown gets its own hydrate, not denied by a stale in-flight flag (Sol review round 6)', async () => {
+		const gate1 = gate();
+		const gate2 = gate();
+		let fetchCount = 0;
+		globalThis.fetch = async () => {
+			fetchCount += 1;
+			const activeGate = fetchCount === 1 ? gate1 : gate2;
+			await activeGate.promise;
+			return jsonResponse({
+				items: [
+					{
+						stable_id: fetchCount === 1 ? 'stale-row' : 'fresh-row',
+						key: '8A',
+						bpm: 120,
+						file_exists: true,
+						file_availability: 'AVAILABILITY_PRESENT',
+						has_rb_mapping: true
+					}
+				],
+				next_cursor: null
+			});
+		};
+
+		mod.uiPrefs.last_playlist = null;
+		const uninstallStale = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(fetchCount, 1, 'session 1 must have started its own fetch');
+
+		uninstallStale();
+
+		// A brand-new session installs immediately after. It must not be
+		// denied its own initial fetch by the OLD session's still-in-flight
+		// `_hydrating` flag (Sol review, PR #3676).
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(
+			fetchCount,
+			2,
+			'a fresh install right after teardown must start its own fetch, not be denied by the stale flag'
+		);
+
+		// The stale session-1 fetch now resolves late; it must not publish.
+		gate1.release();
+		await settle();
+		await settle();
+		assert.deepEqual(mod.getTrackifyFeedRows(), [], 'the stale session must not have published');
+
+		// The new session's own fetch resolves and DOES publish.
+		gate2.release();
+		await settle();
+		await settle();
+		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['fresh-row']);
+	});
 });
