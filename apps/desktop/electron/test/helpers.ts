@@ -47,16 +47,21 @@ export function statusServer(status: number): Promise<{ port: number; close: () 
 export function pidGone(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
-		return false;
 	} catch {
 		return true;
 	}
+	// An unreaped zombie still answers signal 0 but is no longer running.
+	try {
+		return /^\d+ \(.*\) Z/.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'));
+	} catch {
+		return false;
+	}
 }
 
-export async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<boolean> {
+export async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 5_000): Promise<boolean> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		if (predicate()) return true;
+		if (await predicate()) return true;
 		await new Promise((resolve) => setTimeout(resolve, 25));
 	}
 	return predicate();

@@ -222,7 +222,9 @@ function main(): void {
 	const trusted = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => {
 		const url = event.senderFrame?.url ?? '';
 		if (event.sender !== window?.webContents || !isTrustedPage(url)) {
-			appendShellLog('WARN', `refused native bridge call from ${url || 'an unknown frame'}`);
+			// A new window's first document is an empty about:blank that loads the
+			// preload too; refusing it is routine, not worth a warning.
+			if (url !== '' && url !== 'about:blank') appendShellLog('WARN', `refused native bridge call from ${url}`);
 			return false;
 		}
 		return true;
@@ -414,7 +416,12 @@ function main(): void {
 			return { action: 'deny' };
 		});
 
-		await window.loadURL(`${APP_ORIGIN}/index.html`);
+		// The supervisor starts before the load settles: the bootstrap page can
+		// navigate to the engine before loadURL resolves, which rejects it with
+		// ERR_ABORTED, and that must not leave the engine unwatched.
 		supervisor?.start();
-	});
+		window.loadURL(`${APP_ORIGIN}/index.html`).catch((error: unknown) => {
+			appendShellLog('webview', `bootstrap load settled early: ${String(error)}`);
+		});
+	}).catch((error: unknown) => failVisibly(error));
 }

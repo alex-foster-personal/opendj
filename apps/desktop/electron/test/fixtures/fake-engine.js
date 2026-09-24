@@ -48,6 +48,10 @@ if (mode === 'never-ready') {
 			if (req.url === '/api/v1/health') {
 				res.writeHead(200, { 'content-type': 'application/json' });
 				res.end('{"status":"ok"}');
+			} else if (req.url === '/performance') {
+				// Stands in for the SPA in the shell's e2e: a real loopback page.
+				res.writeHead(200, { 'content-type': 'text/html' });
+				res.end('<!doctype html><html><head><title>fake engine</title></head><body><p id="fake">fake engine page</p></body></html>');
 			} else {
 				res.writeHead(404);
 				res.end();
