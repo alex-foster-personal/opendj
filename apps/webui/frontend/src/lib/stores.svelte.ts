@@ -47,13 +47,13 @@ export type Toast = {
 	logId: string;
 	message: string;
 	headline: string;
-	detail?: string;
-	solutionHint?: string;
+	detail?: string | undefined;
+	solutionHint?: string | undefined;
 	expanded?: boolean;
-	clientEventId?: string;
-	serverEventId?: string;
-	errorId?: string;
-	sentryEventId?: string;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	action?: ToastAction;
 	/**
 	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
