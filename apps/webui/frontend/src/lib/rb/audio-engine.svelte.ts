@@ -133,9 +133,9 @@ import {
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
 	patchTrack,
-	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
+import { awaitStemArtifact } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -743,7 +743,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			);
 		},
 		maybeUpgradeStems: (snap, buffer, ctx) => {
-			if (snap.stemsReady && snap.stableId.length > 0) {
+			if ((snap.stemsReady || snap.stemsLoading) && snap.stableId.length > 0) {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
@@ -2840,11 +2840,11 @@ async function _upgradeDeckStems(
 			stages[name] = Math.round(performance.now() - started);
 		}
 	};
-	const stale = (): boolean => token !== rt.loadToken;
+	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx; // a graph rebuild restarts it
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
-		const probe = await time('probeStem', probeStemArtifact(stableId));
-		if (stale()) return;
+		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
+		if (probe === null || stale()) return;
 		if (probe.status !== 'ready') {
 			// A settled "this track has no bundle". Not an error, and not a
 			// spinner: the deck is finished loading.
