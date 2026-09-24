@@ -5,7 +5,6 @@ import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixtureManifestExists, primaryFixtureStableId } from './support/fixture-manifest';
-import { assertNoStemBackendWorkers } from './support/stem-backend-workers';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
@@ -27,6 +26,20 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+
+	// Baseline process-family member count BEFORE any deck load, when no stem
+	// worker can possibly exist yet. This stands in for a name-based
+	// "no stem backend workers" check: the telemetry endpoint never exposes a
+	// raw command line, and nothing in apps/stems currently stamps stem
+	// workers with an opendj-* identity (set_process_identity), so every stem
+	// worker's `name` reads 'unnamed' -- a marker-string search can never
+	// match anything the endpoint actually sends (.planning/debt/3679.md,
+	// "Stem-worker markers do not match any field the telemetry endpoint
+	// exposes"). A live leaked worker is still a live process-family member
+	// though, so comparing the member COUNT before deck loads to the count
+	// after Library teardown catches a leak without needing to name it.
+	const baselineTelemetry = await _pollTelemetryUntilAvailable(request, API_BASE);
+	const baselineMemberCount = _requireMemberCount(baselineTelemetry);
 
 	for (const deck of [1, 2, 3, 4] as const) {
 		await page.evaluate(
@@ -54,16 +67,31 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	expect(librarySnapshot.deck_nodes_present).toBe(false);
 	expect(librarySnapshot.audio_context_state).toBe('uninitialized');
 
-	const telemetryBody = await _pollTelemetryUntilAvailable(request, API_BASE);
-	assertNoStemBackendWorkers(telemetryBody);
+	const finalTelemetry = await _pollTelemetryUntilAvailable(request, API_BASE);
+	const finalMemberCount = _requireMemberCount(finalTelemetry);
+	// A stem worker (or anything else) still alive after teardown shows up as
+	// an EXTRA process-family member versus the pre-load baseline; a match or
+	// a drop is fine (teardown is allowed to free members the baseline held).
+	expect(finalMemberCount).toBeLessThanOrEqual(baselineMemberCount);
 });
+
+/** Throws rather than reading an unavailable/malformed `members` list as
+ * zero -- a failed measurement is not the same as "zero workers running". */
+function _requireMemberCount(body: Record<string, unknown>): number {
+	if (body.available !== true || !Array.isArray(body.members)) {
+		throw new Error(
+			`process telemetry unavailable or malformed; cannot measure process family size: ${JSON.stringify(body)}`
+		);
+	}
+	return body.members.length;
+}
 
 const _TELEMETRY_POLL_ATTEMPTS = 5;
 const _TELEMETRY_POLL_INTERVAL_MS = 500;
 
 /** Poll the process telemetry endpoint until it reports `available: true`,
  * bounded, so a transiently-cold cache does not read as "no workers running"
- * (see assertNoStemBackendWorkers -- unavailable is not evidence of clean). */
+ * (see _requireMemberCount -- unavailable is not evidence of a clean teardown). */
 async function _pollTelemetryUntilAvailable(
 	request: import('@playwright/test').APIRequestContext,
 	apiBase: string

@@ -15,7 +15,6 @@ function source(relative) {
 	return readFileSync(sourcePath(relative), 'utf8');
 }
 
-const NAV_PATH = sourcePath('lib/components/PerformanceAppNav.svelte');
 const LAYOUT = source('routes/+layout.svelte');
 const NAV = source('lib/components/PerformanceAppNav.svelte');
 const TOP_BAR = source('lib/components/rb/TopBar.svelte');
@@ -47,10 +46,16 @@ test('PerformanceAppNav exposes Library and Admin links with the locked contract
 });
 
 test('the hatch lives outside rb/ clone chrome and does not touch TopBar or BrowserPanel', () => {
-	// Falsifiable on the file's real location, not a self-referential import
-	// string PerformanceAppNav.svelte would never contain regardless of where
-	// it actually lives (a string match on its own source can never fail).
-	assert.doesNotMatch(NAV_PATH.replaceAll('\\', '/'), /\/lib\/components\/rb\//);
+	// The file's real location is enforced by `source()` above already
+	// throwing ENOENT if PerformanceAppNav.svelte were not at
+	// lib/components/PerformanceAppNav.svelte (outside rb/). A prior version
+	// of this test also asserted doesNotMatch against that same hardcoded
+	// path string, which the test itself chose -- checking a string the test
+	// wrote, never the file's actual location, so it could never fail
+	// (Claude review, round 4, PR #3679); removed rather than kept as dead
+	// weight. The two doesNotMatch checks below are the real assertions: the
+	// component's own source doesn't import from rb/, and neither TopBar nor
+	// BrowserPanel reference it back.
 	assert.doesNotMatch(NAV, /from '\$lib\/components\/rb\//);
 	assert.doesNotMatch(TOP_BAR, /performance-app-nav/);
 	assert.doesNotMatch(BROWSER_PANEL, /performance-app-nav/);

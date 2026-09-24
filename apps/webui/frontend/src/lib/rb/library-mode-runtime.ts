@@ -16,6 +16,7 @@ import { PERFORMANCE_SESSION_STORAGE_KEY } from '$lib/rb/performance-session-sna
 const LIBRARY_MODE_EXIT_KEY = 'mdt.library_mode_exit';
 
 let _releasePromise: Promise<void> | null = null;
+let _releasePromiseGeneration: number | null = null;
 let _releaseGeneration = 0;
 let _releasedGeneration: number | null = null;
 
@@ -92,30 +93,50 @@ export async function releaseGigRuntime(opts?: {
 }): Promise<void> {
 	const generation = _releaseGeneration;
 	if (_releasedGeneration === generation) return;
-	if (_releasePromise !== null) return _releasePromise;
+	// Only join an in-flight release for THIS SAME generation. A newer
+	// generation (Gig remounted since the in-flight release started) must
+	// start its own release rather than await a stale one that may already
+	// be past the point of no return for disposing this generation's engine.
+	if (_releasePromise !== null && _releasePromiseGeneration === generation) return _releasePromise;
 
 	const disposeEngine = opts?.disposeEngine ?? (() => engine.dispose());
 
-	_releasePromise = (async () => {
+	// `ownPromise` (not the shared `_releasePromise`) is what THIS call awaits
+	// and compares against in `finally`, so a concurrent newer-generation
+	// call that replaces `_releasePromise` with its own promise can't have
+	// its promise nulled out by this call's cleanup.
+	const ownPromise: Promise<void> = (async () => {
 		clearAudioPrefetchCache();
 		invalidateAllAnlzCacheEntries();
 		await disposeStemDecoderPools();
+		// Re-check after every await: if Gig remounted (noteGigRuntimeMounted
+		// bumped _releaseGeneration) while this stale release was still
+		// in-flight, abort before disposing the singleton engine a live,
+		// remounted Gig is now using, and before publishing idle=true over it.
+		if (_releaseGeneration !== generation) return;
 		await disposeEngine();
+		if (_releaseGeneration !== generation) return;
 		clearPerformanceSessionForLibraryExit();
 		_releasedGeneration = generation;
 		_publishLibraryModeIdle();
 	})();
+	_releasePromise = ownPromise;
+	_releasePromiseGeneration = generation;
 
 	try {
-		await _releasePromise;
+		await ownPromise;
 	} finally {
-		_releasePromise = null;
+		if (_releasePromise === ownPromise) {
+			_releasePromise = null;
+			_releasePromiseGeneration = null;
+		}
 	}
 }
 
 /** Test-only: allow repeated teardown assertions in one process. */
 export function resetLibraryModeRuntimeForTest(): void {
 	_releasePromise = null;
+	_releasePromiseGeneration = null;
 	_releaseGeneration = 0;
 	_releasedGeneration = null;
 	if (typeof window !== 'undefined') {

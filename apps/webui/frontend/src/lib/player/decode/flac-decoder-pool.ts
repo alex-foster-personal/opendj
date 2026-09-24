@@ -35,9 +35,16 @@ function _trackDecoder(decoder: StemFlacDecoder): void {
 	_liveDecoders.add(decoder);
 }
 
+/** Retire a decoder for real: free it, and only untrack it once free()
+ * actually resolves. A decoder whose free() rejects stays in _liveDecoders
+ * -- it might still be a live, unterminated worker, so the idle probe
+ * (activeStemWorkerCount) must keep counting it rather than silently
+ * reporting a clean teardown. Callers that want the old "best effort,
+ * never throws" behavior wrap this themselves; disposeStemDecoderPools
+ * relies on this throwing so its own try/catch can see the failure. */
 async function _retireDecoder(decoder: StemFlacDecoder): Promise<void> {
+	await decoder.free();
 	_liveDecoders.delete(decoder);
-	await freeQuietly(decoder);
 }
 
 function _pool(poolKey: string): StemFlacDecoder[] {
@@ -95,7 +102,9 @@ export async function takeDecoder(
 		try {
 			await pooled.reset();
 		} catch (exc) {
-			await _retireDecoder(pooled);
+			// reset() failing is the news for this call; a free() failure on
+			// top of it must not replace/mask that original error.
+			await _retireDecoder(pooled).catch(() => undefined);
 			throw exc;
 		}
 		_trackDecoder(pooled);
@@ -105,7 +114,7 @@ export async function takeDecoder(
 	try {
 		await fresh.ready;
 	} catch (exc) {
-		await _retireDecoder(fresh);
+		await _retireDecoder(fresh).catch(() => undefined);
 		throw exc;
 	}
 	_trackDecoder(fresh);
@@ -115,7 +124,10 @@ export async function takeDecoder(
 export function returnDecoder(decoder: StemFlacDecoder, poolKey = 'flac'): void {
 	const pool = _pool(poolKey);
 	if (pool.length >= MAX_POOLED_DECODERS) {
-		void _retireDecoder(decoder);
+		// Fire-and-forget: a free() failure here just means this decoder
+		// stays in _liveDecoders (honestly still counted as live) rather
+		// than becoming an unhandled promise rejection.
+		void _retireDecoder(decoder).catch(() => undefined);
 		return;
 	}
 	pool.push(decoder);
