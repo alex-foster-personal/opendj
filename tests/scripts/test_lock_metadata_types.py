@@ -147,3 +147,19 @@ def test_a_top_level_tool_that_is_not_a_table_is_no_uv_table(tmp_path: Path) -> 
     assert PYPROJECT.lstrip().startswith("[")  # a top-level key precedes the first table
     code, message = _run(tmp_path, 'tool = "bad"\n' + PYPROJECT, LOCK)
     assert code == EXIT_OK, message
+
+
+def test_a_lock_root_version_that_is_not_a_string_is_unknown(tmp_path: Path) -> None:
+    """`version = 0.1` in the uv.lock root is "invalid type: floating point `0.1`,
+    expected a string", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on
+    #3763, round 29); str() had read it as `0.1`, and a project at `0.1` would then
+    compare clean against it (the fixture's `0.1.0` is the STALE control)."""
+    root = 'name = "demo-project"\nversion = "0.1.0"\n'
+    assert LOCK.count(root) == 1
+    lock = LOCK.replace(root, 'name = "demo-project"\nversion = 0.1\n')
+    code, message = _run(tmp_path, PYPROJECT, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert "uv.lock root version = 0.1 is not a string; uv rejects the file" in message
+    assert 'version = "0.1.0"' in PYPROJECT
+    code, message = _run(tmp_path, PYPROJECT.replace('version = "0.1.0"', 'version = "0.1"'), lock)
+    assert code == EXIT_UNKNOWN, message

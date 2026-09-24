@@ -297,6 +297,13 @@ def _eval(node: tuple, env: dict[str, str]) -> bool:
         return _cmp_versions(release_literal(left), op, release_literal(right))
     if op == "~=":  # erased by _erase_dropped_clauses before evaluation (uv drops it)
         raise Unknown(f"string ~= survived erasure: {lhs!r} {rhs!r}")
+    literal = rhs if lhs[0] == "word" else lhs
+    if var is not None and op in ("<", "<=", ">", ">=") and literal[1][1:-1] == "":
+        # `sys_platform >= ''` is true of every string, yet uv RECORDS it as written
+        # and rejects the unmarked lock (measured uv 0.8.17, Codex P2 on #3763,
+        # round 29), unlike `python_version >= '0'`, which it erases. That
+        # keep-or-erase table is not modeled: UNKNOWN, never "equivalent".
+        raise Unknown(f"ordering against the empty string is not compared: {node!r}")
     return {
         "==": left == right,
         "!=": left != right,
@@ -459,6 +466,8 @@ def markers_equivalent(spelled: tuple[str, ...], recorded: tuple[str, ...]) -> b
     (both already normalized clause tuples) mean the same thing; an empty tuple is
     the always-true marker uv drops. Ordered: uv's contradiction table (module
     docstring) is applied to the spelled side, as uv applied it to the recorded one."""
+    if spelled == recorded:
+        return True  # the same spelling needs no model of uv's rewrites
     return _same_truth(_false_chains(_parse_clauses(spelled)), _parse_clauses(recorded))
 
 
@@ -469,6 +478,8 @@ def spelled_markers_equivalent(one: tuple[str, ...], other: tuple[str, ...]) -> 
     `platform_system == 'Linux'` and `sys_platform == 'linux'`, is recorded ONCE:
     measured uv 0.8.17, Codex P2 on #3763, round 26). Symmetric: both sides get the
     spelled-side rewrites."""
+    if one == other:
+        return True
     return _same_truth(_false_chains(_parse_clauses(one)), _false_chains(_parse_clauses(other)))
 
 

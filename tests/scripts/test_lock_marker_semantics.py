@@ -17,6 +17,7 @@ from scripts.lock_marker_semantics import (
     _MarkerParser,
     markers_equivalent,
     release_literal,
+    spelled_markers_equivalent,
 )
 
 
@@ -440,3 +441,19 @@ def test_an_unknown_marker_variable_is_unknown_not_a_tautology() -> None:
     assert markers_equivalent(("os_name == 'x' or os_name != 'x'",), ())
     with pytest.raises(Exception, match="unknown marker variable 'made_up'"):
         markers_equivalent(("'x' == made_up",), ("made_up == 'x'",))
+
+
+def test_an_ordering_against_the_empty_string_is_unknown_not_the_unmarked_requirement() -> None:
+    """`sys_platform >= ''` holds for every string, and uv still RECORDS it as written
+    and rejects the unmarked lock (`uv lock --check` exit 1; measured uv 0.8.17,
+    Codex P2 on #3763, round 29), while it erases `python_version >= '0'` (control,
+    measured the same way). The keep-or-erase table is not modeled, so the empty-string
+    ordering is UNKNOWN rather than read as equivalent to no marker; the same spelling
+    on both sides needs no model and compares equal."""
+    with pytest.raises(Exception, match="empty string"):
+        markers_equivalent(("sys_platform >= ''",), ())
+    with pytest.raises(Exception, match="empty string"):
+        markers_equivalent(("os_name == 'posix' or '' <= sys_platform",), ())
+    assert markers_equivalent(("python_version >= '0'",), ())
+    assert markers_equivalent(("sys_platform >= ''",), ("sys_platform >= ''",))
+    assert spelled_markers_equivalent(("sys_platform >= ''",), ("sys_platform >= ''",))
