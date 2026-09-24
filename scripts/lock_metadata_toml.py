@@ -14,6 +14,7 @@ import re
 from datetime import datetime
 
 from scripts.lock_marker_parser import Unknown, _MarkerParser
+from scripts.lock_specifier_semantics import norm_spec
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
 
@@ -158,11 +159,80 @@ def resolution_markers(table: dict, where: str) -> None:
         parsed_marker(marker, f"{where} resolution-markers")
 
 
-def package_record(entry: dict, name: str) -> None:
-    """Every field of a `[[package]]` that uv types beyond name, source and version."""
-    dependency_records(entry, name)
-    artifact_records(entry, name)
-    resolution_markers(entry, f"uv.lock [[package]] {name!r}")
+def requirement_records(value: object, where: str) -> None:
+    """A metadata requirement list uv can read (`requires-dist`, or one `requires-dev`
+    group), on ANY package: a list of tables each with a valid `name`, any `marker`
+    the grammar accepts, any `extras` a list of valid names, and on a registry record
+    any `specifier` a string with no empty clause (a path-sourced record's specifier
+    is not read, round 38). `{}`, `[1]`, `[{}]`, `name = 1`, `name = "bad space"`,
+    `marker = ""`, `specifier = 1`, `specifier = ">=1,"`, `extras = "x"` and
+    `extras = ["bad space"]` are each "Failed to parse `uv.lock`", exit 2, while a git
+    record, an unknown key, an unnormalized extra and `[]` are read (measured uv
+    0.8.17 on a non-root package, Codex P2 on #3763, round 40). Compared by meaning
+    only on the root, in lock_metadata_check."""
+    for record in toml_list(value, where):
+        if not isinstance(record, dict) or "name" not in record:
+            raise Unknown(f"{where} record {record!r} is not a table with a name")
+        dep = norm_name(toml_string(record["name"], f"{where} name"))
+        recorded_marker(record, f"{where} {dep!r}")
+        if "specifier" in record and not {"directory", "editable", "virtual"} & set(record):
+            norm_spec(toml_string(record["specifier"], f"{where} {dep!r} specifier"))
+        for extra in toml_strings(record.get("extras", []), f"{where} {dep!r} extras"):
+            norm_name(extra)
+
+
+def metadata_records(entry: dict, name: str) -> None:
+    """A package's `[package.metadata]` uv can read, on ANY package, not only the root:
+    a table, with `requires-dist` a requirement list, `requires-dev` a table of valid
+    group names to requirement lists and `provides-extras` a list of valid names.
+    `metadata = 1`, `requires-dist = {}`, `requires-dev = "bad"`, a group `= {}` or
+    `= [1]`, a group named `"bad space"` and `provides-extras = [1]` or `["bad space"]`
+    are each "Failed to parse `uv.lock`", exit 2 (measured uv 0.8.17, Codex P2 on
+    #3763, round 40); the validators had read only the root's."""
+    if "metadata" not in entry:
+        return
+    where = f"uv.lock [[package]] {name!r} metadata"
+    metadata = entry["metadata"]
+    if not isinstance(metadata, dict):
+        raise Unknown(f"{where} = {metadata!r} is not a table; uv rejects the file")
+    if "requires-dist" in metadata:
+        requirement_records(metadata["requires-dist"], f"{where} requires-dist")
+    if "requires-dev" in metadata:
+        groups = metadata["requires-dev"]
+        if not isinstance(groups, dict):
+            raise Unknown(f"{where} requires-dev = {groups!r} is not a table; uv rejects it")
+        for group, records in groups.items():
+            requirement_records(records, f"{where} requires-dev {norm_name(group)}")
+    for extra in toml_strings(metadata.get("provides-extras", []), f"{where} provides-extras"):
+        norm_name(extra)
+
+
+def package_records(lock: dict) -> list[dict]:
+    """Every `[[package]]` of the lock, each typed as uv types it: a table with `name`
+    and `source` (a record without either is "missing field"; `package = "bad"` is
+    "expected a sequence"; round 33), any `version` a string on EVERY record (round
+    35), then its dependencies (which must name packages of this list), artifacts,
+    resolution markers and metadata. Returned for the root lookup."""
+    packages = toml_list(lock.get("package", []), "uv.lock package")
+    for entry in packages:
+        if not isinstance(entry, dict):
+            raise Unknown(f"uv.lock [[package]] entry is not a table: {entry!r}")
+        for field in ("name", "source"):
+            if field not in entry:
+                raise Unknown(f"uv.lock [[package]] entry without {field!r}: {entry!r}")
+    names = frozenset(
+        norm_name(toml_string(entry["name"], "uv.lock [[package]] name")) for entry in packages
+    )
+    for entry in packages:
+        name = toml_string(entry["name"], "uv.lock [[package]] name")
+        source_table(entry["source"], name)
+        if "version" in entry:
+            toml_string(entry["version"], f"uv.lock [[package]] {name!r} version")
+        dependency_records(entry, name, names)
+        artifact_records(entry, name)
+        resolution_markers(entry, f"uv.lock [[package]] {name!r}")
+        metadata_records(entry, name)
+    return packages
 
 
 def _artifact_fields(record: dict, where: str) -> None:
@@ -228,13 +298,17 @@ def artifact_records(entry: dict, name: str) -> None:
             _wheel_record(wheel, name, where)
 
 
-def dependency_records(entry: dict, name: str) -> None:
+def dependency_records(entry: dict, name: str, packages: frozenset[str]) -> None:
     """A package's `dependencies` uv can read: absent, or a list of tables each with a
-    string `name`, a string `marker` if present and a list of strings `extra` if
-    present. `dependencies = {}`, `[1]`, `[{}]`, `[{ name = 1 }]`, `extra = 1`,
-    `marker = 1` and `marker = "bad"` are each "Failed to parse `uv.lock`", exit 2,
-    while an unknown key beside a valid record and an extra that nothing provides are
-    read (measured uv 0.8.17, Codex P2 on #3763, round 37). The marker is parsed, not
+    valid `name` that (normalized) is a package of the lock, a string `marker` if
+    present and a list of valid names `extra` if present. `dependencies = {}`, `[1]`,
+    `[{}]`, `[{ name = 1 }]`, `extra = 1`, `marker = 1` and `marker = "bad"` are each
+    "Failed to parse `uv.lock`", exit 2 (measured uv 0.8.17, Codex P2 on #3763, round
+    37), as are `name = "bad space"`, `name = "-lead"`, `extra = ["bad space"]` ("Not a
+    valid package or extra name") and a valid name no package carries ("has missing
+    `source` field but has more than one matching package"; round 40), while an unknown
+    key beside a valid record, `name = "SIX"` for the package `six` and an extra that
+    nothing provides or is not normalized are read. The marker is parsed, not
     compared: only the root's requirements are compared by meaning."""
     if "dependencies" not in entry:
         return
@@ -242,11 +316,13 @@ def dependency_records(entry: dict, name: str) -> None:
     for record in toml_list(entry["dependencies"], where):
         if not isinstance(record, dict) or "name" not in record:
             raise Unknown(f"{where} record {record!r} is not a table with a name")
-        toml_string(record["name"], f"{where} name")
+        dep = norm_name(toml_string(record["name"], f"{where} name"))
+        if dep not in packages:
+            raise Unknown(f"{where} names {dep!r}, which no [[package]] of the lock carries")
         if "marker" in record:
-            parsed_marker(record["marker"], f"{where} {record['name']!r} marker")
-        if "extra" in record:
-            toml_strings(record["extra"], f"{where} {record['name']!r} extra")
+            parsed_marker(record["marker"], f"{where} {dep!r} marker")
+        for extra in toml_strings(record.get("extra", []), f"{where} {dep!r} extra"):
+            norm_name(extra)
 
 
 _PYPROJECT_SOURCE_KINDS = ("git", "url", "path", "index")

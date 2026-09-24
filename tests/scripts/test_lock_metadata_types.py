@@ -113,7 +113,7 @@ def test_a_requirement_container_of_the_wrong_type_is_unknown(
         (
             None,
             lambda lock: lock.replace('extras = ["standard"]', 'extras = "standard"'),
-            "requires-dist extras = 'standard' is not a list of strings",
+            "requires-dist 'uvicorn' extras = 'standard' is not a list of strings",
         ),
         (lambda p: p + '\n[tool]\nuv = "bad"\n', None, "[tool] uv = 'bad' is not a table"),
         (
@@ -227,17 +227,17 @@ def _run_mini(
                 'requires-dist = [{ name = "localdep", directory = "dep" }]', "requires-dist = {}"
             ),
             None,
-            "uv.lock requires-dist = {} is not a list",
+            "'demo' metadata requires-dist = {} is not a list",
         ),
         (
             lambda lock: lock.replace("foo = []", "foo = {}"),
             None,
-            "uv.lock requires-dev foo = {} is not a list",
+            "'demo' metadata requires-dev foo = {} is not a list",
         ),
         (
             lambda lock: lock.replace('provides-extras = ["1"]', "provides-extras = [1]"),
             None,
-            "uv.lock provides-extras = [1] is not a list of strings",
+            "'demo' metadata provides-extras = [1] is not a list of strings",
         ),
         (
             None,
