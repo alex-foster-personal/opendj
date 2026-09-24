@@ -139,7 +139,7 @@ def test_malformed_default_hub_is_refused_not_seeded(tmp_path: Path, bad: str) -
 def test_first_run_with_default_hub_writes_config_and_scheduler_beats(
     tmp_path: Path, live_hub: str
 ) -> None:
-    """[if] first run with a default hub leaves sync off, silent, or fake [then] broken, [else stop].
+    """[if] first run with a default hub leaves sync off or faked [then] broken, [else stop].
 
     Sol P1 (PR #3879): the earlier version of this test passed a stub ``sync_fn``
     that always raised, so it only proved the scheduler heartbeat runs, not that
