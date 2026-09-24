@@ -125,41 +125,61 @@ async function loadGigSteadyState(page) {
   await page.waitForTimeout(5_000);
 }
 
-async function openTrackify(page) {
-  const picker = page.locator("details.mode-picker");
-  await picker.locator('summary[aria-label="Choose app mode"]').click();
-  await picker.locator("a.mode-card").filter({ hasText: "Trackify" }).click();
-  await page.waitForURL((url) => url.pathname === "/music-player", { timeout: 60_000 });
+/**
+ * Opens Trackify in a BRAND NEW browser instance rather than navigating the
+ * Gig page's own context there. Reusing one Chromium context/page across
+ * both samples let the Trackify numerator retain decoded buffers, caches
+ * and renderer allocations from the four-deck Gig run, making it
+ * history-dependent rather than a real Trackify steady state (Sol review,
+ * PR #3676). The launcher's own `proc.pid` (the node process
+ * capture_mode_ratios.py samples from) never changes across this handoff,
+ * so the process-tree sampler still finds whichever Chromium is currently
+ * this process's child at sample time -- no Python-side change needed.
+ */
+async function openFreshTrackifyBrowser() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
   await waitForTrackifyIpc(page);
   await waitForTrackifyPlaying(page);
   await page.waitForTimeout(5_000);
+  return { browser, page };
 }
 
-const browser = await chromium.launch({ headless: true });
-try {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  if (mode === "gig-trackify") {
-    await loadGigSteadyState(page);
+if (mode === "gig-trackify") {
+  const gigBrowser = await chromium.launch({ headless: true });
+  try {
+    const gigContext = await gigBrowser.newContext();
+    const gigPage = await gigContext.newPage();
+    await loadGigSteadyState(gigPage);
     console.log("GIG_READY");
     await waitForLine();
-    await openTrackify(page);
-    console.log("TRACKIFY_READY");
-    await waitForLine();
-  } else {
-    await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
-    await waitForTrackifyIpc(page);
-    await waitForTrackifyPlaying(page);
-    await page.waitForTimeout(5_000);
-    console.log("TRACKIFY_READY");
-    await waitForLine();
+  } finally {
+    await gigBrowser.close();
   }
-  // The sample loop only reads process RSS/CPU, so it cannot itself detect
-  // an operator quarantine, a feed running dry, or the page navigating away
-  // mid-capture; re-check here so a sample taken over a page that stopped
-  // playing partway through is never reported as a measurement.
-  await waitForTrackifyPlaying(page);
-  console.log("DONE");
-} finally {
-  await browser.close();
+
+  const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
+  try {
+    console.log("TRACKIFY_READY");
+    await waitForLine();
+    // The sample loop only reads process RSS/CPU, so it cannot itself detect
+    // an operator quarantine, a feed running dry, or the page navigating away
+    // mid-capture; re-check here so a sample taken over a page that stopped
+    // playing partway through is never reported as a measurement.
+    await waitForTrackifyPlaying(trackifyPage);
+    console.log("DONE");
+  } finally {
+    await trackifyBrowser.close();
+  }
+} else {
+  const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
+  try {
+    console.log("TRACKIFY_READY");
+    await waitForLine();
+    await waitForTrackifyPlaying(trackifyPage);
+    console.log("DONE");
+  } finally {
+    await trackifyBrowser.close();
+  }
 }
