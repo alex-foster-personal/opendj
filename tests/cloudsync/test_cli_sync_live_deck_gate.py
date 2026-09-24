@@ -8,13 +8,16 @@ honored it. An operator running the CLI by hand while a real engine has a
 deck playing would defer only for Gig posture, never for a playing deck,
 contradicting the shipped CLOUDSYNC-14 requirement text verbatim.
 
-[if] a live engine's mirror shows a playing deck [then] the CLI sync command defers with deck_playing, [else stop].
+[if] a live engine's mirror shows a playing deck [then] the CLI sync defers, [else stop].
 [if] no engine lock file exists at --data-dir [then] the CLI mirror probe returns None, [else stop].
-[if] a live engine has no open performance page (409) [then] the CLI mirror probe returns None, [else stop].
+[if] a live engine has no open page (409) [then] the CLI mirror probe returns None, [else stop].
+[if] a verified engine answers a non-200/409 status [then] the probe raises an error, [else stop].
+[if] a verified engine's mirror request times out [then] the probe raises an error, [else stop].
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 from collections.abc import Iterator
@@ -24,8 +27,11 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
 
+from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import maintenance
+from apps.webui.server.routes import state as ui_mirror_routes
 from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-14")
@@ -53,6 +59,23 @@ def _write_lock(data_dir: Path, *, port: int) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_fake_engine_409_body_matches_the_real_ui_mirror_route() -> None:
+    """Ties the fake engine's 409 fixture to the real route's actual output
+    (claude-review, PR #3831, P3/NON-BLOCKING): a real-route change that
+    silently returned a different "closed" shape would otherwise leave the
+    fake fixture, and this whole test module, quietly divorced from
+    production behavior. ``TestClient`` never binds a socket -- it drives
+    the real ASGI app in-process, which is exactly the same
+    ``apps.webui.server.routes.state`` module the live engine serves.
+    """
+    app = FastAPI()
+    app.include_router(ui_mirror_routes.router, prefix="/api/v1")
+    with TestClient(app) as client:
+        response = client.get("/api/v1/state/ui-mirror")
+    assert response.status_code == 409
+    assert response.json() == {"client_open": False}
 
 
 def _fake_engine_app(mirror_status: int, mirror_body: dict) -> FastAPI:
@@ -142,3 +165,48 @@ def test_cli_live_mirror_probe_tolerates_unreachable_engine(tmp_path: Path) -> N
     """
     _write_lock(tmp_path, port=_free_port())  # nothing is bound to this port
     assert maintenance._cli_live_ui_mirror(tmp_path) is None
+
+
+@pytest.mark.parametrize("live_engine", [(500, {"error": "boom"})], indirect=True)
+def test_verified_engine_error_status_is_inconclusive_not_safe(
+    tmp_path: Path, live_engine: str
+) -> None:
+    """A genuine server error must not be read as "nothing is playing"
+    (claude-review, PR #3831, P1/BLOCKING): only 200 and the documented 409
+    are conclusive: everything else fails closed."""
+    _write_lock(tmp_path, port=int(live_engine))
+    with pytest.raises(SyncDeferredError) as excinfo:
+        maintenance._cli_live_ui_mirror(tmp_path)
+    assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+
+
+def test_verified_engine_mirror_timeout_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verified-live engine that stops answering mid-probe must fail closed,
+    not fail open (claude-review, PR #3831, P1/BLOCKING): the whole point of
+    this gate is to catch an engine wedged during a live set, so treating its
+    silence as "not playing" is exactly backwards."""
+    monkeypatch.setattr(maintenance, "_LIVE_MIRROR_PROBE_TIMEOUT_S", 0.2)
+    app = FastAPI()
+
+    @app.get("/api/v1/health")
+    def health() -> dict:
+        return {"boot_id": _BOOT_ID}
+
+    @app.get("/api/v1/state/ui-mirror")
+    async def ui_mirror() -> JSONResponse:
+        await asyncio.sleep(1.0)  # exceeds the patched 0.2s client timeout
+        return JSONResponse(status_code=200, content={})
+
+    port = _free_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server, thread = start_uvicorn_in_thread(config, what="the hanging fake engine")
+    try:
+        _write_lock(tmp_path, port=port)
+        with pytest.raises(SyncDeferredError) as excinfo:
+            maintenance._cli_live_ui_mirror(tmp_path)
+        assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10.0)

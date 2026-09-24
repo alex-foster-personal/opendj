@@ -603,6 +603,11 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 _LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
 
 
+#: Reason code for `SyncDeferredError` when a verified live engine cannot be
+#: read conclusively -- see `_cli_live_ui_mirror`.
+DEFER_REASON_ENGINE_MIRROR_UNREACHABLE = "engine_mirror_unreachable"
+
+
 def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     """Best-effort ``ui_mirror`` for a standalone CLI invocation (CLOUDSYNC-14).
 
@@ -616,11 +621,21 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     that port really is the identity-matched engine, then asks it for its
     current mirror over loopback HTTP.
 
-    Anything short of a verified, playing-capable answer reads as "nothing is
-    playing" -- which is correct, not merely permissive: no lock file, an
-    unverifiable lock, or no engine answering means no engine is alive to own
-    a playing deck; a verified engine with no open performance page (409
-    ``client_open: false``) means no deck is rendering audio either.
+    Only two outcomes read as "nothing is playing", both because no engine is
+    alive to own a playing deck: no lock file, or an unverifiable lock
+    (``EngineNotRunning``, which already covers a transport failure against
+    ``/api/v1/health`` during identity verification). A verified engine's own
+    409 ``client_open: false`` also reads as safe: no open performance page
+    means no deck is rendering audio either.
+
+    Everything else from a VERIFIED engine is inconclusive, not permissive
+    (claude-review, PR #3831, P1/BLOCKING x2): a non-200/409 status is a
+    genuine server error, not a "not playing" signal, and a transport failure
+    on THIS specific request (unlike the identity check above) means an
+    engine we just confirmed is alive stopped answering mid-probe -- exactly
+    the "wedged during a live set" case this gate exists to catch. Both raise
+    `SyncDeferredError` so the CLI fails closed (refuses the sync) rather than
+    silently assuming it is safe to proceed.
     """
     lock_file = data_dir / ".engine.lock"
     try:
@@ -630,12 +645,16 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     try:
         with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S) as http_client:
             response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")
-    except httpx.TransportError:
+    except httpx.TransportError as exc:
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    if response.status_code == 409:
         return None
     if response.status_code != 200:
-        return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     body = response.json()
-    return body if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
+    return body
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
