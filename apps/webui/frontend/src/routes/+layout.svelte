@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
-	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
+	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
@@ -63,6 +63,8 @@
 	// listener could only have swallowed the key and done nothing with it.
 	let FeedbackPinLayer: Component | null = $state(null);
 	let FeedbackPinShellButton: Component | null = $state(null);
+	/** Why the pin shell never arrived, or null while it is loading or loaded. */
+	let pinShellError: string | null = $state(null);
 
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
@@ -180,12 +182,19 @@
 		const uninstallShellCommands = installShellCommandPoll();
 		let unmounted = false;
 		let uninstallCommentPinHotkeys: (() => void) | null = null;
-		deferFeedbackPinShell((shell) => {
-			if (unmounted) return;
-			FeedbackPinLayer = shell.layer;
-			FeedbackPinShellButton = shell.shellButton;
-			uninstallCommentPinHotkeys = shell.installCommentPinHotkeys();
-		});
+		deferFeedbackPinShell(
+			(shell) => {
+				if (unmounted) return;
+				FeedbackPinLayer = shell.layer;
+				FeedbackPinShellButton = shell.shellButton;
+				uninstallCommentPinHotkeys = shell.installCommentPinHotkeys();
+			},
+			(error) => {
+				if (unmounted) return;
+				pinShellError = error instanceof Error ? error.message : String(error);
+				pushToast(`Comment pins failed to load: ${pinShellError}`, 'error', TOAST_DEFAULT_MS, error);
+			}
+		);
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
@@ -278,6 +287,13 @@
 			<CloudSyncStatusChip />
 			{#if FeedbackPinShellButton}
 				<FeedbackPinShellButton />
+			{:else if pinShellError}
+				<span
+					class="fb-shell-pin-slot fb-shell-pin-failed"
+					role="img"
+					aria-label="Comment pins failed to load"
+					title={`Comment pins failed to load: ${pinShellError}. Reload the page to retry.`}>!</span
+				>
 			{:else}
 				<!-- Holds the button's 28px so the topbar does not shift when it arrives. -->
 				<span class="fb-shell-pin-slot" aria-hidden="true"></span>
@@ -393,5 +409,12 @@
 		flex: none;
 		width: 28px;
 		height: 28px;
+	}
+	.fb-shell-pin-failed {
+		display: grid;
+		place-items: center;
+		color: var(--danger);
+		font-weight: 700;
+		cursor: help;
 	}
 </style>
