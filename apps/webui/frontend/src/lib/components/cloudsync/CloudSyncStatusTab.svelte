@@ -18,8 +18,8 @@
 		type CloudSyncConfigOut
 	} from '$lib/api-cloudsync-ops';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { pushToast } from '$lib/stores.svelte';
 
+	import { warnForceSyncBypassesGate } from './cloudsync-toasts';
 	import {
 		CLOUDSYNC_TECHNICAL_DETAILS_LABEL,
 		FORCE_SYNC_LABEL,
@@ -169,10 +169,7 @@
 			notice = { kind: 'error', text: forceSyncDecision.reason };
 			return;
 		}
-		pushToast(
-			'Force sync bypasses Gig and playing-deck protection for one round.',
-			'warn'
-		);
+		warnForceSyncBypassesGate();
 		syncing = true;
 		try {
 			const result = await runCloudSyncNow(forceSyncDecision.body);
