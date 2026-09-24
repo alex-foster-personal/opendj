@@ -1,0 +1,37 @@
+[package]
+name = "odj-audio"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Open DJ audio engine: one playback actor driven by a device, wall or fake clock"
+publish = false
+
+[lib]
+name = "odj_audio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "odj-audio"
+path = "src/bin/odj-audio.rs"
+
+[features]
+default = []
+# Real audio output through cpal (CoreAudio, WASAPI, ALSA). Off by default so
+# Linux CI builds without ALSA headers; the fake and wall clocks need no device.
+device = ["dep:cpal"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "wav", "aiff", "pcm", "aac", "alac", "isomp4", "ogg", "vorbis"] }
+rtrb = "0.4"
+sha2 = "0.10"
+cpal = { version = "0.18", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.test]
+opt-level = 2
