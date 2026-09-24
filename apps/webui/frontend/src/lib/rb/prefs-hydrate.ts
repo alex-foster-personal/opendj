@@ -102,6 +102,7 @@ export type DiskPrefsPatch = {
 	next_only_filter?: boolean;
 	remixes_filter?: boolean;
 	vocals_filter?: boolean;
+	available_offline_filter?: boolean;
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
 	app_mode?: DiskAppModePatch;
@@ -176,6 +177,7 @@ export interface PrefsHydrateTarget {
 	next_only_filter: boolean;
 	remixes_filter: boolean;
 	vocals_filter: boolean;
+	available_offline_filter: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -291,7 +293,8 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				'hide_broken_links',
 				'next_only_filter',
 				'remixes_filter',
-				'vocals_filter'
+				'vocals_filter',
+				'available_offline_filter'
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;

@@ -155,13 +155,15 @@
 	});
 
 	function _allTracksCountTitle(): string {
-		if (allTracksError !== null) return `playable count unavailable: ${allTracksError}`;
-		if (allTracksCount === null || allTracksBrokenCount === null) return 'loading playable and broken track counts';
-		return `${allTracksCount} playable tracks, ${allTracksBrokenCount} broken tracks`;
+		if (allTracksError !== null) return `non-broken count unavailable: ${allTracksError}`;
+		if (allTracksCount === null || allTracksBrokenCount === null) {
+			return 'loading non-broken and broken track counts';
+		}
+		return `${allTracksCount} non-broken tracks, ${allTracksBrokenCount} broken tracks`;
 	}
 
 	function _playlistCountTitle(node: PlaylistNode): string {
-		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
+		return `${node.track_count - node.broken_count} non-broken tracks, ${node.broken_count} broken tracks`;
 	}
 
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {

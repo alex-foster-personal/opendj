@@ -109,6 +109,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'available_offline_filter',
+		label: 'Available offline library filter',
+		group: 'library',
+		keywords: ['offline', 'local', 'cloud', 'streaming', 'download', 'filter'],
+		title: 'Keep only tracks with local audio present',
+		detail:
+			'Excludes cloud-only and streaming-only rows. Checkbox in the library header; distinct from the CAT-07 download action.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'beat_sync_max',
 		label: 'Beat Sync Max',
 		group: 'performance',
