@@ -498,6 +498,98 @@ def test_a_malformed_specifier_on_a_path_source_is_unknown(tmp_path: Path, spec:
     assert code == EXIT_OK, message
 
 
+ROOT_DEPS = 'dependencies = [\n    { name = "localdep" },\n]'
+
+
+@pytest.mark.parametrize(
+    "deps",
+    [
+        "dependencies = {}",
+        "dependencies = [1]",
+        "dependencies = [{}]",
+        "dependencies = [{ name = 1 }]",
+        'dependencies = [{ name = "localdep", extra = 1 }]',
+        'dependencies = [{ name = "localdep", marker = 1 }]',
+        'dependencies = [{ name = "localdep", marker = "bad" }]',
+    ],
+    ids=[
+        "table",
+        "integer-item",
+        "nameless",
+        "name-integer",
+        "extra-int",
+        "marker-int",
+        "marker-bad",
+    ],
+)
+def test_a_lock_dependency_record_that_uv_cannot_read_is_unknown(tmp_path: Path, deps: str) -> None:
+    """Each shape is "Failed to parse `uv.lock`", `uv lock --check` exit 2 (measured uv
+    0.8.17, Codex P2 on #3763, round 37), while the record loop typed only name, source
+    and version and reported the pair clean. Controls: an unknown key beside a valid
+    record and an extra nothing provides are read by uv (exit 0), and stay EXIT_OK."""
+    assert MINI_LOCK.count(ROOT_DEPS) == 1
+    code, message = _run_mini(tmp_path, MINI_LOCK.replace(ROOT_DEPS, deps, 1))
+    assert code == EXIT_UNKNOWN, message
+    assert "[[package]] 'demo' dependencies" in message
+    for ok in (
+        'dependencies = [{ name = "localdep", bogus = 1 }]',
+        'dependencies = [{ name = "localdep", extra = ["x"] }]',
+    ):
+        code, message = _run_mini(tmp_path, MINI_LOCK.replace(ROOT_DEPS, ok, 1))
+        assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "undeclared = { path = 1 }",
+        'undeclared = "bad"',
+        "undeclared = {}",
+        'undeclared = { bogus = "x" }',
+        "undeclared = { git = 1 }",
+        'undeclared = { path = "dep", git = "https://example.com/x.git" }',
+        "undeclared = []",
+        "undeclared = [{ path = 1 }]",
+        'undeclared = { path = "dep", editable = 1 }',
+        'undeclared = { path = "dep", marker = 1 }',
+    ],
+    ids=[
+        "path-int",
+        "string",
+        "empty",
+        "unknown-kind",
+        "git-int",
+        "two-kinds",
+        "empty-list",
+        "list-path-int",
+        "editable-int",
+        "marker-int",
+    ],
+)
+def test_an_undeclared_source_entry_that_uv_cannot_read_is_unknown(
+    tmp_path: Path, entry: str
+) -> None:
+    """A `[tool.uv.sources]` entry no requirement names is still parsed by uv: each shape
+    is "Failed to parse: `pyproject.toml`", `uv lock --check` exit 2 (measured uv
+    0.8.17, Codex P2 on #3763, round 37), while the gate read only the entries a
+    requirement named. Controls uv reads (exit 0), kept EXIT_OK: `{ workspace = false }`,
+    a path that resolves nowhere, a git URL, an index name, and a one-item list."""
+    (tmp_path / "dep").mkdir(exist_ok=True)
+    (tmp_path / "dep" / "pyproject.toml").write_text(MINI_DEP_PYPROJECT, encoding="utf-8")
+    code, message = _run(tmp_path, MINI_PYPROJECT + entry + "\n", MINI_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert "[tool.uv.sources] undeclared" in message
+    for ok in (
+        "undeclared = { workspace = false }",
+        'undeclared = { path = "nowhere" }',
+        'undeclared = { git = "https://example.com/x.git" }',
+        'undeclared = { index = "pypi" }',
+        'undeclared = [{ path = "dep" }]',
+    ):
+        code, message = _run(tmp_path, MINI_PYPROJECT + ok + "\n", MINI_LOCK)
+        assert code == EXIT_OK, message
+
+
 @pytest.mark.parametrize(
     ("version", "named"),
     [

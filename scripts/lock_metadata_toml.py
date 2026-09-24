@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from scripts.lock_marker_parser import Unknown
+from scripts.lock_marker_parser import Unknown, _MarkerParser
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
 
@@ -114,3 +114,83 @@ def source_table(source: object, name: object) -> None:
         isinstance(source.get(key), str) for key in _SOURCE_KEYS
     ):
         raise Unknown(f"uv.lock [[package]] {name!r} source = {source!r} is not a source table")
+
+
+def dependency_records(entry: dict, name: str) -> None:
+    """A package's `dependencies` uv can read: absent, or a list of tables each with a
+    string `name`, a string `marker` if present and a list of strings `extra` if
+    present. `dependencies = {}`, `[1]`, `[{}]`, `[{ name = 1 }]`, `extra = 1`,
+    `marker = 1` and `marker = "bad"` are each "Failed to parse `uv.lock`", exit 2,
+    while an unknown key beside a valid record and an extra that nothing provides are
+    read (measured uv 0.8.17, Codex P2 on #3763, round 37). The marker is parsed, not
+    compared: only the root's requirements are compared by meaning."""
+    if "dependencies" not in entry:
+        return
+    where = f"uv.lock [[package]] {name!r} dependencies"
+    for record in toml_list(entry["dependencies"], where):
+        if not isinstance(record, dict) or "name" not in record:
+            raise Unknown(f"{where} record {record!r} is not a table with a name")
+        toml_string(record["name"], f"{where} name")
+        if "marker" in record:
+            marker = toml_string(record["marker"], f"{where} {record['name']!r} marker")
+            try:
+                _MarkerParser(marker).parse()  # `marker = "bad"` is refused too
+            except Unknown as exc:
+                raise Unknown(f"{where} {record['name']!r} marker: {exc}") from exc
+        if "extra" in record:
+            toml_strings(record["extra"], f"{where} {record['name']!r} extra")
+
+
+_PYPROJECT_SOURCE_KINDS = ("git", "url", "path", "index")
+
+
+def pyproject_source_shape(name: str, source: object) -> None:
+    """One `[tool.uv.sources]` entry uv can read, declared or not: a table with exactly
+    one of git/url/path/index holding a string, or `workspace` holding a bool, with
+    any `editable`/`package` a bool and any `marker` a string; or a non-empty list of
+    such tables. `{ path = 1 }`, `"bad"`, `{}`, `{ bogus = "x" }`, `{ git = 1 }`,
+    `{ path = ..., git = ... }`, `[]`, `[{ path = 1 }]`, `editable = 1` and
+    `marker = 1` are each "Failed to parse: `pyproject.toml`", exit 2, while
+    `{ workspace = false }`, an unresolvable path and `[{ path = "dep" }]` are read
+    (measured uv 0.8.17, Codex P2 on #3763, round 37); an entry with no requirement
+    had passed unread."""
+    where = f"[tool.uv.sources] {name}"
+    if isinstance(source, list):
+        if not source:
+            raise Unknown(f"{where} = [] names no source; uv rejects the file")
+        for item in source:
+            pyproject_source_shape(name, item)
+        return
+    if not isinstance(source, dict):
+        raise Unknown(f"{where} = {source!r} is not a source table; uv rejects the file")
+    kinds = [k for k in _PYPROJECT_SOURCE_KINDS if k in source] + (
+        ["workspace"] if "workspace" in source else []
+    )
+    if len(kinds) != 1:
+        raise Unknown(f"{where} = {source!r} names {len(kinds)} source kinds, not one")
+    if kinds[0] == "workspace":
+        toml_flag(source, "workspace", where)
+    else:
+        toml_string(source[kinds[0]], f"{where} {kinds[0]}")
+    toml_flag(source, "editable", where)
+    toml_flag(source, "package", where)
+    if "marker" in source:
+        toml_string(source["marker"], f"{where} marker")
+
+
+def managed_sources(uv_tool: dict | None) -> dict:
+    """`[tool.uv.sources]`, once the project is known to be uv-managed: `managed = false`
+    makes `uv lock` and `uv lock --check` exit 2 ("The project is marked as
+    unmanaged"), so its lock is uncheckable and UNKNOWN (measured uv 0.8.17, round 26)."""
+    if uv_tool is None:
+        return {}
+    if toml_flag(uv_tool, "managed", "[tool.uv]") is False:
+        raise Unknown("[tool.uv] managed = false: the project is unmanaged, uv refuses to lock it")
+    sources = uv_tool.get("sources")
+    if sources is None:
+        return {}
+    if not isinstance(sources, dict):
+        raise Unknown(f"[tool.uv] sources = {sources!r} is not a table; uv rejects the file")
+    for name, source in sources.items():  # every entry, declared or not (round 37)
+        pyproject_source_shape(norm_name(name), source)
+    return sources
