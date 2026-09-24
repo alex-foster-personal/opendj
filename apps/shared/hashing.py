@@ -37,13 +37,14 @@ Design notes
 * Schema is versioned via ``user_version``; bumping invalidates the
   cache.
 """
+
 from __future__ import annotations
 
 import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Literal
 
 HASH_PREFIX = "sha256:"
 _CACHE_VERSION = 1
@@ -110,44 +111,51 @@ def sha256_audio_payload(path: Path | str) -> str:
     p = Path(path)
     with p.open("rb") as fh:
         data = fh.read()
-    payload: bytes | None = None
-    suffix = p.suffix.lower()
-    if suffix == ".mp3":
-        start = 0
-        while start + 10 <= len(data) and data[start : start + 3] == b"ID3":
-            size = sum(
-                (data[start + 6 + index] & 0x7F) << (7 * (3 - index))
-                for index in range(4)
-            )
-            start += 10 + size + (10 if data[start + 5] & 0x10 else 0)
-        end = len(data) - 128 if data[-128:-125] == b"TAG" else len(data)
-        payload = data[start:end]
-    elif suffix == ".flac" and data[:4] == b"fLaC":
-        offset = 4
-        while offset + 4 <= len(data):
-            last = bool(data[offset] & 0x80)
-            block_len = int.from_bytes(data[offset + 1 : offset + 4], "big")
-            offset += 4 + block_len
-            if last:
-                break
-        payload = data[offset:]
-    elif (
-        suffix in {".aiff", ".aif", ".aifc"}
-        and data[:4] == b"FORM"
-        and data[8:12] in {b"AIFF", b"AIFC"}
-    ):
-        payload = _chunk_payload(data, b"SSND", skip=8, byteorder="big")
-    elif suffix == ".wav" and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
-        payload = _chunk_payload(data, b"data", byteorder="little")
-    elif suffix in {".m4a", ".mp4", ".m4b"} and data[4:8] == b"ftyp":
-        payload = _atom_payload(data, b"mdat")
+    payload = _audio_payload(data, p.suffix.lower())
     if payload is None:
         return sha256_file(p)
     return content_hash_bytes(payload)
 
 
+def _audio_payload(data: bytes, suffix: str) -> bytes | None:
+    """Extract a supported format's audio payload."""
+    if suffix in {".mp3", ".flac"}:
+        return _tagged_payload(data, suffix)
+    if suffix in {".aiff", ".aif", ".aifc"} and data[:4] == b"FORM" and data[8:12] in {
+        b"AIFF",
+        b"AIFC",
+    }:
+        return _chunk_payload(data, b"SSND", skip=8, byteorder="big")
+    if suffix == ".wav" and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return _chunk_payload(data, b"data", byteorder="little")
+    if suffix in {".m4a", ".mp4", ".m4b"} and data[4:8] == b"ftyp":
+        return _atom_payload(data, b"mdat")
+    return None
+
+
+def _tagged_payload(data: bytes, suffix: str) -> bytes | None:
+    """Extract the payload from MP3 tags or FLAC metadata blocks."""
+    if suffix == ".mp3":
+        start = 0
+        while start + 10 <= len(data) and data[start : start + 3] == b"ID3":
+            size = sum((data[start + 6 + index] & 0x7F) << (7 * (3 - index)) for index in range(4))
+            start += 10 + size + (10 if data[start + 5] & 0x10 else 0)
+        end = len(data) - 128 if data[-128:-125] == b"TAG" else len(data)
+        return data[start:end]
+    if data[:4] != b"fLaC":
+        return None
+    offset = 4
+    while offset + 4 <= len(data):
+        last = bool(data[offset] & 0x80)
+        block_len = int.from_bytes(data[offset + 1 : offset + 4], "big")
+        offset += 4 + block_len
+        if last:
+            break
+    return data[offset:]
+
+
 def _chunk_payload(
-    data: bytes, wanted: bytes, *, skip: int = 0, byteorder: str
+    data: bytes, wanted: bytes, *, skip: int = 0, byteorder: Literal["little", "big"]
 ) -> bytes | None:
     """Return concatenated payloads for RIFF/FORM chunks of ``wanted``."""
     offset = 12
@@ -258,8 +266,7 @@ class HashCache:
         p = Path(path)
         st = p.stat()
         self._conn.execute(
-            "INSERT OR REPLACE INTO file_hashes(path, size, mtime_ns, digest) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO file_hashes(path, size, mtime_ns, digest) VALUES (?, ?, ?, ?)",
             (str(p), st.st_size, st.st_mtime_ns, digest),
         )
         self._conn.commit()
