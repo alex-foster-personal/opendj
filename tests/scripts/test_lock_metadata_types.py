@@ -57,6 +57,14 @@ def test_a_source_path_that_is_not_a_string_is_unknown(tmp_path: Path) -> None:
     code, message = _run(tmp_path, pyproject + sources % "1", lock)
     assert code == EXIT_UNKNOWN
     assert "[tool.uv.sources] localdep path = 1 is not a string" in message
+    # The lock side too: `directory = 1` is "did not match any variant of untagged
+    # enum SourceWire", `uv lock --check` exit 2 (measured uv 0.8.17, round 28),
+    # where str() read it as the path "1" the pyproject names.
+    broken_lock = lock.replace('directory = "1"', "directory = 1")
+    assert broken_lock != lock
+    code, message = _run(tmp_path, pyproject + sources % '"1"', broken_lock)
+    assert code == EXIT_UNKNOWN
+    assert "requires-dist directory = 1 is not a string; uv rejects the file" in message
 
 
 @pytest.mark.parametrize(
