@@ -13,6 +13,8 @@ contradicting the shipped CLOUDSYNC-14 requirement text verbatim.
 [if] a live engine has no open page (409) [then] the CLI mirror probe returns None, [else stop].
 [if] a verified engine answers a non-200/409 status [then] the probe raises an error, [else stop].
 [if] a verified engine's mirror request times out [then] the probe raises an error, [else stop].
+[if] a verified 409 body is not exactly client_open false [then] the probe raises, [else stop].
+[if] a verified engine's 200 body is not JSON [then] the probe raises, not crashes, [else stop].
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.testclient import TestClient
 
 from apps.shared.sync_runtime_gates import SyncDeferredError
@@ -178,6 +180,47 @@ def test_verified_engine_error_status_is_inconclusive_not_safe(
     with pytest.raises(SyncDeferredError) as excinfo:
         maintenance._cli_live_ui_mirror(tmp_path)
     assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+
+
+@pytest.mark.parametrize("live_engine", [(409, {"client_open": True})], indirect=True)
+def test_409_with_unexpected_body_is_inconclusive_not_safe(
+    tmp_path: Path, live_engine: str
+) -> None:
+    """A 409 whose body is not exactly the documented {"client_open": false}
+    must not be waved through as safe (claude-review, PR #3831, P3): some
+    other conflict could return 409 too, and only the documented shape is a
+    verified "no open page"."""
+    _write_lock(tmp_path, port=int(live_engine))
+    with pytest.raises(SyncDeferredError) as excinfo:
+        maintenance._cli_live_ui_mirror(tmp_path)
+    assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+
+
+def test_malformed_200_body_fails_closed_not_crashes(tmp_path: Path) -> None:
+    """A 200 whose body is not valid JSON must raise SyncDeferredError, never
+    an uncaught JSONDecodeError out of a sync command (claude-review, PR
+    #3831, P3)."""
+    app = FastAPI()
+
+    @app.get("/api/v1/health")
+    def health() -> dict:
+        return {"boot_id": _BOOT_ID}
+
+    @app.get("/api/v1/state/ui-mirror")
+    def ui_mirror() -> PlainTextResponse:
+        return PlainTextResponse("not json", status_code=200)
+
+    port = _free_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server, thread = start_uvicorn_in_thread(config, what="the malformed-body fake engine")
+    try:
+        _write_lock(tmp_path, port=port)
+        with pytest.raises(SyncDeferredError) as excinfo:
+            maintenance._cli_live_ui_mirror(tmp_path)
+        assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10.0)
 
 
 def test_verified_engine_mirror_timeout_fails_closed(

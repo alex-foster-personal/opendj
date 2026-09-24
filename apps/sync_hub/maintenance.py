@@ -624,18 +624,27 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     Only two outcomes read as "nothing is playing", both because no engine is
     alive to own a playing deck: no lock file, or an unverifiable lock
     (``EngineNotRunning``, which already covers a transport failure against
-    ``/api/v1/health`` during identity verification). A verified engine's own
-    409 ``client_open: false`` also reads as safe: no open performance page
-    means no deck is rendering audio either.
+    ``/api/v1/health`` during identity verification -- connect-refused, a
+    role/boot_id mismatch, or a timed-out health check are all folded into
+    that one exception upstream in ``apps.engine_core.origin``; splitting a
+    locked-but-wedged health check out from a genuinely absent engine is
+    tracked as debt against that shared module rather than fixed here, since
+    every other CLI in this repo shares its exception taxonomy). A verified
+    engine's own 409 with EXACTLY the documented ``{"client_open": False}``
+    body also reads as safe: no open performance page means no deck is
+    rendering audio either.
 
     Everything else from a VERIFIED engine is inconclusive, not permissive
-    (claude-review, PR #3831, P1/BLOCKING x2): a non-200/409 status is a
-    genuine server error, not a "not playing" signal, and a transport failure
-    on THIS specific request (unlike the identity check above) means an
-    engine we just confirmed is alive stopped answering mid-probe -- exactly
-    the "wedged during a live set" case this gate exists to catch. Both raise
-    `SyncDeferredError` so the CLI fails closed (refuses the sync) rather than
-    silently assuming it is safe to proceed.
+    (claude-review, PR #3831, P1/BLOCKING x2 plus P3 x2): a non-200 status
+    other than that exact 409 is a genuine server error, not a "not playing"
+    signal; a transport failure on THIS specific request (unlike the identity
+    check above) means an engine we just confirmed is alive stopped answering
+    mid-probe -- exactly the "wedged during a live set" case this gate exists
+    to catch; and a response body that fails to parse as JSON at all must
+    defer rather than raise an uncaught decode error out of a sync command.
+    All of these raise `SyncDeferredError` so the CLI fails closed (refuses
+    the sync) rather than silently assuming it is safe to proceed, or crashing
+    instead of exiting with the documented deferred code.
     """
     lock_file = data_dir / ".engine.lock"
     try:
@@ -647,11 +656,16 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
             response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")
     except httpx.TransportError as exc:
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
     if response.status_code == 409:
-        return None
+        if body == {"client_open": False}:
+            return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     if response.status_code != 200:
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
-    body = response.json()
     if not isinstance(body, dict):
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     return body
