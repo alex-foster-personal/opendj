@@ -139,9 +139,12 @@ _STATE_CORE: tuple[str, ...] = (
     "(stable_id_tier IN ('isrc','fingerprint','inferred')), title TEXT, "
     "artists_json TEXT, album TEXT, isrc TEXT, duration_ms INTEGER, "
     "file_path TEXT, content_hash TEXT, created_at TEXT NOT NULL, "
-    "updated_at TEXT NOT NULL , origin_device_id TEXT, deleted_at TEXT)",
+    "updated_at TEXT NOT NULL , origin_device_id TEXT, deleted_at TEXT, "
+    "audio_hash TEXT)",
     "CREATE INDEX IF NOT EXISTS idx_tracks_isrc ON tracks(isrc) WHERE isrc IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path)",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_audio_hash ON tracks(audio_hash) "
+    "WHERE audio_hash IS NOT NULL",
     "CREATE TABLE IF NOT EXISTS track_vendor_ids ( stable_id TEXT NOT NULL "
     "REFERENCES tracks(stable_id) ON DELETE CASCADE, vendor TEXT NOT NULL, "
     "vendor_id TEXT NOT NULL, updated_at TEXT, origin_device_id TEXT, "
