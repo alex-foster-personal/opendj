@@ -11,21 +11,53 @@
  * `mode_ratio_browser.mjs` itself, whose top-level `await`s make it
  * unimportable outside a real browser run.
  */
+
+/**
+ * How long a Trackify deck may legitimately read "not playing" before a gap
+ * counts as a real stall rather than an ordinary track-boundary handoff
+ * (Sol review round 10, PR #3676: "Trackify intentionally uses one deck and
+ * unloads, loads, then plays at every track boundary, so `deck.playing` is
+ * legitimately false during each decode gap. Any two-second poll that lands
+ * in that normal transition permanently invalidates the capture"). Sized to
+ * absorb a couple of back-to-back quarantined-candidate retries, each
+ * bounded near `TRACKIFY_LOAD_SKIP_DEADLINE_MS` (2000ms) in
+ * trackify-autoplay.svelte.ts, while still catching a genuinely stuck deck
+ * well inside a 60 s or one-hour capture window. Not imported from that
+ * frontend module: this script lives outside the SvelteKit build and is
+ * deliberately dependency-free (see file docstring above).
+ */
+const TRACKIFY_HANDOFF_TOLERANCE_MS = 8_000;
+
 /**
  * Shared poll loop: calls `isPlayingInPage` (a zero-arg function run via
- * `page.evaluate`) on an interval until `signal` settles, and throws
- * `invalidMessage` if any poll (or a rejected `evaluate`, e.g. the page
- * navigated or closed) ever saw "not playing".
+ * `page.evaluate`) on an interval until `signal` settles.
+ *
+ * Two modes, selected by `tolerateGapsUnderMs`:
+ *  - `null` (default; used by the Gig variant, which has no legitimate
+ *    reason for any deck to stop): the ORIGINAL zero-tolerance behavior --
+ *    any single poll that ever saw "not playing" invalidates the capture,
+ *    even if it recovers well before `signal` settles.
+ *  - a number (used by the Trackify variant): a gap that recovers within
+ *    that many ms is forgiven as a normal handoff; only a gap SUSTAINED
+ *    past it invalidates the capture, and a sustained failure is never
+ *    un-recorded by a later recovery.
+ *
+ * Either mode treats a rejected `evaluate` (e.g. the page navigated or
+ * closed) as an unconditional, non-tolerated failure: that is a stronger
+ * signal than a legitimate playback gap and is never forgiven.
  */
 async function _watchUntil(
 	page,
 	signal,
 	isPlayingInPage,
 	invalidMessage,
-	{ pollMs = 2_000, evaluateArg } = {}
+	{ pollMs = 2_000, tolerateGapsUnderMs = null, evaluateArg } = {}
 ) {
 	let stopped = false;
-	let gapAt = null;
+	let gapAt = null; // zero-tolerance mode: sticky, first gap ever seen.
+	let gapStartedAt = null; // bounded-tolerance mode: reset whenever playback resumes.
+	let sustainedGapAt = null; // bounded-tolerance mode: sticky once a gap exceeds the bound.
+	let evaluateFailedAt = null;
 	// Chained off `signal` (not just flipped by the caller after `await
 	// signal` resolves) so a poll iteration currently sleeping between polls
 	// wakes IMMEDIATELY once the caller's own wait ends, via the `Promise.race`
@@ -37,16 +69,42 @@ async function _watchUntil(
 	});
 	const poller = (async () => {
 		while (!stopped) {
-			const playing = await page.evaluate(isPlayingInPage, evaluateArg).catch(() => false);
-			if (!playing && gapAt === null) gapAt = Date.now();
+			let playing;
+			try {
+				playing = await page.evaluate(isPlayingInPage, evaluateArg);
+			} catch {
+				playing = false;
+				if (evaluateFailedAt === null) evaluateFailedAt = Date.now();
+			}
+			if (tolerateGapsUnderMs === null) {
+				if (!playing && gapAt === null) gapAt = Date.now();
+			} else if (playing) {
+				gapStartedAt = null;
+			} else {
+				if (gapStartedAt === null) gapStartedAt = Date.now();
+				if (sustainedGapAt === null && Date.now() - gapStartedAt > tolerateGapsUnderMs) {
+					sustainedGapAt = gapStartedAt;
+				}
+			}
 			if (stopped) break;
 			await Promise.race([stopSignal, new Promise((resolve) => setTimeout(resolve, pollMs))]);
 		}
 	})();
 	await signal;
 	await poller;
-	if (gapAt !== null) {
-		throw new Error(`${invalidMessage} (first gap detected at ${new Date(gapAt).toISOString()}); this capture is invalid`);
+	if (tolerateGapsUnderMs === null) {
+		if (gapAt !== null) {
+			throw new Error(`${invalidMessage} (first gap detected at ${new Date(gapAt).toISOString()}); this capture is invalid`);
+		}
+		return;
+	}
+	if (evaluateFailedAt !== null) {
+		throw new Error(`${invalidMessage} (page.evaluate failed at ${new Date(evaluateFailedAt).toISOString()}); this capture is invalid`);
+	}
+	if (sustainedGapAt !== null) {
+		throw new Error(
+			`${invalidMessage} (stalled for over ${tolerateGapsUnderMs}ms starting ${new Date(sustainedGapAt).toISOString()}); this capture is invalid`
+		);
 	}
 }
 
@@ -61,7 +119,7 @@ export async function watchContinuousPlaybackUntil(page, signal, opts = {}) {
 			return state.deck.stable_id !== null && state.deck.playing === true;
 		},
 		'Trackify was not continuously playing throughout the measured interval',
-		opts
+		{ tolerateGapsUnderMs: TRACKIFY_HANDOFF_TOLERANCE_MS, ...opts }
 	);
 }
 
@@ -73,7 +131,9 @@ export async function watchContinuousPlaybackUntil(page, signal, opts = {}) {
  * whose track ended mid-window could sample a partially idle Gig session as
  * a measured four-deck steady state. Mirrors `watchContinuousPlaybackUntil`
  * exactly, checking every deck in `deckIds` via the Performance IPC instead
- * of the single Trackify deck.
+ * of the single Trackify deck. Kept zero-tolerance (no handoff allowance):
+ * unlike Trackify, Gig has no track-boundary design that legitimately drops
+ * a deck to not-playing, so any gap here is a real anomaly.
  */
 export async function watchGigDecksPlayingUntil(page, signal, deckIds, opts = {}) {
 	await _watchUntil(

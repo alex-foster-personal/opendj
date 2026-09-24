@@ -61,18 +61,67 @@ test('if playback stays true at every poll then the watch resolves without throw
 	}
 });
 
-test('if playback drops mid-window and recovers before the signal fires then the watch still rejects', async () => {
-	mock.timers.enable({ apis: ['setTimeout'] });
+test('a brief mid-window gap that recovers within the handoff tolerance does not invalidate a Trackify capture (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
-		// playing, then a gap, then playing again by the time the signal
-		// arrives -- the bug this guards against: an endpoint-only check
-		// would see "playing" the moment the signal fires and miss the gap
-		// that happened for the rest of the window.
+		// Trackify's own normal operation: unload, load, then play at every
+		// track boundary, so `deck.playing` legitimately reads false for a
+		// moment. A single poll landing in that gap, followed by a recovery
+		// on the very next poll, must not invalidate an otherwise healthy
+		// capture (unlike the old zero-tolerance behavior this replaces).
 		const page = fakePage([true, false, true]);
 		const signal = gate();
-		const done = watchContinuousPlaybackUntil(page, signal.promise, { pollMs: 1_000 });
+		const done = watchContinuousPlaybackUntil(page, signal.promise, {
+			pollMs: 1_000,
+			tolerateGapsUnderMs: 3_000
+		});
 		await settle();
 		mock.timers.tick(1_000);
+		await settle();
+		mock.timers.tick(1_000);
+		await settle();
+		signal.release();
+		await assert.doesNotReject(done);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('a sustained mid-window gap beyond the handoff tolerance still invalidates a Trackify capture, even if it later recovers (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+	try {
+		// The gap this guards against, distinct from the tolerated brief
+		// handoff above: playback stops for LONGER than the tolerance --
+		// a genuine stall, not a track-boundary blip -- then recovers before
+		// the signal fires. An endpoint-only (or infinitely tolerant) check
+		// would miss this entirely.
+		const page = fakePage([true, false, false, false, false, false, true]);
+		const signal = gate();
+		const done = watchContinuousPlaybackUntil(page, signal.promise, {
+			pollMs: 1_000,
+			tolerateGapsUnderMs: 3_000
+		});
+		await settle();
+		for (let i = 0; i < 6; i += 1) {
+			mock.timers.tick(1_000);
+			await settle();
+		}
+		signal.release();
+		await assert.rejects(done, /not continuously playing/);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('control: a page that never plays at all also rejects (not just the mid-window-drop shape)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+	try {
+		const page = fakePage([false, false]);
+		const signal = gate();
+		const done = watchContinuousPlaybackUntil(page, signal.promise, {
+			pollMs: 1_000,
+			tolerateGapsUnderMs: 500
+		});
 		await settle();
 		mock.timers.tick(1_000);
 		await settle();
@@ -83,17 +132,23 @@ test('if playback drops mid-window and recovers before the signal fires then the
 	}
 });
 
-test('control: a page that never plays at all also rejects (not just the mid-window-drop shape)', async () => {
-	mock.timers.enable({ apis: ['setTimeout'] });
+test('production default tolerance absorbs a single normal poll-interval gap without invalidating the capture (Sol review, PR #3676)', async () => {
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
-		const page = fakePage([false, false]);
+		// No override: locks in the actual shipped default
+		// (TRACKIFY_HANDOFF_TOLERANCE_MS) against the real production pollMs
+		// default, so a change to either constant that reintroduces the
+		// original false-invalidation bug is caught here.
+		const page = fakePage([true, false, true]);
 		const signal = gate();
-		const done = watchContinuousPlaybackUntil(page, signal.promise, { pollMs: 1_000 });
+		const done = watchContinuousPlaybackUntil(page, signal.promise, { pollMs: 2_000 });
 		await settle();
-		mock.timers.tick(1_000);
+		mock.timers.tick(2_000);
+		await settle();
+		mock.timers.tick(2_000);
 		await settle();
 		signal.release();
-		await assert.rejects(done, /not continuously playing/);
+		await assert.doesNotReject(done);
 	} finally {
 		mock.timers.reset();
 	}
@@ -180,7 +235,7 @@ test('Gig: the deck id list is threaded through to each page.evaluate call', asy
 });
 
 test('a page.evaluate rejection (e.g. the page navigated away) counts as a gap, not a silent pass', async () => {
-	mock.timers.enable({ apis: ['setTimeout'] });
+	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
 		let calls = 0;
 		const page = {
