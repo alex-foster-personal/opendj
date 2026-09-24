@@ -21,7 +21,7 @@ LABEL="com.af.dmg-smoke"
 
 INSTALL=0
 RENDER_ONLY=""
-HOST_LABEL="air"
+HOST_LABEL=""
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
@@ -44,6 +44,16 @@ done
 
 if [ "$INSTALL" = 1 ] && [ "$(uname -s)" != "Darwin" ]; then
   echo "[ERROR] --install is Darwin-only (this host is $(uname -s))" >&2
+  exit 2
+fi
+
+# --host-label has no hidden default (claude-review, PR #3827, round 2, P2):
+# a silent "air" fallback would attribute a second Mac's dmg-smoke runs to
+# Air in the ledger/evidence with no error, exactly the corruption
+# perf_kpi_job's own --host-label review finding describes for the sibling
+# perf-kpi installer (see .planning/debt/3827.md).
+if [ -z "$HOST_LABEL" ]; then
+  echo "[ERROR] --host-label is required (e.g. --host-label air, --host-label silver)" >&2
   exit 2
 fi
 

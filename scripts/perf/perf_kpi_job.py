@@ -22,7 +22,6 @@ from scripts.perf.kpi_ledger_append import append_entries, load_ledger
 from scripts.perf.perf_kpi_config import (
     LEDGER_PR_BRANCH,
     LEDGER_PR_TITLE,
-    LEDGER_WORKTREE_DIR,
     REPO_ROOT,
     load_config,
 )
@@ -90,21 +89,23 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
 
 
 def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
-    """Best-effort cleanup of a leftover ledger worktree from a prior run.
+    """Clean up a leftover ledger worktree from a prior run.
 
-    Fails loud rather than silently discarding a removal error (claude-review,
-    PR #3827, P2): the old code ran ``git worktree remove`` with
-    ``check=False`` and captured output, then force-``rmtree``'d the
-    directory regardless of whether that removal actually succeeded. If
-    ``git worktree remove`` failed for a real reason and rmtree then deleted
-    the directory out from under it, git kept the worktree registered at a
-    path that no longer existed -- the NEXT run's ``git worktree add`` at
-    that same path then failed with a "missing but already registered"
-    error, far from the actual cause. This still tolerates the ordinary
-    case (nothing registered, or a clean removal) but surfaces everything
-    else, and prunes git's own bookkeeping after a manual rmtree so the
-    next ``add`` never inherits a stale registration.
+    Fails loud on a real removal error instead of discarding it
+    (claude-review, PR #3827, round 2, P2): round 1's fix still ran ``git
+    worktree remove`` with ``check=False`` and then rmtree'd the directory
+    unconditionally, so a locked worktree, a wrong-repo path, or a
+    permissions error was thrown away exactly as before -- only the
+    docstring changed. This now raises with git's own stderr for anything
+    other than "not a working tree" (the ordinary case: nothing was ever
+    registered there). ``git worktree prune`` now always runs first
+    (claude-review, round 2, P3): the old early return on a missing
+    directory meant a state dir wiped out from under git, or a directory
+    removed after a crash, left the registration behind for the next
+    ``git worktree add`` to trip over -- exactly the failure this function
+    exists to prevent.
     """
+    subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
     if not worktree_dir.exists():
         return
     removed = subprocess.run(
@@ -116,6 +117,8 @@ def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
     )
     if removed.returncode == 0:
         return
+    if "is not a working tree" not in removed.stderr:
+        raise RuntimeError(f"git worktree remove {worktree_dir} failed: {removed.stderr.strip()}")
     shutil.rmtree(worktree_dir)
     subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
 
@@ -129,7 +132,7 @@ def _new_entries_since(base_entries: list, local_entries: list) -> list:
 def update_ledger_pr(
     repo_root: Path,
     ledger_path: Path,
-    worktree_dir: Path = LEDGER_WORKTREE_DIR,
+    worktree_dir: Path,
 ) -> None:
     """Open or update the standing docs PR for nightly ledger appends.
 
@@ -160,14 +163,27 @@ def update_ledger_pr(
     merged and a later run happened to find none open. This checks out the
     EXISTING branch instead of origin/main when one is open, so every
     night's new entries reach it either way.
+
+    ``worktree_dir`` has no default (claude-review, PR #3827, round 2, P3):
+    round 1 kept ``LEDGER_WORKTREE_DIR`` (pinned to ``DEFAULT_STATE_DIR`` at
+    import time) as a fallback default, so a future caller that left the
+    argument out would silently get the shared path again, and two installs
+    with different state dirs could still force-remove each other's
+    in-flight worktree. Every real caller must pass ``config.ledger_worktree``.
     """
     completed = subprocess.run(
         ["gh", "pr", "list", "--repo", REPOSITORY, "--head", LEDGER_PR_BRANCH, "--json", "number"],
-        check=False,
+        check=True,
         capture_output=True,
         text=True,
     )
-    pr_already_open = completed.returncode == 0 and completed.stdout.strip() not in ("", "[]")
+    # A failed `gh pr list` (claude-review, PR #3827, round 2, P3) used to
+    # read identically to "no PR open": the job would then build from
+    # origin/main, and either the push got a non-fast-forward rejection
+    # against the branch a PR already existed for, or `gh pr create` failed
+    # for the same auth/network reason -- both far from the real cause.
+    # `check=True` now raises with gh's own stderr immediately instead.
+    pr_already_open = completed.stdout.strip() not in ("", "[]")
     branch = LEDGER_PR_BRANCH
     subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
     base_ref = "origin/main"
