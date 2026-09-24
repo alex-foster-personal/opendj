@@ -601,11 +601,13 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 }
 
 
-#: Timeout for EACH of the CLI's best-effort probes of a live engine (the
-#: identity health check, then the UI-mirror GET). Short on purpose: this
-#: runs on the ``sync`` critical path. Sequential, not shared, so a wedged
-#: engine can hold the command for up to roughly 2x this value per lock
-#: checked, not just this value once (claude-review, PR #3831, P3).
+#: Timeout for the CLI's best-effort UI-mirror GET against a verified live
+#: engine (the identity health check that precedes it has its OWN timeout,
+#: ``apps.shared.engine_origin.IDENTITY_PROBE_TIMEOUT_S``, not this one).
+#: Short on purpose: this runs on the ``sync`` critical path. The two probes
+#: are sequential, not shared, so a wedged engine can hold the command for
+#: roughly the SUM of both timeouts per lock checked, not just this value
+#: once (claude-review, PR #3831, P3).
 _LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
 
 
@@ -617,13 +619,17 @@ DEFER_REASON_ENGINE_MIRROR_UNREACHABLE = "engine_mirror_unreachable"
 def _candidate_lock_files(data_dir: Path) -> list[Path]:
     """The lock file(s) that might describe the engine playing a deck.
 
-    Normally just ``<data_dir>/.engine.lock``, the same file every other CLI
-    in this repo resolves through ``apps.shared.engine_origin.lock_path``'s
-    ``OPENDJ_LIVE_LOCK_PATH`` override. When that override is set AND names a
-    different file, BOTH are checked (claude-review, PR #3831, P2): the
-    override lets an agent drive a sandboxed engine, but a DJ's own real
-    engine at ``data_dir`` can be live at the same time, and its playing deck
-    is exactly what this gate must not miss.
+    Normally just ``<data_dir>/.engine.lock`` -- the lock naming the engine
+    actually serving THIS data dir. Other CLIs in this repo instead resolve
+    through ``apps.shared.engine_origin.lock_path``, which falls back to
+    ``DEFAULT_LOCK_PATH`` (not a data-dir join) when
+    ``OPENDJ_LIVE_LOCK_PATH`` is unset; this function honors that SAME
+    override, layered on top of the data-dir lock rather than replacing it.
+    When the override is set AND names a different file than the data-dir
+    lock, BOTH are checked (claude-review, PR #3831, P2): the override lets
+    an agent drive a sandboxed engine, but a DJ's own real engine at
+    ``data_dir`` can be live at the same time, and its playing deck is
+    exactly what this gate must not miss.
     """
     data_dir_lock = data_dir / ".engine.lock"
     override = os.environ.get(engine_origin.LOCK_PATH_ENV, "").strip()

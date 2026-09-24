@@ -304,17 +304,18 @@ def test_locked_engine_health_check_timeout_fails_closed(
         thread.join(timeout=10.0)
 
 
-def test_opendj_live_lock_path_override_takes_precedence_over_data_dir(
+def test_opendj_live_lock_path_override_is_probed_alongside_data_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] OPENDJ_LIVE_LOCK_PATH is set [then] the CLI probes that lock, not
-    ``<data_dir>/.engine.lock`` (claude-review, PR #3831, P2): otherwise an
-    agent driving a sandboxed engine through the live-debug skill's override
-    is invisible to this specific gate while every other CLI in the repo
-    correctly follows it. Two distinct live fake engines prove WHICH lock was
-    actually read: if the override were ignored, this would return the
-    data-dir engine's body (or None, if its lock were simply absent) instead
-    of the override engine's.
+    """[if] OPENDJ_LIVE_LOCK_PATH is set [then] the CLI probes THAT lock
+    ALONGSIDE ``<data_dir>/.engine.lock``, never instead of it (claude-review,
+    PR #3831, P2): a naive "override wins outright" would make a DJ's own
+    real engine at ``data_dir`` invisible whenever an agent's shell also has
+    the override set for unrelated sandboxed-engine work. Two distinct live
+    fake engines prove the override's playing deck is picked up even though
+    the data-dir engine's own lock reports nothing playing: if the override
+    were ignored, this would return the data-dir engine's not-playing body
+    instead.
     """
     override_body = {"decks": {"1": {"playing": True}}}
     override_app = _fake_engine_app(200, override_body)
