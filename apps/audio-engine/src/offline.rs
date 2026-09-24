@@ -20,6 +20,8 @@ use crate::protocol::{Command, LoadSpec, ProtoError};
 /// Ramps move their knob in steps this far apart; the engine's own parameter
 /// smoothing glides between steps.
 pub const RAMP_STEP_FRAMES: u64 = 32;
+/// How close to a deck-relative target counts as reaching it, in source frames.
+pub const POS_EPS_FRAMES: f64 = 1e-3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fired {
@@ -98,7 +100,9 @@ fn due_in(at: At, engine: &Engine, now: u64) -> Option<u64> {
                 DeckPos::Bar(b) => t.bar_time_ms(b),
                 DeckPos::Beat(b) => t.beat_time_ms(b),
             }?;
-            let target = t.ms_to_frames(target_ms);
+            // A thousandth of a frame (about 20 ns) counts as there: the
+            // playhead is exact to float rounding, not to zero.
+            let target = t.ms_to_frames(target_ms) - POS_EPS_FRAMES;
             if d.pos >= target {
                 return Some(0);
             }
@@ -114,9 +118,7 @@ fn due_in(at: At, engine: &Engine, now: u64) -> Option<u64> {
             if step <= 0.0 {
                 return None;
             }
-            // The epsilon absorbs float residue so a playhead that lands a hair
-            // short of the target after exactly the computed frames still fires.
-            let n = ((target - d.pos) / step - 1e-9).ceil().max(0.0);
+            let n = ((target - d.pos) / step).ceil().max(0.0);
             Some(n as u64)
         }
     }

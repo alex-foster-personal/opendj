@@ -31,7 +31,7 @@ pub struct Track {
 
 impl Track {
     pub fn new(sample_rate: u32, pcm: Vec<f32>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
-        assert!(pcm.len() % 2 == 0, "pcm must be interleaved stereo");
+        assert!(pcm.len().is_multiple_of(2), "pcm must be interleaved stereo");
         let frames = pcm.len() / 2;
         let downbeats = beats
             .iter()
@@ -142,6 +142,13 @@ pub struct Deck {
     pub fader: f64,
     pub assign: Assign,
     strip: Strip,
+    /// Position is computed as `anchor + step * run` rather than by adding
+    /// `step` each frame, so it does not drift over a long set. Any outside
+    /// change to `pos` or the step re-anchors on the next render.
+    anchor: f64,
+    anchor_step: f64,
+    run: u64,
+    rendered_pos: f64,
 }
 
 struct Strip {
@@ -214,12 +221,12 @@ impl Strip {
             if self.coeffs_gliding() {
                 for s in self.eq_db.iter_mut() {
                     for _ in 0..COEFF_INTERVAL {
-                        s.next();
+                        s.tick();
                     }
                 }
                 for _ in 0..COEFF_INTERVAL {
-                    self.lp_hz.next();
-                    self.hp_hz.next();
+                    self.lp_hz.tick();
+                    self.hp_hz.tick();
                 }
                 self.recompute();
             }
@@ -227,18 +234,18 @@ impl Strip {
         }
         self.coeff_countdown -= 1;
 
-        let trim = self.trim.next();
+        let trim = self.trim.tick();
         let (mut l, mut r) = (l * trim, r * trim);
         for bq in self.eq.iter_mut() {
             l = bq.process(0, l);
             r = bq.process(1, r);
         }
-        let (dry, lpw, hpw) = (self.dry.next(), self.lp_wet.next(), self.hp_wet.next());
+        let (dry, lpw, hpw) = (self.dry.tick(), self.lp_wet.tick(), self.hp_wet.tick());
         let (ll, lr) = (self.lp.process(0, l), self.lp.process(1, r));
         let (hl, hr) = (self.hp.process(0, l), self.hp.process(1, r));
         l = dry * l + lpw * ll + hpw * hl;
         r = dry * r + lpw * lr + hpw * hr;
-        let g = self.fader.next() * self.xf.next();
+        let g = self.fader.tick() * self.xf.tick();
         (l * g, r * g)
     }
 }
@@ -259,6 +266,10 @@ impl Deck {
             fader: 1.0,
             assign: Assign::Thru,
             strip: Strip::new(sr),
+            anchor: 0.0,
+            anchor_step: 0.0,
+            run: 0,
+            rendered_pos: f64::NAN,
         }
     }
 
@@ -433,6 +444,11 @@ impl Deck {
         let frames = track.frames;
         let end = frames as f64;
         let step = self.tempo * track.sample_rate as f64 / engine_sr;
+        if self.pos != self.rendered_pos || step != self.anchor_step {
+            self.anchor = self.pos;
+            self.anchor_step = step;
+            self.run = 0;
+        }
         for o in out.chunks_exact_mut(2) {
             if self.pos >= end {
                 self.pos = end;
@@ -443,13 +459,17 @@ impl Deck {
             let (l, r) = self.strip.process(l, r);
             o[0] += l as f32;
             o[1] += r as f32;
-            self.pos += step;
+            self.run += 1;
+            self.pos = self.anchor + step * self.run as f64;
             if let Some((a, b)) = self.looping {
                 if self.pos >= b && b > a {
                     self.pos = a + (self.pos - b) % (b - a);
+                    self.anchor = self.pos;
+                    self.run = 0;
                 }
             }
         }
+        self.rendered_pos = self.pos;
     }
 }
 
@@ -546,6 +566,25 @@ mod tests {
         d.beat_jump(4.0).unwrap();
         assert_eq!(d.pos, 96000.0);
         assert_eq!(d.looping, Some((96000.0, 192000.0)));
+    }
+
+    #[test]
+    fn playhead_does_not_drift_over_a_long_play() {
+        // 110 s at an awkward step (44.1 kHz source, 48 kHz out, tempo 1.07)
+        // in uneven blocks. Adding the step every frame drifts by about 1e-3
+        // frames here; the anchored form is exact.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(44100, 120.0, vec![])));
+        d.set_tempo(1.07).unwrap();
+        d.play(true).unwrap();
+        let step = d.step(48000.0);
+        let mut buf = vec![0.0f32; 997 * 2];
+        let mut n = 0u64;
+        while n + 997 <= 48000 * 110 {
+            d.render_add(&mut buf, 48000.0);
+            n += 997;
+        }
+        assert!((d.pos - step * n as f64).abs() < 1e-7, "drift {}", d.pos - step * n as f64);
     }
 
     #[test]

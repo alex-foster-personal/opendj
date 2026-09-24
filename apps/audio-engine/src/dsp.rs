@@ -154,7 +154,7 @@ impl Smoothed {
     }
 
     #[inline]
-    pub fn next(&mut self) -> f64 {
+    pub fn tick(&mut self) -> f64 {
         if self.value != self.target {
             self.value += (self.target - self.value) * self.k;
             // Settle exactly, so a smoother at rest costs nothing and the
@@ -224,18 +224,29 @@ mod tests {
     }
 
     #[test]
+    fn lowpass_and_highpass_read_q_in_db_like_web_audio() {
+        // Web Audio: Q = 0.707 on a lowpass means 0.707 dB of resonance at
+        // the corner, not the -3 dB a linear Q of 0.707 would give.
+        let sr = 48000.0;
+        let lp = Coeffs::lowpass(sr, 1000.0, 0.707);
+        assert!((db(gain_at(lp, sr, 1000.0)) - 0.707).abs() < 0.01, "{}", db(gain_at(lp, sr, 1000.0)));
+        let hp = Coeffs::highpass(sr, 1000.0, 0.707);
+        assert!((db(gain_at(hp, sr, 1000.0)) - 0.707).abs() < 0.01);
+    }
+
+    #[test]
     fn smoother_follows_set_target_at_time() {
         let sr = 48000.0;
         let mut s = Smoothed::new(0.0, sr, 0.01);
         s.set(1.0);
         let mut v = 0.0;
         for _ in 0..480 {
-            v = s.next();
+            v = s.tick();
         }
         // One time-constant later the value is 1 - 1/e of the way there.
         assert!((v - (1.0 - (-1.0f64).exp())).abs() < 1e-3, "{v}");
         for _ in 0..48000 {
-            s.next();
+            s.tick();
         }
         assert!(s.settled());
     }

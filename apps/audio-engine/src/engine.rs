@@ -258,7 +258,7 @@ impl Engine {
     /// Render `out.len() / 2` frames of interleaved stereo into `out`,
     /// overwriting it. Never allocates.
     pub fn render(&mut self, out: &mut [f32]) {
-        debug_assert!(out.len() % 2 == 0);
+        debug_assert!(out.len().is_multiple_of(2));
         for chunk in out.chunks_mut(MAX_BLOCK * 2) {
             self.render_block(chunk);
         }
@@ -271,7 +271,7 @@ impl Engine {
             d.render_add(out, sr);
         }
         for o in out.chunks_exact_mut(2) {
-            let g = (self.master_gain.next() * self.mute_gain.next()) as f32;
+            let g = (self.master_gain.tick() * self.mute_gain.tick()) as f32;
             o[0] *= g;
             o[1] *= g;
         }
