@@ -130,6 +130,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -2660,6 +2661,9 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (command.type === 'load') {
+		onDeckLoadStart(command.deck);
+	}
 	if (_presetClaim !== null) {
 		const error = new Error(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +

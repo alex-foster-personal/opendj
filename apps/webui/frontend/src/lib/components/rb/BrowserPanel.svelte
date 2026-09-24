@@ -3093,6 +3093,7 @@
 
 <section
 	class="rb-browser"
+	data-library-root
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >

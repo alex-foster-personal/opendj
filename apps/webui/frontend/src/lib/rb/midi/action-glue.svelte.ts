@@ -38,6 +38,7 @@
 
 import { pushToast } from '$lib/stores.svelte';
 import { deckStates, engine, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { onMidiFaderMove } from '$lib/rb/fader-ghost.svelte';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
@@ -229,6 +230,7 @@ export function handleMidiAction(
 					pressT0Ms
 				);
 			} else if (action.target === 'fader') {
+				onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
 				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
