@@ -204,13 +204,30 @@ def test_extra_env_cannot_override_the_hub_env() -> None:
         hub_deploy.hub_service_env(extra_env={machine_identity.IS_HUB_ENV: "0"})
 
 
-def test_enable_runs_daemon_reload_then_enable_now(tmp_path: Path) -> None:
+def test_enable_runs_daemon_reload_then_enable_now_then_restart(tmp_path: Path) -> None:
     systemctl, log = _fake_systemctl(tmp_path)
     _provision(tmp_path, "ben", systemctl=systemctl, enable=True)
     assert log.read_text(encoding="utf-8").splitlines() == [
         "--user daemon-reload",
         "--user enable --now opendj-hub-ben.service opendj-hub-ben-backup.timer",
+        "--user restart opendj-hub-ben.service",
     ]
+
+
+def test_reprovision_restarts_an_already_active_service(tmp_path: Path) -> None:
+    """Codex P1 (PR #3879): a live hub must pick up a rewritten unit file.
+
+    `enable --now` alone leaves an already-active unit running unchanged, so
+    a reprovision that changes settings (e.g. --allowed-hosts) would leave
+    the live process on its old environment until `restart` runs too.
+    """
+    systemctl, log = _fake_systemctl(tmp_path)
+    _provision(tmp_path, "ben", systemctl=systemctl, enable=True)
+    log.write_text("", encoding="utf-8")
+
+    _provision(tmp_path, "ben", systemctl=systemctl, enable=True, allowed_hosts="hub.example.test")
+
+    assert "--user restart opendj-hub-ben.service" in log.read_text(encoding="utf-8").splitlines()
 
 
 def test_without_enable_no_service_manager_is_called(tmp_path: Path) -> None:

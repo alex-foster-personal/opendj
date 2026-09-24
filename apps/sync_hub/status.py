@@ -187,12 +187,21 @@ def _effective_config(
     return effective, None
 
 
+#: Failure kinds the hub never answered: the machine is down, the route is
+#: not up yet, or the proxy in front of it is. These get the benign waiting
+#: treatment. ``hub_error_5xx`` is deliberately excluded: the hub DID answer,
+#: with a server error (a bug, a credential-activation refusal, a storage
+#: fault), so it must stay a visible error rather than reading "no action
+#: needed" (Codex P1, PR #3879).
+_WAITING_FAILURE_KINDS = frozenset({"client_timeout", "proxy_or_hub_timeout", "unreachable"})
+
+
 def waiting_for_hub_reason(latest: SyncResult | None) -> str | None:
-    """The wait reason when the newest result is a transport failure, else None."""
+    """The wait reason when the newest result is an unreachable/timeout failure, else None."""
     if latest is None or latest.status != "error":
         return None
     failure = classify_transport_failure(latest.message)
-    if failure is None:
+    if failure is None or failure.kind not in _WAITING_FAILURE_KINDS:
         return None
     return f"{WAITING_FOR_HUB_PREFIX}: {failure.headline}. Sync retries in the background."
 

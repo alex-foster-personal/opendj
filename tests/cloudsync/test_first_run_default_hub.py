@@ -189,14 +189,23 @@ def test_existing_config_is_never_overwritten(tmp_path: Path) -> None:
     assert sync_config.read_config(data_dir) == existing
 
 
-def test_malformed_existing_config_is_left_alone_and_raised(tmp_path: Path) -> None:
-    """[if] a malformed existing file is replaced by the default [then] broken, [else stop]."""
+def test_malformed_existing_config_is_left_alone_and_boot_continues(tmp_path: Path) -> None:
+    """[if] a malformed existing file is replaced, or aborts boot [then] broken, [else stop].
+
+    Codex P1 (PR #3879): the lifespan call site has no try/except around
+    ``seed_default_config``, so a raise here used to take the whole engine
+    down on a corrupt config file - a CloudSync-only fault should not do
+    that, matching how the scheduler and status paths already just idle on
+    ``CloudSyncConfigError`` instead of propagating it.
+    """
     data_dir = _spoke(tmp_path)
     path = sync_config.config_path(data_dir)
     path.write_text("{not json", encoding="utf-8")
 
-    with pytest.raises(sync_config.CloudSyncConfigError):
-        first_run.seed_default_config(data_dir, env={first_run.DEFAULT_HUB_ENV: _DEFAULT_HUB})
+    seed = first_run.seed_default_config(data_dir, env={first_run.DEFAULT_HUB_ENV: _DEFAULT_HUB})
+
+    assert seed.outcome == "existing"
+    assert seed.hub_url is None
     assert path.read_text(encoding="utf-8") == "{not json"
 
 

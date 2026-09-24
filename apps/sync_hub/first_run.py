@@ -120,13 +120,30 @@ def resolve_default_hub_url(env: Mapping[str, str]) -> str | None:
 
 
 def seed_default_config(data_dir: Path, *, env: Mapping[str, str]) -> FirstRunSeed:
-    """Write ``enabled: true`` + the default hub on first run. Existing file wins."""
-    path = str(sync_config.config_path(data_dir))
+    """Write ``enabled: true`` + the default hub on first run. Existing file wins.
+
+    Detects an existing file by presence, not by parsing it: a malformed file
+    must not abort engine boot here, the same as it does not abort the
+    scheduler or status paths (:func:`apps.sync_hub.scheduler.CloudSyncScheduler._effective`,
+    :func:`apps.sync_hub.status.read_status`), both of which already catch
+    :class:`~apps.sync_hub.config.CloudSyncConfigError` and idle/report instead
+    of raising. Seeding never touches an existing file regardless of its
+    contents, so validating it here has no seeding purpose - only the boot
+    path to lose.
+    """
+    path_obj = sync_config.config_path(data_dir)
+    path = str(path_obj)
     if machine_identity.is_hub_from_env(dict(env)):
         return FirstRunSeed("hub", None, path)
-    existing = sync_config.read_config(data_dir)
-    if existing is not None:
-        return FirstRunSeed("existing", existing.hub_url, path)
+    if path_obj.exists():
+        try:
+            existing = sync_config.read_config(data_dir)
+        except sync_config.CloudSyncConfigError as exc:
+            log.warning(
+                "cloudsync first run: existing %s is unreadable, leaving it alone: %s", path, exc
+            )
+            return FirstRunSeed("existing", None, path)
+        return FirstRunSeed("existing", existing.hub_url if existing is not None else None, path)
     default = resolve_default_hub_url(env)
     if default is None:
         return FirstRunSeed("no-default", None, path)

@@ -252,6 +252,12 @@ def plan_user_hub(
         enable_commands=[
             [systemctl, "--user", "daemon-reload"],
             [systemctl, "--user", "enable", "--now", names[_SERVICE], names[_BACKUP_TIMER]],
+            # `enable --now` only STARTS an inactive unit; an already-active
+            # one (a reprovision with changed settings, e.g. --allowed-hosts)
+            # keeps running with its OLD environment. `restart` picks up the
+            # rewritten unit file either way -- starting a stopped unit or
+            # cycling a live one (Codex P1, PR #3879).
+            [systemctl, "--user", "restart", names[_SERVICE]],
         ],
         expose_commands=[
             ["tailscale", "serve", "--bg", f"--https={chosen}", hub.url],

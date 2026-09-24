@@ -33,6 +33,10 @@ _UNREACHABLE = (
     f"{_HUB}: <urlopen error [Errno 111] Connection refused>"
 )
 _DIGEST = "SyncDigestMismatch: tracks differ after settling (2 rows)"
+#: A reachable hub answering with a server error, not an unreachable one.
+_HUB_5XX = (
+    "POST https://hub.example-tailnet.ts.net:8871/api/v1/sync/push -> HTTP 500:  (after 2.0s)"
+)
 
 
 def _configured(data_dir: Path) -> None:
@@ -100,3 +104,22 @@ def test_non_transport_error_is_not_waiting(tmp_path: Path) -> None:
     assert current.running is True
     assert current.reason is None
     assert sync_status.waiting_for_hub_reason(None) is None
+
+
+def test_hub_5xx_error_is_not_waiting(tmp_path: Path) -> None:
+    """[if] a reachable hub's HTTP 5xx is softened into Waiting for hub [then] broken, [else stop].
+
+    Codex P1 (PR #3879): the hub answered here, with a server error, unlike
+    the unreachable/timeout kinds this module's waiting treatment exists for.
+    A server bug, a credential-activation refusal or a storage fault must
+    stay a visible error, not read as "no action needed".
+    """
+    _configured(tmp_path)
+    sync_heartbeat.beat(tmp_path, hub_url=_HUB, now=_NOW)
+    _journal_error(tmp_path, _HUB_5XX)
+
+    current = sync_status.read_status(tmp_path, env={}, now=_NOW)
+
+    assert current.running is True
+    assert current.reason is None
+    assert current.last_result == {"status": "error", "message": _HUB_5XX}
