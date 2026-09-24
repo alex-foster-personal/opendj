@@ -29,12 +29,17 @@ from apps.shared.state import sync_stamp
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import digest_diff, spoke_credential
 from apps.sync_hub import heartbeat as sync_heartbeat
+from apps.sync_hub.transport import classify_transport_failure
 from apps.sync_hub.wire_version import UpdateRequiredState, parse_update_required
 
 SCHEDULER_ENV: str = sync_config.SCHEDULER_ENV
 ENDPOINT_ENV: str = sync_config.ENDPOINT_ENV
 SIGNED_IN_AS_ENV: str = "MDT_CLOUDSYNC_SIGNED_IN_AS"
 STATUS_FILENAME: str = "cloudsync-status.json"
+#: Reason prefix while the hub cannot be reached but the loop is alive and
+#: retrying (#3870). The status UI keys on it: a hub that is not up yet is a
+#: wait, not a red error, on a first run that was told to sync by default.
+WAITING_FOR_HUB_PREFIX: str = "Waiting for hub"
 MAX_RECENT_RESULTS: int = 5
 
 #: The three verdicts one sync can end on, and the third is not decoration.
@@ -182,6 +187,16 @@ def _effective_config(
     return effective, None
 
 
+def waiting_for_hub_reason(latest: SyncResult | None) -> str | None:
+    """The wait reason when the newest result is a transport failure, else None."""
+    if latest is None or latest.status != "error":
+        return None
+    failure = classify_transport_failure(latest.message)
+    if failure is None:
+        return None
+    return f"{WAITING_FOR_HUB_PREFIX}: {failure.headline}. Sync retries in the background."
+
+
 def read_results(data_dir: Path) -> tuple[SyncResult, ...]:
     """Read the bounded newest-first history, never turning bad data into ok."""
     path = status_path(data_dir)
@@ -268,6 +283,9 @@ def read_status(
         reason = "CloudSync is configured but its scheduler is not running (no fresh heartbeat)."
     results = read_results(Path(data_dir))
     latest = results[0] if results else None
+    if reason is None:
+        # Configured AND beating: an unreachable hub is a wait, not a fault.
+        reason = waiting_for_hub_reason(latest)
     update_required = (
         None
         if latest is None or latest.status != "error"
@@ -319,8 +337,10 @@ __all__ = [
     "CloudSyncStatusError",
     "SyncResult",
     "UpdateRequiredState",
+    "WAITING_FOR_HUB_PREFIX",
     "journal_deferred",
     "read_status",
     "status_path",
+    "waiting_for_hub_reason",
     "write_result",
 ]
