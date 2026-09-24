@@ -26,6 +26,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS, DECK_LOAD_YIELD_MAX_MS } from '../../src/lib/rb/boot-scheduler';
+import { spendBootLanding } from './support/boot-landing';
 
 /** How long the failure surface may take to appear after the shell is up.
  *
@@ -77,6 +78,13 @@ const SETUP_OVERLAY_CHUNK = '**/SetupOverlay*';
 test.describe('lazy root-layout chunks fail visibly', () => {
 	test('a pin-shell chunk that cannot be fetched raises an error toast and marks the slot', async ({ page }) => {
 		test.setTimeout(TEST_BUDGET_MS);
+		// The marked slot lives in the APP-SHELL topbar, which the PERFMODE-11
+		// cold-open redirect replaces with the performance top bar: at e5cb23e5
+		// CI lost that race (the toast fired on /performance?playlist=all, where
+		// the slot does not exist) while a developer box won it every time.
+		// support/boot-landing.ts spends the one-shot redirect up front, as every
+		// other app-shell spec does.
+		await spendBootLanding(page);
 		const aborted: string[] = [];
 		await page.route(PIN_LAYER_CHUNK, (route) => {
 			aborted.push(route.request().url());
