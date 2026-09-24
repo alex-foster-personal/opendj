@@ -79,3 +79,29 @@ def uv_table(pyproject: dict, where: str = "pyproject.toml") -> dict | None:
     if not isinstance(uv, dict):
         raise Unknown(f"{where} [tool] uv = {uv!r} is not a table; uv rejects the file")
     return uv
+
+
+def lock_schema(lock: dict) -> None:
+    """uv reads only schema `version = 1` ("uses an unsupported schema version (v2, but
+    only v1 is supported)", and a missing field is "missing field `version`"; exit 2,
+    measured uv 0.8.17, Codex P2 on #3763, round 32). `revision` is NOT checked: uv
+    accepted 1, 999 and no revision at all on the same pair (measured alongside)."""
+    version = lock.get("version")
+    if version != 1:
+        raise Unknown(f"uv.lock schema version = {version!r}; only 1 is readable by uv")
+
+
+_SOURCE_KEYS = ("registry", "git", "url", "path", "directory", "editable", "virtual")
+
+
+def source_table(source: object, name: object) -> None:
+    """A package `source` uv can read: a table with at least one source key holding a
+    string. `source = "bad"`, `{}`, `{ registry = 1 }` and `{ bogus = "x" }` are each
+    "did not match any variant of untagged enum SourceWire", `uv lock --check` exit 2,
+    while an extra key beside a valid one is read (measured uv 0.8.17, Codex P2 on
+    #3763, round 34). Whether a git or url source RESOLVES is not this check's
+    question; a requirement on one is UNKNOWN in lock_requirement anyway."""
+    if not isinstance(source, dict) or not any(
+        isinstance(source.get(key), str) for key in _SOURCE_KEYS
+    ):
+        raise Unknown(f"uv.lock [[package]] {name!r} source = {source!r} is not a source table")

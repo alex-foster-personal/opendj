@@ -472,3 +472,30 @@ def test_a_lock_package_container_that_is_not_a_list_is_unknown(tmp_path: Path) 
     got, message = _run(tmp_path, UNMARKED_PYPROJECT, head + 'package = "bad"\n')
     assert got == EXIT_UNKNOWN, message
     assert "uv.lock package = 'bad' is not a list" in message
+
+
+@pytest.mark.parametrize(
+    ("source", "code"),
+    [
+        ('"bad"', EXIT_UNKNOWN),
+        ("{}", EXIT_UNKNOWN),
+        ("{ registry = 1 }", EXIT_UNKNOWN),
+        ('{ bogus = "x" }', EXIT_UNKNOWN),
+        ('{ registry = "https://pypi.org/simple", directory = "d" }', EXIT_OK),
+    ],
+    ids=["string", "empty", "registry-integer", "unknown-key", "extra-key-beside-valid"],
+)
+def test_a_non_root_package_source_that_uv_cannot_read_is_unknown(
+    tmp_path: Path, source: str, code: int
+) -> None:
+    """Measured uv 0.8.17 (Codex P2 on #3763, round 34) on six's registry source:
+    `"bad"`, `{}`, `{ registry = 1 }` and `{ bogus = "x" }` are "did not match any
+    variant of untagged enum SourceWire" (exit 2); a stray key beside the registry is
+    read (exit 0, the control). The record check had only asked that `source` exist."""
+    registry = 'source = { registry = "https://pypi.org/simple" }'
+    assert UNMARKED_LOCK.count(registry) == 1
+    lock = UNMARKED_LOCK.replace(registry, f"source = {source}")
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+    assert got == code, message
+    if code == EXIT_UNKNOWN:
+        assert "'six' source = " in message and "is not a source table" in message
