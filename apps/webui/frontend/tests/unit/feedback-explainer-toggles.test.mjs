@@ -22,6 +22,10 @@ const WIDGET = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackWidget.svelte', import.meta.url),
 	'utf8'
 );
+// pagePins gating, the __mdtPinsVisible programmatic twin, and the
+// agent-pins filter moved out of FeedbackWidget into the app-root pin
+// layer (FB-16, #3888) - the toggle button stays in the widget, but what
+// it actually gates now lives here.
 const PIN_LAYER = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url),
 	'utf8'
@@ -36,14 +40,6 @@ const VISIBILITY_ACTIONS = readFileSync(
 );
 const VISIBILITY_PREFERENCE = readFileSync(
 	new URL('../../src/lib/rb/feedback-pin-visibility.ts', import.meta.url),
-	'utf8'
-);
-// pagePins gating, the __mdtPinsVisible programmatic twin, and the
-// agent-pins filter moved out of FeedbackWidget into the app-root pin
-// layer (FB-16, #3888) - the toggle button stays in the widget, but what
-// it actually gates now lives here.
-const PIN_LAYER = readFileSync(
-	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url),
 	'utf8'
 );
 
