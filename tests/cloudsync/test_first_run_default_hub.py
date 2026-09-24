@@ -215,7 +215,7 @@ def test_hub_process_never_seeds(tmp_path: Path) -> None:
 
 
 def test_payload_manifest_carries_the_default_hub_block(tmp_path: Path) -> None:
-    """[if] build_manifest with a default hub omits the cloudsync block [then] broken, [else stop]."""
+    """[if] build_manifest with a default hub drops the cloudsync block [then] broken, [else stop]."""
     from scripts import build_engine_payload as payload
 
     payload_dir = tmp_path / "payload"
