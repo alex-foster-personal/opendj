@@ -270,6 +270,18 @@ test('dismissing without importing closes into an honest incomplete state', () =
 	assert.equal(mod.setupOverlay.incomplete, false);
 });
 
+test('the layout keeps the wizard mounted while the incomplete note is due', () => {
+	// The note is drawn by SetupOverlay itself, in the state AFTER a close
+	// (`open` false, `incomplete` true). The root layout mounts the lazily
+	// loaded component behind a guard, so a guard on `open` alone unmounts the
+	// note before it can render (Codex review of #3862, P2). Pinned by source
+	// shape, as the markup facts above are: the guard names both flags.
+	const layout = read('src/routes/+layout.svelte');
+	assert.match(layout, /const setupMounted = \$derived\(setupOverlay\.open \|\| setupOverlay\.incomplete\);/);
+	assert.match(layout, /\{#if setupMounted\}\s*\{#await setupOverlayModule then \{ default: SetupOverlay \}\}/);
+	assert.doesNotMatch(layout, /\{#if setupOpen\}/);
+});
+
 // ------------------------------------------------ final vs unfinished probe
 
 test('an unfinished health probe is NOT a refusal', async () => {

@@ -174,7 +174,7 @@ const BUDGETS = [
   // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
   // (#3903) landed together; merged tree measured 250,040 locally against the
   // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
-  { name: 'library', limit: 259072, measured: 250236, note: 'initial load of "/"' },
+  { name: 'library', limit: 259072, measured: 250249, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

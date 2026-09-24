@@ -74,6 +74,11 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
+	// The wizard component also draws the "Setup incomplete" note, which lives
+	// in the state AFTER a close (`open` false, `incomplete` true), so the
+	// mount guard below has to cover that state or the note can never render
+	// (Codex review of #3862 at 1ac37b0c, P2).
+	const setupMounted = $derived(setupOverlay.open || setupOverlay.incomplete);
 	// The first-run wizard is a separate chunk (see the bundle-budget note on
 	// SetupOverlay). The fetch starts as soon as the shell script runs, so an
 	// "Open setup" click, or the first-run boot gate, awaits a chunk that is
@@ -353,9 +358,10 @@
      shell, and the one surface a brand new user meets cannot be missing there
      of all places. Imported lazily (the payback named in
      scripts/bundle-budget.mjs): the wizard renders only while the overlay is
-     open, and its own effects early-return while closed, so keeping it off the
-     first paint changes nothing a user or an agent can observe. -->
-{#if setupOpen}
+     open or has just been dismissed with an empty library (the incomplete
+     note), and its own effects early-return while closed, so keeping it off
+     the first paint changes nothing a user or an agent can observe. -->
+{#if setupMounted}
 	{#await setupOverlayModule then { default: SetupOverlay }}
 		<SetupOverlay />
 	{:catch error}
