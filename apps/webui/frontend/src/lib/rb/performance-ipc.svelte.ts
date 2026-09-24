@@ -629,6 +629,9 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
 	message: string;
+	headline: string;
+	detail?: string;
+	expanded: boolean;
 	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
@@ -2851,6 +2854,9 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				headline: toast.headline,
+				detail: toast.detail,
+				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)
