@@ -371,20 +371,34 @@ def carry_forward_unqueried_host(prev_block: dict) -> dict:
     about). A host not queried this pass is neither confirmed reachable nor
     newly unreachable -- it is unmeasured, so its last REAL measurement
     must survive, tagged as not re-verified rather than replaced.
+
+    The real last-known error lives in its OWN field, ``last_known_error``,
+    never folded into ``error`` itself (claude-review, PR #3827, round 4,
+    P3): ``error`` stays the constant ``not_queried_note`` across any
+    number of consecutive scoped regens, so it can never grow a nested
+    "last known: not queried this pass -- last known: ..." prefix the way
+    re-wrapping ``error`` on every pass would.
     """
     not_queried_note = "not queried this pass (--hosts filter)"
     if prev_block.get("reachable"):
         stale_as_of = prev_block.get("generated_at_utc_of_block")
-        error = not_queried_note
+        last_known_error = None
     else:
         stale_as_of = prev_block.get("stale_as_of") or prev_block.get(
             "generated_at_utc_of_block"
         )
-        prev_error = prev_block.get("error")
-        error = (
-            f"{not_queried_note} -- last known: {prev_error}" if prev_error else not_queried_note
-        )
-    return {**prev_block, "reachable": False, "error": error, "stale_as_of": stale_as_of}
+        # Carry the ORIGINAL real error forward, not this pass's rendering
+        # of it: if prev_block was itself already a carried block, its real
+        # error is in last_known_error, not error (which is just the
+        # constant note by then).
+        last_known_error = prev_block.get("last_known_error") or prev_block.get("error")
+    return {
+        **prev_block,
+        "reachable": False,
+        "error": not_queried_note,
+        "last_known_error": last_known_error,
+        "stale_as_of": stale_as_of,
+    }
 
 
 def merge_with_previous(results: list[HostResult], previous: dict[str, dict]) -> list[dict]:
@@ -455,7 +469,8 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         owned = [u for u in b["units"] if u["owned"]]
         violations = [u for u in owned if u["naming"] == "violation"]
         unknown = [u for u in owned if str(u["purpose"]).startswith("UNKNOWN")]
-        reach = "yes" if b["reachable"] else f"NO -- {b['error']}"
+        display_error = b.get("last_known_error") or b["error"]
+        reach = "yes" if b["reachable"] else f"NO -- {display_error}"
         total_row.append(
             f"| {b['host']} | {reach} | {len(owned)} | {len(violations)} | {len(unknown)} |"
         )
@@ -465,7 +480,7 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         lines.append(f"## {b['host']}")
         lines.append("")
         if not b["reachable"]:
-            lines.append(f"**UNREACHABLE this pass** -- {b['error']}")
+            lines.append(f"**UNREACHABLE this pass** -- {b.get('last_known_error') or b['error']}")
             lines.append("")
             if b["units"]:
                 lines.append(

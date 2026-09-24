@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import build
-from scripts.perf.perf_kpi_config import REPO_ROOT, load_config
+from scripts.perf.perf_kpi_config import REPO_ROOT, load_config, require_machine_label
 from scripts.perf.perf_kpi_job import cmd_nightly
 from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE_LOG_NAME
 
@@ -361,3 +361,32 @@ def test_install_requires_host_label(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     assert completed.returncode == 2
     assert "--host-label" in completed.stderr
+
+
+
+def test_load_config_does_not_require_machine_label(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The health path never attributes a ledger entry to a machine (round 4,
+    P1/BLOCKING): Air's already-installed com.af.perf-kpi-health plist
+    predates MDT_PERF_KPI_MACHINE entirely, so requiring it inside
+    load_config() itself -- which both cmd_health and cmd_nightly call --
+    would break Air's wedged-engine detection on merge with no reinstall
+    step. load_config() must succeed with machine=="" when the env var is
+    unset; only the nightly path enforces it."""
+    _nightly_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+    config = load_config()
+    assert config.machine == ""
+
+
+def test_require_machine_label_raises_when_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """cmd_nightly's own guard (require_machine_label) still fails loud
+    before doing any nightly work when the label truly is missing."""
+    _nightly_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+    config = load_config()
+    with pytest.raises(ValueError, match="MDT_PERF_KPI_MACHINE"):
+        require_machine_label(config)

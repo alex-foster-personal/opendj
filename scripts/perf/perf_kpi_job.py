@@ -24,6 +24,7 @@ from scripts.perf.perf_kpi_config import (
     LEDGER_PR_TITLE,
     REPO_ROOT,
     load_config,
+    require_machine_label,
 )
 from scripts.perf.perf_kpi_health import HealthConfig, build_restart_command, run_health_tick
 from scripts.perf.perf_kpi_nightly import (
@@ -69,6 +70,7 @@ def cmd_health(config) -> int:
 
 
 def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
+    require_machine_label(config)
     url, proc, _log_path, prep_code = acquire_nightly_engine(config, base_url=base_url)
     if prep_code != 0:
         return prep_code
@@ -130,11 +132,22 @@ def _new_entries_since(base_entries: list, local_entries: list) -> list:
 
 
 def _ledger_entries_at_ref(repo_root: Path, ref: str) -> list:
-    """``docs/perf/kpi-ledger.json``'s entries at ``ref``, or ``[]`` if it doesn't exist there.
+    """``docs/perf/kpi-ledger.json``'s entries at ``ref``, or ``[]`` if the
+    path genuinely doesn't exist there.
 
-    Uses ``git show`` with the ref and path as separate argv elements
-    (never an interpolated ``f"{ref}:{path}"`` string), so there is no shell
-    to mis-parse the ``:`` separator.
+    The ``f"{ref}:docs/perf/kpi-ledger.json"`` argument IS a Python
+    f-string interpolation, deliberately -- there is just no SHELL involved
+    in building it, since it is one argv element passed straight to
+    ``subprocess.run`` (never ``shell=True``), so there is nothing to
+    mis-parse the ``:`` separator the way an unbraced zsh ``$SHA:path``
+    would (corrected wording, claude-review, PR #3827, round 4, P2).
+
+    Only "path does not exist at this ref" returns ``[]`` (claude-review,
+    round 4, P2): a bad ref, a corrupt object, or a permissions error used
+    to return the same empty list, silently falling back to branch-only
+    entries and risking a re-published duplicate with no error. ``main`` is
+    always freshly fetched immediately before this is called, so any other
+    failure here is a real problem, not an expected absence.
     """
     completed = subprocess.run(
         ["git", "show", f"{ref}:docs/perf/kpi-ledger.json"],
@@ -144,7 +157,11 @@ def _ledger_entries_at_ref(repo_root: Path, ref: str) -> list:
         check=False,
     )
     if completed.returncode != 0:
-        return []
+        if "does not exist in" in completed.stderr:
+            return []
+        raise RuntimeError(
+            f"git show {ref}:docs/perf/kpi-ledger.json failed: {completed.stderr.strip()}"
+        )
     return json.loads(completed.stdout)["entries"]
 
 
@@ -250,7 +267,37 @@ def update_ledger_pr(
             check=True,
             cwd=worktree_dir,
         )
-        subprocess.run(["git", "push", "-u", "origin", branch], check=True, cwd=worktree_dir)
+        # --force-with-lease against a freshly re-checked remote ref
+        # (claude-review, PR #3827, round 4, P2): a plain push is rejected
+        # as non-fast-forward as soon as the standing branch survives one
+        # squash-merge, which claude-review correctly called "the normal
+        # state after the first merge" rather than a rare edge case -- Air
+        # and silver both fire at 04:00 local, so the two-host race isn't
+        # rare either. The lease is keyed on whatever the branch's HEAD
+        # actually is right now (checked again here, not reused from the
+        # earlier fetch at the top of this function), so a genuine
+        # concurrent push from the other host between that fetch and this
+        # push still fails safely instead of being silently overwritten.
+        remote_sha = subprocess.run(
+            ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=worktree_dir,
+        ).stdout.split()
+        lease_value = remote_sha[0] if remote_sha else ""
+        subprocess.run(
+            [
+                "git",
+                "push",
+                "-u",
+                f"--force-with-lease={branch}:{lease_value}",
+                "origin",
+                branch,
+            ],
+            check=True,
+            cwd=worktree_dir,
+        )
     finally:
         _remove_worktree_if_present(repo_root, worktree_dir)
     if not pr_already_open:

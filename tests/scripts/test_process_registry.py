@@ -171,6 +171,7 @@ def test_hosts_filter_carries_a_reachable_hosts_real_units_forward_as_stale(
     assert carried["stale_as_of"] == "2026-09-20T00:27:53Z"
     assert carried["units"] == prev_block["units"]
     assert "not queried this pass" in carried["error"]
+    assert carried["last_known_error"] is None
 
 
 def test_hosts_filter_preserves_an_unreachable_hosts_real_error(
@@ -189,8 +190,28 @@ def test_hosts_filter_preserves_an_unreachable_hosts_real_error(
     carried = carry_forward_unqueried_host(prev_block)
     assert carried["reachable"] is False
     assert carried["stale_as_of"] == "2026-09-16T06:11:17Z"
-    assert "Could not resolve hostname bifrost2" in carried["error"]
     assert "not queried this pass" in carried["error"]
+    assert "Could not resolve hostname bifrost2" in carried["last_known_error"]
+
+
+def test_hosts_filter_error_does_not_nest_across_repeated_regens() -> None:
+    """A second, later --hosts regen that skips the same host again must not
+    re-wrap an already-carried block's error: `error` stays the constant
+    note and `last_known_error` stays the ORIGINAL diagnosis, not a
+    "not queried -- last known: not queried -- last known: ..." pileup."""
+    prev_block = {
+        "host": "bifrost2",
+        "reachable": False,
+        "error": "ssh: Could not resolve hostname bifrost2: Name or service not known",
+        "stale_as_of": "2026-09-16T06:11:17Z",
+        "generated_at_utc_of_block": None,
+        "units": [],
+    }
+    once = carry_forward_unqueried_host(prev_block)
+    twice = carry_forward_unqueried_host(once)
+    assert twice["error"] == once["error"] == "not queried this pass (--hosts filter)"
+    assert twice["last_known_error"] == once["last_known_error"]
+    assert "Could not resolve hostname bifrost2" in twice["last_known_error"]
 
 
 def test_a_scrubbed_row_still_matches_its_live_original() -> None:
