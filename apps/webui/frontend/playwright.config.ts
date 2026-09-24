@@ -89,7 +89,7 @@ export default defineConfig({
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
-		'**/library-mode-perf-capture.spec.ts', // tests/e2e/playwright.library-mode-perf.config.ts (PERFMODE-14 capture; operator-only)
+		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (library-mode KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		// Same owner as the line above, and for the same reason: it imports
