@@ -32,14 +32,18 @@ function read(rel) {
 
 const hotkeys = read('src/lib/rb/performance-hotkeys.ts');
 const widget = read('src/lib/components/rb/FeedbackWidget.svelte');
+// the m hotkey moved into its own module (comment-pin-hotkeys.ts), installed
+// from +layout.svelte, so it fires globally rather than only while the
+// performance-hotkeys handler is attached.
+const commentPinHotkeys = read('src/lib/rb/comment-pin-hotkeys.ts');
 // savePinDraft's textarea moved into its own component (Thu 3 Sep 2026,
 // pin review v2) to bring FeedbackWidget.svelte back under the 600-line
 // file-size gate.
 const draftBubble = read('src/lib/components/rb/FeedbackPinDraftBubble.svelte');
 
 test("'m' arms comment pin placement", () => {
-	assert.match(hotkeys, /e\.key === 'm' \|\| e\.key === 'M'/);
-	assert.match(hotkeys, /armPinPlacement\(\)/);
+	assert.match(commentPinHotkeys, /e\.key !== 'm' && e\.key !== 'M'/);
+	assert.match(commentPinHotkeys, /armPinPlacement\(\)/);
 });
 
 test('no shortcut fires while a text field has focus, or with a modifier held', () => {

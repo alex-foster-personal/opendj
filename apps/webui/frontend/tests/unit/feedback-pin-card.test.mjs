@@ -55,6 +55,13 @@ const card = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinCard.svelte', import.meta.url)),
 	'utf8'
 );
+// FeedbackPinCard's mount point, openPinId/closePin state, and the
+// pinDraft-retention rule moved from FeedbackWidget into the app-root pin
+// layer (FB-16, #3888).
+const pinLayer = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)),
+	'utf8'
+);
 
 let mod;
 before(async () => {
@@ -92,8 +99,8 @@ test('the pin opens a real dialog, not just a native title', () => {
 });
 
 test('a reopened pin card has a close X and only outside pointer presses dismiss it', () => {
-	assert.match(widget, /import FeedbackPinCard from '.\/FeedbackPinCard\.svelte'/);
-	assert.match(widget, /<FeedbackPinCard[\s\S]*onclose=\{closePin\}/);
+	assert.match(pinLayer, /import FeedbackPinCard from '.\/FeedbackPinCard\.svelte'/);
+	assert.match(pinLayer, /<FeedbackPinCard[\s\S]*onclose=\{closePin\}/);
 	assert.match(card, /aria-label="Close comment pin"/);
 	assert.match(card, /onclick=\{onclose\}>×<\/button/);
 	assert.match(
@@ -107,7 +114,7 @@ test('a reopened pin card has a close X and only outside pointer presses dismiss
 	);
 	assert.match(handler, /pinBodyElement\?\.contains\(target\)/);
 	assert.match(handler, /onclose\(\)/);
-	const close = widget.slice(widget.indexOf('function closePin'), widget.indexOf('// ----- pin placement'));
+	const close = pinLayer.slice(pinLayer.indexOf('function closePin'), pinLayer.indexOf('function archiveOpenPin'));
 	assert.match(close, /openPinId = null/);
 	assert.doesNotMatch(close, /pinDraft\s*=\s*null/, 'dismissing a reopened card must retain a new draft');
 });
