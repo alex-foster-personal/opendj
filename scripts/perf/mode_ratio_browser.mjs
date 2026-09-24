@@ -7,6 +7,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
+import { watchContinuousPlaybackUntil } from "./trackify-playback-watch.mjs";
+
 async function loadChromium() {
   const resolver = createRequire(path.join(process.cwd(), "package.json"));
   const entry = resolver.resolve("@playwright/test");
@@ -162,11 +164,13 @@ if (mode === "gig-trackify") {
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
   try {
     console.log("TRACKIFY_READY");
-    await waitForLine();
     // The sample loop only reads process RSS/CPU, so it cannot itself detect
     // an operator quarantine, a feed running dry, or the page navigating away
-    // mid-capture; re-check here so a sample taken over a page that stopped
-    // playing partway through is never reported as a measurement.
+    // mid-capture; watch playback throughout the whole window the sampler is
+    // running, not only at its two endpoints -- a page that stalls for most
+    // of the window and recovers right before "NEXT" arrives must still
+    // invalidate the capture (Sol review, PR #3676).
+    await watchContinuousPlaybackUntil(trackifyPage, waitForLine());
     await waitForTrackifyPlaying(trackifyPage);
     console.log("DONE");
   } finally {
@@ -176,7 +180,7 @@ if (mode === "gig-trackify") {
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
   try {
     console.log("TRACKIFY_READY");
-    await waitForLine();
+    await watchContinuousPlaybackUntil(trackifyPage, waitForLine());
     await waitForTrackifyPlaying(trackifyPage);
     console.log("DONE");
   } finally {
