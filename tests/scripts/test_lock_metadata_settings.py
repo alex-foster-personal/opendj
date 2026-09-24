@@ -116,7 +116,8 @@ def test_a_setting_that_disagrees_with_the_lock_is_stale(
         (
             "constraint-dependencies = [\"six<2; python_version < '3.12'\"]",
             "[manifest]\nconstraints = [\n"
-            '    { name = "six", marker = "python_full_version < \'3.12\'", specifier = "<2" },\n]\n',
+            '    { name = "six", marker = "python_full_version < \'3.12\'", '
+            'specifier = "<2" },\n]\n',
         ),
         (
             'constraint-dependencies = ["six<2", "seven>=1"]',
