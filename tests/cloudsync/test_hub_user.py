@@ -306,6 +306,23 @@ def test_remove_disables_deletes_units_drops_registry_and_keeps_data(tmp_path: P
     assert (Path(ben.hub.data_dir) / "state" / "state.db").is_file()
 
 
+def test_remove_stops_registered_units_even_when_unit_files_are_missing(tmp_path: Path) -> None:
+    """A stale unit dir must not leave an orphan process serving the removed user's data."""
+    systemctl, log = _fake_systemctl(tmp_path)
+    ben = _provision(tmp_path, "ben")
+    for path in ben.unit_files.values():
+        Path(path).unlink()
+    removal = hub_user.remove_user_hub(
+        user="ben", root=tmp_path / "hubs", unit_dir=tmp_path / "units", systemctl=systemctl
+    )
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "--user disable --now opendj-hub-ben.service opendj-hub-ben-backup.service "
+        "opendj-hub-ben-backup.timer",
+    ]
+    assert set(hub_user.read_registry(tmp_path / "hubs")) == set()
+    assert removal.kept == [ben.hub.data_dir, ben.hub.backup_dir]
+
+
 def test_remove_unknown_user_is_refused(tmp_path: Path) -> None:
     (tmp_path / "hubs").mkdir()
     with pytest.raises(hub_deploy.HubDeployError, match="no hub registered"):

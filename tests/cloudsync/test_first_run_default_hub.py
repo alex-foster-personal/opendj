@@ -19,16 +19,20 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+import uvicorn
+from fastapi import FastAPI
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, first_run
+from apps.sync_hub import client, first_run, service
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import scheduler as sync_scheduler
 from apps.sync_hub import status as sync_status
+from tests.cloudsync.conftest import free_port
+from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-25")
 
@@ -71,8 +75,23 @@ async def _until(predicate: Callable[[], bool], what: str) -> None:
         await asyncio.sleep(0.02)
 
 
-def _noop_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
-    raise AssertionError("this test proves the loop beats; no round is expected to complete")
+@pytest.fixture
+def live_hub(tmp_path: Path) -> Iterator[str]:
+    """The real sync router on an EMPTY hub DB behind uvicorn; yields its URL."""
+    hub_dir = tmp_path / "hub"
+    app = FastAPI()
+    app.state.state_db_path = str(client.state_db_path(hub_dir))
+    app.state.sync_hub_data_dir = str(hub_dir)
+    app.state.sync_hub_machine_name = "hub"
+    app.include_router(service.router, prefix="/api/v1")
+    port = free_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server, thread = start_uvicorn_in_thread(config, what="the first-run default-hub test hub")
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10.0)
 
 
 # ----- resolution ------------------------------------------------------------
@@ -117,40 +136,48 @@ def test_malformed_default_hub_is_refused_not_seeded(tmp_path: Path, bad: str) -
 # ----- seeding ---------------------------------------------------------------
 
 
-def test_first_run_with_default_hub_writes_config_and_scheduler_beats(tmp_path: Path) -> None:
-    """[if] first run with a default hub leaves sync off or silent [then] broken, [else stop]."""
+def test_first_run_with_default_hub_writes_config_and_scheduler_beats(
+    tmp_path: Path, live_hub: str
+) -> None:
+    """[if] first run with a default hub leaves sync off, silent, or fake [then] broken, [else stop].
+
+    Sol P1 (PR #3879): the earlier version of this test passed a stub ``sync_fn``
+    that always raised, so it only proved the scheduler heartbeat runs, not that
+    the seeded config drives a real sync round through the production transport.
+    This runs the scheduler's DEFAULT sync function against a real hub over real
+    HTTP, exactly as ``test_cloudsync_scheduler.py`` does, and asserts the round
+    actually completed.
+    """
     data_dir = _spoke(tmp_path)
-    env = {first_run.DEFAULT_HUB_ENV: _DEFAULT_HUB}
+    env = {first_run.DEFAULT_HUB_ENV: live_hub}
     assert sync_config.read_config(data_dir) is None
 
     seed = first_run.seed_default_config(data_dir, env=env)
 
     assert seed.outcome == "seeded"
-    assert seed.hub_url == _DEFAULT_HUB
+    assert seed.hub_url == live_hub
     stored = sync_config.read_config(data_dir)
-    assert stored == sync_config.CloudSyncConfig(
-        enabled=True, hub_url=_DEFAULT_HUB, machine_name=None
-    )
+    assert stored == sync_config.CloudSyncConfig(enabled=True, hub_url=live_hub, machine_name=None)
     before = sync_status.read_status(data_dir, env={})
     assert (before.configured, before.running) == (True, False)
 
     async def run() -> None:
-        scheduler = sync_scheduler.CloudSyncScheduler(
-            data_dir, cfg=_FAST, sync_fn=_noop_sync, env={}
-        )
+        scheduler = sync_scheduler.CloudSyncScheduler(data_dir, cfg=_FAST, env={})
         await scheduler.start()
         try:
             await _until(
-                lambda: sync_status.read_status(data_dir, env={}).running,
-                "the scheduler to beat on the seeded config",
+                lambda: bool(sync_status.read_results(data_dir)),
+                "the seeded config to drive a real sync round to completion",
             )
         finally:
             await scheduler.stop()
 
     asyncio.run(run())
+    journal = sync_status.read_results(data_dir)
+    assert journal and journal[0].status == "ok", journal
     after = sync_status.read_status(data_dir, env={})
     assert after.configured is True
-    assert after.endpoint == _DEFAULT_HUB
+    assert after.endpoint == live_hub
     assert after.enabled_source == "file"
 
 

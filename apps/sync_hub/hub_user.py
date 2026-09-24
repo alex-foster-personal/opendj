@@ -346,9 +346,7 @@ def remove_user_hub(
         raise hub_deploy.HubDeployError(f"{user} has no hub registered in {registry_path(root)}")
     names = unit_names(user)
     present = [name for name in names.values() if (Path(unit_dir) / name).exists()]
-    commands: list[list[str]] = []
-    if present:
-        commands.append([systemctl, "--user", "disable", "--now", *present])
+    commands: list[list[str]] = [[systemctl, "--user", "disable", "--now", *names.values()]]
     for command in commands:
         run(command)
     for name in present:
