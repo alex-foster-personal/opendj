@@ -91,11 +91,23 @@ export function createTrackifyFeedController(): {
 		},
 		step(enabled, lastPlaylist, viewRows) {
 			const nextScope = trackifyPlaylistScope(lastPlaylist);
+			const scopeChanged = nextScope !== scope;
 			const decision = feedSnapshot.step(enabled, nextScope, viewRows);
 			if (decision.publish !== null) {
 				rows = decision.publish.slice();
 				scope = nextScope;
-				if (decision.snapshotted || decision.publish.length > 0) epoch += 1;
+				// A successfully hydrated EMPTY scope (an empty playlist, or a
+				// scope switch that resolves to nothing) still needs its own
+				// epoch: without `scopeChanged` here, `snapshotted` is false
+				// and `publish.length` is 0, so the epoch would not bump, and
+				// `_syncEpoch()` in trackify-autoplay.svelte.ts would never
+				// reset `_playedIds`/`_quarantinedIds`/`_triggeredFor` from
+				// the PREVIOUS scope -- rows is correctly cleared here, so
+				// autoplay cannot keep PICKING old-scope tracks, but a track
+				// already loaded before the switch could still be treated as
+				// "already played" if the same scope is revisited later
+				// (Sol review, PR #3676).
+				if (decision.snapshotted || decision.publish.length > 0 || scopeChanged) epoch += 1;
 			}
 			return {
 				scope,

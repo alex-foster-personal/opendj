@@ -36,6 +36,40 @@ describe('trackify-feed', () => {
 		assert.equal(second.epoch, 1);
 	});
 
+	it('bumps epoch when a newly selected scope hydrates empty, not just when it has rows (Sol review, PR #3676)', async () => {
+		const feed = await loadTypeScriptModule('src/lib/rb/trackify-feed.ts');
+		const controller = feed.createTrackifyFeedController();
+		const allTracks = controller.step(true, null, [
+			{ stable_id: 'a', key: '8A', bpm: 120, file_exists: true }
+		]);
+		assert.equal(allTracks.epoch, 1);
+		assert.deepEqual(allTracks.rows.map((row) => row.stable_id), ['a']);
+
+		// Switch to a genuinely different, EMPTY playlist. Rows must clear
+		// (already true before this fix), and the epoch must ALSO bump: the
+		// caller (`_syncEpoch()` in trackify-autoplay.svelte.ts) resets its
+		// played/quarantined bookkeeping only on an epoch change, and without
+		// one here, revisiting a scope later would wrongly treat a track as
+		// "already played" from a different scope's history.
+		const emptyPlaylist = controller.step(true, { playlist_id: 'p1', name: 'Empty', kind: 'playlist' }, []);
+		assert.deepEqual(emptyPlaylist.rows, []);
+		assert.equal(
+			emptyPlaylist.epoch,
+			2,
+			'a scope switch to an empty playlist must still bump the epoch, not just clear rows'
+		);
+
+		// Control for the overshoot direction: polling the SAME still-empty
+		// scope again (e.g. the 60 s interval hydrate) must NOT bump the
+		// epoch a second time -- only a genuine scope CHANGE should.
+		const samePlaylistAgain = controller.step(
+			true,
+			{ playlist_id: 'p1', name: 'Empty', kind: 'playlist' },
+			[]
+		);
+		assert.equal(samePlaylistAgain.epoch, 2, 'polling the same empty scope again must not re-bump epoch');
+	});
+
 	describe('pagination hard limit', () => {
 		let feed;
 		let originalFetch;
