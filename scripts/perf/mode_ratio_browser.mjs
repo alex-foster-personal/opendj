@@ -57,6 +57,26 @@ async function waitForTrackifyIpc(page) {
   });
 }
 
+/**
+ * An idle Trackify page (empty feed, failed hydration, or every candidate
+ * quarantined) would otherwise sample as a real "savings" ratio and a flat
+ * leak slope, both recorded `measured: true` -- review finding on PR #3676.
+ * Wait for an actually-loaded, actually-playing deck before signalling
+ * READY, so the capture is over a page that is doing the work it claims.
+ */
+async function waitForTrackifyPlaying(page) {
+  await page.waitForFunction(
+    () => {
+      const ipc = window.musicDjToolsTrackify;
+      if (ipc === undefined) return false;
+      const state = ipc.query();
+      return state.deck.stable_id !== null && state.deck.playing === true;
+    },
+    undefined,
+    { timeout: 60_000 }
+  );
+}
+
 async function waitForQueueIdle(page) {
   await page.waitForFunction(
     () => {
@@ -111,6 +131,7 @@ async function openTrackify(page) {
   await picker.locator("a.mode-card").filter({ hasText: "Trackify" }).click();
   await page.waitForURL((url) => url.pathname === "/music-player", { timeout: 60_000 });
   await waitForTrackifyIpc(page);
+  await waitForTrackifyPlaying(page);
   await page.waitForTimeout(5_000);
 }
 
@@ -128,10 +149,16 @@ try {
   } else {
     await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
     await waitForTrackifyIpc(page);
+    await waitForTrackifyPlaying(page);
     await page.waitForTimeout(5_000);
     console.log("TRACKIFY_READY");
     await waitForLine();
   }
+  // The sample loop only reads process RSS/CPU, so it cannot itself detect
+  // an operator quarantine, a feed running dry, or the page navigating away
+  // mid-capture; re-check here so a sample taken over a page that stopped
+  // playing partway through is never reported as a measurement.
+  await waitForTrackifyPlaying(page);
   console.log("DONE");
 } finally {
   await browser.close();

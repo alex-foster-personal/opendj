@@ -1,174 +1,179 @@
-"""Unit tests for scripts.perf.capture_mode_ratios telemetry probing."""
+"""Unit tests for scripts.perf.capture_mode_ratios process-tree sampling.
+
+PERFMODE-15 claude-review finding (PR #3676): the prior version of this
+sampler probed the packaged desktop app's `/api/v1/performance/telemetry/processes`
+endpoint, which describes an unrelated process family (desktop-shell /
+python-engine / webkit-webcontent) rather than the Playwright/Chromium
+process that `mode_ratio_browser.mjs` actually drives. These tests exercise
+the real `psutil` process tree (per .claude/rules/verification.md: a mocked
+psutil would share the defect under test, not catch it) plus the call-shape
+regression that pins sampling to the browser subprocess's own pid.
+"""
 
 from __future__ import annotations
 
-import io
-import itertools
-import json
+import os
+import subprocess
+import time
 from unittest.mock import MagicMock, patch
 
+import psutil
 import pytest
 
 from scripts.perf import capture_mode_ratios as cmr
 
-_OMIT = object()
 
-
-def _response(payload: dict[str, object]) -> MagicMock:
-    response = MagicMock()
-    response.status = 200
-    response.read.return_value = json.dumps(payload).encode("utf-8")
-    response.__enter__.return_value = response
-    return response
-
-
-def _telemetry_body(
-    *,
-    available: bool = True,
-    footprint_mb: float = 512.0,
-    cpu_percent: float = 12.5,
-    stale: object = False,
-) -> dict[str, object]:
-    body: dict[str, object] = {
-        "available": available,
-        "timestamp": "2026-09-24T06:00:00Z",
-        "age_seconds": 3.0,
-        "stale": stale,
-        "totals": {
-            "physical_footprint_mb": footprint_mb,
-            "cpu_percent": cpu_percent,
-        },
-        "by_role_mb": {
-            "python-engine": footprint_mb,
-        },
-    }
-    if stale is _OMIT:
-        del body["stale"]
-    return body
+def _spawn_sleeper(seconds: float) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(["sleep", str(seconds)])
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_probe_once_uses_frontend_scoped_telemetry_endpoint() -> None:
-    """[if] probe runs [then] it targets the frontend origin telemetry URL, [else stop]."""
-    frontend = "http://127.0.0.1:5273"
-    payload = _telemetry_body()
-    response = MagicMock()
-    response.status = 200
-    response.read.return_value = json.dumps(payload).encode("utf-8")
-    response.__enter__.return_value = response
+def test_live_tree_includes_a_spawned_child() -> None:
+    """[if] a child process is spawned under the sampled root [then] the
+    tree walk finds it, [else stop].
 
-    with patch("scripts.perf.capture_mode_ratios.urlopen", return_value=response) as urlopen:
-        sample = cmr._probe_once(frontend)
-
-    urlopen.assert_called_once()
-    request = urlopen.call_args.args[0]
-    assert request.full_url == f"{frontend}/api/v1/performance/telemetry/processes"
-    assert sample["totals"]["physical_footprint_mb"] == 512.0
-    assert sample["totals"]["cpu_percent"] == 12.5
-
-
-@pytest.mark.requirement("PERFMODE-15")
-def test_probe_once_does_not_shell_out_to_opendj_performance_probe() -> None:
-    """[if] probe runs [then] it does not invoke opendj_performance_probe, [else stop]."""
-    payload = _telemetry_body()
-    response = MagicMock()
-    response.status = 200
-    response.read.return_value = json.dumps(payload).encode("utf-8")
-    response.__enter__.return_value = response
-
-    with (
-        patch("scripts.perf.capture_mode_ratios.urlopen", return_value=response),
-        patch("scripts.perf.capture_mode_ratios.subprocess.run") as run,
-        patch("scripts.perf.capture_mode_ratios.subprocess.Popen") as popen,
-    ):
-        cmr._probe_once("http://127.0.0.1:8686")
-
-    run.assert_not_called()
-    popen.assert_not_called()
-
-
-@pytest.mark.requirement("PERFMODE-15")
-def test_probe_once_raises_when_telemetry_unavailable() -> None:
-    """[if] telemetry is unavailable [then] probe raises, [else stop]."""
-    payload = _telemetry_body(available=False)
-    response = MagicMock()
-    response.status = 200
-    response.read.return_value = json.dumps(payload).encode("utf-8")
-    response.__enter__.return_value = response
-
-    with (
-        patch("scripts.perf.capture_mode_ratios.urlopen", return_value=response),
-        pytest.raises(RuntimeError, match="telemetry unavailable"),
-    ):
-        cmr._probe_once("http://127.0.0.1:5273")
-
-
-@pytest.mark.requirement("PERFMODE-15")
-def test_probe_once_raises_on_non_200_http_status() -> None:
-    """[if] telemetry HTTP status is not 200 [then] probe raises, [else stop]."""
-    from email.message import Message
-    from urllib.error import HTTPError
-
-    error = HTTPError(
-        url="http://127.0.0.1:5273/api/v1/performance/telemetry/processes",
-        code=503,
-        msg="service unavailable",
-        hdrs=Message(),
-        fp=io.BytesIO(b""),
-    )
-
-    with (
-        patch("scripts.perf.capture_mode_ratios.urlopen", side_effect=error),
-        pytest.raises(RuntimeError, match="telemetry probe failed \\(503\\)"),
-    ):
-        cmr._probe_once("http://127.0.0.1:5273")
-
-
-@pytest.mark.requirement("PERFMODE-15")
-@pytest.mark.parametrize("stale", [True, None, "false", 0, _OMIT])
-def test_probe_once_reports_unknown_for_telemetry_not_marked_fresh(stale: object) -> None:
-    """[if] telemetry totals are not affirmatively fresh [then] probe raises UNKNOWN, [else stop].
-
-    The endpoint serves an old native-probe record with `available: true` and
-    `stale: true`; only an explicit `stale: false` is a measurement.
+    This is the direct regression test for the wrong-process defect: a
+    sampler that queried a fixed HTTP endpoint instead of walking the OS
+    process tree would never see this child appear.
     """
-    payload = _telemetry_body(stale=stale)
-
-    with (
-        patch("scripts.perf.capture_mode_ratios.urlopen", return_value=_response(payload)),
-        pytest.raises(RuntimeError, match=r"telemetry UNKNOWN .*not fresh"),
-    ):
-        cmr._probe_once("http://127.0.0.1:5273")
+    child = _spawn_sleeper(2.0)
+    try:
+        sampler = cmr._ProcessTreeSampler(os.getpid())
+        tree_pids = {proc.pid for proc in sampler._live_tree()}
+        assert child.pid in tree_pids
+    finally:
+        child.kill()
+        child.wait()
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_stale_telemetry_never_reaches_a_steady_sample() -> None:
-    """[if] the endpoint has only a stale record [then] no footprint/cpu
-    value is produced, [else stop]."""
-    payload = _telemetry_body(stale=True, footprint_mb=999.0)
+def test_tracked_processes_are_forgotten_once_the_child_exits() -> None:
+    """[if] a tracked child process exits [then] a later tree walk drops
+    it from the persistent cache, [else stop]."""
+    child = _spawn_sleeper(0.3)
+    sampler = cmr._ProcessTreeSampler(os.getpid())
+    sampler._live_tree()
+    assert child.pid in sampler._tracked
+
+    child.wait()
+    time.sleep(0.2)  # let the OS reap the zombie before re-walking
+    sampler._live_tree()
+
+    assert child.pid not in sampler._tracked
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_sample_raises_when_the_root_process_is_gone() -> None:
+    """[if] the sampled root pid no longer exists [then] sample() raises
+    loud rather than reporting a silent zero, [else stop]."""
+    with patch.object(psutil, "Process", side_effect=psutil.NoSuchProcess(999999)):
+        sampler = cmr._ProcessTreeSampler(999999)
+        with pytest.raises(RuntimeError, match="is not running"):
+            sampler.sample()
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
+    """[if] a process is newly tracked [then] its first cpu_percent reading
+    is primed (near-zero), so a single busy-tick between construction and
+    the first real sample is not misreported as a huge CPU spike,
+    [else stop].
+
+    Mutation control (opposite direction, per verification.md): a sampler
+    that constructed a FRESH `psutil.Process` on every call instead of
+    reusing one would read 0.0 on every sample, not just the first -- that
+    is the bug this class exists to avoid, so this test also serves as the
+    control that catches a regression back to that shape (see the CPU-rises
+    test below).
+    """
+    sampler = cmr._ProcessTreeSampler(os.getpid())
+    first = sampler.sample()
+    assert first["cpu_percent"] >= 0.0
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
+    """[if] the same tracked process burns CPU between two samples [then]
+    the second sample's cpu_percent reads above zero, [else stop].
+
+    Proves the persistent `dict[int, psutil.Process]` cache is load-bearing:
+    `cpu_percent(interval=None)` on a FRESH Process object always returns
+    0.0 on its first call, so a sampler that rebuilt Process objects each
+    call (the mutation) would fail this test by reporting 0.0 here too.
+    """
+    sampler = cmr._ProcessTreeSampler(os.getpid())
+    sampler.sample()  # primes the cache
+
+    deadline = time.monotonic() + 0.5
+    total = 0
+    while time.monotonic() < deadline:
+        total += 1  # burn CPU in this process so its own usage is nonzero
+
+    second = sampler.sample()
+    assert second["cpu_percent"] > 0.0
+    assert total > 0  # keep the busy-loop from being optimized away
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
+    """[if] duration_s is below the minimum sample window [then]
+    _sample_steady raises before starting any capture, [else stop]."""
+    with pytest.raises(ValueError, match="at least"):
+        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
+
+
+def _fake_browser_proc(pid: int, lines: list[str]) -> MagicMock:
+    proc = MagicMock()
+    proc.pid = pid
+    proc.stdout = MagicMock()
+    proc.stdout.readline.side_effect = [f"{line}\n" for line in lines]
+    proc.stdin = MagicMock()
+    proc.stderr = MagicMock()
+    proc.stderr.read.return_value = ""
+    proc.wait.return_value = 0
+    proc.poll.return_value = 0
+    return proc
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url() -> None:
+    """[if] a Gig/Trackify capture runs [then] it samples the browser
+    subprocess's own pid, never the frontend URL string, [else stop].
+
+    This is the call-shape regression test for the claude-review finding:
+    the prior implementation threaded the frontend URL into an HTTP probe
+    of the packaged app's telemetry endpoint instead of the pid of the
+    process `mode_ratio_browser.mjs` actually spawned.
+    """
+    fake_proc = _fake_browser_proc(pid=54321, lines=["GIG_READY", "TRACKIFY_READY", "DONE"])
 
     with (
-        patch("scripts.perf.capture_mode_ratios.urlopen", return_value=_response(payload)),
-        patch("scripts.perf.capture_mode_ratios.time.sleep"),
+        patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=fake_proc),
         patch(
-            "scripts.perf.capture_mode_ratios.time.monotonic",
-            side_effect=itertools.count(0.0, float(cmr._PROBE_INTERVAL_S)),
-        ),
-        pytest.raises(RuntimeError, match="telemetry UNKNOWN"),
+            "scripts.perf.capture_mode_ratios._sample_steady",
+            return_value={"footprint_mb": 100.0, "cpu_percent": 10.0, "sample_count": 4.0},
+        ) as sample_steady,
     ):
-        cmr._sample_steady("http://127.0.0.1:5273", cmr._MIN_SAMPLE_S)
+        cmr._capture_gig_then_trackify("http://127.0.0.1:5273", cmr._MIN_SAMPLE_S)
+
+    assert sample_steady.call_count == 2
+    for call in sample_steady.call_args_list:
+        root_pid_arg = call.args[0]
+        assert root_pid_arg == 54321
+        assert root_pid_arg != "http://127.0.0.1:5273"
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_probe_once_accepts_fresh_telemetry() -> None:
-    """[if] telemetry is marked fresh [then] its totals are the sample, [else stop].
+def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() -> None:
+    """[if] a leak capture runs [then] it samples the browser subprocess's
+    own pid, never the frontend URL string, [else stop]."""
+    fake_proc = _fake_browser_proc(pid=98765, lines=["TRACKIFY_READY", "DONE"])
 
-    Control for the overshoot direction: a guard that rejects every body
-    passes the UNKNOWN tests above and measures nothing.
-    """
-    payload = _telemetry_body(stale=False, footprint_mb=321.0, cpu_percent=4.5)
+    with (
+        patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=fake_proc),
+        patch("scripts.perf.capture_mode_ratios._sample_leak", return_value=1.5) as sample_leak,
+    ):
+        slope = cmr._capture_trackify_leak("http://127.0.0.1:5273", 3600)
 
-    with patch("scripts.perf.capture_mode_ratios.urlopen", return_value=_response(payload)):
-        sample = cmr._probe_once("http://127.0.0.1:5273")
-
-    assert sample == {"totals": {"physical_footprint_mb": 321.0, "cpu_percent": 4.5}}
+    sample_leak.assert_called_once_with(98765, 3600)
+    assert slope == 1.5

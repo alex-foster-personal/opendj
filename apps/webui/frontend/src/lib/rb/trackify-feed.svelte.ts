@@ -8,6 +8,7 @@ import {
 	type TrackifyFeedSnapshot
 } from '$lib/rb/trackify-feed';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
+import { pushToast } from '$lib/rb/performance-ipc.svelte';
 
 let _controller = createTrackifyFeedController();
 let _hydrating = false;
@@ -48,10 +49,19 @@ async function _hydrate(): Promise<void> {
 	}
 }
 
+/** Surfaces a failed hydration instead of leaving an unhandled rejection
+ * with the feed silently stuck empty (PERFMODE-15 review finding). */
+function _hydrateOrToast(): void {
+	_hydrate().catch((error: unknown) => {
+		const reason = error instanceof Error ? error.message : String(error);
+		pushToast(`Trackify: could not load the feed (${reason})`, 'error');
+	});
+}
+
 export function installTrackifyFeed(): () => void {
-	void _hydrate();
+	_hydrateOrToast();
 	const interval = setInterval(() => {
-		void _hydrate();
+		_hydrateOrToast();
 	}, 60_000);
 	return () => {
 		clearInterval(interval);

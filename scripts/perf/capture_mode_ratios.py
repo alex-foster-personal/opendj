@@ -13,15 +13,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import platform
 import subprocess
 import time
 from pathlib import Path
 from typing import IO, Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import psutil
 
 from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
 from scripts.perf.capture_kpi_ledger import build_row, session_meta
@@ -32,9 +31,6 @@ _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
 _MIN_SAMPLE_S = 60
 _PROBE_INTERVAL_S = 15
-_PROBE_TIMEOUT_S = 10.0
-_TELEMETRY_PATH = "/api/v1/performance/telemetry/processes"
-_ROLE_FALLBACK = ("desktop-shell", "python-engine", "webkit-webcontent")
 _BROWSER_SERVICE_ID = "com.af.music-dj-tools.mode-ratio-browser"
 
 
@@ -57,99 +53,88 @@ def _git_sha() -> str:
     return proc.stdout.strip()
 
 
-def _telemetry_url(frontend: str) -> str:
-    return f"{frontend.rstrip('/')}{_TELEMETRY_PATH}"
+class _ProcessTreeSampler:
+    """Samples footprint and CPU of a live process and its descendants.
+
+    `mode_ratio_browser.mjs` drives Gig and Trackify in a Playwright-launched
+    Chromium against the dev frontend -- NOT the packaged desktop app. The
+    engine's `/api/v1/performance/telemetry/processes` endpoint reports the
+    packaged app's own process family (desktop-shell / python-engine /
+    webkit-webcontent) read from a native diagnostics log, which has nothing
+    to do with this Chromium instance: sampling it would compute a
+    footprint/CPU ratio over processes whose cost barely moves between
+    modes, then publish that as "Trackify savings vs Gig" (claude-review
+    finding on PR #3676). This sampler instead walks the actual OS process
+    tree rooted at the browser subprocess's PID (Chromium's main process
+    plus every renderer/GPU helper it spawns), which is where the
+    AudioContexts, decoded PCM and waveform work this KPI is about actually
+    live.
+
+    `psutil.Process.cpu_percent(interval=None)` reports the delta since the
+    PREVIOUS call on that SAME Process object and returns 0.0 on a
+    process's first call, so this class keeps one persistent
+    `psutil.Process` per pid across samples rather than constructing a
+    fresh one each time; a process that appears mid-capture (a new Chromium
+    renderer) reads 0.0 CPU for its own first sample only, never after.
+    """
+
+    def __init__(self, root_pid: int) -> None:
+        self._root_pid = root_pid
+        self._tracked: dict[int, psutil.Process] = {}
+
+    def _live_tree(self) -> list[psutil.Process]:
+        try:
+            root = psutil.Process(self._root_pid)
+        except psutil.NoSuchProcess as exc:
+            raise RuntimeError(
+                f"mode_ratio_browser process {self._root_pid} is not running"
+            ) from exc
+        tree = [root, *root.children(recursive=True)]
+        seen_pids = {proc.pid for proc in tree}
+        for pid in list(self._tracked):
+            if pid not in seen_pids:
+                del self._tracked[pid]
+        for proc in tree:
+            if proc.pid not in self._tracked:
+                self._tracked[proc.pid] = proc
+                try:
+                    proc.cpu_percent(interval=None)  # prime the delta baseline
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        return list(self._tracked.values())
+
+    def sample(self) -> dict[str, float]:
+        footprint_mb = 0.0
+        cpu_percent = 0.0
+        live = 0
+        for proc in self._live_tree():
+            try:
+                footprint_mb += proc.memory_info().rss / (1024 * 1024)
+                cpu_percent += proc.cpu_percent(interval=None)
+                live += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        if live == 0:
+            raise RuntimeError(
+                f"mode_ratio_browser process tree rooted at {self._root_pid} "
+                "has no live processes to sample"
+            )
+        return {"physical_footprint_mb": footprint_mb, "cpu_percent": cpu_percent}
 
 
-def _dict_field(body: dict[str, Any], key: str) -> dict[str, Any]:
-    """Narrows `body[key]` to a dict, binding the isinstance-checked value
-    itself (rather than re-calling `.get()` in the branch) so mypy can
-    actually narrow it instead of inferring `dict | Any | None`."""
-    value = body.get(key)
-    return value if isinstance(value, dict) else {}
-
-
-def _footprint_mb_from_telemetry(body: dict[str, Any]) -> float:
-    totals = _dict_field(body, "totals")
-    footprint = totals.get("physical_footprint_mb")
-    if isinstance(footprint, (int, float)) and math.isfinite(float(footprint)):
-        return float(footprint)
-    by_role = _dict_field(body, "by_role_mb")
-    summed = 0.0
-    for role in _ROLE_FALLBACK:
-        value = by_role.get(role)
-        if isinstance(value, (int, float)) and math.isfinite(float(value)):
-            summed += float(value)
-    if summed <= 0:
-        raise RuntimeError("telemetry response missing physical_footprint_mb totals")
-    return summed
-
-
-def _cpu_percent_from_telemetry(body: dict[str, Any]) -> float:
-    totals = _dict_field(body, "totals")
-    cpu = totals.get("cpu_percent")
-    if isinstance(cpu, (int, float)) and math.isfinite(float(cpu)):
-        return float(cpu)
-    raise RuntimeError("telemetry response missing cpu_percent totals")
-
-
-def _probe_once(frontend: str) -> dict[str, Any]:
-    url = _telemetry_url(frontend)
-    request = Request(url, headers={"Accept": "application/json"}, method="GET")
-    try:
-        with urlopen(request, timeout=_PROBE_TIMEOUT_S) as response:
-            status = response.status
-            raw = response.read().decode("utf-8")
-    except HTTPError as exc:
-        raise RuntimeError(f"telemetry probe failed ({exc.code}) for {url}") from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"telemetry probe unreachable for {url}: {exc}") from exc
-    if status != 200:
-        raise RuntimeError(f"telemetry probe failed ({status}) for {url}")
-    body = json.loads(raw)
-    if not isinstance(body, dict):
-        raise RuntimeError(  # noqa: TRY004 -- one exception type for every probe failure
-            f"telemetry probe returned non-object JSON for {url}"
-        )
-    if body.get("available") is not True:
-        reason = body.get("reason", "telemetry unavailable")
-        raise RuntimeError(f"telemetry unavailable for {url}: {reason}")
-    # `available` only says the endpoint found SOME sample: it serves the
-    # native probe's last JSONL record with `stale: true` however old that
-    # record is, and a leftover file from an earlier session would otherwise
-    # be recorded as this session's Gig/Trackify footprint. Accept totals only
-    # when the endpoint affirmatively marks them fresh; a missing marker is as
-    # unmeasured as `stale: true`. Nothing is ever written from it.
-    if body.get("stale") is not False:
-        raise RuntimeError(
-            f"telemetry UNKNOWN for {url}: process sample is not fresh "
-            f"(stale={body.get('stale')!r}, age_seconds={body.get('age_seconds')!r}, "
-            f"timestamp={body.get('timestamp')!r})"
-        )
-    return {
-        "totals": {
-            "physical_footprint_mb": _footprint_mb_from_telemetry(body),
-            "cpu_percent": _cpu_percent_from_telemetry(body),
-        }
-    }
-
-
-def _sample_steady(frontend: str, duration_s: int) -> dict[str, float]:
+def _sample_steady(root_pid: int, duration_s: int) -> dict[str, float]:
     if duration_s < _MIN_SAMPLE_S:
         raise ValueError(f"duration must be at least {_MIN_SAMPLE_S}s, got {duration_s}")
+    sampler = _ProcessTreeSampler(root_pid)
+    sampler.sample()  # discard the primed-CPU first reading
     footprints: list[float] = []
     cpus: list[float] = []
     deadline = time.monotonic() + duration_s
     while time.monotonic() < deadline:
-        sample = _probe_once(frontend)
-        totals = _dict_field(sample, "totals")
-        fp = totals.get("physical_footprint_mb")
-        cpu = totals.get("cpu_percent")
-        if isinstance(fp, (int, float)):
-            footprints.append(float(fp))
-        if isinstance(cpu, (int, float)):
-            cpus.append(float(cpu))
         time.sleep(_PROBE_INTERVAL_S)
+        sample = sampler.sample()
+        footprints.append(sample["physical_footprint_mb"])
+        cpus.append(sample["cpu_percent"])
     if not footprints or not cpus:
         raise RuntimeError("probe returned no footprint or cpu samples")
     return {
@@ -159,19 +144,18 @@ def _sample_steady(frontend: str, duration_s: int) -> dict[str, float]:
     }
 
 
-def _sample_leak(frontend: str, duration_s: int) -> float:
+def _sample_leak(root_pid: int, duration_s: int) -> float:
+    sampler = _ProcessTreeSampler(root_pid)
+    sampler.sample()  # discard the primed-CPU first reading
     elapsed: list[float] = []
     footprints: list[float] = []
     start = time.monotonic()
     deadline = start + duration_s
     while time.monotonic() < deadline:
-        sample = _probe_once(frontend)
-        totals = _dict_field(sample, "totals")
-        fp = totals.get("physical_footprint_mb")
-        if isinstance(fp, (int, float)):
-            elapsed.append(time.monotonic() - start)
-            footprints.append(float(fp))
         time.sleep(_PROBE_INTERVAL_S)
+        sample = sampler.sample()
+        elapsed.append(time.monotonic() - start)
+        footprints.append(sample["physical_footprint_mb"])
     slope_per_hour = _linear_slope_mb_per_hour(elapsed, footprints)
     if slope_per_hour is None:
         raise RuntimeError("leak capture produced no computable slope")
@@ -215,10 +199,10 @@ def _capture_gig_then_trackify(
     proc = _start_browser_session(frontend, "gig-trackify")
     try:
         _read_browser_line(proc.stdout, "GIG_READY")
-        gig = _sample_steady(frontend, duration_s)
+        gig = _sample_steady(proc.pid, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "TRACKIFY_READY")
-        trackify = _sample_steady(frontend, duration_s)
+        trackify = _sample_steady(proc.pid, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "DONE")
         stderr = proc.stderr.read() if proc.stderr is not None else ""
@@ -235,7 +219,7 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
     proc = _start_browser_session(frontend, "trackify-leak")
     try:
         _read_browser_line(proc.stdout, "TRACKIFY_READY")
-        slope = _sample_leak(frontend, duration_s)
+        slope = _sample_leak(proc.pid, duration_s)
         _signal_browser(proc)
         _read_browser_line(proc.stdout, "DONE")
         stderr = proc.stderr.read() if proc.stderr is not None else ""
@@ -248,7 +232,10 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
             proc.kill()
 
 
-_METHOD = "engine telemetry /performance/telemetry/processes steady-state sampling (PERFMODE-15)"
+_METHOD = (
+    "process-tree RSS/CPU sampling of the Playwright-launched Chromium running "
+    "Gig/Trackify (PERFMODE-15) -- not the packaged app's telemetry endpoint"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
