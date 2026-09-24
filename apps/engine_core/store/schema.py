@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 7
+SCHEMA_VERSION: int = 8
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -139,9 +139,12 @@ _STATE_CORE: tuple[str, ...] = (
     "(stable_id_tier IN ('isrc','fingerprint','inferred')), title TEXT, "
     "artists_json TEXT, album TEXT, isrc TEXT, duration_ms INTEGER, "
     "file_path TEXT, content_hash TEXT, created_at TEXT NOT NULL, "
-    "updated_at TEXT NOT NULL , origin_device_id TEXT, deleted_at TEXT)",
+    "updated_at TEXT NOT NULL , origin_device_id TEXT, deleted_at TEXT, "
+    "audio_hash TEXT)",
     "CREATE INDEX IF NOT EXISTS idx_tracks_isrc ON tracks(isrc) WHERE isrc IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path)",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_audio_hash ON tracks(audio_hash) "
+    "WHERE audio_hash IS NOT NULL",
     "CREATE TABLE IF NOT EXISTS track_vendor_ids ( stable_id TEXT NOT NULL "
     "REFERENCES tracks(stable_id) ON DELETE CASCADE, vendor TEXT NOT NULL, "
     "vendor_id TEXT NOT NULL, updated_at TEXT, origin_device_id TEXT, "
@@ -1259,7 +1262,17 @@ _V7: list[str] = list(_PATH_INDEX)
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v6 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7]
+_V8: list[str] = [
+    "ALTER TABLE tracks ADD COLUMN audio_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_audio_hash ON tracks(audio_hash) "
+    "WHERE audio_hash IS NOT NULL",
+]
+"""7 -> 8: tag-independent audio identity on tracks (legacy ladder v19, issue #3864).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v7 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
