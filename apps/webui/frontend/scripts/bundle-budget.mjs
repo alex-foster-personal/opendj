@@ -171,7 +171,10 @@ const BUDGETS = [
   // adds +183 on top (the deck's hydrating probe state; the wait loop itself
   // is in its own module), 258,550 locally and on CI within 35 bytes. The
   // SetupOverlay payback above still retires all three KiB.
-  { name: 'library', limit: 259072, measured: 258550, note: 'initial load of "/"' },
+  // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
+  // (#3903) landed together; merged tree measured 250,040 locally against the
+  // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
+  { name: 'library', limit: 259072, measured: 250040, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -260,7 +263,19 @@ const BUDGETS = [
   // mis-attributed, and there is no eager import left to demote. The ceiling
   // follows the +5% ceil-to-KiB rule on 214,670. main alone measured 205,553
   // against the old 210,944, so the diff, not trunk growth, is what crossed it.
-  { name: 'other-lazy', limit: 226304, measured: 214670, note: 'all other routes plus deferred shell' },
+  // RAISED Thu 24 Sep 2026: 221 -> 245 KiB, the library paybacks landing. The two
+  // deferrals the library notes above promise (#3903: the feedback pin shell
+  // loads after boot; #3862: SetupOverlay is a dynamic import, fetched at shell
+  // boot but off the first paint) move their weight out of `library` and into
+  // this bucket by design. Measured on the merged tree (main 4c65e17b + #3903
+  // 06289e85 + #3862), local, one build: library 274,679 on main -> 250,040
+  // (under its unchanged 259,072 ceiling with 9,032 bytes of headroom, so the
+  // three reviewed KiB above are paid back and NOT raised again); other-lazy
+  // 214,670 -> 238,822 over 41 -> 46 files. The ceiling follows the +5%
+  // ceil-to-KiB rule on 238,822. This is deferred-code weight: none of it is on
+  // the boot or first-paint path, which is the point of moving it here.
+  // Decision record: the CI-infra lane comment on #3913, Thu 24 Sep 2026 12:15Z.
+  { name: 'other-lazy', limit: 250880, measured: 238822, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
