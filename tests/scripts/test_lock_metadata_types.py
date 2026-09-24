@@ -477,6 +477,27 @@ def test_a_malformed_lock_package_beside_the_root_is_unknown(
     assert got == EXIT_OK, message
 
 
+@pytest.mark.parametrize("spec", ["localdep=>1", "localdep ==x"])
+def test_a_malformed_specifier_on_a_path_source_is_unknown(tmp_path: Path, spec: str) -> None:
+    """`localdep=>1` and `localdep ==x` on a path-sourced dependency are refused by uv
+    (`uv lock --check` exit 2, measured 0.8.17, Codex P2 on #3763, round 36), while
+    the gate blanked the specifier for the path source before validating it and read
+    the pair clean. `localdep>=1` is the control: uv reads it (exit 0), the path
+    decides the version, and the pair stays clean (a trailing `,` is read too)."""
+    assert MINI_PYPROJECT.count('dependencies = ["localdep"]') == 1
+    (tmp_path / "dep").mkdir(exist_ok=True)
+    (tmp_path / "dep" / "pyproject.toml").write_text(MINI_DEP_PYPROJECT, encoding="utf-8")
+    bad = MINI_PYPROJECT.replace('dependencies = ["localdep"]', f'dependencies = ["{spec}"]', 1)
+    code, message = _run(tmp_path, bad, MINI_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert "UNKNOWN" in message
+    good = MINI_PYPROJECT.replace(
+        'dependencies = ["localdep"]', 'dependencies = ["localdep>=1"]', 1
+    )
+    code, message = _run(tmp_path, good, MINI_LOCK)
+    assert code == EXIT_OK, message
+
+
 @pytest.mark.parametrize(
     ("version", "named"),
     [
