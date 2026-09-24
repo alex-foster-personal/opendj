@@ -631,7 +631,7 @@ export interface ToastIpcRow {
 	kind: 'info' | 'warn' | 'error';
 	message: string;
 	headline: string;
-	detail?: string;
+	detail?: string | undefined;
 	expanded: boolean;
 	count: number;
 	created_at: string;
