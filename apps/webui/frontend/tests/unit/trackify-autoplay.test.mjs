@@ -29,26 +29,35 @@ describe('trackify-autoplay pure logic', () => {
 		assert.equal(next, 'good');
 	});
 
-	it('arms advance only inside the remaining window', async () => {
+	it('advances only at the end of the track, never while audible audio remains or while paused', async () => {
 		const mod = await loadTypeScriptModule('src/lib/rb/trackify-autoplay.ts');
-		assert.equal(
+		const decide = (deck, overrides = {}) =>
 			mod.shouldAdvanceTrackify({
 				enabled: true,
-				deck: { stable_id: 'a', playing: true, position_ms: 1000, duration_ms: 200_000 },
+				deck: { stable_id: 'a', duration_ms: 200_000, ...deck },
 				already_triggered_for: null,
-				in_flight: false
-			}),
-			false
-		);
-		assert.equal(
-			mod.shouldAdvanceTrackify({
-				enabled: true,
-				deck: { stable_id: 'a', playing: true, position_ms: 199_000, duration_ms: 200_000 },
-				already_triggered_for: null,
-				in_flight: false
-			}),
-			true
-		);
+				in_flight: false,
+				...overrides
+			});
+		// Playing: every position with audio left to hear stays on the track,
+		// including the whole 16 s two-deck handoff window.
+		for (const position_ms of [1000, 184_000, 199_000, 199_900]) {
+			assert.equal(decide({ playing: true, position_ms }), false, `playing at ${position_ms}`);
+		}
+		// Paused anywhere before the end: Pause keeps playback stopped.
+		for (const position_ms of [1000, 184_000, 199_000, 199_900]) {
+			assert.equal(decide({ playing: false, position_ms }), false, `paused at ${position_ms}`);
+		}
+		// Ended: the playing audio clock reached the end, or the natural-end
+		// stop parked the transport there.
+		assert.equal(decide({ playing: true, position_ms: 200_000 }), true);
+		assert.equal(decide({ playing: false, position_ms: 200_000 }), true);
+		// Once per track, never while a load is in flight, never with an
+		// unknown duration.
+		assert.equal(decide({ playing: false, position_ms: 200_000 }, { already_triggered_for: 'a' }), false);
+		assert.equal(decide({ playing: false, position_ms: 200_000 }, { in_flight: true }), false);
+		assert.equal(decide({ playing: true, position_ms: 200_000, duration_ms: null }), false);
+		assert.equal(decide({ playing: true, position_ms: 200_000 }, { enabled: false }), false);
 	});
 
 	it('PLAY-04 snapshot ignores live view mutation after activation', async () => {

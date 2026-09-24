@@ -1,7 +1,17 @@
 /**
  * Shared-graph entry for Trackify autoplay controller tests.
+ *
+ * The controller runs against the REAL performance dispatcher: command
+ * parsing, the per-deck scope queue, the command session and command status
+ * are all production code. Only the audio transport boundary (`engine`'s
+ * load/unload/play/pause, which need an AudioContext, a decoder and a worklet)
+ * is replaced, by the test, on the engine instance the dispatcher calls.
  */
-export { deckStates } from '$lib/rb/audio-engine.svelte';
+export { deckStates, engine } from '$lib/rb/audio-engine.svelte';
+export {
+	installPerformanceBrowserIpc,
+	performanceCommandStatus
+} from '$lib/rb/performance-ipc.svelte';
 export { uiPrefs } from '$lib/rb/prefs.svelte';
 export { toasts } from '$lib/stores.svelte';
 export { TRACKIFY_DECK_ID, TRACKIFY_LOAD_SKIP_DEADLINE_MS } from '$lib/rb/trackify-autoplay';
@@ -12,8 +22,3 @@ export {
 	requestTrackifySkipNext
 } from '$lib/rb/trackify-autoplay.svelte';
 export { e2ePrimeTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
-export {
-	getDispatchPerformanceCommandCalls,
-	resetDispatchPerformanceCommandStub,
-	setDispatchPerformanceCommandStub
-} from './trackify-autoplay-stub-ipc';

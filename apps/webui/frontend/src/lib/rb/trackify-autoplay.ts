@@ -7,10 +7,7 @@
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 import { pickNextStableId } from '$lib/rb/auto-play-chain';
 import {
-	AUTO_PLAY_THRESHOLD_MS,
-	effectiveAutoPlayThresholdMs,
 	remainingMs,
-	shouldTriggerAutoPlay,
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap
 } from '$lib/rb/auto-play';
@@ -60,22 +57,42 @@ export function pickNextTrackifyCandidate(input: {
 	});
 }
 
+/**
+ * How close to the decoded end the transport must be before Trackify treats
+ * the track as ended. A float-rounding tolerance, NOT a lead: Trackify has one
+ * deck, so advancing unloads the track that is playing, and any lead here
+ * would cut that much audible audio off the end of every song.
+ */
+export const TRACKIFY_END_OF_TRACK_TOLERANCE_MS = 1;
+
+/**
+ * True once per track, when that track has actually ended.
+ *
+ * Deliberately NOT the two-deck AutoPlay trigger window
+ * (`effectiveAutoPlayThresholdMs`, up to 16 s before the end): that window
+ * exists to PREPARE a second deck while the first keeps playing. Trackify's
+ * advance replaces the only deck, so it may fire only at the end:
+ * - playing: the audio clock has reached the decoded end. Everything left is
+ *   already rendered and in the output path, and the engine's unload waits
+ *   for the deck to go inaudible before it replaces it;
+ * - stopped: the transport is parked AT the decoded end, which is where the
+ *   engine's natural-end stop leaves it (and where a background tab's audio
+ *   clock stops projecting).
+ * A paused deck anywhere before its end never advances, so Pause keeps
+ * playback stopped however close to the end the operator pressed it.
+ */
 export function shouldAdvanceTrackify(input: {
 	enabled: boolean;
 	deck: TrackifyDeckSnap;
 	already_triggered_for: string | null;
 	in_flight: boolean;
 }): boolean {
+	if (!input.enabled || input.in_flight) return false;
+	if (input.deck.stable_id === null) return false;
+	if (input.already_triggered_for === input.deck.stable_id) return false;
 	const remaining = remainingMs(input.deck.position_ms, input.deck.duration_ms);
-	const threshold = effectiveAutoPlayThresholdMs(input.deck.duration_ms);
-	return shouldTriggerAutoPlay({
-		enabled: input.enabled,
-		remaining_ms: remaining,
-		threshold_ms: threshold ?? AUTO_PLAY_THRESHOLD_MS,
-		source_stable_id: input.deck.stable_id,
-		already_triggered_for: input.already_triggered_for,
-		in_flight: input.in_flight
-	});
+	if (remaining === null) return false;
+	return remaining <= TRACKIFY_END_OF_TRACK_TOLERANCE_MS;
 }
 
 export function tempoBoundsForTrackify(pitchRangePct: number): { min: number; max: number } {

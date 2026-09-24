@@ -100,22 +100,69 @@ function _withLoadDeadline<T>(promise: Promise<T>): Promise<T> {
 	});
 }
 
-async function _dispatchLoadSequence(deck: DeckId, nextId: string): Promise<void> {
+/**
+ * Generation of the one load sequence allowed to act on the Trackify deck.
+ * `_withLoadDeadline` can only reject its own wrapper: the dispatcher offers
+ * no cancel for a command that is already running, so a timed-out sequence
+ * stays alive underneath. Every step re-checks its generation, and a sequence
+ * that was superseded (by its own deadline, or by a newer load) never plays,
+ * never becomes queue head, and takes back off the deck a track that its late
+ * load published there.
+ */
+let _loadGeneration = 0;
+/**
+ * Settles once every dispatch of the most recent load sequence has settled.
+ * The dispatcher runs one deck's commands in submission order, so a retry
+ * dispatched behind a still-running timed-out load would wait for it inside
+ * the dispatcher while its OWN deadline ran, and a healthy candidate would be
+ * quarantined for the stale load's latency. The next sequence starts, and its
+ * deadline starts, only once the deck is released.
+ */
+let _lastSequenceSettled: Promise<void> = Promise.resolve();
+
+async function _retireSupersededLoad(deck: DeckId, nextId: string): Promise<void> {
+	if (deckStates[deck].stable_id === nextId) {
+		await dispatchPerformanceCommand({ type: 'unload', deck });
+	}
+}
+
+async function _dispatchLoadSequence(
+	deck: DeckId,
+	nextId: string,
+	generation: number
+): Promise<void> {
+	const superseded = (): boolean => generation !== _loadGeneration;
 	if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
+		if (superseded()) return _retireSupersededLoad(deck, nextId);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
+		if (superseded()) return _retireSupersededLoad(deck, nextId);
 	}
 	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
+	if (superseded()) return _retireSupersededLoad(deck, nextId);
 }
 
 async function _loadAndPlay(nextId: string): Promise<void> {
 	const deck = TRACKIFY_DECK_ID;
+	await _lastSequenceSettled;
+	const generation = ++_loadGeneration;
+	const sequence = _dispatchLoadSequence(deck, nextId, generation);
+	// A late failure of a superseded sequence is not re-reported here: its
+	// track was already quarantined and toasted when the deadline fired, and
+	// the dispatcher has persisted the command error on the deck itself.
+	_lastSequenceSettled = sequence.then(
+		() => undefined,
+		() => undefined
+	);
 	try {
-		await _withLoadDeadline(_dispatchLoadSequence(deck, nextId));
+		await _withLoadDeadline(sequence);
 		_queueHead = nextId;
 	} catch (error: unknown) {
+		// Supersede before anything else: from here the sequence may only
+		// retire its own track, never play it.
+		_loadGeneration += 1;
 		_quarantinedIds.add(nextId);
 		const message = error instanceof Error ? error.message : String(error);
 		_lastSkipReason = `skipped ${nextId}: ${message}`;

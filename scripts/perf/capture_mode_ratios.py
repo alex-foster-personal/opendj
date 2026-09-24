@@ -114,6 +114,18 @@ def _probe_once(frontend: str) -> dict[str, Any]:
     if body.get("available") is not True:
         reason = body.get("reason", "telemetry unavailable")
         raise RuntimeError(f"telemetry unavailable for {url}: {reason}")
+    # `available` only says the endpoint found SOME sample: it serves the
+    # native probe's last JSONL record with `stale: true` however old that
+    # record is, and a leftover file from an earlier session would otherwise
+    # be recorded as this session's Gig/Trackify footprint. Accept totals only
+    # when the endpoint affirmatively marks them fresh; a missing marker is as
+    # unmeasured as `stale: true`. Nothing is ever written from it.
+    if body.get("stale") is not False:
+        raise RuntimeError(
+            f"telemetry UNKNOWN for {url}: process sample is not fresh "
+            f"(stale={body.get('stale')!r}, age_seconds={body.get('age_seconds')!r}, "
+            f"timestamp={body.get('timestamp')!r})"
+        )
     return {
         "totals": {
             "physical_footprint_mb": _footprint_mb_from_telemetry(body),
