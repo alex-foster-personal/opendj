@@ -496,7 +496,35 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	_todo('djay.library_source', 'Library source', 'djay', ['itunes', 'apple', 'spotify'], 'External library source'),
 	_todo('djay.streaming', 'Streaming services', 'djay', ['tidal', 'soundcloud', 'beatport'], 'Connected streaming'),
 	_todo('djay.cue_points', 'Cue point style', 'djay', ['cue', 'points'], 'Cue marker style'),
-	_todo('djay.crossfader_curve', 'Crossfader curve', 'djay', ['crossfader', 'curve'], 'XF curve shape'),
+	{
+		id: 'crossfade_curve',
+		label: 'Crossfader curve',
+		group: 'performance',
+		keywords: ['crossfader', 'curve', 'magic', 'xfade'],
+		title: 'Crossfader blend curve',
+		detail: 'Magic crossfader is live; other curves are placeholders until built.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [{ value: 'magic', label: 'magic crossfader' }]
+		}
+	},
+	{
+		id: 'horizontal_wheel_knob',
+		label: 'Horizontal wheel adjusts',
+		group: 'performance',
+		keywords: ['wheel', 'horizontal', 'filter', 'color', 'knob'],
+		title: 'Which knob horizontal mouse wheel turns on selected channels',
+		detail: 'Filter is the channel FILTER dial. Color routes to FILTER until color FX is built.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'filter', label: 'Filter' },
+				{ value: 'color', label: 'Color' }
+			]
+		}
+	},
 	_todo('djay.midi_learn', 'MIDI learn', 'djay', ['midi', 'map', 'controller'], 'Controller MIDI learn'),
 	_todo('djay.audio_device', 'Audio device', 'djay', ['device', 'output', 'asio'], 'Output device selection'),
 	_todo('djay.sample_rate', 'Sample rate', 'djay', ['sample', 'rate', '48000'], 'Engine sample rate'),

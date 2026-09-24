@@ -354,7 +354,7 @@ def collect_rows(facts: RepoFacts) -> list[Row]:
         _ci_tool_row(facts, "Verified secrets, full history (trufflehog)", "weekly", "trufflehog"),
         _ci_tool_row(facts, "Static analysis (Semgrep CE)", "PR", "semgrep"),
         _ci_tool_row(
-            facts, "Static analysis (Semgrep AppSec Platform)", "PR + daily", "semgrep ci"
+            facts, "Static analysis (Semgrep AppSec Platform)", "PR + weekly", "semgrep ci"
         ),
         _ruff_s_row(facts),
         _zizmor_row(facts),

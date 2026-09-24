@@ -10,6 +10,8 @@
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
+	import { onWheelFaderAdjust } from '$lib/rb/fader-ghost.svelte';
+	import { clickSelect, getSelectedDecks, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import {
 	DECK_IDS,
@@ -68,6 +70,29 @@
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	let { deckId }: { deckId: DeckId } = $props();
+
+	const selected = $derived(isSelected(deckId));
+
+	function handleDeckClick(event: MouseEvent): void {
+		clickSelect(deckId, event.shiftKey);
+	}
+
+	function adjustSelectedFaders(delta: number): void {
+		const decks = getSelectedDecks().includes(deckId) ? getSelectedDecks() : [deckId];
+		for (const deck of decks) {
+			const before = mixerState.channels[deck].fader;
+			const next = Math.min(1, Math.max(0, before + delta));
+			onWheelFaderAdjust(deck, before, next, false);
+			void runPerformanceCommandFromUi({ type: 'fader', deck, value: next });
+		}
+	}
+
+	function handleDeckWheelAdjust(next: number): void {
+		const before = mixerState.channels[deckId].fader;
+		const delta = next - before;
+		if (delta === 0) return;
+		adjustSelectedFaders(delta);
+	}
 
 	const deck: DeckState = $derived(getDeckState(deckId));
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
@@ -365,6 +390,7 @@
 	class:drop-hover={dropHover}
 	class:loading={pending}
 	class:deck-focus={deckHoverUi.deckId === deckId}
+	class:selected={selected}
 	class:is-master={deck.is_master}
 	data-deck={deckId}
 	data-deck-hover={deckId}
@@ -372,8 +398,9 @@
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
-		set: (value) => void runPerformanceCommandFromUi({ type: 'fader', deck: deckId, value })
+		set: handleDeckWheelAdjust
 	}}
+	onclick={handleDeckClick}
 	onpointerenter={(e) => deckHoverEnter(deckIdFromHoverEl(e.currentTarget) ?? deckId)}
 	onpointerleave={(e) => deckHoverLeave(deckIdFromHoverEl(e.currentTarget) ?? deckId, e)}
 	ondragover={onTrackDragOver}
@@ -568,6 +595,12 @@
 			transparent 70%
 		);
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+	}
+	.rb-deck.selected {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+	}
+	.rb-deck.selected.deck-focus {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
 	}
 	/* Yellow master outline wins over focus stroke for quick ID. */
 	.rb-deck.is-master {

@@ -7274,8 +7274,12 @@ export interface components {
         };
         /** ClientErrorOut */
         ClientErrorOut: {
+            /** Error Id */
+            error_id?: string | null;
             /** Event Id */
             event_id: string;
+            /** Sentry Event Id */
+            sentry_event_id?: string | null;
             /** Stored */
             stored: boolean;
         };

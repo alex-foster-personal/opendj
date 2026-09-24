@@ -62,7 +62,7 @@ const FIXTURE_BUILDER = fileURLToPath(new URL('support/deckload_fixture.py', imp
 
 export default defineConfig({
 	testDir: '.',
-	testMatch: 'comment-hotkey-browser.spec.ts',
+	testMatch: ['comment-hotkey-browser.spec.ts', 'comment-pin-io-modal.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
