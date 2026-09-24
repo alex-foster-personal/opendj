@@ -86,8 +86,22 @@ def compatible_upper(version: str) -> str:
     return ".".join([*release[:-2], str(int(release[-2]) + 1)])
 
 
-def norm_spec(spec: str, *, expand_compatible: bool = False) -> str:
-    parts = [p.strip().replace(" ", "") for p in spec.split(",") if p.strip()]
+def norm_spec(
+    spec: str, *, expand_compatible: bool = False, empty_clauses: str = "reject"
+) -> str:
+    """The specifier's clauses normalized and sorted. An empty comma-separated clause
+    (`>=3.11,,`, `,>=3.11`, `>=3.11, ,<4`) is refused by uv where `empty_clauses` is
+    "reject" (requires-python, `uv lock --check` exit 2) and where it is "trailing"
+    except for ONE trailing comma (`localdep>=1,` in `[project] dependencies` is read,
+    `localdep>=1,,` and `localdep,>=1` are "Failed to generate package metadata";
+    measured uv 0.8.17, Codex P2 on #3763, round 38). The old `if p.strip()` filter
+    had dropped every empty clause and certified the malformed side as matching."""
+    raw = spec.split(",")
+    if empty_clauses == "trailing" and len(raw) > 1 and not raw[-1].strip():
+        raw = raw[:-1]
+    if len(raw) > 1 and any(not p.strip() for p in raw):
+        raise Unknown(f"empty specifier clause in {spec!r}; uv rejects the file")
+    parts = [p.strip().replace(" ", "") for p in raw if p.strip()]
     return ",".join(
         sorted(
             clause for p in parts for clause in norm_clause(p, expand_compatible=expand_compatible)

@@ -353,7 +353,9 @@ def test_a_variable_to_variable_marker_matches_the_lock_uv_writes_without_it(
             quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {spelled}")
         )
         assert pyproject != PYPROJECT
-        return pyproject, LOCK.replace(recorded_line, "marker = " + json.dumps(recorded))
+        return pyproject, LOCK.replace(  # uv writes a dropped marker as no key (round 38)
+            ", " + recorded_line, ", marker = " + json.dumps(recorded) if recorded else ""
+        )
 
     for spelled, recorded in (
         ("os_name != sys_platform", ""),
@@ -380,7 +382,12 @@ def _with_marker(pyproject_marker: str, lock_marker: str) -> tuple[str, str]:
     pyproject = PYPROJECT.replace(
         quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {pyproject_marker}")
     )
-    lock = LOCK.replace(recorded, "marker = " + json.dumps(lock_marker))
+    # uv writes a requirement whose marker it dropped WITHOUT the key: `marker = ""`
+    # is "Expected marker value", `uv lock --check` exit 2 (round 38).
+    assert LOCK.count(", " + recorded) == LOCK.count(recorded)
+    lock = LOCK.replace(
+        ", " + recorded, ", marker = " + json.dumps(lock_marker) if lock_marker else ""
+    )
     assert pyproject != PYPROJECT
     assert lock != LOCK or lock_marker == "sys_platform == 'darwin'", "no-op lock edit"
     return pyproject, lock

@@ -11,6 +11,7 @@ below is UNKNOWN on the wrong type and returns the value typed on the right one.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from scripts.lock_marker_parser import Unknown, _MarkerParser
 
@@ -116,6 +117,98 @@ def source_table(source: object, name: object) -> None:
         raise Unknown(f"uv.lock [[package]] {name!r} source = {source!r} is not a source table")
 
 
+def parsed_marker(value: object, where: str) -> str:
+    """A marker uv can read: a string the marker grammar accepts. `marker = 1` is a
+    type error and `marker = "bad"` or `marker = ""` "Expected marker value", each
+    exit 2 (measured uv 0.8.17, rounds 37 and 38). Parsed, not compared."""
+    marker = toml_string(value, where)
+    try:
+        _MarkerParser(marker).parse()
+    except Unknown as exc:
+        raise Unknown(f"{where}: {exc}") from exc
+    return marker
+
+
+_HASH_RE = re.compile(r"^(md5|sha256|sha384|sha512|blake2b):")
+_WHEEL_RE = re.compile(r"^(?P<name>[^-]+)-[^-]+(-[^-]+)?-[^-]+-[^-]+-[^-]+\.whl$")
+
+
+def recorded_marker(entry: dict, where: str) -> str | None:
+    """A uv.lock requirement's `marker`: None when absent, else a string the grammar
+    accepts. `marker = ""` is "Expected marker value" and `marker = 1` or `"bad"` are
+    refused too, each `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763,
+    round 38); a blank marker had read as no marker."""
+    if "marker" not in entry:
+        return None
+    marker = toml_string(entry["marker"], f"{where} marker")
+    if not marker.strip():
+        raise Unknown(f"{where} marker = {marker!r} is blank; uv rejects the file")
+    return parsed_marker(marker, f"{where} marker")
+
+
+def _artifact_fields(record: dict, where: str) -> None:
+    if "hash" in record:
+        digest = toml_string(record["hash"], f"{where} hash")
+        if _HASH_RE.match(digest) is None:  # `sha1:`, `bogus:`, no colon, "" refused
+            raise Unknown(f"{where} hash = {digest!r} names no hash algorithm; uv rejects the file")
+    if "size" in record:
+        size = record["size"]
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise Unknown(f"{where} size = {size!r} is not a byte count; uv rejects the file")
+    if "upload-time" in record:
+        stamp = toml_string(record["upload-time"], f"{where} upload-time")
+        try:
+            aware = datetime.fromisoformat(stamp).tzinfo is not None
+        except ValueError:
+            aware = False
+        if not aware:
+            raise Unknown(
+                f"{where} upload-time = {stamp!r} is not a zoned timestamp; uv rejects it"
+            )
+
+
+def _wheel_record(wheel: object, name: str, where: str) -> None:
+    if not isinstance(wheel, dict):
+        raise Unknown(f"{where} entry {wheel!r} is not a table; uv rejects the file")
+    located = [key for key in ("url", "path") if key in wheel]
+    if len(located) != 1:
+        raise Unknown(f"{where} entry {wheel!r} has no url or path; uv rejects the file")
+    location = toml_string(wheel[located[0]], f"{where} {located[0]}")
+    filename = location.rsplit("/", 1)[-1]
+    match = _WHEEL_RE.match(filename)
+    if match is None or norm_name(match.group("name")) != name:
+        raise Unknown(
+            f"{where} {located[0]} = {location!r} does not end in a wheel of {name!r}; "
+            "uv rejects the file"
+        )
+    _artifact_fields(wheel, f"{where} {filename}")
+
+
+def artifact_records(entry: dict, name: str) -> None:
+    """A package's `sdist` and `wheels` uv can read: `sdist` absent or a table, `wheels`
+    absent or a list of tables each locating (`url` or `path`, a string) a wheel
+    file named for the package; on either, any `hash` an `<algorithm>:` string uv
+    knows, any `size` a non-negative integer, any `upload-time` a zoned timestamp.
+    `sdist = "bad"`, `size = "34031"`, `size = true`, `size = -1`, `hash = 1`,
+    `hash = "sha1:..."`, `hash = ""`, `upload-time = 1`, `"bad"`, `"2024-12-04"`,
+    `wheels = {}`, `[1]`, `[[]]`, `[{}]`, a wheel `url = 1`, `"https://x/bad"`, one
+    naming another package, or `path = 1` are each "Failed to parse `uv.lock`", exit
+    2, while `sdist = {}`, `wheels = []`, an sdist `url = "bad"`, `hash = "sha256:"`,
+    a missing hash or size, a `path` wheel, a relative `url` and an unknown key are
+    read (measured uv 0.8.17, Codex P2 on #3763, round 38). The record loop had typed
+    only name, source, version and dependencies."""
+    if "sdist" in entry:
+        where = f"uv.lock [[package]] {name!r} sdist"
+        sdist = entry["sdist"]
+        if not isinstance(sdist, dict):
+            raise Unknown(f"{where} = {sdist!r} is not a table; uv rejects the file")
+        _artifact_fields(sdist, where)
+    if "wheels" in entry:
+        where = f"uv.lock [[package]] {name!r} wheels"
+        for wheel in toml_list(entry["wheels"], where):
+            _wheel_record(wheel, name, where)
+
+
 def dependency_records(entry: dict, name: str) -> None:
     """A package's `dependencies` uv can read: absent, or a list of tables each with a
     string `name`, a string `marker` if present and a list of strings `extra` if
@@ -132,11 +225,7 @@ def dependency_records(entry: dict, name: str) -> None:
             raise Unknown(f"{where} record {record!r} is not a table with a name")
         toml_string(record["name"], f"{where} name")
         if "marker" in record:
-            marker = toml_string(record["marker"], f"{where} {record['name']!r} marker")
-            try:
-                _MarkerParser(marker).parse()  # `marker = "bad"` is refused too
-            except Unknown as exc:
-                raise Unknown(f"{where} {record['name']!r} marker: {exc}") from exc
+            parsed_marker(record["marker"], f"{where} {record['name']!r} marker")
         if "extra" in record:
             toml_strings(record["extra"], f"{where} {record['name']!r} extra")
 
@@ -175,7 +264,9 @@ def pyproject_source_shape(name: str, source: object) -> None:
     toml_flag(source, "editable", where)
     toml_flag(source, "package", where)
     if "marker" in source:
-        toml_string(source["marker"], f"{where} marker")
+        # `marker = ""` and `marker = "bad"` on any entry, used or not, are "Expected
+        # marker value", exit 2 (round 38); typing it as a string had let both through.
+        parsed_marker(source["marker"], f"{where} marker")
 
 
 def managed_sources(uv_tool: dict | None) -> dict:
