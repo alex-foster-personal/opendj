@@ -72,6 +72,14 @@ async function bundleTrackifyControllerEntry() {
 /** Drains the microtask queue; setImmediate is never in the mocked timer APIs. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+/**
+ * Captured before any test enables `mock.timers`, so it always refers to the
+ * REAL, unmocked setTimeout -- used only as a wall-clock guard against a
+ * mutation-test genuinely wedging this test file forever (see the hard-
+ * ceiling test below), never to drive the scenario itself.
+ */
+const realSetTimeout = setTimeout;
+
 const row = (stable_id, key = '8A', bpm = 124) => ({
 	stable_id,
 	key,
@@ -429,6 +437,132 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 		} finally {
 			firstLoad.release();
 			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('a dispatcher command that never settles at all is eventually released by a hard ceiling, not wedged forever', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const foreverHung = gate();
+		try {
+			const { log, loadGates } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('bad'), row('good')]);
+			loadGates.set('bad', foreverHung.promise);
+
+			const done = entry.e2eForceTrackifyLoad('bad');
+			await settle();
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			assert.match(
+				entry.readTrackifyAutoplayState().last_skip_reason ?? '',
+				/^skipped bad: .*did not settle within/,
+				'bad must still be skipped by its own load deadline first'
+			);
+
+			// Control for the overshoot direction: shortly after bad's own
+			// deadline, the retry to 'good' must still be waiting -- it is
+			// queued behind bad's OWN dispatcher call, which `foreverHung`
+			// deliberately never releases in this test, so nothing but a
+			// ceiling timer can move this forward.
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			assert.deepEqual(
+				log,
+				['load bad'],
+				'the retry must not reach the engine while genuinely wedged behind the hung load'
+			);
+
+			// The bug this guards against: without a hard ceiling on
+			// `_lastSequenceSettled`, ticking simulated time changes nothing
+			// here -- the retry is waiting on a raw promise, not a timer --
+			// and the guarded race below times out because `done` never
+			// resolves.
+			mock.timers.tick(60_000);
+			await settle();
+			// 'good' now begins its own sequence, queues behind the
+			// still-hung 'bad' at the real per-deck dispatcher, and times out
+			// on its OWN load deadline in turn.
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+
+			const outcome = await Promise.race([
+				done.then(() => 'resolved'),
+				new Promise((resolve) => {
+					const guard = realSetTimeout(() => resolve('STILL_WEDGED'), 500);
+					if (typeof guard.unref === 'function') guard.unref();
+				})
+			]);
+			assert.equal(
+				outcome,
+				'resolved',
+				'a hung dispatcher command must not wedge every later Trackify load forever'
+			);
+			await done;
+			assert.match(
+				entry.readTrackifyAutoplayState().last_skip_reason ?? '',
+				/^skipped good: .*did not settle within/,
+				'good must have been queued behind the still-hung bad and timed out in its own turn'
+			);
+		} finally {
+			foreverHung.release();
+			mock.timers.reset();
+		}
+	});
+
+	it('teardown invalidates an in-flight load: it does not toast or retry into the dead session, and its late completion only retires the track', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const hung = gate();
+		let uninstall = null;
+		try {
+			const { deck, log, loadGates } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('bad'), row('good')]);
+			loadGates.set('bad', hung.promise);
+
+			uninstall = entry.installTrackifyAutoplay();
+			const toastsBefore = entry.toasts.length;
+
+			const done = entry.e2eForceTrackifyLoad('bad');
+			await settle();
+			assert.deepEqual(log, ['load bad']);
+
+			// Tear the session down mid-load, before its deadline fires --
+			// e.g. the operator navigated away from the Trackify route.
+			uninstall();
+			uninstall = null;
+
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			await done;
+
+			assert.deepEqual(
+				log,
+				['load bad'],
+				'a load superseded by teardown must not retry into the dead session'
+			);
+			assert.equal(
+				entry.toasts.length,
+				toastsBefore,
+				'a load timing out after its own session tore down must not toast into a dead session'
+			);
+			const state = entry.readTrackifyAutoplayState();
+			assert.equal(
+				state.last_skip_reason,
+				null,
+				'a torn-down session must not record a skip reason for a load it no longer owns'
+			);
+			assert.equal(state.queue_head, null);
+
+			// The late completion, once it lands, must still retire the
+			// track: it must not sit occupying a deck id a later session
+			// (e.g. Gig, which shares this deck id) may reuse.
+			hung.release();
+			await settle();
+			assert.deepEqual(log, ['load bad', 'unload bad']);
+			assert.equal(deck.stable_id, null);
+			assert.equal(deck.playing, false);
+		} finally {
+			if (uninstall !== null) uninstall();
+			hung.release();
 			mock.timers.reset();
 		}
 	});

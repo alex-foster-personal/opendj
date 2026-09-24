@@ -31,6 +31,17 @@ let _quarantinedIds = new Set<string>();
 let _playedFeedEpoch = -1;
 let _lastSkipReason: string | null = null;
 let _queueHead: string | null = null;
+/**
+ * Bumped by every install/uninstall of the controller. `_loadAndPlay`
+ * captures it on entry and re-checks it after every await: a load sequence
+ * still unwinding when the route tears down must retire its track (handled
+ * by the `_loadGeneration` bump in `installTrackifyAutoplay`'s uninstall)
+ * and must not toast or chain into another `_loadAndPlay` retry, which would
+ * otherwise start a FRESH, non-superseded generation and could load/play a
+ * track on the shared deck slot after this session ended -- e.g. into a Gig
+ * session that has since claimed the same deck id (Sol review, PR #3676).
+ */
+let _installEpoch = 0;
 
 function _deckSnap(): TrackifyDeckSnap {
 	const deck = deckStates[TRACKIFY_DECK_ID];
@@ -120,6 +131,36 @@ let _loadGeneration = 0;
  */
 let _lastSequenceSettled: Promise<void> = Promise.resolve();
 
+/**
+ * Ceiling on how long `_lastSequenceSettled` may wait for a load sequence's
+ * OWN dispatcher call, which has no cancel. `_withLoadDeadline` already
+ * bounds a merely SLOW command; this bounds a command that never settles at
+ * all. Without it, the raw `sequence` promise never resolves, so every later
+ * `_loadAndPlay` call -- including the very retry this one triggers -- awaits
+ * `_lastSequenceSettled` forever and `_inFlight` never clears (Sol review,
+ * PR #3676: "do not wait forever behind a timed-out load"). Set far above
+ * `TRACKIFY_LOAD_SKIP_DEADLINE_MS` so a merely-slow, still-progressing load
+ * is never released early into the "nothing may reach the engine past the
+ * held deck" window the existing tests already cover.
+ */
+const _SEQUENCE_HARD_CEILING_MS = 30_000;
+
+function _withHardCeiling(promise: Promise<void>): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const timer = setTimeout(() => resolve(), _SEQUENCE_HARD_CEILING_MS);
+		promise.then(
+			() => {
+				clearTimeout(timer);
+				resolve();
+			},
+			() => {
+				clearTimeout(timer);
+				resolve();
+			}
+		);
+	});
+}
+
 async function _retireSupersededLoad(deck: DeckId, nextId: string): Promise<void> {
 	if (deckStates[deck].stable_id === nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
@@ -146,23 +187,37 @@ async function _dispatchLoadSequence(
 
 async function _loadAndPlay(nextId: string): Promise<void> {
 	const deck = TRACKIFY_DECK_ID;
+	const installEpoch = _installEpoch;
 	await _lastSequenceSettled;
 	const generation = ++_loadGeneration;
 	const sequence = _dispatchLoadSequence(deck, nextId, generation);
 	// A late failure of a superseded sequence is not re-reported here: its
 	// track was already quarantined and toasted when the deadline fired, and
 	// the dispatcher has persisted the command error on the deck itself.
-	_lastSequenceSettled = sequence.then(
-		() => undefined,
-		() => undefined
+	_lastSequenceSettled = _withHardCeiling(
+		sequence.then(
+			() => undefined,
+			() => undefined
+		)
 	);
 	try {
 		await _withLoadDeadline(sequence);
+		// Torn down while this sequence was in flight: `_dispatchLoadSequence`
+		// already retired the track instead of playing it (its own generation
+		// check went stale at teardown), so there is nothing left to publish
+		// into a dead session (Sol review, PR #3676).
+		if (_installEpoch !== installEpoch) return;
 		_queueHead = nextId;
 	} catch (error: unknown) {
 		// Supersede before anything else: from here the sequence may only
 		// retire its own track, never play it.
 		_loadGeneration += 1;
+		// Torn down while this sequence was unwinding: do not toast into a
+		// dead session, and do NOT recurse into another _loadAndPlay -- that
+		// would mint a fresh, non-superseded generation and could load/play a
+		// track on this deck id after a later session (e.g. Gig) has claimed
+		// it (Sol review, PR #3676).
+		if (_installEpoch !== installEpoch) return;
 		_quarantinedIds.add(nextId);
 		const message = error instanceof Error ? error.message : String(error);
 		_lastSkipReason = `skipped ${nextId}: ${message}`;
@@ -275,6 +330,7 @@ export async function e2eForceTrackifyLoad(stableId: string): Promise<void> {
 
 export function installTrackifyAutoplay(): () => void {
 	if (_timer !== null) throw new Error('Trackify autoplay is already installed');
+	_installEpoch += 1;
 	_timer = setInterval(() => {
 		void _tick();
 	}, POLL_MS);
@@ -288,5 +344,13 @@ export function installTrackifyAutoplay(): () => void {
 		_playedFeedEpoch = -1;
 		_lastSkipReason = null;
 		_queueHead = null;
+		// Invalidate every outstanding load sequence from this session. A
+		// straggler still mid-dispatch retires its track (via the generation
+		// bump) instead of publishing/playing it into whatever session -- or
+		// none -- comes next, and `_loadAndPlay`'s own install-epoch check
+		// stops it from toasting or retrying into a dead session (Sol review,
+		// PR #3676: "invalidate outstanding load sequences during teardown").
+		_installEpoch += 1;
+		_loadGeneration += 1;
 	};
 }
