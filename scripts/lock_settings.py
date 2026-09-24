@@ -96,9 +96,11 @@ def _conflicts(value: object, where: str, project: str, *, recorded: bool) -> li
     """Each conflict set as a sorted tuple of items, each item its sorted (key, value)
     pairs with `package` filled in the way uv records it. An item names at most one
     of `extra` / `group` (both is "Expected one of `extra` or `group` ... but found
-    both"), no other key than those and `package`, string values only, and a set on
-    either side holds at least two items; a recorded item carries `package`
-    (measured uv 0.8.17, Codex P2 on #3763, rounds 43 and 45). A package-only item is read. uv
+    both"), at least one of the three ("Expected `package`, `extra` or `group` field"),
+    no other key than those, string values only, and a set on either side holds at
+    least two items; a recorded item carries `package` (measured uv 0.8.17, Codex P2
+    on #3763, rounds 43, 45 and 46). A package-only item is read (uv 0.8.17 calls
+    package conflicts experimental and warns; uv 0.7.22 refused them). uv
     writes each set sorted, and the spelled order does not matter, so both sides are
     compared sorted."""
     sets: list[ConflictSet] = []
@@ -111,6 +113,8 @@ def _conflicts(value: object, where: str, project: str, *, recorded: bool) -> li
                 or not set(item) <= {"package", "extra", "group"}
             ):
                 raise Unknown(f"{where} item {item!r} is not a conflict selector; uv rejects it")
+            if not item:
+                raise Unknown(f"{where} item {{}} names no package, extra or group; uv rejects it")
             if "extra" in item and "group" in item:
                 raise Unknown(f"{where} item {item!r} names both extra and group; uv rejects it")
             if recorded and "package" not in item:

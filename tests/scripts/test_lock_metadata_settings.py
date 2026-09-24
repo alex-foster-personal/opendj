@@ -342,6 +342,8 @@ SORTED_CONFLICT = (
         ('conflicts = [[{ bogus = "ok" }, { extra = "b" }]]', None, "is not a conflict selector"),
         ('conflicts = [[{ extra = 1 }, { extra = "ok" }]]', None, "is not a conflict selector"),
         ('conflicts = [[{ extra = "ok" }]]', None, "holds fewer than two items"),
+        ("conflicts = [[{}, {}]]", None, "names no package, extra or group"),
+        ('conflicts = [[{}, { extra = "ok" }]]', None, "names no package, extra or group"),
         (
             f"conflicts = {CONFLICT}",
             'conflicts = [[\n    { package = "demo", extra = "a", group = "dev" },\n'
@@ -370,6 +372,8 @@ SORTED_CONFLICT = (
         "bogus-key",
         "extra-int",
         "single-item",
+        "empty-items",
+        "empty-item-beside-extra",
         "lock-extra-and-group",
         "lock-no-package",
         "lock-single-item",
@@ -379,11 +383,11 @@ SORTED_CONFLICT = (
 def test_a_conflict_selector_uv_refuses_is_unknown(
     tmp_path: Path, settings: str, recorded: str | None, named: str
 ) -> None:
-    """An item naming both `extra` and `group`, an unknown key, a non-string value or a
-    one-item set in `[tool.uv] conflicts`, and a recorded item with both selectors,
-    no `package` or an unknown key, or a recorded one-item set, are each `uv lock
-    --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 45); the all-strings
-    check had let them compare."""
+    """An item naming both `extra` and `group`, none of `package` / `extra` / `group`,
+    an unknown key, a non-string value or a one-item set in `[tool.uv] conflicts`, and
+    a recorded item with both selectors, no `package` or an unknown key, or a recorded
+    one-item set, are each `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on
+    #3763, rounds 45 and 46); the all-strings check had let them compare."""
     code, message = _run(tmp_path, *_pair(settings, recorded))
     assert code == EXIT_UNKNOWN, message
     assert named in message, message
