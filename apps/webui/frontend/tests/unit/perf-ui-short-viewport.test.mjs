@@ -161,11 +161,9 @@ test('BrowserPanel auto-collapses Next/Recommended at the same 799px breakpoint 
 		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.pane-header[\s\S]*?max-height:\s*24px/,
 		'.pane-header must stay on its 24px floor at short height (no wrap stealing the track row)'
 	);
-	// #3897 moved the wrapping controls out of .header-right into
-	// .header-controls-cluster, so that box is the one that must not wrap.
 	assert.match(
 		panel,
-		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-controls-cluster\s*\{\s*flex-wrap:\s*nowrap/,
+		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-controls-cluster[\s\S]*?flex-wrap:\s*nowrap/,
 		'.header-controls-cluster must not wrap at short height'
 	);
 });

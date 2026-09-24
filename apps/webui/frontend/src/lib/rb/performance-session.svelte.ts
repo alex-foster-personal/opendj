@@ -24,6 +24,10 @@ import {
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
 import type { StemControl } from '$lib/rb/stem-types';
+import {
+	consumeLibraryModeExitFlag,
+	shouldSkipPerformanceSessionRestore
+} from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
@@ -321,7 +325,9 @@ export function installPerformanceSessionRestore(
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
 	activeSessionWriter = null;
-	const skipDeckRestore = opts.skipDeckRestore ?? false;
+	const skipFromLibrary = shouldSkipPerformanceSessionRestore();
+	if (skipFromLibrary) consumeLibraryModeExitFlag();
+	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
 
 	void _restoreSession(dispatch, snapshot, urlDeckIds, skipDeckRestore).finally(() => {
 		writer = createSessionSnapshotWriter({

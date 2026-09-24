@@ -43,13 +43,7 @@ import { fileURLToPath } from 'node:url';
 import { before, describe, it, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const widget = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackWidget.svelte', import.meta.url)),
-	'utf8'
-);
-// #3892 moved pin markers, the reopened card and pin placement out of the
-// topbar widget into FeedbackPinLayer.svelte, mounted at the app root.
-const layer = readFileSync(
+const pinLayer = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)),
 	'utf8'
 );
@@ -98,8 +92,8 @@ test('the pin opens a real dialog, not just a native title', () => {
 });
 
 test('a reopened pin card has a close X and only outside pointer presses dismiss it', () => {
-	assert.match(layer, /import FeedbackPinCard from '.\/FeedbackPinCard\.svelte'/);
-	assert.match(layer, /<FeedbackPinCard[\s\S]*onclose=\{closePin\}/);
+	assert.match(pinLayer, /import FeedbackPinCard from '.\/FeedbackPinCard\.svelte'/);
+	assert.match(pinLayer, /<FeedbackPinCard[\s\S]*onclose=\{closePin\}/);
 	assert.match(card, /aria-label="Close comment pin"/);
 	assert.match(card, /onclick=\{onclose\}>×<\/button/);
 	assert.match(
@@ -113,9 +107,7 @@ test('a reopened pin card has a close X and only outside pointer presses dismiss
 	);
 	assert.match(handler, /pinBodyElement\?\.contains\(target\)/);
 	assert.match(handler, /onclose\(\)/);
-	const closeAt = layer.indexOf('function closePin');
-	assert.notEqual(closeAt, -1, 'closePin moved');
-	const close = layer.slice(closeAt, layer.indexOf('\n\t}\n', closeAt));
+	const close = pinLayer.slice(pinLayer.indexOf('function closePin'), pinLayer.indexOf('function archiveOpenPin'));
 	assert.match(close, /openPinId = null/);
 	assert.doesNotMatch(close, /pinDraft\s*=\s*null/, 'dismissing a reopened card must retain a new draft');
 });
