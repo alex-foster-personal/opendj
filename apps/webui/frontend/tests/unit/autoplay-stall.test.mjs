@@ -173,7 +173,7 @@ describe('describeAutoPlayStall', () => {
 			source_stable_id: 'src-1',
 			blocked: []
 		});
-		assert.match(stall.headline, /no deck has been playing for 5 seconds/);
+		assert.match(stall.headline, /no deck has been playing for 30 seconds/);
 		assert.match(stall.resume, /Press play on a loaded deck/);
 	});
 
