@@ -49,6 +49,13 @@ def toml_string(value: object, where: str) -> str:
     return value
 
 
+def toml_optional_string(value: object, where: str) -> str | None:
+    """As toml_string for a key that may be absent (None passes through): a present
+    `requires-python = 0` is "invalid type: integer `0`, expected a string" on either
+    side of the pair (round 35), while `0 or ""` had read it as no constraint."""
+    return None if value is None else toml_string(value, where)
+
+
 def toml_list(value: object, where: str) -> list:
     """`where` as the list uv requires there. An inline table (`requires-dist = {}`,
     a `requires-dev` group `= {}`) iterates as its keys, so an EMPTY one satisfied an
@@ -84,10 +91,12 @@ def uv_table(pyproject: dict, where: str = "pyproject.toml") -> dict | None:
 def lock_schema(lock: dict) -> None:
     """uv reads only schema `version = 1` ("uses an unsupported schema version (v2, but
     only v1 is supported)", and a missing field is "missing field `version`"; exit 2,
-    measured uv 0.8.17, Codex P2 on #3763, round 32). `revision` is NOT checked: uv
-    accepted 1, 999 and no revision at all on the same pair (measured alongside)."""
+    measured uv 0.8.17, Codex P2 on #3763, round 32). `version = true` is "invalid
+    type: boolean `true`, expected u32" (round 35), and `True == 1` in Python, so the
+    bool is excluded by type. `revision` is NOT checked: uv accepted 1, 999 and no
+    revision at all on the same pair (measured alongside)."""
     version = lock.get("version")
-    if version != 1:
+    if isinstance(version, bool) or version != 1:
         raise Unknown(f"uv.lock schema version = {version!r}; only 1 is readable by uv")
 
 

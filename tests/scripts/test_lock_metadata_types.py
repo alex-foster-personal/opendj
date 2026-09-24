@@ -159,7 +159,9 @@ def test_a_lock_root_version_that_is_not_a_string_is_unknown(tmp_path: Path) -> 
     lock = LOCK.replace(root, 'name = "demo-project"\nversion = 0.1\n')
     code, message = _run(tmp_path, PYPROJECT, lock)
     assert code == EXIT_UNKNOWN, message
-    assert "uv.lock root version = 0.1 is not a string; uv rejects the file" in message
+    # Named per record since round 35 typed every package's version, root included.
+    assert "[[package]] 'demo-project' version = 0.1 is not a string" in message
+    assert "uv rejects the file" in message
     assert 'version = "0.1.0"' in PYPROJECT
     code, message = _run(tmp_path, PYPROJECT.replace('version = "0.1.0"', 'version = "0.1"'), lock)
     assert code == EXIT_UNKNOWN, message
@@ -360,14 +362,24 @@ def test_an_invalid_marker_or_name_shared_by_both_files_is_unknown(
         (lambda lock: lock.replace("version = 1\n", "version = 999\n", 1), "schema version = 999"),
         (lambda lock: lock.replace("version = 1\n", "version = 2\n", 1), "schema version = 2"),
         (lambda lock: lock.replace("version = 1\n", "", 1), "schema version = None"),
+        (
+            lambda lock: lock.replace("version = 1\n", "version = true\n", 1),
+            "schema version = True",
+        ),
+        (
+            lambda lock: lock.replace("version = 1\n", "version = false\n", 1),
+            "schema version = False",
+        ),
     ],
-    ids=["v999", "v2", "missing"],
+    ids=["v999", "v2", "missing", "true", "false"],
 )
 def test_a_lock_schema_version_other_than_1_is_unknown(tmp_path: Path, edit, named: str) -> None:
     """`version = 999` and `version = 2` are "uses an unsupported schema version",
     a missing header is "missing field `version`"; each `uv lock --check` exit 2
     (measured uv 0.8.17, Codex P2 on #3763, round 32) while the gate never read the
-    header. `revision` is the control: uv accepted 1, 999 and no revision at all."""
+    header. `version = true` and `false` are "invalid type: boolean, expected u32"
+    (round 35): `True == 1` in Python, so `!= 1` alone had read `true` as the schema.
+    `revision` is the control: uv accepted 1, 999 and no revision at all."""
     assert MARKED_LOCK.startswith("version = 1\nrevision = 3\n")
     lock = edit(MARKED_LOCK)
     assert lock != MARKED_LOCK
@@ -463,6 +475,68 @@ def test_a_malformed_lock_package_beside_the_root_is_unknown(
     )
     got, message = _run(tmp_path, UNMARKED_PYPROJECT, control)
     assert got == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("version", "named"),
+    [
+        ("version = 0.0", "version = 0.0 is not a string"),
+        ("version = 1", "version = 1 is not a string"),
+    ],
+    ids=["float", "integer"],
+)
+def test_a_non_root_package_version_that_is_not_a_string_is_unknown(
+    tmp_path: Path, version: str, named: str
+) -> None:
+    """`version = 0.0` on the registry package six is "invalid type: floating point
+    `0.0`, expected a string", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2
+    on #3763, round 35); the record check read only `name` and `source`, and
+    `_version_delta` types the ROOT's version alone. The unedited pair is the control
+    (EXIT_OK)."""
+    assert UNMARKED_LOCK.count('version = "1.17.0"') == 1
+    lock = UNMARKED_LOCK.replace('version = "1.17.0"', version, 1)
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+    assert got == EXIT_UNKNOWN, message
+    assert f"[[package]] 'six' {named}" in message
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK)
+    assert got == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("pyproject_edit", "lock_edit", "named"),
+    [
+        (
+            lambda text: text.replace('requires-python = ">=3.11"', "requires-python = 0", 1),
+            lambda text: text.replace('requires-python = ">=3.11"\n', "", 1),
+            "[project] requires-python = 0 is not a string",
+        ),
+        (
+            lambda text: text,
+            lambda text: text.replace('requires-python = ">=3.11"', "requires-python = 0", 1),
+            "uv.lock requires-python = 0 is not a string",
+        ),
+        (
+            lambda text: text.replace('requires-python = ">=3.11"', "requires-python = 0", 1),
+            lambda text: text.replace('requires-python = ">=3.11"', "requires-python = 0", 1),
+            "[project] requires-python = 0 is not a string",
+        ),
+    ],
+    ids=["pyproject-0-lock-omits", "lock-0", "both-0"],
+)
+def test_a_requires_python_that_is_not_a_string_is_unknown(
+    tmp_path: Path, pyproject_edit, lock_edit, named: str
+) -> None:
+    """`requires-python = 0` is "invalid type: integer `0`, expected a string" in
+    pyproject.toml and in uv.lock alike, `uv lock --check` exit 2 (measured uv 0.8.17,
+    Codex P2 on #3763, round 35). With the lock omitting the field, `0 or ""` had
+    compared two empty specifiers and passed; with the lock holding it, the pair read
+    as STALE, a verdict on a file uv cannot parse."""
+    pyproject = pyproject_edit(UNMARKED_PYPROJECT)
+    lock = lock_edit(UNMARKED_LOCK)
+    assert (pyproject, lock) != (UNMARKED_PYPROJECT, UNMARKED_LOCK)
+    got, message = _run(tmp_path, pyproject, lock)
+    assert got == EXIT_UNKNOWN, message
+    assert named in message and "uv rejects the file" in message
 
 
 def test_a_lock_package_container_that_is_not_a_list_is_unknown(tmp_path: Path) -> None:
