@@ -264,7 +264,21 @@ def diff_of(pr: str) -> str:
 # test_ci_shard_matrix.py checks it is JSON with >= 3000 non-negative numbers.
 # A full refresh is ~800 KB of diff, which alone exceeds the reviewers' size
 # cap and blocks the PR from ever being reviewed (#2880, Tue 15 Sep 2026).
-GENERATED_DATA_PATHS: frozenset[str] = frozenset({".test_durations"})
+#
+# apps/webui/openapi.json and apps/webui/frontend/src/lib/api-types.ts are
+# the same class of problem, hit for the second time on PR #3679 (Thu 24 Sep
+# 2026): a rebase onto a fast-moving main needs `just openapi-dump` +
+# `pnpm run api:gen` to pick up new backend routes, and that regeneration
+# alone can be several thousand lines. Both files are validated byte-for-byte
+# by dedicated CI jobs that regenerate them from the checked-out code and
+# diff (ci.yml "Contract drift - openapi.json" and "Contract drift - TS
+# client"), so nothing here is unread by a mechanical check; it is only
+# unread by the LLM reviewers, which is what this set exists to declare.
+GENERATED_DATA_PATHS: frozenset[str] = frozenset({
+    ".test_durations",
+    "apps/webui/openapi.json",
+    "apps/webui/frontend/src/lib/api-types.ts",
+})
 _FILE_HEADER = re.compile(
     r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$'
 )

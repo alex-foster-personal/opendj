@@ -179,10 +179,11 @@ So when a metric regresses, the gate re-measures that metric on the merge-base
 - main is BELOW this run's value: the change made an already-bad number
   worse, so it stays a hard `REGRESSION` and fails. Only `base >= run` is
   inherited; `base` at 50 and the run at 51 is the run's fault.
-- the merge base cannot be measured (HEAD is itself on main, the ref is
-  missing, or the base tree will not run): the message is unchanged and the
+- the merge base cannot be measured (the ref is missing or the base tree will
+  not run): `base_compare` reports UNKNOWN (exit 2), never REGRESSION, and the
   output says why. The gate never downgrades on a guess and never passes
-  silently.
+  silently. HEAD is itself on main is different: that is a measured regression
+  on the trunk detector, not a failed inheritance check, so it stays REGRESSION.
 
 The base re-measure only runs when something actually regressed, and only for
 the evaluator that owns the regressed metric. It checks the base out with

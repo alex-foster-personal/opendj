@@ -153,6 +153,9 @@ export interface LoadedDeckRecreateSnap {
 	loop: LoopState | null;
 	stableId: string;
 	stemsReady: boolean;
+	/** A stem upgrade was in flight (STEM-37 can wait minutes on R2): the
+	 * rebuild must restart it on the new context, or stems never land. */
+	stemsLoading: boolean;
 }
 
 export async function reattachLoadedDeckProcessors(deps: {
@@ -251,7 +254,8 @@ export function snapLoadedDeck(
 		keyShiftSemitones: rt.controlKeyShiftSemitones,
 		loop: rt.controlLoop,
 		stableId: st.stable_id ?? '',
-		stemsReady: st.stems.status === 'ready'
+		stemsReady: st.stems.status === 'ready',
+		stemsLoading: st.stems.status === 'loading'
 	};
 }
 

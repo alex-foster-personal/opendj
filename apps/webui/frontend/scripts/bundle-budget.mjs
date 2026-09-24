@@ -153,7 +153,25 @@ const BUDGETS = [
   // CI before this PR, the same "no headroom left" state the performance
   // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
   // reduction retires this KiB, not the consent code.
-  { name: 'library', limit: 257024, measured: 256494, note: 'initial load of "/"' },
+  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3681, multiple-folder first-run setup):
+  // SetupOverlay is imported statically by +layout.svelte, so the folder-row
+  // list (add/remove rows, per-row check, stale-scan guard) is first-paint
+  // weight. Clean origin/main cb401fbee measured 256,747 locally (277 bytes of
+  // headroom); this PR measured 257,513 locally and 257,523 on CI, +766 bytes.
+  // Payback: lazy-loading SetupOverlay (it renders only while the first-run
+  // overlay is open) retires this KiB and the one above.
+  // PR #3645 (DECKUX-19 stem mini-waveforms) adds +333 bytes of first-paint
+  // weight (the show_stems pref, settings row and perf-tier cache scalers)
+  // and lands AFTER #3681, so it takes no raise of its own: both fit under
+  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally;
+  // after #3739 (main 47324919a) it measured 257,987, 61 bytes of headroom left.
+  // RAISED Thu 24 Sep 2026 (+1 KiB, PR #3865, STEM-37 stems on installed spokes):
+  // clean origin/main ccad1999e already measures 258,367 locally, 319 bytes
+  // OVER this limit (merge skew: each PR since #3739 passed alone). This PR
+  // adds +183 on top (the deck's hydrating probe state; the wait loop itself
+  // is in its own module), 258,550 locally and on CI within 35 bytes. The
+  // SetupOverlay payback above still retires all three KiB.
+  { name: 'library', limit: 259072, measured: 258550, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -227,7 +245,22 @@ const BUDGETS = [
   // is in the STATIC closure of the root layout, so "/" pays for it at boot. That
   // is a boot-weight question for the perf program, not a CI-green one, and
   // raising a budget that is not failing is not this change's to make.
-  { name: 'other-lazy', limit: 210944, measured: 200328, note: 'all other routes plus deferred shell' },
+  // RAISED Mon 21 Sep 2026: 206 -> 221 KiB for PR #3548 (cue alignment through
+  // a worklet sink). The diff adds exactly five files to this bucket, measured
+  // against a clean detached build of origin/main ac68b743c, both local:
+  //   +3,094  assets/cue-bridge-processor (the AudioWorklet, fetched by URL)
+  //   +2,634  the calibration flow (CueAlignAborted, the operator guidance)
+  //   +1,679  the mic and room-output probe (getUserMedia, device matching)
+  //   +1,007  the headphone output-liveness wrapper
+  //     +707  the cue bridge wiring (AudioWorkletNode construction)
+  //   = +9,121, 205,553 -> 214,670 over 36 -> 41 files.
+  // Every one sits behind a real dynamic import, reached only when headphone
+  // cue is used or the calibration modal opens, so none of it is boot or
+  // first-paint weight. The two cheaper fixes do not apply: nothing is
+  // mis-attributed, and there is no eager import left to demote. The ceiling
+  // follows the +5% ceil-to-KiB rule on 214,670. main alone measured 205,553
+  // against the old 210,944, so the diff, not trunk growth, is what crossed it.
+  { name: 'other-lazy', limit: 226304, measured: 214670, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

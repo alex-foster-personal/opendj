@@ -133,6 +133,14 @@ export type PendingOut = { batches: PendingBatch[] };
 
 export type UploadOut = { batch: string; dest_dir: string; results: UploadFileResult[] };
 
+export type MaterializedTrack = {
+	relative_path: string;
+	stable_id: string;
+	inserted: boolean;
+};
+
+export type MaterializeOut = { batch: string; tracks: MaterializedTrack[] };
+
 async function _err(r: Response): Promise<never> {
 	const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
 	const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
@@ -249,6 +257,15 @@ export async function getIngestPending(): Promise<PendingOut> {
 	const r = await fetch(`${API_BASE}/api/v1/ingest/pending`);
 	if (!r.ok) await _err(r);
 	return (await r.json()) as PendingOut;
+}
+
+export async function materializeIngestBatch(batch: string): Promise<MaterializeOut> {
+	const r = await fetch(
+		`${API_BASE}/api/v1/ingest/batch/${encodeURIComponent(batch)}/materialize`,
+		{ method: 'POST' }
+	);
+	if (!r.ok) await _err(r);
+	return (await r.json()) as MaterializeOut;
 }
 
 export async function confirmIngestPending(batch: string): Promise<void> {

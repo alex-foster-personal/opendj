@@ -62,9 +62,10 @@ except ModuleNotFoundError as exc:
     raise
 
 GATING_WORKFLOW = "CI"
+# CI Cost Guard left this set on Tue 22 Sep 2026: it is a scheduled batch pass
+# now, not a per-SHA follower, so there is nothing of it to supersede.
 BOOKKEEPING_WORKFLOWS = frozenset(
     {
-        "CI Cost Guard",
         "Stable evidence",
         "Error sink",
     }
@@ -169,13 +170,42 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
     return _paginated_runs(f"repos/{REPO}/actions/runs?branch={branch}&status=queued")
 
 
-def _paginated_runs(path: str) -> list[QueuedRun]:
+def _paginated_runs(
+    path: str, fetch_json: Callable[[str], object] | None = None
+) -> list[QueuedRun]:
+    """Every run the listing holds, or a PreconditionError: never a partial census.
+
+    GitHub answers the count and each page from a queue that keeps moving, so a
+    run leaving or joining it between the two makes total_count disagree with what
+    paging collected. That is not a paging defect, and it was read as one: the
+    sweeper went red with every test job green on main runs 35730977563 (13:03Z),
+    35723785363, 35722075764 and 35721772426 (Tue 22 Sep 2026), 4 of its 11 red
+    runs in the last 30. A listing that disagrees with its own count is listed
+    ONCE more; the second one agreeing with its own count is the census, two that
+    do not are the error, naming both. `fetch_json` is the GitHub GET; a test hands
+    in captured real payloads keyed by the path this asks (no monkeypatching)."""
+    fetch = _gh_api_json if fetch_json is None else fetch_json
+    first_runs, first_total = _list_runs_once(path, fetch)
+    if len(first_runs) == first_total:
+        return first_runs
+    runs, total_count = _list_runs_once(path, fetch)
+    if len(runs) != total_count:
+        raise PreconditionError(
+            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs,"
+            f" twice (the first listing: total_count={first_total} against {len(first_runs)})"
+        )
+    return runs
+
+
+def _list_runs_once(
+    path: str, fetch_json: Callable[[str], object]
+) -> tuple[list[QueuedRun], int]:
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
     page = 1
     while True:
-        payload = _gh_api_json(f"{path}{sep}per_page={PAGE_SIZE}&page={page}")
+        payload = fetch_json(f"{path}{sep}per_page={PAGE_SIZE}&page={page}")
         if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
             raise PreconditionError(f"{path} page {page} has no workflow_runs list: {payload!r}")
         if total_count is None:
@@ -189,11 +219,7 @@ def _paginated_runs(path: str) -> list[QueuedRun]:
         if len(runs) >= total_count:
             break
         page += 1
-    if len(runs) != total_count:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs"
-        )
-    return runs
+    return runs, total_count
 
 
 def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:
