@@ -513,3 +513,36 @@ def test_a_uv_toml_beside_the_pyproject_is_unknown(tmp_path: Path) -> None:
     (tmp_path / "uv.toml").unlink()
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK)
     assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("value", "named"),
+    [
+        ('">=999"', "this check does not run uv"),
+        ('">=0.8"', "this check does not run uv"),
+        ('"==0.8.17"', "this check does not run uv"),
+        ('"x"', "uv drops every [tool.uv] setting"),
+        ("1", "is not a string; uv drops every [tool.uv] setting"),
+    ],
+    ids=["unsatisfiable", "satisfiable-today", "exact", "not-a-specifier", "integer"],
+)
+def test_a_required_uv_version_is_unknown_not_clean(tmp_path: Path, value: str, named: str) -> None:
+    """Round 57: uv 0.8.17 exits 2 under `required-version = ">=999"` ("Required uv
+    version ... does not match the running version") and locks under `>=0.8`; this
+    check runs no uv, so it cannot tell which the locking uv will be and reports
+    UNKNOWN for any non-empty specifier; `"x"` and `1` are the settings-discovery
+    warning that drops the table (measured)."""
+    assert "[tool.uv]" not in UNMARKED_PYPROJECT
+    pyproject = UNMARKED_PYPROJECT + f"[tool.uv]\nrequired-version = {value}\n"
+    code, message = _run(tmp_path, pyproject, UNMARKED_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message, message
+    assert "required-version" in message, message
+
+
+def test_an_empty_required_uv_version_keeps_the_verdict(tmp_path: Path) -> None:
+    """CONTROL: `required-version = ""` is read as any version (uv 0.8.17 exit 0,
+    measured round 57), so the verdict is the pair's own."""
+    pyproject = UNMARKED_PYPROJECT + '[tool.uv]\nrequired-version = ""\n'
+    code, message = _run(tmp_path, pyproject, UNMARKED_LOCK)
+    assert code == EXIT_OK, message

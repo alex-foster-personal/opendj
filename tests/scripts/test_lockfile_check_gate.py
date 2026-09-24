@@ -45,3 +45,15 @@ def test_metadata_check_runs_ungated_on_the_pool() -> None:
     runs = [s.get("run", "") for s in job["steps"]]
     assert any("python -m scripts.lock_metadata_check" in r for r in runs), runs
     assert not any("uv lock" in r for r in runs), "no resolution on the persistent pool"
+
+
+def test_uv_toml_triggers_both_halves() -> None:
+    """if uv.toml leaves either trigger list then a PR that adds or edits it, which
+    outranks [tool.uv] for every compared setting, runs no lock check at all (Codex P2
+    on #3763, round 57); with it listed the metadata job runs and reports UNKNOWN"""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    triggers = workflow.get("on", workflow.get(True))  # PyYAML reads a bare `on` as True
+    for event in ("pull_request", "push"):
+        paths = triggers[event]["paths"]
+        assert "uv.toml" in paths, (event, paths)
+        assert "pyproject.toml" in paths and "uv.lock" in paths, (event, paths)

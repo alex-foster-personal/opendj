@@ -28,6 +28,7 @@ from pathlib import Path
 from scripts.lock_marker_parser import Unknown
 from scripts.lock_metadata_toml import norm_name, toml_list, toml_strings
 from scripts.lock_requirement_keys import Key, fmt_key, pair_by_meaning, same_requirement
+from scripts.lock_specifier_semantics import norm_spec
 
 # (pyproject key, lock key under [options], uv's default, the values uv reads)
 OPTIONS: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
@@ -164,6 +165,7 @@ def settings_delta(
         if key in manifest:
             raise Unknown(f"uv.lock manifest {key} is not compared by this check")
     _refuse_index_configuration(tool, lock)
+    _refuse_required_version(tool)  # round 57
     lines = [line for spec in OPTIONS if (line := _option(tool, options, spec)) is not None]
     for spelled_key, recorded_key in MANIFEST:
         # uv records a repeated or equivalent requirement ONCE (`six<2` beside `six<2.0`,
@@ -290,6 +292,30 @@ def refuse_uv_toml(project_dir: Path) -> None:
     check reads there (round 47): UNKNOWN."""
     if (project_dir / "uv.toml").exists():
         raise Unknown(f"{project_dir / 'uv.toml'} exists and is not read by this check")
+
+
+def _refuse_required_version(tool: dict[str, object]) -> None:
+    """`[tool.uv] required-version` gates `uv lock` on the uv that runs it: uv 0.8.17
+    exits 2 under `>=999` or `<0.8` ("Required uv version ... does not match the running
+    version") and locks under `>=0.8` or `==0.8.17`; this check runs no uv and cannot
+    tell which the one that will lock is, so a non-empty specifier is UNKNOWN (Codex P2
+    on #3763, round 57). `""` is read as any version. `"x"` and `1` are the
+    settings-discovery warning that drops the table (`IGNORED`)."""
+    if "required-version" not in tool:
+        return
+    value = tool["required-version"]
+    if not isinstance(value, str):
+        raise Unknown(f"[tool.uv] required-version = {value!r} is not a string; {IGNORED}")
+    if not value.strip():
+        return
+    try:
+        norm_spec(value)
+    except Unknown as exc:
+        raise Unknown(f"[tool.uv] required-version = {value!r}: {exc}; {IGNORED}") from exc
+    raise Unknown(
+        f"[tool.uv] required-version = {value!r}: this check does not run uv and cannot"
+        " tell whether the uv that locks satisfies it; uv refuses to lock when it does not"
+    )
 
 
 def _refuse_index_configuration(tool: dict[str, object], lock: dict[str, object]) -> None:
