@@ -15,6 +15,8 @@
  *   [if] probeStem is back in the load() fetch group [then ⛔️]
  *   [if] stem decode is back in the pre-swap section [then ⛔️]
  *   [if] 'loading' collapses back into 'unavailable' [then ⛔️]
+ *   [if] the deferred upgrade reads one STEM_BUNDLE_HYDRATING answer as final
+ *        instead of waiting through it with awaitStemArtifact [then ⛔️]
  *   [if] a held stem upgrade is not released on unload/dispose [then ⛔️]
  *   [if] a retired processor is only .disconnect()-ed, never .dispose()-ed
  *        [then ⛔️] (retired worklet + its transferred PCM leak until the whole
@@ -50,6 +52,7 @@ test('no stem fetch, decode or processor build sits in the deck critical path', 
 	const path = criticalPath();
 	for (const banned of [
 		'probeStemArtifact',
+		'awaitStemArtifact',
 		'fetchStemAudioArrayBuffers',
 		'AlignedStemDeckProcessor.create',
 		"time('probeStem'",
@@ -70,12 +73,20 @@ test('the deferred upgrade owns every stage the critical path gave up', () => {
 	assert.ok(start > 0, '_upgradeDeckStems not found');
 	const deferred = source.slice(start, source.indexOf('\n}\n', start));
 	for (const required of [
-		'probeStemArtifact',
+		// awaitStemArtifact wraps probeStemArtifact and waits out a bundle the
+		// server is still pulling from R2; a bare probeStemArtifact here would
+		// settle a spoke's first load of every track as "no stems".
+		'awaitStemArtifact',
 		'fetchStemAudioArrayBuffers',
 		'AlignedStemDeckProcessor.create'
 	]) {
 		assert.ok(deferred.includes(required), `${required} was dropped, not deferred`);
 	}
+	assert.ok(
+		!/probeStemArtifact\(/.test(deferred),
+		'_upgradeDeckStems calls probeStemArtifact directly: one STEM_BUNDLE_HYDRATING ' +
+			'answer would settle the deck as unavailable while its bundle is downloading'
+	);
 	// Never awaited by load(): awaiting it would put the whole cost straight
 	// back on the critical path while looking like it had moved.
 	assert.ok(
