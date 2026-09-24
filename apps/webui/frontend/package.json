@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test:unit": "svelte-kit sync && node --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs",
+    "test:unit": "svelte-kit sync && node --experimental-strip-types --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs",
     "test:unit:slow": "svelte-kit sync && node --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit-slow.xml --test-concurrency=1 --test-timeout=120000 tests/unit/slow/*.test.mjs",
     "test:unit:all": "svelte-kit sync && node --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit-all.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs tests/unit/slow/*.test.mjs",
     "test:e2e": "uv sync --extra dev --extra tags --extra analysis && uv run --no-sync python -m apps.webui.port_config claim && playwright test",
