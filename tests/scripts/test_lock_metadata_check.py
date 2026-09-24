@@ -52,6 +52,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "numpy"
 version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
 
 [[package]]
 name = "demo-project"

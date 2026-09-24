@@ -396,3 +396,79 @@ def test_an_empty_marker_after_the_semicolon_is_unknown(tmp_path: Path, text: st
     code, message = _run(tmp_path, edited, unmarked_lock)
     assert code == EXIT_UNKNOWN, message
     assert f"unparseable requirement: {text!r}" in message
+
+
+UNMARKED_PYPROJECT = MARKED_PYPROJECT.replace("\"six; os_name == 'x'\"", '"six"')
+UNMARKED_LOCK = MARKED_LOCK.replace(", marker = \"os_name == 'x'\"", "")
+
+
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("six[]", EXIT_OK),
+        ("six[ ]", EXIT_OK),
+        ("six[,]", EXIT_UNKNOWN),
+        ("six[a,]", EXIT_UNKNOWN),
+        ("six[,a]", EXIT_UNKNOWN),
+        ("six[a,,b]", EXIT_UNKNOWN),
+    ],
+)
+def test_an_empty_extra_slot_is_unknown_and_empty_brackets_are_not(
+    tmp_path: Path, text: str, code: int
+) -> None:
+    """Measured uv 0.8.17 (Codex P2 on #3763, round 33): `six[]` and `six[ ]` lock
+    clean as `six` (exit 0), while `six[,]`, `six[a,]`, `six[,a]` and `six[a,,b]` are
+    "`project.dependencies[0]` must be pep508" (exit 2). Filtering empty slots had
+    read all six as `six`."""
+    assert UNMARKED_PYPROJECT != MARKED_PYPROJECT and "marker" not in UNMARKED_LOCK
+    edited = UNMARKED_PYPROJECT.replace('"six"', f'"{text}"')
+    assert edited != UNMARKED_PYPROJECT
+    got, message = _run(tmp_path, edited, UNMARKED_LOCK)
+    assert got == code, message
+    if code == EXIT_UNKNOWN:
+        assert f"unparseable requirement (empty extra): {text!r}" in message
+
+
+@pytest.mark.parametrize(
+    ("appended", "named"),
+    [
+        (
+            '\n[[package]]\nversion = "9.9"\nsource = { registry = "https://pypi.org/simple" }\n',
+            "[[package]] entry without 'name'",
+        ),
+        (
+            '\n[[package]]\nname = "ghost"\nversion = "9.9"\n',
+            "[[package]] entry without 'source'",
+        ),
+        (
+            '\n[[package]]\nname = 1\nsource = { registry = "https://pypi.org/simple" }\n',
+            "name = 1 is not a string",
+        ),
+    ],
+    ids=["no-name", "no-source", "name-integer"],
+)
+def test_a_malformed_lock_package_beside_the_root_is_unknown(
+    tmp_path: Path, appended: str, named: str
+) -> None:
+    """A `[[package]]` without `name` or `source` is "missing field", `uv lock --check`
+    exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 33); the root filter had
+    dropped it and reported the pair clean. A record without `version` is the control:
+    uv reads it (exit 0), as a path source records none."""
+    lock = UNMARKED_LOCK + appended
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+    assert got == EXIT_UNKNOWN, message
+    assert named in message
+    control = UNMARKED_LOCK + (
+        '\n[[package]]\nname = "ghost"\nsource = { registry = "https://pypi.org/simple" }\n'
+    )
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, control)
+    assert got == EXIT_OK, message
+
+
+def test_a_lock_package_container_that_is_not_a_list_is_unknown(tmp_path: Path) -> None:
+    """`package = "bad"` in uv.lock is "invalid type: string, expected a sequence",
+    exit 2 (measured uv 0.8.17, round 33); `.get("package", [])` had iterated it."""
+    head = UNMARKED_LOCK[: UNMARKED_LOCK.index("[[package]]")]
+    got, message = _run(tmp_path, UNMARKED_PYPROJECT, head + 'package = "bad"\n')
+    assert got == EXIT_UNKNOWN, message
+    assert "uv.lock package = 'bad' is not a list" in message
