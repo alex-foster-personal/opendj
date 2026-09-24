@@ -80,9 +80,13 @@
 	// (Codex review of #3862 at 1ac37b0c, P2).
 	const setupMounted = $derived(setupOverlay.open || setupOverlay.incomplete);
 	// The first-run wizard is a separate chunk (see the bundle-budget note on
-	// SetupOverlay). The fetch starts as soon as the shell script runs, so an
-	// "Open setup" click, or the first-run boot gate, awaits a chunk that is
-	// already in flight instead of a cold request made at click time.
+	// SetupOverlay), and the request for it starts only when the wizard
+	// mounts: a normal library boot never fetches it, which is what the
+	// budget's library surface (the files first paint downloads) measures. An
+	// import() at script level would start the fetch on every boot before
+	// `setupMounted` was consulted (Codex review of #3862 at 1fb0cc41, P1).
+	// The promise is kept once made, so a close and reopen awaits the same
+	// load rather than a second request.
 	//
 	// A chunk that cannot be fetched (a stale client after a deploy, a dropped
 	// connection) must not strand first run: `setupOpen` makes the preflight
@@ -91,11 +95,18 @@
 	// failure is reported the way the pin shell's is (an error toast, which
 	// also reaches the client-error log with the cause attached), and the
 	// await below renders a retry surface from its catch branch.
-	const setupOverlayModule = import('$lib/components/setup/SetupOverlay.svelte');
-	setupOverlayModule.catch((error: unknown) => {
-		const message = error instanceof Error ? error.message : String(error);
-		pushToast(`Setup failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
-	});
+	type SetupOverlayModule = typeof import('$lib/components/setup/SetupOverlay.svelte');
+	let setupOverlayModule: Promise<SetupOverlayModule> | null = null;
+	function loadSetupOverlay(): Promise<SetupOverlayModule> {
+		if (setupOverlayModule === null) {
+			setupOverlayModule = import('$lib/components/setup/SetupOverlay.svelte');
+			setupOverlayModule.catch((error: unknown) => {
+				const message = error instanceof Error ? error.message : String(error);
+				pushToast(`Setup failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+			});
+		}
+		return setupOverlayModule;
+	}
 	// The retry is a fresh document, not a second import(): the browser keeps
 	// a failed module fetch in its module map, so re-importing the same URL
 	// rejects again without touching the network (measured in Chromium, Thu 24
@@ -362,7 +373,7 @@
      note), and its own effects early-return while closed, so keeping it off
      the first paint changes nothing a user or an agent can observe. -->
 {#if setupMounted}
-	{#await setupOverlayModule then { default: SetupOverlay }}
+	{#await loadSetupOverlay() then { default: SetupOverlay }}
 		<SetupOverlay />
 	{:catch error}
 		<!-- The chunk did not arrive. Same backdrop the wizard uses, so the ask

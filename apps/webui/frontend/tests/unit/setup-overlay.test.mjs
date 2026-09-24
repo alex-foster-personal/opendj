@@ -278,8 +278,25 @@ test('the layout keeps the wizard mounted while the incomplete note is due', () 
 	// shape, as the markup facts above are: the guard names both flags.
 	const layout = read('src/routes/+layout.svelte');
 	assert.match(layout, /const setupMounted = \$derived\(setupOverlay\.open \|\| setupOverlay\.incomplete\);/);
-	assert.match(layout, /\{#if setupMounted\}\s*\{#await setupOverlayModule then \{ default: SetupOverlay \}\}/);
+	assert.match(layout, /\{#if setupMounted\}\s*\{#await loadSetupOverlay\(\) then \{ default: SetupOverlay \}\}/);
 	assert.doesNotMatch(layout, /\{#if setupOpen\}/);
+});
+
+test('the layout requests the wizard chunk only once setup mounts', () => {
+	// The bundle budget's library surface is what first paint downloads, so
+	// the chunk's import() must not run at script level, where it would start
+	// the fetch on every boot before the mount guard was consulted (Codex
+	// review of #3862 at 1fb0cc41, P1). The one import() sits inside the
+	// memoizing loader the {#await} above calls, and nowhere else.
+	const layout = read('src/routes/+layout.svelte');
+	// The runtime import(), not the `typeof import(...)` type of its module.
+	const runtimeImport = /(?<!typeof )import\('\$lib\/components\/setup\/SetupOverlay\.svelte'\)/g;
+	assert.equal(layout.match(runtimeImport)?.length, 1, 'exactly one import() of the setup chunk');
+	const loader = layout.match(/function loadSetupOverlay\(\)[^]*?\n\t\}\n/);
+	assert.ok(loader, 'the memoizing loader exists');
+	assert.match(loader[0], runtimeImport, 'the import() is inside the loader');
+	assert.match(loader[0], /if \(setupOverlayModule === null\)/);
+	assert.doesNotMatch(layout, /const setupOverlayModule = import\(/);
 });
 
 // ------------------------------------------------ final vs unfinished probe
