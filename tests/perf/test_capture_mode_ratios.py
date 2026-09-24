@@ -11,7 +11,6 @@ import pytest
 
 from scripts.perf import capture_mode_ratios as cmr
 
-
 _OMIT = object()
 
 
@@ -137,14 +136,15 @@ def test_probe_once_reports_unknown_for_telemetry_not_marked_fresh(stale: object
 
     with (
         patch("scripts.perf.capture_mode_ratios.urlopen", return_value=_response(payload)),
-        pytest.raises(RuntimeError, match="telemetry UNKNOWN .*not fresh"),
+        pytest.raises(RuntimeError, match=r"telemetry UNKNOWN .*not fresh"),
     ):
         cmr._probe_once("http://127.0.0.1:5273")
 
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_stale_telemetry_never_reaches_a_steady_sample() -> None:
-    """[if] the endpoint only has a stale record [then] no footprint/cpu value is produced, [else stop]."""
+    """[if] the endpoint has only a stale record [then] no footprint/cpu
+    value is produced, [else stop]."""
     payload = _telemetry_body(stale=True, footprint_mb=999.0)
 
     with (
