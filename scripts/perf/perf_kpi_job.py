@@ -226,10 +226,33 @@ def update_ledger_pr(
     if pr_already_open:
         subprocess.run(["git", "fetch", "origin", branch], check=True, cwd=repo_root)
         base_ref = f"origin/{branch}"
+    # The push lease is taken HERE, right after the fetch(es) above, not
+    # from a fresh `git ls-remote` immediately before the push (claude-review,
+    # PR #3827, round 5, P1/BLOCKING): a lease re-checked right before
+    # pushing always matches whatever the remote currently is, which makes
+    # the "force-with-lease" push an unconditional force push -- exactly
+    # the concurrent-overwrite it was meant to prevent. The lease must
+    # reflect the ref this run's commit was actually BUILT on top of, so a
+    # push from the other host landing in between is detected and rejected.
+    lease_ls_remote = subprocess.run(
+        ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    ).stdout.split()
+    lease_value = lease_ls_remote[0] if lease_ls_remote else ""
     _remove_worktree_if_present(repo_root, worktree_dir)
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+    # --detach, never `-B <branch>` (claude-review, PR #3827, round 5, P2):
+    # a worktree can't reset a branch another worktree already has checked
+    # out. Any host where an OLDER version of this job got past the
+    # PR-open check and left REPO_ROOT itself sitting on
+    # perf/kpi-nightly-ledger would fail this line on every subsequent
+    # run. A detached worktree never contends for the branch name; the
+    # push below names the branch explicitly instead.
     subprocess.run(
-        ["git", "worktree", "add", "-B", branch, str(worktree_dir), base_ref],
+        ["git", "worktree", "add", "--detach", str(worktree_dir), base_ref],
         check=True,
         cwd=repo_root,
     )
@@ -267,33 +290,25 @@ def update_ledger_pr(
             check=True,
             cwd=worktree_dir,
         )
-        # --force-with-lease against a freshly re-checked remote ref
-        # (claude-review, PR #3827, round 4, P2): a plain push is rejected
-        # as non-fast-forward as soon as the standing branch survives one
-        # squash-merge, which claude-review correctly called "the normal
-        # state after the first merge" rather than a rare edge case -- Air
-        # and silver both fire at 04:00 local, so the two-host race isn't
-        # rare either. The lease is keyed on whatever the branch's HEAD
-        # actually is right now (checked again here, not reused from the
-        # earlier fetch at the top of this function), so a genuine
-        # concurrent push from the other host between that fetch and this
-        # push still fails safely instead of being silently overwritten.
-        remote_sha = subprocess.run(
-            ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=worktree_dir,
-        ).stdout.split()
-        lease_value = remote_sha[0] if remote_sha else ""
+        # --force-with-lease against the SHA fetched at the top of this
+        # function (claude-review, PR #3827, round 5, P1/BLOCKING -- round
+        # 4's version re-checked the lease with a fresh `git ls-remote`
+        # immediately before this push, which always matches the current
+        # remote tip and so was an unconditional force push in disguise: a
+        # concurrent push from the other host landing between that
+        # ls-remote and this one would have been silently overwritten
+        # instead of rejected). `lease_value` is the branch's SHA as of
+        # the fetch this run's commit was actually built on top of, so a
+        # push that landed after that point is detected here. The worktree
+        # is DETACHED (round 5, P2), so there is no local branch to push
+        # from by name -- push HEAD to the branch ref explicitly.
         subprocess.run(
             [
                 "git",
                 "push",
-                "-u",
                 f"--force-with-lease={branch}:{lease_value}",
                 "origin",
-                branch,
+                f"HEAD:refs/heads/{branch}",
             ],
             check=True,
             cwd=worktree_dir,

@@ -469,7 +469,10 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         owned = [u for u in b["units"] if u["owned"]]
         violations = [u for u in owned if u["naming"] == "violation"]
         unknown = [u for u in owned if str(u["purpose"]).startswith("UNKNOWN")]
-        display_error = b.get("last_known_error") or b["error"]
+        if b.get("last_known_error"):
+            display_error = f"{b['error']}; last known error: {b['last_known_error']}"
+        else:
+            display_error = b["error"]
         reach = "yes" if b["reachable"] else f"NO -- {display_error}"
         total_row.append(
             f"| {b['host']} | {reach} | {len(owned)} | {len(violations)} | {len(unknown)} |"
@@ -480,7 +483,11 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         lines.append(f"## {b['host']}")
         lines.append("")
         if not b["reachable"]:
-            lines.append(f"**UNREACHABLE this pass** -- {b.get('last_known_error') or b['error']}")
+            if b.get("last_known_error"):
+                unreachable_line = f"{b['error']}; last known error: {b['last_known_error']}"
+            else:
+                unreachable_line = b["error"]
+            lines.append(f"**UNREACHABLE this pass** -- {unreachable_line}")
             lines.append("")
             if b["units"]:
                 lines.append(

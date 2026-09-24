@@ -48,6 +48,7 @@ from scripts.process_registry_gen import (
     build_doc,
     carry_forward_unqueried_host,
     merge_with_previous,
+    render_markdown,
 )
 from scripts.process_registry_sources import (
     Host,
@@ -212,6 +213,30 @@ def test_hosts_filter_error_does_not_nest_across_repeated_regens() -> None:
     assert twice["error"] == once["error"] == "not queried this pass (--hosts filter)"
     assert twice["last_known_error"] == once["last_known_error"]
     assert "Could not resolve hostname bifrost2" in twice["last_known_error"]
+
+
+def test_rendered_markdown_never_claims_a_carried_host_was_checked_this_pass(
+) -> None:
+    """A carried-forward host's real last-known error must render alongside
+    the not-queried note, not in place of it (claude-review, PR #3827,
+    round 5, P3): showing only last_known_error reports a measurement
+    ("UNREACHABLE this pass") that never happened this pass at all."""
+    prev_block = {
+        "host": "bifrost2",
+        "reachable": False,
+        "error": "ssh: Could not resolve hostname bifrost2: Name or service not known",
+        "stale_as_of": "2026-09-16T06:11:17Z",
+        "generated_at_utc_of_block": None,
+        "units": [],
+    }
+    carried = carry_forward_unqueried_host(prev_block)
+    md = render_markdown([carried], _STAMP)
+    assert "not queried this pass" in md
+    assert "Could not resolve hostname bifrost2" in md
+    # Both facts on the same line, not one silently replacing the other.
+    for line in md.splitlines():
+        if "not queried this pass" in line:
+            assert "Could not resolve hostname bifrost2" in line
 
 
 def test_a_scrubbed_row_still_matches_its_live_original() -> None:
