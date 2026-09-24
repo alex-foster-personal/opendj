@@ -45,6 +45,8 @@ EDGE_LABELS = frozenset({"start", "end"})
 MIN_SECTION_BARS = 4
 SPARSE_WINDOW_S = 360.0
 SPARSE_MIN_BOUNDARIES = 3
+# A first boundary this close to 0 s already is the opening section.
+LEAD_MIN_S = 0.05
 
 
 @dataclass(frozen=True)
@@ -69,10 +71,29 @@ class Structure:
     phrase_offset: int | None
     merged: int
     implausible: list[str] = field(default_factory=list)
+    # The model's label for the music before the first boundary. Boundaries
+    # are section CHANGES, so the opening section has no boundary of its own.
+    lead_label: str | None = None
 
     def sections(self, duration_s: float) -> list[dict[str, Any]]:
-        """Sections as ``{start_s, end_s, label, start_bar, bars}``, PSSI-shaped."""
+        """Sections as ``{start_s, end_s, label, start_bar, bars}``, PSSI-shaped.
+
+        The first section starts at 0 s, before any boundary: without it a
+        track's intro would simply be missing. It has no ``start_bar``, since
+        0 s is the file's start and not a measured downbeat.
+        """
         out: list[dict[str, Any]] = []
+        first = self.boundaries[0] if self.boundaries else None
+        if first is not None and self.lead_label is not None and first.time_s > LEAD_MIN_S:
+            out.append(
+                {
+                    "start_s": 0.0,
+                    "end_s": round(first.time_s, 3),
+                    "label": self.lead_label,
+                    "start_bar": None,
+                    "bars": None,
+                }
+            )
         for i, b in enumerate(self.boundaries):
             nxt = self.boundaries[i + 1] if i + 1 < len(self.boundaries) else None
             end_s = nxt.time_s if nxt else duration_s
@@ -97,6 +118,7 @@ class Structure:
             "phrase_offset": self.phrase_offset,
             "merged": self.merged,
             "implausible": list(self.implausible),
+            "lead_label": self.lead_label,
         }
 
 
@@ -155,7 +177,8 @@ def quantize(
     if len(grid) < 2:
         # No grid to snap to: keep the model's times and say so.
         raw = [Boundary(s, s, lab, None, 0.0, False, "unsnapped") for s, lab in starts]
-        return Structure(raw, phrase_bars, None, 0, ["no_downbeat_grid"] if starts else [])
+        flags = ["no_downbeat_grid"] if starts else []
+        return Structure(raw, phrase_bars, None, 0, flags, _lead_label(segments))
     first = _downbeat_snap(starts, grid, max_move_bars)
     offset = _phrase_offset(first, phrase_bars, phrase_offset)
 
@@ -174,7 +197,15 @@ def quantize(
         out.append(Boundary(s, grid[bar], lab, bar, abs(grid[bar] - s), aligned, "snapped"))
     out.sort(key=lambda b: b.time_s)
 
-    return Structure(out, phrase_bars, offset, merged, _implausible(out, grid))
+    return Structure(
+        out, phrase_bars, offset, merged, _implausible(out, grid), _lead_label(segments)
+    )
+
+
+def _lead_label(segments: Sequence[tuple[float, float, str]]) -> str | None:
+    """Label of the earliest segment that is music, not the model's silence edges."""
+    music = sorted((float(s), str(lab)) for s, _e, lab in segments if str(lab) not in EDGE_LABELS)
+    return music[0][1] if music else None
 
 
 def _model_starts(segments: Sequence[tuple[float, float, str]]) -> list[tuple[float, str]]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 
 from apps.analysis_structure.quantize import quantize, vote_phrase_offset
@@ -97,8 +99,31 @@ def test_plausible_track_raises_no_flags():
 def test_sections_are_pssi_shaped_with_bar_counts():
     q = quantize(seg(0.0, 32.0, 96.0), GRID, phrase_bars=4)
     s = q.sections(400.0)
-    assert s[0] == {"start_s": 32.0, "end_s": 96.0, "label": "verse", "start_bar": 16, "bars": 32}
+    assert s[1] == {"start_s": 32.0, "end_s": 96.0, "label": "verse", "start_bar": 16, "bars": 32}
     assert s[-1]["end_s"] == 400.0 and s[-1]["bars"] is None
+
+
+def test_the_opening_section_is_kept_when_the_model_starts_at_zero():
+    """Found on a real All-In-One run: a track with no leading silence starts its first
+    segment at 0.0 s, which is not a boundary, and the intro vanished from `sections`."""
+    segments = [(0.0, 22.2, "intro"), (22.2, 44.9, "inst"), (44.9, 400.0, "chorus")]
+    s = quantize(segments, GRID, phrase_bars=1).sections(400.0)
+    assert s[0] == {
+        "start_s": 0.0,
+        "end_s": 22.0,
+        "label": "intro",
+        "start_bar": None,
+        "bars": None,
+    }
+    assert [x["label"] for x in s] == ["intro", "inst", "chorus"]
+    assert all(a["end_s"] == b["start_s"] for a, b in pairwise(s))
+
+
+def test_no_extra_opening_section_when_the_first_boundary_is_at_zero():
+    """Control: leading silence, then an intro that snaps onto the 0 s downbeat, is one section."""
+    segments = [(0.0, 0.4, "start"), (0.4, 32.3, "intro"), (32.3, 400.0, "verse")]
+    s = quantize(segments, GRID, phrase_bars=1).sections(400.0)
+    assert [(x["start_s"], x["label"]) for x in s] == [(0.0, "intro"), (32.0, "verse")]
 
 
 def test_vote_ties_go_to_zero():
