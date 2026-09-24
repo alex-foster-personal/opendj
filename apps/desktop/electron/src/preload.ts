@@ -25,7 +25,6 @@ interface PageInit {
 	engineOrigin: string | null;
 	shellBuild: Record<string, unknown>;
 	supervisor: Record<string, unknown> | null;
-	sidecarOrigins: Record<string, string>;
 }
 
 const init = ipcRenderer.sendSync('opendj:page-init') as PageInit | null;
@@ -44,7 +43,6 @@ if (init !== null) {
 				pending.push({ kind, message, context: context || { source: 'shell-webview' } });
 			};
 			if (state.supervisor !== null) scope.__OPENDJ_ENGINE_SUPERVISOR__ = state.supervisor;
-			for (const [name, origin] of Object.entries(state.sidecarOrigins)) scope[name] = origin;
 		},
 		args: [init]
 	});

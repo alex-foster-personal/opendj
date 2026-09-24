@@ -5,7 +5,7 @@
 // `payload/bin/odj-output-probe <probe|switch>` when the payload carries that
 // helper, and otherwise answers the honest ADR-0125 `unknown` verdict with the
 // reason stated. Extracting output_health.rs into that helper is a blocker on
-// the cutover plan (.planning/phases/20-electron-desktop-shell/20-01-PLAN.md).
+// the cutover plan (.planning/phases/21-electron-desktop-shell/21-01-PLAN.md).
 
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';

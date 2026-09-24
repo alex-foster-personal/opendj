@@ -48,7 +48,6 @@ import {
 } from './policy';
 import { ShellHealthServer } from './shell-health';
 import { EngineError, appendShellLog, installShellLogging } from './shell-log';
-import { type RunningSidecar, readSidecarManifest, sidecarGlobals, startSidecars, stopSidecars } from './sidecars';
 import { EngineSupervisor, type SupervisorSurface, defaultDeps, supervisedOrigin } from './supervisor';
 import { applyUpdate } from './updater';
 
@@ -142,16 +141,14 @@ function main(): void {
 
 	let window: BrowserWindow | null = null;
 	let supervisor: EngineSupervisor | null = null;
-	let sidecars: RunningSidecar[] = [];
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
-	const page: PageInit = { engineOrigin: null, shellBuild: identity, supervisor: null, sidecarOrigins: {} };
+	const page: PageInit = { engineOrigin: null, shellBuild: identity, supervisor: null };
 
 	const shutdownAll = (reason: string): Promise<void> => {
 		if (shuttingDown === null) {
 			shuttingDown = (async () => {
 				appendShellLog('shutdown', `shell exit: ${reason}`);
-				await stopSidecars(sidecars);
 				if (supervisor !== null) {
 					appendShellLog('shutdown', 'shell exit: stopping runtime supervisor');
 					await supervisor.shutdown();
@@ -235,7 +232,7 @@ function main(): void {
 	};
 
 	ipcMain.on('opendj:page-init', (event) => {
-		event.returnValue = trusted(event) ? { ...page, sidecarOrigins: sidecarGlobals(sidecars) } : null;
+		event.returnValue = trusted(event) ? page : null;
 	});
 	ipcMain.handle('opendj:pick-folder', async (event, options: { title?: unknown } | undefined) => {
 		if (!trusted(event) || window === null) return refuse();
@@ -367,8 +364,6 @@ function main(): void {
 					surface,
 					defaultDeps(lockProbe)
 				);
-				// D8: sidecars (the Rust audio engine) after the engine is up.
-				sidecars = await startSidecars(payload, dataDir, path.dirname(logPath), readSidecarManifest(payload));
 			}
 		} catch (error) {
 			if (supervisor !== null) await supervisor.shutdown();

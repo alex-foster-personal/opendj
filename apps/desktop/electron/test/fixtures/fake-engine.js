@@ -25,7 +25,8 @@ const watched = [
 	'WEB_CONCURRENCY',
 	'OPENDJ_PARENT_PID',
 	'OPENDJ_ENGINE_WARN_LOG',
-	'OPENDJ_ENGINE_LOG_BOOT_ID'
+	'OPENDJ_ENGINE_LOG_BOOT_ID',
+	'ODJ_AUDIO_BIN'
 ];
 process.stdout.write(`fake-engine argv ${JSON.stringify(args)}\n`);
 for (const name of watched) {

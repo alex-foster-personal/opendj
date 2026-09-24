@@ -9,10 +9,12 @@ import { test } from 'node:test';
 
 import {
 	APPSTORE_PROFILE,
+	AUDIO_ENGINE_BIN,
 	Engine,
 	EngineError,
 	LogSink,
 	STRIPPED_ENV,
+	audioEngineEnv,
 	buildProfileFor,
 	freeLoopbackPort,
 	healthOk,
@@ -181,17 +183,73 @@ test('spawn passes the launch contract and strips inherited env', async () => {
 	} finally {
 		for (const name of STRIPPED_ENV) delete process.env[name];
 	}
-	await engine.waitUntilHealthy(10_000);
-	await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
-	const text = fs.readFileSync(log, 'utf8');
-	assert.match(text, new RegExp(`"--data-dir","${data.replace(/[/\\]/g, '\\$&')}","--host","127.0.0.1","--port","${engine.port}"`));
-	for (const name of STRIPPED_ENV) assert.match(text, new RegExp(`env ${name}=<unset>`));
-	assert.match(text, new RegExp(`env OPENDJ_PARENT_PID=${process.pid}\\n`));
-	assert.match(text, /env OPENDJ_ENGINE_WARN_LOG=.*logs\/engine-warn\.log/);
-	assert.match(text, /env OPENDJ_ENGINE_LOG_BOOT_ID=shell-\d+-\d+/);
-	assert.match(text, /fake-engine stderr line/, 'stderr is pumped into the same log');
-	await engine.shutdown();
+	try {
+		await engine.waitUntilHealthy(10_000);
+		await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
+		const text = fs.readFileSync(log, 'utf8');
+		assert.match(text, new RegExp(`"--data-dir","${data.replace(/[/\\]/g, '\\$&')}","--host","127.0.0.1","--port","${engine.port}"`));
+		for (const name of STRIPPED_ENV) assert.match(text, new RegExp(`env ${name}=<unset>`));
+		assert.match(text, new RegExp(`env OPENDJ_PARENT_PID=${process.pid}\\n`));
+		assert.match(text, /env OPENDJ_ENGINE_WARN_LOG=.*logs\/engine-warn\.log/);
+		assert.match(text, /env OPENDJ_ENGINE_LOG_BOOT_ID=shell-\d+-\d+/);
+		assert.match(text, /fake-engine stderr line/, 'stderr is pumped into the same log');
+	} finally {
+		await engine.shutdown();
+	}
 	assert.ok(await waitFor(() => pidGone(engine.pid)));
+});
+
+// ----- the Rust audio engine's binary (ADR NEW rust-audio-engine-process, D5) --
+test('a bundled audio engine is handed to the engine as ODJ_AUDIO_BIN', async () => {
+	const dir = scratchDir('spawn-audio-bin');
+	const payload = fakePayload(dir);
+	const binary = path.join(payload, AUDIO_ENGINE_BIN);
+	fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+	const data = path.join(dir, 'data');
+	const log = path.join(data, 'logs/engine.log');
+	process.env.ODJ_AUDIO_BIN = '/Users/dev/music-dj-tools/apps/audio-engine/target/debug/odj-audio';
+	let engine: Engine;
+	try {
+		engine = spawnEngine(payload, data, log, await freeLoopbackPort());
+	} finally {
+		delete process.env.ODJ_AUDIO_BIN;
+	}
+	try {
+		await engine.waitUntilHealthy(10_000);
+		await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
+		assert.match(fs.readFileSync(log, 'utf8'), new RegExp(`env ODJ_AUDIO_BIN=${binary.replace(/[/\\.]/g, '\\$&')}\\n`));
+	} finally {
+		await engine.shutdown();
+	}
+});
+
+test('no bundled audio engine: ODJ_AUDIO_BIN is unset, even when the terminal set one', async () => {
+	const dir = scratchDir('spawn-no-audio-bin');
+	const data = path.join(dir, 'data');
+	const log = path.join(data, 'logs/engine.log');
+	process.env.ODJ_AUDIO_BIN = '/Users/dev/music-dj-tools/apps/audio-engine/target/debug/odj-audio';
+	let engine: Engine;
+	try {
+		engine = spawnEngine(fakePayload(dir), data, log, await freeLoopbackPort());
+	} finally {
+		delete process.env.ODJ_AUDIO_BIN;
+	}
+	try {
+		await engine.waitUntilHealthy(10_000);
+		await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
+		assert.match(fs.readFileSync(log, 'utf8'), /env ODJ_AUDIO_BIN=<unset>\n/);
+	} finally {
+		await engine.shutdown();
+	}
+});
+
+test('a non-executable audio engine file is not handed over', () => {
+	const dir = scratchDir('audio-bin-mode');
+	fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
+	fs.writeFileSync(path.join(dir, AUDIO_ENGINE_BIN), 'not a program', { mode: 0o644 });
+	assert.deepEqual(audioEngineEnv(dir, 'linux'), {});
+	fs.chmodSync(path.join(dir, AUDIO_ENGINE_BIN), 0o755);
+	assert.deepEqual(audioEngineEnv(dir, 'linux'), { ODJ_AUDIO_BIN: path.join(dir, AUDIO_ENGINE_BIN) });
 });
 
 test('an engine that exits during boot is named with its status', async () => {

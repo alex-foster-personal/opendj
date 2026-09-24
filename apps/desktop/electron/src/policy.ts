@@ -181,6 +181,4 @@ export interface PageInit {
 	shellBuild: Record<string, unknown>;
 	/** Present only while the supervisor has declared the engine dead. */
 	supervisor: { engine: 'dead'; exit_code: number; lock_pid: number; lock_port: number; health_port: number } | null;
-	/** Extra origins from sidecars, e.g. OPENDJ_AUDIO_ENGINE_ORIGIN. */
-	sidecarOrigins: Record<string, string>;
 }

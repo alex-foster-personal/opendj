@@ -11,8 +11,10 @@
 // 5. Engine output is never silently lost: the log is proved writable before
 //    the spawn, and a pump that dies stops the engine.
 //
-// The same machinery launches sidecars (the Rust audio engine), so the
-// process contract lives in `spawnProcess` and the Python engine is one caller.
+// The Rust audio engine (`odj-audio`) is not launched here: the Python engine
+// supervises it, so both shells behave the same. The shell only tells the
+// engine where the bundled binary is, in ODJ_AUDIO_BIN (ADR NEW
+// rust-audio-engine-process, decision D5).
 
 import { spawn as spawnChild, spawnSync, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -47,8 +49,30 @@ export const STRIPPED_ENV = [
 	'MDT_DATA_DIR',
 	'MDT_REKORDBOX_WRITEBACK_ENABLED',
 	'MUSIC_DJ_STATE_BACKEND',
-	'WEB_CONCURRENCY'
+	'WEB_CONCURRENCY',
+	// Set from the payload below or not at all: a developer's terminal must not
+	// point the app's engine at a repo build of the audio engine.
+	'ODJ_AUDIO_BIN'
 ] as const;
+
+/** Where the payload bundles the Rust audio engine, when it does. */
+export const AUDIO_ENGINE_BIN = 'bin/odj-audio';
+export const AUDIO_ENGINE_BIN_ENV = 'ODJ_AUDIO_BIN';
+
+/**
+ * `{ODJ_AUDIO_BIN: <path>}` when the payload carries an executable audio
+ * engine, otherwise nothing: the engine then keeps playback in the page, and
+ * says so itself. The shell never falls back to another binary.
+ */
+export function audioEngineEnv(payloadDir: string, platform: NodeJS.Platform = process.platform): Record<string, string> {
+	const binary = path.join(payloadDir, AUDIO_ENGINE_BIN + (platform === 'win32' ? '.exe' : ''));
+	try {
+		fs.accessSync(binary, platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
+	} catch {
+		return {};
+	}
+	return { [AUDIO_ENGINE_BIN_ENV]: binary };
+}
 
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -229,7 +253,7 @@ export interface ProcessSpec {
 	args?: string[];
 }
 
-/** A spawned engine (or sidecar) and the address it was told to serve on. */
+/** A spawned engine and the address it was told to serve on. */
 export class Engine {
 	private exit: ExitInfo | null = null;
 	private readonly exited: Promise<ExitInfo>;
@@ -385,8 +409,10 @@ export function spawnProcess(spec: ProcessSpec): Engine {
 	// BEFORE the spawn: an unwritable log is a launch-time fact.
 	verifyLogWritable(logPath);
 
-	const env: NodeJS.ProcessEnv = { ...process.env, ...spec.env };
+	// Strip what the parent inherited, then apply what the shell decided.
+	const env: NodeJS.ProcessEnv = { ...process.env };
 	for (const stripped of STRIPPED_ENV) delete env[stripped];
+	Object.assign(env, spec.env);
 	const args = ['--data-dir', dataDir, '--host', '127.0.0.1', '--port', String(port), ...(spec.args ?? [])];
 
 	let child: ChildProcess;
@@ -431,7 +457,8 @@ export function spawnEngine(payloadDir: string, dataDir: string, logPath: string
 		env: {
 			OPENDJ_ENGINE_WARN_LOG: path.join(path.dirname(logPath), 'engine-warn.log'),
 			OPENDJ_ENGINE_LOG_BOOT_ID: logBootId(),
-			OPENDJ_PARENT_PID: String(process.pid)
+			OPENDJ_PARENT_PID: String(process.pid),
+			...audioEngineEnv(payloadDir)
 		}
 	});
 }
