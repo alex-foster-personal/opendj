@@ -85,7 +85,9 @@ def _default_from_manifest(path: Path) -> str | None:
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise sync_config.CloudSyncConfigError(f"{MANIFEST_ENV}={path} is unreadable: {exc}") from exc
+        raise sync_config.CloudSyncConfigError(
+            f"{MANIFEST_ENV}={path} is unreadable: {exc}"
+        ) from exc
     block = manifest.get(MANIFEST_KEY) if isinstance(manifest, dict) else None
     if block is None:
         return None
@@ -97,7 +99,9 @@ def _default_from_manifest(path: Path) -> str | None:
     if raw is None:
         return None
     if not isinstance(raw, str):
-        raise sync_config.CloudSyncConfigError(f"{path} {MANIFEST_URL_KEY} must be a string or null")
+        raise sync_config.CloudSyncConfigError(
+            f"{path} {MANIFEST_URL_KEY} must be a string or null"
+        )
     return _validated_hub_url(raw, source=f"{path} {MANIFEST_URL_KEY}")
 
 

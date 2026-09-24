@@ -7,7 +7,7 @@ carries :data:`apps.sync_hub.status.WAITING_FOR_HUB_PREFIX` only while the
 config is on AND the heartbeat proves the loop is alive; a non-transport error
 (digest mismatch, protocol refusal) is never softened into a wait.
 
-  - [if] a live loop with an unreachable hub does not report Waiting for hub [then] broken, [else stop].
+  - [if] a live loop cannot reach the hub and is not Waiting for hub [then] broken, [else stop].
   - [if] a dead loop or an unconfigured machine reports Waiting for hub [then] broken, [else stop].
   - [if] a non-transport error is reported as Waiting for hub [then] broken, [else stop].
 """
@@ -51,7 +51,7 @@ def _journal_error(data_dir: Path, message: str) -> None:
 
 
 def test_live_loop_with_unreachable_hub_is_waiting(tmp_path: Path) -> None:
-    """[if] configured + beating + unreachable hub does not read Waiting for hub [then] broken, [else stop]."""
+    """[if] a beating loop with a dead hub is not Waiting for hub [then] broken, [else stop]."""
     _configured(tmp_path)
     sync_heartbeat.beat(tmp_path, hub_url=_HUB, now=_NOW)
     _journal_error(tmp_path, _UNREACHABLE)
@@ -80,7 +80,7 @@ def test_dead_loop_is_not_waiting(tmp_path: Path) -> None:
 
 
 def test_unconfigured_machine_is_not_waiting(tmp_path: Path) -> None:
-    """[if] an unconfigured machine with an old error reads Waiting for hub [then] broken, [else stop]."""
+    """[if] an unconfigured machine with an old error reads Waiting [then] broken, [else stop]."""
     _journal_error(tmp_path, _UNREACHABLE)
 
     current = sync_status.read_status(tmp_path, env={}, now=_NOW)

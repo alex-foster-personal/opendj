@@ -333,11 +333,11 @@ def read_status(
 __all__ = [
     "MAX_RECENT_RESULTS",
     "RESULT_STATUSES",
+    "WAITING_FOR_HUB_PREFIX",
     "CloudSyncStatus",
     "CloudSyncStatusError",
     "SyncResult",
     "UpdateRequiredState",
-    "WAITING_FOR_HUB_PREFIX",
     "journal_deferred",
     "read_status",
     "status_path",

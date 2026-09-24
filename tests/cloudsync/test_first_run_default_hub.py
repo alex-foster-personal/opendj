@@ -8,9 +8,9 @@ one with ``enabled: true`` and that URL, and the real scheduler picks it up
 and beats. With no default the file is not written and status reads exactly
 as it does today. A config file that already exists is never touched.
 
-  - [if] a default hub is present and no config exists but no config is written [then] broken, [else stop].
+  - [if] a default hub is present, no config exists, and none is written [then] broken, [else stop].
   - [if] the seeded config does not make the real scheduler beat [then] broken, [else stop].
-  - [if] no default hub is present and a config appears or status changes [then] broken, [else stop].
+  - [if] no default hub is present and a config appears or status moves [then] broken, [else stop].
   - [if] an existing config file is rewritten on first run [then] broken, [else stop].
 """
 
@@ -25,9 +25,8 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client
+from apps.sync_hub import client, first_run
 from apps.sync_hub import config as sync_config
-from apps.sync_hub import first_run
 from apps.sync_hub import scheduler as sync_scheduler
 from apps.sync_hub import status as sync_status
 
@@ -37,7 +36,11 @@ _DEFAULT_HUB = "https://hub.example-tailnet.ts.net:8871"
 _EXISTING_HUB = "http://127.0.0.1:8870"
 _DEADLINE_S = 20.0
 _FAST = sync_scheduler.SchedulerCfg(
-    INTERVAL_S=0.2, INITIAL_DELAY_S=0.0, MAX_BACKOFF_S=0.8, BEAT_INTERVAL_S=0.05, STOP_TIMEOUT_S=15.0
+    INTERVAL_S=0.2,
+    INITIAL_DELAY_S=0.0,
+    MAX_BACKOFF_S=0.8,
+    BEAT_INTERVAL_S=0.05,
+    STOP_TIMEOUT_S=15.0,
 )
 
 
@@ -76,7 +79,7 @@ def _noop_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncRes
 
 
 def test_default_hub_comes_from_env_first(tmp_path: Path) -> None:
-    """[if] the env var is set but the manifest wins or nothing resolves [then] broken, [else stop]."""
+    """[if] the env var is set and does not win [then] broken, [else stop]."""
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(first_run.manifest_block("http://manifest.example.test")))
     env = {first_run.DEFAULT_HUB_ENV: _DEFAULT_HUB, first_run.MANIFEST_ENV: str(manifest)}
@@ -87,7 +90,8 @@ def test_default_hub_comes_from_manifest_when_env_unset(tmp_path: Path) -> None:
     """[if] a manifest default is not read when the env is unset [then] broken, [else stop]."""
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"identity": {}, **first_run.manifest_block(_DEFAULT_HUB)}))
-    assert first_run.resolve_default_hub_url({first_run.MANIFEST_ENV: str(manifest)}) == _DEFAULT_HUB
+    resolved = first_run.resolve_default_hub_url({first_run.MANIFEST_ENV: str(manifest)})
+    assert resolved == _DEFAULT_HUB
 
 
 def test_manifest_without_cloudsync_block_means_no_default(tmp_path: Path) -> None:
@@ -114,7 +118,7 @@ def test_malformed_default_hub_is_refused_not_seeded(tmp_path: Path, bad: str) -
 
 
 def test_first_run_with_default_hub_writes_config_and_scheduler_beats(tmp_path: Path) -> None:
-    """[if] first run with a default hub leaves sync off or the loop silent [then] broken, [else stop]."""
+    """[if] first run with a default hub leaves sync off or silent [then] broken, [else stop]."""
     data_dir = _spoke(tmp_path)
     env = {first_run.DEFAULT_HUB_ENV: _DEFAULT_HUB}
     assert sync_config.read_config(data_dir) is None
