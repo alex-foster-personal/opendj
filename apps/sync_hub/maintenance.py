@@ -636,7 +636,11 @@ def _candidate_lock_files(data_dir: Path) -> list[Path]:
     if not override:
         return [data_dir_lock]
     override_lock = Path(override).expanduser()
-    if override_lock == data_dir_lock:
+    # Resolved, not compared as-typed (claude-review, PR #3831, P3): a
+    # relative --data-dir and an absolute override that name the SAME file
+    # would otherwise be seen as different, probing (and blocking on) one
+    # engine twice.
+    if override_lock.resolve() == data_dir_lock.resolve():
         return [data_dir_lock]
     return [data_dir_lock, override_lock]
 

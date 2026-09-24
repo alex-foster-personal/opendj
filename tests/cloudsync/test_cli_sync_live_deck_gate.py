@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -304,20 +304,17 @@ def test_locked_engine_health_check_timeout_fails_closed(
         thread.join(timeout=10.0)
 
 
-def test_opendj_live_lock_path_override_is_probed_alongside_data_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """[if] OPENDJ_LIVE_LOCK_PATH is set [then] the CLI probes THAT lock
-    ALONGSIDE ``<data_dir>/.engine.lock``, never instead of it (claude-review,
-    PR #3831, P2): a naive "override wins outright" would make a DJ's own
-    real engine at ``data_dir`` invisible whenever an agent's shell also has
-    the override set for unrelated sandboxed-engine work. Two distinct live
-    fake engines prove the override's playing deck is picked up even though
-    the data-dir engine's own lock reports nothing playing: if the override
-    were ignored, this would return the data-dir engine's not-playing body
-    instead.
+def _run_two_engine_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    override_body: dict[str, Any],
+    data_dir_body: dict[str, Any],
+) -> Mapping[str, Any] | None:
+    """Stand up TWO distinct live fake engines, one per candidate lock, and
+    return what ``_cli_live_ui_mirror`` reports against ``data_dir`` with
+    ``OPENDJ_LIVE_LOCK_PATH`` pointed at the other one.
     """
-    override_body = {"decks": {"1": {"playing": True}}}
     override_app = _fake_engine_app(200, override_body)
     override_port = _free_port()
     override_config = uvicorn.Config(
@@ -327,7 +324,6 @@ def test_opendj_live_lock_path_override_is_probed_alongside_data_dir(
         override_config, what="the override-lock fake engine"
     )
 
-    data_dir_body = {"decks": {}}
     data_dir_app = _fake_engine_app(200, data_dir_body)
     data_dir_port = _free_port()
     data_dir_config = uvicorn.Config(
@@ -344,12 +340,50 @@ def test_opendj_live_lock_path_override_is_probed_alongside_data_dir(
         data_dir = tmp_path / "unrelated-data-dir"
         _write_lock(data_dir, port=data_dir_port)
 
-        assert maintenance._cli_live_ui_mirror(data_dir) == override_body
+        return maintenance._cli_live_ui_mirror(data_dir)
     finally:
         override_server.should_exit = True
         override_thread.join(timeout=10.0)
         data_dir_server.should_exit = True
         data_dir_thread.join(timeout=10.0)
+
+
+def test_opendj_live_lock_path_overrides_playing_deck_is_not_missed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the OVERRIDE engine has a playing deck and the data-dir engine
+    does not [then] the CLI still reports the playing deck (claude-review,
+    PR #3831, P2): a naive "override wins outright" would happen to pass
+    this direction too, but the OTHER direction below is what would catch
+    that regression -- both are needed, per the mutate-the-guard-in-both-
+    directions principle.
+    """
+    mirror = _run_two_engine_probe(
+        tmp_path,
+        monkeypatch,
+        override_body=_PLAYING_DECK_MIRROR_BODY,
+        data_dir_body={"decks": {}},
+    )
+    assert mirror == _PLAYING_DECK_MIRROR_BODY
+
+
+def test_data_dirs_own_playing_deck_is_not_dropped_for_the_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the DATA-DIR engine has a playing deck and the override engine
+    does not [then] the CLI still reports the playing deck (claude-review,
+    PR #3831, P2): this is the direction that actually catches a regression
+    to "override wins outright" -- if ``_candidate_lock_files`` ever dropped
+    the data-dir lock whenever an override is set, this assertion would fail
+    while the previous test's would not.
+    """
+    mirror = _run_two_engine_probe(
+        tmp_path,
+        monkeypatch,
+        override_body={"decks": {}},
+        data_dir_body=_PLAYING_DECK_MIRROR_BODY,
+    )
+    assert mirror == _PLAYING_DECK_MIRROR_BODY
 
 
 def test_verified_engine_mirror_timeout_fails_closed(
