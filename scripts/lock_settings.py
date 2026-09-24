@@ -19,6 +19,7 @@ UNKNOWN here, not a compare against the defaults.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import datetime
@@ -210,6 +211,78 @@ def refuse_dynamic_dependencies(project: dict[str, object]) -> None:
             f"[project] dynamic lists {supplied}: the build backend supplies them at lock"
             " time and this check does not run it"
         )
+
+
+_REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def refuse_unscoped_sources(pyproject: dict[str, object], sources: dict[str, object]) -> None:
+    """A `[tool.uv.sources]` entry carrying `extra` or `group` names a VALID extra or
+    dependency group that LISTS the package, or uv refuses the project, used or not
+    (measured uv 0.8.17, Codex P2 on #3763, round 53): `extra = "bad space"`, `-bad`,
+    `bad!` and a non-ASCII name are "Not a valid package or extra name", "Failed to
+    parse: `pyproject.toml`", exit 2; a valid name whose extra or group does not exist
+    ("the `dev` extra does not exist"), or exists without the package ("`unused` was
+    not found under the `project.optional-dependencies` section for that extra", the
+    same for `dependency-groups`), is "Failed to generate package metadata", exit 2.
+    Names match normalized on both sides (`Dev_X` lists `LocalDep` for `extra =
+    "dev-x"`), a requirement's extras and marker do not matter, and an `include-group`
+    chain counts. Typing the value as a string had let every one of these through
+    against an unchanged lock."""
+    project = pyproject.get("project", {})
+    extras = project.get("optional-dependencies", {}) if isinstance(project, dict) else {}
+    groups = pyproject.get("dependency-groups", {})
+    if not isinstance(extras, dict):
+        raise Unknown(
+            f"[project] optional-dependencies = {extras!r} is not a table; uv rejects the file"
+        )
+    if not isinstance(groups, dict):
+        raise Unknown(f"[dependency-groups] = {groups!r} is not a table; uv rejects the file")
+    for name, source in sources.items():
+        for entry in source if isinstance(source, list) else [source]:
+            if not isinstance(entry, dict):
+                continue  # pyproject_source_shape reports the shape
+            for scope, table in (("extra", extras), ("group", groups)):
+                if scope in entry and isinstance(entry[scope], str):
+                    _scope_lists(name, scope, entry[scope], table)
+
+
+def _scope_lists(name: str, scope: str, spelled: str, table: dict) -> None:
+    where = f"[tool.uv.sources] {name} {scope} = {spelled!r}"
+    wanted = norm_name(spelled)  # UNKNOWN for a name uv refuses to parse
+    listed = {norm_name(str(k)): v for k, v in table.items()}
+    if wanted not in listed:
+        raise Unknown(f"{where}: the {wanted!r} {scope} does not exist; uv refuses to lock")
+    members = _group_members(listed, wanted, ()) if scope == "group" else _members(listed[wanted])
+    if norm_name(name) not in members:
+        raise Unknown(f"{where}: {name!r} is not listed under that {scope}; uv refuses to lock")
+
+
+def _members(entries: object) -> set[str]:
+    """The normalized names a requirement list names (extras and markers stripped; a
+    malformed requirement names nothing here and is reported where it is parsed)."""
+    if not isinstance(entries, list):
+        return set()
+    found = set()
+    for entry in entries:
+        match = _REQUIREMENT_NAME_RE.match(entry) if isinstance(entry, str) else None
+        if match is not None:
+            found.add(norm_name(match.group(1)))
+    return found
+
+
+def _group_members(groups: dict[str, object], name: str, stack: tuple[str, ...]) -> set[str]:
+    """A PEP 735 group's names with every `include-group` expanded (a cycle or a missing
+    group is reported where the groups are compared: here it names nothing)."""
+    entries = groups.get(name)
+    if name in stack or not isinstance(entries, list):
+        return set()
+    found = _members(entries)
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("include-group"), str):
+            included = norm_name(entry["include-group"])
+            found |= _group_members(groups, included, (*stack, name))
+    return found
 
 
 def refuse_uv_toml(project_dir: Path) -> None:

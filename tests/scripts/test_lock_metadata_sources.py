@@ -130,3 +130,108 @@ def test_a_group_scoped_source_parses_and_stops_downstream(tmp_path: Path) -> No
     assert code == EXIT_UNKNOWN, message
     assert "has keys not compared" in message, message
     assert "cannot specify" not in message and "unknown field" not in message, message
+
+
+@pytest.mark.parametrize(
+    ("entry", "named"),
+    [
+        ('path = "x", extra = "bad space"', "'bad space' is not a valid package or extra name"),
+        ('path = "x", extra = "-bad"', "'-bad' is not a valid package or extra name"),
+        ('path = "x", group = "b@d"', "'b@d' is not a valid package or extra name"),
+        ('path = "x", extra = "café"', "is not a valid package or extra name"),
+        ('path = "x", extra = ""', "is not a valid package or extra name"),
+        ('path = "x", extra = "notdeclared"', "the 'notdeclared' extra does not exist"),
+        ('path = "x", group = "notdeclared"', "the 'notdeclared' group does not exist"),
+        ('path = "x", extra = "1"', "'unused' is not listed under that extra"),
+        ('path = "x", group = "foo"', "'unused' is not listed under that group"),
+        ('path = "x", group = "Foo"', "'unused' is not listed under that group"),
+    ],
+    ids=[
+        "extra-space",
+        "extra-leading-dash",
+        "group-at-sign",
+        "extra-non-ascii",
+        "extra-empty",
+        "extra-missing",
+        "group-missing",
+        "extra-without-package",
+        "group-without-package",
+        "group-without-package-spelled-differently",
+    ],
+)
+def test_a_scoped_source_naming_no_listing_extra_or_group_is_unknown(
+    tmp_path: Path, entry: str, named: str
+) -> None:
+    """Round 53: uv 0.8.17 refuses each (an invalid name at parse, "Not a valid package
+    or extra name", exit 2; a valid one whose extra/group is absent or does not list the
+    package at metadata generation, exit 2), measured on an entry no requirement uses,
+    so the check cannot answer clean on the unchanged lock."""
+    code, message = _run_sources(tmp_path, _with(entry))
+    assert code == EXIT_UNKNOWN, message
+    assert named in message, message
+    assert "[tool.uv.sources] unused" in message or "is not a valid" in message, message
+
+
+def test_a_scoped_source_listed_in_a_list_entry_is_checked_too(tmp_path: Path) -> None:
+    """Round 53: uv 0.8.17 checks every entry of a source LIST (`[{ path, extra = "dev"
+    }, { path }]` with the package only in `dependencies` is refused, measured); the
+    second, plain entry does not excuse the first."""
+    scoped = 'localdep = [{ path = "dep", extra = "1" }, { path = "dep" }]'
+    pyproject = MINI_PYPROJECT.replace('localdep = { path = "dep" }', scoped)
+    assert pyproject != MINI_PYPROJECT
+    code, message = _run_sources(tmp_path, pyproject)
+    assert code == EXIT_UNKNOWN, message
+    assert "'localdep' is not listed under that extra" in message, message
+
+
+@pytest.mark.parametrize(
+    ("declared", "scope"),
+    [
+        ('"1" = []', 'extra = "1"'),
+        ('Dev_X = ["LocalDep"]', 'extra = "dev-x"'),
+        ("dev-x = [\"localdep[x]; python_version > '3'\"]", 'extra = "Dev_X"'),
+    ],
+    ids=["extra-exact", "extra-normalized-both-sides", "extra-with-extras-and-marker"],
+)
+def test_an_extra_scoped_source_the_extra_lists_passes_the_scope_check(
+    tmp_path: Path, declared: str, scope: str
+) -> None:
+    """CONTROLS: uv 0.8.17 reads each (exit 1, the moved requirement changes the lock,
+    measured round 53), names matched normalized on both sides and a requirement's
+    extras and marker ignored; the verdict is the existing refusal to compare a used
+    source scoped by extra, never the round-53 scope refusal."""
+    pyproject = (
+        MINI_PYPROJECT.replace('dependencies = ["localdep"]', "dependencies = []")
+        .replace('"1" = []', declared.replace('"1" = []', '"1" = ["localdep"]'))
+        .replace('localdep = { path = "dep" }', f'localdep = {{ path = "dep", {scope} }}')
+    )
+    assert pyproject != MINI_PYPROJECT
+    code, message = _run_sources(tmp_path, pyproject)
+    assert code == EXIT_UNKNOWN, message
+    assert "has keys not compared" in message, message
+    assert "does not exist" not in message and "not listed" not in message, message
+    assert "is not a valid" not in message, message
+
+
+CHAIN = (
+    'base = ["localdep"]',
+    'mid = [{include-group = "base"}]',
+    'dev = [{include-group = "mid"}]',
+)
+
+
+def test_a_group_scoped_source_reached_through_include_group_passes_the_scope_check(
+    tmp_path: Path,
+) -> None:
+    """CONTROL: `group = "dev"` where `dev` reaches `localdep` only through a two-step
+    `include-group` chain is read by uv 0.8.17 (exit 1, measured round 53)."""
+    pyproject = (
+        MINI_PYPROJECT.replace('dependencies = ["localdep"]', "dependencies = []")
+        .replace("foo = []", "\n".join(CHAIN))
+        .replace('localdep = { path = "dep" }', 'localdep = { path = "dep", group = "dev" }')
+    )
+    assert pyproject != MINI_PYPROJECT
+    code, message = _run_sources(tmp_path, pyproject)
+    assert code == EXIT_UNKNOWN, message
+    assert "has keys not compared" in message, message
+    assert "does not exist" not in message and "not listed" not in message, message
