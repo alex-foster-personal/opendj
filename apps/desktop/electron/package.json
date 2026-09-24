@@ -1,0 +1,27 @@
+{
+  "name": "opendj-desktop-electron",
+  "productName": "Open DJ",
+  "version": "0.1.5",
+  "private": true,
+  "description": "Open DJ desktop shell on Electron: boots the bundled engine and opens a Chromium window onto it. Phase 20, beside the Tauri shell until cutover.",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=spec dist-test/test/",
+    "start": "tsc -p tsconfig.json && electron .",
+    "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=spec --test-concurrency=1 dist-test/e2e/"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.19.0",
+    "electron": "44.4.5",
+    "typescript": "^5.7.2"
+  }
+}
