@@ -1750,8 +1750,12 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode' ||
-		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
-		command.type === 'headphone_calibrate'
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps, so the
+		// delay writes wait behind it rather than moving the nodes it is verifying.
+		command.type === 'headphone_calibrate' ||
+		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms'
 	) {
 		return ['headphone'];
 	}
@@ -1775,9 +1779,6 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
-		command.type === 'head_delay_ms' ||
-		command.type === 'headphone_alignment_mode' ||
-		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
 		// CUEOUT-15: the preview owns no deck, so serializing it behind one

@@ -239,7 +239,22 @@ const BUDGETS = [
   // is in the STATIC closure of the root layout, so "/" pays for it at boot. That
   // is a boot-weight question for the perf program, not a CI-green one, and
   // raising a budget that is not failing is not this change's to make.
-  { name: 'other-lazy', limit: 210944, measured: 200328, note: 'all other routes plus deferred shell' },
+  // RAISED Mon 21 Sep 2026: 206 -> 221 KiB for PR #3548 (cue alignment through
+  // a worklet sink). The diff adds exactly five files to this bucket, measured
+  // against a clean detached build of origin/main ac68b743c, both local:
+  //   +3,094  assets/cue-bridge-processor (the AudioWorklet, fetched by URL)
+  //   +2,634  the calibration flow (CueAlignAborted, the operator guidance)
+  //   +1,679  the mic and room-output probe (getUserMedia, device matching)
+  //   +1,007  the headphone output-liveness wrapper
+  //     +707  the cue bridge wiring (AudioWorkletNode construction)
+  //   = +9,121, 205,553 -> 214,670 over 36 -> 41 files.
+  // Every one sits behind a real dynamic import, reached only when headphone
+  // cue is used or the calibration modal opens, so none of it is boot or
+  // first-paint weight. The two cheaper fixes do not apply: nothing is
+  // mis-attributed, and there is no eager import left to demote. The ceiling
+  // follows the +5% ceil-to-KiB rule on 214,670. main alone measured 205,553
+  // against the old 210,944, so the diff, not trunk growth, is what crossed it.
+  { name: 'other-lazy', limit: 226304, measured: 214670, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

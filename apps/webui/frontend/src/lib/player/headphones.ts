@@ -4,9 +4,10 @@
  * Extracted from `audio-engine.svelte.ts` under convention D5 -- the feature
  * file keeps the call sites, a subsystem with a real boundary keeps its own
  * arithmetic AND its own state. This is the one part of the player that owns a
- * SECOND audio sink: a MediaStreamAudioDestinationNode played through a
- * detached HTMLAudioElement whose `setSinkId` points at the operator's
- * headphones. Everything that follows from that -- the
+ * SECOND audio sink: a dedicated cue `AudioContext` pinned with
+ * `AudioContext.setSinkId`, fed from the engine graph through an AudioWorklet
+ * sender/receiver bridge (SharedArrayBuffer ring when cross-origin-isolated,
+ * MessageChannel otherwise). Everything that follows from that -- the
  * `navigator.mediaDevices` capability checks, the equal-power cue/master
  * blend, the generation counter that stops a stale async selection publishing
  * over a disposed monitor -- lives here and nowhere else.
@@ -40,20 +41,18 @@ import {
 	type HeadphoneOutputMode
 } from '$lib/player/constants';
 import {
-	calibrationBlockers,
-	deriveAlignment,
-	type AppliedAlignment,
-	type CueAlignBus,
-	type CueAlignEffects,
-	type MicHandle
-} from '$lib/player/cue-align.svelte';
+	CUE_BRIDGE_TARGET_FRAMES,
+	CueBridgeRing
+} from '$lib/player/cue-bridge-ring';
+import { deriveAlignment } from '$lib/player/cue-align-policy';
+import type { CueAlignBus } from '$lib/player/cue-align.svelte';
+import type { CueBridgeWireResult } from '$lib/player/cue-bridge-wiring';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
-import {
-	installHeadphoneOutputLiveness,
-	type LivenessVerdict,
-	type HeadphoneOutputSnapshot
-} from '$lib/rb/audio-output-liveness';
+import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
+// Types only: the monitor is imported when the cue output starts (see
+// _startHeadphoneLiveness), so it is not in the initial load of "/".
+import type { HeadphoneOutputSnapshot, installCueBridgeHeadphoneLiveness } from '$lib/rb/headphone-output-liveness';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -124,8 +123,46 @@ export function practiceCueWithGain(practiceCue: number, level: number): number 
 	return practiceCue * level;
 }
 
+export { CUE_BRIDGE_TARGET_FRAMES };
+
+/** Knowable cue-bridge latency parts for calibration (round 6 reads this). */
+export interface CueBridgeLatencyReport {
+	bridge_buffer_ms: number;
+	main_base_latency_ms: number;
+	main_output_latency_ms: number;
+	cue_base_latency_ms: number;
+	cue_output_latency_ms: number;
+	total_ms: number;
+}
+
+export function cueBridgeLatencyReport(): CueBridgeLatencyReport | null {
+	const main = _outputContext;
+	const nodes = _headphoneNodes;
+	if (main === null || nodes === null) return null;
+	const cue = nodes.cueContext;
+	if (cue === null) return null;
+	const bridge_buffer_ms = CueBridgeRing.bufferLatencyMs(cue.sampleRate);
+	const main_base_latency_ms = main.baseLatency * 1000;
+	const main_output_latency_ms = main.outputLatency * 1000;
+	const cue_base_latency_ms = cue.baseLatency * 1000;
+	const cue_output_latency_ms = cue.outputLatency * 1000;
+	return {
+		bridge_buffer_ms,
+		main_base_latency_ms,
+		main_output_latency_ms,
+		cue_base_latency_ms,
+		cue_output_latency_ms,
+		total_ms:
+			bridge_buffer_ms +
+			main_base_latency_ms +
+			main_output_latency_ms +
+			cue_base_latency_ms +
+			cue_output_latency_ms
+	};
+}
+
 /** The monitor graph: channel cue sum and a master tap, blended equal-power,
- * through one level gain into a MediaStream the sink element plays. Practice
+ * through one level gain and HEAD DELAY into the cue bridge input. Practice
  * mode also owns a second equal-power pair that sits in the main output path. */
 export interface HeadphoneNodes {
 	cueSum: GainNode;
@@ -134,8 +171,13 @@ export interface HeadphoneNodes {
 	masterMix: GainNode;
 	level: GainNode;
 	delay: DelayNode;
-	destination: MediaStreamAudioDestinationNode;
-	element: HTMLAudioElement;
+	/** Chirp target and live cue feed into the bridge sender. */
+	bridgeInput: GainNode;
+	bridgeSender: AudioWorkletNode | null;
+	cueContext: (AudioContext & { setSinkId?: (sinkId: string) => Promise<void> }) | null;
+	bridgeReceiver: AudioWorkletNode | null;
+	cueDeviceId: string | null;
+	bridgeControl: Int32Array | null;
 	practiceCueMix: GainNode;
 	practiceMasterMix: GainNode;
 	masterSplitter: ChannelSplitterNode;
@@ -155,6 +197,14 @@ export interface HeadphoneNodes {
 let _headphoneNodes: HeadphoneNodes | null = null;
 /** The engine AudioContext the master mix is pinned onto via setSinkId. */
 let _outputContext: AudioContext | null = null;
+
+/** The live monitor graph, for the calibration effects in cue-align-audio.ts.
+ * Both are null until the headphone graph is built. */
+export function liveCalibrationGraph(): { ctx: AudioContext | null; nodes: HeadphoneNodes | null } {
+	return { ctx: _outputContext, nodes: _headphoneNodes };
+}
+let _cueBridgeReady: Promise<void> | null = null;
+let _bridgeUnderrunCount = 0;
 /** Bumped by every teardown. An operation that started under an older
  * generation refuses to publish rather than resurrect a disposed monitor. */
 let _headphoneGeneration = 0;
@@ -240,18 +290,11 @@ export function reconcileHeadphoneOutputRefresh(
 }
 
 export function headphoneSelectionStages(): readonly string[] {
-	return ['setSinkId', 'attachStream', 'play', 'publish'];
+	return ['setSinkId', 'resume', 'publish'];
 }
 
 export function headphoneReselectionStages(): readonly string[] {
-	return [
-		'createCandidate',
-		'setSinkId',
-		'attachStream',
-		'play',
-		'replaceAndPublish',
-		'detachPrevious'
-	];
+	return ['setSinkId', 'resume', 'publish'];
 }
 
 export function headphoneReselectionResult(candidateAccepted: boolean): {
@@ -263,7 +306,7 @@ export function headphoneReselectionResult(candidateAccepted: boolean): {
 		throw new TypeError('headphone candidate acceptance must be boolean');
 	}
 	return candidateAccepted
-		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: true }
+		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: false }
 		: { replaceCurrentElement: false, publishSelection: false, detachPrevious: false };
 }
 
@@ -353,6 +396,21 @@ export function setHeadDelayMs(value: unknown): void {
 	applyHeadphoneMix();
 }
 
+/**
+ * CUEOUT-14: move both delays in state and on the graph WITHOUT persisting.
+ * Calibration applies its plan through this while it verifies, so a reload or
+ * crash mid-verification boots with the last saved delays, never an unverified
+ * one. Only a verified result goes through the persisting setters.
+ */
+export function applyUnsavedAlignmentDelays(delays: { head_delay_ms: unknown; master_delay_ms: unknown }): void {
+	assertHeadDelayMs(delays.head_delay_ms);
+	assertMasterDelayMs(delays.master_delay_ms);
+	mixerState.headphones.head_delay_ms = delays.head_delay_ms;
+	mixerState.headphones.master_delay_ms = delays.master_delay_ms;
+	applyHeadphoneMix();
+	_applyMasterDelay();
+}
+
 /** CUEOUT-14: the room delay line. ONE DelayNode, created here (so the
  * engine keeps no `createDelay` of its own) and inserted by `_ensureGraph`
  * as the LAST node before `ctx.destination`, after `_masterMuteGain`. The
@@ -376,6 +434,11 @@ export function createMasterDelayNode(context: AudioContext): DelayNode {
 	node.delayTime.value = masterDelaySeconds(mixerState.headphones.master_delay_ms);
 	_masterDelayNode = node;
 	return node;
+}
+
+/** The room delay line's input: the verification chirp enters here, after master mute. */
+export function masterDelayNode(): DelayNode | null {
+	return _masterDelayNode;
 }
 
 export function setMasterDelayMs(value: unknown): void {
@@ -752,10 +815,17 @@ export function dualSinkAssignment(args: {
 	return { masterId: masterStillPresent, cueId, autoPinnedMaster: false };
 }
 
-export function audioContextSinkIdIsSupported(
-	context: AudioContext | { setSinkId?: unknown }
-): boolean {
-	return 'setSinkId' in context && typeof context.setSinkId === 'function';
+/** `unknown` rather than a `{ setSinkId?: unknown }` shape: the real
+ * `AudioContext`/`HTMLMediaElement` types in this project's DOM lib do not
+ * declare the experimental `setSinkId`, so a structurally-typed parameter
+ * makes every real caller a TS "weak type" mismatch (zero declared overlap).
+ * `unknown` sidesteps that at the boundary; the runtime check is unchanged. */
+export function audioContextSinkIdIsSupported(context: unknown): boolean {
+	return (
+		typeof context === 'object' &&
+		context !== null &&
+		typeof (context as { setSinkId?: unknown }).setSinkId === 'function'
+	);
 }
 
 export function preferredAudioInputDeviceId(
@@ -787,13 +857,15 @@ export function unlockAudioInputConstraints(
 		)
 			? selectedInputDeviceId
 			: null;
-	const deviceId = selected ?? preferred;
 	const audio: MediaTrackConstraints = {
 		echoCancellation: false,
 		noiseSuppression: false,
 		autoGainControl: false
 	};
-	if (deviceId !== null) audio.deviceId = { ideal: deviceId };
+	// The operator's pick is `exact`: Chromium treats `ideal` as a hint and
+	// opens the system default mic instead. The automatic fallback stays a hint.
+	if (selected !== null) audio.deviceId = { exact: selected };
+	else if (preferred !== null) audio.deviceId = { ideal: preferred };
 	return audio;
 }
 
@@ -803,7 +875,7 @@ function _probeAcquisitionKind(): HeadphoneAcquisitionKind {
 		navigator.mediaDevices !== undefined &&
 		typeof navigator.mediaDevices.enumerateDevices === 'function';
 	const setSinkId =
-		typeof HTMLMediaElement !== 'undefined' && typeof HTMLMediaElement.prototype.setSinkId === 'function';
+		typeof AudioContext !== 'undefined' && audioContextSinkIdIsSupported(AudioContext.prototype);
 	const selectAudioOutput =
 		typeof navigator !== 'undefined' &&
 		navigator.mediaDevices !== undefined &&
@@ -868,7 +940,7 @@ function _assertCurrentHeadphoneOperation(generation: number, nodes: HeadphoneNo
 	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
 }
 
-function _requireHeadphoneDeviceApi(): MediaDevices {
+export function requireHeadphoneDeviceApi(): MediaDevices {
 	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
 		mixerState.headphones.supported = false;
 		throw _headphoneError('headphone output unsupported', 'navigator.mediaDevices is unavailable');
@@ -877,12 +949,180 @@ function _requireHeadphoneDeviceApi(): MediaDevices {
 		mixerState.headphones.supported = false;
 		throw _headphoneError('headphone output unsupported', 'enumerateDevices is unavailable');
 	}
-	if (typeof HTMLMediaElement === 'undefined' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'HTMLMediaElement.setSinkId is unavailable');
-	}
 	mixerState.headphones.supported = true;
 	return navigator.mediaDevices;
+}
+
+function _requireCueBridgeApi(mainContext: AudioContext): void {
+	if (!audioContextSinkIdIsSupported(mainContext)) {
+		throw _headphoneError(
+			'headphone output unsupported',
+			'AudioContext.setSinkId is unavailable; cue monitor needs a pinnable AudioContext. Use Chrome for two-device cue.'
+		);
+	}
+	if (typeof AudioWorkletNode === 'undefined' || typeof mainContext.audioWorklet?.addModule !== 'function') {
+		throw _headphoneError(
+			'headphone output unsupported',
+			'AudioWorkletNode is unavailable; cue monitor needs an AudioWorklet bridge. Use Chrome for two-device cue.'
+		);
+	}
+}
+
+function _requireCueSinkApi(
+	context: AudioContext
+): AudioContext & { setSinkId: (sinkId: string) => Promise<void> } {
+	_requireCueBridgeApi(context);
+	return _requireMasterSinkApi(context);
+}
+
+async function _applyCueSink(deviceId: string, nodes: HeadphoneNodes): Promise<void> {
+	const ctx = nodes.cueContext;
+	if (ctx === null) {
+		throw new Error('cue bridge is not initialized');
+	}
+	await applyCueSinkTransaction(_requireCueSinkApi(ctx), deviceId, nodes);
+}
+
+type _CueSinkContext = Pick<AudioContext, 'state' | 'resume' | 'suspend'> & {
+	setSinkId: (sinkId: string) => Promise<void>;
+};
+
+/**
+ * CUEOUT-09: move the ONE shared cue context to `deviceId` as a transaction.
+ * The context is live, so a half-applied change is audible: on any failure it
+ * goes back to the device `holder` recorded. A setSinkId that timed out may
+ * still land later, but calls on one context apply in order, so the restore
+ * queued behind it wins. With nothing to restore to, or a restore that fails,
+ * the context is suspended: silent beats playing on hardware the UI does not show.
+ */
+export async function applyCueSinkTransaction(
+	ctx: _CueSinkContext,
+	deviceId: string,
+	holder: { cueDeviceId: string | null }
+): Promise<void> {
+	const previousId = holder.cueDeviceId;
+	try {
+		await withHeadphoneOperationTimeout('cue setSinkId', ctx.setSinkId(deviceId));
+		holder.cueDeviceId = deviceId;
+		if (ctx.state === 'suspended') {
+			await withHeadphoneOperationTimeout('cue resume', ctx.resume());
+		}
+	} catch (error) {
+		await _restoreCueSink(ctx, previousId, holder);
+		throw error;
+	}
+}
+
+async function _restoreCueSink(
+	ctx: _CueSinkContext,
+	previousId: string | null,
+	holder: { cueDeviceId: string | null }
+): Promise<void> {
+	try {
+		if (previousId === null) throw new Error('no previous cue device to restore');
+		await withHeadphoneOperationTimeout('cue restore setSinkId', ctx.setSinkId(previousId));
+		holder.cueDeviceId = previousId;
+	} catch (restoreError) {
+		holder.cueDeviceId = null;
+		const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+		recordPerfEvent('cue-sink-restore-failed', `silencing cue: ${detail}`, null, 'error');
+		await withHeadphoneOperationTimeout('cue silence', ctx.suspend());
+	}
+}
+
+/**
+ * A bridge worklet threw, so its node outputs silence for good while the cue
+ * context keeps running. Say so, and tear the bridge down: a dead bridge left
+ * attached is what `_ensureCueBridge` would reuse, so re-selecting the output
+ * could never recover. Returns the message it published.
+ */
+export async function failCueBridge(
+	side: 'sender' | 'receiver',
+	nodes: Pick<
+		HeadphoneNodes,
+		'bridgeSender' | 'bridgeReceiver' | 'bridgeInput' | 'cueContext' | 'cueDeviceId' | 'bridgeControl'
+	>
+): Promise<string> {
+	const message = `cue bridge ${side} worklet failed, so the headphones are silent; re-select the headphone output to rebuild it`;
+	recordPerfEvent('cue-bridge-processor-error', message, null, 'error');
+	pushToast(`NO HEADPHONE OUTPUT: ${message}`, 'error');
+	mixerState.headphones.error = message;
+	mixerState.headphones.active = false;
+	// Zero the live monitor gains now: a rebuilt bridge must not start on the stale mix.
+	applyHeadphoneMix();
+	_stopHeadphoneLiveness();
+	// The sender has no outputs; its only edge is the incoming one, so cut that or
+	// the main graph keeps every dead worklet alive until route teardown.
+	if (nodes.bridgeSender !== null) nodes.bridgeInput.disconnect(nodes.bridgeSender);
+	nodes.bridgeSender?.disconnect();
+	nodes.bridgeReceiver?.disconnect();
+	const cueContext = nodes.cueContext;
+	nodes.bridgeSender = null;
+	nodes.bridgeReceiver = null;
+	nodes.bridgeControl = null;
+	nodes.cueContext = null;
+	nodes.cueDeviceId = null;
+	_cueBridgeReady = null;
+	if (cueContext !== null) await _closeCueContext(cueContext);
+	return message;
+}
+
+async function _closeCueContext(cueContext: AudioContext): Promise<void> {
+	await cueContext.close().catch((closeError: unknown) => {
+		const detail = closeError instanceof Error ? closeError.message : String(closeError);
+		recordPerfEvent('cue-bridge-context-close-failed', detail, null, 'warn');
+	});
+}
+
+async function _ensureCueBridge(mainContext: AudioContext, nodes: HeadphoneNodes): Promise<void> {
+	if (nodes.bridgeSender !== null && nodes.cueContext !== null) return;
+	if (_cueBridgeReady !== null) {
+		await _cueBridgeReady;
+		return;
+	}
+	_requireCueBridgeApi(mainContext);
+	// Declared first so the failure path can tell whether it is still the cached start.
+	let ready: Promise<void> | null = null;
+	ready = (async () => {
+		const cueContext = new AudioContext({ sampleRate: mainContext.sampleRate });
+		// Silent until `applyCueSinkTransaction` pins the headphone sink and resumes it:
+		// a running context plays on the room default output in the meantime.
+		await cueContext.suspend();
+		let wired: CueBridgeWireResult;
+		try {
+			// On demand: the wiring and the worklet it names are only fetched once a cue
+			// output is actually used, so neither is part of the initial load of "/".
+			const { wireCueBridgeNodes } = await import('$lib/player/cue-bridge-wiring');
+			wired = await wireCueBridgeNodes(mainContext, cueContext, {
+				onUnderrun: () => {
+					_bridgeUnderrunCount += 1;
+				},
+				onProcessorError: (side) => void failCueBridge(side, nodes)
+			});
+		} catch (error) {
+			// Not cached: a failed start must not poison every later output selection,
+			// and the half-built context must not outlive it.
+			if (_cueBridgeReady === ready) _cueBridgeReady = null;
+			await _closeCueContext(cueContext);
+			throw error;
+		}
+		if (_headphoneNodes !== nodes) {
+			// The route tore the graph down while this start was in flight. Publishing
+			// onto the detached nodes would orphan a live AudioContext.
+			wired.bridgeSender.disconnect();
+			wired.bridgeReceiver.disconnect();
+			await _closeCueContext(cueContext);
+			throw new Error('cue bridge start finished after the headphone graph was disposed');
+		}
+		nodes.bridgeInput.connect(wired.bridgeSender);
+		wired.bridgeReceiver.connect(cueContext.destination);
+		nodes.bridgeSender = wired.bridgeSender;
+		nodes.cueContext = cueContext;
+		nodes.bridgeReceiver = wired.bridgeReceiver;
+		nodes.bridgeControl = wired.bridgeControl;
+	})();
+	_cueBridgeReady = ready;
+	await ready;
 }
 
 interface _OutputSelectableMediaDevices extends MediaDevices {
@@ -890,7 +1130,7 @@ interface _OutputSelectableMediaDevices extends MediaDevices {
 }
 
 function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices {
-	const mediaDevices = _requireHeadphoneDeviceApi();
+	const mediaDevices = requireHeadphoneDeviceApi();
 	if (typeof (mediaDevices as Partial<_OutputSelectableMediaDevices>).selectAudioOutput !== 'function') {
 		throw _headphoneError(
 			'headphone output acquisition unsupported',
@@ -902,7 +1142,9 @@ function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices 
 
 let _watchingDeviceChanges = false;
 let _lastMonitorSource: MonitorSource | undefined;
-let _headphoneLiveness: ReturnType<typeof installHeadphoneOutputLiveness> | null = null;
+let _headphoneLiveness: ReturnType<typeof installCueBridgeHeadphoneLiveness> | null = null;
+/** Bumped by every stop, so a monitor whose module finishes loading after a stop is never installed. */
+let _headphoneLivenessGeneration = 0;
 
 function _isAnyDeckPlaying(): boolean {
 	return ([1, 2, 3, 4] as const).some((deck) => deckStates[deck].playing);
@@ -923,6 +1165,7 @@ function _selectedHeadphoneDeviceStillPresent(): boolean {
 }
 
 function _stopHeadphoneLiveness(): void {
+	_headphoneLivenessGeneration += 1;
 	_headphoneLiveness?.uninstall();
 	_headphoneLiveness = null;
 	const hp = _headphonesWithLiveness();
@@ -930,13 +1173,56 @@ function _stopHeadphoneLiveness(): void {
 	hp.liveness_snapshot = null;
 }
 
-function _startHeadphoneLiveness(element: HTMLAudioElement): void {
+function _readCueBridgeHealth(): { bufferMs: number; underrunCount: number } {
+	const nodes = _headphoneNodes;
+	const cue = nodes?.cueContext;
+	const bufferMs = cue === null || cue === undefined ? 0 : CueBridgeRing.bufferLatencyMs(cue.sampleRate);
+	let underrunCount = _bridgeUnderrunCount;
+	const control = nodes?.bridgeControl;
+	if (control !== null && control !== undefined) {
+		underrunCount = control[2] ?? 0;
+	}
+	return { bufferMs, underrunCount };
+}
+
+function _startHeadphoneLiveness(nodes: HeadphoneNodes): void {
 	_stopHeadphoneLiveness();
+	const cue = nodes.cueContext;
+	if (cue === null) return;
 	const hp = _headphonesWithLiveness();
 	hp.liveness_verdict = 'idle';
 	hp.liveness_snapshot = null;
-	_headphoneLiveness = installHeadphoneOutputLiveness(
-		element,
+	const generation = _headphoneLivenessGeneration;
+	void import('$lib/rb/headphone-output-liveness')
+		.then(({ installCueBridgeHeadphoneLiveness: install }) => {
+			if (generation !== _headphoneLivenessGeneration) return;
+			_headphoneLiveness = _installCueBridgeLiveness(install, cue);
+		})
+		.catch((error: unknown) => {
+			const message = `headphone output monitor failed to load: ${error instanceof Error ? error.message : String(error)}`;
+			recordPerfEvent('headphone-output-liveness-load-failed', message, null, 'error');
+			pushToast(message, 'error');
+		});
+}
+
+/** Suspend and resume the cue context so the browser re-opens its output device. */
+async function _rebindCueContext(cue: AudioContext, reason: 'dead' | 'stalled'): Promise<void> {
+	try {
+		await withHeadphoneOperationTimeout('cue rebind suspend', cue.suspend());
+		await withHeadphoneOperationTimeout('cue rebind resume', cue.resume());
+		recordPerfEvent('headphone-output-rebind', `cue context re-bound after ${reason} output`, null, 'info');
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		recordPerfEvent('headphone-output-rebind-failed', `${reason}: ${detail}`, null, 'error');
+	}
+}
+
+function _installCueBridgeLiveness(
+	install: typeof installCueBridgeHeadphoneLiveness,
+	cue: AudioContext
+): ReturnType<typeof installCueBridgeHeadphoneLiveness> {
+	return install(
+		cue,
 		{
 			pushToast,
 			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
@@ -944,6 +1230,10 @@ function _startHeadphoneLiveness(element: HTMLAudioElement): void {
 			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
 			now: () => performance.now(),
 			onSnapshot: (snapshot) => _publishHeadphoneLiveness(snapshot),
+			// The cue context's own recovery: the base detector's default would
+			// suspend and resume the ROOM context and leave this one dead.
+			rebindDeadOutput: () => void _rebindCueContext(cue, 'dead'),
+			recoverOutput: () => void _rebindCueContext(cue, 'stalled'),
 			watchDeviceChanges:
 				typeof navigator !== 'undefined' && navigator.mediaDevices !== undefined
 					? (handler) => {
@@ -953,7 +1243,8 @@ function _startHeadphoneLiveness(element: HTMLAudioElement): void {
 					: undefined
 		},
 		_shouldMonitorHeadphoneOutput,
-		_selectedHeadphoneDeviceStillPresent
+		_selectedHeadphoneDeviceStillPresent,
+		_readCueBridgeHealth
 	);
 }
 /** Last CUE id while two_outputs was live, so a vanished sink can restore. */
@@ -982,8 +1273,6 @@ function _unwatchHeadphoneDeviceChanges(): void {
 }
 
 function _clearHeadphoneSelection(): void {
-	const currentElement = _headphoneNodes?.element;
-	if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
 	_stopHeadphoneLiveness();
 	mixerState.headphones.selected_output_device_id = null;
 	mixerState.headphones.active = false;
@@ -1027,6 +1316,18 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
 	_outputContext = context;
 }
 
+/**
+ * The cue device went away. Suspend its context rather than leave it running:
+ * Chrome may reroute a context whose sink vanished to the default output, which
+ * would put the monitor mix in the room. A restored device resumes it only
+ * after its sink lands (`applyCueSinkTransaction`).
+ */
+export async function silenceVanishedCueOutput(nodes: Pick<HeadphoneNodes, 'cueContext'> | null): Promise<void> {
+	const cueContext = nodes?.cueContext ?? null;
+	if (cueContext === null || cueContext.state !== 'running') return;
+	await withHeadphoneOperationTimeout('cue suspend after device vanished', cueContext.suspend());
+}
+
 async function _reapplyPinnedSinks(
 	monitorSource: MonitorSource | undefined,
 	plan: PinnedSinkReapplyPlan
@@ -1040,10 +1341,9 @@ async function _reapplyPinnedSinks(
 		}
 	}
 	if (plan.clearCue) {
-		const currentElement = _headphoneNodes?.element;
-		if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
 		_stopHeadphoneLiveness();
 		mixerState.headphones.active = false;
+		await silenceVanishedCueOutput(_headphoneNodes);
 		return;
 	}
 	if (!plan.applyCue && !plan.restoreCue) return;
@@ -1051,11 +1351,10 @@ async function _reapplyPinnedSinks(
 	if (cueId === null) return;
 	const { context, masterGain } = monitorSource();
 	const nodes = ensureHeadphoneGraph(context, masterGain);
-	await withHeadphoneOperationTimeout('setSinkId', nodes.element.setSinkId(cueId));
-	nodes.element.srcObject = nodes.destination.stream;
-	await withHeadphoneOperationTimeout('play', nodes.element.play());
+	await _ensureCueBridge(context, nodes);
+	await _applyCueSink(cueId, nodes);
 	mixerState.headphones.active = true;
-	_startHeadphoneLiveness(nodes.element);
+	_startHeadphoneLiveness(nodes);
 }
 
 /** Build the monitor graph once and hand it back so the engine can wire the
@@ -1091,15 +1390,15 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	splitLeftGain.gain.value = 0;
 	splitRightCueGain.gain.value = 0;
 	splitRightMasterGain.gain.value = 0;
-	const destination = context.createMediaStreamDestination();
-	const element = _createDetachedHeadphoneElement();
+	const bridgeInput = context.createGain();
+	bridgeInput.gain.value = 1;
 	cueSum.connect(cueMix);
 	masterGain.connect(masterMonitor);
 	masterMonitor.connect(masterMix);
 	cueMix.connect(level);
 	masterMix.connect(level);
 	level.connect(delay);
-	delay.connect(destination);
+	delay.connect(bridgeInput);
 	_headphoneNodes = {
 		cueSum,
 		masterMonitor,
@@ -1107,8 +1406,12 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		masterMix,
 		level,
 		delay,
-		destination,
-		element,
+		bridgeInput,
+		bridgeSender: null,
+		cueContext: null,
+		bridgeReceiver: null,
+		cueDeviceId: null,
+		bridgeControl: null,
 		practiceCueMix,
 		practiceMasterMix,
 		masterSplitter,
@@ -1147,21 +1450,20 @@ export function peekCueBus(): { context: AudioContext; cueSum: GainNode } | null
 	return { context: _outputContext, cueSum: _headphoneNodes.cueSum };
 }
 
-function _createDetachedHeadphoneElement(): HTMLAudioElement {
-	return new Audio();
-}
-
-function _detachHeadphoneElement(element: HTMLAudioElement): void {
-	element.pause();
-	element.srcObject = null;
-}
-
 function _disposeHeadphoneGraph(): void {
 	_stopHeadphoneLiveness();
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
 	_outputContext = null;
+	_cueBridgeReady = null;
+	_bridgeUnderrunCount = 0;
 	if (nodes === null) return;
+	nodes.bridgeSender?.disconnect();
+	nodes.bridgeReceiver?.disconnect();
+	nodes.bridgeInput.disconnect();
+	if (nodes.cueContext !== null) {
+		void nodes.cueContext.close();
+	}
 	for (const node of [
 		nodes.cueSum,
 		nodes.masterMonitor,
@@ -1169,7 +1471,6 @@ function _disposeHeadphoneGraph(): void {
 		nodes.masterMix,
 		nodes.level,
 		nodes.delay,
-		nodes.destination,
 		nodes.practiceCueMix,
 		nodes.practiceMasterMix,
 		nodes.masterSplitter,
@@ -1187,8 +1488,6 @@ function _disposeHeadphoneGraph(): void {
 	]) {
 		node.disconnect();
 	}
-	_detachHeadphoneElement(nodes.element);
-	for (const track of nodes.destination.stream.getTracks()) track.stop();
 }
 
 /** Route teardown: retire every in-flight operation, then release the graph. */
@@ -1209,7 +1508,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	try {
 		devices = await withHeadphoneOperationTimeout(
 			'enumerateDevices',
-			_requireHeadphoneDeviceApi().enumerateDevices()
+			requireHeadphoneDeviceApi().enumerateDevices()
 		);
 		_assertCurrentHeadphoneOperation(generation, null);
 	} catch (error) {
@@ -1263,7 +1562,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		inputStillPresent ?? preferredAudioInputDeviceId(devices);
 	mixerState.headphones.error = null;
 	applyHeadphoneMix();
-	_watchHeadphoneDeviceChanges(_requireHeadphoneDeviceApi());
+	_watchHeadphoneDeviceChanges(requireHeadphoneDeviceApi());
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -1284,7 +1583,7 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 	try {
 		const kind = _probeAcquisitionKind();
 		if (kind === 'unsupported') {
-			_requireHeadphoneDeviceApi();
+			requireHeadphoneDeviceApi();
 		}
 		if (kind === 'chooser') {
 			const device = await withHeadphoneOperationTimeout(
@@ -1297,7 +1596,7 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			_assertCurrentHeadphoneOperation(generation, null);
 			return;
 		}
-		const mediaDevices = _requireHeadphoneDeviceApi();
+		const mediaDevices = requireHeadphoneDeviceApi();
 		// List first: a hung or denied permission prompt must never leave the I/O
 		// selects empty, so the unlabelled devices are always selectable and the
 		// unlock failure is still raised (and shown) afterwards.
@@ -1342,178 +1641,6 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 	}
 }
 
-/** CUEOUT-14: one chirp train to ONE node, cancellable. The master check
- * targets `ctx.destination` directly so the room delay line is bypassed and
- * the measurement is the raw output-path latency; the cue check targets the
- * headphone MediaStreamAudioDestinationNode only. */
-async function _playChirpTrain(
-	ctx: AudioContext,
-	target: AudioNode,
-	samples: Float32Array,
-	sampleRate: number,
-	signal: AbortSignal
-): Promise<void> {
-	signal.throwIfAborted();
-	const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-	buffer.copyToChannel(new Float32Array(samples), 0);
-	const src = ctx.createBufferSource();
-	src.buffer = buffer;
-	src.connect(target);
-	try {
-		await new Promise<void>((resolve, reject) => {
-			const onAbort = () => {
-				src.onended = null;
-				try {
-					src.stop();
-				} catch {
-					// already ended
-				}
-				reject(signal.reason instanceof Error ? signal.reason : new Error('cue alignment chirp aborted'));
-			};
-			signal.addEventListener('abort', onAbort, { once: true });
-			src.onended = () => {
-				signal.removeEventListener('abort', onAbort);
-				resolve();
-			};
-			try {
-				src.start();
-			} catch (error) {
-				signal.removeEventListener('abort', onAbort);
-				reject(error instanceof Error ? error : new Error(String(error)));
-			}
-		});
-	} finally {
-		src.disconnect();
-	}
-}
-
-function _sleepMs(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Capture `durationMs` of the mic into a Float32Array at `sampleRate`,
- * rejecting (and closing the capture context) the moment `signal` aborts. */
-async function _recordChirpCapture(
-	stream: MediaStream,
-	durationMs: number,
-	sampleRate: number,
-	signal: AbortSignal
-): Promise<Float32Array> {
-	signal.throwIfAborted();
-	const ctx = new AudioContext({ sampleRate });
-	try {
-		await ctx.resume();
-		const frames = Math.ceil((durationMs / 1000) * ctx.sampleRate);
-		const out = new Float32Array(frames);
-		let offset = 0;
-		const src = ctx.createMediaStreamSource(stream);
-		const processor = ctx.createScriptProcessor(2048, 1, 1);
-		const silent = ctx.createGain();
-		silent.gain.value = 0;
-		src.connect(processor);
-		processor.connect(silent);
-		silent.connect(ctx.destination);
-		await new Promise<void>((resolve, reject) => {
-			const timeoutId = setTimeout(
-				() => reject(new Error(`cue alignment record timed out after ${durationMs}ms`)),
-				durationMs + 1500
-			);
-			const onAbort = () => {
-				clearTimeout(timeoutId);
-				processor.onaudioprocess = null;
-				reject(signal.reason instanceof Error ? signal.reason : new Error('cue alignment record aborted'));
-			};
-			signal.addEventListener('abort', onAbort, { once: true });
-			processor.onaudioprocess = (event: AudioProcessingEvent) => {
-				const input = event.inputBuffer.getChannelData(0);
-				const n = Math.min(input.length, frames - offset);
-				out.set(input.subarray(0, n), offset);
-				offset += n;
-				if (offset >= frames) {
-					clearTimeout(timeoutId);
-					signal.removeEventListener('abort', onAbort);
-					processor.onaudioprocess = null;
-					resolve();
-				}
-			};
-		});
-		processor.disconnect();
-		src.disconnect();
-		silent.disconnect();
-		return out;
-	} finally {
-		await ctx.close();
-	}
-}
-
-interface _MicStreamHandle extends MicHandle {
-	stream: MediaStream;
-}
-
-/**
- * CUEOUT-14: the audio half of the calibration effects, bound to the LIVE
- * headphone graph. Throws (rather than measuring the wrong sinks) unless every
- * precondition holds, and the message names the ones that do not, so a missing
- * audio graph is never reported as a missing device.
- */
-export function cueAlignAudioEffects(): Pick<
-	CueAlignEffects,
-	'sampleRate' | 'getUserMedia' | 'playTrain' | 'record' | 'sleep' | 'now' | 'persist' | 'alignmentMode' | 'deviceIds'
-> {
-	const ctx = _outputContext;
-	const nodes = _headphoneNodes;
-	const cueId = mixerState.headphones.selected_output_device_id;
-	const blockers = calibrationBlockers({
-		audio_graph_ready: ctx !== null && nodes !== null,
-		output_mode: mixerState.headphones.output_mode,
-		selected_output_device_id: cueId
-	});
-	if (blockers.length > 0) {
-		throw new Error(`cue alignment calibration cannot start: ${blockers.join('; ')}`);
-	}
-	if (ctx === null || nodes === null || cueId === null) {
-		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
-	}
-	return {
-		sampleRate: () => ctx.sampleRate,
-		async getUserMedia(): Promise<_MicStreamHandle> {
-			const mediaDevices = _requireHeadphoneDeviceApi();
-			const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
-			const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);
-			const stream = await withHeadphoneOperationTimeout(
-				'getUserMedia',
-				mediaDevices.getUserMedia({ audio, video: false })
-			);
-			return {
-				stream,
-				stop: () => {
-					for (const track of stream.getTracks()) track.stop();
-				}
-			};
-		},
-		playTrain(bus, reference, sampleRate, signal) {
-			const target = bus === 'master' ? ctx.destination : nodes.destination;
-			return _playChirpTrain(ctx, target, reference, sampleRate, signal);
-		},
-		record(mic, durationMs, sampleRate, signal) {
-			const stream = (mic as _MicStreamHandle).stream;
-			if (!(stream instanceof MediaStream)) {
-				throw new TypeError('cue alignment record needs the MicHandle returned by getUserMedia');
-			}
-			return _recordChirpCapture(stream, durationMs, sampleRate, signal);
-		},
-		sleep: _sleepMs,
-		now: () => Date.now(),
-		persist(result: AppliedAlignment) {
-			setHeadDelayMs(result.head_delay_ms);
-			setMasterDelayMs(result.master_delay_ms);
-			persistMixerConfig({ last_calibration: result.record });
-		},
-		alignmentMode: () => mixerState.headphones.alignment_mode,
-		deviceIds: () => ({ cue: cueId, master: mixerState.headphones.selected_master_output_device_id })
-	};
-}
-
 export async function selectHeadphoneOutput(
 	deviceId: string,
 	monitorSource: MonitorSource
@@ -1523,9 +1650,8 @@ export async function selectHeadphoneOutput(
 	const previousActive = mixerState.headphones.active;
 	const previousMode = mixerState.headphones.output_mode;
 	let nodes: HeadphoneNodes | null = null;
-	let candidate: HTMLAudioElement | null = null;
 	try {
-		_requireHeadphoneDeviceApi();
+		requireHeadphoneDeviceApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 		const plan = cueOutputChangePlan({
 			currentCueId: previousId,
@@ -1534,7 +1660,7 @@ export async function selectHeadphoneOutput(
 		});
 		if (plan.skip) {
 			const live = _headphoneNodes;
-			if (live !== null && mixerState.headphones.active) _startHeadphoneLiveness(live.element);
+			if (live !== null && mixerState.headphones.active) _startHeadphoneLiveness(live);
 			return;
 		}
 		mixerState.headphones.selected_output_device_id = deviceId;
@@ -1542,9 +1668,8 @@ export async function selectHeadphoneOutput(
 		mixerState.headphones.error = null;
 		const { context, masterGain } = monitorSource();
 		nodes = ensureHeadphoneGraph(context, masterGain);
+		await _ensureCueBridge(context, nodes);
 		if (plan.applyMixBeforePlay) applyHeadphoneMix();
-		const nextElement = _createDetachedHeadphoneElement();
-		candidate = nextElement;
 		const liveNodes = nodes;
 		const assignment = dualSinkAssignment({
 			outputs: mixerState.headphones.outputs,
@@ -1552,11 +1677,7 @@ export async function selectHeadphoneOutput(
 			selectedMasterId: mixerState.headphones.selected_master_output_device_id
 		});
 		const cueReady = (async () => {
-			await withHeadphoneOperationTimeout('setSinkId', nextElement.setSinkId(deviceId));
-			_assertCurrentHeadphoneOperation(generation, liveNodes);
-			nextElement.srcObject = liveNodes.destination.stream;
-			_assertCurrentHeadphoneOperation(generation, liveNodes);
-			await withHeadphoneOperationTimeout('play', nextElement.play());
+			await _applyCueSink(deviceId, liveNodes);
 			_assertCurrentHeadphoneOperation(generation, liveNodes);
 		})();
 		const masterReady = (async () => {
@@ -1573,23 +1694,18 @@ export async function selectHeadphoneOutput(
 		})();
 		await Promise.all([cueReady, masterReady]);
 		const transaction = headphoneReselectionResult(true);
-		const previous = nodes.element;
-		if (!transaction.replaceCurrentElement || !transaction.publishSelection || !transaction.detachPrevious) {
-			throw new Error('accepted headphone candidate did not produce a complete replacement transaction');
+		if (!transaction.replaceCurrentElement || !transaction.publishSelection) {
+			throw new Error('accepted headphone sink pin did not produce a complete publish transaction');
 		}
-		nodes.element = nextElement;
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.active = true;
 		mixerState.headphones.output_mode = 'two_outputs';
 		_rememberedCueId = deviceId;
 		_cueClearedByOperator = false;
 		applyHeadphoneMix();
-		_detachHeadphoneElement(previous);
-		candidate = null;
 		_lastMonitorSource = monitorSource;
-		_startHeadphoneLiveness(nodes.element);
+		_startHeadphoneLiveness(nodes);
 	} catch (error) {
-		if (candidate !== null) _detachHeadphoneElement(candidate);
 		mixerState.headphones.selected_output_device_id = previousId;
 		mixerState.headphones.active = previousActive;
 		mixerState.headphones.output_mode = previousMode;
@@ -1605,7 +1721,7 @@ export async function selectMasterOutput(
 	const generation = _headphoneGeneration;
 	const previousId = mixerState.headphones.selected_master_output_device_id;
 	try {
-		_requireHeadphoneDeviceApi();
+		requireHeadphoneDeviceApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 		if (sinkSelectIsNoop(previousId, deviceId, previousId !== null)) {
 			return;
@@ -1628,7 +1744,7 @@ export async function selectMasterOutput(
 export async function selectAudioInput(deviceId: string): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
-		_requireHeadphoneDeviceApi();
+		requireHeadphoneDeviceApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.inputs);
 		_assertCurrentHeadphoneOperation(generation, null);
 		mixerState.headphones.selected_input_device_id = deviceId;

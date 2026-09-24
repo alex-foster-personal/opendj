@@ -265,7 +265,7 @@ test('headphone output refresh fails closed when browser device IDs rotate', () 
 });
 
 test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
-	assert.deepEqual(headphones.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
+	assert.deepEqual(headphones.headphoneSelectionStages(), ['setSinkId', 'resume', 'publish']);
 	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 4, true), true);
 	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 5, true), false);
 	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 4, false), false);
@@ -281,14 +281,7 @@ test('headphone selection declares sink, stream attach, play, then publish and r
 });
 
 test('headphone reselection keeps the previous monitor until a candidate commits', () => {
-	assert.deepEqual(headphones.headphoneReselectionStages(), [
-		'createCandidate',
-		'setSinkId',
-		'attachStream',
-		'play',
-		'replaceAndPublish',
-		'detachPrevious'
-	]);
+	assert.deepEqual(headphones.headphoneReselectionStages(), ['setSinkId', 'resume', 'publish']);
 	assert.deepEqual(headphones.headphoneReselectionResult(false), {
 		replaceCurrentElement: false,
 		publishSelection: false,
@@ -297,7 +290,7 @@ test('headphone reselection keeps the previous monitor until a candidate commits
 	assert.deepEqual(headphones.headphoneReselectionResult(true), {
 		replaceCurrentElement: true,
 		publishSelection: true,
-		detachPrevious: true
+		detachPrevious: false
 	});
 });
 
