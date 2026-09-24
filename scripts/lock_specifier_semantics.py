@@ -33,8 +33,8 @@ from scripts.lock_marker_parser import _MarkerParser, tokenize_marker
 from scripts.lock_marker_semantics import (
     _VERSION_RE,
     Unknown,
+    _release_parts,
     canonical_version,
-    markers_equivalent,
     release_literal,
 )
 
@@ -125,28 +125,105 @@ def norm_spec(spec: str, *, expand_compatible: bool = False, empty_clauses: str 
     )
 
 
+# A release-only bound: (release key with trailing zeros dropped, inclusive), or None for
+# unbounded. An interval is (lower, upper); a specifier is a union of intervals.
+_Bound = tuple[tuple[int, ...], bool] | None
+_Interval = tuple[_Bound, _Bound]
+
+
 def python_specs_equivalent(want: str, have: str) -> bool:
-    """requires-python compared BY MEANING: uv records the tightest bounds, not the
-    spelling (measured with uv 0.8.17: `>=3.10,>=3.11,<4,<5` -> `>=3.11, <4`,
-    `>3.10,>=3.11` -> `>=3.11`, `>=3.11,==3.12.*` -> `==3.12.*`), while a
-    dependency's specifier it keeps verbatim. Each side becomes the marker
-    `python_full_version <op> '<version>'` per clause and the two go through the
-    marker evaluator's probe grid (Codex P2 on #3763, round 12). A missing side is
-    a difference."""
-    normed = [norm_spec(want, expand_compatible=True), norm_spec(have, expand_compatible=True)]
-    if normed[0] == normed[1]:
-        return True
-    if not normed[0] or not normed[1]:
-        return False
-    markers = []
-    for spec in normed:
-        clauses = []
-        for clause in spec.split(","):
-            match = CLAUSE_RE.match(clause)
-            assert match is not None, clause  # _norm_spec emitted it
-            clauses.append(f"python_full_version {match.group('op')} '{match.group('version')}'")
-        markers.append(tuple(clauses))
-    return markers_equivalent(markers[0], markers[1])
+    """requires-python compared the way `uv lock --check` accepts an existing lock: by
+    the BOUNDING RANGE of the release-only range each side admits (its lowest bound and
+    its highest, inclusive or exclusive), never by full meaning. Measured uv 0.8.17,
+    Codex P2 on #3763, rounds 12 and 54: `>=3.11,!=3.12.*`, `>=3.11,!=3.11.2`,
+    `>=3.11,!=3.12.*,!=3.13.*`, `>=3.11,!=4.*` and `>=3.11rc1` each exit 0 against a
+    lock recording `>=3.11` (the holes and the pre-release are not compared), as do
+    `>=3.11,!=3.12.*,<4` against `>=3.11, <4`, `>=3.11,<4` against `>=3.11, !=3.12.*, <4`
+    (a hole only the lock has), `>=3.11,!=3.11.0,!=3.11.1` against `>3.11.0` and
+    `>=3.11,<3.12` against `==3.11.*`; while a hole that moves a bound is a change:
+    `>=3.11,!=3.11.0` (lower becomes exclusive), `>=3.11,!=3.11.*` (lower becomes 3.12)
+    and `>=3.11,!=3.13.*,<3.13` (upper 3.13 against a lock's `<4`) each exit 1. Comparing
+    every clause by meaning (round 12) had reported `>=3.11,!=3.12.*` stale while uv
+    kept the lock. A fresh `uv lock` writes the holes it can spell, so the lock a
+    contributor commits after such an edit still passes here: its bounds are the same.
+    An empty range is UNKNOWN ("Found conflicting Python requirements", exit 2); a
+    missing lower bound is only a uv warning and compares like any other bound."""
+    if not want or not have:
+        return want == have
+    return _bounding_range(want) == _bounding_range(have)
+
+
+def _bounding_range(spec: str) -> _Interval:
+    """The lowest and highest bound of the union of intervals `spec` admits, from the
+    clauses AS SPELLED: `norm_spec` trims a wildcard's trailing zeros, but uv keeps
+    its width (`>=3.12,!=3.12.0.*` is `>=3.12.1`, not `>=3.13`; measured round 54)."""
+    norm_spec(spec, expand_compatible=True)  # UNKNOWN for a spelling uv rejects
+    intervals: list[_Interval] = [(None, None)]
+    for clause in spec.split(","):
+        match = SPELLED_CLAUSE_RE.fullmatch(clause.strip())
+        assert match is not None, clause  # norm_spec accepted it
+        # Two sorted unions of disjoint intervals met in this nesting stay sorted, so
+        # the first interval's lower bound and the last's upper bound are the extremes.
+        intervals = [
+            met
+            for one in intervals
+            for other in _clause_intervals(match.group(1), match.group(2))
+            if (met := _meet(one, other)) is not None
+        ]
+    if not intervals:
+        raise Unknown(f"requires-python {spec!r} admits no version; uv refuses to lock")
+    return intervals[0][0], intervals[-1][1]
+
+
+def _clause_intervals(op: str, version: str) -> list[_Interval]:
+    """The release-only intervals one clause admits (pre-, post- and dev-release cut,
+    as uv cuts them: `>=3.11rc1` and `!=3.12.0rc1` are `>=3.11` and `!=3.12.0`)."""
+    if op == "===":
+        raise Unknown(f"requires-python `==={version}`: arbitrary equality is not compared")
+    if "!" in version:
+        raise Unknown(f"requires-python `{op}{version}`: an epoch is not compared")
+    if op == "~=":
+        low = _key(_release_parts(release_literal(version)))
+        return [((low, True), (_key(_release_parts(compatible_upper(version))), False))]
+    if op in ("==", "!=") and version.endswith(".*"):
+        parts = _release_parts(release_literal(version[:-2]))
+        low, high = _key(parts), _key((*parts[:-1], parts[-1] + 1))
+        if op == "==":
+            return [((low, True), (high, False))]
+        return [(None, (low, False)), ((high, True), None)]
+    key = _key(_release_parts(release_literal(version)))
+    by_op: dict[str, list[_Interval]] = {
+        ">=": [((key, True), None)],
+        ">": [((key, False), None)],
+        "<": [(None, (key, False))],
+        "<=": [(None, (key, True))],
+        "==": [((key, True), (key, True))],
+        "!=": [(None, (key, False)), ((key, False), None)],
+    }
+    return by_op[op]
+
+
+def _key(parts: tuple[int, ...]) -> tuple[int, ...]:
+    """A release with trailing zeros dropped, so 3.11 and 3.11.0 are one bound."""
+    while len(parts) > 1 and parts[-1] == 0:
+        parts = parts[:-1]
+    return parts
+
+
+def _meet(one: _Interval, other: _Interval) -> _Interval | None:
+    """The intersection of two intervals, or None when empty (a lower bound above an
+    upper, or the same version with either side exclusive)."""
+    lows = [b for b in (one[0], other[0]) if b is not None]
+    highs = [b for b in (one[1], other[1]) if b is not None]
+    low = max(lows, key=lambda b: (b[0], not b[1])) if lows else None
+    high = min(highs, key=lambda b: (b[0], b[1])) if highs else None
+    if (
+        low is not None
+        and high is not None
+        and (low[0] > high[0] or (low[0] == high[0] and not (low[1] and high[1])))
+    ):
+        return None
+    return low, high
 
 
 def norm_marker(marker: str | None) -> tuple[str, ...]:
