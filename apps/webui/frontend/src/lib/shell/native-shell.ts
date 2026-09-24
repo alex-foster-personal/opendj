@@ -46,7 +46,8 @@ const TAURI_GLOBAL = '__TAURI_INTERNALS__';
 /** The global the Electron preload exposes. */
 const ELECTRON_GLOBAL = 'opendjShell';
 
-type Scope = Record<string, unknown>;
+// `globalThis` is assignable to this without a cast, and tests pass plain objects.
+type Scope = { readonly [key: string]: unknown };
 
 function electronBridge(scope: Scope): ElectronShellBridge | null {
 	const candidate = scope[ELECTRON_GLOBAL] as Partial<ElectronShellBridge> | null | undefined;
@@ -55,7 +56,7 @@ function electronBridge(scope: Scope): ElectronShellBridge | null {
 }
 
 /** Which desktop shell hosts this page, or null in a browser tab. */
-export function nativeShellKind(scope: Scope = globalThis as unknown as Scope): NativeShellKind | null {
+export function nativeShellKind(scope: Scope = globalThis): NativeShellKind | null {
 	if (electronBridge(scope) !== null) return 'electron';
 	if (scope[TAURI_GLOBAL] !== undefined && scope[TAURI_GLOBAL] !== null) return 'tauri';
 	return null;
@@ -64,7 +65,7 @@ export function nativeShellKind(scope: Scope = globalThis as unknown as Scope): 
 /** OS directory picker. Null when cancelled; throws when there is no shell. */
 export async function pickFolder(
 	title = 'Choose a folder',
-	scope: Scope = globalThis as unknown as Scope
+	scope: Scope = globalThis
 ): Promise<string | null> {
 	const electron = electronBridge(scope);
 	if (electron !== null) return electron.pickFolder({ title });
@@ -77,7 +78,7 @@ export async function pickFolder(
 }
 
 /** Open a URL in the system browser (Google sign-in needs passkeys outside the webview). */
-export async function openExternal(url: string, scope: Scope = globalThis as unknown as Scope): Promise<void> {
+export async function openExternal(url: string, scope: Scope = globalThis): Promise<void> {
 	const electron = electronBridge(scope);
 	if (electron !== null) return electron.openExternal(url);
 	if (nativeShellKind(scope) === 'tauri') {
@@ -88,7 +89,7 @@ export async function openExternal(url: string, scope: Scope = globalThis as unk
 }
 
 /** Quit the app after the quit gate confirmed it (INSTALL-21). */
-export async function exitApp(code = 0, scope: Scope = globalThis as unknown as Scope): Promise<void> {
+export async function exitApp(code = 0, scope: Scope = globalThis): Promise<void> {
 	const electron = electronBridge(scope);
 	if (electron !== null) return electron.exit(code);
 	if (nativeShellKind(scope) === 'tauri') {
@@ -105,7 +106,7 @@ export async function exitApp(code = 0, scope: Scope = globalThis as unknown as 
  */
 export function electronApplyUpdate(
 	onProgress: (progress: ShellUpdateProgress) => void,
-	scope: Scope = globalThis as unknown as Scope
+	scope: Scope = globalThis
 ): Promise<ShellUpdateOutcome> | null {
 	const electron = electronBridge(scope);
 	return electron === null ? null : electron.applyUpdate(onProgress);

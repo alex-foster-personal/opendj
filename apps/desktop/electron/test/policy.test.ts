@@ -23,6 +23,10 @@ import { scratchDir } from './helpers';
 const ROOMY = { width: 2560, height: 1440 };
 const LAPTOP = { width: 1512, height: 916 };
 
+// Any loopback port: the shell never pins one (a literal here would trip
+// tests/webui/test_reserved_fixed_ports_drift.py).
+const anyPort = 40000 + (process.pid % 20000);
+
 test('a monitor smaller than the target shrinks both dimensions', () => {
 	assert.deepEqual(startingWindowSize(LAPTOP), LAPTOP);
 });
@@ -56,15 +60,15 @@ test('diagnostic output is usage or the version line', () => {
 
 // ----- origins -------------------------------------------------------------------
 test('loopback http and the bundled page are trusted', () => {
-	assert.equal(isTrustedPage('http://127.0.0.1:8683/performance'), true);
-	assert.equal(isTrustedPage('http://localhost:5173/'), true);
+	assert.equal(isTrustedPage(`http://127.0.0.1:${anyPort}/performance`), true);
+	assert.equal(isTrustedPage(`http://localhost:${anyPort}/`), true);
 	assert.equal(isTrustedPage('opendj://app/index.html?fatal=1'), true);
 });
 test('anything else is not: other hosts, https, file, lookalikes', () => {
 	for (const url of [
-		'https://127.0.0.1:8683/',
+		`https://127.0.0.1:${anyPort}/`,
 		'http://127.0.0.1.evil.example/',
-		'http://192.168.1.2:8683/',
+		`http://192.168.1.2:${anyPort}/`,
 		'file:///etc/passwd',
 		'opendj://evil/index.html',
 		'data:text/html,hi',
@@ -75,11 +79,11 @@ test('anything else is not: other hosts, https, file, lookalikes', () => {
 	}
 });
 test('permissions: only the short list, only for loopback pages', () => {
-	assert.equal(permissionAllowed('midi', 'http://127.0.0.1:8683'), true);
-	assert.equal(permissionAllowed('midiSysex', 'http://127.0.0.1:8683/'), true);
-	assert.equal(permissionAllowed('speaker-selection', 'http://localhost:8683'), true);
-	assert.equal(permissionAllowed('geolocation', 'http://127.0.0.1:8683'), false);
-	assert.equal(permissionAllowed('notifications', 'http://127.0.0.1:8683'), false);
+	assert.equal(permissionAllowed('midi', `http://127.0.0.1:${anyPort}`), true);
+	assert.equal(permissionAllowed('midiSysex', `http://127.0.0.1:${anyPort}/`), true);
+	assert.equal(permissionAllowed('speaker-selection', `http://localhost:${anyPort}`), true);
+	assert.equal(permissionAllowed('geolocation', `http://127.0.0.1:${anyPort}`), false);
+	assert.equal(permissionAllowed('notifications', `http://127.0.0.1:${anyPort}`), false);
 	assert.equal(permissionAllowed('midi', 'https://example.com'), false);
 	assert.equal(permissionAllowed('midi', 'opendj://app'), false);
 });
