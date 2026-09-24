@@ -99,6 +99,7 @@ def test_a_setting_that_disagrees_with_the_lock_is_stale(
     ("settings", "recorded"),
     [
         ('resolution = "highest"', None),
+        ("no-sources = false", None),
         ('prerelease = "if-necessary-or-explicit"', None),
         ('fork-strategy = "requires-python"', None),
         ('resolution = "lowest-direct"', '[options]\nresolution-mode = "lowest-direct"\n'),
@@ -145,6 +146,7 @@ def test_a_setting_that_disagrees_with_the_lock_is_stale(
     ],
     ids=[
         "resolution-default-explicit",
+        "no-sources-default-explicit",
         "prerelease-default-explicit",
         "fork-strategy-default-explicit",
         "resolution-same",
@@ -217,6 +219,8 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
             None,
             "[tool.uv] dependency-metadata is not compared",
         ),
+        ("no-sources = true", None, "[tool.uv] no-sources = true: uv resolves without"),
+        ("no-sources = 1", None, "[tool.uv] no-sources = 1 is not a boolean"),
         (
             '[[tool.uv.index]]\nname = "mirror"\nurl = "https://mirror.example/simple"\n'
             "default = true",
@@ -246,6 +250,8 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
         "lock-conflicts-string",
         "lock-members",
         "dependency-metadata",
+        "no-sources-true",
+        "no-sources-int",
         "index-table",
         "index-url",
         "extra-index-url",

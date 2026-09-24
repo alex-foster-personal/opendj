@@ -222,7 +222,19 @@ def refuse_uv_toml(project_dir: Path) -> None:
 def _refuse_index_configuration(tool: dict[str, object], lock: dict[str, object]) -> None:
     """A `[tool.uv]` index key, or a package recorded from a registry other than the
     default index (resolved under index configuration from a uv.toml, an environment
-    variable or a since-removed key): UNKNOWN, round 47."""
+    variable or a since-removed key): UNKNOWN, round 47. `no-sources = true` makes uv
+    resolve without `[tool.uv.sources]`, which this check applies to every requirement,
+    so a source-backed lock is stale under it (`uv lock --check` exit 1, measured uv
+    0.8.17, round 50): UNKNOWN; `false` is the default and reads; a non-boolean is the
+    settings-discovery warning that drops the whole table."""
+    no_sources = tool.get("no-sources", False)
+    if not isinstance(no_sources, bool):
+        raise Unknown(f"[tool.uv] no-sources = {no_sources!r} is not a boolean; {IGNORED}")
+    if no_sources:
+        raise Unknown(
+            "[tool.uv] no-sources = true: uv resolves without [tool.uv.sources], which this"
+            " check applies; not compared by this check"
+        )
     for key in INDEX_KEYS:
         if key in tool:
             raise Unknown(f"[tool.uv] {key}: index configuration is not compared by this check")
