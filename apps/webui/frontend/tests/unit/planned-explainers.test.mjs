@@ -98,4 +98,13 @@ describe('planned explainers', () => {
 		assert.match(topbar, /plannedTitle\('autoplay-two-track'\)/);
 		assert.match(mod.PLANNED_CONTROLS['autoplay-two-track'], /second automatic track/i);
 	});
+
+	test('the browser MASTER dropdown wires the master-dropdown explainer', () => {
+		const panel = readFileSync(
+			fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
+			'utf8'
+		);
+		assert.match(panel, /class="rb-lit-button rb-inert master-dd"/);
+		assert.match(panel, /plannedTitle\('master-dropdown'\)/);
+	});
 });

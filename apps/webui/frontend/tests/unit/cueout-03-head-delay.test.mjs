@@ -125,7 +125,9 @@ test('Bluetooth warning helpers and HeadphoneCluster wiring', async () => {
 
 	const clusterSrc = await readFile('src/lib/components/rb/mixer/HeadphoneCluster.svelte', 'utf8');
 	assert.match(clusterSrc, /data-two-outputs-warning/);
-	assert.match(clusterSrc, /aria-label="head delay milliseconds"/);
+	assert.match(clusterSrc, /data-performance-control="head-delay"/);
+	assert.match(clusterSrc, /aria-label="increase head delay"/);
+	assert.match(clusterSrc, /aria-label="decrease head delay"/);
 	assert.match(clusterSrc, /twoOutputsWarning\(/);
 	assert.match(clusterSrc, /ondelay/);
 });

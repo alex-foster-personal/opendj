@@ -577,7 +577,7 @@
 		<button
 			type="button"
 			class="bsm-toggle ap-next-btn"
-			class:on={autoPlayNextState.armed}
+			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
 			title={autoPlayNextState.armed
 				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
@@ -1092,6 +1092,9 @@
 		border-bottom-left-radius: 0;
 		padding-left: 6px;
 		padding-right: 6px;
+	}
+	.ap-wrap > .ap-next-btn:hover {
+		color: var(--rb-accent);
 	}
 	/* The ">|" split is the least essential control in this row (an early-
 	   trigger shortcut, not a required transport) - drop it first, at the

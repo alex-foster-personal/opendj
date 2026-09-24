@@ -18,11 +18,13 @@
 		pins,
 		seen,
 		pathname,
+		optionKeyHeld = false,
 		onopen
 	}: {
 		pins: FeedbackPin[];
 		seen: PinSeen;
 		pathname: string;
+		optionKeyHeld?: boolean;
 		onopen: (pin: FeedbackPin) => void;
 	} = $props();
 
@@ -59,7 +61,7 @@
 		class:fb-unread={isPinUnread(pin, seen)}
 		class:fb-harvested={board.collapsed}
 		style={pinStyle(pin)}
-		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}${pin.page !== pathname ? ` [page ${pin.page}]` : ''}`}
+		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}${pin.page !== pathname ? ` [page ${pin.page}]` : ''}${board.badges.length ? ` - ${board.badges.map(badgeLabel).join(', ')}` : ''}`}
 		aria-label={`Comment pin (${state}) - open${board.badges.length ? ` - ${board.badges.join(', ')}` : ''}`}
 		onclick={() => onopen(pin)}
 	>
@@ -89,9 +91,11 @@
 				height="20"
 			/>
 		{/if}
-		{#each board.badges as badge (badge)}
-			<span class="fb-pin-badge fb-pin-badge-{badge}" title={badgeLabel(badge)}>{badgeLabel(badge)}</span>
-		{/each}
+		{#if optionKeyHeld}
+			{#each board.badges as badge (badge)}
+				<span class="fb-pin-badge fb-pin-badge-{badge}" title={badgeLabel(badge)}>{badgeLabel(badge)}</span>
+			{/each}
+		{/if}
 	</button>
 {/each}
 
