@@ -10,6 +10,10 @@ const topbar = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
 	'utf8'
 );
+const cluster = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/TopBarAccountCluster.svelte', import.meta.url)),
+	'utf8'
+);
 
 test('UserBauble appears before the clock in TopBar source order', () => {
 	const baubleAt = topbar.indexOf('<UserBauble');
@@ -23,9 +27,15 @@ test('clock is hidden when signed out and CloudSync is off', () => {
 });
 
 test('signed-in account button precedes login cluster', () => {
-	const accountAt = topbar.indexOf('class="account-btn"');
+	// TopBar passes the bauble into TopBarAccountCluster, which renders the
+	// account button ahead of it.
+	const accountAt = cluster.indexOf('class="account-btn"');
+	const baubleSlotAt = cluster.indexOf('{@render children()}');
+	assert.ok(accountAt >= 0 && accountAt < baubleSlotAt);
+	const clusterAt = topbar.indexOf('<TopBarAccountCluster>');
 	const baubleAt = topbar.indexOf('<UserBauble');
-	assert.ok(accountAt >= 0 && accountAt < baubleAt);
+	const clusterEndAt = topbar.indexOf('</TopBarAccountCluster>');
+	assert.ok(clusterAt >= 0 && clusterAt < baubleAt && baubleAt < clusterEndAt);
 });
 
 test('topbar MIDI slot removed in favor of tray and I/O', () => {

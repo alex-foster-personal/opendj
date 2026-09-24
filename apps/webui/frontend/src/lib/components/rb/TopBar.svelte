@@ -64,9 +64,8 @@
 		}
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
-	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
+	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
 	import { auth } from '$lib/auth.svelte';
-	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
@@ -247,11 +246,6 @@
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
-	const loginGatedBullets = [
-		'Google sign-in for account panel and CloudSync fleet adopt',
-		'Feedback pin sync across devices',
-		'CloudSync enrollment and remote library features'
-	];
 	const showClock = $derived(
 		auth.user !== null || cloudSyncChipState.value !== 'off'
 	);
@@ -806,26 +800,9 @@
 	</button>
 
 	<CloudSyncStatusChip />
-	{#if auth.user}
-		<button
-			type="button"
-			class="account-btn"
-			aria-label="Open account panel"
-			title="Open account panel"
-			onclick={() => openAccountOverlay()}
-		>
-			Account
-		</button>
-	{/if}
-	<ControlExplainer
-		title={auth.user ? 'Signed-in features' : 'Sign in required'}
-		bullets={loginGatedBullets}
-		showDelayMs={60}
-	>
-		<span class="login-cluster" class:signed-in={auth.user !== null}>
-			<UserBauble size={20} showLabel={auth.user !== null} />
-		</span>
-	</ControlExplainer>
+	<TopBarAccountCluster>
+		<UserBauble size={20} showLabel={auth.user !== null} />
+	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
 		<span class="clock">{clock}</span>
@@ -1552,21 +1529,5 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
-	}
-	.account-btn {
-		background: transparent;
-		border: 1px solid var(--rb-border);
-		border-radius: 999px;
-		color: var(--rb-text-dim);
-		font-size: 10px;
-		padding: 2px 8px;
-		cursor: pointer;
-	}
-	.account-btn:hover {
-		color: var(--rb-text);
-		border-color: var(--rb-text-dim);
-	}
-	.login-cluster.signed-in {
-		color: var(--rb-green);
 	}
 </style>
