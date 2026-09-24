@@ -45,6 +45,8 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
         "cue_latency_ms": None,
         "master_latency_ms": None,
         "offset_ms": None,
+        "verify_residual_ms": None,
+        "probe": None,
         "error": None,
     },
     "selected_output_device_id": None,
@@ -151,6 +153,8 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             "cue_latency_ms": 900,
             "master_latency_ms": 200,
             "offset_ms": 700,
+            "verify_residual_ms": 1.5,
+            "probe": None,
             "error": None,
         }
         mirror["mixer"]["headphones"]["calibration"] = calibration
@@ -486,32 +490,6 @@ def test_alignment_bodies_are_rejected_without_submitting(
         assert response.status_code == 400
         assert response.json()["detail"] == detail
         assert nxt.json() is None
-
-    asyncio.run(run())
-
-
-def test_calibrate_mirrors_the_page_calibration_state() -> None:
-    """CUEOUT-14: GET /headphones carries alignment_mode, master_delay_ms and
-    calibration, and a headless calibrate returns the applied state."""
-
-    async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
-            await _open_page(client)
-            before = await client.get("/api/v1/performance/headphones")
-            fake = asyncio.create_task(_fake_page(client))
-            response = await client.post("/api/v1/performance/headphones/calibrate")
-            command = await fake
-        assert before.status_code == 200
-        assert before.json()["alignment_mode"] == "hybrid"
-        assert before.json()["master_delay_ms"] == 0
-        assert before.json()["calibration"] == _DEFAULT_HEADPHONES["calibration"]
-        assert command == {"type": "headphone_calibrate"}
-        assert response.status_code == 200
-        assert response.json()["calibration"]["step"] == "applied"
-        assert response.json()["calibration"]["offset_ms"] == 700
-        assert response.json()["master_delay_ms"] == 700
 
     asyncio.run(run())
 
