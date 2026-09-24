@@ -7274,8 +7274,12 @@ export interface components {
         };
         /** ClientErrorOut */
         ClientErrorOut: {
+            /** Error Id */
+            error_id?: string | null;
             /** Event Id */
             event_id: string;
+            /** Sentry Event Id */
+            sentry_event_id?: string | null;
             /** Stored */
             stored: boolean;
         };
@@ -13935,6 +13939,11 @@ export interface components {
             auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /**
+             * Available Offline Filter
+             * @default false
+             */
+            available_offline_filter: boolean;
+            /**
              * Beat Sync Max
              * @default true
              */
@@ -14062,6 +14071,8 @@ export interface components {
             /** Auto Play Maximize Reach */
             auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Available Offline Filter */
+            available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
             /** Confirm */

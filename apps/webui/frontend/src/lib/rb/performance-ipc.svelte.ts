@@ -130,6 +130,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -629,6 +630,9 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
 	message: string;
+	headline: string;
+	detail?: string;
+	expanded: boolean;
 	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
@@ -2657,6 +2661,9 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (command.type === 'load') {
+		onDeckLoadStart(command.deck);
+	}
 	if (_presetClaim !== null) {
 		const error = new Error(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
@@ -2851,6 +2858,9 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				headline: toast.headline,
+				detail: toast.detail,
+				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)

@@ -214,7 +214,7 @@ textarea {
 .toast {
   background: var(--surface);
   border: 1px solid var(--border);
-  padding: 0.6rem 1rem;
+  padding: 0.35rem 0.55rem;
   border-radius: 6px;
   min-width: 240px;
 }

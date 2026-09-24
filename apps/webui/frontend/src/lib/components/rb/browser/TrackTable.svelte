@@ -76,7 +76,8 @@
 		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
-		scrollTopForRowIndex
+		scrollTopForRowIndex,
+		scrollTopToKeepRowVisible
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -735,6 +736,13 @@
 	 * a listener (pin b44c957f082f). */
 	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Deck layout toggle anchor: preserve selected row across viewport resize. */
+	let deckLayoutAnchor: {
+		rowIndex: number;
+		priorScrollTop: number;
+		priorViewportHeight: number;
+	} | null = $state(null);
+	let lastDeckLayout = uiPrefs.deck_layout;
 	/** Wrap's own rendered width, for the master-fold badge's right-edge
 	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
 	 * extra (pin b44c957f082f follow-up). */
@@ -759,6 +767,24 @@
 
 	// ------------------------------------------------- DOM row virtualization
 	$effect(() => {
+		const layout = uiPrefs.deck_layout;
+		if (layout !== lastDeckLayout) {
+			const ids = untrack(() => selectedIds);
+			const map = untrack(() => rowIndexOf);
+			const anchorId = ids.length > 0 ? ids[ids.length - 1] : null;
+			const rowIndex = anchorId === null ? -1 : (map.get(anchorId) ?? -1);
+			if (rowIndex >= 0) {
+				deckLayoutAnchor = {
+					rowIndex,
+					priorScrollTop: untrack(() => liveScrollTop),
+					priorViewportHeight: viewportHeight
+				};
+			}
+			lastDeckLayout = layout;
+		}
+	});
+
+	$effect(() => {
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
@@ -768,6 +794,21 @@
 			for (const entry of entries) {
 				viewportHeight = entry.contentRect.height;
 				wrapWidth = entry.contentRect.width;
+				const anchor = deckLayoutAnchor;
+				if (anchor !== null && entry.contentRect.height > 0 && entry.contentRect.height !== anchor.priorViewportHeight) {
+					const next = scrollTopToKeepRowVisible({
+						rowIndex: anchor.rowIndex,
+						rowHeight,
+						headerOffsetPx: TRACK_TABLE_THEAD_PX,
+						viewportHeight: entry.contentRect.height,
+						priorScrollTop: anchor.priorScrollTop,
+						priorViewportHeight: anchor.priorViewportHeight
+					});
+					el.scrollTop = next;
+					liveScrollTop = next;
+					onscrollcursor?.(next);
+					deckLayoutAnchor = null;
+				}
 			}
 		});
 		ro.observe(el);

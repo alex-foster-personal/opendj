@@ -140,6 +140,11 @@
 		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
 
+	function stepHeadDelay(delta: number): void {
+		const next = Math.min(500, Math.max(0, state.head_delay_ms + delta));
+		ondelay(next);
+	}
+
 	function toggleSplit(): void {
 		if (state.output_mode === 'split_cable') {
 			onmode(state.selected_output_device_id !== null ? 'two_outputs' : 'practice');
@@ -278,20 +283,23 @@
 	</ControlExplainer>
 	{#if state.output_mode === 'two_outputs'}
 		<ControlExplainer title="HEAD DELAY" bullets={delayBullets} showDelayMs={60}>
-			<label class="hp-delay">
+			<div class="hp-delay" data-performance-control="head-delay">
 				<span class="hp-delay-label">HEAD DELAY</span>
-				<input
-					type="number"
-					min="0"
-					max="500"
-					step="1"
-					value={state.head_delay_ms}
-					aria-label="head delay milliseconds"
-					data-performance-control="head-delay"
-					onchange={(event) => ondelay(Number(event.currentTarget.value))}
-				/>
+				<span class="hp-delay-stepper" role="group" aria-label="head delay stepper">
+					<button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}>
+						<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+							<path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" />
+						</svg>
+					</button>
+					<button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}>
+						<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+							<path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" />
+						</svg>
+					</button>
+				</span>
+				<span class="hp-delay-value" title={`${state.head_delay_ms} ms head delay on the cue path`}>{state.head_delay_ms}</span>
 				<span class="hp-delay-unit">ms</span>
-			</label>
+			</div>
 		</ControlExplainer>
 		{#if state.master_delay_ms > 0}
 			<ControlExplainer title="ROOM" bullets={roomBullets} showDelayMs={60}>
@@ -450,21 +458,36 @@
 	.hp-delay {
 		display: inline-flex;
 		align-items: center;
-		gap: 2px;
+		gap: 3px;
 		font-size: 7px;
 		color: var(--rb-text-dim, #838990);
 	}
 	.hp-delay-label {
 		letter-spacing: 0.04em;
 	}
-	.hp-delay input {
+	.hp-delay-stepper {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+	}
+	.hp-delay-step {
 		font: inherit;
-		font-size: 7px;
-		width: 36px;
-		padding: 0 2px;
+		line-height: 0;
+		padding: 1px 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
+	.hp-delay-step:hover {
+		color: var(--rb-text, #c8cdd2);
+		border-color: var(--rb-accent, #2f6fd6);
+	}
+	.hp-delay-value {
+		min-width: 24px;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 	.hp-delay-unit {
 		letter-spacing: 0.04em;

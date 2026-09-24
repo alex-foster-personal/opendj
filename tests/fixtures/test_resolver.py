@@ -427,3 +427,32 @@ def test_contract_detects_missing_file(tmp_path: Path) -> None:
             verify_fixture_contract(name, root)
     finally:
         contract_path.unlink(missing_ok=True)
+
+
+def test_contract_detects_checksum_mismatch(tmp_path: Path) -> None:
+    """A tampered/regenerated fixture file must fail loud, not silently pass.
+
+    Distinct from ``test_contract_detects_missing_file`` above: the file is
+    PRESENT (so the missing/extra set-difference check is a no-op) but its
+    content no longer matches the committed digest -- the exact shape of a
+    stale or partially-regenerated ``MUX_FIXTURE_HOST`` tree (Issue #1032
+    acceptance: "if the fixture checksum is tampered then FixtureNotAvailable
+    fails loud"; the concrete exception here is ``FixtureContractMismatch``,
+    the data-integrity-specific guard this repo's own docs point at --
+    ``FixtureNotAvailable`` is reserved for an unmounted host). Same real-
+    ``FIXTURES_ROOT`` scratch-file pattern as the tests above.
+    """
+    root = tmp_path / "some-fixture"
+    root.mkdir()
+    (root / "master.plain.db").write_bytes(b"tampered content")
+    name = "zz-scratch-contract-checksum-mismatch-test"
+    contract_path = _resolver.FIXTURES_ROOT / f"{name}.contract.json"
+    # A well-formed but deliberately WRONG digest -- the file exists, so
+    # this exercises the checksum comparison, not the missing-file branch.
+    _write_contract(_resolver.FIXTURES_ROOT, name, {"master.plain.db": "sha256:" + "0" * 64})
+
+    try:
+        with pytest.raises(FixtureContractMismatch, match=r"checksum verification"):
+            verify_fixture_contract(name, root)
+    finally:
+        contract_path.unlink(missing_ok=True)

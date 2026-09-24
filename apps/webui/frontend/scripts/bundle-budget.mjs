@@ -165,7 +165,13 @@ const BUDGETS = [
   // and lands AFTER #3681, so it takes no raise of its own: both fit under
   // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally;
   // after #3739 (main 47324919a) it measured 257,987, 61 bytes of headroom left.
-  { name: 'library', limit: 258048, measured: 257987, note: 'initial load of "/"' },
+  // RAISED Thu 24 Sep 2026 (+1 KiB, PR #3865, STEM-37 stems on installed spokes):
+  // clean origin/main ccad1999e already measures 258,367 locally, 319 bytes
+  // OVER this limit (merge skew: each PR since #3739 passed alone). This PR
+  // adds +183 on top (the deck's hydrating probe state; the wait loop itself
+  // is in its own module), 258,550 locally and on CI within 35 bytes. The
+  // SetupOverlay payback above still retires all three KiB.
+  { name: 'library', limit: 259072, measured: 258550, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

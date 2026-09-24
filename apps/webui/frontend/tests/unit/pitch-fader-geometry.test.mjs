@@ -384,6 +384,22 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		assert.doesNotMatch(graph, /meterSources\.push\(\{ tap, source: high \}\)/);
 	});
 
+	// Issue #3529: source matching proves the tap is wired to `fader`, but only
+	// a real Web Audio graph test can prove `fader.gain` actually moves the
+	// meter reading. See meter-artifact.spec.ts (channel-meter-browser-entry).
+	it('documents that post-fader metering needs a real graph test, not source grep alone', () => {
+		const artifact = readFileSync(
+			fileURLToPath(
+				new URL('../../tests/e2e/fixtures/channel-meter-browser-entry.ts', import.meta.url)
+			),
+			'utf8'
+		);
+		assert.match(artifact, /buildDeckChannelGraph/);
+		assert.match(artifact, /readChannelMeterAtFaderGains/);
+		assert.match(artifact, /readChannelMeterFloorsOnNextObservation/);
+		assert.match(artifact, /issue #3529/);
+	});
+
 	it('keeps real analyser sampling in the extracted component and does not use a gradient', () => {
 		assert.match(meter, /peekDeckMeterReading\(deckId\)/);
 		assert.match(meter, /requestAnimationFrame\(tick\)/);

@@ -10,8 +10,8 @@ import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
 import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
-import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
 import { armPinPlacement } from './feedback-store.svelte';
+import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -149,41 +149,23 @@ async function _exitLast(): Promise<void> {
 
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
-		if (isSettingsOpen()) return;
-		if (e.code === 'Space' || e.key === ' ') {
-			if (isNativeInteractiveTarget(e.target)) return;
-			if (e.metaKey || e.ctrlKey) {
-				if (e.altKey) return;
-				e.preventDefault();
-				void _toggleRecentPlay(e.timeStamp, true);
-				return;
-			}
-			if (e.altKey) return;
-			e.preventDefault();
-			void _toggleRecentPlay(e.timeStamp);
-			return;
-		}
-		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-		if (e.key === 'Tab') {
-			e.preventDefault();
-			toggleNextOnlyFilter();
-		} else if (e.key === '+' || e.key === '=') {
-			e.preventDefault();
-			void _resizeLast(2);
-		} else if (e.key === '-' || e.key === '_') {
-			e.preventDefault();
-			void _resizeLast(0.5);
-		} else if (e.key === ')') {
-			e.preventDefault();
-			void _exitLast();
-		} else if (e.key === 'm' || e.key === 'M') {
-			// Drop a comment pin without reaching for the topbar icon. The
-			// guard above already answers the other half of pin 919d65b350b1:
-			// nothing here fires while a text field has focus, and a modifier
-			// held (Cmd+Enter to submit) returns early too.
-			e.preventDefault();
-			armPinPlacement();
-		}
+		handlePerformanceShortcutKeydown(
+			e,
+			{
+				toggleRecentPlay: (pressT0Ms, quantize) => {
+					void _toggleRecentPlay(pressT0Ms, quantize || undefined);
+				},
+				toggleNextOnlyFilter,
+				resizeLast: (factor) => {
+					void _resizeLast(factor);
+				},
+				exitLast: () => {
+					void _exitLast();
+				},
+				armPinPlacement
+			},
+			{ settingsOpen: isSettingsOpen() }
+		);
 	};
 	window.addEventListener('keydown', onKey);
 	return () => window.removeEventListener('keydown', onKey);
