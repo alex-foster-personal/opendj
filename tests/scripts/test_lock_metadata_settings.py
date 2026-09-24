@@ -205,7 +205,7 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
             None,
             "constraint-dependencies = 'six<2' is not a list",
         ),
-        ('constraint-dependencies = ["bad space<2"]', None, "unparseable specifier clause"),
+        ('constraint-dependencies = ["bad space<2"]', None, "whitespace inside a specifier"),
         (None, 'manifest = "bad"\n', "uv.lock manifest = 'bad' is not a table"),
         (None, "[manifest]\nconstraints = {}\n", "uv.lock manifest constraints = {} is not a list"),
         (None, "[manifest]\nconstraints = [{ name = 1 }]\n", "requires-dist entry without a name"),
@@ -326,7 +326,7 @@ def test_legacy_dev_dependencies_are_the_dev_group(
     [
         ('"bad"', "[tool.uv] dev-dependencies = 'bad' is not a list of strings"),
         ("[1]", "[tool.uv] dev-dependencies = [1] is not a list of strings"),
-        ('["bad space"]', "unparseable"),
+        ('["bad space"]', "whitespace inside a specifier"),
     ],
     ids=["string", "int-item", "bad-name"],
 )

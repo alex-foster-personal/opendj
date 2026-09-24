@@ -39,6 +39,9 @@ from scripts.lock_marker_semantics import (
 )
 
 CLAUSE_RE = re.compile(r"^(?P<op>===|==|!=|<=|>=|<|>|~=)\s*(?P<version>.+)$")
+# A spelled clause: whitespace may surround the operator and the operand, never sit
+# inside either (`> =3.11`, `>=3 .11`; uv rejects both, round 49).
+SPELLED_CLAUSE_RE = re.compile(r"(===|==|!=|<=|>=|<|>|~=)\s*((?![=<>!~\s])\S+)")
 
 
 def norm_clause(clause: str, *, expand_compatible: bool) -> list[str]:
@@ -93,13 +96,28 @@ def norm_spec(spec: str, *, expand_compatible: bool = False, empty_clauses: str 
     except for ONE trailing comma (`localdep>=1,` in `[project] dependencies` is read,
     `localdep>=1,,` and `localdep,>=1` are "Failed to generate package metadata";
     measured uv 0.8.17, Codex P2 on #3763, round 38). The old `if p.strip()` filter
-    had dropped every empty clause and certified the malformed side as matching."""
+    had dropped every empty clause and certified the malformed side as matching.
+    Whitespace may surround an operator or operand (`>= 3.11`, ` >= 3.11 `, `six >= 1`
+    are read) but never split one: `> =3.11` and `>=3 .11` are "Failed to parse" for
+    requires-python and "must be pep508" for a dependency, `uv lock --check` exit 2
+    (measured uv 0.8.17, round 49); deleting every space had collapsed them back onto
+    the valid spelling the lock was made from."""
     raw = spec.split(",")
     if empty_clauses == "trailing" and len(raw) > 1 and not raw[-1].strip():
         raw = raw[:-1]
     if len(raw) > 1 and any(not p.strip() for p in raw):
         raise Unknown(f"empty specifier clause in {spec!r}; uv rejects the file")
-    parts = [p.strip().replace(" ", "") for p in raw if p.strip()]
+    parts = []
+    for p in raw:
+        if not p.strip():
+            continue
+        match = SPELLED_CLAUSE_RE.fullmatch(p.strip())
+        if match is None:
+            raise Unknown(
+                f"whitespace inside a specifier token, or no operator, in {p.strip()!r};"
+                " uv rejects the file"
+            )
+        parts.append(match.group(1) + match.group(2))
     return ",".join(
         sorted(
             clause for p in parts for clause in norm_clause(p, expand_compatible=expand_compatible)
