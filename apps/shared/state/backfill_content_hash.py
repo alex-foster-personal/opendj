@@ -1,9 +1,9 @@
-"""Backfill ``tracks.content_hash`` for rows ingested before hashing existed.
+"""Backfill exact-file and tag-independent hashes for legacy tracks.
 
 Rekordbox ingest now hashes the audio file at ingest time (see
 ``apps.shared.state.ingest.rekordbox``), but any track ingested before that
 fix landed -- or ingested while its audio drive was offline -- still has
-``content_hash IS NULL``. This CLI re-visits exactly those rows and hashes
+    ``content_hash IS NULL``. This CLI re-visits rows missing either hash and hashes
 whatever audio is actually reachable on **this machine**.
 
 Resolution prefers this machine's local ``track_locations`` row (primary
@@ -106,13 +106,27 @@ def _try_hash(file_path: str | None, path_map: PathMap) -> str | None:
         return None
 
 
+def _try_audio_hash(file_path: str | None, path_map: PathMap) -> str | None:
+    """Hash the tag-independent payload at a resolved local path."""
+    if not file_path:
+        return None
+    mapped = resolve_asset_path(file_path, path_map=path_map)
+    if mapped.resolved is None:
+        return None
+    try:
+        return hashing.sha256_audio_payload(mapped.resolved)
+    except OSError:
+        return None
+
+
 def _candidate_rows(
     conn: sqlite3.Connection, limit: int | None
 ) -> list[sqlite3.Row]:
     sql = (
         "SELECT stable_id, stable_id_tier, title, artists_json, album, "
-        "isrc, duration_ms, file_path FROM tracks "
-        "WHERE content_hash IS NULL AND deleted_at IS NULL ORDER BY stable_id"
+        "isrc, duration_ms, file_path, content_hash, audio_hash FROM tracks "
+        "WHERE (content_hash IS NULL OR audio_hash IS NULL) "
+        "AND deleted_at IS NULL ORDER BY stable_id"
     )
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
@@ -169,7 +183,8 @@ def run_backfill(
                 conn, row["stable_id"], row["file_path"], machine_id
             )
             digest = _try_hash(raw_path, path_map)
-            if digest is None:
+            audio_digest = _try_audio_hash(raw_path, path_map)
+            if digest is None and audio_digest is None:
                 report.unresolvable += 1
                 continue
             report.resolvable += 1
@@ -188,7 +203,8 @@ def run_backfill(
                     isrc=row["isrc"],
                     duration_ms=row["duration_ms"],
                     file_path=row["file_path"],
-                    content_hash=digest,
+                    content_hash=digest or row["content_hash"],
+                    audio_hash=audio_digest or row["audio_hash"],
                 )
     finally:
         if writer is not None:

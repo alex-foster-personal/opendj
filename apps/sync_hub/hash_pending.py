@@ -1,4 +1,4 @@
-"""Hub-side listing of tracks awaiting ``content_hash`` (ADR-0068)."""
+"""Hub-side listing of tracks awaiting content identity (ADR-0068)."""
 from __future__ import annotations
 
 import sqlite3
@@ -23,12 +23,18 @@ def _as_text(value: object) -> str | None:
 
 def count_hash_pending(conn: sqlite3.Connection) -> int:
     """Live inferred-tier tracks with no hash and no normalizable ISRC."""
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    audio_predicate = (
+        "AND (audio_hash IS NULL OR audio_hash = '')"
+        if "audio_hash" in columns else ""
+    )
     rows = conn.execute(
-        """
+        f"""
         SELECT isrc FROM tracks
         WHERE deleted_at IS NULL
           AND stable_id_tier = 'inferred'
           AND (content_hash IS NULL OR content_hash = '')
+          {audio_predicate}
         """
     ).fetchall()
     return sum(
@@ -48,9 +54,15 @@ def list_hash_pending(
     if limit < 1:
         raise ValueError(f"limit must be >= 1, got {limit}")
     params: list[object] = []
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    audio_predicate = (
+        " AND (audio_hash IS NULL OR audio_hash = '')"
+        if "audio_hash" in columns else ""
+    )
     where = (
         "deleted_at IS NULL AND stable_id_tier = 'inferred' "
         "AND (content_hash IS NULL OR content_hash = '')"
+        + audio_predicate
     )
     if cursor:
         where += " AND stable_id > ?"

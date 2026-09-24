@@ -17,9 +17,9 @@ Contract
 ``sha256_file(path)`` -> ``"sha256:<64-hex>"`` (lowercase). Reads the
 file in 1 MiB chunks via :func:`hashlib.file_digest` (Python 3.11+).
 
-``sha256_audio_payload(path)`` -> ``"sha256:<64-hex>"``. Same shape, but for
-mp3 it strips ID3v2 (leading) and ID3v1 (trailing) tag bytes first, so a
-retag alone does not change the digest. Every other extension hashes whole.
+``sha256_audio_payload(path)`` -> ``"sha256:<64-hex>"``. Same shape, but it
+hashes audio payload bytes while excluding tag/container metadata for MP3,
+AIFF, FLAC, M4A and WAV. Unknown or malformed formats hash whole.
 
 ``HashCache(db_path)`` wraps a small SQLite table keyed on
 ``(path, size, mtime_ns)``. Any of those three changing invalidates the
@@ -94,7 +94,7 @@ def _id3v2_len(handle: BinaryIO) -> int:
 
 
 def sha256_audio_payload(path: Path | str) -> str:
-    """``sha256:<64-hex>`` of the AUDIO bytes only, tags stripped for mp3.
+    """``sha256:<64-hex>`` of the audio payload, excluding container tags.
 
     A repair, relink or re-encode that only rewrites ID3 tags (rekordbox and
     Mixed In Key both do this on analysis) must not look like a different
@@ -108,32 +108,83 @@ def sha256_audio_payload(path: Path | str) -> str:
     ID3v2 tags (a second tagger writing after one already did leaves two).
     """
     p = Path(path)
-    if p.suffix.lower() != ".mp3":
-        return sha256_file(p)
-    size = p.stat().st_size
     with p.open("rb") as fh:
+        data = fh.read()
+    payload: bytes | None = None
+    suffix = p.suffix.lower()
+    if suffix == ".mp3":
         start = 0
-        while True:
-            fh.seek(start)
-            more = _id3v2_len(fh)
-            if not more:
+        while start + 10 <= len(data) and data[start : start + 3] == b"ID3":
+            size = sum(
+                (data[start + 6 + index] & 0x7F) << (7 * (3 - index))
+                for index in range(4)
+            )
+            start += 10 + size + (10 if data[start + 5] & 0x10 else 0)
+        end = len(data) - 128 if data[-128:-125] == b"TAG" else len(data)
+        payload = data[start:end]
+    elif suffix == ".flac" and data[:4] == b"fLaC":
+        offset = 4
+        while offset + 4 <= len(data):
+            last = bool(data[offset] & 0x80)
+            block_len = int.from_bytes(data[offset + 1 : offset + 4], "big")
+            offset += 4 + block_len
+            if last:
                 break
-            start += more
-        end = size
-        if size >= 128:
-            fh.seek(size - 128)
-            if fh.read(3) == b"TAG":
-                end = size - 128
-        fh.seek(start)
-        digest = hashlib.sha256()
-        remaining = end - start
-        while remaining > 0:
-            chunk = fh.read(min(_CHUNK, remaining))
-            if not chunk:
-                break
-            digest.update(chunk)
-            remaining -= len(chunk)
-    return HASH_PREFIX + digest.hexdigest()
+        payload = data[offset:]
+    elif (
+        suffix in {".aiff", ".aif", ".aifc"}
+        and data[:4] == b"FORM"
+        and data[8:12] in {b"AIFF", b"AIFC"}
+    ):
+        payload = _chunk_payload(data, b"SSND", skip=8, byteorder="big")
+    elif suffix == ".wav" and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        payload = _chunk_payload(data, b"data", byteorder="little")
+    elif suffix in {".m4a", ".mp4", ".m4b"} and data[4:8] == b"ftyp":
+        payload = _atom_payload(data, b"mdat")
+    if payload is None:
+        return sha256_file(p)
+    return content_hash_bytes(payload)
+
+
+def _chunk_payload(
+    data: bytes, wanted: bytes, *, skip: int = 0, byteorder: str
+) -> bytes | None:
+    """Return concatenated payloads for RIFF/FORM chunks of ``wanted``."""
+    offset = 12
+    payloads: list[bytes] = []
+    while offset + 8 <= len(data):
+        name = data[offset : offset + 4]
+        length = int.from_bytes(data[offset + 4 : offset + 8], byteorder)
+        end = offset + 8 + length
+        if end > len(data):
+            return None
+        if name == wanted and length >= skip:
+            payloads.append(data[offset + 8 + skip : end])
+        offset = end + (length & 1)
+    return b"".join(payloads) if payloads else None
+
+
+def _atom_payload(data: bytes, wanted: bytes) -> bytes | None:
+    """Return all ``mdat`` atom bodies from an MP4/M4A file."""
+    offset = 0
+    payloads: list[bytes] = []
+    while offset + 8 <= len(data):
+        size = int.from_bytes(data[offset : offset + 4], "big")
+        atom = data[offset + 4 : offset + 8]
+        header = 16 if size == 1 else 8
+        if size == 0:
+            end = len(data)
+        elif size == 1 and offset + 16 <= len(data):
+            size = int.from_bytes(data[offset + 8 : offset + 16], "big")
+            end = offset + size
+        else:
+            end = offset + size
+        if end > len(data) or end < offset + header:
+            return None
+        if atom == wanted:
+            payloads.append(data[offset + header : end])
+        offset = end
+    return b"".join(payloads) if payloads else None
 
 
 @dataclass(frozen=True)

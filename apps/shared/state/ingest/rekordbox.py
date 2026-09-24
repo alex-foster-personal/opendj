@@ -171,6 +171,16 @@ def _content_hash_for(path_str: str, is_streaming: bool) -> str | None:
     """
     if not path_str or is_streaming:
         return None
+
+
+def _audio_hash_for(path_str: str, is_streaming: bool) -> str | None:
+    """Hash audio payload bytes while ignoring tags rewritten by DJ tools."""
+    if not path_str or is_streaming:
+        return None
+    try:
+        return hashing.sha256_audio_payload(path_str)
+    except OSError:
+        return None
     try:
         return hashing.sha256_file(path_str)
     except OSError:
@@ -299,6 +309,7 @@ def ingest_rb(
                 seen_sids.add(sid)
 
                 content_hash = _content_hash_for(path_str, track["is_streaming"])
+                audio_hash = _audio_hash_for(path_str, track["is_streaming"])
                 if (
                     content_hash is None
                     and path_str
@@ -316,6 +327,7 @@ def ingest_rb(
                     duration_ms=track["duration_ms"],
                     file_path=path_str or None,
                     content_hash=content_hash,
+                    audio_hash=audio_hash,
                 )
                 if changed:
                     existing_vendor = conn.execute(

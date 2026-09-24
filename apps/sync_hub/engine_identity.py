@@ -1,7 +1,8 @@
 """CLOUDSYNC-07: collapse the same audio under two ``tracks`` primary keys.
 
 Path-tier (``inferred``) ``stable_id`` is minted from a local path and mtime,
-so it is never a merge key. Merge identity is ``content_hash`` first, then a
+so it is never a merge key. Merge identity is ``content_hash`` or
+tag-independent ``audio_hash`` first, then a
 normalizable ISRC, then a fingerprint-tier ``stable_id`` (already a global
 PK, so ordinary LWW covers it).
 
@@ -64,6 +65,7 @@ class IdentityDecision:
 class _StoredMatch:
     pk: str
     content_hash: str | None
+    audio_hash: str | None
     isrc: str | None
     sort_key: tuple[str, str]
 
@@ -96,15 +98,24 @@ def _incoming_beats(
 def _signals_conflict(incoming: Mapping[str, Any], stored: _StoredMatch) -> bool:
     """True when two rows share one identity key but disagree on another.
 
-    Same ``content_hash`` with two normalizable ISRCs, or the same
+    Same ``content_hash`` or ``audio_hash`` with two normalizable ISRCs, or the same
     normalizable ISRC with two ``content_hash`` values. Either is a silent
     dup or a silent collapse if we guessed.
     """
     incoming_hash = _as_text(incoming.get("content_hash"))
     stored_hash = _as_text(stored.content_hash)
+    incoming_audio_hash = _as_text(incoming.get("audio_hash"))
+    stored_audio_hash = _as_text(stored.audio_hash)
     incoming_isrc = normalise_isrc(_as_text(incoming.get("isrc")))
     stored_isrc = normalise_isrc(_as_text(stored.isrc))
-    if incoming_hash and stored_hash and incoming_hash == stored_hash:
+    if (
+        (incoming_hash and stored_hash and incoming_hash == stored_hash)
+        or (
+            incoming_audio_hash
+            and stored_audio_hash
+            and incoming_audio_hash == stored_audio_hash
+        )
+    ):
         return bool(incoming_isrc and stored_isrc and incoming_isrc != stored_isrc)
     if incoming_isrc and stored_isrc and incoming_isrc == stored_isrc:
         return bool(incoming_hash and stored_hash and incoming_hash != stored_hash)
@@ -112,25 +123,50 @@ def _signals_conflict(incoming: Mapping[str, Any], stored: _StoredMatch) -> bool
 
 
 def _matches_by_hash(
-    conn: sqlite3.Connection, incoming_pk: str, content_hash: str
+    conn: sqlite3.Connection, incoming_pk: str, content_hash: str | None,
+    audio_hash: str | None,
 ) -> list[_StoredMatch]:
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "audio_hash" not in columns:
+        rows = conn.execute(
+            "SELECT stable_id, content_hash, isrc, updated_at, origin_device_id "
+            "FROM tracks WHERE content_hash = ? AND stable_id != ?",
+            (content_hash, incoming_pk),
+        ).fetchall()
+        return [_match_from_legacy_row(row) for row in rows]
     rows = conn.execute(
         """
-        SELECT stable_id, content_hash, isrc, updated_at, origin_device_id
+        SELECT stable_id, content_hash, audio_hash, isrc, updated_at, origin_device_id
         FROM tracks
-        WHERE content_hash = ? AND stable_id != ?
+        WHERE stable_id != ?
+          AND ((content_hash = ? AND ? IS NOT NULL)
+            OR (audio_hash = ? AND ? IS NOT NULL))
         """,
-        (content_hash, incoming_pk),
+        (incoming_pk, content_hash, content_hash, audio_hash, audio_hash),
     ).fetchall()
     return [_match_from_row(row) for row in rows]
+
+
+def _match_from_legacy_row(row: Sequence[Any]) -> _StoredMatch:
+    return _StoredMatch(
+        pk=str(row[0]),
+        content_hash=_as_text(row[1]),
+        audio_hash=None,
+        isrc=_as_text(row[2]),
+        sort_key=protocol.lww_key(
+            {protocol.UPDATED_AT: row[3], protocol.ORIGIN_DEVICE_ID: row[4]}
+        ),
+    )
 
 
 def _matches_by_isrc(
     conn: sqlite3.Connection, incoming_pk: str, isrc: str, raw_isrc: str | None
 ) -> list[_StoredMatch]:
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    audio_column = "audio_hash" if "audio_hash" in columns else "NULL AS audio_hash"
     rows = conn.execute(
-        """
-        SELECT stable_id, content_hash, isrc, updated_at, origin_device_id
+        f"""
+        SELECT stable_id, content_hash, {audio_column}, isrc, updated_at, origin_device_id
         FROM tracks
         WHERE stable_id != ?
           AND isrc IS NOT NULL
@@ -149,9 +185,10 @@ def _match_from_row(row: Sequence[Any]) -> _StoredMatch:
     return _StoredMatch(
         pk=str(row[0]),
         content_hash=_as_text(row[1]),
-        isrc=_as_text(row[2]),
+        audio_hash=_as_text(row[2]),
+        isrc=_as_text(row[3]),
         sort_key=protocol.lww_key(
-            {protocol.UPDATED_AT: row[3], protocol.ORIGIN_DEVICE_ID: row[4]}
+            {protocol.UPDATED_AT: row[4], protocol.ORIGIN_DEVICE_ID: row[5]}
         ),
     )
 
@@ -161,8 +198,11 @@ def _find_matches(
 ) -> list[_StoredMatch]:
     incoming_pk = change.pk[0]
     content_hash = _as_text(change.values.get("content_hash"))
-    if content_hash:
-        return _matches_by_hash(conn, incoming_pk, content_hash)
+    audio_hash = _as_text(change.values.get("audio_hash"))
+    if content_hash or audio_hash:
+        matches = _matches_by_hash(conn, incoming_pk, content_hash, audio_hash)
+        if matches:
+            return matches
     isrc = normalise_isrc(_as_text(change.values.get("isrc")))
     if isrc:
         return _matches_by_isrc(
@@ -477,6 +517,7 @@ def unsyncable_inferred_pks(conn: sqlite3.Connection) -> tuple[str, ...]:
         WHERE deleted_at IS NULL
           AND stable_id_tier = 'inferred'
           AND (content_hash IS NULL OR content_hash = '')
+          AND (audio_hash IS NULL OR audio_hash = '')
         """
     ).fetchall()
     return tuple(
