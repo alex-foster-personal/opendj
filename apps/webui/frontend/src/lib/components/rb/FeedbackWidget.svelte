@@ -112,7 +112,7 @@
 	>
 		<button
 			type="button"
-			class="fb-btn"
+			class="fb-btn fb-place-skip"
 			class:rb-inert={unavailable}
 			class:armed={feedbackState.placementArmed}
 			disabled={unavailable}
