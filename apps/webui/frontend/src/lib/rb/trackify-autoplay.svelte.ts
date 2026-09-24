@@ -189,6 +189,13 @@ async function _loadAndPlay(nextId: string): Promise<void> {
 	const deck = TRACKIFY_DECK_ID;
 	const installEpoch = _installEpoch;
 	await _lastSequenceSettled;
+	// `_lastSequenceSettled` can be a STALE sequence's hard ceiling, still
+	// pending up to 30 s after `_loadAndPlay`'s own caller already returned
+	// (its 2 s load deadline fired first). Teardown can land during that
+	// wait: without this recheck, resuming here would undo teardown's own
+	// invalidation and dispatch a fresh load onto a deck a later session
+	// (e.g. Gig) may since have claimed (Sol review, PR #3676).
+	if (_installEpoch !== installEpoch) return;
 	const generation = ++_loadGeneration;
 	const sequence = _dispatchLoadSequence(deck, nextId, generation);
 	// A late failure of a superseded sequence is not re-reported here: its

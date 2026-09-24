@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from typing import cast
@@ -108,10 +109,19 @@ def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
     is the bug this class exists to avoid, so this test also serves as the
     control that catches a regression back to that shape (see the CPU-rises
     test below).
+
+    A live child is required: `sample()` excludes the root pid itself (the
+    Sol-review fix below), so a root with no descendant would raise instead
+    of returning a reading.
     """
-    sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
-    first = sampler.sample()
-    assert first["cpu_percent"] >= 0.0
+    child = _spawn_sleeper(2.0)
+    try:
+        sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
+        first = sampler.sample()
+        assert first["cpu_percent"] >= 0.0
+    finally:
+        child.kill()
+        child.wait()
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -133,11 +143,53 @@ def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
         def read(self, pid: int) -> SimpleNamespace:
             return SimpleNamespace(phys_footprint=int(distinctive_mb * 1024 * 1024))
 
-    sampler = cmr._ProcessTreeSampler(
-        os.getpid(), native=cast(DarwinProcessMetrics, _FixedFootprintNative())
-    )
-    result = sampler.sample()
-    assert result["physical_footprint_mb"] == pytest.approx(distinctive_mb)
+    child = _spawn_sleeper(2.0)
+    try:
+        sampler = cmr._ProcessTreeSampler(
+            os.getpid(), native=cast(DarwinProcessMetrics, _FixedFootprintNative())
+        )
+        result = sampler.sample()
+        # Root (this test process) is excluded from the sample, so the only
+        # contributor is the one spawned child -- exactly one reading of
+        # `distinctive_mb`, not the launcher's own footprint added in too.
+        assert result["physical_footprint_mb"] == pytest.approx(distinctive_mb)
+    finally:
+        child.kill()
+        child.wait()
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_sample_excludes_the_root_launcher_pid_from_the_browser_only_kpi() -> None:
+    """[if] the root pid itself reports a distinctive footprint [then]
+    sample() never includes it, only its descendants [else stop].
+
+    Direct regression test for the Sol-review finding: `root_pid` is the
+    Node `mode_ratio_browser.mjs` launcher that SPAWNS Chromium via
+    Playwright, not a member of the Chromium browser/renderer family the
+    KPI card and `_METHOD` claim to measure. Two DIFFERENT distinctive
+    values (root vs. child) mean this fails loud in EITHER wrong direction:
+    if root's value leaked into the sum, the total would exceed the child's
+    alone; if the child were dropped instead, the total would be 0, not the
+    child's value.
+    """
+    root_only_mb = 111.0
+    child_only_mb = 222.0
+
+    class _PerPidNative:
+        def read(self, pid: int) -> SimpleNamespace:
+            value_mb = root_only_mb if pid == os.getpid() else child_only_mb
+            return SimpleNamespace(phys_footprint=int(value_mb * 1024 * 1024))
+
+    child = _spawn_sleeper(2.0)
+    try:
+        sampler = cmr._ProcessTreeSampler(
+            os.getpid(), native=cast(DarwinProcessMetrics, _PerPidNative())
+        )
+        result = sampler.sample()
+        assert result["physical_footprint_mb"] == pytest.approx(child_only_mb)
+    finally:
+        child.kill()
+        child.wait()
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -149,18 +201,28 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
     `cpu_percent(interval=None)` on a FRESH Process object always returns
     0.0 on its first call, so a sampler that rebuilt Process objects each
     call (the mutation) would fail this test by reporting 0.0 here too.
+
+    The busy work runs in a CHILD process, not this test process: `sample()`
+    now excludes the root pid itself (Sol review, PR #3676 -- the root is
+    the Node launcher, not part of the Chromium family this KPI measures),
+    so burning CPU in the root would no longer show up in the result.
     """
-    sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
-    sampler.sample()  # primes the cache
-
-    deadline = time.monotonic() + 0.5
-    total = 0
-    while time.monotonic() < deadline:
-        total += 1  # burn CPU in this process so its own usage is nonzero
-
-    second = sampler.sample()
-    assert second["cpu_percent"] > 0.0
-    assert total > 0  # keep the busy-loop from being optimized away
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import time\nd=time.monotonic()+1.5\n\nwhile time.monotonic()<d: pass",
+        ]
+    )
+    try:
+        sampler = cmr._ProcessTreeSampler(os.getpid(), native=_native())
+        sampler.sample()  # primes the cache
+        time.sleep(0.5)  # let the child accumulate real CPU time
+        second = sampler.sample()
+        assert second["cpu_percent"] > 0.0
+    finally:
+        child.kill()
+        child.wait()
 
 
 @pytest.mark.requirement("PERFMODE-15")

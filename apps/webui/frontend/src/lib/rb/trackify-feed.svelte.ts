@@ -5,6 +5,7 @@ import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 import {
 	createTrackifyFeedController,
 	fetchTrackifyViewRows,
+	trackifyPlaylistScope,
 	type TrackifyFeedSnapshot
 } from '$lib/rb/trackify-feed';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -42,8 +43,19 @@ async function _hydrate(): Promise<void> {
 	if (_hydrating) return;
 	_hydrating = true;
 	try {
-		const viewRows = await fetchTrackifyViewRows(uiPrefs.last_playlist);
-		_lastSnapshot = _controller.step(true, uiPrefs.last_playlist, viewRows);
+		// Captured ONCE, before the await: `uiPrefs.last_playlist` can change
+		// while this fetch is in flight (the operator picks a different
+		// playlist), and re-reading it afterward to publish would stamp rows
+		// fetched for the OLD scope as belonging to whatever is selected NOW,
+		// corrupting PLAY-04 snapshot semantics (Sol review, PR #3676). A
+		// fetch that is no longer for the current scope by the time it
+		// resolves is discarded outright rather than published under either
+		// scope; the next hydrate cycle covers whatever is selected now.
+		const lastPlaylist = uiPrefs.last_playlist;
+		const requestedScope = trackifyPlaylistScope(lastPlaylist);
+		const viewRows = await fetchTrackifyViewRows(lastPlaylist);
+		if (trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope) return;
+		_lastSnapshot = _controller.step(true, lastPlaylist, viewRows);
 	} finally {
 		_hydrating = false;
 	}

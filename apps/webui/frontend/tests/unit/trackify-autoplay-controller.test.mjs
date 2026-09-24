@@ -566,4 +566,95 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			mock.timers.reset();
 		}
 	});
+
+	it('a load queued behind a stale _lastSequenceSettled is superseded, not dispatched, once teardown lands first', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const wedgedBad = gate();
+		let uninstall = null;
+		try {
+			const { log, loadGates } = installFakeTransport();
+			// No retry candidate once 'bad' is quarantined: this isolates the
+			// SECOND, independent call below from the existing recursive-retry
+			// path (which already rechecks installEpoch inside its own catch).
+			entry.e2ePrimeTrackifyFeed([row('bad')]);
+			loadGates.set('bad', wedgedBad.promise);
+
+			uninstall = entry.installTrackifyAutoplay();
+
+			// First load dispatches 'load bad', then times out on its OWN 2 s
+			// deadline -- the underlying dispatcher call (`wedgedBad`) is never
+			// released in this test, so it keeps running underneath.
+			// `_lastSequenceSettled` keeps tracking that raw, still-pending
+			// call up to its 30 s hard ceiling, independently of `_loadAndPlay`
+			// having already returned once its own 2 s deadline fired.
+			const first = entry.e2eForceTrackifyLoad('bad');
+			await settle();
+			assert.deepEqual(log, ['load bad']);
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			await first;
+			assert.match(
+				entry.readTrackifyAutoplayState().last_skip_reason ?? '',
+				/^skipped bad: .*did not settle within/
+			);
+
+			// A second, independent load starts (e.g. the next poll tick's own
+			// advance) while `_lastSequenceSettled` is still the stale, wedged
+			// promise from 'bad'. It must block entering its own sequence.
+			const second = entry.e2eForceTrackifyLoad('other');
+			await settle();
+			assert.deepEqual(
+				log,
+				['load bad'],
+				'the second load must queue behind the stale settle, not dispatch yet'
+			);
+
+			// Tear the session down while the second load is still waiting on
+			// that stale promise -- e.g. the operator navigated away.
+			uninstall();
+			uninstall = null;
+
+			// The stale sequence's hard ceiling fires, releasing
+			// `_lastSequenceSettled` and resuming the second load's
+			// `_loadAndPlay` past its `await`.
+			mock.timers.tick(30_000);
+			await settle();
+
+			// Drain the real per-deck dispatcher queue: 'bad's own engine.load
+			// call is what that queue is still serialized behind, so a buggy
+			// `_loadAndPlay('other')` that already SUBMITTED a load command
+			// (rather than returning before ever calling
+			// `_dispatchLoadSequence`) only reaches the engine once this
+			// releases -- without releasing it here, 'load other' could never
+			// appear in `log` either way, and the assertion below would pass
+			// for the wrong reason (control for the "queue, not the fix,
+			// blocked it" false pass).
+			wedgedBad.release();
+			await settle();
+
+			// The bug this guards against: without an install-epoch recheck
+			// immediately after `await _lastSequenceSettled`, the resumed call
+			// dispatches 'load other' onto a deck id a different session (e.g.
+			// Gig, which shares this deck id) may since have claimed.
+			await Promise.race([
+				second,
+				new Promise((resolve) => {
+					const guard = realSetTimeout(resolve, 500);
+					if (typeof guard.unref === 'function') guard.unref();
+				})
+			]);
+			// The first sequence's own late resolution (its dispatcher call was
+			// never cancelled, only timed out at the controller level) still
+			// produces its own log entries here -- this test asserts only that
+			// the SECOND load ('other') never reaches the engine at all.
+			assert.ok(
+				!log.some((entry) => entry.includes('other')),
+				`a load resumed after teardown must not dispatch into the dead session, got ${JSON.stringify(log)}`
+			);
+		} finally {
+			if (uninstall !== null) uninstall();
+			wedgedBad.release();
+			mock.timers.reset();
+		}
+	});
 });

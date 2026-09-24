@@ -2,7 +2,7 @@
  * Trackify route session installer: engine lifecycle + feed + autoplay + IPC.
  */
 import { engine } from '$lib/rb/audio-engine.svelte';
-import { noteGigRuntimeMounted } from '$lib/rb/library-mode-runtime';
+import { currentGigRuntimeGeneration, noteGigRuntimeMounted } from '$lib/rb/library-mode-runtime';
 import { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
 import { setAppMode, setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { installTrackifyAutoplay } from '$lib/rb/trackify-autoplay.svelte';
@@ -22,7 +22,7 @@ export function installTrackifySession(): () => Promise<void> {
 	// to supersede a stale release; sending it here makes a Trackify mount
 	// supersede one too, so the stale Gig teardown retires before disposing
 	// an engine Trackify has since claimed (Codex review, PR #3676).
-	noteGigRuntimeMounted();
+	const ownEngineGeneration = noteGigRuntimeMounted();
 	const priorAutoPlayEnabled = uiPrefs.auto_play_enabled;
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
@@ -45,6 +45,15 @@ export function installTrackifySession(): () => Promise<void> {
 			const reason = error instanceof Error ? error.message : String(error);
 			pushToast(`Trackify: could not stop playback cleanly before teardown (${reason})`, 'error');
 		}
+		// Svelte does not await an async onMount cleanup, so navigating
+		// straight to Gig can mount and claim the shared engine WHILE this
+		// teardown was suspended on the stop dispatch above. Recheck ownership
+		// immediately before disposing: a generation bump here means a newer
+		// session (Gig, or a remounted Trackify) has since claimed the engine,
+		// and disposing now would tear IT down instead (Sol review, PR #3676;
+		// symmetric with releaseGigRuntime's own post-await recheck for the
+		// opposite Gig-to-Trackify direction).
+		if (currentGigRuntimeGeneration() !== ownEngineGeneration) return;
 		await engine.dispose();
 	};
 }

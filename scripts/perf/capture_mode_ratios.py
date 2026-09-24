@@ -124,6 +124,15 @@ class _ProcessTreeSampler:
         cpu_percent = 0.0
         live = 0
         for proc in self._live_tree():
+            if proc.pid == self._root_pid:
+                # `root` is the Node `mode_ratio_browser.mjs` launcher that
+                # SPAWNS Chromium via Playwright, not a member of the
+                # Chromium browser/renderer family this KPI claims to
+                # measure. Its own fixed footprint and CPU would dilute both
+                # savings ratios with a cost that barely moves between modes
+                # (Sol review, PR #3676) -- it is walked for tree discovery
+                # (`_live_tree`) but excluded from the sample itself.
+                continue
             try:
                 footprint_mb += self._native.read(proc.pid).phys_footprint / (1024 * 1024)
                 cpu_percent += proc.cpu_percent(interval=None)
@@ -133,7 +142,7 @@ class _ProcessTreeSampler:
         if live == 0:
             raise RuntimeError(
                 f"mode_ratio_browser process tree rooted at {self._root_pid} "
-                "has no live processes to sample"
+                "has no live Chromium descendant to sample (only the launcher itself is running)"
             )
         return {"physical_footprint_mb": footprint_mb, "cpu_percent": cpu_percent}
 
