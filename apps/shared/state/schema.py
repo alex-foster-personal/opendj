@@ -37,8 +37,10 @@ from .migrations_v14 import _V14
 from .migrations_v15 import _V15, backfill_track_fields_stamps
 from .migrations_v16 import _V16
 from .migrations_v17 import _V17, repair_hub_changelog_stamps
+from .migrations_v18 import _V18
+from .migrations_v19 import _V19
 
-SCHEMA_VERSION: int = 17
+SCHEMA_VERSION: int = 19
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -61,6 +63,8 @@ MIGRATIONS: list[list[str]] = [
     _V15,
     _V16,
     _V17,
+    _V18,
+    _V19,
 ]
 
 
@@ -85,18 +89,26 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
 
     Idempotent. Every unapplied migration step runs inside its own
     transaction and records a row in ``schema_meta`` on success.
+
+    A db already at :data:`SCHEMA_VERSION` takes no write lock: the version
+    is read outside any transaction, which WAL permits while another process
+    holds a long write. Only a stale db enters the ``BEGIN IMMEDIATE`` loop,
+    and there the version is re-read under the lock so concurrent boots
+    observe the winner's ``schema_meta`` row before choosing DDL (issue #791).
     """
     _ensure_meta(conn)
-    current = _current_version(conn)
 
-    for step_idx in range(current, SCHEMA_VERSION):
-        statements = MIGRATIONS[step_idx]
-        target_version = step_idx + 1
-        # Use a manual BEGIN -- sqlite3's default transaction handling does
-        # not wrap DDL cleanly unless we're explicit. Safe in isolation:
-        # caller owns the connection.
-        conn.execute("BEGIN")
+    while _current_version(conn) < SCHEMA_VERSION:
+        conn.execute("BEGIN IMMEDIATE")
         try:
+            current = _current_version(conn)
+            if current >= SCHEMA_VERSION:
+                conn.execute("COMMIT")
+                break
+
+            step_idx = current
+            statements = MIGRATIONS[step_idx]
+            target_version = step_idx + 1
             for stmt in statements:
                 conn.execute(stmt)
             conn.execute(
@@ -138,6 +150,8 @@ TABLES: tuple[str, ...] = (
     "local_changelog",
     # v8 (analysis retention for audio we do not have)
     "track_availability",
+    # v18 (issue #1037 path index for bounded listing stat budgets)
+    "path_availability",
     "unmatched_source_analysis",
     "track_energy_segments",
     "analysis_field_verification",

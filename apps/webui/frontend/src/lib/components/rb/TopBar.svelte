@@ -42,6 +42,27 @@
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
+	import { switchDeviceOutput } from '$lib/rb/device-output-probe-control';
+
+	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
+	let switchOutputBusy = $state(false);
+
+	async function handleSwitchOutput(): Promise<void> {
+		if (switchOutputBusy || !outputHealthDisplay.switchOutputAvailable) return;
+		if (
+			!confirm(
+				'Switch the macOS default output to another device and back? This is the same fix as choosing a different output in System Settings.'
+			)
+		) {
+			return;
+		}
+		switchOutputBusy = true;
+		try {
+			await switchDeviceOutput();
+		} finally {
+			switchOutputBusy = false;
+		}
+	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
@@ -71,6 +92,7 @@
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
+	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -114,6 +136,7 @@
 	);
 
 	function _selectAppMode(modeId: (typeof APP_MODES)[number]['id']): void {
+		if (modeId === 'library') markLibraryModeExit();
 		setAppMode(modeId);
 	}
 
@@ -554,7 +577,7 @@
 		<button
 			type="button"
 			class="bsm-toggle ap-next-btn"
-			class:on={autoPlayNextState.armed}
+			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
 			title={autoPlayNextState.armed
 				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
@@ -726,8 +749,9 @@
 
 		<!-- master output level meter: REAL -> engine master bus, post master
 		     gain (pin 5a5c3b8033d8's still-open half; the ten-segment channel
-		     meters shipped in PR #1062 tap post-EQ/pre-fader and so do not move
-		     with this control). Distinct from the output-health-bar below,
+		     meters tap post-trim/post-EQ/post-channel-fader per #3529 and track
+		     each deck fader, not this master control). Distinct from the
+		     output-health-bar below,
 		     which answers "is a device receiving audio" rather than "how loud
 		     is the master bus". -->
 		<MasterLevelMeter active={masterMeterActive} />
@@ -739,10 +763,29 @@
 		     "ok", per the pin's own "never healthy when the probe cannot tell"
 		     rule. -->
 		<div
-			class={`output-health-bar ${describeAudioOutputHealth(audioOutputHealth.snapshot).cssClass}`}
-			title={describeAudioOutputHealth(audioOutputHealth.snapshot).title}
+			class={`output-health-bar ${outputHealthDisplay.cssClass}`}
+			title={outputHealthDisplay.title}
 			aria-label="output to audio device"
 		></div>
+		{#if audioOutputHealth.snapshot?.combined_verdict === 'not_delivering'}
+			<div class="output-health-fault" title={outputHealthDisplay.title}>
+				<span class="output-health-fault-copy"
+					>Output device is not delivering audio. Switch the macOS output to another device and
+					back, or reconnect the headphones.</span
+				>
+				<button
+					type="button"
+					class="output-health-switch-btn"
+					disabled={switchOutputBusy || !outputHealthDisplay.switchOutputAvailable}
+					title={outputHealthDisplay.switchOutputAvailable
+						? 'Cycle the macOS default output away and back'
+						: 'Switch output requires the installed macOS desktop shell'}
+					onclick={() => void handleSwitchOutput()}
+				>
+					{switchOutputBusy ? 'Switching…' : 'Switch output'}
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
@@ -962,10 +1005,17 @@
 	   two tiers that never yielded at all give up their read-only status
 	   surfaces. Swept at 5px granularity across [780px, 1920px]: before this
 	   change the shipped ladder overflows at 160 of 229 widths, worst 184px,
-	   in bands 780-1105 / 1215-1390 / 1405-1505 / 1535-1715; after it, at 0 of
+	   in bands 780-1105 / 1215-1390 / 1405-1505 / 1535-1715; 	   after it, at 0 of
 	   229. The bands above the old thresholds are exactly where the label did
 	   not fit, which is why the thresholds - not the selectors - are what
 	   moved.
+
+	   RE-VERIFIED Thu 18 Sep 2026 (issue #1365): the 1530px and 1740px tiers
+	   above already close the >1400px crush this issue filed - a fresh 5px
+	   elementFromPoint sweep across [1400px, 1920px] (105 widths) reports zero
+	   failures with the current ladder, so no further threshold move was needed
+	   here; tests/e2e/performance-topbar-responsive.spec.ts now guards
+	   PERF-UI-06 at the ladder boundaries.
 
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the
@@ -1043,6 +1093,9 @@
 		border-bottom-left-radius: 0;
 		padding-left: 6px;
 		padding-right: 6px;
+	}
+	.ap-wrap > .ap-next-btn:hover {
+		color: var(--rb-accent);
 	}
 	/* The ">|" split is the least essential control in this row (an early-
 	   trigger shortcut, not a required transport) - drop it first, at the
@@ -1441,6 +1494,31 @@
 	.output-health-bar.unknown {
 		background: var(--rb-text-dim);
 		opacity: 0.25;
+	}
+	.output-health-fault {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 280px;
+		font-size: 10px;
+		line-height: 1.2;
+		color: var(--rb-red, #e55);
+	}
+	.output-health-fault-copy {
+		flex: 1 1 auto;
+	}
+	.output-health-switch-btn {
+		flex: 0 0 auto;
+		font-size: 10px;
+		padding: 1px 6px;
+		border: 1px solid currentColor;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
+	.output-health-switch-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	.master-track {
 		position: absolute;

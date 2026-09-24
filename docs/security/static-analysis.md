@@ -19,7 +19,7 @@ belong to the AI review layer below and the manual areas in
 |---|---|---|---|
 | Python patterns | **ruff `S` rules** (flake8-bandit) | pre-commit + existing quality ratchet | yes, via ratchet |
 | Python + TS patterns | **Semgrep CE** registry packs + custom rules | PR (diff-aware) | new findings only |
-| Cross-file taint, platform rules | **Semgrep AppSec Platform** (`semgrep ci`) | same-repo PR (diff-aware) + daily full | Block-mode rules only; report-only |
+| Cross-file taint, platform rules | **Semgrep AppSec Platform** (`semgrep ci`) | same-repo PR (diff-aware) + weekly full of `main` (unproven: never completed inside its timeout as of Tue 22 Sep 2026) | Block-mode rules only; report-only |
 | Design / logic | Claude Code **`/security-review`** on high-risk paths | weekly + on PRs touching those paths | advisory |
 
 ### ruff `S`
@@ -59,7 +59,7 @@ Semgrep's free cloud tier (up to 10 contributors) adds cross-file taint analysis
 is its biggest lead over CE (research: CE detected 44-48% vs Pro 72-75% on Semgrep's own
 benchmark). It requires uploading code to Semgrep. **Adopted Tue 15 Sep 2026:** the
 `semgrep` job in `security.yml` runs `semgrep ci` against the Semgrep AppSec Platform on
-same-repo PRs and daily on `main`. Token handling and the reason CE still runs are in
+same-repo PRs and weekly (Monday) on `main`; the full scan was daily until ADR-NEW-semgrep-full-scan-weekly. Token handling and the reason CE still runs are in
 [routine-scanning.md](routine-scanning.md#semgrep-appsec-platform-semgrep-ci).
 
 ### AI security review

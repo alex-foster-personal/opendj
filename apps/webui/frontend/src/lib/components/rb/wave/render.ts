@@ -214,6 +214,46 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
 }
 
+export interface StemWaveRowFrame {
+	envelope: Float32Array | readonly number[];
+	/** Main-row scroll: track seconds x (width / (WAVE_WINDOW_S x pitch)). */
+	scrollPx: number;
+	/** Whole-track duration the envelope spans, in ms. */
+	durationMs: number | null;
+	/** Deck pitch, the same rate the main row scales its window by. */
+	pitch: number;
+	width: number;
+	height: number;
+	color: string;
+}
+
+/** Paint one stem mini-waveform row synced to the main wavestack scroll model.
+ * The envelope spans the WHOLE track, so one point is durationS / points of
+ * track time, drawn at the main row's px-per-second (Codex P1 on #3645). */
+export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRowFrame): void {
+	const { envelope, scrollPx, durationMs, pitch, width, height, color } = frame;
+	ctx.clearRect(0, 0, width, height);
+	if (envelope.length === 0 || width <= 0 || height <= 0) return;
+	if (durationMs === null || !(durationMs > 0) || !(pitch > 0)) return;
+
+	const points = envelope.length;
+	const pxPerS = width / (WAVE_WINDOW_S * pitch);
+	const pxPerPoint = ((durationMs / 1000) * pxPerS) / points;
+	const startPx = scrollPx - width / 2;
+
+	ctx.fillStyle = color;
+	for (let x = 0; x < width; x++) {
+		const trackPx = startPx + x;
+		const idx = Math.floor(trackPx / pxPerPoint);
+		if (idx < 0 || idx >= points) continue;
+		const amp = envelope[idx];
+		if (!Number.isFinite(amp) || amp <= 0) continue;
+		const barH = Math.max(1, Math.round(amp * (height - 1)));
+		const y = Math.round((height - barH) / 2);
+		ctx.fillRect(x, y, 1, barH);
+	}
+}
+
 // ----------------------------------------------------------- _helpers
 
 function _bucketMax(values: number[], p0: number, p1: number): number {

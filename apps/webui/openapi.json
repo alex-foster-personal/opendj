@@ -1136,6 +1136,218 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioInterferenceItemOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "why",
+          "matched"
+        ],
+        "title": "AudioInterferenceItemOut",
+        "type": "object"
+      },
+      "AudioInterferenceOut": {
+        "properties": {
+          "detected": {
+            "items": {
+              "$ref": "#/components/schemas/AudioInterferenceItemOut"
+            },
+            "title": "Detected",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "detected"
+        ],
+        "title": "AudioInterferenceOut",
+        "type": "object"
+      },
+      "AudioOutputHealthOut": {
+        "properties": {
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "default_device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Device Name"
+          },
+          "default_device_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Device Uid"
+          },
+          "device_delivering": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Delivering"
+          },
+          "hal_overload_recent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hal Overload Recent"
+          },
+          "io_cycles_advanced": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Io Cycles Advanced"
+          },
+          "probe_available": {
+            "title": "Probe Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_delivering",
+          "verdict",
+          "probe_available",
+          "checked_at"
+        ],
+        "title": "AudioOutputHealthOut",
+        "type": "object"
+      },
+      "AudioSwitchOutputOut": {
+        "properties": {
+          "cycled": {
+            "title": "Cycled",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "restored": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored"
+          },
+          "via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via"
+          }
+        },
+        "required": [
+          "cycled"
+        ],
+        "title": "AudioSwitchOutputOut",
+        "type": "object"
+      },
       "AutoAnalyzeOut": {
         "description": "State of the daemon's auto-drain reconcile loop.",
         "properties": {
@@ -3196,9 +3408,31 @@
       },
       "ClientErrorOut": {
         "properties": {
+          "error_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
+          },
+          "sentry_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentry Event Id"
           },
           "stored": {
             "title": "Stored",
@@ -7651,9 +7885,30 @@
             ],
             "title": "Offset Ms"
           },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadphoneCalibrationProbeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "step": {
             "title": "Step",
             "type": "string"
+          },
+          "verify_residual_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Residual Ms"
           }
         },
         "required": [
@@ -7661,9 +7916,64 @@
           "cue_latency_ms",
           "master_latency_ms",
           "offset_ms",
+          "verify_residual_ms",
+          "probe",
           "error"
         ],
         "title": "HeadphoneCalibrationOut",
+        "type": "object"
+      },
+      "HeadphoneCalibrationProbeOut": {
+        "description": "CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.\n\nThe ear-cup step is interactive, so this is the feedback an agent needs to\ndrive it the way the operator does, watching `best` climb toward `threshold`.",
+        "properties": {
+          "best": {
+            "title": "Best",
+            "type": "number"
+          },
+          "bus": {
+            "title": "Bus",
+            "type": "string"
+          },
+          "gain": {
+            "title": "Gain",
+            "type": "number"
+          },
+          "lag_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Ms"
+          },
+          "peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bus",
+          "gain",
+          "peak",
+          "lag_ms",
+          "best",
+          "threshold"
+        ],
+        "title": "HeadphoneCalibrationProbeOut",
         "type": "object"
       },
       "HeadphoneOutputDeviceOut": {
@@ -10582,6 +10892,50 @@
           }
         },
         "title": "MatchRequest",
+        "type": "object"
+      },
+      "MaterializeOut": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/MaterializedTrack"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "tracks"
+        ],
+        "title": "MaterializeOut",
+        "type": "object"
+      },
+      "MaterializedTrack": {
+        "properties": {
+          "inserted": {
+            "title": "Inserted",
+            "type": "boolean"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "stable_id",
+          "inserted"
+        ],
+        "title": "MaterializedTrack",
         "type": "object"
       },
       "MeOut": {
@@ -16384,9 +16738,27 @@
             "title": "Etag",
             "type": "string"
           },
+          "file_availability": {
+            "enum": [
+              "present",
+              "absent",
+              "AVAILABILITY_PENDING",
+              "streaming",
+              "awaiting_volume"
+            ],
+            "title": "File Availability",
+            "type": "string"
+          },
           "file_exists": {
-            "title": "File Exists",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Exists"
           },
           "genre": {
             "anyOf": [
@@ -16398,6 +16770,17 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
@@ -16587,6 +16970,7 @@
           "etag",
           "preview_b64",
           "preview_max",
+          "file_availability",
           "file_exists",
           "is_streaming",
           "has_remote_copy",
@@ -17878,6 +18262,48 @@
           "message"
         ],
         "title": "StemUnavailableOut",
+        "type": "object"
+      },
+      "StemWaveformOut": {
+        "description": "Mono peak envelope for one stem part (issue #1036).",
+        "properties": {
+          "envelope": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Envelope",
+            "type": "array"
+          },
+          "layout": {
+            "title": "Layout",
+            "type": "string"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "schema": {
+            "default": 1,
+            "title": "Schema",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "part",
+          "layout",
+          "points",
+          "envelope"
+        ],
+        "title": "StemWaveformOut",
         "type": "object"
       },
       "StemsPlanOut": {
@@ -19307,7 +19733,7 @@
         "type": "object"
       },
       "TrackListItemOut": {
-        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.\nhas_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.\nFalse for a locally imported or djay-only track, whose rb-meta 404s BY\nCONTRACT; the browser skips the per-row fetch rather than provoke it.",
+        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_availability: typed disk-truth lane including AVAILABILITY_PENDING.\nfile_exists: present/absent only; null while availability is pending.\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.\nhas_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.\nFalse for a locally imported or djay-only track, whose rb-meta 404s BY\nCONTRACT; the browser skips the per-row fetch rather than provoke it.",
         "properties": {
           "album": {
             "anyOf": [
@@ -19419,9 +19845,27 @@
             ],
             "title": "Energy Source"
           },
+          "file_availability": {
+            "enum": [
+              "present",
+              "absent",
+              "AVAILABILITY_PENDING",
+              "streaming",
+              "awaiting_volume"
+            ],
+            "title": "File Availability",
+            "type": "string"
+          },
           "file_exists": {
-            "title": "File Exists",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Exists"
           },
           "file_path": {
             "anyOf": [
@@ -19433,6 +19877,28 @@
               }
             ],
             "title": "File Path"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
@@ -19616,6 +20082,7 @@
           "artwork_available",
           "preview_b64",
           "preview_max",
+          "file_availability",
           "file_exists",
           "has_remote_copy",
           "quality",
@@ -20099,9 +20566,27 @@
             "title": "Etag",
             "type": "string"
           },
+          "file_availability": {
+            "enum": [
+              "present",
+              "absent",
+              "AVAILABILITY_PENDING",
+              "streaming",
+              "awaiting_volume"
+            ],
+            "title": "File Availability",
+            "type": "string"
+          },
           "file_exists": {
-            "title": "File Exists",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Exists"
           },
           "genre": {
             "anyOf": [
@@ -20113,6 +20598,17 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
@@ -20298,6 +20794,7 @@
           "etag",
           "preview_b64",
           "preview_max",
+          "file_availability",
           "file_exists",
           "is_streaming",
           "has_remote_copy",
@@ -20445,6 +20942,11 @@
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
+          "available_offline_filter": {
+            "default": false,
+            "title": "Available Offline Filter",
+            "type": "boolean"
+          },
           "beat_sync_max": {
             "default": true,
             "title": "Beat Sync Max",
@@ -20553,6 +21055,11 @@
             "title": "Show Agent Pins",
             "type": "boolean"
           },
+          "show_stems": {
+            "default": false,
+            "title": "Show Stems",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
@@ -20648,6 +21155,17 @@
                 "type": "null"
               }
             ]
+          },
+          "available_offline_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Offline Filter"
           },
           "beat_sync_max": {
             "anyOf": [
@@ -20872,6 +21390,17 @@
               }
             ],
             "title": "Show Agent Pins"
+          },
+          "show_stems": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Stems"
           },
           "technically_working_animate": {
             "anyOf": [
@@ -23844,6 +24373,69 @@
         "summary": "Assistant Status",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/audio-interference": {
+      "get": {
+        "operationId": "audio_interference_api_v1_audio_interference_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioInterferenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Interference",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/audio/output-health": {
+      "get": {
+        "operationId": "get_output_health_api_v1_audio_output_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioOutputHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Output Health",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/switch-output": {
+      "post": {
+        "operationId": "post_switch_output_api_v1_audio_switch_output_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSwitchOutputOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Switch Output",
+        "tags": [
+          "audio"
         ]
       }
     },
@@ -27163,6 +27755,49 @@
         "summary": "Host Info",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/ingest/batch/{batch}/materialize": {
+      "post": {
+        "description": "[if] batch is staged under the ingest inbox [then] folder-ingest writes\ntracks and returns stable_ids [else stop].",
+        "operationId": "materialize_batch_api_v1_ingest_batch__batch__materialize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "title": "Batch",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterializeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Materialize Batch",
+        "tags": [
+          "ingest"
         ]
       }
     },
@@ -35838,7 +36473,7 @@
     },
     "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
       "get": {
-        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead defers to native-analysis v1 first: when v1\nhas already settled a beatgrid determination for this track (a\ncanonical own pointer exists, whatever it resolved to), this endpoint\npreserves that gridless/failed state rather than silently substituting\na superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).",
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead refuses a superseded pre-v1 legacy row only\nwhen the canonical own beatgrid lane is ``failed``; a successful native\nbackfill does not disable the legacy row while own is not yet serving\n(STANDALONE-04).",
         "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
         "parameters": [
           {
@@ -36622,6 +37257,64 @@
           }
         },
         "summary": "Get Stem File",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/{part}/waveform": {
+      "get": {
+        "description": "Return a downsampled mono peak envelope for one validated stem part.",
+        "operationId": "get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part",
+            "required": true,
+            "schema": {
+              "title": "Part",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemWaveformOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
+          }
+        },
+        "summary": "Get Stem Waveform",
         "tags": [
           "stems"
         ]

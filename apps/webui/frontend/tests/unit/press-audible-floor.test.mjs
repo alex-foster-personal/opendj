@@ -2,7 +2,11 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
+import {
+	engineBlockAfter,
+	readFrontendSource as readSource,
+	SCHEDULE_DECK_SERIAL_ANCHOR
+} from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -338,18 +342,7 @@ test('SABOTAGE: one pitch-fader drag can no longer evict the press row', async (
 //-----------------------------------------------------------------------------
 
 test('the engine labels the row from the SAME context it read the clock from', () => {
-	const body = engineBlockAfter(`async function _scheduleDeckSerial(
-	deck: DeckId,
-	when: number,
-	inputSec: number | ((effectiveWhen: number) => number),
-	active: boolean,
-	tempoRatio: number | undefined,
-	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined,
-	reanchorGeneration?: number
-): Promise<number> {`);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 	// The facts are DERIVED FROM scheduleStages, so the floor terms the labels
 	// call absent are the same ones the row itself omits. A second read of the
 	// context could disagree with the row printed beside it.
@@ -404,7 +397,12 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 
 	const hotkeys = readSource('src/lib/rb/performance-hotkeys.ts');
 	assert.ok(
-		hotkeys.includes('void _toggleRecentPlay(e.timeStamp);'),
+		// issue #3528 routed Space through the shared performance-shortcut-routing
+		// module, which hands the callback its own pressT0Ms/quantize rather than
+		// the raw event, so the literal this pins moved from `e.timeStamp` to the
+		// routed parameter - it must still be the DOM event stamp captured at
+		// keydown, not a fresh performance.now() taken inside the callback.
+		hotkeys.includes('void _toggleRecentPlay(pressT0Ms, quantize || undefined);'),
 		'Space is how a DJ starts a track without looking at the screen; it is the LAST ' +
 			'path that should be measuring from after its own dispatch'
 	);
@@ -715,6 +713,16 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 	assert.ok(
 		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
 		'the receipt stamp must reach the glue layer'
+	);
+	// Pinned on the registration signature, not on the whole file, and on
+	// either optionality: main tightened the slot to a required `number`
+	// (d0b0840b) after this guard was written against the optional form.
+	const registerAt = midi.indexOf('export function registerActionHandler(');
+	assert.ok(registerAt >= 0, 'registerActionHandler must exist for this guard to pin anything');
+	const registerSig = midi.slice(registerAt, midi.indexOf('): void {', registerAt));
+	assert.ok(
+		/\bpressT0Ms\??: number\b/.test(registerSig),
+		'registerActionHandler must accept the receipt stamp as a fourth parameter'
 	);
 	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
 	assert.ok(

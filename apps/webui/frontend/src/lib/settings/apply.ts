@@ -14,9 +14,12 @@ import {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
 	setDeckLayoutMode,
+	setCrossfadeCurve,
 	setHideBrokenLinks,
 	setHideTodoSettings,
+	setHorizontalWheelKnob,
 	setJogRadialWaveform,
+	setShowStems,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -25,6 +28,7 @@ import {
 	setLyricsLoadStrategy,
 	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
+	setAvailableOfflineFilter,
 	setAppPosture,
 	setPerfTier,
 	setRemixesFilter,
@@ -60,6 +64,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'next_only_filter',
 	'remixes_filter',
 	'vocals_filter',
+	'available_offline_filter',
 	'lyrics_global',
 	'lyrics_library_col',
 	'lyrics_hover_scrub',
@@ -69,6 +74,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_todo_settings',
 	'technically_working_animate',
 	'jog_radial_waveform',
+	'show_stems',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -79,6 +85,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.dblclick_load_play',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
+	'crossfade_curve',
+	'horizontal_wheel_knob',
 	'perf_tier',
 	'app_posture'
 ] as const;
@@ -113,6 +121,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.remixes_filter;
 		case 'vocals_filter':
 			return uiPrefs.vocals_filter;
+		case 'available_offline_filter':
+			return uiPrefs.available_offline_filter;
 		case 'lyrics_global':
 			return uiPrefs.lyrics_global;
 		case 'lyrics_library_col':
@@ -131,6 +141,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
 			return uiPrefs.jog_radial_waveform;
+		case 'show_stems':
+			return uiPrefs.show_stems;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -151,6 +163,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'crossfade_curve':
+			return uiPrefs.crossfade_curve;
+		case 'horizontal_wheel_knob':
+			return uiPrefs.horizontal_wheel_knob;
 		case 'preview_beat_sync':
 			return uiPrefs.preview_beat_sync;
 		case 'perf_tier':
@@ -207,6 +223,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'vocals_filter':
 			setVocalsFilter(_asBool(value, key));
 			return;
+		case 'available_offline_filter':
+			setAvailableOfflineFilter(_asBool(value, key));
+			return;
 		case 'lyrics_global':
 			setLyricsGlobal(_asBool(value, key));
 			return;
@@ -237,6 +256,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'jog_radial_waveform':
 			setJogRadialWaveform(_asBool(value, key));
+			return;
+		case 'show_stems':
+			setShowStems(_asBool(value, key));
 			return;
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {
@@ -278,6 +300,20 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			// control's string into a number, or refuse loudly.
 			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
 			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
+		case 'crossfade_curve': {
+			if (value !== 'magic') {
+				throw new Error(`crossfade_curve must be magic until curves are built, got ${String(value)}`);
+			}
+			setCrossfadeCurve('magic');
+			return;
+		}
+		case 'horizontal_wheel_knob': {
+			if (value !== 'filter' && value !== 'color') {
+				throw new Error(`horizontal_wheel_knob must be filter|color, got ${String(value)}`);
+			}
+			setHorizontalWheelKnob(value as 'filter' | 'color');
 			return;
 		}
 		case 'preview_beat_sync': {

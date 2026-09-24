@@ -93,6 +93,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "sync operation until the CLOUDSYNC content-hash-backfill "
             "phase runs (cloudsync-spec.md section 4)."
         ),
+        "audio_hash": (
+            "Tag-independent SHA-256 of the decoded container audio payload; "
+            "used beside content_hash for CloudSync identity merges."
+        ),
         "created_at": "RFC 3339 UTC timestamp of first insert. Never rewritten.",
         "updated_at": (
             "RFC 3339 UTC timestamp of the most recent write to this row. "
@@ -398,6 +402,24 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "updated_at": "Sync LWW timestamp.",
         "origin_device_id": "Writing machine's machine_id.",
         "deleted_at": "Tombstone timestamp. NULL = live.",
+    },
+    "path_availability": {
+        "resolver_namespace": (
+            "SHA-256 fingerprint of the active path-map entries plus this "
+            "machine's machine-id file. Rows from an old namespace are ignored "
+            "after a path-map change."
+        ),
+        "logical_path": (
+            "Library path string before containment resolution (rekordbox "
+            "FolderPath, tracks.file_path, or track_locations path)."
+        ),
+        "materialised_size": (
+            "Materialised st_size in bytes from fs_residency, or NULL when "
+            "the resolved path is missing, not a file, or a dataless stub."
+        ),
+        "checked_at": (
+            "RFC 3339 UTC timestamp when this row was last probed or written."
+        ),
     },
     "sync_state": {
         "peer": (

@@ -2,7 +2,11 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
+import {
+	engineBlockAfter,
+	readFrontendSource as readSource,
+	SCHEDULE_DECK_SERIAL_ANCHOR
+} from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -200,18 +204,7 @@ test('agent-native parity: the browser IPC can carry the same press stamp', () =
 });
 
 test('the engine turns the stamp into a delta at the same clock read it reports', () => {
-	const body = engineBlockAfter(`async function _scheduleDeckSerial(
-	deck: DeckId,
-	when: number,
-	inputSec: number | ((effectiveWhen: number) => number),
-	active: boolean,
-	tempoRatio: number | undefined,
-	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined,
-	pressT0Ms: number | undefined,
-	reanchorGeneration?: number
-): Promise<number> {`);
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
 
 	const clockAt = body.indexOf('const scheduleContextTime = _ctx.currentTime;');
 	const deltaAt = body.indexOf('const pressToScheduleMs = measurePressToScheduleMs(');

@@ -78,6 +78,7 @@ export type DiskPrefsPatch = {
 	auto_sync?: AutoSyncPrefs;
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
+	show_stems?: boolean;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -101,6 +102,7 @@ export type DiskPrefsPatch = {
 	next_only_filter?: boolean;
 	remixes_filter?: boolean;
 	vocals_filter?: boolean;
+	available_offline_filter?: boolean;
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
 	app_mode?: DiskAppModePatch;
@@ -150,6 +152,7 @@ export interface PrefsHydrateTarget {
 	auto_sync: AutoSyncPrefs;
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
+	show_stems: boolean;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
@@ -174,6 +177,7 @@ export interface PrefsHydrateTarget {
 	next_only_filter: boolean;
 	remixes_filter: boolean;
 	vocals_filter: boolean;
+	available_offline_filter: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -220,6 +224,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			}
 			if (typeof body.show_agent_pins === 'boolean') {
 				uiPrefs.show_agent_pins = body.show_agent_pins;
+			}
+			if (typeof body.show_stems === 'boolean') {
+				uiPrefs.show_stems = body.show_stems;
 			}
 			if (typeof body.jog_radial_waveform === 'boolean') {
 				uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
@@ -286,7 +293,8 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				'hide_broken_links',
 				'next_only_filter',
 				'remixes_filter',
-				'vocals_filter'
+				'vocals_filter',
+				'available_offline_filter'
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;

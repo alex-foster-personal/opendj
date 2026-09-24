@@ -109,6 +109,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'available_offline_filter',
+		label: 'Available offline library filter',
+		group: 'library',
+		keywords: ['offline', 'local', 'cloud', 'streaming', 'download', 'filter'],
+		title: 'Keep only tracks with local audio present',
+		detail:
+			'Excludes cloud-only and streaming-only rows. Checkbox in the library header; distinct from the CAT-07 download action.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'beat_sync_max',
 		label: 'Beat Sync Max',
 		group: 'performance',
@@ -192,6 +203,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		title: 'Show preview waveform as a polar plot on jog dials',
 		detail:
 			'When on, each loaded deck paints its 400-point preview waveform radially on the jog wheel face and hides the red position tick. The white progress trail still shows playback position. Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'show_stems',
+		label: 'Stem mini-waveforms',
+		group: 'performance',
+		keywords: ['stem', 'stems', 'mini', 'waveform', 'wavestack', 'demucs', 'vocals'],
+		title: 'Show per-stem mini-waveforms under deck waveforms',
+		detail:
+			'When on, each loaded deck paints one mini-waveform row per stem control (VOCAL, INST, DRUMS) using server peak envelopes. Default off. Same path as the show_stems performance command.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -485,7 +507,35 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	_todo('djay.library_source', 'Library source', 'djay', ['itunes', 'apple', 'spotify'], 'External library source'),
 	_todo('djay.streaming', 'Streaming services', 'djay', ['tidal', 'soundcloud', 'beatport'], 'Connected streaming'),
 	_todo('djay.cue_points', 'Cue point style', 'djay', ['cue', 'points'], 'Cue marker style'),
-	_todo('djay.crossfader_curve', 'Crossfader curve', 'djay', ['crossfader', 'curve'], 'XF curve shape'),
+	{
+		id: 'crossfade_curve',
+		label: 'Crossfader curve',
+		group: 'performance',
+		keywords: ['crossfader', 'curve', 'magic', 'xfade'],
+		title: 'Crossfader blend curve',
+		detail: 'Magic crossfader is live; other curves are placeholders until built.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [{ value: 'magic', label: 'magic crossfader' }]
+		}
+	},
+	{
+		id: 'horizontal_wheel_knob',
+		label: 'Horizontal wheel adjusts',
+		group: 'performance',
+		keywords: ['wheel', 'horizontal', 'filter', 'color', 'knob'],
+		title: 'Which knob horizontal mouse wheel turns on selected channels',
+		detail: 'Filter is the channel FILTER dial. Color routes to FILTER until color FX is built.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'filter', label: 'Filter' },
+				{ value: 'color', label: 'Color' }
+			]
+		}
+	},
 	_todo('djay.midi_learn', 'MIDI learn', 'djay', ['midi', 'map', 'controller'], 'Controller MIDI learn'),
 	_todo('djay.audio_device', 'Audio device', 'djay', ['device', 'output', 'asio'], 'Output device selection'),
 	_todo('djay.sample_rate', 'Sample rate', 'djay', ['sample', 'rate', '48000'], 'Engine sample rate'),

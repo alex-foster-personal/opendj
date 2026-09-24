@@ -131,7 +131,7 @@ test('MORE-mode compact wavestack at max-height 799px leaves room for one track 
 	);
 	assert.match(
 		moreBlock[1],
-		/calc\(4\s*\*\s*var\(--rb-waverow-h\)\)/,
+		/calc\(4\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)\)/,
 		'MORE must still reserve all 4 wavestack rows'
 	);
 });
@@ -163,8 +163,8 @@ test('BrowserPanel auto-collapses Next/Recommended at the same 799px breakpoint 
 	);
 	assert.match(
 		panel,
-		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-right[\s\S]*?flex-wrap:\s*nowrap/,
-		'.header-right must not wrap at short height'
+		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.header-controls-cluster[\s\S]*?flex-wrap:\s*nowrap/,
+		'.header-controls-cluster must not wrap at short height'
 	);
 });
 

@@ -46,6 +46,9 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
+	import FeedbackPinLayer from '$lib/components/rb/FeedbackPinLayer.svelte';
+	import FeedbackPinShellButton from '$lib/components/rb/FeedbackPinShellButton.svelte';
+	import { installCommentPinHotkeys } from '$lib/rb/comment-pin-hotkeys';
 
 	let { children } = $props();
 
@@ -163,6 +166,7 @@
 		const stopInstruments = startAppInstruments();
 		const uninstallShellNavigation = installShellNavigationPoll();
 		const uninstallShellCommands = installShellCommandPoll();
+		const uninstallCommentPinHotkeys = installCommentPinHotkeys();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
@@ -171,6 +175,7 @@
 			stopInstruments();
 			uninstallShellNavigation();
 			uninstallShellCommands();
+			uninstallCommentPinHotkeys();
 			clearInterval(id);
 		};
 	});
@@ -251,6 +256,7 @@
 				{/if}
 			</div>
 			<CloudSyncStatusChip />
+			<FeedbackPinShellButton />
 			<UserBauble />
 		</div>
 		<div class="content">
@@ -296,6 +302,7 @@
      first-paint path or in the library page's bundle budget. -->
 
 <ToastStack items={toasts} />
+<FeedbackPinLayer />
 <BrandLaunch />
 
 <style>

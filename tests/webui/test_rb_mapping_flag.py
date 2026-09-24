@@ -229,12 +229,8 @@ def test_unmapped_rows_and_meta_read_file_tag_metadata_from_state(
 
     A track without a live rekordbox mapping has no djmdContent genre or
     comment to read. Its file-tag metadata belongs to state.db instead, and
-    the two shapes that carry those columns -- rb-meta and the hydrated
-    playlist row -- must expose the same values from it. The /tracks listing
-    row is deliberately NOT one of them: genre and comment have never been in
-    that contract (BrowserPanel's _rowFromListWire says so, and fills them
-    from the lazy rb-meta fetch instead), so widening it here would add a
-    field with no reader.
+    rb-meta, the hydrated playlist row, and the /tracks listing row must
+    expose the same genre from it (STANDALONE-05).
     """
     body = client.get(f"/api/v1/tracks/{LOCAL_ONLY}/rb-meta").json()
     assert body["vendor"] == "local"
@@ -254,7 +250,8 @@ def test_unmapped_rows_and_meta_read_file_tag_metadata_from_state(
     assert row["quality"] == body["quality"]
 
     listing_row = _rows_by_id(client)[LOCAL_ONLY]
-    assert "genre" not in listing_row
+    assert listing_row["genre"] == "House"
+    assert listing_row.get("genre_reason") is None
     assert "comments" not in listing_row
 
 

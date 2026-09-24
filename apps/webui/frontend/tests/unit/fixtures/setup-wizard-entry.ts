@@ -13,4 +13,5 @@
  */
 export * from '$lib/api/capabilities.svelte';
 export * from '$lib/setup/setup-api';
+export * from '$lib/setup/folder-rows';
 export * from '$lib/setup/wizard.svelte';
