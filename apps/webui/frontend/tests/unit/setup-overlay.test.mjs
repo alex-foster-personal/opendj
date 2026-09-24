@@ -278,8 +278,22 @@ test('the layout keeps the wizard mounted while the incomplete note is due', () 
 	// shape, as the markup facts above are: the guard names both flags.
 	const layout = read('src/routes/+layout.svelte');
 	assert.match(layout, /const setupMounted = \$derived\(setupOverlay\.open \|\| setupOverlay\.incomplete\);/);
-	assert.match(layout, /\{#if setupMounted\}\s*\{#await loadSetupOverlay\(\) then \{ default: SetupOverlay \}\}/);
+	assert.match(layout, /\{#if setupMounted\}\s*\{#await loadSetupOverlay\(\)\}/);
+	assert.match(layout, /\{:then \{ default: SetupOverlay \}\}\s*<SetupOverlay \/>/);
 	assert.doesNotMatch(layout, /\{#if setupOpen\}/);
+});
+
+test('the layout covers the app while the wizard chunk is in flight', () => {
+	// `setupOpen` yields the boot gate the moment setup opens, so an {#await}
+	// with no pending branch left the app usable for the length of the chunk
+	// download on a cold cache (Codex review of #3862 at 079105b3, P2). The
+	// pending branch draws the same backdrop the failure branch does, with a
+	// status the e2e (lazy-chunk-failures.spec.ts) waits on.
+	const layout = read('src/routes/+layout.svelte');
+	const pending = layout.match(/\{#await loadSetupOverlay\(\)\}([^]*?)\{:then \{ default: SetupOverlay \}\}/);
+	assert.ok(pending, 'the await has a pending branch');
+	assert.match(pending[1], /class="setup-load-backdrop"/);
+	assert.match(pending[1], /role="status" aria-label="Setup is loading"/);
 });
 
 test('the layout requests the wizard chunk only once setup mounts', () => {

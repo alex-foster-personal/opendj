@@ -135,4 +135,25 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 		await expect(page.getByRole('alertdialog', { name: 'Setup failed to load' })).toHaveCount(0);
 		expect(requested.length, 'the retry never requested the setup chunk').toBeGreaterThan(0);
 	});
+
+	test('the setup surface covers the app while its chunk is still in flight', async ({ page }) => {
+		test.setTimeout(TEST_BUDGET_MS);
+		// Hold the chunk on the wire: `setupOpen` yields the boot gate at once,
+		// so the pending branch is what stands between a fresh install and the
+		// app underneath for the length of the download.
+		const HOLD_MS = 4_000;
+		await page.route(SETUP_OVERLAY_CHUNK, async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, HOLD_MS));
+			await route.continue();
+		});
+		await gotoShellReady(page, '/setup');
+
+		const loading = page.getByRole('status', { name: 'Setup is loading' });
+		await expect(loading).toBeVisible({ timeout: FAILURE_SURFACE_MS });
+		await expect(page.getByRole('dialog', { name: 'First-run setup' })).toHaveCount(0);
+		await expect(page.getByRole('dialog', { name: 'First-run setup' })).toBeVisible({
+			timeout: HOLD_MS + FAILURE_SURFACE_MS
+		});
+		await expect(loading).toHaveCount(0);
+	});
 });

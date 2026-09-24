@@ -371,15 +371,23 @@
      scripts/bundle-budget.mjs): the wizard renders only while the overlay is
      open or has just been dismissed with an empty library (the incomplete
      note), and its own effects early-return while closed, so keeping it off
-     the first paint changes nothing a user or an agent can observe. -->
+     the first paint changes nothing a user or an agent can observe while it
+     is closed. While it is OPEN and the chunk is still in flight, the
+     backdrop below covers the app: `setupOpen` has already yielded the boot
+     gate, so without it a fresh install could use the app for the length of
+     the download (Codex review of #3862 at 079105b3, P2). -->
 {#if setupMounted}
-	{#await loadSetupOverlay() then { default: SetupOverlay }}
+	{#await loadSetupOverlay()}
+		<div class="setup-load-backdrop" role="presentation">
+			<div class="setup-load-pending" role="status" aria-label="Setup is loading">Loading setup&hellip;</div>
+		</div>
+	{:then { default: SetupOverlay }}
 		<SetupOverlay />
 	{:catch error}
 		<!-- The chunk did not arrive. Same backdrop the wizard uses, so the ask
 		     still sits over the app rather than vanishing, and one action that
 		     fetches the chunk again (see retrySetupOverlay). -->
-		<div class="setup-load-failed-backdrop" role="presentation">
+		<div class="setup-load-backdrop" role="presentation">
 			<div class="setup-load-failed" role="alertdialog" aria-label="Setup failed to load">
 				<p class="setup-load-failed-reason">
 					Setup failed to load: {error instanceof Error ? error.message : String(error)}
@@ -480,7 +488,7 @@
 	}
 	/* Same box and layer as SetupOverlay's .su-backdrop / .su-panel, minus the
 	   wizard: what the user sees when the wizard's chunk could not be fetched. */
-	.setup-load-failed-backdrop {
+	.setup-load-backdrop {
 		position: fixed;
 		inset: 0;
 		z-index: 380;
@@ -489,6 +497,13 @@
 		justify-content: center;
 		padding: 3vh 1rem;
 		background: rgba(0, 0, 0, 0.55);
+	}
+	.setup-load-pending {
+		padding: 1rem 1.5rem;
+		border: 1px solid var(--border, #2a3140);
+		border-radius: 8px;
+		background: var(--surface, #121720);
+		color: var(--muted, #9aa4b2);
 	}
 	.setup-load-failed {
 		display: grid;
