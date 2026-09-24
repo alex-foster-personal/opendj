@@ -352,3 +352,47 @@ def test_an_invalid_marker_or_name_shared_by_both_files_is_unknown(
     code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_UNKNOWN, message
     assert named in message
+
+
+@pytest.mark.parametrize(
+    ("edit", "named"),
+    [
+        (lambda lock: lock.replace("version = 1\n", "version = 999\n", 1), "schema version = 999"),
+        (lambda lock: lock.replace("version = 1\n", "version = 2\n", 1), "schema version = 2"),
+        (lambda lock: lock.replace("version = 1\n", "", 1), "schema version = None"),
+    ],
+    ids=["v999", "v2", "missing"],
+)
+def test_a_lock_schema_version_other_than_1_is_unknown(tmp_path: Path, edit, named: str) -> None:
+    """`version = 999` and `version = 2` are "uses an unsupported schema version",
+    a missing header is "missing field `version`"; each `uv lock --check` exit 2
+    (measured uv 0.8.17, Codex P2 on #3763, round 32) while the gate never read the
+    header. `revision` is the control: uv accepted 1, 999 and no revision at all."""
+    assert MARKED_LOCK.startswith("version = 1\nrevision = 3\n")
+    lock = edit(MARKED_LOCK)
+    assert lock != MARKED_LOCK
+    code, message = _run(tmp_path, MARKED_PYPROJECT, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message and "only 1 is readable by uv" in message
+    for revision in ("revision = 1\n", "revision = 999\n", ""):
+        lock = MARKED_LOCK.replace("revision = 3\n", revision, 1)
+        code, message = _run(tmp_path, MARKED_PYPROJECT, lock)
+        assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize("text", ["six;", "six; ", "six ;"])
+def test_an_empty_marker_after_the_semicolon_is_unknown(tmp_path: Path, text: str) -> None:
+    """`dep;` is "`project.dependencies[0]` must be pep508", `uv lock --check` exit 2
+    (measured uv 0.8.17, Codex P2 on #3763, round 32); the optional marker group read
+    it as the unmarked `dep` the lock records, so the pair passed. The unmarked pair
+    itself is the control."""
+    unmarked_pyproject = MARKED_PYPROJECT.replace("\"six; os_name == 'x'\"", '"six"')
+    unmarked_lock = MARKED_LOCK.replace(", marker = \"os_name == 'x'\"", "")
+    assert unmarked_pyproject != MARKED_PYPROJECT and unmarked_lock.count("marker") == 0
+    code, message = _run(tmp_path, unmarked_pyproject, unmarked_lock)
+    assert code == EXIT_OK, message
+    edited = unmarked_pyproject.replace('"six"', f'"{text}"')
+    assert edited != unmarked_pyproject
+    code, message = _run(tmp_path, edited, unmarked_lock)
+    assert code == EXIT_UNKNOWN, message
+    assert f"unparseable requirement: {text!r}" in message
