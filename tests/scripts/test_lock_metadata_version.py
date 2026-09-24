@@ -145,3 +145,28 @@ def test_a_version_respelled_to_the_same_pep_440_release_is_clean(tmp_path: Path
     )
     assert code == EXIT_STALE
     assert "[project] version: pyproject.toml '0.1.0rc1', uv.lock root '0.1.0'" in message
+
+
+def test_dynamic_dependency_metadata_is_unknown_not_clean(tmp_path: Path) -> None:
+    """[if] `[project] dynamic` lists `dependencies` or `optional-dependencies` [then]
+    UNKNOWN: the build backend supplies them at lock time (uv 0.8.17 resolves what it
+    emits and `uv lock --check` exits 1 against the lock the static lists left,
+    measured, Codex P2 on #3763, round 48), and this check never runs a backend, so
+    treating the absent static lists as empty had read the stale lock clean. CONTROL:
+    a dynamic version alone still compares."""
+    head, static = PYPROJECT.split("dependencies = [", 1)
+    assert "[project.optional-dependencies]" in static
+    dynamic_deps = head + 'dynamic = ["dependencies"]\n' + static.split("\n]\n", 1)[1]
+    assert "dependencies = [" not in dynamic_deps.split("[project.optional-dependencies]")[0]
+    dynamic_optional = PYPROJECT.split("[project.optional-dependencies]")[0].replace(
+        'version = "0.1.0"', 'version = "0.1.0"\ndynamic = ["optional-dependencies"]'
+    )
+    for pyproject, named in (
+        (dynamic_deps, "dynamic lists ['dependencies']"),
+        (dynamic_optional, "dynamic lists ['optional-dependencies']"),
+    ):
+        code, message = _run(tmp_path, pyproject, LOCK)
+        assert code == EXIT_UNKNOWN, (pyproject[:120], message)
+        assert named in message, message
+    code, message = _run(tmp_path, DYNAMIC, VERSIONLESS_LOCK)
+    assert code == EXIT_OK, message

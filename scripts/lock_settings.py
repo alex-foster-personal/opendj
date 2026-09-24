@@ -198,6 +198,20 @@ def settings_delta(
     return lines
 
 
+def refuse_dynamic_dependencies(project: dict[str, object]) -> None:
+    """`[project] dynamic` listing `dependencies` or `optional-dependencies` hands them
+    to the build backend at lock time (uv 0.8.17 resolves what the backend emits and
+    `uv lock --check` exits 1 against the lock the static lists left, measured round
+    48); this check never runs a backend, so it cannot see them: UNKNOWN."""
+    dynamic = toml_strings(project.get("dynamic", []), "[project] dynamic")
+    supplied = sorted({"dependencies", "optional-dependencies"} & set(dynamic))
+    if supplied:
+        raise Unknown(
+            f"[project] dynamic lists {supplied}: the build backend supplies them at lock"
+            " time and this check does not run it"
+        )
+
+
 def refuse_uv_toml(project_dir: Path) -> None:
     """A `uv.toml` beside the pyproject outranks `[tool.uv]` for every setting this
     check reads there (round 47): UNKNOWN."""
