@@ -13,6 +13,9 @@
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import { RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
+	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
+	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -204,14 +207,35 @@
 		title="Audio I/O"
 		bullets={ioBullets}
 		pinOnClick={true}
+		programmaticOpen={ioSurface.open}
+		onProgrammaticClose={closeIoView}
 		action={outputMenu}
 	>
 		<button
 			type="button"
 			class="hp-btn"
 			aria-label="SHOW AUDIO I/O"
-			aria-expanded={state.supported}
-			onclick={onacquire}>I/O</button
+			aria-expanded={state.supported || ioSurface.open}
+			onclick={() => {
+				openIoView();
+				onacquire();
+			}}>I/O</button
+		>
+	</ControlExplainer>
+	<ControlExplainer
+		title="MIDI"
+		bullets={['Open the MIDI panel to connect controllers and view the learn log.']}
+		showDelayMs={60}
+	>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-label="Open MIDI panel"
+			aria-expanded={midiUi.panelOpen}
+			onclick={() => {
+				openIoView();
+				if (!midiUi.panelOpen) toggleMidiPanel();
+			}}>MIDI</button
 		>
 	</ControlExplainer>
 	<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={60}>
@@ -219,8 +243,13 @@
 			type="button"
 			class="hp-btn"
 			aria-label="Rescan available headphone output devices"
-			onclick={onrefresh}>↻</button
+			onclick={onrefresh}
 		>
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+				<path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" />
+				<path d={RESCAN_ARROW_PATH} fill="currentColor" />
+			</svg>
+		</button>
 	</ControlExplainer>
 	{#if masterLabel !== null || selectedLabel !== null}
 		<ControlExplainer title="Pinned sinks" bullets={sinksBullets} showDelayMs={60}>

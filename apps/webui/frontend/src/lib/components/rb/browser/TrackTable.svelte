@@ -91,6 +91,10 @@
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 	import { trackCloudView } from './track-cloud-state';
+	import CloudStatusIcon from './CloudStatusIcon.svelte';
+	import MinorIssueSquare from './MinorIssueSquare.svelte';
+	import SortArrowIcon from './SortArrowIcon.svelte';
+	import { minorIssuesFor } from '$lib/rb/track-minor-issues';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -1014,7 +1018,7 @@
 		<span class="th-label">
 			<span>{label}</span>
 			{#if sortKey === key}
-				<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+				<SortArrowIcon asc={sortDir === 1} />
 			{/if}
 		</span>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1080,7 +1084,7 @@
 			title="Master track is above - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
 		>
-			▲ MASTER
+			<SortArrowIcon asc={true} /> MASTER
 		</button>
 	{/if}
 	{#if masterFold === 'below'}
@@ -1092,7 +1096,7 @@
 			title="Master track is below - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
 		>
-			▼ MASTER
+			<SortArrowIcon asc={false} /> MASTER
 		</button>
 	{/if}
 	{#if bodyOverlay !== undefined}
@@ -1303,7 +1307,7 @@
 								<span>K</span>
 							{/if}
 							{#if sortKey === 'key'}
-								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1343,7 +1347,7 @@
 								<span>B</span>
 							{/if}
 							{#if sortKey === 'bpm'}
-								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1355,7 +1359,33 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					{@render sortableTh('plays', '▶', 'plays')}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-plays"
+						class:h-icon={true}
+						class:sortable={true}
+						style={`width:${colWidths.plays}px`}
+						use:columnExplainer={{ text: columnHeaderTitle('plays', 'Sort by plays (asc → desc → clear)') }}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('plays');
+						}}
+					>
+						<span class="th-label"
+							><svg class="plays-icon" aria-hidden="true" viewBox="0 0 14 14"
+								><path d="M4 3 L4 13 L12 8 Z" fill="currentColor" /></svg
+							>{#if sortKey === 'plays'}<SortArrowIcon asc={sortDir === 1} />{/if}</span
+						>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'plays')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('rating', 'Rating', 'rating')}
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
@@ -1388,7 +1418,7 @@
 						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
 						aria-label="Energy 1-9, from Mixed In Key"
 					>
-						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg><span class="energy-glyph" aria-hidden="true">⚡</span>{#if sortKey === 'energy'}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}</span>
+						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>{#if sortKey === 'energy'}<SortArrowIcon asc={sortDir === 1} />{/if}</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1430,6 +1460,7 @@
 						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
+						folderPath: row.rb_meta?.folder_path ?? null,
 						transfer:
 							row.cloud_transfer === null || row.cloud_transfer === undefined
 								? null
@@ -1439,6 +1470,7 @@
 										bytesTotal: row.cloud_transfer.bytes_total
 									}
 					})}
+					{@const minorIssues = minorIssuesFor(row)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1516,43 +1548,8 @@
 						<td class="c-cloud">
 							{#if cloudView.showIcon}
 								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
-									{#if cloudView.kind === 'streaming'}
-										<span class="cloud" title={cloudView.title} aria-label={cloudView.title}>
-											<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-												<path
-													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
-													fill="currentColor"
-												/>
-											</svg>
-										</span>
-									{:else}
-										<span
-											class="cloud-copy"
-											class:not-on-cloud={cloudView.kind === 'not-on-cloud'}
-											class:on-cloud-not-local={cloudView.kind === 'on-cloud-not-local'}
-											class:on-cloud-and-local={cloudView.kind === 'on-cloud-and-local'}
-											title={cloudView.title}
-											aria-label={cloudView.title}
-										>
-											<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-												<path
-													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
-													fill={cloudView.kind === 'not-on-cloud' ? 'none' : 'currentColor'}
-													stroke="currentColor"
-													stroke-width="1.25"
-												/>
-												{#if cloudView.kind === 'not-on-cloud'}
-													<path
-														d="M3 13 13 3"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="1.5"
-														stroke-linecap="round"
-													/>
-												{/if}
-											</svg>
-										</span>
-									{/if}
+									<CloudStatusIcon view={cloudView} />
+									<MinorIssueSquare issues={minorIssues} />
 									{#if cloudView.transfer !== null}
 										<span
 											class="cloud-transfer-track"
@@ -2406,7 +2403,7 @@
 	 * and only shrink the glyphs once there is no gap left to give. Both
 	 * measure against --rating-w, which the cell publishes from colWidths -
 	 * state the table already owns, so no ResizeObserver and no layout read.
-	 * STAR_ADV (1.2em) is the ★ glyph's advance, which is wider than 1em; using
+	 * STAR_ADV (1.2em) is the filled star glyph's advance, which is wider than 1em; using
 	 * 1em here would under-measure and let the overflow back in. */
 	.c-rating {
 		--rating-avail: calc(var(--rating-w, 80px) - 2 * var(--tt-td-pad-x));

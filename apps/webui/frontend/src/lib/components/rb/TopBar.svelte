@@ -64,6 +64,10 @@
 		}
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
+	import { auth } from '$lib/auth.svelte';
+	import { openAccountOverlay } from '$lib/account/overlay.svelte';
+	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
@@ -80,9 +84,7 @@
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
 	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
 	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
-	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
-	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
-	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -243,19 +245,13 @@
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
-	/** MIDI label status (build unit: midi panel): grey = unsupported /
-	 * denied / idle, amber pulse = permission prompt pending, green = at
-	 * least one mapped device connected. Logic lives in midi-format.ts
-	 * (pure, unit-tested); this is just the reactive plumbing. */
-	const midiMappedCount = $derived(
-		midiState.devices.filter((d) => d.mapVendor !== null).length
-	);
-	const midiStatus = $derived(
-		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
-	);
-	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
-	const midiTitle = $derived(
-		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	const loginGatedBullets = [
+		'Google sign-in for account panel and CloudSync fleet adopt',
+		'Feedback pin sync across devices',
+		'CloudSync enrollment and remote library features'
+	];
+	const showClock = $derived(
+		auth.user !== null || cloudSyncChipState.value !== 'off'
 	);
 
 	// Re-run the access request on load IFF the user opted in before (persisted
@@ -634,20 +630,7 @@
 	</span>
 
 	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
-	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
-	<button
-		class="midi-label topbar-slot-midi"
-		class:st-grey={midiStatus === 'grey'}
-		class:st-green={midiStatus === 'green'}
-		class:st-amber={midiStatus === 'amber'}
-		class:st-red={midiStatus === 'red'}
-		title={midiTitle}
-		aria-label="MIDI panel"
-		aria-expanded={midiUi.panelOpen}
-		onclick={toggleMidiPanel}
-	>
-		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
-	</button>
+	<!-- MIDI moved to settings, I/O view, and bottom tray (issue #3886). -->
 
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
 	     Inert on a daemon with no jobs API, and the title says which. -->
@@ -819,16 +802,31 @@
 		{/if}
 	</button>
 
-	<!-- clock: REAL, local time HH:MM -->
-	<span class="clock">{clock}</span>
-
-	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
-	     reachable from performance mode too - the shell topbar is not
-	     rendered on this route. Sized down to fit --rb-topbar-h, and labelled
-	     because on this route it is the only sign-in affordance there is
-	     (issue #2357). -->
 	<CloudSyncStatusChip />
-	<UserBauble size={20} showLabel />
+	{#if auth.user}
+		<button
+			type="button"
+			class="account-btn"
+			aria-label="Open account panel"
+			title="Open account panel"
+			onclick={() => openAccountOverlay()}
+		>
+			Account
+		</button>
+	{/if}
+	<ControlExplainer
+		title={auth.user ? 'Signed-in features' : 'Sign in required'}
+		bullets={loginGatedBullets}
+		showDelayMs={60}
+	>
+		<span class="login-cluster" class:signed-in={auth.user !== null}>
+			<UserBauble size={20} showLabel={auth.user !== null} />
+		</span>
+	</ControlExplainer>
+	{#if showClock}
+		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
+		<span class="clock">{clock}</span>
+	{/if}
 </header>
 
 <CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
@@ -1051,7 +1049,6 @@
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),
-		.rb-topbar .topbar-slot-midi,
 		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
 	}
 	@media (max-width: 1023px) {
@@ -1549,5 +1546,21 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
+	}
+	.account-btn {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 999px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 8px;
+		cursor: pointer;
+	}
+	.account-btn:hover {
+		color: var(--rb-text);
+		border-color: var(--rb-text-dim);
+	}
+	.login-cluster.signed-in {
+		color: var(--rb-green);
 	}
 </style>

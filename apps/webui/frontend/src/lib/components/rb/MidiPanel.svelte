@@ -18,7 +18,14 @@
 	 */
 	import MidiDeviceList from '$lib/components/rb/midi/MidiDeviceList.svelte';
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
-	import { midiUi, requestMidiAccess, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import {
+		floatMidiPanel,
+		midiUi,
+		requestMidiAccess,
+		setMidiPanelWidthMode,
+		toggleMidiPanel,
+		toggleMidiPanelExpanded
+	} from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 
 	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {
@@ -39,10 +46,40 @@
 
 {#if midiUi.panelOpen}
 	<button class="midi-backdrop" aria-label="close MIDI panel" onclick={toggleMidiPanel}></button>
-	<div class="midi-drawer rb-panel" role="dialog" aria-label="MIDI devices and learn log">
+	<div
+		class="midi-drawer rb-panel"
+		class:expanded={midiUi.widthMode === 'expanded'}
+		class:floating={midiUi.widthMode === 'floating'}
+		role="dialog"
+		aria-label="MIDI devices and learn log"
+		data-width-mode={midiUi.widthMode}
+	>
 		<header class="drawer-head">
 			<span class="drawer-title">MIDI</span>
-			<button class="drawer-close" aria-label="close" onclick={toggleMidiPanel}>&times;</button>
+			<div class="drawer-actions">
+				<button
+					type="button"
+					class="drawer-action"
+					aria-label={midiUi.widthMode === 'expanded' ? 'compact width' : 'expand to 70% viewport'}
+					title={midiUi.widthMode === 'expanded' ? 'Compact width' : 'Expand to 70% viewport width'}
+					onclick={toggleMidiPanelExpanded}
+				>
+					{midiUi.widthMode === 'expanded' ? 'Compact' : 'Expand'}
+				</button>
+				<button
+					type="button"
+					class="drawer-action"
+					aria-label="float panel"
+					title="Float panel (non-oversized)"
+					onclick={() => {
+						if (midiUi.widthMode === 'floating') setMidiPanelWidthMode('compact');
+						else floatMidiPanel();
+					}}
+				>
+					{midiUi.widthMode === 'floating' ? 'Dock' : 'Float'}
+				</button>
+				<button class="drawer-close" aria-label="close" onclick={toggleMidiPanel}>&times;</button>
+			</div>
 		</header>
 
 		<section class="drawer-section">
@@ -99,6 +136,7 @@
 		bottom: 0;
 		z-index: 41;
 		width: min(420px, 92vw);
+		max-width: 70vw;
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -106,10 +144,39 @@
 		overflow-y: auto;
 		box-shadow: -6px 0 18px rgba(0, 0, 0, 0.5);
 	}
+	.midi-drawer.expanded {
+		width: 70vw;
+	}
+	.midi-drawer.floating {
+		top: calc(var(--rb-topbar-h) + 12px);
+		right: 12px;
+		bottom: auto;
+		max-height: min(80vh, 640px);
+		border-radius: 6px;
+		border: 1px solid var(--rb-border);
+	}
 	.drawer-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+	}
+	.drawer-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.drawer-action {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 6px;
+		cursor: pointer;
+	}
+	.drawer-action:hover {
+		color: var(--rb-text);
+		border-color: var(--rb-text-dim);
 	}
 	.drawer-title {
 		color: var(--rb-text);

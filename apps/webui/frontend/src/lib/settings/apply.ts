@@ -48,6 +48,10 @@ import {
 	wheelSensitivity,
 	type WheelInputKind
 } from '$lib/rb/wheel-adjust';
+import {
+	midiEnabledPersisted,
+	setMidiEnabledChoice
+} from '$lib/components/rb/midi/midi-ui-state.svelte';
 
 export const ALLOWED_SETTING_KEYS = [
 	'theme',
@@ -82,7 +86,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
 	'perf_tier',
-	'app_posture'
+	'app_posture',
+	'rb.midi_enabled'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -161,6 +166,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.perf_tier;
 		case 'app_posture':
 			return uiPrefs.app_posture;
+		case 'rb.midi_enabled':
+			return midiEnabledPersisted();
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -313,6 +320,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setAppPosture(value as AppPosturePref);
 			return;
 		}
+		case 'rb.midi_enabled':
+			setMidiEnabledChoice(_asBool(value, key));
+			return;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);

@@ -87,8 +87,11 @@ function _reloadInstalledMapsAfterLibraryChange(): void {
 // because this is the one call site that attaches it.
 let _detachMidiGlue: (() => void) | null = null;
 
+export type MidiPanelWidthMode = 'compact' | 'expanded' | 'floating';
+
 export const midiUi: {
 	panelOpen: boolean;
+	widthMode: MidiPanelWidthMode;
 	requestPending: boolean;
 	/** Last permission-request failure, shown red in the panel. null = none. */
 	lastError: string | null;
@@ -102,6 +105,7 @@ export const midiUi: {
 	installedMapsError: string | null;
 } = $state({
 	panelOpen: false,
+	widthMode: 'compact' as MidiPanelWidthMode,
 	requestPending: false,
 	lastError: null,
 	logPopoutOpen: false,
@@ -111,6 +115,18 @@ export const midiUi: {
 
 export function toggleMidiPanel(): void {
 	midiUi.panelOpen = !midiUi.panelOpen;
+}
+
+export function setMidiPanelWidthMode(mode: MidiPanelWidthMode): void {
+	midiUi.widthMode = mode;
+}
+
+export function toggleMidiPanelExpanded(): void {
+	midiUi.widthMode = midiUi.widthMode === 'expanded' ? 'compact' : 'expanded';
+}
+
+export function floatMidiPanel(): void {
+	midiUi.widthMode = 'floating';
 }
 
 // -------------------------------------------------------- learn-log pop-out

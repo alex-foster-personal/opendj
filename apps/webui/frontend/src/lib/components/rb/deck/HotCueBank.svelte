@@ -25,7 +25,8 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { PAD_MODE_CATALOG, padModeMenuLabel } from '$lib/rb/pad-mode-catalog';
+	import { pushToast } from '$lib/stores.svelte';
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
@@ -33,6 +34,13 @@
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
+
+	let padMenuOpen = $state(false);
+
+	function onPadModeSelect(built: boolean): void {
+		padMenuOpen = false;
+		if (!built) pushToast('not built yet', 'info');
+	}
 
 	let {
 		deck,
@@ -391,9 +399,34 @@
 			</div>
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={plannedTitle('hot-cue-menu')} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
-		HOT CUE <span class="caret">&#9662;</span>
-	</button>
+	<span class="pad-menu-wrap">
+		<button
+			class="rb-lit-button dropdown"
+			aria-label={`hot cue menu deck ${deck.deck_id}`}
+			aria-expanded={padMenuOpen}
+			data-testid={`hot-cue-menu-deck-${deck.deck_id}`}
+			onclick={() => (padMenuOpen = !padMenuOpen)}
+		>
+			HOT CUE <span class="caret">&#9662;</span>
+		</button>
+		{#if padMenuOpen}
+			<div class="pad-menu" role="menu">
+				{#each PAD_MODE_CATALOG as entry (entry.id)}
+					<button
+						type="button"
+						class="pad-menu-item"
+						class:rb-inert={!entry.built}
+						role="menuitem"
+						data-pad-mode={entry.id}
+						data-built={entry.built}
+						onclick={() => onPadModeSelect(entry.built)}
+					>
+						{padModeMenuLabel(entry)}
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</span>
 	{#if undo !== null}
 		<!-- Undo is frequently the control a DJ clicks to LEAVE the open cue-name
 		input, and that click's mousedown blurs the input, which starts the
@@ -592,5 +625,39 @@
 	}
 	.caret {
 		color: var(--rb-text-dim);
+	}
+	.pad-menu-wrap {
+		position: relative;
+		align-self: flex-start;
+	}
+	.pad-menu {
+		position: absolute;
+		left: 0;
+		top: calc(100% + 4px);
+		z-index: 20;
+		min-width: 180px;
+		background: var(--rb-panel);
+		border: 1px solid var(--rb-border);
+		border-radius: 4px;
+		padding: 4px 0;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+	}
+	.pad-menu-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: transparent;
+		border: none;
+		color: var(--rb-text);
+		font-size: 11px;
+		padding: 5px 10px;
+		cursor: pointer;
+	}
+	.pad-menu-item:hover:not(.rb-inert) {
+		background: rgba(255, 255, 255, 0.06);
+	}
+	.pad-menu-item.rb-inert {
+		opacity: 0.55;
+		cursor: default;
 	}
 </style>

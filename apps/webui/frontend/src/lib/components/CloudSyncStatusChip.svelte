@@ -14,6 +14,7 @@
 		chipState as chipStateOf,
 		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
+	import { publishCloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 
 	let status = $state<CloudSyncStatus | null>(null);
 	let loadError = $state<string | null>(null);
@@ -31,8 +32,10 @@
 		try {
 			status = await getStatus();
 			loadError = null;
+			publishCloudSyncChipState(status);
 		} catch (error: unknown) {
 			loadError = error instanceof Error ? error.message : String(error);
+			publishCloudSyncChipState(null);
 		}
 	}
 
