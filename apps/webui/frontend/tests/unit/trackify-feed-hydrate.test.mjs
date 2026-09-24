@@ -172,6 +172,109 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		assert.equal(fetchCount, 2, 'no further fetch should fire beyond the rescheduled one');
 	});
 
+	it('a scope switch during a REJECTED fetch also reschedules immediately, not after the 60 s interval (Sol review, PR #3676)', async () => {
+		const held = gate();
+		const fetchedUrls = [];
+		// Branches on the URL rather than call order: an unrelated background
+		// fetch (settings/machine-name -- the same pre-existing, documented
+		// third-fetch noise a prior attempt at a sibling fix hit, see
+		// .planning/debt/3676.md) can land at any point in this module's
+		// lifecycle and must not desynchronize which response this test's
+		// two REAL trackify requests receive.
+		globalThis.fetch = async (url) => {
+			const urlStr = String(url);
+			fetchedUrls.push(urlStr);
+			if (urlStr.includes('/api/v1/tracks')) {
+				await held.promise;
+				throw new Error('network error fetching all_tracks');
+			}
+			if (urlStr.includes('/api/v1/playlists/')) {
+				return new Response(
+					JSON.stringify({
+						tracks: [{ stable_id: 'p1-row', key: '8A', bpm: 120, file_exists: true }],
+						total: 1,
+						next_offset: null
+					}),
+					{ status: 200, headers: { 'content-type': 'application/json', etag: 'p1-etag' } }
+				);
+			}
+			throw new Error(`unrelated fetch outside this test's scope: ${urlStr}`);
+		};
+		const trackifyFetches = () =>
+			fetchedUrls.filter((u) => u.includes('/api/v1/tracks') || u.includes('/api/v1/playlists/'));
+
+		mod.uiPrefs.last_playlist = null; // all_tracks scope
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(trackifyFetches().length, 1, 'the initial hydrate must have started its fetch');
+
+		// Switch scope while that fetch is still in flight, then let it
+		// reject outright (unlike the sibling test above, where it resolves
+		// for the stale scope).
+		mod.uiPrefs.last_playlist = { playlist_id: 'p1', name: 'Warmup', kind: 'playlist' };
+		held.release();
+		await settle();
+		await settle();
+
+		// The bug this guards against (Sol review round 12, PR #3676): the
+		// rejection path never set the old `rehydrateForNewScope` flag (only
+		// the try's success path could), so a scope switch during a FAILING
+		// fetch sat on the stale snapshot until the 60 s interval. Without
+		// any further passage of time, a second fetch must already have
+		// gone out for the new scope.
+		assert.equal(
+			trackifyFetches().length,
+			2,
+			'a rejected stale-scope fetch must immediately schedule a hydrate for the current scope'
+		);
+		assert.match(
+			trackifyFetches()[1],
+			/playlists\/p1/,
+			'the rescheduled hydrate must fetch the NEWLY selected scope, not repeat the old one'
+		);
+
+		await settle();
+		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['p1-row']);
+
+		for (let i = 0; i < 5; i += 1) await settle();
+		assert.equal(trackifyFetches().length, 2, 'no further fetch should fire beyond the rescheduled one');
+	});
+
+	it('control: a rejected fetch for a scope that has NOT changed does not reschedule early (waits for the 60 s interval)', async () => {
+		const held = gate();
+		const fetchedUrls = [];
+		globalThis.fetch = async (url) => {
+			const urlStr = String(url);
+			fetchedUrls.push(urlStr);
+			if (urlStr.includes('/api/v1/tracks')) {
+				await held.promise;
+				throw new Error('network error');
+			}
+			throw new Error(`unrelated fetch outside this test's scope: ${urlStr}`);
+		};
+		const trackifyFetches = () => fetchedUrls.filter((u) => u.includes('/api/v1/tracks'));
+
+		mod.uiPrefs.last_playlist = null;
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(trackifyFetches().length, 1, 'the initial hydrate must have started its fetch');
+
+		// Nothing changes the selection this time -- only the fetch fails.
+		held.release();
+		await settle();
+		await settle();
+
+		// Control for the overshoot direction: a fix that reschedules on
+		// EVERY rejection (not just one that raced a scope change) would
+		// busy-loop retrying the same failing scope instead of waiting for
+		// the 60 s interval like every other same-scope failure.
+		assert.equal(
+			trackifyFetches().length,
+			1,
+			'a same-scope rejection must not trigger an immediate retry of its own accord'
+		);
+	});
+
 	it('control: an unchanged playlist selection still publishes normally once its own fetch resolves', async () => {
 		const held = gate();
 		globalThis.fetch = async () => {
