@@ -182,27 +182,37 @@ def _paginated_runs(
     20 over 15). Reading that as a paging defect made the sweeper red with every
     test job green (main runs 35730977563, 35723785363, 35722075764 and
     35721772426 that day, 4 of its 11 red runs in the last 30), and listing again
-    (#3825) did not cure it. So the pages are the census and the count is only a
-    warning: paging stops at the first page shorter than PAGE_SIZE, which is
-    complete by construction, and a run the queue gained or lost meanwhile only
-    lowers the cancellation count (it is never cancelled by mistake, because a
-    run is cancelled only when its head_sha is not retained, and an unlisted run
-    cannot be retained). `fetch_json` is the GitHub GET; a test hands in captured
-    real payloads keyed by the path this asks (no monkeypatching)."""
+    (#3825) did not cure it.
+
+    A SINGLE page shorter than PAGE_SIZE is complete by construction, so it is the
+    census and a disagreeing count is only a warning. Across MORE than one page a
+    disagreement can also mean the queue moved between page requests, and offset
+    paging then skips or repeats a run at the boundary; a skipped CI run whose SHA
+    should be retained would let a bookkeeping run sharing that SHA be cancelled,
+    so a moving multi-page census stays fail-closed (PreconditionError, exit 10).
+    `fetch_json` is the GitHub GET; a test hands in captured real payloads keyed by
+    the path this asks (no monkeypatching)."""
     fetch = _gh_api_json if fetch_json is None else fetch_json
-    runs, total_count = _list_runs_once(path, fetch)
-    if len(runs) != total_count:
-        print(
-            f"[WARN] {path} reported total_count={total_count} but its pages hold"
-            f" {len(runs)} runs; the count lags the listing, the pages are the census",
-            file=sys.stderr,
+    runs, total_count, pages = _list_runs_once(path, fetch)
+    if len(runs) == total_count:
+        return runs
+    if pages > 1:
+        raise PreconditionError(
+            f"{path} reported total_count={total_count} but {pages} pages hold {len(runs)} runs;"
+            " the queue moved between page requests, so this census could have skipped a run"
         )
+    print(
+        f"[WARN] {path} reported total_count={total_count} but its single page holds"
+        f" {len(runs)} runs; the count lags the listing, the page is the census",
+        file=sys.stderr,
+    )
     return runs
 
 
 def _list_runs_once(
     path: str, fetch_json: Callable[[str], object]
-) -> tuple[list[QueuedRun], int]:
+) -> tuple[list[QueuedRun], int, int]:
+    """The runs, the total_count page 1 reported, and how many pages were read."""
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
@@ -218,9 +228,8 @@ def _list_runs_once(
         page_items = payload["workflow_runs"]
         runs.extend(_parse_queued_run(item) for item in page_items)
         if len(page_items) < PAGE_SIZE:
-            break
+            return runs, total_count, page
         page += 1
-    return runs, total_count
 
 
 def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:
