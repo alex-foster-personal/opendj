@@ -28,6 +28,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "next_only_filter",
         "remixes_filter",
         "vocals_filter",
+        "available_offline_filter",
         "midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",

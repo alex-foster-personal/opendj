@@ -26,6 +26,7 @@ import {
 	setLyricsLoadStrategy,
 	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
+	setAvailableOfflineFilter,
 	setAppPosture,
 	setPerfTier,
 	setRemixesFilter,
@@ -61,6 +62,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'next_only_filter',
 	'remixes_filter',
 	'vocals_filter',
+	'available_offline_filter',
 	'lyrics_global',
 	'lyrics_library_col',
 	'lyrics_hover_scrub',
@@ -115,6 +117,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.remixes_filter;
 		case 'vocals_filter':
 			return uiPrefs.vocals_filter;
+		case 'available_offline_filter':
+			return uiPrefs.available_offline_filter;
 		case 'lyrics_global':
 			return uiPrefs.lyrics_global;
 		case 'lyrics_library_col':
@@ -210,6 +214,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'vocals_filter':
 			setVocalsFilter(_asBool(value, key));
+			return;
+		case 'available_offline_filter':
+			setAvailableOfflineFilter(_asBool(value, key));
 			return;
 		case 'lyrics_global':
 			setLyricsGlobal(_asBool(value, key));

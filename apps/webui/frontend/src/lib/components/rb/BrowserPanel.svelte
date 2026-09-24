@@ -147,6 +147,7 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setAvailableOfflineFilter,
 		setRemixesFilter,
 		setVocalsFilter,
 		uiPrefs,
@@ -204,6 +205,8 @@
 		makeClientRowProvider,
 		multiPanePlaylistIds,
 		reconcileBootSnapshot,
+		canAddPaneSlot,
+		MAX_PANE_SLOTS,
 		reorderPanesInPlace,
 		parseLv1,
 		resolveBootPlaylist,
@@ -211,6 +214,7 @@
 		shouldRetryBootPane,
 		writeLv1,
 		rowHasVocalLyrics,
+		rowIsLocallyAvailable,
 		rowIsRemix,
 		sortRows,
 		visibleRowsOf,
@@ -262,12 +266,7 @@
 	// 4 independent PaneStore instances - selection, search, sort, and
 	// scroll cursor per pane survive tab switches. Only the active pane
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
-	const panes: PaneStore[] = [
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore()
-	];
+	const panes: PaneStore[] = [createPaneStore()];
 	let activePane = $state(0);
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
@@ -602,6 +601,7 @@
 		let out = rows;
 		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
 		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		if (uiPrefs.available_offline_filter) out = out.filter(rowIsLocallyAvailable);
 		return out;
 	}
 
@@ -1407,7 +1407,7 @@
 		const target = resolveNewTabIndex(panes);
 		if (target === null) {
 			pushToast(
-				'ALL 4 LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist',
+				`ALL ${MAX_PANE_SLOTS} LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist`,
 				'error'
 			);
 			return;
@@ -1435,6 +1435,12 @@
 	function togglePaneSticky(index: number): void {
 		if (index < 0 || index >= panes.length) return;
 		panes[index].sticky = !panes[index].sticky;
+	}
+
+	function addBlankPaneSlot(): void {
+		if (!canAddPaneSlot(panes.length)) return;
+		panes.push(createPaneStore());
+		activePane = panes.length - 1;
 	}
 
 	function reorderPaneTabs(from: number, to: number): void {
@@ -3163,8 +3169,10 @@
 				onreorder={reorderPaneTabs}
 				ondropplaylist={dropPlaylistOnTabBar}
 				onsaveas={(i) => void saveAsPlaylistUi(i)}
+				onaddpane={addBlankPaneSlot}
 			/>
 			<div class="header-right">
+				<div class="header-controls-cluster">
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
@@ -3280,6 +3288,18 @@
 					/>
 					<span>compatible</span>
 				</label>
+				<label
+					class="offline-filter"
+					title="Keep only tracks with local audio present (excludes cloud-only and streaming rows)"
+				>
+					<input
+						type="checkbox"
+						aria-label="Available offline - keep only tracks with local audio present"
+						checked={uiPrefs.available_offline_filter}
+						onchange={(e) => setAvailableOfflineFilter(e.currentTarget.checked)}
+					/>
+					<span>available offline</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -3319,9 +3339,14 @@
 						onfocuschange={(f) => (searchFocused = f)}
 					/>
 				</div>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
-				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+				</div>
+				<div class="edit-actions-stack">
+					<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
+					<div class="edit-actions-fold">
+						<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
+						<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+					</div>
+				</div>
 			</div>
 		</div>
 		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
@@ -3617,21 +3642,32 @@
 	}
 	.header-right {
 		display: flex;
-		align-items: center;
-		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
-		   the 190px AddTrackSearch alongside these controls, and .list-panel
-		   is overflow: hidden, so a non-wrapping row silently clipped its
-		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
-		   running past the edge visibly. Bot review, PR #1672.
-		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
-		   `flex: none` this box sized to max-content, so `flex-wrap` had no
-		   narrower width to wrap INTO and did nothing at all. */
-		flex-wrap: wrap;
-		row-gap: 3px;
+		align-items: flex-start;
 		gap: 4px;
 		padding: 0 6px;
 		flex: 0 1 auto;
 		min-width: 0;
+	}
+	.header-controls-cluster {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: center;
+		gap: 4px;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.edit-actions-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex: none;
+	}
+	.edit-actions-fold {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -3658,6 +3694,8 @@
 		flex-direction: column;
 		align-items: flex-end;
 		gap: 3px;
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.search-options {
 		display: flex;
@@ -3672,7 +3710,8 @@
 	.hide-broken,
 	.next-only,
 	.remixes-filter,
-	.vocals-filter {
+	.vocals-filter,
+	.offline-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3684,13 +3723,15 @@
 	.hide-broken:hover,
 	.next-only:hover,
 	.remixes-filter:hover,
-	.vocals-filter:hover {
+	.vocals-filter:hover,
+	.offline-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
 	.next-only input,
 	.remixes-filter input,
-	.vocals-filter input {
+	.vocals-filter input,
+	.offline-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3746,7 +3787,7 @@
 			max-height: 24px;
 			overflow: hidden;
 		}
-		.header-right {
+		.header-controls-cluster {
 			flex-wrap: nowrap;
 		}
 	}
