@@ -166,6 +166,25 @@ OWNERSHIP_RULES: list[OwnershipRule] = [
     ),
     OwnershipRule(
         "*",
+        r"^com\.af\.dmg-smoke$",
+        "build",
+        "builds, launches and library-attach-smokes the signed desktop dmg on a cadence "
+        "(DEVOPS-04, ops/dmg-smoke/)",
+    ),
+    OwnershipRule(
+        "*",
+        r"^com\.af\.perf-kpi-nightly$",
+        "perf",
+        "nightly deck-load perf KPI capture + ledger PR (DEVOPS-08, issue #1506)",
+    ),
+    OwnershipRule(
+        "*",
+        r"^com\.af\.perf-kpi-health$",
+        "perf",
+        "10-minute live preview-engine health probe + bounded restart (DEVOPS-08, issue #1506)",
+    ),
+    OwnershipRule(
+        "*",
         r"^application\.com\.opendj\.desktop\.",
         "desktop-app",
         "running instance of the packaged Open DJ desktop app (Tauri bundle id com.opendj.desktop)",

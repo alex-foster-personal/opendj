@@ -20,6 +20,12 @@ CEILING_FACTOR = 3.0
 CEILING_WINDOW_DAYS = 7
 LEDGER_PR_TITLE = "perf(kpi): nightly ledger"
 LEDGER_PR_BRANCH = "perf/kpi-nightly-ledger"
+#: A dedicated worktree for the ledger PR's git operations (issue #1506 /
+#: PR #3827 review): the nightly launchd job shares REPO_ROOT with whatever
+#: checkout is installed on that machine, so its ``git checkout -B`` must
+#: never run there directly -- that would switch branches out from under an
+#: operator's or agent's in-progress work.
+LEDGER_WORKTREE_DIR = DEFAULT_STATE_DIR / "ledger-worktree"
 
 
 @dataclass(frozen=True)
@@ -96,9 +102,7 @@ def load_config() -> PerfKpiConfig:
         health_log=state_dir / "health.jsonl",
         history_log=state_dir / "history.jsonl",
         health_state=state_dir / "health-state.json",
-        preview_health_url=(
-            _env("MDT_PERF_KPI_PREVIEW_HEALTH_URL") or DEFAULT_PREVIEW_HEALTH_URL
-        ),
+        preview_health_url=(_env("MDT_PERF_KPI_PREVIEW_HEALTH_URL") or DEFAULT_PREVIEW_HEALTH_URL),
         preview_engine_label=(
             _env("MDT_PERF_KPI_PREVIEW_ENGINE_LABEL") or DEFAULT_PREVIEW_ENGINE_LABEL
         ),
