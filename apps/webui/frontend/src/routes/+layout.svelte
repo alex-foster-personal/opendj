@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
-	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
+	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
@@ -45,11 +45,25 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
-	import FeedbackPinLayer from '$lib/components/rb/FeedbackPinLayer.svelte';
-	import FeedbackPinShellButton from '$lib/components/rb/FeedbackPinShellButton.svelte';
-	import { installCommentPinHotkeys } from '$lib/rb/comment-pin-hotkeys';
+	import type { Component } from 'svelte';
+	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 
 	let { children } = $props();
+
+	// The comment-pin layer (markers, the reopened card, the draft bubble) and
+	// the topbar pin button are imported inside a deferred boot task, like the
+	// consent dialog: static imports charged them, the feedback store and its
+	// helpers to the library page's first-paint budget (#3892 put it at 268,926
+	// against 258,048). Nothing is lost by the wait: the layer is what hydrates
+	// the store, and until it has, the store reports 'unknown' and arming is a
+	// no-op, so the button could only have said "probing" and done nothing.
+	// The `m` hotkey is installed by the same task for the same reason: arming
+	// is a no-op before the layer has hydrated the store, so an earlier
+	// listener could only have swallowed the key and done nothing with it.
+	let FeedbackPinLayer: Component | null = $state(null);
+	let FeedbackPinShellButton: Component | null = $state(null);
+	/** Why the pin shell never arrived, or null while it is loading or loaded. */
+	let pinShellError: string | null = $state(null);
 
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
@@ -170,7 +184,21 @@
 		const stopInstruments = startAppInstruments();
 		const uninstallShellNavigation = installShellNavigationPoll();
 		const uninstallShellCommands = installShellCommandPoll();
-		const uninstallCommentPinHotkeys = installCommentPinHotkeys();
+		let unmounted = false;
+		let uninstallCommentPinHotkeys: (() => void) | null = null;
+		deferFeedbackPinShell(
+			(shell) => {
+				if (unmounted) return;
+				FeedbackPinLayer = shell.layer;
+				FeedbackPinShellButton = shell.shellButton;
+				uninstallCommentPinHotkeys = shell.installCommentPinHotkeys();
+			},
+			(error) => {
+				if (unmounted) return;
+				pinShellError = error instanceof Error ? error.message : String(error);
+				pushToast(`Comment pins failed to load: ${pinShellError}`, 'error', TOAST_DEFAULT_MS, error);
+			}
+		);
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
@@ -179,7 +207,8 @@
 			stopInstruments();
 			uninstallShellNavigation();
 			uninstallShellCommands();
-			uninstallCommentPinHotkeys();
+			unmounted = true;
+			uninstallCommentPinHotkeys?.();
 			clearInterval(id);
 		};
 	});
@@ -260,7 +289,19 @@
 				{/if}
 			</div>
 			<CloudSyncStatusChip />
-			<FeedbackPinShellButton />
+			{#if FeedbackPinShellButton}
+				<FeedbackPinShellButton />
+			{:else if pinShellError}
+				<span
+					class="fb-shell-pin-slot fb-shell-pin-failed"
+					role="img"
+					aria-label="Comment pins failed to load"
+					title={`Comment pins failed to load: ${pinShellError}. Reload the page to retry.`}>!</span
+				>
+			{:else}
+				<!-- Holds the button's 28px so the topbar does not shift when it arrives. -->
+				<span class="fb-shell-pin-slot" aria-hidden="true"></span>
+			{/if}
 			<UserBauble />
 		</div>
 		<div class="content">
@@ -313,7 +354,9 @@
      first-paint path or in the library page's bundle budget. -->
 
 <ToastStack items={toasts} />
-<FeedbackPinLayer />
+{#if FeedbackPinLayer}
+	<FeedbackPinLayer />
+{/if}
 <BrandLaunch />
 
 <style>
@@ -371,5 +414,18 @@
 	.status-strip .sep {
 		flex: none;
 		white-space: pre;
+	}
+	/* Same box as FeedbackPinShellButton's .fb-shell-pin, empty until it loads. */
+	.fb-shell-pin-slot {
+		flex: none;
+		width: 28px;
+		height: 28px;
+	}
+	.fb-shell-pin-failed {
+		display: grid;
+		place-items: center;
+		color: var(--danger);
+		font-weight: 700;
+		cursor: help;
 	}
 </style>
