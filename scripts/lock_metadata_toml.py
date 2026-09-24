@@ -332,10 +332,26 @@ def dependency_records(entry: dict, name: str, packages: dict[str, list[dict]]) 
     `source` pick one of two, and an extra that nothing provides or is not normalized
     are read. The marker is parsed, not compared: only the root's requirements are
     compared by meaning."""
-    if "dependencies" not in entry:
-        return
-    where = f"uv.lock [[package]] {name!r} dependencies"
-    for record in toml_list(entry["dependencies"], where):
+    where = f"uv.lock [[package]] {name!r}"
+    if "dependencies" in entry:
+        _dependency_list(entry["dependencies"], f"{where} dependencies", packages)
+    # `[package.optional-dependencies]` and `[package.dev-dependencies]` hold the same
+    # records per extra or group, on ANY package: `format = {}`, `[1]`, `[{}]`,
+    # `[{ name = 1 }]`, a name no package carries, `marker = "bad"`, a group named
+    # `"bad space"` and a bare `= "bad"` are each "Failed to parse `uv.lock`", exit 2,
+    # while `format = []` and a record naming a package are read (round 44).
+    for key in ("optional-dependencies", "dev-dependencies"):
+        if key not in entry:
+            continue
+        table = entry[key]
+        if not isinstance(table, dict):
+            raise Unknown(f"{where} {key} = {table!r} is not a table; uv rejects the file")
+        for group, records in table.items():
+            _dependency_list(records, f"{where} {key} {norm_name(group)}", packages)
+
+
+def _dependency_list(records: object, where: str, packages: dict[str, list[dict]]) -> None:
+    for record in toml_list(records, where):
         if not isinstance(record, dict) or "name" not in record:
             raise Unknown(f"{where} record {record!r} is not a table with a name")
         dep = norm_name(toml_string(record["name"], f"{where} name"))

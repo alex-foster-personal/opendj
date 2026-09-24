@@ -252,3 +252,88 @@ def test_a_dependency_record_that_matches_no_single_package_is_unknown(
         lock = UNMARKED_LOCK.replace(SIX_DEP, f"dependencies = [\n    {control},\n]") + extra
         code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
         assert code == EXIT_OK, (control, message)
+
+
+@pytest.mark.parametrize(
+    ("appended", "named"),
+    [
+        ('optional-dependencies = "bad"\n', "optional-dependencies = 'bad' is not a table"),
+        (
+            "[package.optional-dependencies]\nformat = {}\n",
+            "optional-dependencies format = {} is not a list",
+        ),
+        ("[package.optional-dependencies]\nformat = [1]\n", "record 1 is not a table with a name"),
+        (
+            "[package.optional-dependencies]\nformat = [{}]\n",
+            "record {} is not a table with a name",
+        ),
+        ("[package.optional-dependencies]\nformat = [{ name = 1 }]\n", "name = 1 is not a string"),
+        (
+            '[package.optional-dependencies]\nformat = [{ name = "bad space" }]\n',
+            "'bad space' is not a valid package or extra name",
+        ),
+        (
+            '[package.optional-dependencies]\nformat = [{ name = "seven" }]\n',
+            "names 'seven', which no [[package]] of the lock carries",
+        ),
+        (
+            '[package.optional-dependencies]\nformat = [{ name = "demo", marker = "bad" }]\n',
+            "optional-dependencies format 'demo' marker: marker ends early",
+        ),
+        (
+            '[package.optional-dependencies]\n"bad space" = []\n',
+            "'bad space' is not a valid package or extra name",
+        ),
+        ('dev-dependencies = "bad"\n', "dev-dependencies = 'bad' is not a table"),
+        ("[package.dev-dependencies]\ndev = {}\n", "dev-dependencies dev = {} is not a list"),
+        (
+            '[package.dev-dependencies]\ndev = [{ name = "seven" }]\n',
+            "names 'seven', which no [[package]] of the lock carries",
+        ),
+        ('[package.dev-dependencies]\n"bad space" = []\n', "'bad space' is not a valid package"),
+    ],
+    ids=[
+        "optional-string",
+        "optional-group-table",
+        "optional-int-record",
+        "optional-nameless",
+        "optional-name-int",
+        "optional-name-invalid",
+        "optional-unknown-package",
+        "optional-marker-bad",
+        "optional-group-invalid",
+        "dev-string",
+        "dev-group-table",
+        "dev-unknown-package",
+        "dev-group-invalid",
+    ],
+)
+def test_a_package_optional_or_dev_dependency_map_that_uv_cannot_read_is_unknown(
+    tmp_path: Path, appended: str, named: str
+) -> None:
+    """`[package.optional-dependencies]` and `[package.dev-dependencies]` on any
+    package hold dependency records per extra or group; each shape is "Failed to parse
+    `uv.lock`", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round
+    44), while the record loop had read only `dependencies`."""
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + appended)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message, message
+
+
+@pytest.mark.parametrize(
+    "appended",
+    [
+        "[package.optional-dependencies]\nformat = []\n",
+        '[package.optional-dependencies]\nformat = [{ name = "demo" }]\n',
+        '[package.optional-dependencies]\nformat = [{ name = "SIX" }]\n',
+        "[package.dev-dependencies]\ndev = []\n",
+        '[package.dev-dependencies]\ndev = [{ name = "demo" }]\n',
+    ],
+    ids=["optional-empty", "optional-record", "optional-unnormalized", "dev-empty", "dev-record"],
+)
+def test_a_package_optional_or_dev_dependency_map_uv_reads_keeps_the_verdict(
+    tmp_path: Path, appended: str
+) -> None:
+    """CONTROLS for the guard above, each `uv lock --check` exit 0 (measured 0.8.17)."""
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + appended)
+    assert code == EXIT_OK, message

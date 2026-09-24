@@ -245,3 +245,74 @@ def test_a_setting_shape_uv_refuses_or_drops_is_unknown(
     code, message = _run(tmp_path, *_pair(settings, recorded))
     assert code == EXIT_UNKNOWN, message
     assert named in message, message
+
+
+PROVIDES = 'provides-extras = ["ok"]\n'
+
+
+def _dev_pair(settings: str | None, groups: str | None, recorded: str | None) -> tuple[str, str]:
+    pyproject = UNMARKED_PYPROJECT
+    if settings is not None:
+        pyproject += f"[tool.uv]\ndev-dependencies = {settings}\n"
+    if groups is not None:
+        pyproject += f"[dependency-groups]\ndev = {groups}\n"
+    assert UNMARKED_LOCK.count(PROVIDES) == 1
+    lock = UNMARKED_LOCK.replace(
+        PROVIDES,
+        PROVIDES
+        + ("" if recorded is None else f"\n[package.metadata.requires-dev]\ndev = {recorded}\n"),
+    )
+    return pyproject, lock
+
+
+@pytest.mark.parametrize(
+    ("settings", "groups", "recorded", "code"),
+    [
+        ('["six"]', None, None, EXIT_STALE),
+        ('["six"]', None, '[{ name = "six" }]', EXIT_OK),
+        ('["six"]', '["seven"]', '[{ name = "seven" }, { name = "six" }]', EXIT_OK),
+        ('["six"]', '["seven"]', '[{ name = "seven" }]', EXIT_STALE),
+        ("[]", None, "[]", EXIT_OK),
+        ("[]", None, None, EXIT_STALE),
+        ('["six"]', '["six"]', '[{ name = "six" }]', EXIT_OK),
+    ],
+    ids=[
+        "unlocked",
+        "locked",
+        "merged-with-group",
+        "group-only-locked",
+        "empty-locked",
+        "empty-unlocked",
+        "duplicate-once",
+    ],
+)
+def test_legacy_dev_dependencies_are_the_dev_group(
+    tmp_path: Path, settings: str, groups: str | None, recorded: str | None, code: int
+) -> None:
+    """`[tool.uv] dev-dependencies` is recorded as the `dev` group beside any
+    `[dependency-groups] dev`, a duplicate once and an empty list as `dev = []`: each
+    STALE pair is `uv lock --check` exit 1 and each OK pair exit 0 (measured uv 0.8.17,
+    Codex P2 on #3763, round 44); the comparison had read only `[dependency-groups]`."""
+    got, message = _run(tmp_path, *_dev_pair(settings, groups, recorded))
+    assert got == code, message
+    if code == EXIT_STALE:
+        assert "dependency group 'dev'" in message
+
+
+@pytest.mark.parametrize(
+    ("settings", "named"),
+    [
+        ('"bad"', "[tool.uv] dev-dependencies = 'bad' is not a list of strings"),
+        ("[1]", "[tool.uv] dev-dependencies = [1] is not a list of strings"),
+        ('["bad space"]', "unparseable"),
+    ],
+    ids=["string", "int-item", "bad-name"],
+)
+def test_a_legacy_dev_dependency_uv_cannot_read_is_unknown(
+    tmp_path: Path, settings: str, named: str
+) -> None:
+    """`dev-dependencies = "bad"`, `[1]` and `["bad space"]` are "Failed to parse:
+    `pyproject.toml`", `uv lock --check` exit 2 (measured uv 0.8.17, round 44)."""
+    got, message = _run(tmp_path, *_dev_pair(settings, None, None))
+    assert got == EXIT_UNKNOWN, message
+    assert named in message, message
