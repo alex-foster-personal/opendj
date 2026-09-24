@@ -3,6 +3,7 @@
  */
 import { deckAudioClockPositionMs, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
+import { currentGigRuntimeGeneration } from '$lib/rb/library-mode-runtime';
 import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -185,9 +186,22 @@ let _lastDispatchedGeneration = -1;
 async function _retireSupersededLoad(
 	deck: DeckId,
 	nextId: string,
-	generation: number
+	generation: number,
+	ownRuntimeGeneration: number
 ): Promise<void> {
 	if (generation !== _lastDispatchedGeneration) return;
+	// A stale retirement must not unload once a DIFFERENT session (Gig, or a
+	// remounted Trackify) has since claimed this shared deck id --
+	// `currentGigRuntimeGeneration()` only changes when a session actually
+	// MOUNTS and claims it (unlike `_installEpoch`, which also bumps on this
+	// session's own teardown even when nobody else has claimed the deck yet,
+	// a case the existing "late completion only retires the track" test
+	// requires to still retire normally). Checking the shared ownership
+	// generation instead of `_installEpoch` distinguishes the two (Sol review
+	// round 4, PR #3676: "the retirement guard tracks only newer Trackify
+	// load generations, not ownership changes to Gig or a remounted
+	// session").
+	if (currentGigRuntimeGeneration() !== ownRuntimeGeneration) return;
 	if (deckStates[deck].stable_id === nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
 	}
@@ -196,20 +210,21 @@ async function _retireSupersededLoad(
 async function _dispatchLoadSequence(
 	deck: DeckId,
 	nextId: string,
-	generation: number
+	generation: number,
+	ownRuntimeGeneration: number
 ): Promise<void> {
 	_lastDispatchedGeneration = generation;
 	const superseded = (): boolean => generation !== _loadGeneration;
 	if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'unload', deck });
-		if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
+		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
-		if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
+		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
-	if (superseded()) return _retireSupersededLoad(deck, nextId, generation);
+	if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 }
 
 async function _loadAndPlay(nextId: string): Promise<void> {
@@ -224,7 +239,7 @@ async function _loadAndPlay(nextId: string): Promise<void> {
 	// (e.g. Gig) may since have claimed (Sol review, PR #3676).
 	if (_installEpoch !== installEpoch) return;
 	const generation = ++_loadGeneration;
-	const sequence = _dispatchLoadSequence(deck, nextId, generation);
+	const sequence = _dispatchLoadSequence(deck, nextId, generation, currentGigRuntimeGeneration());
 	// A late failure of a superseded sequence is not re-reported here: its
 	// track was already quarantined and toasted when the deadline fired, and
 	// the dispatcher has persisted the command error on the deck itself.

@@ -334,6 +334,48 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 		}
 	});
 
+	it('a timed-out load does not retire its track once a different session (Gig) has since claimed the shared deck (Sol review round 4)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		const hung = gate();
+		try {
+			const { deck, log, loadGates } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('bad')]);
+			loadGates.set('bad', hung.promise);
+
+			const done = entry.e2eForceTrackifyLoad('bad');
+			await settle();
+			mock.timers.tick(REQUIRED_SKIP_BOUND_MS);
+			await settle();
+			await done;
+			assert.match(entry.readTrackifyAutoplayState().last_skip_reason ?? '', /^skipped bad: /);
+
+			// Gig mounts and claims the shared deck id while bad's own
+			// dispatcher call is still pending -- e.g. the operator navigated
+			// Trackify -> Gig while this superseded load was still unwinding.
+			// This is the real, production ownership signal (also used by
+			// `releaseGigRuntime`/`installTrackifySession`'s own generation
+			// checks), independent of this file's own `_installEpoch`, which
+			// bumps on Trackify's OWN teardown too -- a case the PRECEDING
+			// test (no other session involved) requires to still retire
+			// normally.
+			entry.noteGigRuntimeMounted();
+
+			// bad's own dispatcher call finally lands late. Its stale
+			// retirement must not unload: this deck id no longer belongs to
+			// the session that quarantined 'bad'.
+			hung.release();
+			await settle();
+			assert.deepEqual(
+				log,
+				['load bad'],
+				'a stale retirement must not dispatch an unload once a different session has claimed the deck'
+			);
+		} finally {
+			hung.release();
+			mock.timers.reset();
+		}
+	});
+
 	it('advances only once the playing track has reached its end, never inside the old 16 s window', async () => {
 		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
 		let uninstall = null;
