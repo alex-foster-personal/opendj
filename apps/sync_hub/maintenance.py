@@ -69,6 +69,7 @@ startup -- :mod:`apps.sync_hub.hosted_config`):
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,6 +84,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+from apps.engine_core import origin as engine_origin
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
@@ -157,9 +161,7 @@ def sync(
         raise SyncDeferredError(reason)
     started_at = sync_stamp.canonical_now()
     try:
-        result = client.run_sync(
-            Path(data_dir), hub_url, transport=transport, name=name
-        )
+        result = client.run_sync(Path(data_dir), hub_url, transport=transport, name=name)
     except Exception as exc:
         message = _sync_error_message(exc)
         sync_status.write_result(
@@ -173,9 +175,7 @@ def sync(
             ),
         )
         raise
-    sync_status.write_result(
-        Path(data_dir), _journal_entry(result, started_at, data_dir)
-    )
+    sync_status.write_result(Path(data_dir), _journal_entry(result, started_at, data_dir))
     return result
 
 
@@ -209,11 +209,7 @@ def _journal_entry(
             pulled=result.pulled,
         )
     if result.digest_inconclusive:
-        hub_held = (
-            "unreported"
-            if result.hub_quarantined is None
-            else result.hub_quarantined
-        )
+        hub_held = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
         try:
             exclusion_summary = sync_set.format_inconclusive_exclusion_summary(
@@ -321,9 +317,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
-    subcommands.add_parser(
-        "generation", parents=[common], help="print this hub's generation token"
-    )
+    subcommands.add_parser("generation", parents=[common], help="print this hub's generation token")
     subcommands.add_parser(
         "rotate",
         parents=[common],
@@ -337,9 +331,7 @@ def _parser() -> argparse.ArgumentParser:
         default=engine.HUB_CHANGELOG_TABLE,
         choices=sorted(engine.CHANGELOG_TABLES),
     )
-    prune_command.add_argument(
-        "--keep-days", type=float, default=engine.DEFAULT_KEEP_DAYS
-    )
+    prune_command.add_argument("--keep-days", type=float, default=engine.DEFAULT_KEEP_DAYS)
     prune_command.add_argument("--keep-rows", type=int, default=engine.DEFAULT_KEEP_ROWS)
 
     grant_command = subcommands.add_parser(
@@ -448,9 +440,7 @@ def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
         f"{result.hub_seq}{restored}"
     )
     if result.quarantined_rows or result.hub_quarantined:
-        on_hub = (
-            "unreported" if result.hub_quarantined is None else result.hub_quarantined
-        )
+        on_hub = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
         try:
             remedy = sync_set.inconclusive_remedy(
@@ -514,9 +504,7 @@ def _print_prune(args: argparse.Namespace) -> None:
 
 
 def _print_grant(args: argparse.Namespace) -> None:
-    minted = maintenance_enroll.grant(
-        args.data_dir, owner_email=args.owner, ttl_s=args.ttl_seconds
-    )
+    minted = maintenance_enroll.grant(args.data_dir, owner_email=args.owner, ttl_s=args.ttl_seconds)
     for line in maintenance_enroll.grant_lines(minted):
         print(line)
 
@@ -558,16 +546,10 @@ def _feedback_pins(args: argparse.Namespace) -> int:
     """
     base = args.engine.rstrip("/")
     if args.action == "sync":
-        request = urllib.request.Request(
-            f"{base}/api/v1/feedback/sync", data=b"", method="POST"
-        )
+        request = urllib.request.Request(f"{base}/api/v1/feedback/sync", data=b"", method="POST")
     else:
-        query = (
-            f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
-        )
-        request = urllib.request.Request(
-            f"{base}/api/v1/feedback/sync/status{query}", method="GET"
-        )
+        query = f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
+        request = urllib.request.Request(f"{base}/api/v1/feedback/sync/status{query}", method="GET")
     try:
         with urllib.request.urlopen(request, timeout=FEEDBACK_PINS_CLI_TIMEOUT_S) as response:
             payload = json.loads(response.read())
@@ -599,9 +581,7 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
-    {"sync", "status", "feedback-pins", "policy"}
-)
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "feedback-pins", "policy"})
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -615,6 +595,47 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     **fleet_admin.PRINTING_COMMANDS,
     "hosted": _print_hosted,
 }
+
+
+#: Timeout for the CLI's best-effort probe of a live engine's UI mirror. Short
+#: on purpose: this runs on the ``sync`` critical path and a wedged engine
+#: must not turn an operator's sync command into a multi-second hang.
+_LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
+
+
+def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
+    """Best-effort ``ui_mirror`` for a standalone CLI invocation (CLOUDSYNC-14).
+
+    The CLI is its own process, so it never has the in-process ``ui_mirror``
+    the running webui app keeps on ``Request.app.state`` -- that is only
+    populated by an open performance page pushing to ``PUT
+    /api/v1/state/ui-mirror`` inside THAT process. A deck can only be playing
+    while the engine that owns it is alive, so this reads the same engine
+    lock file (``<data_dir>/.engine.lock``, ``apps.engine_core.lock``) every
+    other CLI in this repo uses to find a live engine, verifies the process on
+    that port really is the identity-matched engine, then asks it for its
+    current mirror over loopback HTTP.
+
+    Anything short of a verified, playing-capable answer reads as "nothing is
+    playing" -- which is correct, not merely permissive: no lock file, an
+    unverifiable lock, or no engine answering means no engine is alive to own
+    a playing deck; a verified engine with no open performance page (409
+    ``client_open: false``) means no deck is rendering audio either.
+    """
+    lock_file = data_dir / ".engine.lock"
+    try:
+        origin = engine_origin.resolve_verified_origin(lock_file)
+    except engine_origin.EngineNotRunning:
+        return None
+    try:
+        with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S) as http_client:
+            response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")
+    except httpx.TransportError:
+        return None
+    if response.status_code != 200:
+        return None
+    body = response.json()
+    return body if isinstance(body, dict) else None
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -638,7 +659,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.data_dir,
                     args.hub,
                     name=args.name,
-                    ui_mirror=None,
+                    ui_mirror=(None if args.force else _cli_live_ui_mirror(args.data_dir)),
                     force=args.force,
                 ),
                 args.data_dir,
