@@ -428,3 +428,15 @@ def test_the_contradiction_table_reads_only_the_pyproject_side() -> None:
     assert not markers_equivalent(
         ("python_version < '0'",), ("os_name == 'nt' and sys_platform == 'linux'",)
     )
+
+
+def test_an_unknown_marker_variable_is_unknown_not_a_tautology() -> None:
+    """uv refuses `made_up == 'x' or made_up != 'x'` ("Expected a valid marker
+    variable", `uv lock` exit 2; measured uv 0.8.17, Codex P2 on #3763, round 27);
+    the parser read it as a tautology and so as the unmarked requirement uv.lock
+    holds. The same shape over a real variable IS that tautology (control)."""
+    with pytest.raises(Exception, match="unknown marker variable 'made_up'"):
+        markers_equivalent(("made_up == 'x' or made_up != 'x'",), ())
+    assert markers_equivalent(("os_name == 'x' or os_name != 'x'",), ())
+    with pytest.raises(Exception, match="unknown marker variable 'made_up'"):
+        markers_equivalent(("'x' == made_up",), ("made_up == 'x'",))

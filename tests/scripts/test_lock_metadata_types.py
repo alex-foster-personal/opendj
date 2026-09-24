@@ -97,3 +97,45 @@ def test_a_requirement_container_of_the_wrong_type_is_unknown(
     code, message = _run(tmp_path, edited, LOCK)
     assert code == EXIT_UNKNOWN, message
     assert named in message and "uv rejects the file" in message
+
+
+@pytest.mark.parametrize(
+    ("pyproject_edit", "lock_edit", "named"),
+    [
+        (
+            None,
+            lambda lock: lock.replace('extras = ["standard"]', 'extras = "standard"'),
+            "requires-dist extras = 'standard' is not a list of strings",
+        ),
+        (lambda p: p + '\n[tool]\nuv = "bad"\n', None, "[tool] uv = 'bad' is not a table"),
+        (
+            lambda p: p + '\n[tool.uv]\nsources = "bad"\n',
+            None,
+            "[tool.uv] sources = 'bad' is not a table",
+        ),
+    ],
+    ids=["lock-extras-string", "tool-uv-string", "sources-string"],
+)
+def test_a_uv_table_or_lock_extras_of_the_wrong_type_is_unknown(
+    tmp_path: Path, pyproject_edit, lock_edit, named: str
+) -> None:
+    """Measured uv 0.8.17 (Codex P2 on #3763, round 27): `extras = "standard"` in
+    uv.lock is "invalid type: string, expected a sequence", `[tool] uv = "bad"` is
+    "expected struct ToolUv" and `[tool.uv] sources = "bad"` is "expected a map with
+    unique keys", each `uv lock --check` exit 2. The gate iterated the string's
+    letters, read the non-table as no sources, or crashed on `.items()`."""
+    pyproject = PYPROJECT if pyproject_edit is None else pyproject_edit(PYPROJECT)
+    lock = LOCK if lock_edit is None else lock_edit(LOCK)
+    assert (pyproject, lock) != (PYPROJECT, LOCK)
+    code, message = _run(tmp_path, pyproject, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert named in message and "uv rejects the file" in message
+
+
+def test_a_top_level_tool_that_is_not_a_table_is_no_uv_table(tmp_path: Path) -> None:
+    """`tool = "bad"` at the top level is ignored by uv (`uv lock` exit 0, measured
+    0.8.17): no [tool.uv], so no sources, and a clean pair stays clean rather than
+    crashing on `.get`."""
+    assert PYPROJECT.lstrip().startswith("[")  # a top-level key precedes the first table
+    code, message = _run(tmp_path, 'tool = "bad"\n' + PYPROJECT, LOCK)
+    assert code == EXIT_OK, message

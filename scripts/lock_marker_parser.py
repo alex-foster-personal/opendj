@@ -16,6 +16,26 @@ class Unknown(Exception):
     """The check could not measure; the caller must report UNKNOWN, not a verdict."""
 
 
+# The PEP 508 environment markers. uv also accepts `extras` and `dependency_groups`,
+# but only on the right of `in` (measured uv 0.8.17), and never records either in a
+# lock's requires-dist, so they stay Unknown here rather than modeled.
+MARKER_VARIABLES = frozenset(
+    {
+        "python_version",
+        "python_full_version",
+        "os_name",
+        "sys_platform",
+        "platform_release",
+        "platform_system",
+        "platform_version",
+        "platform_machine",
+        "platform_python_implementation",
+        "implementation_name",
+        "implementation_version",
+        "extra",
+    }
+)
+
 _TOKEN_RE = re.compile(
     r"\s*(?:(?P<lp>\()|(?P<rp>\))|(?P<str>'[^']*'|\"[^\"]*\")|(?P<word>[A-Za-z_][A-Za-z0-9_.]*)"
     r"|(?P<op>===|==|!=|<=|>=|<|>|~=))"
@@ -113,6 +133,12 @@ class _MarkerParser:
         for side in (lhs, rhs):
             if side[0] not in ("str", "word"):
                 raise Unknown(f"expected a variable or string in marker: {self.text!r}")
+            if side[0] == "word" and side[1] not in MARKER_VARIABLES:
+                # uv refuses the file ("Expected a valid marker variable", `uv lock`
+                # exit 2; measured uv 0.8.17, Codex P2 on #3763, round 27): a name
+                # this parser does not know is not a variable it can evaluate, and
+                # reading `made_up == 'x' or made_up != 'x'` as a tautology hid it.
+                raise Unknown(f"unknown marker variable {side[1]!r} in marker: {self.text!r}")
         return ("cmp", lhs, op, rhs)
 
 
