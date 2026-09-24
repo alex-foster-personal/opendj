@@ -12,8 +12,13 @@ test('armPinPlacement reveals hidden pins through the shared visibility twin', a
 	assert.match(store, /feedbackState\.placementArmed = true/);
 });
 
-test('FeedbackWidget keeps pagePins gated on pinsVisible for marker rendering', async () => {
-	const widget = await readFile('src/lib/components/rb/FeedbackWidget.svelte', 'utf8');
-	assert.match(widget, /const pagePins = \$derived\(\s*pinsVisible/);
-	assert.match(widget, /<FeedbackPinMarkers pins=\{pagePins\}/);
+test('FeedbackPinLayer keeps pagePins gated on pinsVisible for marker rendering', async () => {
+	// FB-16 (main, merged Thu 24 Sep 2026) moved the pinsVisible-gated pin
+	// rendering out of FeedbackWidget.svelte into a dedicated root-mounted
+	// FeedbackPinLayer.svelte; re-pointed here rather than at the old file
+	// after resolving the merge conflict in performance-hotkeys.ts pulled
+	// that refactor onto this branch.
+	const layer = await readFile('src/lib/components/rb/FeedbackPinLayer.svelte', 'utf8');
+	assert.match(layer, /const pagePins = \$derived\(\s*pinsVisible/);
+	assert.match(layer, /<FeedbackPinMarkers\s*\n?\s*pins=\{pagePins\}/);
 });
