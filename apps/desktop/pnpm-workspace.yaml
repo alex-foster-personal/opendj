@@ -10,3 +10,9 @@ allowBuilds:
   edgedriver: false
   esbuild: true
   geckodriver: false
+
+# mocha 10 (via @wdio/mocha-framework) still asks for serialize-javascript ^6,
+# which carries GHSA RCE and CPU-DoS advisories fixed in 7.0.5. The
+# serialize(obj, opts) API mocha's parallel mode calls is unchanged in 7.
+overrides:
+  serialize-javascript: ^7.0.5

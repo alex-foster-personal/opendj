@@ -44,6 +44,7 @@
 
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api } from "../api/client";
+import { writePinsVisible } from "./feedback-pin-visibility";
 import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
@@ -128,7 +129,22 @@ export function toggleFeedbackPanel(): void {
 
 export function armPinPlacement(): void {
   if (feedbackState.availability !== "ok") return;
+  _revealPinsIfHidden();
   feedbackState.placementArmed = true;
+}
+
+function _revealPinsIfHidden(): void {
+  if (typeof window === "undefined") return;
+  // review r3549 P2: a swallowed storage error used to let armPinPlacement
+  // still set placementArmed = true below, opening the placement overlay
+  // over a board whose markers stayed hidden - exactly the "⛔️ if the key
+  // fails silently behind hidden markers" clause A11Y-02 adds in this same
+  // PR. This repo is fail-fast: let a blocked/throwing localStorage write
+  // propagate so armPinPlacement never reaches placementArmed = true on a
+  // reveal that did not actually happen, instead of failing silently.
+  writePinsVisible(window.localStorage, true);
+  const w = window as Window & { __mdtPinsVisible?: { set?: (value: boolean) => void } };
+  w.__mdtPinsVisible?.set?.(true);
 }
 
 export function disarmPinPlacement(): void {

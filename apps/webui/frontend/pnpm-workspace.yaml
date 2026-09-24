@@ -11,3 +11,10 @@ minimumReleaseAgeExclude:
   - storybook@10.5.10
 patchedDependencies:
   signalsmith-stretch@1.3.2: patches/signalsmith-stretch@1.3.2.patch
+# Transitive security floors (same major, no API change for the callers):
+# js-yaml via openapi-typescript > @redocly/openapi-core (quadratic-CPU
+# merge-key/omap advisories, fixed 4.3.2); cookie via @sveltejs/kit
+# (out-of-bounds name/path/domain characters, fixed 0.7.0).
+overrides:
+  js-yaml@4: ^4.3.2
+  cookie@<0.7.0: ^0.7.0
