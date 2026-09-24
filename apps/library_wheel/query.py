@@ -230,6 +230,30 @@ def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
     )
 
 
+def genre_tags_by_stable_id(state_db: Path, master_db: Path) -> dict[str, str | None]:
+    """Every library track's raw genre tag, resolved exactly as the wheel does.
+
+    Live rekordbox content wins over the state-layer ``track_fields`` genre;
+    ``None`` means no tag anywhere. Public so the genre suggester
+    (``apps/genre_infer``) trains on, and fills gaps in, the same labels the
+    wheel shows, rather than a second precedence rule that could drift.
+    """
+    library = _load_library(state_db, master_db)
+    return {stable_id: _resolve_genre(library, stable_id)[0] for stable_id in library.tracks}
+
+
+def _resolve_genre(library: _LoadedLibrary, stable_id: str) -> tuple[str | None, int, str]:
+    """(genre tag, play count, play-count source) for one track."""
+    vendor_id = library.vendor_id_by_stable_id.get(stable_id)
+    content = library.genre_and_plays.get(vendor_id) if vendor_id is not None else None
+    if content is not None:
+        # Live rekordbox content wins over any local track_fields genre.
+        return content[0], content[1], "rekordbox"
+    # No mapping, or a mapping whose djmdContent row is gone/deleted:
+    # bulk_rb_meta treats that as unmapped, so the wheel does too.
+    return library.local_genre_by_stable_id.get(stable_id), 0, "local"
+
+
 @dataclass(frozen=True)
 class _GenreTree:
     # family -> genre tag -> list of track dicts (pre-axis).
@@ -246,18 +270,7 @@ def _build_genre_tree(library: _LoadedLibrary) -> _GenreTree:
     unclassified_count = 0
 
     for stable_id, track in library.tracks.items():
-        vendor_id = library.vendor_id_by_stable_id.get(stable_id)
-        content = library.genre_and_plays.get(vendor_id) if vendor_id is not None else None
-        if content is not None:
-            # Live rekordbox content wins over any local track_fields genre.
-            genre_tag, play_count = content
-            play_count_source = "rekordbox"
-        else:
-            # No mapping, or a mapping whose djmdContent row is gone/deleted:
-            # bulk_rb_meta treats that as unmapped, so the wheel does too.
-            genre_tag = library.local_genre_by_stable_id.get(stable_id)
-            play_count = 0
-            play_count_source = "local"
+        genre_tag, play_count, play_count_source = _resolve_genre(library, stable_id)
         family = simple_genre_family(genre_tag)
         if genre_tag is None or family is None:
             unclassified_count += 1
@@ -428,4 +441,10 @@ def _axis_value_and_title(
     raise AssertionError(f"unhandled enabled axis: {axis.key}")
 
 
-__all__ = ["AXES", "AxisInfo", "LibraryWheelError", "query_library_wheel"]
+__all__ = [
+    "AXES",
+    "AxisInfo",
+    "LibraryWheelError",
+    "genre_tags_by_stable_id",
+    "query_library_wheel",
+]
