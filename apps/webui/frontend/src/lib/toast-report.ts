@@ -177,11 +177,11 @@ export interface ToastReportInput {
 	headline: string;
 	/** Raw message written to the perf-event ring. */
 	message: string;
-	detail?: string;
-	clientEventId?: string;
-	serverEventId?: string;
-	errorId?: string;
-	sentryEventId?: string;
+	detail?: string | undefined;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	/** ISO 8601 UTC, and the SAME instant the log row carries. */
 	createdAt: string;
 	env: ToastEnvironment;
