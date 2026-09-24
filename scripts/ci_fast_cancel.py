@@ -42,19 +42,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
+# The watcher's parser, NOT a second copy of it. Both sides of this subtraction must speak
+# one identity format, and until Thu 24 Sep 2026 they did not: this module stripped the
+# `FAILED `/`ERROR ` prefix that scripts.ci_main_red's cached baseline keeps, so `failed -
+# baseline` subtracted nothing and EVERY known trunk red read GENUINE. Armed, that cancels
+# a run whose only failures are main's own. Importing the one parser makes the parity
+# structural instead of a property two regexes have to keep agreeing on.
+from scripts.ci_failure_ids import failed_identities
+
 LINE_PREFIX = "[fast-cancel]"
-#: pytest's short-summary lines. Same shape the watcher reads (scripts/ci_failure_ids.py).
-FAILED_LINE = re.compile(r"^(?:FAILED|ERROR) (tests/\S+?)(?: - .*)?$", re.MULTILINE)
 EXIT_UNKNOWN = 3
 
-
-def failed_identities(log: str) -> frozenset[str]:
-    return frozenset(FAILED_LINE.findall(log))
+__all__ = ["decide", "failed_identities", "main"]
 
 
 def _baseline(main_red_json: Path | None) -> frozenset[str] | None:
