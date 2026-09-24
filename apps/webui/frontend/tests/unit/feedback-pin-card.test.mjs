@@ -43,6 +43,9 @@ import { fileURLToPath } from 'node:url';
 import { before, describe, it, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// FeedbackPinCard's mount point, openPinId/closePin state, and the
+// pinDraft-retention rule moved from FeedbackWidget into the app-root pin
+// layer (FB-16, #3888).
 const pinLayer = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)),
 	'utf8'
@@ -53,13 +56,6 @@ const markers = readFileSync(
 );
 const card = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinCard.svelte', import.meta.url)),
-	'utf8'
-);
-// FeedbackPinCard's mount point, openPinId/closePin state, and the
-// pinDraft-retention rule moved from FeedbackWidget into the app-root pin
-// layer (FB-16, #3888).
-const pinLayer = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)),
 	'utf8'
 );
 
