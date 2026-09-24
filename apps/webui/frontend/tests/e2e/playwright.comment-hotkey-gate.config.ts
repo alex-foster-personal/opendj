@@ -135,7 +135,7 @@ export default defineConfig({
 			cwd: FRONTEND_ROOT,
 			url: `${FRONTEND_ORIGIN}/performance`,
 			reuseExistingServer: false,
-			timeout: 30_000
+			timeout: 90_000
 		}
 	],
 	use: {
