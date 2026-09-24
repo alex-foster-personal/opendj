@@ -7,10 +7,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-function source(relative) {
-	return readFileSync(fileURLToPath(new URL(`../../src/${relative}`, import.meta.url)), 'utf8');
+function sourcePath(relative) {
+	return fileURLToPath(new URL(`../../src/${relative}`, import.meta.url));
 }
 
+function source(relative) {
+	return readFileSync(sourcePath(relative), 'utf8');
+}
+
+const NAV_PATH = sourcePath('lib/components/PerformanceAppNav.svelte');
 const LAYOUT = source('routes/+layout.svelte');
 const NAV = source('lib/components/PerformanceAppNav.svelte');
 const TOP_BAR = source('lib/components/rb/TopBar.svelte');
@@ -42,7 +47,11 @@ test('PerformanceAppNav exposes Library and Admin links with the locked contract
 });
 
 test('the hatch lives outside rb/ clone chrome and does not touch TopBar or BrowserPanel', () => {
-	assert.doesNotMatch(NAV, /components\/rb\/PerformanceAppNav/);
+	// Falsifiable on the file's real location, not a self-referential import
+	// string PerformanceAppNav.svelte would never contain regardless of where
+	// it actually lives (a string match on its own source can never fail).
+	assert.doesNotMatch(NAV_PATH.replaceAll('\\', '/'), /\/lib\/components\/rb\//);
+	assert.doesNotMatch(NAV, /from '\$lib\/components\/rb\//);
 	assert.doesNotMatch(TOP_BAR, /performance-app-nav/);
 	assert.doesNotMatch(BROWSER_PANEL, /performance-app-nav/);
 });

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kpiCaptureTimeoutS } from './kpi-capture-timeouts.mjs';
 import { fixtureManifestExists, readFixtureManifest } from './support/fixture-manifest';
-import { sampleRendererProcessFootprint } from './support/renderer-process-sample';
+import { sampleProcessFamilyFootprint } from './support/renderer-process-sample';
 
 const RESULT_PATH = process.env.KPI_CAPTURE_RESULT;
 const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
@@ -19,7 +19,11 @@ const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
 const MANIFEST_PATH = join(DATA_DIR, 'fixture-manifest.json');
 const SAMPLE_INTERVAL_S = Number(process.env.KPI_CAPTURE_SAMPLE_INTERVAL_S ?? '5');
 const SAMPLING_METHOD =
-	`CDP SystemInfo.getProcessInfo selects Chrome renderer + gpu-process PIDs; ps -o rss=,%cpu= for footprint and CPU every ${SAMPLE_INTERVAL_S}s`;
+	'CDP SystemInfo.getProcessInfo selects Chrome renderer + gpu-process PIDs (ps -o rss=,%cpu=) ' +
+	'plus the python engine + stem worker family from ' +
+	`GET /api/v1/performance/telemetry/processes members[].rss_mb, every ${SAMPLE_INTERVAL_S}s. ` +
+	'CPU covers renderer+gpu only (no per-process CPU is exposed for the engine family).';
+const MIN_SAMPLE_FRACTION = 0.5;
 
 interface ModeCapture {
 	footprint_samples_mb: number[];
@@ -62,21 +66,36 @@ function median(values: number[]): number {
 
 async function dwellSample(
 	cdp: CDPSession,
+	request: APIRequestContext,
+	apiBase: string,
 	dwellSeconds: number,
 	intervalMs: number
 ): Promise<ModeCapture> {
 	const footprintSamples: number[] = [];
 	const cpuSamples: number[] = [];
+	const failures: string[] = [];
 	const endAt = Date.now() + dwellSeconds * 1000;
+	const expectedTicks = Math.max(1, Math.floor((dwellSeconds * 1000) / intervalMs));
 	while (Date.now() < endAt) {
-		const sample = await sampleRendererProcessFootprint(cdp);
-		if (sample.footprint_mb !== null) footprintSamples.push(sample.footprint_mb);
-		if (sample.cpu_percent !== null) cpuSamples.push(sample.cpu_percent);
+		// Every read throws on failure (see renderer-process-sample.ts) rather
+		// than degrading to null, so a bad tick is skipped here and counted
+		// against the minimum-sample-count floor below -- never silently
+		// averaged in as a partial or mixed-process-set sample.
+		try {
+			const sample = await sampleProcessFamilyFootprint(cdp, request, apiBase);
+			footprintSamples.push(sample.footprint_mb);
+			cpuSamples.push(sample.cpu_percent);
+		} catch (error) {
+			failures.push(error instanceof Error ? error.message : String(error));
+		}
 		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
-	if (footprintSamples.length === 0 || cpuSamples.length === 0) {
+	const minSamples = Math.ceil(expectedTicks * MIN_SAMPLE_FRACTION);
+	if (footprintSamples.length < minSamples || cpuSamples.length < minSamples) {
 		throw new Error(
-			`insufficient telemetry during dwell (footprint=${footprintSamples.length}, cpu=${cpuSamples.length})`
+			`insufficient telemetry during dwell: got footprint=${footprintSamples.length} ` +
+				`cpu=${cpuSamples.length}, need >=${minSamples} of ${expectedTicks} expected ticks. ` +
+				`Sample failures: ${failures.slice(0, 3).join(' | ') || 'none'}`
 		);
 	}
 	return {
@@ -146,10 +165,10 @@ test('captures Gig vs Library steady-state footprint and CPU medians', async ({ 
 		}
 
 		const cdp = await page.context().newCDPSession(page);
-		const gig = await dwellSample(cdp, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
+		const gig = await dwellSample(cdp, request, API_BASE, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
 		await selectLibraryMode(page);
 		await page.waitForFunction(() => window.__mdtLibraryModeIdle === true);
-		const library = await dwellSample(cdp, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
+		const library = await dwellSample(cdp, request, API_BASE, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
 
 		writeResult({
 			ok: true,

@@ -28,3 +28,8 @@ test('assertNoStemBackendWorkers throws on hits', () => {
 		/stems_local_worker/
 	);
 });
+
+test('assertNoStemBackendWorkers throws when telemetry is unavailable, rather than passing', () => {
+	assert.throws(() => assertNoStemBackendWorkers({ available: false }), /available/);
+	assert.throws(() => assertNoStemBackendWorkers({}), /available/);
+});

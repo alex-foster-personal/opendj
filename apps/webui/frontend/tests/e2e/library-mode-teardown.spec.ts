@@ -54,7 +54,27 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	expect(librarySnapshot.deck_nodes_present).toBe(false);
 	expect(librarySnapshot.audio_context_state).toBe('uninitialized');
 
-	const telemetryResponse = await request.get(`${API_BASE}/api/v1/performance/telemetry/processes`);
-	expect(telemetryResponse.ok()).toBeTruthy();
-	assertNoStemBackendWorkers((await telemetryResponse.json()) as Record<string, unknown>);
+	const telemetryBody = await _pollTelemetryUntilAvailable(request, API_BASE);
+	assertNoStemBackendWorkers(telemetryBody);
 });
+
+const _TELEMETRY_POLL_ATTEMPTS = 5;
+const _TELEMETRY_POLL_INTERVAL_MS = 500;
+
+/** Poll the process telemetry endpoint until it reports `available: true`,
+ * bounded, so a transiently-cold cache does not read as "no workers running"
+ * (see assertNoStemBackendWorkers -- unavailable is not evidence of clean). */
+async function _pollTelemetryUntilAvailable(
+	request: import('@playwright/test').APIRequestContext,
+	apiBase: string
+): Promise<Record<string, unknown>> {
+	let lastBody: Record<string, unknown> = {};
+	for (let attempt = 0; attempt < _TELEMETRY_POLL_ATTEMPTS; attempt++) {
+		const response = await request.get(`${apiBase}/api/v1/performance/telemetry/processes`);
+		expect(response.ok()).toBeTruthy();
+		lastBody = (await response.json()) as Record<string, unknown>;
+		if (lastBody.available === true) return lastBody;
+		await new Promise((resolve) => setTimeout(resolve, _TELEMETRY_POLL_INTERVAL_MS));
+	}
+	return lastBody;
+}

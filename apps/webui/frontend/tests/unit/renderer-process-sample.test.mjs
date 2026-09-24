@@ -30,3 +30,24 @@ test('selectRendererProcessIds yields null when no renderer entry exists', () =>
 	assert.equal(ids.rendererPid, null);
 	assert.equal(ids.gpuPid, null);
 });
+
+test('sumEngineFamilyFootprintMb sums live members (rss_mb)', () => {
+	const total = sample.sumEngineFamilyFootprintMb({
+		available: true,
+		members: [{ name: 'engine', rss_mb: 120.5 }, { name: 'opendj-stems-worker', rss_mb: 40 }]
+	});
+	assert.equal(total, 160.5);
+});
+
+test('sumEngineFamilyFootprintMb sums jsonl-merged members (physical_footprint_mb)', () => {
+	const total = sample.sumEngineFamilyFootprintMb({
+		available: true,
+		members: [{ name: 'engine', physical_footprint_mb: 200 }]
+	});
+	assert.equal(total, 200);
+});
+
+test('sumEngineFamilyFootprintMb throws rather than reading unavailable telemetry as zero', () => {
+	assert.throws(() => sample.sumEngineFamilyFootprintMb({ available: false }), /available/);
+	assert.throws(() => sample.sumEngineFamilyFootprintMb({}), /available/);
+});

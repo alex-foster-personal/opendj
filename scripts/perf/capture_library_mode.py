@@ -103,19 +103,14 @@ def _ledger_rows(
     gig_cpu_percent: float,
     library_cpu_percent: float,
     measured: bool = True,
+    note: str | None = None,
 ) -> list[dict[str, Any]]:
     footprint_ratio = library_footprint_mb / gig_footprint_mb
     cpu_ratio = library_cpu_percent / gig_cpu_percent
-    if measured:
+    if note is None:
         note = (
             f"capture_id={capture_id} app_build_sha={app_build_sha} "
             "method=scripts/perf/capture_library_mode.py dwell_seconds=60"
-        )
-    else:
-        note = (
-            f"capture_id={capture_id} app_build_sha={app_build_sha} "
-            "method=scripts/perf/capture_library_mode.py "
-            "values supplied by hand on the command line (not a dwell capture)"
         )
     today = datetime.now(UTC).date().isoformat()
     return [
@@ -197,8 +192,8 @@ def _run_playwright_capture(
         }
     finally:
         Path(result_path).unlink(missing_ok=True)
-    if proc.returncode != 0 and not result.get("reason"):
-        result.setdefault("ok", False)
+    if proc.returncode != 0:
+        result["ok"] = False
         result["reason"] = (
             result.get("reason")
             or f"playwright exited {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
@@ -212,11 +207,16 @@ def _rows_from_capture_result(
     capture_id: str,
     machine: str,
     app_build_sha: str,
+    dwell_seconds: int,
 ) -> list[dict[str, Any]]:
     gig = result.get("gig") if isinstance(result.get("gig"), dict) else None
     library = result.get("library") if isinstance(result.get("library"), dict) else None
     if gig is None or library is None:
         raise ValueError(result.get("reason") or "capture result missing gig/library medians")
+    sampling_method = result.get("sampling_method")
+    method_note = (
+        f"sampling_method={sampling_method}" if isinstance(sampling_method, str) else "method=scripts/perf/capture_library_mode.py"
+    )
     return _ledger_rows(
         capture_id=capture_id,
         machine=machine,
@@ -225,6 +225,7 @@ def _rows_from_capture_result(
         library_footprint_mb=float(library["median_footprint_mb"]),
         gig_cpu_percent=float(gig["median_cpu_percent"]),
         library_cpu_percent=float(library["median_cpu_percent"]),
+        note=f"capture_id={capture_id} app_build_sha={app_build_sha} dwell_seconds={dwell_seconds} {method_note}",
     )
 
 
@@ -262,6 +263,12 @@ def main(argv: list[str] | None = None) -> int:
             library_footprint_mb=500.0,
             gig_cpu_percent=10.0,
             library_cpu_percent=3.0,
+            measured=False,
+            note=(
+                f"capture_id={capture_id} app_build_sha={_git_sha()} "
+                "method=scripts/perf/capture_library_mode.py --dry-run "
+                "(hardcoded placeholder values, not a capture)"
+            ),
         )
         print(json.dumps({"capture_id": capture_id, "rows": rows}, indent=2))
         return 0
@@ -293,6 +300,11 @@ def main(argv: list[str] | None = None) -> int:
             gig_cpu_percent=float(args.gig_cpu_percent),
             library_cpu_percent=float(args.library_cpu_percent),
             measured=False,
+            note=(
+                f"capture_id={capture_id} app_build_sha={app_build_sha} "
+                "method=scripts/perf/capture_library_mode.py "
+                "values supplied by hand on the command line (not a dwell capture)"
+            ),
         )
         append_entries(args.ledger, rows)
         for row in rows:
@@ -322,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             capture_id=capture_id,
             machine=machine,
             app_build_sha=app_build_sha,
+            dwell_seconds=args.dwell_seconds,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

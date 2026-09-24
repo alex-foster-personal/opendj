@@ -32,6 +32,12 @@ export function findStemBackendWorkers(body: ProcessTelemetryBody): string[] {
 }
 
 export function assertNoStemBackendWorkers(body: ProcessTelemetryBody): void {
+	if (body.available !== true) {
+		throw new Error(
+			'process telemetry reported available!==true; cannot verify no stem backend workers ' +
+				'are running (an unavailable probe is not evidence of a clean teardown)'
+		);
+	}
 	const hits = findStemBackendWorkers(body);
 	if (hits.length > 0) {
 		throw new Error(`unexpected stem backend workers in process telemetry: ${hits.join(', ')}`);
