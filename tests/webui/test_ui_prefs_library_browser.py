@@ -26,6 +26,7 @@ LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
+    "available_offline_filter": False,
     "wheel_sensitivity": {"mouse": 1.0, "trackpad": 1.0 / 3.0},
     "midi_enabled": False,
 }
@@ -35,6 +36,7 @@ LIBRARY_BROWSER_WRITES: dict[str, Any] = {
     "next_only_filter": True,
     "remixes_filter": True,
     "vocals_filter": True,
+    "available_offline_filter": True,
     "midi_enabled": True,
 }
 

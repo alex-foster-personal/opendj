@@ -92,6 +92,7 @@
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
+	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -135,6 +136,7 @@
 	);
 
 	function _selectAppMode(modeId: (typeof APP_MODES)[number]['id']): void {
+		if (modeId === 'library') markLibraryModeExit();
 		setAppMode(modeId);
 	}
 
@@ -575,7 +577,7 @@
 		<button
 			type="button"
 			class="bsm-toggle ap-next-btn"
-			class:on={autoPlayNextState.armed}
+			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
 			title={autoPlayNextState.armed
 				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
@@ -747,8 +749,9 @@
 
 		<!-- master output level meter: REAL -> engine master bus, post master
 		     gain (pin 5a5c3b8033d8's still-open half; the ten-segment channel
-		     meters shipped in PR #1062 tap post-EQ/pre-fader and so do not move
-		     with this control). Distinct from the output-health-bar below,
+		     meters tap post-trim/post-EQ/post-channel-fader per #3529 and track
+		     each deck fader, not this master control). Distinct from the
+		     output-health-bar below,
 		     which answers "is a device receiving audio" rather than "how loud
 		     is the master bus". -->
 		<MasterLevelMeter active={masterMeterActive} />
@@ -1090,6 +1093,9 @@
 		border-bottom-left-radius: 0;
 		padding-left: 6px;
 		padding-right: 6px;
+	}
+	.ap-wrap > .ap-next-btn:hover {
+		color: var(--rb-accent);
 	}
 	/* The ">|" split is the least essential control in this row (an early-
 	   trigger shortcut, not a required transport) - drop it first, at the

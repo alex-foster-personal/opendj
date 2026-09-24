@@ -1,8 +1,8 @@
 """Playlist endpoints + diff viewer -- CAT-05 (+ parity contract items 2/4)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -69,12 +69,12 @@ def _playlist_summaries(
     ):
         order = rb_vendor.playlist_order_index()
 
-    available: dict[str, bool] = {}
+    member_availability: Mapping[str, str] = {}
     if availability != "skip":
-        # available_count (FR-1 item 4): one bulk vendor lookup + one cached
-        # stat pass across every member of every playlist -- never a per-row
-        # stat fan-out. A membership pointing at a stable_id with no track row
-        # counts as unavailable (it is certainly not playable from disk).
+        # available_count (FR-1 item 4): index-backed availability across every
+        # playlist member with zero in-request filesystem stats (PERF-RB-01).
+        # A membership pointing at a stable_id with no track row counts as
+        # unavailable (it is certainly not playable from disk).
         member_ids = sorted({sid for pl in playlists for sid in pl.items})
         # get_file_paths_bulk, not get_tracks_bulk: available_count only ever
         # reads .file_path, and hydrating a full Track (EAV pass included) per
@@ -82,7 +82,9 @@ def _playlist_summaries(
         # time (pin e0f3a90652a9, measured Sat 5 Sep 2026 against the real
         # library: 7155 unique members).
         file_paths = backend.get_file_paths_bulk(member_ids)
-        available = rb_vendor.bulk_availability(member_ids, file_paths)
+        member_availability = rb_vendor.bulk_availability_for_playlist_summary(
+            member_ids, file_paths,
+        )
 
     return [
         PlaylistSummary(
@@ -91,7 +93,9 @@ def _playlist_summaries(
             available_count=(
                 -1
                 if availability == "skip"
-                else sum(1 for sid in pl.items if available.get(sid, False))
+                else sum(
+                    1 for sid in pl.items if member_availability.get(sid) == "present"
+                )
             ),
             updated_at=pl.updated_at,
             forbid_duplicates=pl.forbid_duplicates,
@@ -239,7 +243,7 @@ def get_playlist(
     for i, row in enumerate(rows):
         iid = item_ids[i] if i < len(item_ids) else None
         out = TrackRowOut(**row, item_id=iid or None)
-        if keep_by_availability(available, row["file_exists"]):
+        if keep_by_availability(available, row.get("file_exists")):
             tracks.append(out)
     return PlaylistDetail(
         playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,

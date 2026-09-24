@@ -297,10 +297,10 @@ export function createMasterMeterSource(gain: AudioNode): MeterTapSource {
  * Master output level, taken POST MASTER GAIN through the same meter-math
  * policy the per-channel meters use.
  *
- * Deliberately distinct from a channel reading: the channel taps sit post-EQ,
- * PRE-fader on purpose (the DJM trim/EQ-staging convention), so by design
- * they do not move with the master volume control. This one taps downstream
- * of that control, which is what pin 5a5c3b8033d8 asked for.
+ * Deliberately distinct from a channel reading: the channel taps sit post-trim,
+ * post-EQ, and post-channel-fader (issue #3529), so they track each deck's
+ * channel fader rather than the master bus. This one taps downstream of
+ * `_masterGain`, which is what pin 5a5c3b8033d8 asked for.
  *
  * NOT a speaker-damage reading: everything downstream of the master bus (OS
  * volume, the audio interface, the amplifier, its limiter) is invisible from

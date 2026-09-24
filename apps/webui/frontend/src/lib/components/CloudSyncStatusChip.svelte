@@ -4,8 +4,8 @@
 	// The state rules live in one pure module shared with /cloudsync: the chip
 	// reads 'off' whenever there is no fresh scheduler heartbeat
 	// (status.running false), whatever the config or the last result says.
+	import CloudSyncQuickActions from '$lib/components/cloudsync/CloudSyncQuickActions.svelte';
 	import {
-		CHIP_HREF,
 		CHIP_POLL_MS,
 		STATUS_CHANGED_EVENT,
 		chipAriaLabel,
@@ -17,6 +17,9 @@
 
 	let status = $state<CloudSyncStatus | null>(null);
 	let loadError = $state<string | null>(null);
+	let popoverOpen = $state(false);
+	let triggerEl = $state<HTMLButtonElement | null>(null);
+	let popoverEl = $state<HTMLDivElement | null>(null);
 
 	function chipState(): ReturnType<typeof chipStateOf> {
 		return chipStateOf(status);
@@ -36,6 +39,30 @@
 		}
 	}
 
+	function closePopover(): void {
+		popoverOpen = false;
+		triggerEl?.focus();
+	}
+
+	function togglePopover(): void {
+		popoverOpen = !popoverOpen;
+	}
+
+	function onWindowKeydown(event: KeyboardEvent): void {
+		if (!popoverOpen || event.key !== 'Escape') return;
+		event.preventDefault();
+		closePopover();
+	}
+
+	function onWindowPointerDown(event: PointerEvent): void {
+		if (!popoverOpen) return;
+		const target = event.target;
+		if (!(target instanceof Node)) return;
+		if (triggerEl?.contains(target)) return;
+		if (popoverEl?.contains(target)) return;
+		closePopover();
+	}
+
 	// Re-read on an interval (a heartbeat that goes stale after load must turn
 	// the chip off) and at once when /cloudsync runs Sync now or saves config.
 	onMount(() => {
@@ -52,9 +79,12 @@
 	});
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerDown} />
+
 <div class="cloudsync-status">
-	<a
-		href={CHIP_HREF}
+	<button
+		bind:this={triggerEl}
+		type="button"
 		class="chip"
 		class:error={chipState() === 'error'}
 		class:update-required={chipState() === 'update_required'}
@@ -62,6 +92,10 @@
 		class:inconclusive={chipState() === 'inconclusive'}
 		title={title}
 		aria-label={ariaLabel}
+		aria-haspopup="dialog"
+		aria-expanded={popoverOpen}
+		data-testid="cloudsync-status-chip"
+		onclick={togglePopover}
 	>
 		<svg
 			class="chip-icon"
@@ -77,7 +111,14 @@
 		</svg>
 		<span class="chip-label-full">{fullLabel}</span>
 		<span class="chip-label-short">{shortLabel}</span>
-	</a>
+	</button>
+	{#if popoverOpen}
+		<CloudSyncQuickActions
+			getTrigger={() => triggerEl}
+			onclose={closePopover}
+			bind:popoverEl
+		/>
+	{/if}
 </div>
 
 <style>
@@ -101,12 +142,7 @@
 		line-height: 1;
 		padding: 0.1rem 0.45rem;
 		white-space: nowrap;
-		text-decoration: none;
 		cursor: pointer;
-	}
-
-	.chip:hover {
-		text-decoration: none;
 	}
 
 	.chip.ok {

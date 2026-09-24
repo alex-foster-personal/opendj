@@ -41,6 +41,7 @@ from apps.engine_core.account.api import (
 )
 from apps.engine_core.app_posture_api import add_app_posture_route
 from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.audio_interference_api import add_audio_interference_route
 from apps.engine_core.availability_api import add_availability_routes
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
@@ -78,6 +79,7 @@ from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
+from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart, library_jobs_autostart
@@ -171,6 +173,7 @@ def create_app(
     add_host_info_route(app, data_dir=cfg.data_dir)
     add_perf_tier_route(app, data_dir=cfg.data_dir)
     add_app_posture_route(app, data_dir=cfg.data_dir)
+    add_audio_interference_route(app)
     build_identity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
     if build_identity.info is not None and build_identity.info.source == "payload":
         # An installed engine owns the first-run assessment. A checkout has no
@@ -418,7 +421,11 @@ def _wrap_lifespan(
         try:
             # The CloudSync scheduler idles until cloudsync-config.json (or
             # its env overrides) turns it on, and never starts on the hub.
+            # First run (#3870): a build that names a default hub writes that
+            # file once, so a test user's install syncs with no prompt. An
+            # existing file always wins; no default means nothing changes.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
+            cloudsync_first_run.seed_default_config(cloudsync_dir, env=os.environ)
             async with legacy_lifespan(instance), scheduler_lifespan(
                 cloudsync_dir,
                 ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),

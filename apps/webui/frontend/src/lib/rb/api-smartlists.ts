@@ -19,7 +19,13 @@
  * keeps the SmartlistRule AST union the rule editor depends on.
  */
 
-import { RbApiError, type CloudTransferWire, type StemSummary, type Vocals } from './api-rb';
+import {
+	RbApiError,
+	type CloudTransferWire,
+	type FileAvailabilityStatus,
+	type StemSummary,
+	type Vocals
+} from './api-rb';
 import type { TrackQuality } from './library-types';
 
 import { ApiError, api, unwrap } from '../api/client';
@@ -67,7 +73,9 @@ export interface SmartlistTrackRow {
 	etag: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	/** PERF-RB-01: null only while file_availability is AVAILABILITY_PENDING. */
+	file_exists: boolean | null;
+	file_availability: FileAvailabilityStatus;
 	is_streaming: boolean;
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */

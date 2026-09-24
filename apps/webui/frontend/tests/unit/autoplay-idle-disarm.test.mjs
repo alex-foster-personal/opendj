@@ -1,5 +1,6 @@
 /**
  * PLAY-09 / issue #1878: AutoPlay cannot stay armed with every deck stopped.
+ * PLAY-12 / issue #3884: 30s silent stall, 31s post-playback disarm, 3min armed-empty grace.
  *
  * [if] AutoPlay is armed and every deck has been stopped for AUTO_PLAY_IDLE_DISARM_MS
  *   with no pending master promotion [then] the pref disarms [⛔️ if aria-pressed
@@ -23,7 +24,7 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
-	"export { AUTO_PLAY_IDLE_DISARM_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
+	"export { AUTO_PLAY_ARMED_EMPTY_DISARM_MS, AUTO_PLAY_IDLE_DISARM_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
 ].join('\n');
 
 function settle() {
@@ -42,7 +43,7 @@ test.before(async () => {
 	autoPlay = await loadTypeScriptModule('src/lib/rb/autoplay-idle.ts');
 });
 
-test('shouldRaiseAutoPlaySilentStall waits for five seconds of idle', () => {
+test('shouldRaiseAutoPlaySilentStall waits for thirty seconds of idle', () => {
 	const { shouldRaiseAutoPlaySilentStall, AUTO_PLAY_SILENT_STALL_MS } = autoPlay;
 	const base = {
 		enabled: true,
@@ -51,7 +52,8 @@ test('shouldRaiseAutoPlaySilentStall waits for five seconds of idle', () => {
 		stall_active: false,
 		idle_since_ms: 1_000,
 		now_ms: 1_000 + AUTO_PLAY_SILENT_STALL_MS - 1,
-		source_stable_id: 'src-1'
+		source_stable_id: 'src-1',
+		armed_empty_active: false
 	};
 	assert.equal(shouldRaiseAutoPlaySilentStall(base), false);
 	assert.equal(
@@ -64,6 +66,7 @@ test('shouldRaiseAutoPlaySilentStall waits for five seconds of idle', () => {
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, stall_active: true }), false);
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, source_stable_id: '' }), false);
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, enabled: false }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, armed_empty_active: true }), false);
 });
 
 test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
@@ -73,7 +76,8 @@ test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
 		any_playing: false,
 		pending_master: false,
 		idle_since_ms: 1_000,
-		now_ms: 1_000 + AUTO_PLAY_IDLE_DISARM_MS - 1
+		now_ms: 1_000 + AUTO_PLAY_IDLE_DISARM_MS - 1,
+		armed_empty_active: false
 	};
 	assert.equal(shouldDisarmAutoPlayIdle(base), false);
 	assert.equal(
@@ -84,6 +88,34 @@ test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, pending_master: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, silence_recovering: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, enabled: false }), false);
+});
+
+test('armed-empty mode disarms after three minutes without playback', () => {
+	const {
+		shouldDisarmAutoPlayIdle,
+		shouldRaiseAutoPlaySilentStall,
+		AUTO_PLAY_ARMED_EMPTY_DISARM_MS
+	} = autoPlay;
+	const base = {
+		enabled: true,
+		any_playing: false,
+		pending_master: false,
+		stall_active: false,
+		idle_since_ms: 1_000,
+		now_ms: 1_000 + AUTO_PLAY_ARMED_EMPTY_DISARM_MS - 1,
+		source_stable_id: 'src-1',
+		armed_empty_active: true
+	};
+	assert.equal(shouldRaiseAutoPlaySilentStall(base), false);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, armed_empty_active: true }), false);
+	assert.equal(
+		shouldDisarmAutoPlayIdle({
+			...base,
+			now_ms: 1_000 + AUTO_PLAY_ARMED_EMPTY_DISARM_MS,
+			armed_empty_active: true
+		}),
+		true
+	);
 });
 
 test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => {
@@ -109,6 +141,10 @@ test('RUNNING it: idle disarm drops the pref after every deck stops', async () =
 		uninstall = mod.installAutoPlay();
 		await probe.flush();
 		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
 		stopEveryDeck(mod);
 		await settle();
 		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
@@ -140,6 +176,7 @@ test('RUNNING it: no-deck-playing stall retires when the same source is audible 
 		mod.deckStates[1].is_master = true;
 		mod.deckStates[1].duration_ms = 300_000;
 		mod.deckStates[1].position_ms = 167_090;
+		await settle();
 		stopEveryDeck(mod);
 		await settle();
 		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
@@ -166,7 +203,7 @@ test('RUNNING it: no-deck-playing stall retires when the same source is audible 
 	}
 });
 
-test('RUNNING it: five seconds idle raises no-deck-playing before disarm', async () => {
+test('RUNNING it: thirty seconds idle raises no-deck-playing before disarm', async () => {
 	mock.timers.enable({ apis: ['Date'] });
 	const probe = installTimerProbe();
 	let uninstall = null;
@@ -178,6 +215,7 @@ test('RUNNING it: five seconds idle raises no-deck-playing before disarm', async
 		mod.deckStates[1].stable_id = 'src-1';
 		mod.deckStates[1].playing = true;
 		mod.deckStates[1].is_master = true;
+		await settle();
 		stopEveryDeck(mod);
 		await settle();
 		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
@@ -186,6 +224,63 @@ test('RUNNING it: five seconds idle raises no-deck-playing before disarm', async
 		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS);
 		await settle();
 		assert.equal(mod.uiPrefs.auto_play_enabled, false);
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing');
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('RUNNING it: armed-empty grace keeps AutoPlay on for three minutes', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_ARMED_EMPTY_DISARM_MS - 1);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		assert.equal(mod.readAutoPlayStall(), null);
+		mock.timers.tick(2);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, false);
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('RUNNING it: playback before armed-empty grace expires uses normal idle timing', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(60_000);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
+		await settle();
 		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing');
 	} finally {
 		if (uninstall !== null) uninstall();
@@ -211,6 +306,10 @@ test('RUNNING it: idle disarm keeps a PLAY-08 stall visible', async () => {
 				{ stable_id: 'gone-1', key: '8A', bpm: 124, file_exists: false, title: 'Gone', artist: 'Bo' }
 			]
 		});
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
 		stopEveryDeck(mod);
 		await settle();
 		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
@@ -241,5 +340,8 @@ test('SHAPE GUARD: idle disarm calls setAutoPlayEnabled from the poll', () => {
 	assert.match(controller, /planAutoPlayIdleDisarm\(/);
 	assert.match(controller, /applyAutoPlayIdleDisarmAction\(/);
 	assert.match(controller, /setAutoPlayEnabled\(false\)/);
+	assert.match(controller, /noteAutoPlayArmedEmptyOnEnable\(/);
+	assert.match(controller, /noteAutoPlayPlaybackStarted\(/);
 	assert.match(idle, /shouldDisarmAutoPlayIdle\(/);
+	assert.match(idle, /AUTO_PLAY_ARMED_EMPTY_DISARM_MS/);
 });

@@ -28,8 +28,6 @@
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
-		parseStemSummary,
-		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
@@ -85,13 +83,14 @@
 		clearSelection,
 		pruneSelection,
 		fetchAllPages,
+		rowFromListWire as _rowFromListWire,
+		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
 		SearchHitWire,
-		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -148,6 +147,7 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setAvailableOfflineFilter,
 		setRemixesFilter,
 		setVocalsFilter,
 		uiPrefs,
@@ -205,6 +205,8 @@
 		makeClientRowProvider,
 		multiPanePlaylistIds,
 		reconcileBootSnapshot,
+		canAddPaneSlot,
+		MAX_PANE_SLOTS,
 		reorderPanesInPlace,
 		parseLv1,
 		resolveBootPlaylist,
@@ -212,6 +214,7 @@
 		shouldRetryBootPane,
 		writeLv1,
 		rowHasVocalLyrics,
+		rowIsLocallyAvailable,
 		rowIsRemix,
 		sortRows,
 		visibleRowsOf,
@@ -263,12 +266,7 @@
 	// 4 independent PaneStore instances - selection, search, sort, and
 	// scroll cursor per pane survive tab switches. Only the active pane
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
-	const panes: PaneStore[] = [
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore()
-	];
+	const panes: PaneStore[] = [createPaneStore()];
 	let activePane = $state(0);
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
@@ -603,6 +601,7 @@
 		let out = rows;
 		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
 		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		if (uiPrefs.available_offline_filter) out = out.filter(rowIsLocallyAvailable);
 		return out;
 	}
 
@@ -1408,7 +1407,7 @@
 		const target = resolveNewTabIndex(panes);
 		if (target === null) {
 			pushToast(
-				'ALL 4 LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist',
+				`ALL ${MAX_PANE_SLOTS} LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist`,
 				'error'
 			);
 			return;
@@ -1436,6 +1435,12 @@
 	function togglePaneSticky(index: number): void {
 		if (index < 0 || index >= panes.length) return;
 		panes[index].sticky = !panes[index].sticky;
+	}
+
+	function addBlankPaneSlot(): void {
+		if (!canAddPaneSlot(panes.length)) return;
+		panes.push(createPaneStore());
+		activePane = panes.length - 1;
 	}
 
 	function reorderPaneTabs(from: number, to: number): void {
@@ -2010,110 +2015,8 @@
 		};
 	}
 
-	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (
-			typeof wire.stable_id !== 'string' ||
-			typeof wire.file_exists !== 'boolean' ||
-			typeof wire.has_rb_mapping !== 'boolean'
-		) {
-			throw new Error(
-				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
-			);
-		}
-		return {
-			stable_id: wire.stable_id,
-			item_id: wire.item_id ?? null,
-			order,
-			title: wire.title,
-			artist: wire.artist,
-			key: wire.key,
-			bpm: wire.bpm,
-			rating: wire.rating,
-			etag: wire.etag,
-			comments: wire.comments,
-			duration_ms: wire.duration_ms,
-			genre: wire.genre,
-			genre_reason: wire.genre_reason ?? null,
-			energy: wire.energy,
-			energy_source: wire.energy_source,
-			energy_reason: wire.energy_reason,
-			key_status: wire.key_status ?? 'ok',
-			key_reason: wire.key_reason ?? null,
-			loudness_status: wire.loudness_status ?? 'ok',
-			loudness_reason: wire.loudness_reason ?? null,
-			file_exists: wire.file_exists,
-			is_streaming: wire.is_streaming,
-			is_remote: wire.is_remote === true,
-			has_remote_copy: wire.has_remote_copy === true,
-			cloud_transfer: wire.cloud_transfer ?? null,
-			spotify_pending:
-				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
-			quality: wire.quality ?? null,
-			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
-			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
-			vocals: parseVocals(wire.vocals),
-			stems: parseStemSummary(wire.stems),
-			has_rb_mapping: wire.has_rb_mapping,
-			artwork_available: wire.artwork_available,
-			artwork_status: wire.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: wire.lyrics ?? null,
-			is_remix: wire.is_remix ?? null,
-			is_radio_edit: wire.is_radio_edit ?? null
-		};
-	}
-
 	function _rowFromSearchHit(wire: SearchHitWire, order: number): BrowserRow {
 		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
-	}
-
-	function _rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
-		if (typeof track.stable_id !== 'string') {
-			throw new Error(`tracks endpoint returned a non-track payload at row ${order}`);
-		}
-		return {
-			stable_id: track.stable_id,
-			item_id: null,
-			order,
-			// TrackOut spells its nullable fields optional; a BrowserRow wants one
-			// spelling of "unknown", so absent collapses onto null here.
-			title: track.title ?? null,
-			artist: track.artist ?? null,
-			key: track.key ?? null,
-			bpm: track.bpm ?? null,
-			rating: track.rating ?? null,
-			// List items carry no ETag; rating edits lazily fetch one.
-			etag: '',
-			comments: track.notes ?? null,
-			duration_ms: track.duration_ms ?? null,
-			genre: track.genre ?? null,
-			genre_reason: track.genre_reason ?? null,
-			energy: track.energy,
-			energy_source: track.energy_source,
-			energy_reason: track.energy_reason,
-			file_exists: track.file_exists,
-			is_streaming: null,
-			is_remote: track.is_remote === true,
-			has_remote_copy: track.has_remote_copy === true,
-			cloud_transfer: track.cloud_transfer ?? null,
-			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
-			quality: track.quality ?? null,
-			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
-			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
-			vocals: parseVocals(track.vocals),
-			stems: parseStemSummary(track.stems),
-			has_rb_mapping: track.has_rb_mapping,
-			artwork_available: track.artwork_available,
-			artwork_status: track.artwork_status,
-			rb_meta: null,
-			revealed: false,
-			match_context: null,
-			lyrics: track.lyrics ?? null,
-			is_remix: track.is_remix ?? null,
-			is_radio_edit: track.is_radio_edit ?? null
-		};
 	}
 
 	async function _fetchAllRows(
@@ -2269,7 +2172,14 @@
 
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
+		file_availability?: BrowserRow['file_availability'];
 	};
+
+	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
+	 * its own reason, never reported as a missing file. */
+	function _availabilityPending(row: LoadableRow): boolean {
+		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
+	}
 
 	function loadRow(
 		row: LoadableRow,
@@ -2355,7 +2265,9 @@
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
-				file_exists: r.file_exists,
+				// Pending (null) is not playable yet; AutoPlay skips it like a
+				// missing row until the disk probe settles it.
+				file_exists: r.file_exists === true,
 				title: r.title,
 				artist: r.artist
 			})),
@@ -2509,6 +2421,10 @@
 			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
+		if (_availabilityPending(row)) {
+			pushToast('preview: availability still checking (wait for disk probe)', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2545,6 +2461,10 @@
 		try {
 			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
+				return;
+			}
+			if (_availabilityPending(row)) {
+				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
 				return;
 			}
 			if (!row.file_exists) {
@@ -3179,6 +3099,7 @@
 
 <section
 	class="rb-browser"
+	data-library-root
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
@@ -3249,8 +3170,10 @@
 				onreorder={reorderPaneTabs}
 				ondropplaylist={dropPlaylistOnTabBar}
 				onsaveas={(i) => void saveAsPlaylistUi(i)}
+				onaddpane={addBlankPaneSlot}
 			/>
 			<div class="header-right">
+				<div class="header-controls-cluster">
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
@@ -3366,6 +3289,18 @@
 					/>
 					<span>compatible</span>
 				</label>
+				<label
+					class="offline-filter"
+					title="Keep only tracks with local audio present (excludes cloud-only and streaming rows)"
+				>
+					<input
+						type="checkbox"
+						aria-label="Available offline - keep only tracks with local audio present"
+						checked={uiPrefs.available_offline_filter}
+						onchange={(e) => setAvailableOfflineFilter(e.currentTarget.checked)}
+					/>
+					<span>available offline</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -3405,9 +3340,14 @@
 						onfocuschange={(f) => (searchFocused = f)}
 					/>
 				</div>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
-				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+				</div>
+				<div class="edit-actions-stack">
+					<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
+					<div class="edit-actions-fold">
+						<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
+						<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+					</div>
+				</div>
 			</div>
 		</div>
 		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
@@ -3703,21 +3643,32 @@
 	}
 	.header-right {
 		display: flex;
-		align-items: center;
-		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
-		   the 190px AddTrackSearch alongside these controls, and .list-panel
-		   is overflow: hidden, so a non-wrapping row silently clipped its
-		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
-		   running past the edge visibly. Bot review, PR #1672.
-		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
-		   `flex: none` this box sized to max-content, so `flex-wrap` had no
-		   narrower width to wrap INTO and did nothing at all. */
-		flex-wrap: wrap;
-		row-gap: 3px;
+		align-items: flex-start;
 		gap: 4px;
 		padding: 0 6px;
 		flex: 0 1 auto;
 		min-width: 0;
+	}
+	.header-controls-cluster {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: center;
+		gap: 4px;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.edit-actions-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex: none;
+	}
+	.edit-actions-fold {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -3744,6 +3695,8 @@
 		flex-direction: column;
 		align-items: flex-end;
 		gap: 3px;
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.search-options {
 		display: flex;
@@ -3758,7 +3711,8 @@
 	.hide-broken,
 	.next-only,
 	.remixes-filter,
-	.vocals-filter {
+	.vocals-filter,
+	.offline-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3770,13 +3724,15 @@
 	.hide-broken:hover,
 	.next-only:hover,
 	.remixes-filter:hover,
-	.vocals-filter:hover {
+	.vocals-filter:hover,
+	.offline-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
 	.next-only input,
 	.remixes-filter input,
-	.vocals-filter input {
+	.vocals-filter input,
+	.offline-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3832,7 +3788,7 @@
 			max-height: 24px;
 			overflow: hidden;
 		}
-		.header-right {
+		.header-controls-cluster {
 			flex-wrap: nowrap;
 		}
 	}

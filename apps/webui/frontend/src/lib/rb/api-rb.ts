@@ -50,6 +50,13 @@ export const RB_API_BASE: string = API_BASE;
 
 export { RbApiError } from './api-rb-error';
 
+export type FileAvailabilityStatus =
+	| 'present'
+	| 'absent'
+	| 'AVAILABILITY_PENDING'
+	| 'streaming'
+	| 'awaiting_volume';
+
 export type TrackLyrics = {
 	stable_id: string;
 	source: string;
@@ -118,7 +125,10 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 			typeof value.start_ms !== 'number' ||
 			!Number.isInteger(value.start_ms) ||
 			value.start_ms < 0 ||
-			value.start_ms <= previousStartMs ||
+			// Equal stamps are valid LRC (two lines sung at once), and the
+			// server's cache reader accepts them (apps/lyrics/cache.py); only a
+			// line that starts BEFORE the previous one is out of order.
+			value.start_ms < previousStartMs ||
 			typeof value.text !== 'string' ||
 			!value.text.trim()
 		) {
@@ -381,7 +391,8 @@ export interface PlaylistTrackRowWire {
 	etag: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	is_streaming: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
@@ -587,7 +598,8 @@ export type TrackListItemWire = Track & {
 	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
-	file_exists: boolean;
+	file_availability: FileAvailabilityStatus;
+	file_exists: boolean | null;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
@@ -626,10 +638,18 @@ export async function listTracksHydrated(params: {
 		.join('&');
 	const page = await _fetchJson<TracksPageHydrated>(`/api/v1/tracks${qs === '' ? '' : '?' + qs}`);
 	for (const item of page.items) {
-		if (typeof item.file_exists !== 'boolean') {
+		if (
+			item.file_availability !== 'AVAILABILITY_PENDING' &&
+			typeof item.file_exists !== 'boolean'
+		) {
 			throw new Error(
 				`track ${String(item.stable_id)}: listing row has no file_exists - ` +
 					'backend contract point 1 not met'
+			);
+		}
+		if (typeof item.file_availability !== 'string') {
+			throw new Error(
+				`track ${String(item.stable_id)}: listing row has no file_availability`
 			);
 		}
 		// Loud, not falsy-defaulted: an absent flag would silently read as
@@ -890,7 +910,11 @@ export interface StemArtifactManifest {
 
 export type StemArtifactProbe =
 	| { status: 'ready'; manifest: StemArtifactManifest }
-	| { status: 'unavailable'; error: string };
+	| { status: 'unavailable'; error: string }
+	// The server has the bundle in its R2 index and just started fetching it
+	// (STEM_BUNDLE_HYDRATING). NOT settled: the same GET answers `ready` once
+	// the download lands, so a caller must re-ask, never read this as "no stems".
+	| { status: 'hydrating'; error: string };
 
 function _validateStemManifest(raw: unknown, stableId: string): StemArtifactManifest {
 	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -964,7 +988,10 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 				'code' in raw ? String((raw as { code: unknown }).code) : 'STEM_BUNDLE_NOT_FOUND';
 			const message =
 				'message' in raw ? String((raw as { message: unknown }).message) : 'no stem bundle';
-			return { status: 'unavailable', error: `${code}: ${message}` };
+			const hydrating =
+				code === 'STEM_BUNDLE_HYDRATING' ||
+				('hydrating' in raw && (raw as { hydrating: unknown }).hydrating === true);
+			return { status: hydrating ? 'hydrating' : 'unavailable', error: `${code}: ${message}` };
 		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {
