@@ -3,7 +3,7 @@
   "productName": "Open DJ",
   "version": "0.1.5",
   "private": true,
-  "description": "Open DJ desktop shell on Electron: boots the bundled engine and opens a Chromium window onto it. Phase 20, beside the Tauri shell until cutover.",
+  "description": "Open DJ desktop shell on Electron: boots the bundled engine and opens a Chromium window onto it. Phase 21, beside the Tauri shell until cutover.",
   "main": "dist/main.js",
   "engines": {
     "node": ">=22.12"
