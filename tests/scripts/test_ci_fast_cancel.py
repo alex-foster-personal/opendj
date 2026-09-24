@@ -328,7 +328,7 @@ def test_a_working_baseline_still_decides_after_the_refusal_guard(
         identities = ("FAILED tests/a/test_x.py::test_two",)
 
     _forbid_gh(monkeypatch)
-    monkeypatch.setattr(ci_main_red, "cached_main_red", lambda: _Record())
+    monkeypatch.setattr(ci_main_red, "cached_main_red", _Record)
     rc = ci_fast_cancel.main(["--log", str(_log(tmp_path)), "--run-id", "777", "--dry-run"])
     assert rc == 0
     out = capsys.readouterr().out
