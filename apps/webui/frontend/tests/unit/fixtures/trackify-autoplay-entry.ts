@@ -3,6 +3,7 @@
  */
 export { deckStates } from '$lib/rb/audio-engine.svelte';
 export { uiPrefs } from '$lib/rb/prefs.svelte';
+export { toasts } from '$lib/stores.svelte';
 export { TRACKIFY_DECK_ID, TRACKIFY_LOAD_SKIP_DEADLINE_MS } from '$lib/rb/trackify-autoplay';
 export {
 	e2eForceTrackifyLoad,
