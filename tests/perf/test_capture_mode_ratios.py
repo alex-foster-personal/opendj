@@ -122,6 +122,21 @@ def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
         cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
 
 
+@pytest.mark.requirement("PERFMODE-15")
+def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
+    """[if] leak-duration-s is below the requirement's 1h window [then]
+    _sample_leak raises before writing a slope KPI over a shorter window,
+    [else stop].
+
+    Direct regression test for the claude-review P3: a 30s run with two or
+    three samples must not be allowed to write
+    `trackify_mode_footprint_slope_mb_per_10min` with a note implying a 1h
+    leak slope.
+    """
+    with pytest.raises(ValueError, match="1 h unattended"):
+        cmr._sample_leak(os.getpid(), cmr._MIN_LEAK_DURATION_S - 1)
+
+
 def _fake_browser_proc(pid: int, lines: list[str]) -> MagicMock:
     proc = MagicMock()
     proc.pid = pid

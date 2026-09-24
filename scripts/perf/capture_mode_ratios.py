@@ -144,7 +144,15 @@ def _sample_steady(root_pid: int, duration_s: int) -> dict[str, float]:
     }
 
 
+_MIN_LEAK_DURATION_S = 3600
+
+
 def _sample_leak(root_pid: int, duration_s: int) -> float:
+    if duration_s < _MIN_LEAK_DURATION_S:
+        raise ValueError(
+            f"leak capture must run at least {_MIN_LEAK_DURATION_S}s (the requirement's "
+            f"'1 h unattended' window), got {duration_s}s"
+        )
     sampler = _ProcessTreeSampler(root_pid)
     sampler.sample()  # discard the primed-CPU first reading
     elapsed: list[float] = []
