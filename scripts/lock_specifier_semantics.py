@@ -86,9 +86,7 @@ def compatible_upper(version: str) -> str:
     return ".".join([*release[:-2], str(int(release[-2]) + 1)])
 
 
-def norm_spec(
-    spec: str, *, expand_compatible: bool = False, empty_clauses: str = "reject"
-) -> str:
+def norm_spec(spec: str, *, expand_compatible: bool = False, empty_clauses: str = "reject") -> str:
     """The specifier's clauses normalized and sorted. An empty comma-separated clause
     (`>=3.11,,`, `,>=3.11`, `>=3.11, ,<4`) is refused by uv where `empty_clauses` is
     "reject" (requires-python, `uv lock --check` exit 2) and where it is "trailing"

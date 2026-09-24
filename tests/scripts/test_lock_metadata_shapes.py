@@ -537,3 +537,53 @@ def test_a_package_artifact_record_uv_reads_keeps_the_verdict(tmp_path: Path, ed
     assert edited != lock
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, edited)
     assert code == EXIT_OK, message
+
+
+SIX_HEAD = 'name = "six"\nversion = "1.17.0"\nsource = { registry = "https://pypi.org/simple" }'
+
+
+@pytest.mark.parametrize("site", ["lock", "package"])
+@pytest.mark.parametrize("value", ["[true]", "{}", '["bad"]', '[""]', "[1]", "\"os_name == 'x'\""])
+def test_a_resolution_marker_that_uv_cannot_read_is_unknown(
+    tmp_path: Path, site: str, value: str
+) -> None:
+    """`resolution-markers` of each shape, on the lock or on a package, is "Failed to
+    parse `uv.lock`", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763,
+    round 39), while `lock_schema` had read only `version`. Controls: `[]` on either,
+    and a list of valid markers (two complementary forks on the lock, one on a
+    package) are read (exit 0)."""
+    anchor = 'requires-python = ">=3.11"' if site == "lock" else SIX_HEAD
+    assert UNMARKED_LOCK.count(anchor) == 1
+    lock = UNMARKED_LOCK.replace(anchor, f"{anchor}\nresolution-markers = {value}")
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+    assert code == EXIT_UNKNOWN, message
+    assert "resolution-markers" in message
+    forks = "[\"os_name == 'x'\", \"os_name != 'x'\"]" if site == "lock" else "[\"os_name == 'x'\"]"
+    for control in ("[]", forks):
+        lock = UNMARKED_LOCK.replace(anchor, f"{anchor}\nresolution-markers = {control}")
+        code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
+        assert code == EXIT_OK, message
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("foo_bar", "foo-bar"), ('"Foo.Bar"', "foo_bar"), ("localdep", "LocalDep")],
+)
+def test_source_names_that_collide_after_normalization_are_unknown(
+    tmp_path: Path, first: str, second: str
+) -> None:
+    """`foo_bar = ...` beside `foo-bar = ...` in `[tool.uv.sources]`, declared or not,
+    is "duplicate sources for package", "Failed to parse: `pyproject.toml`", exit 2
+    (measured uv 0.8.17, Codex P2 on #3763, round 39), while the normalized lookup had
+    kept one quietly. Control: one of them alone is read (exit 0)."""
+    assert MINI_PYPROJECT.endswith('localdep = { path = "dep" }\n')
+    entries = [f"{name} = {{ workspace = false }}\n" for name in (first, second)]
+    if first == "localdep":  # colliding with the declared source itself
+        entries = ["", f'{second} = {{ path = "dep" }}\n']
+    (tmp_path / "dep").mkdir(exist_ok=True)
+    (tmp_path / "dep" / "pyproject.toml").write_text(MINI_DEP_PYPROJECT, encoding="utf-8")
+    code, message = _run(tmp_path, MINI_PYPROJECT + "".join(entries), MINI_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert "[tool.uv.sources]" in message and "are both" in message
+    code, message = _run(tmp_path, MINI_PYPROJECT + entries[0], MINI_LOCK)
+    assert code == EXIT_OK, message

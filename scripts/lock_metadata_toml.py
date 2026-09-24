@@ -99,6 +99,7 @@ def lock_schema(lock: dict) -> None:
     version = lock.get("version")
     if isinstance(version, bool) or version != 1:
         raise Unknown(f"uv.lock schema version = {version!r}; only 1 is readable by uv")
+    resolution_markers(lock, "uv.lock")
 
 
 _SOURCE_KEYS = ("registry", "git", "url", "path", "directory", "editable", "virtual")
@@ -122,6 +123,8 @@ def parsed_marker(value: object, where: str) -> str:
     type error and `marker = "bad"` or `marker = ""` "Expected marker value", each
     exit 2 (measured uv 0.8.17, rounds 37 and 38). Parsed, not compared."""
     marker = toml_string(value, where)
+    if not marker.strip():
+        raise Unknown(f"{where} = {marker!r} is blank; uv rejects the file")
     try:
         _MarkerParser(marker).parse()
     except Unknown as exc:
@@ -140,10 +143,26 @@ def recorded_marker(entry: dict, where: str) -> str | None:
     round 38); a blank marker had read as no marker."""
     if "marker" not in entry:
         return None
-    marker = toml_string(entry["marker"], f"{where} marker")
-    if not marker.strip():
-        raise Unknown(f"{where} marker = {marker!r} is blank; uv rejects the file")
-    return parsed_marker(marker, f"{where} marker")
+    return parsed_marker(entry["marker"], f"{where} marker")
+
+
+def resolution_markers(table: dict, where: str) -> None:
+    """`resolution-markers`, on the lock or on a package: absent, or a list of markers
+    the grammar accepts. `[true]`, `{}`, `[1]`, `["bad"]`, `[""]` and a bare string
+    are each "Failed to parse `uv.lock`", `uv lock --check` exit 2, while `[]` and a
+    list of valid markers are read (measured uv 0.8.17, Codex P2 on #3763, round 39).
+    Whether the forks match the resolution is not modeled: uv re-resolves for that."""
+    if "resolution-markers" not in table:
+        return
+    for marker in toml_strings(table["resolution-markers"], f"{where} resolution-markers"):
+        parsed_marker(marker, f"{where} resolution-markers")
+
+
+def package_record(entry: dict, name: str) -> None:
+    """Every field of a `[[package]]` that uv types beyond name, source and version."""
+    dependency_records(entry, name)
+    artifact_records(entry, name)
+    resolution_markers(entry, f"uv.lock [[package]] {name!r}")
 
 
 def _artifact_fields(record: dict, where: str) -> None:
@@ -282,6 +301,17 @@ def managed_sources(uv_tool: dict | None) -> dict:
         return {}
     if not isinstance(sources, dict):
         raise Unknown(f"[tool.uv] sources = {sources!r} is not a table; uv rejects the file")
+    seen: dict[str, str] = {}
     for name, source in sources.items():  # every entry, declared or not (round 37)
-        pyproject_source_shape(norm_name(name), source)
+        normalized = norm_name(name)
+        if normalized in seen:
+            # `foo_bar = ...` beside `foo-bar = ...` is "duplicate sources for package",
+            # "Failed to parse: `pyproject.toml`", exit 2 (round 39); the normalized
+            # lookup downstream had kept one of them quietly.
+            raise Unknown(
+                f"[tool.uv.sources] {name} and {seen[normalized]} are both {normalized!r}; "
+                "uv rejects the file"
+            )
+        seen[normalized] = name
+        pyproject_source_shape(normalized, source)
     return sources
