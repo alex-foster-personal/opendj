@@ -32,6 +32,8 @@ CLI::
     python -m apps.sync_hub.hub_deploy init   --data-dir D
     python -m apps.sync_hub.hub_deploy status --data-dir D --url http://127.0.0.1:P \\
         [--allowed-hosts HOST[,HOST]]
+    python -m apps.sync_hub.hub_deploy provision-user --user U ...   (apps/sync_hub/hub_user.py)
+    python -m apps.sync_hub.hub_deploy remove-user    --user U ...   (one hub per test user, #3870)
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from xml.sax.saxutils import escape
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
+from apps.sync_hub import hub_user
 from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 
 Kind = Literal["systemd", "launchd"]
@@ -100,10 +103,17 @@ def _validated_allowed_hosts(raw: str) -> str:
     return ",".join(hosts)
 
 
-def hub_service_env(*, allowed_hosts: str | None = None) -> dict[str, str]:
+def hub_service_env(
+    *, allowed_hosts: str | None = None, extra_env: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The serve unit's env. ``extra_env`` may add keys, never override one."""
     env = dict(HUB_ENV)
     if allowed_hosts is not None and allowed_hosts.strip():
         env[ALLOWED_HOSTS_ENV] = _validated_allowed_hosts(allowed_hosts)
+    for key, value in (extra_env or {}).items():
+        if key in env:
+            raise HubDeployError(f"extra env {key} would override the hub's {env[key]!r}")
+        env[key] = value
     return env
 
 TEMPLATE_FILES: dict[Kind, dict[str, str]] = {
@@ -283,10 +293,13 @@ class RenderInputs:
     serve_r2: bool = False
     serve_doppler_config: str | None = None
     allowed_hosts: str | None = None
+    #: Added to the serve unit only (never the backup job): the per-user hub
+    #: sets its credential mode and machine name here.
+    extra_env: Mapping[str, str] | None = None
 
 
 def _placeholder_values(kind: Kind, inputs: RenderInputs) -> dict[str, dict[str, str]]:
-    serve_env = hub_service_env(allowed_hosts=inputs.allowed_hosts)
+    serve_env = hub_service_env(allowed_hosts=inputs.allowed_hosts, extra_env=inputs.extra_env)
     serve = hub_serve_argv(
         uv=inputs.uv,
         data_dir=inputs.data_dir,
@@ -354,17 +367,25 @@ def render_units(kind: Kind, inputs: RenderInputs) -> dict[str, str]:
 # ----- init + status ---------------------------------------------------------
 
 
-def init_hub_data_dir(data_dir: Path) -> machine_identity.MachineIdentity:
-    """Create the hub DB and its own ``machines`` row, so ``status`` can read it."""
+def init_hub_data_dir(
+    data_dir: Path, *, env: Mapping[str, str] | None = None, name: str | None = None
+) -> machine_identity.MachineIdentity:
+    """Create the hub DB and its own ``machines`` row, so ``status`` can read it.
+
+    ``env`` stands in for the process environment (a provisioning CLI passes
+    the unit's env rather than exporting ``MDT_IS_HUB`` into its own).
+    """
     assert_dedicated_data_dir(data_dir)
-    if not machine_identity.is_hub_from_env():
+    if not machine_identity.is_hub_from_env(env):
         raise HubDeployError(
             f"init must run with {machine_identity.IS_HUB_ENV}=1 in the environment"
         )
     Path(data_dir).mkdir(parents=True, exist_ok=True)
     conn = state_db.open_rw(Path(data_dir) / "state" / "state.db")
     try:
-        return machine_identity.register_machine(conn, data_dir=Path(data_dir))
+        return machine_identity.register_machine(
+            conn, data_dir=Path(data_dir), name=name, is_hub=True
+        )
     finally:
         conn.close()
 
@@ -549,6 +570,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="if set, probe GET /api/v1/health on loopback with Host set to the first "
         "listed hostname",
     )
+    hub_user.add_parsers(sub)
     return parser
 
 
@@ -630,12 +652,18 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    commands = {**COMMANDS, **hub_user.COMMANDS}
     try:
-        return COMMANDS[args.command](args)
+        return commands[args.command](args)
     except (HubDeployError, machine_identity.MachineIdentityError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ``python -m`` loads this file as ``__main__``; hub_user imports it again
+    # under its package name, so run the package's copy or its HubDeployError
+    # is a different class from the one ``main`` catches.
+    from apps.sync_hub.hub_deploy import main as _package_main
+
+    raise SystemExit(_package_main())
