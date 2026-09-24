@@ -25,16 +25,15 @@ export interface FeedbackPinShell {
 
 /** The real imports; a test passes its own loader instead. */
 async function loadFeedbackPinShell(): Promise<FeedbackPinShell> {
-	const [layer, shellButton, pinHotkeys] = await Promise.all([
-		import('$lib/components/rb/FeedbackPinLayer.svelte'),
-		import('$lib/components/rb/FeedbackPinShellButton.svelte'),
-		import('$lib/rb/comment-pin-hotkeys')
+	// Each import names what it takes (`({ default: x })`, not a namespace
+	// read later), so the dead-export scan can see installCommentPinHotkeys
+	// is used; a namespace object passed through Promise.all hides that.
+	const [layer, shellButton, installCommentPinHotkeys] = await Promise.all([
+		import('$lib/components/rb/FeedbackPinLayer.svelte').then(({ default: c }) => c),
+		import('$lib/components/rb/FeedbackPinShellButton.svelte').then(({ default: c }) => c),
+		import('$lib/rb/comment-pin-hotkeys').then(({ installCommentPinHotkeys }) => installCommentPinHotkeys)
 	]);
-	return {
-		layer: layer.default,
-		shellButton: shellButton.default,
-		installCommentPinHotkeys: pinHotkeys.installCommentPinHotkeys
-	};
+	return { layer, shellButton, installCommentPinHotkeys };
 }
 
 /** Queue the load behind the boot window; `onReady` gets the loaded pieces,
