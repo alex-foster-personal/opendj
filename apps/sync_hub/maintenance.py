@@ -619,20 +619,30 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     lock file (``<data_dir>/.engine.lock``, ``apps.engine_core.lock``) every
     other CLI in this repo uses to find a live engine, verifies the process on
     that port really is the identity-matched engine, then asks it for its
-    current mirror over loopback HTTP.
+    current mirror over loopback HTTP. ``OPENDJ_LIVE_LOCK_PATH`` (the same
+    override every other CLI in this repo honors via
+    ``apps.shared.engine_origin.lock_path``) takes precedence when set, so an
+    agent driving a sandboxed engine through the live-debug skill is not
+    invisible to this gate just because ``--data-dir`` names a different path
+    (claude-review, PR #3831, P2).
 
-    Only two outcomes read as "nothing is playing", both because no engine is
-    alive to own a playing deck: no lock file, or an unverifiable lock
-    (``EngineNotRunning``, which already covers a transport failure against
-    ``/api/v1/health`` during identity verification -- connect-refused, a
-    role/boot_id mismatch, or a timed-out health check are all folded into
-    that one exception upstream in ``apps.shared.engine_origin``; splitting a
-    locked-but-wedged health check out from a genuinely absent engine is
-    tracked as debt against that shared module rather than fixed here, since
-    every other CLI in this repo shares its exception taxonomy). A verified
-    engine's own 409 with EXACTLY the documented ``{"client_open": False}``
-    body also reads as safe: no open performance page means no deck is
-    rendering audio either.
+    Only ONE outcome reads as "nothing is playing" for certain: no lock file
+    at that path at all. Every other ``EngineNotRunning`` -- an unusable or
+    unreadable lock, a role/boot_id mismatch, a non-200 health status, or a
+    verified port that stopped answering -- is inconclusive, not permissive
+    (claude-review, PR #3831, P1/BLOCKING): the lock names a specific engine,
+    so its failure to check out is a reason to defer, not a reason to assume
+    safety, EXCEPT for the one transport failure that itself proves no engine
+    is listening. ``verify_engine_identity`` raises that case via
+    ``unreachable(...) from error``, so ``exc.__cause__`` names the original
+    ``httpx.TransportError`` subclass; only ``httpx.ConnectError`` (the port
+    refused the connection) reads as safe. A ``httpx.TimeoutException`` (the
+    port accepted the connection and then hung on ``/api/v1/health``) is
+    exactly the "wedged during a live set" case this gate exists to catch, so
+    it defers like every other inconclusive outcome. A verified engine's own
+    409 with EXACTLY the documented ``{"client_open": False}`` body also
+    reads as safe: no open performance page means no deck is rendering audio
+    either.
 
     Everything else from a VERIFIED engine is inconclusive, not permissive
     (claude-review, PR #3831, P1/BLOCKING x2 plus P3 x2): a non-200 status
@@ -646,11 +656,16 @@ def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
     the sync) rather than silently assuming it is safe to proceed, or crashing
     instead of exiting with the documented deferred code.
     """
-    lock_file = data_dir / ".engine.lock"
+    override = os.environ.get(engine_origin.LOCK_PATH_ENV, "").strip()
+    lock_file = Path(override).expanduser() if override else data_dir / ".engine.lock"
     try:
         origin = engine_origin.resolve_verified_origin(lock_file)
-    except engine_origin.EngineNotRunning:
-        return None
+    except engine_origin.EngineNotRunning as exc:
+        if not lock_file.exists():
+            return None
+        if isinstance(exc.__cause__, httpx.ConnectError):
+            return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
     try:
         with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S) as http_client:
             response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")

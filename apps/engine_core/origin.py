@@ -7,12 +7,23 @@ would have made ``sync_hub`` import back from ``engine_core``, closing a
 package cycle. Every name keeps this import path, so nothing else in this
 package's callers moves with it; delete this module once no importer needs
 the old path.
+
+A rebound name is not the same object as the module attribute a function
+reads at call time: ``verify_engine_identity`` (defined in
+``apps.shared.engine_origin``) resolves ``httpx`` and every module-level
+constant from ITS OWN globals, not this shim's. Monkeypatching
+``apps.engine_core.origin.DEFAULT_LOCK_PATH`` (or ``.httpx``, or any other
+name re-exported here) silently patches nothing real -- target
+``apps.shared.engine_origin`` directly instead (claude-review, PR #3831, P3).
 """
 
 from __future__ import annotations
 
 from apps.shared.engine_origin import (
     DEFAULT_LOCK_PATH,
+    EXPECTED_ENGINE_ROLE,
+    HEALTH_PATH,
+    IDENTITY_PROBE_TIMEOUT_S,
     LOCK_PATH_ENV,
     EngineIdentityMismatch,
     EngineNotRunning,
@@ -27,6 +38,9 @@ from apps.shared.engine_origin import (
 
 __all__ = [
     "DEFAULT_LOCK_PATH",
+    "EXPECTED_ENGINE_ROLE",
+    "HEALTH_PATH",
+    "IDENTITY_PROBE_TIMEOUT_S",
     "LOCK_PATH_ENV",
     "EngineIdentityMismatch",
     "EngineNotRunning",

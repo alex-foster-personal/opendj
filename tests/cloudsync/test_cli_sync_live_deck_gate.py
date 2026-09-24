@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.testclient import TestClient
 
+from apps.shared import engine_origin
 from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import maintenance
 from apps.webui.server.routes import state as ui_mirror_routes
@@ -221,6 +222,87 @@ def test_malformed_200_body_fails_closed_not_crashes(tmp_path: Path) -> None:
     finally:
         server.should_exit = True
         thread.join(timeout=10.0)
+
+
+def test_locked_engine_health_check_timeout_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A locked-but-wedged engine (accepts the connection, then hangs on
+    ``/api/v1/health``) must fail closed, not read as "nothing is playing"
+    (claude-review, PR #3831, P1/BLOCKING): ``verify_engine_identity`` raises
+    ``EngineNotRunning`` `from` the underlying ``httpx.TimeoutException`` for
+    this exact case, and only a ``ConnectError`` cause (a port that refused
+    the connection outright) may read as safe. This exercises the identity
+    probe specifically -- the earlier of the two HTTP calls, and a distinct
+    code path from ``test_verified_engine_mirror_timeout_fails_closed``
+    above, which hangs the later ui-mirror GET instead.
+    """
+    monkeypatch.setattr(engine_origin, "IDENTITY_PROBE_TIMEOUT_S", 0.2)
+    app = FastAPI()
+
+    @app.get("/api/v1/health")
+    async def health() -> dict:
+        await asyncio.sleep(1.0)  # exceeds the patched 0.2s client timeout
+        return {"boot_id": _BOOT_ID}
+
+    port = _free_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server, thread = start_uvicorn_in_thread(config, what="the health-hanging fake engine")
+    try:
+        _write_lock(tmp_path, port=port)
+        with pytest.raises(SyncDeferredError) as excinfo:
+            maintenance._cli_live_ui_mirror(tmp_path)
+        assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10.0)
+
+
+def test_opendj_live_lock_path_override_takes_precedence_over_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] OPENDJ_LIVE_LOCK_PATH is set [then] the CLI probes that lock, not
+    ``<data_dir>/.engine.lock`` (claude-review, PR #3831, P2): otherwise an
+    agent driving a sandboxed engine through the live-debug skill's override
+    is invisible to this specific gate while every other CLI in the repo
+    correctly follows it. Two distinct live fake engines prove WHICH lock was
+    actually read: if the override were ignored, this would return the
+    data-dir engine's body (or None, if its lock were simply absent) instead
+    of the override engine's.
+    """
+    override_body = {"decks": {"1": {"playing": True}}}
+    override_app = _fake_engine_app(200, override_body)
+    override_port = _free_port()
+    override_config = uvicorn.Config(
+        override_app, host="127.0.0.1", port=override_port, log_level="warning"
+    )
+    override_server, override_thread = start_uvicorn_in_thread(
+        override_config, what="the override-lock fake engine"
+    )
+
+    data_dir_body = {"decks": {}}
+    data_dir_app = _fake_engine_app(200, data_dir_body)
+    data_dir_port = _free_port()
+    data_dir_config = uvicorn.Config(
+        data_dir_app, host="127.0.0.1", port=data_dir_port, log_level="warning"
+    )
+    data_dir_server, data_dir_thread = start_uvicorn_in_thread(
+        data_dir_config, what="the data-dir-lock fake engine"
+    )
+    try:
+        override_lock = tmp_path / "sandboxed-engine" / ".engine.lock"
+        _write_lock(override_lock.parent, port=override_port)
+        monkeypatch.setenv(engine_origin.LOCK_PATH_ENV, str(override_lock))
+
+        data_dir = tmp_path / "unrelated-data-dir"
+        _write_lock(data_dir, port=data_dir_port)
+
+        assert maintenance._cli_live_ui_mirror(data_dir) == override_body
+    finally:
+        override_server.should_exit = True
+        override_thread.join(timeout=10.0)
+        data_dir_server.should_exit = True
+        data_dir_thread.join(timeout=10.0)
 
 
 def test_verified_engine_mirror_timeout_fails_closed(
