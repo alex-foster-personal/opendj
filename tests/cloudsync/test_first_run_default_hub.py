@@ -209,3 +209,57 @@ def test_hub_process_never_seeds(tmp_path: Path) -> None:
 
     assert seed.outcome == "hub"
     assert sync_config.read_config(data_dir) is None
+
+
+# ----- the payload build writes the block --------------------------------
+
+
+def test_payload_manifest_carries_the_default_hub_block(tmp_path: Path) -> None:
+    """[if] build_manifest with a default hub omits the cloudsync block [then] broken, [else stop]."""
+    from scripts import build_engine_payload as payload
+
+    payload_dir = tmp_path / "payload"
+    build_dir = payload_dir / "app" / "apps" / "webui" / "frontend" / "build"
+    for sub in ("runtime", "pylib"):
+        (payload_dir / sub).mkdir(parents=True)
+    build_dir.mkdir(parents=True)
+    (build_dir / "index.html").write_text("<html></html>")
+    stretch = build_dir / "stretch.wasm"
+    stretch.write_bytes(b"\0")
+    identity = payload.PayloadIdentity(
+        label=None, product_name="Open DJ", identifier="com.example.opendj",
+        app_version="0.0.0", engine_version="0.0.0", default_hub_url=_DEFAULT_HUB,
+    )
+    staged = payload.StagedPayload(
+        runtime_source=tmp_path, python_version="3.11", pruned=[], requirements=[],
+        orphaned=[], stretch_asset=stretch, waveform_wheel_name="", waveform_wheel_sha256="",
+    )
+    manifest = payload.build_manifest(
+        repo_root=Path(__file__).resolve().parents[2], payload_dir=payload_dir,
+        identity_input=identity, staged=staged, report=payload.PayloadReport(),
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, default=str))
+    assert manifest[first_run.MANIFEST_KEY] == {first_run.MANIFEST_URL_KEY: _DEFAULT_HUB}
+    env = {first_run.MANIFEST_ENV: str(manifest_path)}
+    assert first_run.resolve_default_hub_url(env) == _DEFAULT_HUB
+    no_default = payload.build_manifest(
+        repo_root=Path(__file__).resolve().parents[2], payload_dir=payload_dir,
+        identity_input=payload.PayloadIdentity(
+            label=None, product_name="Open DJ", identifier="com.example.opendj",
+            app_version="0.0.0", engine_version="0.0.0",
+        ),
+        staged=staged, report=payload.PayloadReport(),
+    )
+    assert no_default[first_run.MANIFEST_KEY] == {first_run.MANIFEST_URL_KEY: None}
+
+
+def test_payload_build_cli_refuses_a_malformed_default_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a bad --default-hub-url is not refused before building [then] broken, [else stop]."""
+    from scripts import build_engine_payload as payload
+
+    assert payload.main(["--out", str(tmp_path / "out"), "--default-hub-url", "not a url"]) == 1
+    err = capsys.readouterr().err
+    assert "[ERROR]" in err and "not a usable hub URL" in err, err
