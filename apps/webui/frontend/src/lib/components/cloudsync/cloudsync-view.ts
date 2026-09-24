@@ -397,15 +397,26 @@ export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
 
 /**
  * ui-mirror read for Gig/playing-deck sync gates (HTTP parity with Status tab).
- * Fails closed: a fetch error propagates to the caller instead of being read
- * as "no deck playing", so a transient failure never widens the sync gate.
+ * Fails closed: an UNEXPECTED fetch error propagates to the caller instead of
+ * being read as "no deck playing", so a transient failure never widens the
+ * sync gate. A 409 is the one EXPECTED shape here - `/api/v1/state/ui-mirror`
+ * answers it whenever `/performance` is not the mounted route (every other
+ * app-shell route, including `/cloudsync` itself), because there is no live
+ * performance mirror to report. That is "no deck data", not a failure, and
+ * must resolve to null rather than disable Sync / stall the Status tab on
+ * every route besides `/performance`.
  */
 export async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
-	const { data } = await api.GET('/api/v1/state/ui-mirror', {});
-	if (data !== undefined && typeof data === 'object') {
-		return data as { decks?: UiMirrorDecks };
+	try {
+		const { data } = await api.GET('/api/v1/state/ui-mirror', {});
+		if (data !== undefined && typeof data === 'object') {
+			return data as { decks?: UiMirrorDecks };
+		}
+		return null;
+	} catch (exc) {
+		if (readApiErrorStatus(exc) === 409) return null;
+		throw exc;
 	}
-	return null;
 }
 
 export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
