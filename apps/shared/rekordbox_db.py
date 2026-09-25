@@ -104,7 +104,7 @@ def decrypt_to_plain(
     # functions that actually construct a live DB need it at runtime; every
     # other use in this file is a type annotation, made lazy by the
     # ``from __future__ import annotations`` at the top.
-    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox import Rekordbox6Database
 
     db = None
     try:
@@ -231,7 +231,7 @@ def open_db(path: Path | None = None) -> Rekordbox6Database:
     FileNotFoundError
         If neither the working copy nor the live DB can be found.
     """
-    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox import Rekordbox6Database
 
     target = Path(path) if path is not None else paths.REKORDBOX_WORKING_DB
     if not target.exists():

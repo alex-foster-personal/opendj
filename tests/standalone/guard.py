@@ -33,14 +33,13 @@ def find_violations(data_dir: Path) -> list[str]:
     scratch dir, an old backup) is exactly as much a violation as one sitting
     at the top level, and a root-only check would miss it.
     """
-    violations: list[str] = []
     resolved_dir = data_dir.resolve()
 
-    for master in sorted(resolved_dir.rglob(MASTER_PLAIN_DB_NAME)):
-        if master.is_file():
-            violations.append(
-                f"{VIOLATION_PREFIX} forbidden rekordbox artifact at {master}"
-            )
+    violations: list[str] = [
+        f"{VIOLATION_PREFIX} forbidden rekordbox artifact at {master}"
+        for master in sorted(resolved_dir.rglob(MASTER_PLAIN_DB_NAME))
+        if master.is_file()
+    ]
 
     anlz_cache = resolved_dir / ANLZ_CACHE_REL
     if anlz_cache.exists():
