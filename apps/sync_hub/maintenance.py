@@ -199,9 +199,19 @@ def sync(
                     ),
                 )
                 raise
+            # Journaled while STILL holding the flock (Sol review, PR #3831,
+            # P1/BLOCKING): writing this after the ``with`` block exited let a
+            # second process's error write land in the gap between release
+            # and this write, and then get silently overwritten by this
+            # round's now-stale success -- the exact "failed measurement
+            # rendered as a clean result" .claude/rules/verification.md
+            # exists to stop. A complete journaled round -- success or the
+            # error path just above -- now stays atomic under one lock.
+            sync_status.write_result(
+                Path(data_dir), _journal_entry(result, started_at, data_dir)
+            )
     except single_flight.SyncInProgressError as exc:
         raise SyncDeferredError(DEFER_REASON_SYNC_IN_PROGRESS) from exc
-    sync_status.write_result(Path(data_dir), _journal_entry(result, started_at, data_dir))
     return result
 
 

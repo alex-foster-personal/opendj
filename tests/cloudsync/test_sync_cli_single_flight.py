@@ -31,6 +31,10 @@ import pytest
 
 from apps.shared.sync_runtime_gates import DEFER_REASON_SYNC_IN_PROGRESS, SyncDeferredError
 from apps.sync_hub import maintenance, single_flight
+from apps.sync_hub import status as sync_status
+
+from .enrollment_transport import TestClientTransport
+from .test_hub_sync import hub, hub_dir, spoke_a  # noqa: F401 -- pytest fixtures
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-14")
 
@@ -97,3 +101,49 @@ def test_maintenance_sync_cli_exit_code_for_a_concurrent_round(
         )
     assert exit_code == maintenance.EXIT_SYNC_DEFERRED
     assert f"DEFERRED: {DEFER_REASON_SYNC_IN_PROGRESS}" in capsys.readouterr().err
+
+
+def test_maintenance_sync_journals_success_while_still_holding_the_flock(
+    spoke_a: Path, hub: TestClientTransport, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a sync round completes successfully [then] its journal write
+    happens BEFORE the cross-process flock is released (Sol review, PR #3831,
+    P1/BLOCKING): the round-2 fix released the flock BEFORE journaling the
+    success, so a second process could finish and journal an ``error`` in the
+    gap, and this round's now-stale success would silently overwrite it on
+    the next line -- the exact "later failure gets masked by an earlier,
+    now-stale success" this fix closes.
+
+    Proven directly, not by timing: ``sync_status.write_result`` is spied so
+    that AT THE MOMENT it is called, it tries to acquire a fresh flock handle
+    on the SAME data dir. While ``maintenance.sync``'s own flock is genuinely
+    still held, that second acquire must be refused -- if the journal write
+    ever moves back outside the ``with single_flight.sync_flock_for(...)``
+    block, this spy's own acquire would succeed and the test would fail.
+
+    Drives a REAL hub over the real ASGI router (the ``hub`` fixture from
+    ``test_hub_sync``), not a mock: the property under test is the ORDERING
+    of the flock release relative to the journal write, which only exists
+    once ``client.run_sync`` has genuinely completed.
+    """
+    checked = {"write_result_ran_under_the_flock": False}
+    real_write_result = sync_status.write_result
+
+    def _spy_write_result(data_dir: Path, result: sync_status.SyncResult) -> None:
+        with pytest.raises(single_flight.SyncInProgressError):
+            with single_flight.sync_flock_for(data_dir):
+                pass  # pragma: no cover -- must never be reached
+        checked["write_result_ran_under_the_flock"] = True
+        real_write_result(data_dir, result)
+
+    monkeypatch.setattr(sync_status, "write_result", _spy_write_result)
+
+    result = maintenance.sync(
+        spoke_a, "http://hub.invalid", transport=hub, name="spoke-a", force=True
+    )
+
+    assert checked["write_result_ran_under_the_flock"] is True
+    assert result.digest  # sanity: a real completed round came back
+    # And the flock is genuinely free again once sync() has returned.
+    with single_flight.sync_flock_for(spoke_a):
+        pass
