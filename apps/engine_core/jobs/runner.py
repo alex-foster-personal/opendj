@@ -15,6 +15,7 @@ is no lenient parse and no partial credit.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sqlite3
@@ -51,6 +52,15 @@ _RECONCILERS: dict[str, ReconcileHook] = {}
 _OBSERVERS: dict[str, ProgressObserver] = {}
 
 _TAIL_LINES: int = 20
+
+# At most one progress write per job per this interval, and never on the event
+# loop (#3964). The contract is a line per unit of work -- the folder import
+# writes one per FILE -- and a StreamReader with buffered data hands back line
+# after line without yielding, so writing each one synchronously held the loop
+# for a whole backlog of sqlite commits: a 10,000-file import on a busy disk
+# left /api/v1/health unanswered for about two minutes. 4 Hz is plenty for a
+# progress bar, and every line still reaches its kind's observer.
+PROGRESS_WRITE_INTERVAL_S: float = 0.25
 
 # sqlite3.Error is NOT an OSError, so without it here a store write failing
 # mid-run escaped the guard entirely and left the row 'running' forever with
@@ -586,6 +596,23 @@ class JobRunner:
         stream = proc.stdout
         if stream is None:
             raise RuntimeError("worker was spawned without a stdout pipe")
+        writer = _ProgressWriter(self.store, job_id, PROGRESS_WRITE_INTERVAL_S)
+        try:
+            broken = await self._read_progress(stream, tail, writer)
+        except BaseException:
+            writer.abort()
+            raise
+        # Every line read is on disk before the caller writes a terminal
+        # status, so no late progress write can land after it.
+        await writer.close()
+        return broken
+
+    @staticmethod
+    async def _read_progress(
+        stream: asyncio.StreamReader,
+        tail: deque[str],
+        writer: _ProgressWriter,
+    ) -> str | None:
         while True:
             try:
                 raw = await stream.readline()
@@ -602,12 +629,83 @@ class JobRunner:
                 progress, message, parsed = _parse_progress(line)
             except WorkerProtocolError as exc:
                 return str(exc)
-            # The observer runs AFTER the write, on the row the write
-            # produced, so a kind that turns a progress line into a domain
-            # event can never announce something the store has not recorded.
-            observe_progress(
-                self.store.set_progress(job_id, progress, message), parsed
+            writer.offer(progress, message, parsed)
+
+
+class _ProgressWriter:
+    """Coalesce one job's progress lines into rate-bounded, off-loop writes.
+
+    The pump only queues a line; this task writes the LATEST queued line in a
+    worker thread, then waits out ``interval_s`` before the next write. Every
+    queued line is then handed to the kind's observer, in order, on the row
+    that write produced -- so an observer still sees every line, and still
+    never announces a line the store has not recorded.
+
+    A failed write is not swallowed: the next ``offer`` or the final
+    ``close`` re-raises it, and the runner fails the job exactly as it did
+    when the write ran inline.
+    """
+
+    def __init__(self, store: JobStore, job_id: str, interval_s: float) -> None:
+        self._store = store
+        self._job_id = job_id
+        self._interval_s = interval_s
+        self._pending: list[tuple[float, str | None, dict[str, Any]]] = []
+        self._wake = asyncio.Event()
+        self._closed = asyncio.Event()
+        self._task = asyncio.create_task(self._drain())
+
+    def offer(
+        self, progress: float, message: str | None, parsed: dict[str, Any]
+    ) -> None:
+        if self._task.done():
+            # Raises the write error that stopped it; a clean stop before
+            # close() is impossible, so that is a bug worth naming.
+            self._task.result()
+            raise RuntimeError(
+                f"progress writer for job {self._job_id} stopped before its "
+                "worker did"
             )
+        self._pending.append((progress, message, parsed))
+        self._wake.set()
+
+    async def close(self) -> None:
+        """Flush what is still queued, then stop. Raises a failed write."""
+        self._closed.set()
+        self._wake.set()
+        await self._task
+
+    def abort(self) -> None:
+        """The run is already failing: stop writing, keep its own error."""
+        if not self._task.done():
+            self._task.cancel()
+        elif not self._task.cancelled() and self._task.exception() is not None:
+            log.error(
+                "progress writer for job %s had also failed: %r",
+                self._job_id,
+                self._task.exception(),
+            )
+
+    async def _drain(self) -> None:
+        while self._pending or not self._closed.is_set():
+            await self._wake.wait()
+            self._wake.clear()
+            await self._write_pending()
+            if self._closed.is_set():
+                continue
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._closed.wait(), self._interval_s)
+
+    async def _write_pending(self) -> None:
+        if not self._pending:
+            return
+        batch, self._pending = self._pending, []
+        progress, message, _parsed = batch[-1]
+        row = await asyncio.to_thread(
+            self._store.set_progress, self._job_id, progress, message
+        )
+        for _progress, _message, parsed in batch:
+            observe_progress(row, parsed)
 
 
 def _parse_progress(line: str) -> tuple[float, str | None, dict[str, Any]]:
@@ -671,6 +769,7 @@ def _log_supervisor_exit(task: asyncio.Task[None]) -> None:
 
 __all__ = [
     "ORPHANED_WORKER_ERROR",
+    "PROGRESS_WRITE_INTERVAL_S",
     "RECONCILE_RESULTS",
     "JobRunner",
     "ProgressObserver",
