@@ -356,25 +356,31 @@ def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
-    """[if] machine kernel [then] endpoint omits kernel_memory_pressure_level, [else stop]."""
-    record = _captured_process_record()
-    record["machine"] = {"load_average_1m": 1.0}
+    """[if] the live reading has no valid kernel level [then] endpoint omits it, [else stop].
+
+    The route overlays the LIVE machine reading, so the unread case is supplied
+    through ``app.state.machine_pressure_reader``: on a Mac whose kernel pressure
+    is readable it cannot be produced any other way.
+    """
     (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
-        json.dumps(record) + "\n", encoding="utf-8"
+        json.dumps(_captured_process_record()) + "\n", encoding="utf-8"
     )
-    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
-        body = client.get("/api/v1/performance/telemetry/processes").json()
 
-    assert "kernel_memory_pressure_level" not in body
+    def _processes_body(reading: dict[str, object]) -> dict[str, object]:
+        app = _app(performance_process_log_dirs=(tmp_path,))
+        app.state.machine_pressure_reader = lambda: reading
+        with TestClient(app) as client:
+            body: dict[str, object] = client.get(
+                "/api/v1/performance/telemetry/processes"
+            ).json()
+        return body
 
-    record["machine"] = {"kernel_memory_pressure_level": 0}
-    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
-        json.dumps(record) + "\n", encoding="utf-8"
+    assert "kernel_memory_pressure_level" not in _processes_body({"band": "ok"})
+    assert "kernel_memory_pressure_level" not in _processes_body(
+        {"kernel_memory_pressure_level": 0}
     )
-    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
-        body = client.get("/api/v1/performance/telemetry/processes").json()
-
-    assert "kernel_memory_pressure_level" not in body
+    # Control: a valid live level IS surfaced, so the omissions above are measured.
+    assert _processes_body({"kernel_memory_pressure_level": 2})["kernel_memory_pressure_level"] == 2
 
 
 @pytest.mark.requirement("PERFMODE-05")
