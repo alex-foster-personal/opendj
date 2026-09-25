@@ -105,6 +105,14 @@ def _ledger_rows(
     measured: bool = True,
     note: str | None = None,
 ) -> list[dict[str, Any]]:
+    # A ratio over a zero Gig baseline is undefined, not infinite or zero: an
+    # idle Gig (decks loaded, nothing playing) can read 0.0% CPU on every tick.
+    for name, baseline in (
+        ("gig median_footprint_mb", gig_footprint_mb),
+        ("gig median_cpu_percent", gig_cpu_percent),
+    ):
+        if baseline <= 0:
+            raise ValueError(f"{name} is {baseline}; a Library/Gig ratio over it is undefined")
     footprint_ratio = library_footprint_mb / gig_footprint_mb
     cpu_ratio = library_cpu_percent / gig_cpu_percent
     if note is None:

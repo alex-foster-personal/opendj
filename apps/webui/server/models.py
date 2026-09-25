@@ -30,7 +30,7 @@ class ProvenanceOut(BaseModel):
     source: str
     confidence: float | None = None
     modified_at: str
-    status: Literal["ok", "failed", "missing"]
+    status: Literal["ok", "failed", "missing", "available-not-selected"]
     reason: str | None = None
 
 
@@ -335,9 +335,11 @@ class TrackRowOut(BaseModel):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
-    key_status: Literal["ok", "failed", "missing"]
+    key_status: Literal["ok", "failed", "missing", "available-not-selected"]
     key_reason: str | None
-    loudness_status: Literal["ok", "failed", "missing"]
+    bpm_status: Literal["ok", "failed", "missing", "available-not-selected"]
+    bpm_reason: str | None = None
+    loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
     is_remix: bool = False

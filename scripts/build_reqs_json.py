@@ -10,7 +10,10 @@ the repo root so tests + CI can consume it without parsing markdown.
 
 Parsing rules (kept intentionally narrow — the ``.planning/REQUIREMENTS.md``
 file has a stable shape):
-  * ``## v1 Requirements`` — collects categories until ``## v2 Requirements``.
+  * ``## v1 Requirements`` - collects categories until ``## v1.1 Requirements``
+    or ``## v2 Requirements`` (whichever comes first).
+  * ``## v1.1 Requirements`` (optional) - same bullet shape as v1; collects until
+    ``## v2 Requirements``.
   * ``## v2 Requirements`` — collects until ``## Out of Scope`` / ``## Traceability``.
   * ``## Out of Scope`` — reads the markdown table rows.
   * A category header is ``### <Name> (CODE)``; bullets beneath it matching
@@ -111,8 +114,8 @@ def _section_bounds(lines: list[str], header: str) -> tuple[int, int]:
     return start, end
 
 
-def _parse_v1(lines: list[str]) -> dict:
-    start, end = _section_bounds(lines, "v1 Requirements")
+def _parse_versioned_requirements(lines: list[str], header: str) -> dict:
+    start, end = _section_bounds(lines, header)
     if start < 0:
         return {}
     categories: dict[str, dict] = {}
@@ -178,6 +181,10 @@ def _parse_v1(lines: list[str]) -> dict:
             }
         )
     return categories
+
+
+def _parse_v1(lines: list[str]) -> dict:
+    return _parse_versioned_requirements(lines, "v1 Requirements")
 
 
 # v2 categories often lack a parenthesized code: `### Cross-Platform` with
@@ -316,7 +323,14 @@ def _build_payload() -> dict:
     lines = _read_lines(SOURCE)
     v1 = _parse_v1(lines)
     v2 = _parse_v2(lines)
-    duplicates = _duplicate_ids(v1, v2)
+    v1_1_start, _ = _section_bounds(lines, "v1.1 Requirements")
+    v1_1 = (
+        _parse_versioned_requirements(lines, "v1.1 Requirements")
+        if v1_1_start >= 0
+        else None
+    )
+    duplicate_buckets: tuple[dict, ...] = (v1, v2) if v1_1 is None else (v1, v1_1, v2)
+    duplicates = _duplicate_ids(*duplicate_buckets)
     if duplicates:
         listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(duplicates.items()))
         raise ValueError(
@@ -329,7 +343,8 @@ def _build_payload() -> dict:
     oos = _parse_out_of_scope(lines)
 
     # Attach phase mapping.
-    for bucket in (v1, v2):
+    phase_buckets: tuple[dict, ...] = (v1, v2) if v1_1 is None else (v1, v1_1, v2)
+    for bucket in phase_buckets:
         for cat in bucket.values():
             for req in cat["requirements"]:
                 if req["id"] in trace:
@@ -344,7 +359,7 @@ def _build_payload() -> dict:
     except ValueError:
         source_str = str(SOURCE)
 
-    payload = {
+    payload: dict = {
         # No generated_at field: a timestamp (even one seeded from mtime) makes
         # reqs.json drift on every git checkout, which flakes the "in sync"
         # test. The content is fully derivable from REQUIREMENTS.md, so the
@@ -354,12 +369,18 @@ def _build_payload() -> dict:
         "v2": v2,
         "out_of_scope": oos,
     }
+    if v1_1 is not None:
+        payload["v1.1"] = v1_1
     return payload
 
 
 def _all_ids(payload: dict) -> list[str]:
     ids: list[str] = []
-    for bucket in ("v1", "v2"):
+    bucket_names = ["v1"]
+    if "v1.1" in payload:
+        bucket_names.append("v1.1")
+    bucket_names.append("v2")
+    for bucket in bucket_names:
         for cat in payload.get(bucket, {}).values():
             for req in cat.get("requirements", []):
                 ids.append(req["id"])
