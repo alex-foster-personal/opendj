@@ -69,8 +69,41 @@ def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
             "also lacks the .git file a real worktree checkout always has -- refusing to "
             "recursively delete a directory this job cannot prove it created"
         )
+    # The .git file alone proves SOME repository's worktree, not this one's
+    # (Sol, PR #3827, P1/BLOCKING, review comment 4108252015, "Refuse to
+    # delete worktrees owned by another repository"): a state dir pointed at
+    # another checkout's worktree also fails `git worktree remove` here as
+    # "not a working tree". Only a gitdir inside THIS repository's own
+    # `worktrees/` admin directory licenses the recursive delete.
+    admin_root = _git_common_dir(repo_root) / "worktrees"
+    gitdir = _worktree_gitdir(worktree_dir)
+    if gitdir.parent != admin_root:
+        raise RuntimeError(
+            f"{worktree_dir} is a git worktree, but its gitdir {gitdir} is not under "
+            f"{admin_root}: not this repository's worktree -- refusing to recursively delete it"
+        )
     shutil.rmtree(worktree_dir)
     subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
+
+
+def _git_common_dir(repo_root: Path) -> Path:
+    """Absolute, resolved path of ``repo_root``'s shared git directory."""
+    completed = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        check=True,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    return Path(completed.stdout.strip()).resolve()
+
+
+def _worktree_gitdir(worktree_dir: Path) -> Path:
+    """Resolved admin directory a linked worktree's ``.git`` file points at."""
+    marker = (worktree_dir / ".git").read_text(encoding="utf-8").strip()
+    if not marker.startswith("gitdir: "):
+        raise RuntimeError(f"{worktree_dir / '.git'} is not a worktree gitdir file: {marker!r}")
+    return (worktree_dir / marker.removeprefix("gitdir: ")).resolve()
 
 
 def _restore_tracked_ledger(
@@ -78,6 +111,7 @@ def _restore_tracked_ledger(
     ledger_path: Path,
     *,
     pre_run_content: str | None,
+    post_run_content: str,
 ) -> None:
     """Put REPO_ROOT's own tracked ledger back exactly as it was before this
     job touched it, success or failure.
@@ -113,6 +147,16 @@ def _restore_tracked_ledger(
     outbox (see ``_archive_unpublished_ledger`` / ``update_ledger_pr``) so
     they are never the only copy of a lost measurement.
 
+    ``post_run_content`` is the file exactly as this run left it, read just
+    before the publish starts. The restore only replaces a file that still
+    holds exactly that, and otherwise raises and leaves it alone (Sol, PR
+    #3827, P1/BLOCKING, review comment 4108252023, "Preserve edits made
+    while the ledger publish is running"): writing `pre_run_content`
+    unconditionally erased any operator's or agent's edit made during the
+    network-bound publish window. Leaving the file is safe on both paths:
+    by the time this runs, tonight's rows are already on the branch or in
+    the outbox.
+
     A no-op when ``ledger_path`` does not live inside `repo_root`'s working
     tree at all (an env override pointing somewhere else, as several tests
     do): nothing was written to `repo_root`'s own checkout to begin with.
@@ -121,6 +165,13 @@ def _restore_tracked_ledger(
         ledger_path.resolve().relative_to(repo_root.resolve())
     except ValueError:
         return
+    current_content = ledger_path.read_text(encoding="utf-8") if ledger_path.exists() else None
+    if current_content != post_run_content:
+        raise RuntimeError(
+            f"{ledger_path} changed while the ledger publish was running; leaving that edit in "
+            "place instead of restoring over it (tonight's rows are already published or in "
+            "the outbox)"
+        )
     if pre_run_content is None:
         # Nothing existed at this path before this job touched the tree;
         # undo whatever it created rather than leaving a new file dirty.

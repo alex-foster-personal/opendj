@@ -231,6 +231,9 @@ def _update_ledger_pr_inner(
     the FULL still-pending set, so nothing from the first failure is ever
     silently dropped by the second.
     """
+    # Snapshot of the file exactly as this run left it; the restore only
+    # replaces a file that still matches it (review comment 4108252023).
+    post_run_content = ledger_path.read_text(encoding="utf-8")
     local_entries = load_ledger(ledger_path)["entries"]
     pre_run_entries = json.loads(pre_run_content)["entries"] if pre_run_content else []
     tonight_entries = _new_entries_since(pre_run_entries, local_entries)
@@ -247,13 +250,27 @@ def _update_ledger_pr_inner(
     # such failure now propagates with the tracked file left as it is.
     try:
         _update_ledger_pr_publish(repo_root, worktree_dir, candidate_entries)
-    except Exception:
+    except Exception as publish_error:
         _archive_unpublished_ledger(candidate_entries, outbox_dir=outbox_dir)
-        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
+        try:
+            _restore_tracked_ledger(
+                repo_root,
+                ledger_path,
+                pre_run_content=pre_run_content,
+                post_run_content=post_run_content,
+            )
+        except RuntimeError as restore_refusal:
+            # Keep the publish failure as the primary error; the refusal rides along.
+            publish_error.add_note(str(restore_refusal))
         raise
     else:
         _clear_outbox(outbox_dir)
-        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
+        _restore_tracked_ledger(
+            repo_root,
+            ledger_path,
+            pre_run_content=pre_run_content,
+            post_run_content=post_run_content,
+        )
 
 
 def _update_ledger_pr_publish(repo_root: Path, worktree_dir: Path, candidate_entries: list) -> None:
