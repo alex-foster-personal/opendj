@@ -113,8 +113,9 @@ def test_a_bulk_harvest_on_one_machine_never_empties_another_machines_board(
     again = silver.sync()
     assert (again["exported"], again["imported"]) == (0, 0), again
     assert pin["id"] in silver.pins(), "silver harvest removed pin from live board"
-    assert silver.pins()[pin["id"]]["status"] == "harvested"
-    assert silver.status(pin["id"])["pins"][0]["state"] == "harvested"
+    assert silver.pins()[pin["id"]]["agent_snapshot_at"]
+    assert silver.pins()[pin["id"]]["status"] == "open"
+    assert silver.status(pin["id"])["pins"][0]["state"] == "open"
 
     # A later edit on another machine brings it back, like any newer edit.
     air.patch(pin["id"], agent_note="still broken after the harvest")

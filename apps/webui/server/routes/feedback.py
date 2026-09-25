@@ -203,6 +203,8 @@ class CommentOut(BaseModel):
     fixed_in_sha: str | None = None
     fixed_at: str | None = None
     harvested_at: str | None = None
+    # Set when an agent bulk-harvest snapshots the pin without UI archive (#3981).
+    agent_snapshot_at: str | None = None
     # PIN-AGENT-01: older operator pins retain their original identity when
     # read through this newer contract.
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")

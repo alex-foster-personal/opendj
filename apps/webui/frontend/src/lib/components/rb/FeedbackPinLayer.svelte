@@ -39,12 +39,10 @@
 		clearPinAnchorHighlight
 	} from '$lib/rb/feedback-pin-anchor-highlight';
 	import { resolvePinAnchorAt } from '$lib/rb/feedback-pin-placement';
-	import { anyRootOverlayOpen } from '$lib/rb/feedback-pin-root-overlays';
 	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 	import FeedbackPinCard from './FeedbackPinCard.svelte';
 	import FeedbackPinDraftBubble from './FeedbackPinDraftBubble.svelte';
 	import FeedbackPinMarkers from './feedback/FeedbackPinMarkers.svelte';
-	import FeedbackPinShellButton from './FeedbackPinShellButton.svelte';
 
 	let pinDraft:
 		| (PinDraft & {
@@ -76,8 +74,6 @@
 			: []
 	);
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
-	const showFloatingAffordance = $derived(anyRootOverlayOpen());
-
 	$effect(() => {
 		if (!draftHydrated) return;
 		persistParkedPinDraft(localStorage, pinDraft, foreignDraftParked, (err) => {
@@ -304,17 +300,11 @@
 	/>
 {/if}
 
-{#if showFloatingAffordance}
-	<div class="fb-pin-affordance-float" style:z-index={OVERLAY_Z_INDEX.feedbackPinPlacement}>
-		<FeedbackPinShellButton />
-	</div>
-{/if}
-
 {#if feedbackState.placementArmed}
 	<button
 		type="button"
 		class="fb-place-overlay"
-		style:z-index={OVERLAY_Z_INDEX.feedbackPinPlacement}
+		style:z-index={OVERLAY_Z_INDEX.feedbackDock}
 		aria-label="Click to place the comment pin, Escape to cancel"
 		onpointerdowncapture={handlePlacementPointerDown}
 	></button>
@@ -336,13 +326,6 @@
 		50% {
 			outline-color: rgba(255, 255, 255, 1);
 		}
-	}
-
-	.fb-pin-affordance-float {
-		position: fixed;
-		top: 12px;
-		right: 12px;
-		pointer-events: auto;
 	}
 
 	.fb-place-overlay {

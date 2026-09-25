@@ -34,16 +34,26 @@ test('FeedbackPinLayer owns placement overlay and resolvePinAnchorAt', () => {
 	assert.match(LAYER, /onpointerdowncapture=\{handlePlacementPointerDown\}/);
 });
 
-test('FeedbackPinLayer placement stack sits above root overlays', () => {
-	assert.match(LAYER, /OVERLAY_Z_INDEX\.feedbackPinPlacement/);
-	assert.match(LAYER, /style:z-index=\{OVERLAY_Z_INDEX\.feedbackPinPlacement\}/);
+test('FeedbackPinLayer armed placement sits above boot and quit gates', () => {
+	assert.match(LAYER, /OVERLAY_Z_INDEX\.feedbackDock/);
+	assert.match(LAYER, /style:z-index=\{OVERLAY_Z_INDEX\.feedbackDock\}/);
 });
 
-test('FeedbackPinLayer exposes floating affordance while root overlays are open', () => {
-	assert.match(LAYER, /anyRootOverlayOpen/);
-	assert.match(LAYER, /fb-pin-affordance-float/);
-	assert.match(LAYER, /showFloatingAffordance/);
-	assert.match(LAYER, /FeedbackPinShellButton/);
+test('+layout.svelte mounts FeedbackDock beside FeedbackPinLayer', () => {
+	assert.match(LAYOUT, /<FeedbackDock\s*\/>/);
+	const perfBranch = LAYOUT.indexOf('{#if isPerformance}');
+	const dockAt = LAYOUT.indexOf('<FeedbackDock');
+	assert.ok(dockAt > perfBranch, 'dock must not live only inside isPerformance');
+});
+
+test('FeedbackDock provides always-on pin and support affordance', () => {
+	const DOCK = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/FeedbackDock.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(DOCK, /FeedbackPinShellButton/);
+	assert.match(DOCK, /Open support and feedback/);
+	assert.match(DOCK, /OVERLAY_Z_INDEX\.feedbackDock/);
 });
 
 test('global m hotkey installer is registered from +layout onMount', () => {

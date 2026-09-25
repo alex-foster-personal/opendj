@@ -1,7 +1,15 @@
 /** Track context-menu targeting and first-action runners (issue #2286). */
 
 import { getTrack } from '$lib/api';
-import { enqueueBackfill } from '$lib/rb/api-analysis-backfill';
+import { backfillProgress, enqueueBackfill } from '$lib/rb/api-analysis-backfill';
+import {
+	describeReanalyzePlan,
+	formatReanalyzeEnqueueToast,
+	REANALYZE_BACKEND,
+	REANALYZE_LANE,
+	REANALYZE_TOAST_GROUP,
+	watchReanalyzeBatch
+} from '$lib/rb/reanalyze-batch-feedback';
 import { revealTrack } from '$lib/rb/api-track-reveal';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -107,24 +115,58 @@ export async function runRevealTracks(
 	}
 }
 
+function _pushReanalyzeToast(
+	push: typeof pushToast,
+	presentation: { message: string; kind: 'info' | 'warn' | 'error'; title?: string }
+): void {
+	push(
+		presentation.message,
+		presentation.kind,
+		undefined,
+		undefined,
+		{},
+		REANALYZE_TOAST_GROUP,
+		presentation.title ? { headline: presentation.title } : undefined
+	);
+}
+
 export async function runReanalyze(
 	targetIds: readonly string[],
 	deps: {
 		enqueueBackfill: typeof enqueueBackfill;
-		pushToast: ToastFn;
-	} = { enqueueBackfill, pushToast }
+		backfillProgress: typeof backfillProgress;
+		pushToast: typeof pushToast;
+		watchBatch: typeof watchReanalyzeBatch;
+	} = {
+		enqueueBackfill,
+		backfillProgress,
+		pushToast,
+		watchBatch: watchReanalyzeBatch
+	}
 ): Promise<void> {
+	const planLabel = describeReanalyzePlan(REANALYZE_LANE, REANALYZE_BACKEND);
 	try {
 		const result = await deps.enqueueBackfill({
 			stableIds: [...targetIds],
-			lane: 'beatgrid',
-			backend: 'own_beatgrid.backfill',
+			lane: REANALYZE_LANE,
+			backend: REANALYZE_BACKEND,
 			note: 'track context menu'
 		});
-		deps.pushToast(
-			`Queued ${result.admitted} of ${result.offered} for re-analyze (batch ${result.batch_id})`,
-			result.refused === 0 ? 'info' : 'warn'
-		);
+		let progress = null;
+		try {
+			progress = await deps.backfillProgress(result.batch_id);
+		} catch {
+			progress = null;
+		}
+		_pushReanalyzeToast(deps.pushToast, formatReanalyzeEnqueueToast(result, progress, planLabel));
+
+		if (result.admitted > 0) {
+			deps.watchBatch(result.batch_id, planLabel, {
+				onUpdate: (_progress, presentation) => _pushReanalyzeToast(deps.pushToast, presentation),
+				onTerminal: (_progress, presentation) => _pushReanalyzeToast(deps.pushToast, presentation),
+				onError: (message) => deps.pushToast(message, 'error', undefined, undefined, {}, REANALYZE_TOAST_GROUP)
+			});
+		}
 	} catch (error) {
 		deps.pushToast(error instanceof Error ? error.message : String(error), 'error');
 	}
