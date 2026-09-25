@@ -342,3 +342,22 @@ def test_unreaped_workers_report_that_the_signal_was_unreadable() -> None:
     assert pool_death_message([]) == (
         "analysis worker died before its exit signal could be read"
     )
+
+
+@pytest.mark.requirement("META-08")
+def test_traced_signals_import_without_sigbus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the platform has no SIGBUS (Windows) [then] import and trace the rest, [else stop]."""
+    import importlib
+    import signal as signal_module
+
+    from apps.analysis import worker_diagnostics
+
+    monkeypatch.delattr(signal_module, "SIGBUS", raising=False)
+    try:
+        reloaded = importlib.reload(worker_diagnostics)
+        assert int(signal_module.SIGSEGV) in reloaded.TRACED_SIGNALS
+        assert len(reloaded.TRACED_SIGNALS) == 4
+    finally:
+        monkeypatch.undo()
+        importlib.reload(worker_diagnostics)
+    assert int(signal_module.SIGBUS) in worker_diagnostics.TRACED_SIGNALS
