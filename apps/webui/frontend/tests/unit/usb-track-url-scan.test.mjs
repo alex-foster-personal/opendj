@@ -9,18 +9,25 @@ import { test } from 'node:test';
  * a stick id must never produce a request to /api/v1/tracks/{usb-...}.
  *
  * Source scan over every src file: each place that builds a /api/v1/tracks/
- * URL from an id (a template literal interpolating into the path, or a typed
- * client call with a path parameter) must either go through `trackApiPath`
- * (which never produces that prefix for a stick id, so it never matches here)
- * or sit in a function that checks the id BEFORE the URL is built
- * (`isUsbTrackId(`, or the `refuseStickRead(`/`refuseStickWrite(` guards).
- * The few library-only sites a stick id cannot reach are listed below with
- * the reason.
+ * URL from an id (a template literal interpolating into the path, a string
+ * concatenation onto it, or a typed client call with a path parameter) must
+ * either go through `trackApiPath` (which never produces that prefix for a
+ * stick id, so it never matches here) or sit in a function that checks THAT
+ * id BEFORE the URL is built (`isUsbTrackId(id`, or the
+ * `refuseStickRead(id`/`refuseStickWrite(id` guards). A function is any
+ * `function` declaration, arrow-function binding or method; the guard only
+ * counts from the nearest such header before the site, and only when its
+ * first argument is the same variable the URL interpolates. The few
+ * library-only sites a stick id cannot reach are listed below with the
+ * reason.
  *
  * Regression lines:
  * - if a new per-track builder interpolates an id into /api/v1/tracks/ with no usb guard then this scan fails and names file:line and function
  * - if the scanner stops finding the known guarded sites then it has gone blind (positive control fails)
  * - if the scanner stops flagging an unguarded synthetic builder then it can no longer fail (negative control fails)
+ * - if an arrow-function or method builder after a guarded function borrows that function's guard then an unguarded builder passes
+ * - if a string-concatenated /api/v1/tracks/ URL is not a site then an unguarded builder passes
+ * - if a guard on a different variable counts as guarding the URL's id then an unguarded builder passes
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
@@ -37,16 +44,31 @@ const LIBRARY_ONLY_SITES = new Map([
 	]
 ]);
 
+const ID_EXPRESSION = /^\s*(?:encodeURIComponent\(\s*)?([A-Za-z_$][\w$.]*)/;
+
+/** Each pattern's group 1 is where the id expression starts. */
 const ID_URL_BUILDERS = [
 	// `/api/v1/tracks/${...}` or `${BASE}/api/v1/tracks/${...}`
-	/`(?:\$\{[A-Za-z_$][\w$.]*\})?\/api\/v1\/tracks\/\$\{/g,
-	// api.GET('/api/v1/tracks/{stable_id}...') and siblings
-	/\bapi\.(?:GET|POST|PUT|PATCH|DELETE)\(\s*'\/api\/v1\/tracks\/\{/g
+	{ pattern: /`(?:\$\{[A-Za-z_$][\w$.]*\})?\/api\/v1\/tracks\/\$\{([^}]*)\}/g, idOf: _idOfExpression },
+	// '/api/v1/tracks/' + id, `${BASE}/api/v1/tracks/` + encodeURIComponent(id)
+	{ pattern: /\/api\/v1\/tracks\/['"`]\s*\+([^;\n]*)/g, idOf: _idOfExpression },
+	// api.GET('/api/v1/tracks/{stable_id}...', { params: { path: { stable_id } } }) and siblings
+	{ pattern: /\bapi\.(?:GET|POST|PUT|PATCH|DELETE)\(\s*'\/api\/v1\/tracks\/\{([\w$]+)\}/g, idOf: _idOfPathParam }
 ];
 
-const FUNCTION_HEADER = /(?:^|\n)[\t ]*(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)/g;
+const FUNCTION_HEADERS = [
+	// function name(
+	/(?:^|\n)[\t ]*(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)/g,
+	// const name = (...) => / const name = async id =>
+	/(?:^|\n)[\t ]*(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*(?::[^=\n]*)?=\s*(?:async\s*)?(?:\([^)]*\)|[\w$]+)\s*(?::[^=]*?)?=>/g,
+	// name: (...) => inside an object literal
+	/(?:^|\n)[\t ]*([\w$]+)\s*:\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*?)?=>/g,
+	// name(...) { as a class or object method (control keywords excluded below)
+	/(?:^|\n)[\t ]*(?:(?:public|private|protected|static|async|get|set)\s+)*([\w$]+)\s*\([^)]*\)\s*(?::[^{;\n]*)?\{/g
+];
+const NOT_A_FUNCTION = new Set(['if', 'for', 'while', 'switch', 'catch', 'with', 'return', 'function']);
 
-const USB_GUARD = /\b(?:isUsbTrackId|refuseStickRead|refuseStickWrite)\(/;
+const GUARD_NAMES = '(?:isUsbTrackId|refuseStickRead|refuseStickWrite)';
 
 //-----------------------------------------------------------------------------
 // _helpers
@@ -62,27 +84,51 @@ function withoutComments(text) {
 		.replace(/(^|[^:'"`\\])(\/\/[^\n]*)/g, (_, lead, comment) => lead + blank(comment));
 }
 
+function _idOfExpression(match) {
+	return ID_EXPRESSION.exec(match[1])?.[1] ?? null;
+}
+
+/** The variable a typed client call passes for `{name}`: `path: { name }` or
+ * `path: { name: variable }` within the call. */
+function _idOfPathParam(match, code) {
+	const name = match[1];
+	const call = code.slice(match.index, match.index + 600);
+	const param = new RegExp(`path:\\s*\\{[^}]*?\\b${name}\\b(?:\\s*:\\s*([A-Za-z_$][\\w$.]*))?`).exec(call);
+	if (param === null) return null;
+	return param[1] ?? name;
+}
+
+function _escaped(text) {
+	return text.replace(/[.$]/g, '\\$&');
+}
+
 function enclosingFunction(code, index) {
 	let found = { name: '(module scope)', start: 0 };
-	for (const header of code.matchAll(FUNCTION_HEADER)) {
-		if (header.index >= index) break;
-		found = { name: header[1], start: header.index };
+	for (const pattern of FUNCTION_HEADERS) {
+		for (const header of code.matchAll(pattern)) {
+			if (header.index >= index) break;
+			if (NOT_A_FUNCTION.has(header[1]) || header.index < found.start) continue;
+			found = { name: header[1], start: header.index };
+		}
 	}
 	return found;
 }
 
 /** Every id-built /api/v1/tracks/ site in one file, with whether its
- * enclosing function runs a usb guard before the URL. */
+ * enclosing function guards that same id before the URL. An id the scan
+ * cannot name (a computed expression) is never counted as guarded. */
 function trackUrlSites(file, text) {
 	const code = withoutComments(text);
 	const sites = [];
-	for (const pattern of ID_URL_BUILDERS) {
+	for (const { pattern, idOf } of ID_URL_BUILDERS) {
 		for (const match of code.matchAll(pattern)) {
 			const fn = enclosingFunction(code, match.index);
+			const id = idOf(match, code);
+			const guard = id === null ? null : new RegExp(`\\b${GUARD_NAMES}\\(\\s*${_escaped(id)}\\s*[,)]`);
 			sites.push({
 				site: `${file}#${fn.name}`,
 				line: code.slice(0, match.index).split('\n').length,
-				guarded: USB_GUARD.test(code.slice(fn.start, match.index))
+				guarded: guard !== null && guard.test(code.slice(fn.start, match.index))
 			});
 		}
 	}
@@ -205,4 +251,51 @@ test('negative control: an unguarded synthetic builder is flagged, a guarded one
 		].join('\n')
 	);
 	assert.deepEqual(clean, [], 'comments and trackApiPath callers are not sites');
+});
+
+test('negative control: builders the first scan could not see are flagged (review of lane D, three blind spots)', () => {
+	const guardedFunctionThen = (builder) =>
+		['export function listTrackPlaylists(id: string) {', "\trefuseStickRead(id, 'x');", '\treturn 1;', '}', ...builder].join('\n');
+	const cases = {
+		// (1) an arrow or method after a guarded function must not borrow its guard
+		'arrow binding': guardedFunctionThen([
+			'export const arrowProbe = (id: string): string => `/api/v1/tracks/${encodeURIComponent(id)}/audio`;'
+		]),
+		'object method': guardedFunctionThen(['const o = {', '\tbuild(id: string) {', '\t\treturn `/api/v1/tracks/${id}`;', '\t}', '};']),
+		'object arrow property': guardedFunctionThen(['const o = {', '\tbuild: (id: string) => `/api/v1/tracks/${id}`', '};']),
+		// (2) string concatenation is a builder too
+		'quoted concatenation': ['export function a(id: string) {', "\treturn '/api/v1/tracks/' + encodeURIComponent(id);", '}'].join('\n'),
+		'template concatenation': ['export function a(id: string) {', "\treturn `${API_BASE}/api/v1/tracks/` + id + '/audio';", '}'].join('\n'),
+		// (3) a guard on another variable does not guard this id
+		'guard on another variable': [
+			'export function d(id: string, other: string) {',
+			'\tif (isUsbTrackId(other)) return null;',
+			'\treturn `/api/v1/tracks/${id}/x`;',
+			'}'
+		].join('\n'),
+		'typed call guarded on another variable': [
+			'export async function t(stable_id: string, other: string) {',
+			"\trefuseStickRead(other, 'x');",
+			"\treturn api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } });",
+			'}'
+		].join('\n')
+	};
+	for (const [name, text] of Object.entries(cases)) {
+		const sites = trackUrlSites('synthetic.ts', text);
+		assert.equal(sites.length, 1, `${name}: expected exactly one site, got ${JSON.stringify(sites)}`);
+		assert.equal(sites[0].guarded, false, `${name}: an unguarded builder was counted as guarded`);
+	}
+
+	// Control in the other direction: a typed call whose path param is bound
+	// to a renamed variable is guarded when THAT variable is checked.
+	const renamed = trackUrlSites(
+		'synthetic.ts',
+		[
+			'export async function t(sid: string) {',
+			"\trefuseStickRead(sid, 'x');",
+			"\treturn api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id: sid } } });",
+			'}'
+		].join('\n')
+	);
+	assert.deepEqual(renamed.map(({ guarded }) => guarded), [true], 'a guard on the bound variable counts');
 });
