@@ -261,9 +261,16 @@ def _archive_unpublished_ledger(entries: list, *, outbox_dir: Path) -> None:
     consecutive failure does not silently drop the first failure's rows.
     """
     outbox_dir.mkdir(parents=True, exist_ok=True)
-    (outbox_dir / _OUTBOX_FILENAME).write_text(
-        json.dumps({"schema_version": 2, "entries": entries}), encoding="utf-8"
-    )
+    # Written to a sibling temp file and renamed into place (Sol, PR #3827,
+    # P1/BLOCKING, review 5321908943, "Preserve nightly rows when outbox
+    # persistence fails"): a direct write_text interrupted mid-write (disk
+    # full, a kill) left a truncated outbox, which the next run then failed
+    # to parse. The rename is atomic, so the outbox is either the previous
+    # complete file or the new complete file, never a partial one.
+    outbox_path = outbox_dir / _OUTBOX_FILENAME
+    staging_path = outbox_dir / f"{_OUTBOX_FILENAME}.tmp"
+    staging_path.write_text(json.dumps({"schema_version": 2, "entries": entries}), encoding="utf-8")
+    staging_path.replace(outbox_path)
 
 
 def _clear_outbox(outbox_dir: Path) -> None:
@@ -367,18 +374,16 @@ def update_ledger_pr(
     already-mutated state, not the caller's true prior one.
 
     Restores REPO_ROOT's own tracked ledger to exactly ``pre_run_content``
-    afterward, success or failure (Codex / Sol, PR #3827, P1/BLOCKING): see
-    ``_restore_tracked_ledger``. Publishes only entries genuinely new since
+    afterward once tonight's rows are durably published or archived (Codex /
+    Sol, PR #3827, P1/BLOCKING): see ``_restore_tracked_ledger``. If the
+    archive itself fails, the tracked file is deliberately left as it is.
+
+    Publishes only entries genuinely new since
     ``pre_run_content``, folded together with anything an earlier run
     failed to publish, and archives that same set to an outbox on failure
     (Sol, PR #3827, P1/BLOCKING x2): see ``_update_ledger_pr_inner``.
     """
-    try:
-        _update_ledger_pr_inner(
-            repo_root, ledger_path, worktree_dir, pre_run_content=pre_run_content
-        )
-    finally:
-        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
+    _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir, pre_run_content=pre_run_content)
 
 
 def _pr_list_argv(repository: str, branch: str) -> list[str]:
@@ -395,8 +400,26 @@ def _parse_pr_list_result(stdout: str) -> bool:
     (``tests/fixtures/github/perf_kpi_pr_list_exchanges.json``), with no
     subprocess, no monkeypatch, and nothing simulated: this function never
     touches a process at all.
+
+    Parses and validates the JSON contract rather than treating any
+    non-empty stdout as "a PR exists" (Sol, PR #3827, P1/BLOCKING, review
+    5321908943, "Validate the gh PR-list response before deciding a PR
+    exists"): malformed JSON or a drifted shape such as ``null`` or ``{}``
+    used to read as an open PR, so a remotely existing branch was updated
+    while `_create_pr` was silently skipped. Only a list of objects, each
+    with an integer ``number``, is an answer; everything else raises.
     """
-    return stdout.strip() not in ("", "[]")
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"gh pr list returned non-JSON output: {stdout!r}") from exc
+    if not isinstance(payload, list):
+        raise TypeError(f"gh pr list returned {type(payload).__name__}, not a list: {stdout!r}")
+    for item in payload:
+        number = item.get("number") if isinstance(item, dict) else None
+        if not isinstance(number, int) or isinstance(number, bool):
+            raise TypeError(f"gh pr list returned an item without an integer number: {item!r}")
+    return bool(payload)
 
 
 def _pr_already_open(repository: str, branch: str) -> bool:
@@ -469,13 +492,23 @@ def _update_ledger_pr_inner(
     outbox_dir = worktree_dir.parent / "unpublished-ledger-outbox"
     outbox_entries = _load_outbox_entries(outbox_dir)
     candidate_entries = tonight_entries + _new_entries_since(tonight_entries, outbox_entries)
+    # REPO_ROOT's tracked ledger is restored ONLY once tonight's rows are
+    # durably somewhere else -- on the branch, or in a completely written
+    # outbox (Sol, PR #3827, P1/BLOCKING, review 5321908943, "Preserve
+    # nightly rows when outbox persistence fails"). The old unconditional
+    # `finally` restore also ran when candidate preparation or the archive
+    # write itself raised (a corrupt outbox, a permission error, a full
+    # disk), wiping tonight's rows from the only place they were left. Any
+    # such failure now propagates with the tracked file left as it is.
     try:
         _update_ledger_pr_publish(repo_root, worktree_dir, candidate_entries)
     except Exception:
         _archive_unpublished_ledger(candidate_entries, outbox_dir=outbox_dir)
+        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
         raise
     else:
         _clear_outbox(outbox_dir)
+        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
 
 
 def _update_ledger_pr_publish(repo_root: Path, worktree_dir: Path, candidate_entries: list) -> None:
