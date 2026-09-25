@@ -14,6 +14,7 @@ real subprocess, and the delay stands in for the fsync cost the issue measured
 the defect entirely, which is exactly why the model is needed here.
 
 Single-line intent:
+  - [if] a worker floods progress lines [then] the engine loop keeps running, [else stop]
   - if a worker emits hundreds of progress lines against a slow disk then the
     engine loop never goes more than LOOP_GAP_BOUND_S without running
     [broken if progress writes run on the loop, per #3964]

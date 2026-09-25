@@ -21,6 +21,7 @@ time. The import is the product's own ``POST /api/v1/setup/import/folder``
 driving the real worker subprocess over real, playable wav files.
 
 Single-line intent:
+  - [if] a fresh engine runs a first import [then] /tracks lists it unrestarted, [else stop]
   - if an engine boots with no state.db and a folder import finishes then
     /api/v1/tracks lists the imported rows without a restart [broken if the
     backend is chosen by file presence before the store exists, per #3965]
