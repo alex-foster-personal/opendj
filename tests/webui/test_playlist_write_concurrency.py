@@ -68,6 +68,7 @@ def client(db_path: Path) -> Iterator[TestClient]:
     playlist_write.close_store(app)
 
 
+# REQ: STATE-14
 def test_concurrent_create_playlist_all_201_no_500(client: TestClient) -> None:
     def _create():
         return client.post(
@@ -112,6 +113,7 @@ def test_concurrent_create_under_cross_connection_contention_eventually_201(
     assert all(s == 201 for s in statuses), statuses
 
 
+# REQ: STATE-14
 def test_create_returns_503_when_store_busy_timeout_exhausted(
     client: TestClient, db_path: Path,
 ) -> None:

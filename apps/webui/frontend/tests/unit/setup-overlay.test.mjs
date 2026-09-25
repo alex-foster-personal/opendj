@@ -475,6 +475,7 @@ test('the wizard gates on the FINAL refusal, never on an unfinished probe', () =
 	assert.doesNotMatch(overlay, /\$derived\(setupRefusal\(\)\)/);
 });
 
+// REQ: SETUP-10
 test('the folder step offers a native picker beside the path field', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /class="folder-path-row"/);
@@ -505,6 +506,7 @@ test('the folder step can add and remove rows once a path is entered', () => {
 	assert.match(overlay, /\{#if folderRows\.length > 1\}/);
 });
 
+// REQ: SETUP-09
 test('the folder path placeholder is dim and italic, not the input itself', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\.folder-form input::placeholder\s*\{/);
@@ -518,6 +520,7 @@ test('the folder path placeholder is dim and italic, not the input itself', () =
 	assert.doesNotMatch(baseInputRule, /color:\s*var\(--muted\)/);
 });
 
+// REQ: SETUP-13
 test('the folder picker is a real control, and says so when it cannot run', () => {
 	// A native picker shipped on main while this branch was open, replacing the
 	// honestly-disabled placeholder this test used to guard. The requirement is
@@ -532,6 +535,7 @@ test('the folder picker is a real control, and says so when it cannot run', () =
 	assert.match(overlay, /available in the Open DJ desktop app/);
 });
 
+// REQ: SETUP-11
 test('denied folder candidates render as refused chips, not hidden', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\{#if candidate\.readable\}/);
@@ -550,6 +554,7 @@ test('denied folder candidates render as refused chips, not hidden', () => {
 // setup-wizard-navigation.test.mjs; what is checked here is that the markup
 // actually wires the controls to those rules.
 
+// REQ: SETUP-12
 test('every step panel renders a Back control', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	// one shared snippet, rendered once per panel (detect has two branches),
