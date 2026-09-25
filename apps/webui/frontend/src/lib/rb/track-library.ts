@@ -5,6 +5,7 @@
  */
 
 import { api, unwrap } from '../api/client';
+import { refuseStickWrite } from './track-source';
 
 export interface TrackMembershipRef {
 	playlist_id: string;
@@ -18,6 +19,8 @@ export interface TrackLifecycleOut {
 }
 
 export async function removeFromLibrary(stableId: string): Promise<TrackLifecycleOut> {
+	// Spec 4b: a stick track is not in the library, and nothing is written for it.
+	refuseStickWrite(stableId, 'remove from library');
 	return await unwrap(
 		api.POST('/api/v1/tracks/{stable_id}:remove', {
 			params: { path: { stable_id: stableId } }

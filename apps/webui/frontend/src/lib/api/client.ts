@@ -69,7 +69,11 @@ async function _decodeErrorBody(response: Response): Promise<unknown> {
 	}
 }
 
-async function _apiErrorFrom(response: Response): Promise<ApiError> {
+/** Decode one non-2xx response into the ApiError this client throws. Exported
+ * for the one raw-fetch caller whose route is not in the generated schema yet
+ * (`getTrack` for a stick id, spec 4b), so its failures carry the same
+ * `code` a typed call would. */
+export async function apiErrorFrom(response: Response): Promise<ApiError> {
 	const body = await _decodeErrorBody(response);
 	const detail = (body as ErrorEnvelope | null)?.detail;
 	const structured =
@@ -123,7 +127,7 @@ export function readApiErrorCode(error: unknown): string | null {
 const _throwApiError: Middleware = {
 	async onResponse({ response }) {
 		if (response.ok) return undefined;
-		throw await _apiErrorFrom(response);
+		throw await apiErrorFrom(response);
 	}
 };
 

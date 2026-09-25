@@ -25,6 +25,14 @@ import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
+import {
+	clearSessionHotCue,
+	restoreSessionHotCue,
+	saveSessionHotCue,
+	withSessionHotCues,
+	withSessionHotCueSlots
+} from './stick-session-edits';
+import { isUsbTrackId, refuseStickRead, trackApiPath } from './track-source';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -142,7 +150,8 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 
 /** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
 export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
-	if (optionalResources(stableId).lyrics === false) return null;
+	// Spec 4b: a stick track has no lyrics route, so it is the no-lyrics state.
+	if (isUsbTrackId(stableId) || optionalResources(stableId).lyrics === false) return null;
 	try {
 		return _parseTrackLyrics(
 			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
@@ -699,12 +708,9 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, gen)}`,
+		trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`),
 		'no-store'
-	).then((data) => {
-		vocalsOf(data);
-		return data;
-	});
+	).then((data) => _checkedAnlz(stable_id, data));
 	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
@@ -739,15 +745,31 @@ export async function fetchAnlzBypassingHttpCache(
 	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`,
+		trackApiPath(stable_id, `/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`),
 		'reload'
 	);
+	return _checkedAnlz(stable_id, data);
+}
+
+/** Validates the vocals contract (priming vocalsOf's memo), and for a stick
+ * id also that the payload names that id: anlz-cache exempts stick payloads
+ * from the analysis-source confirmation loop by `data.stable_id`, so a stick
+ * payload stamped with any other id would make that loop spin (spec 4b). A
+ * stick payload also carries this session's hot cue edits (decision 2), so
+ * the waveform markers and the display loop match the pads. */
+function _checkedAnlz(stable_id: string, data: AnlzWithVocals): AnlzWithVocals {
 	vocalsOf(data);
-	return data;
+	if (!isUsbTrackId(stable_id)) return data;
+	if (data.stable_id !== stable_id) {
+		throw new Error(`/anlz for ${stable_id} answered for ${data.stable_id}`);
+	}
+	return withSessionHotCues(stable_id, data);
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
+	// Spec 4b: rb-meta is library vendor state; no stick route exists.
+	refuseStickRead(stable_id, 'rb-meta');
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
 }
 
@@ -779,11 +801,11 @@ export interface HotCueSlotState {
 	revision: string;
 }
 
-/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. */
+/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
+ * stick track's slots carry this session's edits (decision 2). */
 export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
-	return _fetchJson<HotCueSlotState[]>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues`
-	);
+	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
+	return isUsbTrackId(stable_id) ? withSessionHotCueSlots(stable_id, slots) : slots;
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
@@ -795,6 +817,8 @@ export async function saveHotCue(
 	revision: string,
 	comment?: string | null
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		{ in_ms, comment: comment ?? null },
@@ -808,6 +832,8 @@ export async function clearHotCue(
 	slot: HotCueSlot,
 	revision: string
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return clearSessionHotCue(stable_id, slot, revision);
 	return _deleteRequest<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		revision
@@ -821,6 +847,8 @@ export async function restoreHotCue(
 	revision: string,
 	reversal_id: string
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return restoreSessionHotCue(stable_id, slot, revision, reversal_id);
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
 		{ reversal_id },
@@ -829,10 +857,10 @@ export async function restoreHotCue(
 }
 
 /** URL for GET /tracks/{sid}/artwork - use directly as <img src>. The
- * backend 404s ARTWORK_NOT_FOUND; consumers render the grey placeholder
+ * backend 404s ARTWORK_NOT_FOUND; consumers render the gray placeholder
  * slate on img error, never a fabricated image. */
 export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
-	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/artwork?size=${size}`;
+	return `${RB_API_BASE}${trackApiPath(stable_id, `/artwork?size=${size}`)}`;
 }
 
 /** Human label for rb_meta.artwork_status when the art cell is empty.
@@ -865,7 +893,7 @@ export function artworkStatusLabel(
 
 /** URL for GET /tracks/{sid}/audio (Range-capable stream). */
 export function audioUrl(stable_id: string): string {
-	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/audio`;
+	return `${RB_API_BASE}${trackApiPath(stable_id, '/audio')}`;
 }
 
 /** Fetch the full audio file as an ArrayBuffer for decodeAudioData.
@@ -971,6 +999,8 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
  * unavailable envelope is published as explicit unavailable state; malformed
  * or broken artifacts still reject. */
 export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
+	// Spec 4b: stick tracks have no stem bundle and no stems route.
+	if (isUsbTrackId(stableId)) return { status: 'unavailable', error: 'stick tracks have no stem bundle' };
 	if (optionalResources(stableId).stems === false) {
 		return { status: 'unavailable', error: 'no stem bundle advertised' };
 	}
@@ -1003,6 +1033,8 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 }
 
 export function stemAudioUrl(stableId: string, part: StemPartName): string {
+	// Unreachable for a stick id (probeStemArtifact above never reports it ready).
+	refuseStickRead(stableId, `stem ${part}`);
 	return (
 		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` +
 		encodeURIComponent(part)

@@ -23,6 +23,8 @@
  *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
  *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
  *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
+ *     [if] the deck holds a USB stick track [then] the save is allowed and
+ *       stays in the session (specs/usb-play-from-stick.md 4b, decision 2) ⛔️
  *   ✔︎ ✅ 🎯 hot_cue_trigger honours BeatSyncMax on a playing, unlooped deck (#884).
  *     [if] BeatSyncMax is on, the deck is playing and unlooped [then] the jump
  *       arms for the deck's own next downbeat instead of firing immediately,
@@ -54,6 +56,7 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { hotCueEditsAllowed } from '$lib/rb/track-source';
 import {
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
@@ -2111,7 +2114,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
-		if (!_hotCueDriver.hasRbMapping(command.deck)) {
+		if (!hotCueEditsAllowed(stableId, _hotCueDriver.hasRbMapping(command.deck))) {
 			throw new Error(
 				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
 			);

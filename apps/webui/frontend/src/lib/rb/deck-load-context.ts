@@ -287,6 +287,22 @@ export function formatDeckLoadFailureMessage(
 	return title ? `${title}: ${message}` : `${stableId}: ${message}`;
 }
 
+/** Plain words for a stick load refusal, keyed on the backend's detail.code
+ * (spec 4b, USBPLAY-09). */
+const STICK_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
+	['USB_STICK_NOT_MOUNTED', 'Stick removed - plug it back in to load this track'],
+	['USB_FILE_MISSING', "This track's audio file is missing from the stick"],
+	['USB_TRACK_NOT_FOUND', "This track is no longer in the stick's rekordbox export"]
+]);
+
+/** The toast headline for a failed stick load, or null when `cause` is not a
+ * stick refusal. Reads `code` off either error class a load can reject with
+ * (ApiError from getTrack, RbApiError from audio, anlz and hot cues). */
+export function stickLoadFailureWords(cause: unknown): string | null {
+	const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	return typeof code === 'string' ? (STICK_LOAD_FAILURE_WORDS.get(code) ?? null) : null;
+}
+
 export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,
@@ -294,6 +310,16 @@ export function reportDeckLoadFailure(
 	stages: Readonly<Record<string, number>>
 ): void {
 	const failureContext = deckLoadFailureContext(deck, stages);
-	pushToast(`Deck ${deck} load failed - ${message}`, 'error', undefined, cause, failureContext);
+	const stickWords = stickLoadFailureWords(cause);
+	pushToast(
+		`Deck ${deck} load failed - ${message}`,
+		'error',
+		undefined,
+		cause,
+		failureContext,
+		undefined,
+		undefined,
+		stickWords === null ? undefined : { headline: stickWords }
+	);
 	recordPerfEvent('deck-load-fail', message, deck);
 }
