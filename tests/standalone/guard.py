@@ -26,15 +26,21 @@ def resolve_data_dir() -> Path:
 
 
 def find_violations(data_dir: Path) -> list[str]:
-    """Return human-readable violation lines for ``data_dir`` (empty if clean)."""
+    """Return human-readable violation lines for ``data_dir`` (empty if clean).
+
+    ``master.plain.db`` is searched for anywhere beneath ``data_dir``, not
+    just at its root: a copy nested under a subdirectory (a stray import
+    scratch dir, an old backup) is exactly as much a violation as one sitting
+    at the top level, and a root-only check would miss it.
+    """
     violations: list[str] = []
     resolved_dir = data_dir.resolve()
 
-    master = resolved_dir / MASTER_PLAIN_DB_NAME
-    if master.is_file():
-        violations.append(
-            f"{VIOLATION_PREFIX} forbidden rekordbox artifact at {master}"
-        )
+    for master in sorted(resolved_dir.rglob(MASTER_PLAIN_DB_NAME)):
+        if master.is_file():
+            violations.append(
+                f"{VIOLATION_PREFIX} forbidden rekordbox artifact at {master}"
+            )
 
     anlz_cache = resolved_dir / ANLZ_CACHE_REL
     if anlz_cache.exists():
