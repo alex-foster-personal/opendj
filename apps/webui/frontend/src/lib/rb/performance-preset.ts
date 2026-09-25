@@ -188,6 +188,10 @@ export function isPerformanceRoutePath(pathname: string): boolean {
 	return pathname === '/performance' || pathname.startsWith('/performance/');
 }
 
+export function isTrackifyRoutePath(pathname: string): boolean {
+	return pathname === '/music-player' || pathname.startsWith('/music-player/');
+}
+
 export function parsePerformanceAudioActivationPolicy(
 	value: string | undefined
 ): PerformanceAudioActivationPolicy {

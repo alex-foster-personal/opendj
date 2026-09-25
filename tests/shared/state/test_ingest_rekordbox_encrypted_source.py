@@ -96,6 +96,13 @@ def encrypted_master_copy(
     below; tests that unlink or overwrite their copy touch only that copy.
     The decrypt under test still runs for real, per test, on the production
     path.
+
+    Only tests that DECRYPT take this fixture. The two that discard the copy
+    before touching it (unlink it, or overwrite it with bytes that are not a
+    cipher file) take ``checkout_layout`` instead: the export is pure cost to
+    them, and it is what put them over the fast tier's 120 s per-test wall
+    clock (133 s at setup on a loaded pool host, PR #3651 leg 2 of 4, Tue 22
+    Sep 2026) although the ledger records them at 0.2 s and 0.47 s.
     """
     root = tmp_path_factory.mktemp("encrypted-master")
     source_plain = root / "source.plain.db"
@@ -106,18 +113,19 @@ def encrypted_master_copy(
 
 
 @pytest.fixture
-def fresh_checkout(
-    encrypted_master_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def checkout_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
-    """A data dir holding only an ENCRYPTED ``master.db.copy`` -- no plain copy.
+    """A fresh checkout's data dir and paths, with NO ``master.db.copy`` yet.
 
-    This is exactly the post-``copy_live_dbs()`` state of a fresh checkout.
+    The ``encrypted`` path is where ``copy_live_dbs()`` would write the
+    working copy; nothing is there until the test (or ``fresh_checkout``)
+    puts something there.
     """
     data_dir = tmp_path / "data"
     data_dir.mkdir()
 
     encrypted = data_dir / "master.db.copy"
-    shutil.copy2(encrypted_master_copy, encrypted)
     plain = data_dir / "master.plain.db"
 
     monkeypatch.setattr(shared_paths, "REKORDBOX_WORKING_DB", encrypted)
@@ -133,6 +141,18 @@ def fresh_checkout(
         "plain": plain,
         "state_db": tmp_path / "state.db",
     }
+
+
+@pytest.fixture
+def fresh_checkout(
+    encrypted_master_copy: Path, checkout_layout: dict[str, Path]
+) -> dict[str, Path]:
+    """A data dir holding only an ENCRYPTED ``master.db.copy`` -- no plain copy.
+
+    This is exactly the post-``copy_live_dbs()`` state of a fresh checkout.
+    """
+    shutil.copy2(encrypted_master_copy, checkout_layout["encrypted"])
+    return checkout_layout
 
 
 def test_encrypted_working_copy_is_unreadable_as_plain_sqlite(
@@ -210,10 +230,11 @@ def test_refresh_decrypt_rebuilds_the_plain_copy(
 
 
 def test_missing_working_copy_names_the_step_that_produces_it(
-    fresh_checkout: dict[str, Path], capsys: pytest.CaptureFixture
+    checkout_layout: dict[str, Path], capsys: pytest.CaptureFixture
 ) -> None:
     """Fail fast, and say which command populates ``data/master.db.copy``."""
-    fresh_checkout["encrypted"].unlink()
+    fresh_checkout = checkout_layout
+    assert not fresh_checkout["encrypted"].exists()
     state_db = fresh_checkout["state_db"]
     assert state_cli.main(["--db", str(state_db), "init"]) == 0
     capsys.readouterr()
@@ -227,9 +248,10 @@ def test_missing_working_copy_names_the_step_that_produces_it(
 
 
 def test_undecryptable_source_reports_decryption_failure(
-    fresh_checkout: dict[str, Path], capsys: pytest.CaptureFixture
+    checkout_layout: dict[str, Path], capsys: pytest.CaptureFixture
 ) -> None:
     """A bad key / corrupt cipher file must say so, not ingest partially."""
+    fresh_checkout = checkout_layout
     fresh_checkout["encrypted"].write_bytes(b"not a sqlcipher database at all")
     state_db = fresh_checkout["state_db"]
     assert state_cli.main(["--db", str(state_db), "init"]) == 0

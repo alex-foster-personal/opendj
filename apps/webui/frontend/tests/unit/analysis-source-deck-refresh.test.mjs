@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
@@ -161,8 +162,8 @@ function resetCacheDecks() {
 	return Object.fromEntries(DECK_KEYS.map((key, index) => [key, DECKS[index]]));
 }
 
-after(() => {
-	serverProcess?.kill();
+after(async () => {
+	if (serverProcess) await stopFixtureServer(serverProcess, apiBase);
 });
 
 beforeEach(() => {
@@ -181,7 +182,7 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 	const after_ = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(after_.length, 1, 'only the one loaded deck should fetch');
-	assert.match(after_[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
+	assert.match(after_[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?(?:points=\\d+&)?gen=`));
 	assert.equal(
 		audio.deckStates[1].anlz.beatgrid_source,
 		'own',
@@ -675,7 +676,7 @@ test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricat
 	const secondPass = (await requestLog()).slice(midpoint.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(secondPass.length, 1, 'ensureAnlz must treat an evicted entry as a real cache miss');
-	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
+	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?(?:points=\\d+&)?gen=`));
 	assert.equal(cache.getAnlzEntry(SID_TRACK_A).status, 'ready');
 });
 

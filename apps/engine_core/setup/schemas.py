@@ -26,6 +26,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from apps.shared.platform_paths import normalise_path_prefix
+
+
+def normalize_setup_folder_path(raw: str) -> str:
+    """Canonical folder path for setup detect/import: expanduser + strip trailing slash."""
+    trimmed = raw.strip()
+    expanded = str(Path(trimmed).expanduser())
+    return normalise_path_prefix(expanded)
+
 
 class FileProbeOut(BaseModel):
     """One real path and whether it is actually there."""
@@ -239,10 +248,19 @@ class FolderImportIn(BaseModel):
         # builder (wrong layer: a 400 several calls deep). ``~`` is not
         # expanded on this path -- the import job walks the literal string --
         # so a leading ``~`` is refused too, not treated as a convenience.
+        normalized: list[str] = []
+        seen: set[str] = set()
         for entry in value:
             if not entry or not Path(entry).is_absolute():
                 raise ValueError(f"folder must be an absolute path, got {entry!r}")
-        return value
+            canon = normalize_setup_folder_path(entry)
+            if canon in seen:
+                raise ValueError(
+                    f"duplicate folder path after normalization: {canon!r}"
+                )
+            seen.add(canon)
+            normalized.append(canon)
+        return normalized
 
 
 class FolderScanOut(BaseModel):
@@ -317,4 +335,5 @@ __all__ = [
     "SetupStatusOut",
     "StemTierOut",
     "StemsSetupOut",
+    "normalize_setup_folder_path",
 ]

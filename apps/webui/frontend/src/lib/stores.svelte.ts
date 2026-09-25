@@ -8,7 +8,11 @@ import {
 	type HealthHistoryEntry
 } from '../routes/admin/health-history';
 import { auth } from './auth.svelte';
-import { reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { onClientErrorAck, reportClientError, type ClientErrorContext } from './client-error-reporting';
+import {
+	formatToastPresentation,
+	type ToastPresentation
+} from './toast-presentation';
 import { readShellBuild } from './rb/build-identity';
 import { mintErrorId } from './rb/error-id';
 import { recordPerfEvent } from './rb/perf-event-log';
@@ -42,6 +46,14 @@ export type Toast = {
 	id: number;
 	logId: string;
 	message: string;
+	headline: string;
+	detail?: string | undefined;
+	solutionHint?: string | undefined;
+	expanded?: boolean;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	action?: ToastAction;
 	/**
 	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
@@ -61,6 +73,15 @@ export type Toast = {
 // which is what stops `t-3` matching the third id of every session ever.
 const _toastSession = newToastSessionToken();
 export const toasts = $state<Toast[]>([]);
+
+onClientErrorAck((ack) => {
+	for (const toast of toasts) {
+		if (toast.clientEventId !== ack.client_event_id) continue;
+		toast.serverEventId = ack.server_event_id;
+		if (ack.error_id) toast.errorId = ack.error_id;
+		if (ack.sentry_event_id) toast.sentryEventId = ack.sentry_event_id;
+	}
+});
 // Retain occurrence ids only while their grouped toast remains actionable.
 const _toastLogIds = new Map<number, Set<string>>();
 
@@ -138,7 +159,8 @@ export function pushToast(
 	cause?: unknown,
 	context: ClientErrorContext = {},
 	groupKey?: string,
-	action?: ToastAction
+	action?: ToastAction,
+	presentationOverride?: Partial<ToastPresentation>
 ): void {
 	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
@@ -162,6 +184,10 @@ export function pushToast(
 	// search for. Minting it after the logs, or again at copy time, would
 	// produce an id that looks like a correlation key and matches nothing.
 	const logId = formatToastId(_toastSession, id);
+	const presentation = {
+		...formatToastPresentation({ kind, message, cause, feature: presentationOverride?.feature }),
+		...presentationOverride
+	};
 	const row = recordPerfEvent(
 		`toast-${kind}`,
 		message,
@@ -175,7 +201,21 @@ export function pushToast(
 	// has its own log row; the displayed message/id refer to the latest one.
 	const existing = groupKey === undefined ? undefined :
 		toasts.find((toast) => toast.groupKey === groupKey && toast.kind === kind);
-	const toast = existing ?? { id, logId, message, kind, createdAt: row.t, count: 0, groupKey };
+	const toast =
+		existing ??
+		({
+			id,
+			logId,
+			message,
+			headline: presentation.headline,
+			detail: presentation.detail,
+			solutionHint: presentation.solutionHint,
+			expanded: false,
+			kind,
+			createdAt: row.t,
+			count: 0,
+			groupKey
+		} satisfies Toast);
 	if (groupKey !== undefined) {
 		const logIds = _toastLogIds.get(toast.id) ?? new Set<string>();
 		logIds.add(logId);
@@ -184,6 +224,9 @@ export function pushToast(
 	Object.assign(toast, {
 		logId,
 		message,
+		headline: presentation.headline,
+		detail: presentation.detail,
+		solutionHint: presentation.solutionHint,
 		createdAt: row.t,
 		count: toast.count + 1,
 		action
@@ -201,11 +244,12 @@ export function pushToast(
 		// reliable home for the id on its own. The ring row above is written
 		// unconditionally, which is why that is the surface the id is promised
 		// against and this one is the bonus.
-		reportClientError(cause ?? new Error(message), {
+		const clientEventId = reportClientError(cause ?? new Error(message), {
 			source: 'toast',
 			toast_id: logId,
 			...context
 		});
+		if (clientEventId !== undefined) toast.clientEventId = clientEventId;
 	}
 	if (existing !== undefined && _timers.get(toast.id)?.handle === null) {
 		_timers.set(toast.id, { handle: null, dismissMs });
@@ -254,6 +298,16 @@ export function releaseToast(logId: string): boolean {
 	const timer = _timers.get(toast.id);
 	_armTimer(toast.id, timer?.dismissMs ?? TOAST_DEFAULT_MS);
 	return true;
+}
+
+/** Toggle expanded detail for one toast. Returns the new expanded state. */
+export function toggleToastExpanded(logId: string): boolean {
+	const toast = _find(logId);
+	if (toast === undefined) {
+		throw new Error(`toggleToastExpanded: no toast with id ${logId} is on screen`);
+	}
+	toast.expanded = toast.expanded !== true;
+	return toast.expanded === true;
 }
 
 /** Test/agent seam: is a dismissal timer currently armed for this toast? */
@@ -338,10 +392,18 @@ export async function copyToast(logId: string): Promise<string> {
 	// Query stripped: it can carry ids a report has no business republishing,
 	// and the path is what identifies the surface.
 	const page = href === '' ? UNKNOWN : href.split('?')[0].split('#')[0];
+	const occurrenceSuffix =
+		toast.count > 1 ? `\nOccurrences: ${toast.count}` : '';
 	const text = buildToastReport({
 		id: toast.logId,
 		kind: toast.kind,
-		message: toast.count > 1 ? `${toast.message}\nOccurrences: ${toast.count}` : toast.message,
+		headline: toast.headline,
+		message: `${toast.message}${occurrenceSuffix}`,
+		detail: toast.detail,
+		clientEventId: toast.clientEventId,
+		serverEventId: toast.serverEventId,
+		errorId: toast.errorId,
+		sentryEventId: toast.sentryEventId,
 		createdAt: toast.createdAt,
 		env: await _toastEnvironment(page)
 	});

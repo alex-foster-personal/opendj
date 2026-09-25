@@ -43,17 +43,16 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.adr_ref_freshness import check_ref_freshness, emit_gate_result
+from scripts.adr_pr_lookup import DEFAULT_REPO, current_pr_number, pr_files, pr_view
+from scripts.adr_ref_freshness import DEFAULT_GATED_DIR, check_ref_freshness, emit_gate_result
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_REPO = "maintainer/music-dj-tools"
 DEFAULT_ADR_DIR = REPO_ROOT / "docs" / "decisions"
 DEFAULT_BASE = "origin/main"
 DEEPEN_HINT = "git fetch --deepen=900 origin main"
@@ -175,10 +174,7 @@ def duplicate_new_slugs(entries: dict[str, int]) -> dict[str, list[str]]:
 
 def duplicate_adr_ids(adr_dir: Path) -> dict[str, list[str]]:
     """ADR id -> filenames, for every id claimed by 2+ files. Empty when unique."""
-    entries = {
-        path.name: path.stat().st_size
-        for path in sorted(adr_dir.glob("ADR-*.md"))
-    }
+    entries = {path.name: path.stat().st_size for path in sorted(adr_dir.glob("ADR-*.md"))}
     return duplicate_adr_ids_from_entries(entries)
 
 
@@ -265,8 +261,7 @@ def evaluate(
     if has_adr_new(body) and new_paths:
         return Verdict(
             0,
-            f"[adr-check] OK -- ADR: NEW ({', '.join(new_paths)}) "
-            f"(gated paths: {', '.join(hit)})",
+            f"[adr-check] OK -- ADR: NEW ({', '.join(new_paths)}) (gated paths: {', '.join(hit)})",
         )
 
     if has_none_because(body):
@@ -365,9 +360,7 @@ def merged_tree_sha(base_sha: str, head_sha: str, repo_root: Path) -> str:
             check=False,
         )
         if probe.returncode != 0:
-            raise RuntimeError(
-                f"commit {sha[:12]} is not present locally. Run: {DEEPEN_HINT}"
-            )
+            raise RuntimeError(f"commit {sha[:12]} is not present locally. Run: {DEEPEN_HINT}")
 
     proc = subprocess.run(
         ["git", "merge-tree", "--write-tree", base_sha, head_sha],
@@ -441,61 +434,6 @@ def git_rev_parse(ref: str, repo_root: Path) -> str:
     return proc.stdout.strip()
 
 
-def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
-    proc = subprocess.run(
-        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return json.loads(proc.stdout)
-
-
-def pr_files(pr: int, repo: str = DEFAULT_REPO) -> list[str]:
-    """Every path the PR changes. Paginated, because ``gh pr view --json files`` truncates."""
-    proc = subprocess.run(
-        [
-            "gh",
-            "api",
-            "--paginate",
-            f"repos/{repo}/pulls/{pr}/files",
-            "--jq",
-            ".[].filename",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"gh api pulls/{pr}/files failed rc={proc.returncode}: {proc.stderr.strip()}"
-        )
-    return [line for line in proc.stdout.splitlines() if line.strip()]
-
-
-def current_pr_number(repo_root: Path, repo: str = DEFAULT_REPO) -> int | None:
-    proc = subprocess.run(
-        ["gh", "pr", "view", "--repo", repo, "--json", "number"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        return None
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    number = payload.get("number")
-    return int(number) if number else None
-
-
 def _resolve_changed_paths(
     args: argparse.Namespace,
     *,
@@ -555,7 +493,7 @@ def main(
     decisions = Path(args.adr_dir) if args.adr_dir else (adr_dir or DEFAULT_ADR_DIR)
 
     if args.merge_base is not None:
-        return _run_merge_base_mode(args, repo_root)
+        return _run_merge_base_mode(args, repo_root, decisions)
 
     try:
         paths = _resolve_changed_paths(
@@ -571,7 +509,9 @@ def main(
         print(f"[adr-check] UNKNOWN: could not read PR/commit body ({exc})", file=sys.stderr)
         return 2
 
-    freshness = check_ref_freshness(args.base, "HEAD", repo_root)
+    freshness = check_ref_freshness(
+        args.base, "HEAD", repo_root, gated_dir=_gated_dir(decisions, repo_root)
+    )
     if freshness is not None:
         return emit_gate_result(freshness.code, freshness.message)
 
@@ -579,8 +519,19 @@ def main(
     return emit_gate_result(verdict.code, verdict.message)
 
 
-def _run_merge_base_mode(args: argparse.Namespace, repo_root: Path) -> int:
-    freshness = check_ref_freshness(args.merge_base, args.merge_head, repo_root)
+def _gated_dir(decisions: Path, repo_root: Path) -> str:
+    """The ADR directory as a repo-relative path for the freshness guard; a
+    directory outside the repository (test fixtures) falls back to the default."""
+    try:
+        return decisions.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return DEFAULT_GATED_DIR
+
+
+def _run_merge_base_mode(args: argparse.Namespace, repo_root: Path, decisions: Path) -> int:
+    freshness = check_ref_freshness(
+        args.merge_base, args.merge_head, repo_root, gated_dir=_gated_dir(decisions, repo_root)
+    )
     if freshness is not None:
         return emit_gate_result(freshness.code, freshness.message)
     try:

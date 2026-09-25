@@ -95,7 +95,7 @@ describe('the master meter publishes only what it measured', () => {
 
 	it('overlays output-stalled-while-rendering when rms is high and output is stalled', () => {
 		assert.match(source, /RENDERING_RMS_FLOOR = 0\.05/);
-		assert.match(source, /audioOutputHealth\.snapshot\?\.verdict === 'stalled'/);
+		assert.match(source, /audioOutputHealth\.snapshot\?\.browser\?\.verdict === 'stalled'/);
 		assert.match(source, /output-stalled-while-rendering/);
 	});
 });

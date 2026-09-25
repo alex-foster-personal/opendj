@@ -6,6 +6,8 @@
  */
 import { expect, type Page, test } from '@playwright/test';
 
+import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
+
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
 const PREFLIGHT_PASS = {
@@ -64,7 +66,10 @@ const BROKEN_TRACKS = [
 	}
 ];
 
-async function stubPerformanceApis(page: Page): Promise<void> {
+async function stubPerformanceApis(
+	page: Page,
+	options: { playlistsFail?: boolean } = {}
+): Promise<void> {
 	await page.route('**/api/v1/**', (route) => route.abort());
 	await page.route('**/api/v1/preflight', (route) => route.fulfill({ json: PREFLIGHT_PASS }));
 	await page.route('**/api/v1/health', (route) =>
@@ -97,6 +102,18 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 						items: [
 							{ key: 'vibe_sensitivity', value: 1, tbd: false },
 							{ key: 'vibe_decay_per_sec', value: 0.1, tbd: false }
+						]
+					},
+					{
+						// Required at boot since #3739 (POLICY-01): the browser
+						// fails fast when any runtime policy key is missing.
+						group: 'Runtime policy',
+						items: [
+							{ key: 'hide_broken_playlist_min_available_ratio', value: 0.3, tbd: false },
+							{ key: 'anlz_points_default', value: 38400, tbd: false },
+							{ key: 'anlz_points_min', value: 100, tbd: false },
+							{ key: 'anlz_points_max', value: 38400, tbd: false },
+							{ key: 'file_exists_ttl_s', value: 30, tbd: false }
 						]
 					}
 				]
@@ -157,7 +174,16 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 	await page.route('**/api/sets/recorder', (route) =>
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
-	await page.route('**/api/v1/playlists', (route) => route.fulfill({ json: [USER_MISSING_PLAYLIST] }));
+	await stubPlaylistsRoute(page, (route) => {
+		if (options.playlistsFail) {
+			return route.fulfill({ status: 500, json: { detail: 'playlist boot failed (e2e)' } });
+		}
+		const fast = route.request().url().includes('availability=skip');
+		const playlist = fast
+			? { ...USER_MISSING_PLAYLIST, available_count: -1 }
+			: USER_MISSING_PLAYLIST;
+		return route.fulfill({ json: [playlist] });
+	});
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [], next_cursor: null } })
 	);
@@ -234,4 +260,22 @@ test('Hide broken links does not empty the Missing Tracks folder or its rows', a
 	await folder.click();
 	await expect(page.locator('.title-text', { hasText: 'Broken Alpha' })).toBeVisible();
 	await expect(page.locator('.title-text', { hasText: 'Broken Beta' })).toBeVisible();
+});
+
+test('Missing Tracks count still resolves when playlist boot fails (#3750)', async ({ page }) => {
+	// [if] BrowserPanel._init() rejects because the playlist read fails [then] the
+	// reconcile summary still loads from its finally block and the Missing Tracks
+	// count renders, [else stop]. Drives the real component; only the API is stubbed.
+	const reconcileRequests: string[] = [];
+	page.on('request', (request) => {
+		if (request.url().includes('/api/v1/reconcile/summary')) reconcileRequests.push(request.url());
+	});
+	await stubPerformanceApis(page, { playlistsFail: true });
+	await page.goto('/performance');
+
+	await expect(page.getByText(/browser init failed/)).toBeVisible({ timeout: 45_000 });
+	const folder = page.getByTestId('playlist-missing-tracks');
+	await expect(folder).toBeVisible({ timeout: 45_000 });
+	await expect(folder.locator('.count')).toHaveText('2');
+	expect(reconcileRequests.length).toBeGreaterThan(0);
 });

@@ -1,5 +1,6 @@
 <script module lang="ts">
 	import type { ColumnSourceRow } from './column-buckets';
+	import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
 
 	/** Minimal track shape the Miller-column browser needs - deliberately
 	 * NOT the full BrowserRow (strip/rb_meta/revealed are table-only
@@ -7,7 +8,9 @@
 	export interface ColumnTrackRow extends ColumnSourceRow {
 		stable_id: string;
 		title: string | null;
-		file_exists: boolean;
+		/** null only while file_availability is AVAILABILITY_PENDING. */
+		file_exists: boolean | null;
+		file_availability: FileAvailabilityStatus;
 		is_streaming: boolean | null;
 	}
 </script>
@@ -81,6 +84,7 @@
 				artist: t.artist ?? null,
 				album: t.album ?? null,
 				file_exists: t.file_exists,
+				file_availability: t.file_availability,
 				// Bulk listing has no is_streaming (same gap as All Tracks
 				// table rows before their lazy rb-meta hydrates, contract
 				// point 1) - null here means the SAME "unknown, treat as
@@ -117,7 +121,7 @@
 	// broken track can't still surface as an otherwise-empty artist/album
 	// bucket.
 	const visibleRows = $derived<ColumnTrackRow[]>(
-		rows === null ? [] : uiPrefs.hide_broken_links ? rows.filter((r) => r.file_exists) : rows
+		rows === null ? [] : uiPrefs.hide_broken_links ? rows.filter((r) => r.file_exists !== false) : rows
 	);
 	const artistList = $derived<ColumnBucket[]>(artistBuckets(visibleRows));
 	const albumList = $derived<ColumnBucket[]>(albumBuckets(visibleRows, artist));
@@ -201,7 +205,11 @@
 							<div
 								class="row"
 								class:selected={selectedId === row.stable_id}
-								class:broken={!row.file_exists}
+								class:broken={row.file_exists === false}
+								class:pending={row.file_availability === 'AVAILABILITY_PENDING'}
+								title={row.file_availability === 'AVAILABILITY_PENDING'
+									? 'availability still checking (wait for disk probe)'
+									: undefined}
 								role="button"
 								tabindex="0"
 								onclick={() => _selectTrack(row)}
@@ -276,6 +284,10 @@
 	}
 	.row.broken {
 		color: var(--rb-text-dim);
+	}
+	/* PERF-RB-01: still being probed - neither dimmed as broken nor loadable. */
+	.row.pending {
+		font-style: italic;
 	}
 	.row.rb-inert {
 		cursor: default;

@@ -47,6 +47,14 @@ TABLE_DOCS: dict[str, str] = {
         "tracks_unavailable, track_fields_available) read this as a "
         "dimension so an aggregate cannot silently include unplayable rows."
     ),
+    "path_availability": (
+        "Resolver-namespaced cache of disk-truth answers for rekordbox "
+        "library paths (FolderPath / track file_path strings before "
+        "containment mapping). Keys are (resolver_namespace, logical_path); "
+        "materialised_size is NULL when the path is missing or a dataless "
+        "stub. Written by bounded listing hydration and a background "
+        "refresher (issue #1037, PERF-RB-01); survives process restarts."
+    ),
     "unmatched_source_analysis": (
         "Staging for an analysed source row (MIK, rekordbox, ...) that "
         "matches no tracks row at all, so there is no stable_id to hang a "

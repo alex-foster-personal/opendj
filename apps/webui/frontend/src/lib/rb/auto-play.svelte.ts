@@ -48,6 +48,9 @@ import {
 import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
 import {
 	applyAutoPlayIdleDisarmAction,
+	isAutoPlayArmedEmptyActive,
+	noteAutoPlayArmedEmptyOnEnable,
+	noteAutoPlayPlaybackStarted,
 	planAutoPlayIdleDisarm,
 	readAutoPlayIdleSinceMs,
 	resetAutoPlayIdleClock,
@@ -281,6 +284,15 @@ async function _tick(): Promise<void> {
 	if (_inFlight) return;
 
 	const snaps = _snaps();
+	const anyPlaying = snaps.some((d) => d.playing);
+	noteAutoPlayArmedEmptyOnEnable({
+		enabled: uiPrefs.auto_play_enabled,
+		any_playing: anyPlaying,
+		now_ms: Date.now()
+	});
+	if (anyPlaying) {
+		noteAutoPlayPlaybackStarted();
+	}
 	const idlePlan = planAutoPlayIdleDisarm({
 		enabled: uiPrefs.auto_play_enabled,
 		snaps,
@@ -303,13 +315,14 @@ async function _tick(): Promise<void> {
 	if (
 		shouldRaiseAutoPlaySilentStall({
 			enabled: uiPrefs.auto_play_enabled,
-			any_playing: snaps.some((d) => d.playing),
+			any_playing: anyPlaying,
 			pending_master: _pendingMaster !== null,
 			silence_recovering: isSilenceRecovering(),
 			stall_active: readAutoPlayStall() !== null,
 			idle_since_ms: readAutoPlayIdleSinceMs(),
 			now_ms: Date.now(),
-			source_stable_id: sourceStableId
+			source_stable_id: sourceStableId,
+			armed_empty_active: isAutoPlayArmedEmptyActive()
 		})
 	) {
 		noteAutoPlaySilentIdle({ source_stable_id: sourceStableId!, blocked: [] });

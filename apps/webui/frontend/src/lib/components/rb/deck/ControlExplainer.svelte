@@ -159,9 +159,19 @@
 		_show();
 	}
 
+	function _pinPlacementArmed(): boolean {
+		const g = window as unknown as Record<string, unknown>;
+		const armed = g.__mdtPinPlacementArmed as { get?: () => boolean } | undefined;
+		return armed?.get?.() === true;
+	}
+
 	function _onDocumentPointerDown(event: PointerEvent): void {
 		if (!pinned) return;
+		if (_pinPlacementArmed()) return;
 		const target = event.target;
+		// The press that ARMS pin placement lands before the armed flag is set,
+		// so pin-arm chrome must not close a pinned menu the pin is meant for.
+		if (target instanceof Element && target.closest('.fb-place-skip') !== null) return;
 		if (target instanceof Node && wrapEl?.contains(target)) return;
 		if (target instanceof Node && popEl?.contains(target)) return;
 		// Native <select> menus paint outside the DOM. Skip only that case:

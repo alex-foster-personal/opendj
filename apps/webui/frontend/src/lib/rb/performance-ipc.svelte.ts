@@ -104,7 +104,7 @@ import {
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
-import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import { setLibraryPanelCollapsed, setShowStems, type LibraryPanel } from '$lib/rb/prefs.svelte';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -130,6 +130,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -265,6 +266,7 @@ export type PerformanceCommand =
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
+	| { type: 'show_stems'; enabled: boolean }
 	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
@@ -447,6 +449,9 @@ export interface PerformanceState {
 		eq_raised: boolean;
 		hovered_edges: EdgeRegion[];
 	};
+	ui: {
+		show_stems: boolean;
+	};
 }
 
 export interface PairingSnapshot {
@@ -625,6 +630,9 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
 	message: string;
+	headline: string;
+	detail?: string | undefined;
+	expanded: boolean;
 	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
@@ -1194,6 +1202,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
+	if (type === 'show_stems') {
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
 	if (type === 'feedback_mark') {
 		_exactKeys(record, ['type', 'vote']);
 		if (record.vote !== 'bad' && record.vote !== 'good' && record.vote !== 'great') {
@@ -1684,7 +1696,10 @@ export function queryPerformanceState(): PerformanceState {
 		// $state rune, so handing the live Proxy out breaks structuredClone for
 		// every agent reading this snapshot over IPC.
 		analysis_source_decks: { ...analysisSourceState.deckFeatures },
-		feedback_marks: performanceFeedbackSummary()
+		feedback_marks: performanceFeedbackSummary(),
+		ui: {
+			show_stems: uiPrefs.show_stems
+		}
 	};
 }
 
@@ -1739,8 +1754,12 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode' ||
-		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
-		command.type === 'headphone_calibrate'
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps, so the
+		// delay writes wait behind it rather than moving the nodes it is verifying.
+		command.type === 'headphone_calibrate' ||
+		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms'
 	) {
 		return ['headphone'];
 	}
@@ -1764,9 +1783,6 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
-		command.type === 'head_delay_ms' ||
-		command.type === 'headphone_alignment_mode' ||
-		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
 		// CUEOUT-15: the preview owns no deck, so serializing it behind one
@@ -1774,6 +1790,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_cue' ||
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
+		command.type === 'show_stems' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -2034,6 +2051,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
+	} else if (command.type === 'show_stems') {
+		setShowStems(command.enabled);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
@@ -2642,6 +2661,9 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (command.type === 'load') {
+		onDeckLoadStart(command.deck);
+	}
 	if (_presetClaim !== null) {
 		const error = new Error(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
@@ -2803,6 +2825,11 @@ function _captureUnknown(deck: unknown): DeckAudioSnapshot {
 	return copyDeckAudioSnapshot(engine.captureDeckAudio(_deck(deck)));
 }
 
+/** Test hook: parse one performance command message. */
+export function parsePerformanceCommandForTest(message: unknown): PerformanceCommand {
+	return _parseCommand(message);
+}
+
 export function installPerformanceBrowserIpc(): () => void {
 	if (typeof window === 'undefined') throw new Error('performance IPC requires a browser window');
 	if (window.musicDjToolsPerformance !== undefined) {
@@ -2831,6 +2858,9 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				headline: toast.headline,
+				detail: toast.detail,
+				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)
@@ -2849,3 +2879,11 @@ export function installPerformanceBrowserIpc(): () => void {
 		delete window.musicDjToolsPerformance;
 	};
 }
+
+/**
+ * Re-exported for Trackify (PERFMODE-15): performance-ipc.svelte.ts is
+ * already a stores.svelte importer, so routing pushToast through here keeps
+ * the frontend.max_fan_in count on stores.svelte from growing when a new
+ * consumer needs it (.planning/debt/1141.md precedent).
+ */
+export { pushToast } from '$lib/stores.svelte';

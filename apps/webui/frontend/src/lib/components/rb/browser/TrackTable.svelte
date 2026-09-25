@@ -76,7 +76,8 @@
 		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
-		scrollTopForRowIndex
+		scrollTopForRowIndex,
+		scrollTopToKeepRowVisible
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -731,6 +732,13 @@
 	 * a listener (pin b44c957f082f). */
 	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Deck layout toggle anchor: preserve selected row across viewport resize. */
+	let deckLayoutAnchor: {
+		rowIndex: number;
+		priorScrollTop: number;
+		priorViewportHeight: number;
+	} | null = $state(null);
+	let lastDeckLayout = uiPrefs.deck_layout;
 	/** Wrap's own rendered width, for the master-fold badge's right-edge
 	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
 	 * extra (pin b44c957f082f follow-up). */
@@ -755,6 +763,24 @@
 
 	// ------------------------------------------------- DOM row virtualization
 	$effect(() => {
+		const layout = uiPrefs.deck_layout;
+		if (layout !== lastDeckLayout) {
+			const ids = untrack(() => selectedIds);
+			const map = untrack(() => rowIndexOf);
+			const anchorId = ids.length > 0 ? ids[ids.length - 1] : null;
+			const rowIndex = anchorId === null ? -1 : (map.get(anchorId) ?? -1);
+			if (rowIndex >= 0) {
+				deckLayoutAnchor = {
+					rowIndex,
+					priorScrollTop: untrack(() => liveScrollTop),
+					priorViewportHeight: viewportHeight
+				};
+			}
+			lastDeckLayout = layout;
+		}
+	});
+
+	$effect(() => {
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
@@ -764,6 +790,21 @@
 			for (const entry of entries) {
 				viewportHeight = entry.contentRect.height;
 				wrapWidth = entry.contentRect.width;
+				const anchor = deckLayoutAnchor;
+				if (anchor !== null && entry.contentRect.height > 0 && entry.contentRect.height !== anchor.priorViewportHeight) {
+					const next = scrollTopToKeepRowVisible({
+						rowIndex: anchor.rowIndex,
+						rowHeight,
+						headerOffsetPx: TRACK_TABLE_THEAD_PX,
+						viewportHeight: entry.contentRect.height,
+						priorScrollTop: anchor.priorScrollTop,
+						priorViewportHeight: anchor.priorViewportHeight
+					});
+					el.scrollTop = next;
+					liveScrollTop = next;
+					onscrollcursor?.(next);
+					deckLayoutAnchor = null;
+				}
 			}
 		});
 		ro.observe(el);
@@ -924,6 +965,7 @@
 		// wording as the double-click path (pins 8ba0b15d975b, 72be3e505510).
 		const refusal = trackDragRefusal({
 			file_exists: row.file_exists,
+			file_availability: row.file_availability,
 			// All Tracks rows start row.is_streaming at null and hydrate the
 			// real value into row.rb_meta later - same effective flag
 			// _loadOntoDeck already checks, so the two refusal paths agree.
@@ -1426,7 +1468,7 @@
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
-						fileExists: row.file_exists,
+						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
 						transfer:
@@ -1464,11 +1506,17 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={!row.file_exists &&
+						class:broken={row.file_exists === false &&
+							row.file_availability !== 'AVAILABILITY_PENDING' &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
 							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
+						class:rb-row-availability-pending={row.file_availability ===
+							'AVAILABILITY_PENDING'}
+						title={row.file_availability === 'AVAILABILITY_PENDING'
+							? 'availability still checking (wait for disk probe)'
+							: undefined}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -1762,29 +1810,33 @@
 							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
-							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
-								{#if i > 0}<span class="genre-sep">, </span>{/if}
-								<button
-									type="button"
-									class="genre-tag"
-									class:active={/^genre:~?/i.test(searchQuery.trim()) &&
-										searchQuery
-											.trim()
-											.replace(/^genre:~?/i, '')
-											.toLowerCase() === tag.toLowerCase()}
-									style={genreTagStyle(tag)}
-									title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
-									onclick={(e) => onGenreTagClick(e, tag)}
-									ondblclick={(e) => {
-										e.stopPropagation();
-										e.preventDefault();
-									}}
-								>
-									{#each hl(tag) as part, j (j)}
-										{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-									{/each}
-								</button>
-							{/each}
+							{#if splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '').length > 0}
+								{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
+									{#if i > 0}<span class="genre-sep">, </span>{/if}
+									<button
+										type="button"
+										class="genre-tag"
+										class:active={/^genre:~?/i.test(searchQuery.trim()) &&
+											searchQuery
+												.trim()
+												.replace(/^genre:~?/i, '')
+												.toLowerCase() === tag.toLowerCase()}
+										style={genreTagStyle(tag)}
+										title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
+										onclick={(e) => onGenreTagClick(e, tag)}
+										ondblclick={(e) => {
+											e.stopPropagation();
+											e.preventDefault();
+										}}
+									>
+										{#each hl(tag) as part, j (j)}
+											{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+										{/each}
+									</button>
+								{/each}
+							{:else if row.genre_reason}
+								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
+							{/if}
 						</td>
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
@@ -2542,6 +2594,15 @@
 		}
 	}
 
+	/* PERF-RB-01: pending rows stay neutral while disk truth is probed. */
+	tbody tr.rb-row-availability-pending td {
+		color: var(--rb-text);
+	}
+	tbody tr.rb-row-availability-pending .c-art img,
+	tbody tr.rb-row-availability-pending .art-slate {
+		opacity: 0.85;
+	}
+
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay
 	 * selectable; deck load is blocked upstream with an explicit toast. */
 	tbody tr.broken td {
@@ -2588,6 +2649,14 @@
 		text-shadow:
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
+	}
+	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
+	 * fixed-height row (22.5px -> 25px), which the virtualization math and
+	 * right-click anchored popovers both assume never happens. */
+	.genre-reason {
+		color: var(--text-muted, #8b949e);
+		font-size: 0.85em;
+		font-style: italic;
 	}
 	.genre-tag.active {
 		color: var(--rb-text);

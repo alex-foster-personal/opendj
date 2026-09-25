@@ -65,6 +65,7 @@ from .request_guard import (
     origin_guard_middleware,
 )
 from .routes import analysis as analysis_routes
+from .routes import audio_output_health as audio_output_health_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
@@ -93,6 +94,7 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
@@ -106,6 +108,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
+from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -252,8 +255,14 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.library_jobs_watcher = jobs_watcher
         jobs_watcher.start()
+        from . import path_availability_refresh
+
+        path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
+        from . import path_availability_refresh
+
+        path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
@@ -488,6 +497,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     prefixed = (
         tracks_routes.router,
         client_errors_routes.router,
+        telemetry_consent_routes.router,
         error_feed_routes.router,
         client_events_routes.router,
         performance_telemetry_routes.router,
@@ -532,6 +542,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         relocate_routes.router,
         copilot_routes.router,
         analysis_routes.router,
+        audio_output_health_routes.router,
         analysis_backfill_routes.router,
         analysis_queue_routes.router,
         library_jobs_routes.router,
@@ -539,6 +550,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         auth_routes.router,
         ingest_routes.router,
         ingest_upload_routes.router,
+        ingest_materialize_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
         lifecycle_routes.router,

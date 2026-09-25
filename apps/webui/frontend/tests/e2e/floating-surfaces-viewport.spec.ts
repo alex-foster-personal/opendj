@@ -95,6 +95,17 @@ test('hover tile, comment pin, and QuickDraw stay inside the viewport from the b
 	await assertInsideWindow(page, pinBody);
 	await page.keyboard.press('Escape');
 	await page.mouse.move(0, 0);
+	// FB-16 (#3888) draws pins in the app-root layer above .perf-root, so the
+	// probe pin now owns this corner pixel; hide pins so the right-click
+	// reaches the performance surface QuickDraw listens on.
+	await page.evaluate(() => {
+		const twin = (window as unknown as Record<string, unknown>).__mdtPinsVisible as
+			| { set: (v: boolean) => void }
+			| undefined;
+		if (twin === undefined) throw new Error('__mdtPinsVisible twin is not installed');
+		twin.set(false);
+	});
+	await expect(pinMarker).toHaveCount(0);
 
 	await page.locator('.perf-root').click({ button: 'right', position: { x: brX, y: brY } });
 	const quickDraw = page.getByTestId('quick-draw-menu');

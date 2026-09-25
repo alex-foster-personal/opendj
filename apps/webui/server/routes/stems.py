@@ -9,6 +9,7 @@ part GET still 404s when there is no file to stream.
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 import threading
@@ -45,6 +46,8 @@ from apps.stems.artifacts import (
 from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
+
+log = logging.getLogger(__name__)
 
 #: How long the PART route waits for an in-flight hydration before answering
 #: "still fetching" instead of the bytes. The MANIFEST route never waits at
@@ -280,6 +283,7 @@ def _run_hydration(
     except StemSourceError as exc:
         with _INFLIGHT_LOCK:
             _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(exc.code, exc.message)
+        _log_hydration_failure(stable_id, exc.code, exc.message)
         return stem_hydration.HydrationOutcome(
             stable_id=stable_id,
             status="error",
@@ -291,6 +295,7 @@ def _run_hydration(
                 "STEM_BUNDLE_HYDRATION_FAILED",
                 str(exc),
             )
+        _log_hydration_failure(stable_id, "STEM_BUNDLE_HYDRATION_FAILED", str(exc))
         raise
     with _INFLIGHT_LOCK:
         if outcome.status == "error":
@@ -308,7 +313,40 @@ def _run_hydration(
             )
         else:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
+    if outcome.status == "error":
+        _log_hydration_failure(
+            stable_id, "STEM_BUNDLE_HYDRATION_FAILED", outcome.reason or "hydration failed"
+        )
+    elif outcome.status == "hub_error":
+        _log_hydration_failure(
+            stable_id, hub_exc.code, outcome.reason or "hub transport failure"
+        )
     return outcome
+
+
+def _log_hydration_failure(stable_id: str, code: str, reason: str) -> None:
+    """Report an indexed bundle that could not be fetched.
+
+    The manifest route already answers this loud (502), but an HTTP error
+    never becomes a Sentry event (``failed_request_status_codes=set()``), and
+    the deck that asked may be mid-set, where the client report is held back.
+    ERROR reaches the error sink and Sentry through the engine warning log;
+    an unreachable hub stays WARNING, because a laptop offline at a venue is
+    an expected state, not a defect.
+    """
+    exc = StemSourceError(code, reason)
+    level = (
+        logging.WARNING
+        if hub_transport_failure_kind(exc) == "unreachable"
+        else logging.ERROR
+    )
+    log.log(
+        level,
+        "stem-hydration: indexed bundle could not be fetched [%s] stable_id=%s: %s",
+        code,
+        stable_id,
+        reason,
+    )
 
 
 def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
@@ -591,6 +629,58 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
     )
 
 
+class StemWaveformOut(BaseModel):
+    """Mono peak envelope for one stem part (issue #1036)."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    schema_version: int = Field(default=1, alias="schema")
+    stable_id: str
+    part: str
+    layout: str
+    points: int
+    envelope: list[float]
+
+
+def _stem_waveform_cache_root(request: Request) -> Path:
+    configured = getattr(request.app.state, "data_dir", None)
+    if configured is not None:
+        return Path(configured) / "state" / "stem-waveform-cache"
+    root = Path(os.environ.get("MDT_DATA_DIR", "data"))
+    return root / "state" / "stem-waveform-cache"
+
+
+@router.get(
+    "/{stable_id}/stems/{part}/waveform",
+    response_model=StemWaveformOut,
+    responses=STEM_PART_RESPONSES,
+)
+def get_stem_waveform(stable_id: str, part: str, request: Request) -> StemWaveformOut:
+    """Return a downsampled mono peak envelope for one validated stem part."""
+    from apps.stems.stem_waveform import load_stem_waveform_payload
+
+    try:
+        payload = load_stem_waveform_payload(
+            stable_id,
+            part,
+            stems_dir=_stems_dir(request),
+            cache_root=_stem_waveform_cache_root(request),
+            roots=_stem_roots(request),
+        )
+    except StemBundleNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STEM_BUNDLE_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except StemArtifactError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STEM_PART_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
+    return StemWaveformOut(**payload)
+
+
 @router.post("/{stable_id}/stems/deck-open")
 def mark_stem_deck_open(stable_id: str) -> dict[str, str]:
     """A deck has this bundle open. Protects it from eviction until closed.
@@ -618,5 +708,6 @@ __all__ = [
     "StemManifestOut",
     "StemPartOut",
     "StemUnavailableOut",
+    "StemWaveformOut",
     "router",
 ]

@@ -38,6 +38,25 @@ export function activeLyricLineIndex(lines: readonly TimedLyricLine[], positionM
 	return activeIndex;
 }
 
+/** Consecutive lines sharing one timestamp, drawn as a single lane entry. */
+export type LyricLaneGroup = { start_ms: number; text: string; firstIndex: number; lastIndex: number };
+
+/** Merge equal-timestamp lines (LYRICS-09 duets) so the lane never stacks two
+ * spans at one `left` or keys two entries by the same start_ms. */
+export function lyricLaneGroups(lines: readonly LyricLine[]): LyricLaneGroup[] {
+	const groups: LyricLaneGroup[] = [];
+	lines.forEach((line, index) => {
+		const last = groups.at(-1);
+		if (last !== undefined && last.start_ms === line.start_ms) {
+			last.text = `${last.text} / ${line.text}`;
+			last.lastIndex = index;
+		} else {
+			groups.push({ start_ms: line.start_ms, text: line.text, firstIndex: index, lastIndex: index });
+		}
+	});
+	return groups;
+}
+
 /** Lines whose timestamps fall inside a loop in/out window (inclusive). */
 export function lyricLinesSpanningRange(
 	lines: readonly LyricLine[],

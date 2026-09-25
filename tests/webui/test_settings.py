@@ -64,6 +64,19 @@ def test_settings_storage_paths_are_strings(client):
         assert items[key]["tbd"] is False
 
 
+@pytest.mark.requirement("POLICY-01")
+def test_settings_publish_runtime_policy_defaults(client):
+    """[if] GET /api/v1/settings [then] runtime policy defaults are published, [else stop]."""
+    response = client.get("/api/v1/settings")
+    assert response.status_code == 200
+    items = _flatten(response.json())
+    assert items["hide_broken_playlist_min_available_ratio"]["value"] == 0.3
+    assert items["anlz_points_default"]["value"] == 38400
+    assert items["anlz_points_min"]["value"] == 100
+    assert items["anlz_points_max"]["value"] == 38400
+    assert items["file_exists_ttl_s"]["value"] == 30.0
+
+
 @pytest.mark.requirement("CAT-05")
 def test_settings_publish_vibe_runtime_defaults(client):
     response = client.get("/api/v1/settings")

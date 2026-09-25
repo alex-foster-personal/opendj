@@ -43,6 +43,7 @@ _DEFAULT_AUTO_SYNC: dict[str, bool] = {
 _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
+_DEFAULT_SHOW_STEMS = False
 _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
@@ -64,6 +65,7 @@ _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
+    "available_offline_filter": False,
 }
 _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
 _DEFAULT_MIDI_ENABLED = False
@@ -476,6 +478,7 @@ def _load(path: Path) -> dict[str, Any]:
             "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
+            "show_stems": _DEFAULT_SHOW_STEMS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
@@ -540,6 +543,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_agent_pins must be a boolean",
             },
         )
+    show_stems = raw.get("show_stems", _DEFAULT_SHOW_STEMS)
+    if not isinstance(show_stems, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "show_stems must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
@@ -548,6 +560,7 @@ def _load(path: Path) -> dict[str, Any]:
         "technically_working_animate": animate,
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
+        "show_stems": show_stems,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
@@ -608,6 +621,7 @@ class UiPrefsOut(BaseModel):
     technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
+    show_stems: bool = _DEFAULT_SHOW_STEMS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
     lyrics_library_col: bool = _DEFAULT_LYRICS_BOOLS["lyrics_library_col"]
@@ -628,6 +642,7 @@ class UiPrefsOut(BaseModel):
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
+    available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
 
@@ -642,6 +657,7 @@ class UiPrefsPatch(BaseModel):
     technically_working_animate: bool | None = None
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
+    show_stems: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
     lyrics_global: bool | None = None
     lyrics_library_col: bool | None = None
@@ -662,6 +678,7 @@ class UiPrefsPatch(BaseModel):
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
+    available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
 
@@ -739,6 +756,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["jog_radial_waveform"] = body.jog_radial_waveform
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
+    if body.show_stems is not None:
+        current["show_stems"] = body.show_stems
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier
