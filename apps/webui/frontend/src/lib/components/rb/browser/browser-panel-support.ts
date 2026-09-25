@@ -54,3 +54,8 @@ export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+/** Play from USB pane source (USBPLAY-05): dynamic, so the stick store and
+ * row mapping load on the first stick pane, not with /performance. */
+export function usbPaneSource(): Promise<typeof import('$lib/rb/usb-library.svelte')> {
+	return import('$lib/rb/usb-library.svelte');
+}
