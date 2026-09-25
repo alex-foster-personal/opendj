@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
+import shutil
+import signal
 import socket
 import sqlite3
+import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -77,7 +80,12 @@ SID_SLOW_ABSENT = "slow-absent-track"
 #: BLOCKING).
 SID_MIK_BPM = "real-track-mik-bpm-no-own-analysis"
 
-_DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
+#: Per-run scratch dir OUTSIDE the tracked tree. Opening the state db
+#: regenerates a sibling AGENTS.md (apps/shared/state/db.py), so a db kept
+#: beside this file rewrote a tracked file and leaked db/-wal/-shm on every run.
+#: `SCRATCH <dir>` is printed before READY so the hygiene test can prove removal.
+_SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="analysis-source-anlz-server-"))
+_DB_PATH = _SCRATCH_DIR / "state.db"
 
 #: Beats per bar, so ``bar_count`` still reads as bars at the call sites.
 BEATS_PER_BAR = 4
@@ -327,6 +335,18 @@ async def _hold_if_armed(app: FastAPI, kind: str, request: Request, suffix_of) -
 
 
 def main() -> int:
+    # The JS tests stop this server with SIGTERM. uvicorn shuts down cleanly,
+    # restores the handler installed before it, then re-raises the signal; the
+    # default handler would kill the process and skip the cleanup below.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        _serve()
+    finally:
+        shutil.rmtree(_SCRATCH_DIR)
+    return 0
+
+
+def _serve() -> None:
     _seed_db(_DB_PATH)
     app = create_app()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -337,11 +357,11 @@ def main() -> int:
     # listen() here queues any early connection in the backlog instead.
     sock.listen()
     port = sock.getsockname()[1]
+    print(f"SCRATCH {_SCRATCH_DIR}", flush=True)
     print(f"READY {port}", flush=True)
     config = uvicorn.Config(app, fd=sock.fileno(), log_level="warning")
     server = uvicorn.Server(config)
     server.run()
-    return 0
 
 
 if __name__ == "__main__":
