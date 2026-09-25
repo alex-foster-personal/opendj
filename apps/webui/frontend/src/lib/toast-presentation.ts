@@ -11,11 +11,11 @@ export interface ToastPresentation {
 	/** Short, human, shown collapsed. */
 	headline: string;
 	/** Technical / verbose; shown expanded only. */
-	detail?: string;
+	detail?: string | undefined;
 	/** Error-only hint with placeholder solutions URL. */
-	solutionHint?: string;
+	solutionHint?: string | undefined;
 	/** Feature area for bare exception mapping. */
-	feature?: string;
+	feature?: string | undefined;
 	/** Original message for perf rows and logs. */
 	rawMessage: string;
 }
@@ -87,7 +87,7 @@ export function formatToastPresentation(input: {
 	kind: 'info' | 'warn' | 'error';
 	message: string;
 	cause?: unknown;
-	feature?: string;
+	feature?: string | undefined;
 }): ToastPresentation {
 	const rawMessage = input.message;
 	const feature = inferFeature(rawMessage, input.feature);

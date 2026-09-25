@@ -125,7 +125,10 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 			typeof value.start_ms !== 'number' ||
 			!Number.isInteger(value.start_ms) ||
 			value.start_ms < 0 ||
-			value.start_ms <= previousStartMs ||
+			// Equal stamps are valid LRC (two lines sung at once), and the
+			// server's cache reader accepts them (apps/lyrics/cache.py); only a
+			// line that starts BEFORE the previous one is out of order.
+			value.start_ms < previousStartMs ||
 			typeof value.text !== 'string' ||
 			!value.text.trim()
 		) {
@@ -907,7 +910,11 @@ export interface StemArtifactManifest {
 
 export type StemArtifactProbe =
 	| { status: 'ready'; manifest: StemArtifactManifest }
-	| { status: 'unavailable'; error: string };
+	| { status: 'unavailable'; error: string }
+	// The server has the bundle in its R2 index and just started fetching it
+	// (STEM_BUNDLE_HYDRATING). NOT settled: the same GET answers `ready` once
+	// the download lands, so a caller must re-ask, never read this as "no stems".
+	| { status: 'hydrating'; error: string };
 
 function _validateStemManifest(raw: unknown, stableId: string): StemArtifactManifest {
 	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -981,7 +988,10 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 				'code' in raw ? String((raw as { code: unknown }).code) : 'STEM_BUNDLE_NOT_FOUND';
 			const message =
 				'message' in raw ? String((raw as { message: unknown }).message) : 'no stem bundle';
-			return { status: 'unavailable', error: `${code}: ${message}` };
+			const hydrating =
+				code === 'STEM_BUNDLE_HYDRATING' ||
+				('hydrating' in raw && (raw as { hydrating: unknown }).hydrating === true);
+			return { status: hydrating ? 'hydrating' : 'unavailable', error: `${code}: ${message}` };
 		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {
