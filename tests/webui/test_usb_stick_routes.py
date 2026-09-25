@@ -314,8 +314,12 @@ def test_no_write_method_is_routed_under_usb_tracks(client: TestClient) -> None:
         route for route in client.app.routes  # type: ignore[attr-defined]
         if isinstance(route, APIRoute) and route.path.startswith(f"{API}/tracks")
     ]
-    assert len(stick_routes) == 4
-    assert set().union(*(route.methods for route in stick_routes)) == {"GET", "HEAD"}
+    # Positive control: the scan sees this lane's routes (lane A2 adds more,
+    # and they are held to the same rule without editing this test).
+    assert {f"{API}/tracks/{{track_id}}{s}" for s in ("", "/audio", "/artwork")} <= {
+        route.path for route in stick_routes
+    }
+    assert set().union(*(route.methods for route in stick_routes)) <= {"GET", "HEAD"}
     for method in ("post", "put", "patch", "delete"):
         assert client.request(method, _track_url(1)).status_code == 405
 
