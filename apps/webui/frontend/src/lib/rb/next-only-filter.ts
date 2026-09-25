@@ -1,13 +1,13 @@
 /**
  * Library "next-only" appropriateness: Camelot family + BPM window.
- * Direct ±SWEET_PCT matches suggest-next; half/double within BPM_HALF_ABS
- * stay eligible (fun transitions, not "wrong" BPM).
  */
-import { camelotKeysAreCompatible } from '$lib/rb/audio-engine.svelte';
-import { BPM_HALF_ABS, BPM_SWEET_PCT } from '$lib/rb/bpm-heat';
+import { camelotKeysWithinSteps } from '$lib/player/key/camelot';
+import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
+import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
+import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
 
 /** Match apps.shared.harmonic.MAX_BPM_DIFF_PCT / candidates.bpm_window_pct. */
-export const NEXT_BPM_WINDOW_PCT = BPM_SWEET_PCT;
+export const NEXT_BPM_WINDOW_PCT = 6;
 
 /** Pin 007fed0da025 (the maintainer, Wed 2 Sep 2026): only a tiny exact search result
  * may be shown outside active filters. */
@@ -18,10 +18,6 @@ export interface SearchFilterFallback<Row> {
 	ignoredFilters: string[];
 }
 
-/**
- * Preserve a tiny, exact search result when active filters hide every match.
- * Three or more matches remain hidden so filters retain their normal meaning.
- */
 export function resolveSearchFilterFallback<Row>(
 	filteredRows: Row[],
 	unfilteredRows: Row[],
@@ -38,7 +34,6 @@ export function resolveSearchFilterFallback<Row>(
 	return { rows: filteredRows, ignoredFilters: [] };
 }
 
-/** Recover only a precise search hidden by the compatible filter, never a broad result set. */
 export function selectSearchFilterFallback<T>(
 	query: string,
 	filteredRows: readonly T[],
@@ -66,17 +61,55 @@ export function bpmInNextWindow(candidateBpm: number | null, refBpm: number | nu
 	const lo = Math.min(candidateBpm, refBpm);
 	const hi = Math.max(candidateBpm, refBpm);
 	if (hi / lo <= 1 + NEXT_BPM_WINDOW_PCT / 100) return true;
-	// Half / double of master within absolute BPM_HALF_ABS (e.g. 180↔90).
 	for (const fold of [0.5, 2] as const) {
 		if (Math.abs(candidateBpm - refBpm * fold) <= BPM_HALF_ABS) return true;
 	}
 	return false;
 }
 
-/** True when the row is an appropriate next track vs the reference (master). */
+export function bpmMatchesCompatiblePrefs(
+	candidateBpm: number | null,
+	refBpm: number | null,
+	prefs: CompatibleFilterPrefs
+): boolean {
+	if (!prefs.bpm_enabled) return true;
+	if (
+		candidateBpm === null ||
+		refBpm === null ||
+		!(candidateBpm > 0) ||
+		!(refBpm > 0)
+	) {
+		return false;
+	}
+	const window = prefs.bpm_window_bpm;
+	const delta = candidateBpm - refBpm;
+	let within = false;
+	if (prefs.bpm_direction === 'same') {
+		within = Math.abs(delta) <= window;
+	} else if (prefs.bpm_direction === 'above') {
+		within = delta >= 0 && delta <= window;
+	} else if (prefs.bpm_direction === 'below') {
+		within = delta <= 0 && -delta <= window;
+	} else {
+		within = Math.abs(delta) <= window;
+	}
+	if (within) return true;
+	if (!prefs.allow_half_double) return false;
+	for (const fold of [0.5, 2] as const) {
+		if (Math.abs(candidateBpm - refBpm * fold) <= BPM_HALF_ABS) return true;
+	}
+	return false;
+}
+
+export { COMPATIBLE_FILTER_DEFAULTS };
+
 export function isAppropriateNext(
 	row: { key: string | null; bpm: number | null },
-	ref: NextOnlyRef
+	ref: NextOnlyRef,
+	prefs: CompatibleFilterPrefs = COMPATIBLE_FILTER_DEFAULTS
 ): boolean {
-	return camelotKeysAreCompatible(row.key, ref.key) && bpmInNextWindow(row.bpm, ref.bpm);
+	return (
+		camelotKeysWithinSteps(row.key, ref.key, prefs.camelot_steps) &&
+		bpmMatchesCompatiblePrefs(row.bpm, ref.bpm, prefs)
+	);
 }

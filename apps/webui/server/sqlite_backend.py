@@ -55,6 +55,12 @@ from apps.shared.state.writer import StateWriter
 
 from .analysis_overlay import lane_owned_fields as _lane_owned_fields
 from .analysis_overlay import selection_tag as _selection_tag
+from .pairings_sqlite import (
+    count_http_pairings,
+    create_http_pairing,
+    delete_http_pairing,
+    list_http_pairings,
+)
 from .backend import (
     MAX_LIMIT,
     BackendError,
@@ -748,14 +754,13 @@ class SqliteBackend:
         self, *, from_stable_id: str | None = None,
         to_stable_id: str | None = None, source: str | None = None,
     ) -> list[Pairing]:
-        # Phase 5 does not ship a pairings table yet.
-        _warn_fallback_once(
-            "list_pairings", "no pairings table in Phase 5 state.db",
-        )
-        return self._fallback.list_pairings(
-            from_stable_id=from_stable_id,
-            to_stable_id=to_stable_id, source=source,
-        )
+        with self._ro() as conn:
+            return list_http_pairings(
+                conn,
+                from_stable_id=from_stable_id,
+                to_stable_id=to_stable_id,
+                source=source,
+            )
 
     def get_queue(
         self, kind: QueueKind,
@@ -782,11 +787,11 @@ class SqliteBackend:
                 ).fetchone()[0]
             else:
                 _warn_fallback_once("stats:playlists", "no playlists table")
-        # pairings always from fallback (no Phase 5 table).
-        fb = self._fallback.stats()
+        with self._ro() as conn:
+            pairings = count_http_pairings(conn)
         return {
             "tracks": tracks, "playlists": playlists,
-            "pairings": fb.get("pairings", 0),
+            "pairings": pairings,
         }
 
     # --- writes -----------------------------------------------------------
@@ -1002,18 +1007,37 @@ class SqliteBackend:
             return len(updates)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
-        _warn_fallback_once(
-            "create_pairing", "no pairings table in Phase 5 state.db",
-        )
-        return self._fallback.create_pairing(pairing)
+        with self._write_lock:
+            conn = _state_db.open_rw(self._path)
+            conn.row_factory = sqlite3.Row
+            try:
+                created = create_http_pairing(conn, pairing)
+                conn.commit()
+            except Exception:
+                if conn.in_transaction:
+                    conn.rollback()
+                raise
+            finally:
+                conn.close()
+            self._sqlite_last_writer = (pairing.source, pairing.created_at)
+            return created
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
-        _warn_fallback_once(
-            "delete_pairing", "no pairings table in Phase 5 state.db",
-        )
-        self._fallback.delete_pairing(
-            pairing_id, expected_etag=expected_etag,
-        )
+        with self._write_lock:
+            conn = _state_db.open_rw(self._path)
+            conn.row_factory = sqlite3.Row
+            try:
+                delete_http_pairing(conn, pairing_id, expected_etag=expected_etag)
+                conn.commit()
+            except Exception:
+                if conn.in_transaction:
+                    conn.rollback()
+                raise
+            finally:
+                conn.close()
+            self._sqlite_last_writer = ("webui", datetime.now(UTC).strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ",
+            ))
 
     def last_writer(self) -> tuple[str, str] | None:
         if self._sqlite_last_writer is not None:

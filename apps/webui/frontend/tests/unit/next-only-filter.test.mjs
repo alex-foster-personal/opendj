@@ -76,7 +76,23 @@ describe('next-only-filter', () => {
 		assert.equal(isAppropriateNext({ key: '9A', bpm: 124 }, ref), true);
 		assert.equal(isAppropriateNext({ key: '8B', bpm: 124 }, ref), true);
 		assert.equal(isAppropriateNext({ key: '10A', bpm: 124 }, ref), false);
-		assert.equal(isAppropriateNext({ key: '8A', bpm: 140 }, ref), false);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 127 }, ref), true);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 100 }, ref), false);
 		assert.equal(isAppropriateNext({ key: null, bpm: 124 }, ref), false);
+	});
+
+	it('honors configurable BPM window (default ±20)', () => {
+		const { isAppropriateNext, bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const ref = { key: '8A', bpm: 128 };
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 127 }, ref), true);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 100 }, ref), false);
+		assert.equal(
+			bpmMatchesCompatiblePrefs(106, 100, {
+				...COMPATIBLE_FILTER_DEFAULTS,
+				bpm_window_bpm: 6,
+				bpm_enabled: true
+			}),
+			true
+		);
 	});
 });

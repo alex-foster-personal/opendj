@@ -787,3 +787,25 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
     return current
+
+
+class WatcherFoldersValidateIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    paths: list[str] = Field(default_factory=list)
+
+
+@router.post("/watcher-folders:validate")
+def validate_watcher_folders(body: WatcherFoldersValidateIn) -> dict[str, bool]:
+    """LIBM-129 v1: existence check only; no watcher daemon."""
+    missing: list[str] = []
+    for raw in body.paths:
+        path = Path(raw)
+        if not path.is_dir():
+            missing.append(raw)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "watcher folder path does not exist", "missing": missing},
+        )
+    return {"ok": True}

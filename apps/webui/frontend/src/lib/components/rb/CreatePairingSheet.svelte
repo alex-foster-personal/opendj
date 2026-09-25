@@ -48,10 +48,15 @@
 
 	async function _save(): Promise<void> {
 		if (selected.length !== 2) return;
-		await dispatchPerformanceCommand({
-			type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
-		});
-		open = false;
+		try {
+			await dispatchPerformanceCommand({
+				type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
+			});
+			pushToast('Pairing captured', 'info');
+			open = false;
+		} catch (exc) {
+			pushToast(`Capture pairing failed: ${String(exc)}`, 'error');
+		}
 	}
 
 	interface LoadedPair {

@@ -60,6 +60,20 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'library_watcher_folders',
+		label: 'Watcher folders (v2)',
+		group: 'library',
+		keywords: ['watcher', 'folder', 'import', 'auto', 'monitor', 'ingest'],
+		title: 'Folder paths to watch for auto-import (v2 - not active yet)',
+		detail:
+			'One absolute path per line. Saved paths are validated to exist on disk; no background watcher runs in v1 (see PARITY-TODO). Auto-import ships in v2.',
+		implemented: true,
+		control: {
+			kind: 'path_lines',
+			v2Notice: 'v2 - folder watcher not active; paths are stored for a future release only.'
+		}
+	},
+	{
 		id: 'library_density',
 		label: 'Library density',
 		group: 'library',
@@ -312,6 +326,23 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		detail: 'Off skips the destructive confirm forever. Missing/default means ask.',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'confirm.playlist_drop_mode',
+		label: 'Playlist drop default',
+		group: 'confirmations',
+		keywords: ['confirm', 'drop', 'playlist', 'add', 'move', 'drag'],
+		title: 'Remembered add vs move for playlist drops',
+		detail: 'Choose Ask to clear the remembered choice and re-prompt on the next drop.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'ask', label: 'Ask each time' },
+				{ value: 'add', label: 'Always add' },
+				{ value: 'move', label: 'Always move' }
+			]
+		}
 	},
 	{
 		id: 'auto_sync',

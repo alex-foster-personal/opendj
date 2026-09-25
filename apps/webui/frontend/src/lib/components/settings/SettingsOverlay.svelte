@@ -40,7 +40,13 @@
 	import { filterSettings, visibleGroups } from '$lib/settings/search';
 	import { subscribeWheelSensitivity } from '$lib/rb/wheel-adjust';
 	import {
+		formatWatcherFolderLines,
+		parseWatcherFolderLines,
+		validateWatcherFoldersExist
+	} from '$lib/rb/library-watcher-folders';
+	import {
 		setAutoSyncDestination,
+		setLibraryWatcherFolders,
 		uiPrefs,
 		type AutoSyncDestination
 	} from '$lib/rb/prefs.svelte';
@@ -68,6 +74,9 @@
 	 * module variable. Seeded on open, and refreshed by the subscription below
 	 * on EVERY change, including writes this component did not make. */
 	let numberDraft = $state<Record<string, number>>({});
+	let pathLinesDraft = $state<Record<string, string>>({});
+	let pathLinesBusy = $state(false);
+	let pathLinesMsg = $state<string | null>(null);
 
 	const hideTodo = $derived(uiPrefs.hide_todo_settings);
 	const filterOpts = $derived({
@@ -91,6 +100,8 @@
 		applyOk = null;
 		pendingProposal = null;
 		numberDraft = _seedNumbers();
+		pathLinesDraft = _seedPathLines();
+		pathLinesMsg = null;
 		void tick().then(() => searchEl?.focus());
 	});
 
@@ -275,6 +286,31 @@
 	function resetNumber(def: SettingDef): void {
 		if (def.control.kind !== 'number') return;
 		writeNumber(def, def.control.defaultValue);
+	}
+
+	function _seedPathLines(): Record<string, string> {
+		return { library_watcher_folders: formatWatcherFolderLines(uiPrefs.library_watcher_folders) };
+	}
+
+	function pathLinesValue(def: SettingDef): string {
+		return pathLinesDraft[def.id] ?? formatWatcherFolderLines(uiPrefs.library_watcher_folders);
+	}
+
+	async function applyPathLines(def: SettingDef): Promise<void> {
+		if (def.control.kind !== 'path_lines') return;
+		pathLinesBusy = true;
+		pathLinesMsg = null;
+		try {
+			const paths = parseWatcherFolderLines(pathLinesValue(def));
+			await validateWatcherFoldersExist(paths);
+			setLibraryWatcherFolders(paths);
+			pathLinesDraft = { ...pathLinesDraft, [def.id]: formatWatcherFolderLines(paths) };
+			pathLinesMsg = paths.length === 0 ? 'Cleared watcher folders.' : `Saved ${paths.length} folder(s).`;
+		} catch (err) {
+			pathLinesMsg = err instanceof Error ? err.message : String(err);
+		} finally {
+			pathLinesBusy = false;
+		}
 	}
 
 	async function askAiApply(): Promise<void> {
@@ -568,6 +604,34 @@
 													>
 														Reset
 													</button>
+												</div>
+											{:else if def.control.kind === 'path_lines'}
+												<div class="so-path-lines" title={def.title}>
+													<p class="so-v2-notice" title={def.control.v2Notice}>
+														{def.control.v2Notice}
+													</p>
+													<textarea
+														aria-label={def.label}
+														rows={3}
+														value={pathLinesValue(def)}
+														oninput={(e) => {
+															pathLinesDraft = {
+																...pathLinesDraft,
+																[def.id]: (e.currentTarget as HTMLTextAreaElement).value
+															};
+														}}
+													></textarea>
+													<button
+														type="button"
+														disabled={pathLinesBusy}
+														title="Validate paths exist on disk, then save"
+														onclick={() => void applyPathLines(def)}
+													>
+														{pathLinesBusy ? 'Saving…' : 'Apply'}
+													</button>
+													{#if pathLinesMsg && def.id === 'library_watcher_folders'}
+														<span class="so-path-lines-msg" title={pathLinesMsg}>{pathLinesMsg}</span>
+													{/if}
 												</div>
 											{/if}
 										</div>

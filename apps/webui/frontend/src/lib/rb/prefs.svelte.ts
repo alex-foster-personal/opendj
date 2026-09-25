@@ -25,6 +25,11 @@ import {
 	makeLibraryFilterSetters,
 	validateLibraryFilterPrefFields
 } from './library-filter-prefs';
+import {
+	COMPATIBLE_FILTER_DEFAULTS,
+	validateCompatibleFilterPrefs,
+	type CompatibleFilterPrefs
+} from './compatible-filter-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import {
 	LYRICS_PREF_DEFAULTS,
@@ -171,6 +176,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	show_agent_pins: boolean;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** Compatible-filter range knobs (LIBUX-22). */
+	compatible_filter: CompatibleFilterPrefs;
+	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
+	library_watcher_folders: string[];
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -224,6 +233,8 @@ const DEFAULTS: RbUiPrefs = {
 	jog_radial_waveform: false,
 	show_agent_pins: true,
 	show_stems: false,
+	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
+	library_watcher_folders: [],
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -493,7 +504,14 @@ function _load(): RbUiPrefs {
 		...APP_POSTURE_PREF_DEFAULTS,
 		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
-		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
+		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY),
+		compatible_filter: {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			...validateCompatibleFilterPrefs(parsed.compatible_filter, STORAGE_KEY)
+		},
+		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
+			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
+			: DEFAULTS.library_watcher_folders
 	};
 }
 
@@ -684,6 +702,25 @@ export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeL
 );
 
 /** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
+export function patchCompatibleFilter(patch: Partial<CompatibleFilterPrefs>): void {
+	uiPrefs.compatible_filter = { ...uiPrefs.compatible_filter, ...patch };
+	_persist();
+	_syncDiskPrefs({ compatible_filter: uiPrefs.compatible_filter });
+}
+
+/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
+export function setLibraryWatcherFolders(paths: readonly string[]): void {
+	uiPrefs.library_watcher_folders = [...paths];
+	_persist();
+	void _syncDiskPrefs({ library_watcher_folders: uiPrefs.library_watcher_folders });
+}
+
+export function resetAllConfirmPrefs(): void {
+	uiPrefs.confirm = {};
+	_persist();
+	_syncDiskPrefs({ confirm: {} });
+}
+
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
 	value: RbUiPrefs['confirm'][K] | undefined

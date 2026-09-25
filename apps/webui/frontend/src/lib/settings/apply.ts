@@ -83,6 +83,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_sync.open_dj',
 	'confirm.delete_playlist',
 	'confirm.dblclick_load_play',
+	'confirm.playlist_drop_mode',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
 	'crossfade_curve',
@@ -159,6 +160,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.confirm.delete_playlist !== false;
 		case 'confirm.dblclick_load_play':
 			return uiPrefs.confirm.dblclick_load_play !== false;
+		case 'confirm.playlist_drop_mode':
+			return uiPrefs.confirm.playlist_drop_mode ?? 'ask';
 		case 'wheel_sensitivity.mouse':
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
@@ -292,6 +295,15 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'confirm.dblclick_load_play':
 			setConfirmPref('dblclick_load_play', _asBool(value, key));
+			return;
+		case 'confirm.playlist_drop_mode':
+			if (value === 'ask') {
+				setConfirmPref('playlist_drop_mode', undefined);
+			} else if (value === 'add' || value === 'move') {
+				setConfirmPref('playlist_drop_mode', value);
+			} else {
+				throw new Error(`confirm.playlist_drop_mode must be ask|add|move, got ${String(value)}`);
+			}
 			return;
 		case 'wheel_sensitivity.mouse':
 		case 'wheel_sensitivity.trackpad': {

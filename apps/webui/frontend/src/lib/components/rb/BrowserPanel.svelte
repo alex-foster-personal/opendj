@@ -237,6 +237,9 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import BrowserConfirmDialog from './browser/BrowserConfirmDialog.svelte';
+	import CompatibleFilterPopover from './browser/CompatibleFilterPopover.svelte';
+	import { PairingIndex } from '$lib/rb/pairing-index.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -287,6 +290,16 @@
 	let _healthWriteEpoch = 0;
 	let _playlistsWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
+	const pairingIndex = new PairingIndex();
+	let browserConfirmOpen = $state(false);
+	let browserConfirmPending = $state<{
+		title: string;
+		message: string;
+		primaryLabel: string;
+		secondaryLabel: string;
+		showDefault: boolean;
+		resolve: (value: { ok: boolean; remember: boolean; setDefault: boolean }) => void;
+	} | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
@@ -582,6 +595,40 @@
 	);
 
 	/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
+	const referenceMasterStableId = $derived.by((): string | null => {
+		const states = DECK_IDS.map((d) => decks[d]);
+		const ordered = [
+			...states.filter((s) => s.is_master && s.stable_id !== null),
+			...states.filter((s) => s.playing && s.stable_id !== null),
+			...states.filter((s) => s.stable_id !== null)
+		];
+		for (const s of ordered) {
+			if (s.stable_id !== null) return s.stable_id;
+		}
+		return null;
+	});
+
+	$effect(() => {
+		void pairingIndex.refresh(() => referenceMasterStableId);
+	});
+
+	function askBrowserConfirm(cfg: {
+		title: string;
+		message: string;
+		primaryLabel: string;
+		secondaryLabel: string;
+		showDefault?: boolean;
+	}): Promise<{ ok: boolean; remember: boolean; setDefault: boolean }> {
+		return new Promise((resolve) => {
+			browserConfirmPending = {
+				...cfg,
+				showDefault: cfg.showDefault ?? false,
+				resolve
+			};
+			browserConfirmOpen = true;
+		});
+	}
+
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
 		const states = DECK_IDS.map((d) => decks[d]);
 		const ordered = [
@@ -609,7 +656,7 @@
 		if (!uiPrefs.next_only_filter) return rows;
 		const ref = nextOnlyRef;
 		if (ref === null) return rows;
-		return rows.filter((r) => isAppropriateNext(r, ref));
+		return rows.filter((r) => isAppropriateNext(r, ref, uiPrefs.compatible_filter));
 	}
 
 	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
@@ -804,6 +851,7 @@
 	});
 
 	onMount(() => {
+		pairingIndex.start(() => referenceMasterStableId);
 		const uninstallBrowserSortIpc = installBrowserSortIpc({
 			sort: sortBy,
 			query: () => ({
@@ -932,6 +980,7 @@
 		}, 60_000);
 
 		return () => {
+			pairingIndex.stop();
 			uninstallBrowserSortIpc();
 			unregisterPerformanceBrowser();
 			connAlive = false;
@@ -1513,7 +1562,7 @@
 			// leave it there until the next event. The mount-time read in
 			// `_init` above has no such constraint and shares one.
 			const healthRes = await getHealthFreshWithRetry(getHealth);
-			allTracksCount = healthRes.health.state_db.tracks;
+			allTracksCount = allTracksNonBrokenCount ?? healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
@@ -1721,10 +1770,14 @@
 			return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
-			const every = window.confirm(`Delete playlist "${node.name}"?`);
-			if (!every) return;
-			const remember = window.confirm('Do this every time (skip delete confirm)?');
-			if (remember) setConfirmPref('delete_playlist', false);
+			const choice = await askBrowserConfirm({
+				title: 'Delete playlist',
+				message: `Delete playlist "${node.name}"?`,
+				primaryLabel: 'Delete',
+				secondaryLabel: 'Cancel'
+			});
+			if (!choice.ok) return;
+			if (choice.remember) setConfirmPref('delete_playlist', false);
 		}
 		try {
 			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
@@ -1797,12 +1850,17 @@
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
 		if (mode === null) {
-			const add = window.confirm(
-				`Drop ${stableIds.length} track(s) onto playlist.\n\nOK = Add\nCancel = choose Move`
-			);
-			mode = add ? 'add' : 'move';
-			const remember = window.confirm(`Remember "${mode}" every time for playlist drops?`);
-			if (remember) setConfirmPref('playlist_drop_mode', mode);
+			const choice = await askBrowserConfirm({
+				title: 'Drop onto playlist',
+				message: `Drop ${stableIds.length} track(s).\n\nAdd keeps them on the source playlist; Move transfers membership.`,
+				primaryLabel: 'Add',
+				secondaryLabel: 'Move',
+				showDefault: true
+			});
+			mode = choice.ok ? 'add' : 'move';
+			if (choice.remember || choice.setDefault) {
+				setConfirmPref('playlist_drop_mode', mode);
+			}
 		}
 		try {
 			let effectiveMode: 'add' | 'move' = 'add';
@@ -3280,14 +3338,19 @@
 					preference (prefs.svelte.ts validates that exact key). Only the
 					user-facing label changes, to the one the maintainer asked for.
 				-->
-				<label class="next-only" title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
-					<input
-						type="checkbox"
-						aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
-						checked={uiPrefs.next_only_filter}
-						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-					/>
-					<span>compatible</span>
+				<label
+					class="next-only"
+					title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Hover compatible for range buttons. Shortcut: Tab"
+				>
+					<CompatibleFilterPopover>
+						<input
+							type="checkbox"
+							aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
+							checked={uiPrefs.next_only_filter}
+							onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+						/>
+						<span>compatible</span>
+					</CompatibleFilterPopover>
 				</label>
 				<label
 					class="offline-filter"
@@ -3367,6 +3430,7 @@
 		{/if}
 		<TrackTable
 			bodyOverlay={libraryLoadOverlay}
+			pairedPartnerIds={pairingIndex.partnerIds}
 			{provider}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}
@@ -3518,6 +3582,25 @@
 		</span>
 	</div>
 </section>
+
+{#if browserConfirmPending}
+	<BrowserConfirmDialog
+		bind:open={browserConfirmOpen}
+		title={browserConfirmPending.title}
+		message={browserConfirmPending.message}
+		primaryLabel={browserConfirmPending.primaryLabel}
+		secondaryLabel={browserConfirmPending.secondaryLabel}
+		showDefault={browserConfirmPending.showDefault}
+		onPrimary={(opts) => {
+			browserConfirmPending?.resolve({ ok: true, ...opts });
+			browserConfirmPending = null;
+		}}
+		onSecondary={() => {
+			browserConfirmPending?.resolve({ ok: false, remember: false, setDefault: false });
+			browserConfirmPending = null;
+		}}
+	/>
+{/if}
 
 <TrackEditModals
 	{openModal}

@@ -98,6 +98,33 @@ def test_ui_prefs_wheel_sensitivity_partial_put_merges_trackpad_default(
     assert body["trackpad"] == LIBRARY_BROWSER_DEFAULTS["wheel_sensitivity"]["trackpad"]
 
 
+@pytest.mark.requirement("LIBM-129")
+def test_watcher_folders_validate_rejects_missing_dir(prefs_client: TestClient) -> None:
+    """[if] a watcher path is not a directory [then] validate returns 400 [else stop]."""
+    r = prefs_client.post(
+        "/api/v1/ui-prefs/watcher-folders:validate",
+        json={"paths": ["/definitely/not/a/real/music-dj-tools-watcher-dir"]},
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert "missing" in body["detail"]
+
+
+@pytest.mark.requirement("LIBM-129")
+def test_watcher_folders_validate_accepts_existing_dir(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a watcher path is an existing directory [then] validate returns ok [else stop]."""
+    watch = tmp_path / "watch-me"
+    watch.mkdir()
+    r = prefs_client.post(
+        "/api/v1/ui-prefs/watcher-folders:validate",
+        json={"paths": [str(watch)]},
+    )
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
 def test_ui_prefs_library_browser_put_leaves_siblings_alone(prefs_client: TestClient) -> None:
     assert prefs_client.put("/api/v1/ui-prefs", json={"hide_broken_links": True}).status_code == 200
     body = prefs_client.get("/api/v1/ui-prefs").json()

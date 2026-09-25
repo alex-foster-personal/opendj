@@ -339,6 +339,9 @@ class TrackRowOut(BaseModel):
     key_reason: str | None
     bpm_status: Literal["ok", "failed", "missing", "available-not-selected"]
     bpm_reason: str | None = None
+    bpm_source: str | None = None
+    bpm_method: str | None = None
+    bpm_confidence: float | None = None
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
