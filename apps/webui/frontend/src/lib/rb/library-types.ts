@@ -146,7 +146,9 @@ export interface TrackRow {
 }
 
 /** One node in the playlist tree panel (5b). state.db has NO folder
- * hierarchy, so v1 produces: one 'all_tracks' node + flat 'playlist' nodes. */
+ * hierarchy, so the library produces one 'all_tracks' node + flat 'playlist'
+ * nodes. A rekordbox USB stick's tree (Play from USB, USBPLAY-05) is the one
+ * nested source: its playlists are 'usb' nodes and its folders 'folder'. */
 export interface PlaylistNode {
 	/** Playlist id from PlaylistSummary; 'all' for the All Tracks node.
 	 * 'missing' is the All-Tracks-style Missing Tracks sentinel, not a
@@ -158,14 +160,23 @@ export interface PlaylistNode {
 	track_count: number;
 	/** Broken tracks omitted from the displayed playable count. */
 	broken_count: number;
-	/** Node flavour; 'folder' reserved for future hierarchy, unused v1.
+	/** Node flavor. 'folder' is a stick folder (never a loadable pane).
 	 * 'missing_tracks' is the reserved Missing Tracks view (playlist_id
-	 * 'missing'), never matched by a user playlist's display name. */
-	kind: 'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist';
+	 * 'missing'), never matched by a user playlist's display name. 'usb' is
+	 * one list on a plugged-in stick, read from its export, never the library. */
+	kind:
+		| 'all_tracks'
+		| 'playlist'
+		| 'smartlist'
+		| 'folder'
+		| 'missing_tracks'
+		| 'taglist'
+		| 'autolist'
+		| 'usb';
 	/** Below server min-available ratio; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** When true, extra copies of an already-present track are rejected on add. */
 	forbid_duplicates?: boolean;
-	/** Children for folder nodes; always [] at v1. */
+	/** Children for folder nodes; [] for every library node. */
 	children: PlaylistNode[];
 }
