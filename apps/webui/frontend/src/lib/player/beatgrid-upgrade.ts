@@ -25,6 +25,7 @@ import {
 	withFallbackBeatgrid
 } from '$lib/rb/beatgrid-fallback';
 import { recordPerfTiming } from '$lib/rb/perf-event-log';
+import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
@@ -150,6 +151,11 @@ export async function upgradeDeckBeatgrid(
 		}
 		return await settle(false);
 	};
+	// Spec 4b: a stick track's only grid is the stick's own PQTZ. It has no
+	// rb-meta, fallback grid or analysis record to reach for, so a gridless
+	// stick deck settles gridless here (the same answer as a track with no
+	// analysis yet) and makes no request.
+	if (isUsbTrackId(stableId)) return await settle(false);
 	try {
 		// The only honest source of "this track has no rekordbox mapping":
 		// RbMetaOut.vendor (apps/webui/server/routes/rb_assets.py). The empty
