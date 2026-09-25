@@ -728,13 +728,16 @@ export function invalidateAllAnlzCacheEntries(): void {
  * by library browsing is invisible to `refreshAnalysisSourceDecks`'s own
  * loaded-deck check, so a switch with no loaded deck to disagree left such an
  * entry cached under the OLD source indefinitely (discussion_r3973991969 P1
- * BLOCKING). */
+ * BLOCKING). A stick entry is never evicted (spec 4b, the same exemption as
+ * `_disagreesWithConfirmedSource`): it serves the stick's own grid under
+ * either lane, so evicting it would discard it and bump the fetch generation
+ * on every poll while the lane is 'own'. */
 export function evictAnlzCacheEntriesServingOtherSource(
 	wantedSource: 'rekordbox' | 'own'
 ): boolean {
 	let evictedAny = false;
 	for (const [stable_id, entry] of Object.entries(_cache)) {
-		if (entry.status === 'ready' && entry.data.beatgrid_source !== wantedSource) {
+		if (entry.status === 'ready' && !isUsbTrackId(stable_id) && entry.data.beatgrid_source !== wantedSource) {
 			delete _cache[stable_id];
 			evictedAny = true;
 		}
