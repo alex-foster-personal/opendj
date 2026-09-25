@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import psutil
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -288,33 +289,38 @@ def test_process_endpoint_labels_members_by_opendj_name(tmp_path: Path) -> None:
     assert "opendj-engine" in names
 
 
+def _pid_not_running() -> int:
+    live = set(psutil.pids())
+    pid = next(candidate for candidate in range(99_000, 1, -1) if candidate not in live)
+    assert not psutil.pid_exists(pid), pid
+    return pid
+
+
 @pytest.mark.requirement("PERFMODE-14")
 def test_process_endpoint_tags_each_member_with_its_source(tmp_path: Path) -> None:
     """[if] live and probe-log members merge [then] each names its source, [else stop]."""
+    # No patching: the live walk is rooted at this test process (os.getpid()),
+    # so it is a real live member; the probe record names a pid that is not
+    # running, so the route must merge it and tag it probe_log.
     record = _captured_process_record()
     record["processes"] = [
-        {"pid": 11, "role": "python-engine", "physical_footprint_mb": 151.4,
-         "command": "opendj-engine"},
-        {"pid": 99, "role": "desktop-shell", "physical_footprint_mb": 2.7,
-         "command": "opendj-desktop"},
+        {"pid": _pid_not_running(), "role": "desktop-shell", "physical_footprint_mb": 2.7,
+         "command": "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"},
     ]
     (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
         json.dumps(record) + "\n", encoding="utf-8"
     )
-    live = [{"name": "opendj-engine", "rss_mb": 53.8}, {"name": "unnamed"}]
-    with (
-        patch(
-            "apps.webui.server.routes.performance_telemetry.live_process_family_state",
-            return_value=(live, {11, 12}),
-        ),
-        TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client,
-    ):
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
         members = client.get("/api/v1/performance/telemetry/processes").json()["members"]
 
-    assert [(m["name"], m["source"]) for m in members] == [
-        ("opendj-engine", "live"),
-        ("unnamed", "live"),
-        ("opendj-desktop", "probe_log"),
+    live = [m for m in members if m["source"] == "live"]
+    probe_log = [m for m in members if m["source"] == "probe_log"]
+    assert {m["source"] for m in members} == {"live", "probe_log"}
+    # Live members come from the psutil walk, never from the probe record.
+    assert live and not any("role" in m or "physical_footprint_mb" in m for m in live)
+    assert probe_log == [
+        {"name": "opendj-desktop", "source": "probe_log", "physical_footprint_mb": 2.7,
+         "role": "desktop-shell"}
     ]
 
 
