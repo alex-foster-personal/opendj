@@ -170,6 +170,62 @@ export function triggerFloatingAction(
 	};
 }
 
+export interface PointFloatingOptions {
+	/** Requested top-left, usually the pointer position that opened the surface. */
+	x: number;
+	y: number;
+}
+
+/**
+ * Keep a fixed node's full box inside the viewport, anchored at a point, for
+ * EVERY size the node takes - not only its first one.
+ *
+ * A menu that opens on a "Loading..." row and then fills with its real items
+ * grows after its first placement. Clamping once against the loading size
+ * left the grown menu hanging below the viewport bottom (Show in playlists
+ * opened near the bottom of the track list put its third item at y=736 in a
+ * 720px window, where nothing can click it; a fixed node cannot be scrolled
+ * into view). Re-clamping from the ORIGINAL point on every resize also lets a
+ * menu that shrinks back return to the requested point rather than stay
+ * pushed up.
+ */
+export function pointFloatingAction(
+	node: HTMLElement,
+	options: PointFloatingOptions
+): { update: (next: PointFloatingOptions) => void; destroy: () => void } {
+	let config = options;
+
+	function place(): void {
+		const width = node.offsetWidth;
+		const height = node.offsetHeight;
+		if (width <= 0 || height <= 0) return;
+		const box = clampToViewport(
+			config.x,
+			config.y,
+			{ width, height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		node.style.left = `${Math.round(box.x)}px`;
+		node.style.top = `${Math.round(box.y)}px`;
+	}
+
+	const ro = new ResizeObserver(() => place());
+	ro.observe(node);
+	window.addEventListener('resize', place);
+	place();
+
+	return {
+		update(next: PointFloatingOptions): void {
+			config = next;
+			place();
+		},
+		destroy(): void {
+			ro.disconnect();
+			window.removeEventListener('resize', place);
+		}
+	};
+}
+
 export interface ViewportFloatingPopoverOptions {
 	preferred?: FloatingPlacement;
 	gap?: number;

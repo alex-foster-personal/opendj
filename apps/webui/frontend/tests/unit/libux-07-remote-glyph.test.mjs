@@ -42,22 +42,21 @@ const rowCloudView = template.slice(
 test('the cloud-presence glyph lives in the existing LHS status cell, not a new column', () => {
 	assert.match(rowCloudView, /row\.has_remote_copy/);
 	assert.match(cloudCell, /cloudView\./);
-	assert.match(cloudCell, /class="cloud-copy"/);
+	assert.match(cloudCell, /<CloudStatusIcon\b/);
 	assert.doesNotMatch(template, /class="c-remote"/);
 });
 
 test('cloud-presence states stay distinct from streaming', () => {
-	assert.match(cloudCell, /class="cloud"/);
-	assert.match(cloudCell, /class="cloud-copy"/);
-	assert.notEqual(
-		cloudCell.indexOf('class="cloud-copy"'),
-		cloudCell.indexOf('class="cloud"'),
-		'CloudSync presence and service streaming must not share one class'
+	const iconSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/CloudStatusIcon.svelte', import.meta.url)),
+		'utf8'
 	);
+	assert.match(iconSource, /class:streaming=/);
+	assert.match(iconSource, /class:not-on-cloud=/);
 });
 
 test('every CloudSync glyph carries the production helper title', () => {
-	assert.match(cloudCell, /class="cloud-copy"[^>]*title=\{cloudView\.title\}/);
+	assert.match(cloudCell, /<CloudStatusIcon[^>]*view=\{cloudView\}/);
 	assert.match(stateSource, /Not on CloudSync/);
 	assert.match(stateSource, /On CloudSync but not stored locally/);
 	assert.match(stateSource, /On CloudSync and stored locally/);
@@ -80,6 +79,11 @@ test('a remote row is not classed broken the way a missing local file is', () =>
 });
 
 test('local-only uses a crossed-out cloud instead of the old blank cell', () => {
-	assert.match(cloudCell, /class:not-on-cloud=/);
-	assert.match(cloudCell, /d="M3 13 13 3"/);
+	const iconSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/CloudStatusIcon.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(iconSource, /class:not-on-cloud=/);
+	assert.match(iconSource, /d="M3 13 13 3"/);
+	assert.match(iconSource, /tick-blue/);
 });

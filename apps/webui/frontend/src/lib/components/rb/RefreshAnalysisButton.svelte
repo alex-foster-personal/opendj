@@ -34,16 +34,12 @@
 	let queue = $state<AnalysisQueue | null>(null);
 	let hovered = $state(false);
 	let fetchError = $state<string | null>(null);
+	let clickFeedback = $state<string | null>(null);
 	let wrapEl: HTMLSpanElement | undefined = $state();
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	const badged = new Set<string>();
 
 	const running = $derived(status?.running === true);
-	const buttonTitle = $derived(
-		running
-			? 'Refresh analysis is running - hover for coverage; a second click does nothing until it finishes'
-			: 'Refresh analysis - click to find tracks missing analysis, stems, or vocals and run them; hover for coverage'
-	);
 	const pct = $derived.by(() => {
 		if (status === null || status.step_total === 0) return 0;
 		return Math.min(1, status.step_done / status.step_total);
@@ -111,19 +107,28 @@
 	}
 
 	async function onClick(): Promise<void> {
+		clickFeedback = null;
 		try {
 			status = await startIngestRefresh();
 			badged.clear();
+			clickFeedback = `Running: ${status.steps.join(', ')}`;
 			pushToast(`Refresh started: ${status.steps.join(', ')}`, 'info');
 			_syncTimer();
 		} catch (e) {
 			if (e instanceof RbApiError && e.status === 409) {
+				clickFeedback = 'Already running';
 				pushToast('A refresh is already running', 'info');
 			} else if (e instanceof RbApiError && e.status === 422) {
+				clickFeedback = 'WIP - not working: no ingestion steps enabled';
 				pushToast('No ingestion steps enabled - configure the ingest modal first', 'error');
+			} else if (e instanceof RbApiError && e.status === 503) {
+				clickFeedback = `WIP - not working: ${e.message}`;
+				pushToast(`Refresh unavailable: ${e.message}`, 'error');
 			} else {
+				clickFeedback = `WIP - not working: ${e instanceof Error ? e.message : String(e)}`;
 				pushToast(`Refresh failed to start: ${e instanceof Error ? e.message : e}`, 'error');
 			}
+			hovered = true;
 		}
 	}
 
@@ -143,7 +148,6 @@
 		class="tb-icon"
 		class:running
 		onclick={onClick}
-		title={buttonTitle}
 		aria-label="refresh analysis"
 		data-testid="refresh-analysis"
 	>
@@ -198,6 +202,8 @@
 					{#if status.log_tail.length > 0}
 						<pre class="pop-log">{status.log_tail.slice(-8).join('\n')}</pre>
 					{/if}
+				{:else if clickFeedback !== null}
+					<div class="pop-phase" data-testid="refresh-click-feedback">{clickFeedback}</div>
 				{:else}
 					<div class="pop-phase">idle - click to run the enabled steps over every missing track</div>
 				{/if}

@@ -185,7 +185,13 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 25 Sep 2026 (+1 KiB, preview branch af--preview-mixtour-io only):
+  // merging main 4abab4929 plus PR #3896 (CHROME-07 MIDI entry in the headphone
+  // cluster) into the preview's IOPIN I/O panel measured 241,874, 210 bytes over.
+  // The weight is the MIDI entry's status plumbing plus SVG icons replacing the
+  // cluster's emoji glyphs (CHROME-01). Main without the IOPIN panel does not
+  // carry it, so this raise is not proposed for main.
+  { name: 'performance', limit: 242688, measured: 241874, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

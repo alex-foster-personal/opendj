@@ -122,11 +122,11 @@ test('midiLabelStatus: green when granted with a mapped device, red without', ()
 	assert.equal(fmt.midiLabelStatus('unsupported', false, false), 'grey');
 });
 
-test('midiLabelGlyph: tick for green, X for red, nothing otherwise', () => {
-	assert.equal(fmt.midiLabelGlyph('green'), '✓');
-	assert.equal(fmt.midiLabelGlyph('red'), '✗');
-	assert.equal(fmt.midiLabelGlyph('grey'), '');
-	assert.equal(fmt.midiLabelGlyph('amber'), '');
+test('midiLabelGlyph: tick for green, cross for red, none otherwise', () => {
+	assert.equal(fmt.midiLabelGlyph('green'), 'tick');
+	assert.equal(fmt.midiLabelGlyph('red'), 'cross');
+	assert.equal(fmt.midiLabelGlyph('grey'), 'none');
+	assert.equal(fmt.midiLabelGlyph('amber'), 'none');
 });
 
 test('midiLabelTitle: granted with zero mapped devices reads as disconnected', () => {
@@ -282,4 +282,18 @@ test('maybeAutoEnableMidi re-runs the request when the choice was persisted', as
 	assert.notEqual(uiState.midiUi.lastError, null);
 	assert.equal(uiState.midiEnabledPersisted(), false);
 	_uninstallLocalStorage();
+});
+
+// requirement: CHROME-08
+test('MidiPanel supports expanded 70vw and floating width modes', async () => {
+	const { readFileSync } = await import('node:fs');
+	const { fileURLToPath } = await import('node:url');
+	const panel = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/MidiPanel.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(panel, /width:\s*70vw/);
+	assert.match(panel, /data-width-mode=\{midiUi\.widthMode\}/);
+	assert.match(panel, /toggleMidiPanelExpanded/);
+	assert.match(panel, /floatMidiPanel/);
 });

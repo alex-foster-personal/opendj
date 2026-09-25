@@ -21,6 +21,7 @@
 
 import type { DeviceMap, MidiAction, MidiSource } from '$lib/rb/midi/midi-types';
 import type { MidiPermission } from '$lib/rb/midi/webmidi.svelte';
+import { midiLabelGlyphKind, type MidiLabelGlyphKind } from '$lib/ui/icon-glyphs';
 
 export type MidiLabelStatus = 'green' | 'amber' | 'grey' | 'red';
 
@@ -75,13 +76,9 @@ export function midiLabelStatus(
 	return 'grey';
 }
 
-/** The glyph shown next to the TopBar MIDI label for a given status: a tick
- * when a controller is bound, an X when access is granted but disconnected,
- * nothing otherwise (amber pulses; grey is idle). */
-export function midiLabelGlyph(status: MidiLabelStatus): string {
-	if (status === 'green') return '✓'; // check mark
-	if (status === 'red') return '✗'; // ballot X
-	return '';
+/** The glyph kind shown next to the MIDI label for a given status. */
+export function midiLabelGlyph(status: MidiLabelStatus): MidiLabelGlyphKind {
+	return midiLabelGlyphKind(status);
 }
 
 /** Tooltip for the TopBar MIDI label - states WHY the colour is what it is. */

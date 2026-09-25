@@ -15,6 +15,11 @@
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
+	import { PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
+	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
+	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -37,7 +42,6 @@
 
 	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode }: Props =
 		$props();
-	let ioOpen = $state(false);
 
 	let mixStepDirection: HeadphoneMixDirection = 1;
 	let lastMixStep: HeadphoneMixStepResult | null = null;
@@ -118,6 +122,9 @@
 		'ROOM is the room (MASTER) delay, 0-1500 ms, the last node before the speakers. The phones never pay it.',
 		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
 	];
+	const rescanBullets = [
+		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
+	];
 	const modeBullets = [
 		'practice: cue and master share the speakers.',
 		'two outputs: MASTER/MAIN is the room, HEADPHONE CUE is headphones.',
@@ -138,16 +145,16 @@
 	}
 
 	function openIo(): void {
-		ioOpen = true;
+		openIoView();
 	}
 
 	function closeIo(): void {
 		if (cueAlignModal.open) closeCueAlignModal();
-		ioOpen = false;
+		closeIoView();
 	}
 
 	function onWindowKeydown(event: KeyboardEvent): void {
-		if (event.key === 'Escape' && ioOpen && !cueAlignModal.open) {
+		if (event.key === 'Escape' && ioSurface.open && !cueAlignModal.open) {
 			event.preventDefault();
 			closeIo();
 		}
@@ -167,13 +174,25 @@
 		const step = event.deltaY < 0 ? 1 : -1;
 		ondelay(Math.max(0, Math.min(500, headphoneState.head_delay_ms + step)));
 	}
+
+	// MIDI status moved here with MIDI connect (CHROME-07): the entry keeps the
+	// gray / amber / green / red reading the top-bar MIDI label used to carry.
+	// Logic lives in midi-format.ts (pure, unit-tested); this is the plumbing.
+	const midiMappedCount = $derived(midiState.devices.filter((d) => d.mapVendor !== null).length);
+	const midiStatus = $derived(
+		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
+	);
+	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
+	const midiTitle = $derived(
+		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	);
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="hp" data-performance-control="headphones">
 	<ControlExplainer title="MIX" bullets={mixBullets} showDelayMs={60}>
-		<span class="hp-control-icon" aria-hidden="true">🎧</span>
+		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
 			label="MIX"
@@ -186,7 +205,7 @@
 		/>
 	</ControlExplainer>
 	<ControlExplainer title="VOL" bullets={levelBullets} showDelayMs={60}>
-		<span class="hp-control-icon" aria-hidden="true">🎧</span>
+		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-level')}
 			label="VOL"
@@ -200,21 +219,47 @@
 		bullets={ioBullets}
 		showDelayMs={100}
 		compact={true}
-		disabled={ioOpen}
+		disabled={ioSurface.open}
 	>
 		<button
 			type="button"
 			class="hp-btn hp-io-trigger"
 			aria-label="SHOW AUDIO I/O"
-			aria-expanded={ioOpen}
-			onclick={openIo}>
-			<span aria-hidden="true">🎧</span><span aria-hidden="true">ᛒ</span><span aria-hidden="true">🔊</span>
-		</button
+			aria-expanded={ioSurface.open}
+			onclick={openIo}>I/O</button
+		>
+	</ControlExplainer>
+	<ControlExplainer
+		title="MIDI"
+		bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
+		showDelayMs={60}
+	>
+		<button
+			type="button"
+			class="hp-btn midi-btn"
+			class:st-grey={midiStatus === 'grey'}
+			class:st-green={midiStatus === 'green'}
+			class:st-amber={midiStatus === 'amber'}
+			class:st-red={midiStatus === 'red'}
+			aria-label="Open MIDI panel"
+			aria-expanded={midiUi.panelOpen}
+			onclick={() => {
+				openIoView();
+				if (!midiUi.panelOpen) toggleMidiPanel();
+			}}
+			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
+					><path
+						d={midiGlyph === 'tick' ? 'M2 6.2 L5 9.2 L10 3' : 'M3 3 L9 9 M9 3 L3 9'}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+					/></svg
+				>{/if}</button
 		>
 	</ControlExplainer>
 </div>
 
-{#if ioOpen}
+{#if ioSurface.open}
 	<div class="hp-panel" role="dialog" aria-label="Audio I/O settings" aria-modal="false" tabindex="-1" data-audio-io-panel>
 		<header class="hp-panel-header">
 			<div>
@@ -241,7 +286,7 @@
 				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
-				<div class="hp-section-heading"><h3>Devices</h3><button type="button" aria-label="Rescan available headphone output devices" title="Rescan audio devices" onclick={onrefresh}>Rescan ↻</button></div>
+				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
 				{#if masterLabel !== null || selectedLabel !== null}
@@ -258,7 +303,7 @@
 				<section class="hp-section" aria-label="Cue alignment">
 					<h3>Cue alignment</h3>
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
-					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━▶</span><span>CUE ━━━━━▶</span></div>
+					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
 					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
 						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
@@ -369,6 +414,32 @@
 		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
+	}
+	.midi-btn.st-grey {
+		opacity: 0.6;
+	}
+	.midi-btn.st-green {
+		color: var(--rb-green);
+	}
+	.midi-btn.st-red {
+		color: var(--rb-red);
+	}
+	.midi-btn.st-amber {
+		color: var(--rb-orange);
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
+	}
+	.midi-glyph {
+		margin-left: 3px;
+		vertical-align: middle;
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);

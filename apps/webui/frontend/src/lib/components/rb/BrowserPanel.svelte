@@ -166,7 +166,8 @@
 		hydrateRuntimePolicy,
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
-	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
+	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
+	import { openIoView } from '$lib/rb/io-surface.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
@@ -3686,6 +3687,29 @@
 				{/each}
 			</div>
 		</div>
+		<div class="tray-right-cluster">
+			<button
+				type="button"
+				class="tray-midi"
+				aria-label="Open audio I/O and MIDI"
+				title="Open audio I/O view (MIDI connect)"
+				onclick={() => openIoView()}
+			>
+				MIDI
+			</button>
+			<button
+				type="button"
+				class="tray-preview"
+				class:active={previewCue.playing}
+				aria-label={previewCue.playing ? 'Stop library preview' : 'Library preview cue'}
+				title={previewCue.playing ? 'Stop library preview' : 'Library preview cue (click a mini-waveform)'}
+				onclick={() => {
+					if (previewCue.playing) void stopPreviewCue();
+				}}
+			>
+				Preview
+			</button>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -4000,6 +4024,40 @@
 	}
 	.panels-chevron:hover {
 		color: var(--rb-accent);
+	}
+	.tray-right-cluster {
+		display: inline-flex;
+		align-items: center;
+		margin-left: auto;
+		gap: 0;
+	}
+	.tray-midi {
+		opacity: 0.45;
+		margin-right: 20px;
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 8px;
+		cursor: pointer;
+	}
+	.tray-midi:hover {
+		opacity: 0.75;
+		color: var(--rb-text);
+	}
+	.tray-preview {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 8px;
+		cursor: pointer;
+	}
+	.tray-preview.active {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
 	}
 	.bottom-bar {
 		grid-area: bottom;

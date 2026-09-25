@@ -206,6 +206,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	{ id: 'rb.midi_enabled', label: 'MIDI controllers', group: 'performance', implemented: true, control: { kind: 'boolean' },
+		keywords: ['midi', 'controller', 'webmidi', 'ddj', 'device'], title: 'Enable WebMIDI controller input',
+		detail: 'When on, the app requests browser MIDI access on load and routes mapped controllers to decks and mixer. Persisted to ui-prefs (PARITY-12).' },
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',

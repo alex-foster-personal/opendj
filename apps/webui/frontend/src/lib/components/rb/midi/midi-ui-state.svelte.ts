@@ -46,10 +46,12 @@ import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 import {
-	MIDI_ENABLED_KEY,
+	midiEnabledPersisted,
 	onMidiEnabledHydrated,
 	persistMidiEnabled
 } from './midi-enabled-choice';
+
+export { midiEnabledPersisted };
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -87,8 +89,11 @@ function _reloadInstalledMapsAfterLibraryChange(): void {
 // because this is the one call site that attaches it.
 let _detachMidiGlue: (() => void) | null = null;
 
+export type MidiPanelWidthMode = 'compact' | 'expanded' | 'floating';
+
 export const midiUi: {
 	panelOpen: boolean;
+	widthMode: MidiPanelWidthMode;
 	requestPending: boolean;
 	/** Last permission-request failure, shown red in the panel. null = none. */
 	lastError: string | null;
@@ -102,6 +107,7 @@ export const midiUi: {
 	installedMapsError: string | null;
 } = $state({
 	panelOpen: false,
+	widthMode: 'compact' as MidiPanelWidthMode,
 	requestPending: false,
 	lastError: null,
 	logPopoutOpen: false,
@@ -111,6 +117,18 @@ export const midiUi: {
 
 export function toggleMidiPanel(): void {
 	midiUi.panelOpen = !midiUi.panelOpen;
+}
+
+export function setMidiPanelWidthMode(mode: MidiPanelWidthMode): void {
+	midiUi.widthMode = mode;
+}
+
+export function toggleMidiPanelExpanded(): void {
+	midiUi.widthMode = midiUi.widthMode === 'expanded' ? 'compact' : 'expanded';
+}
+
+export function floatMidiPanel(): void {
+	midiUi.widthMode = 'floating';
 }
 
 // -------------------------------------------------------- learn-log pop-out
@@ -150,12 +168,6 @@ function _syncMidiEnabledToDisk(enabled: boolean): void {
 export function setMidiEnabledChoice(enabled: boolean): void {
 	persistMidiEnabled(enabled);
 	_syncMidiEnabledToDisk(enabled);
-}
-
-/** True if the user previously enabled MIDI (persisted choice). */
-export function midiEnabledPersisted(): boolean {
-	if (typeof localStorage === 'undefined') return false;
-	return localStorage.getItem(MIDI_ENABLED_KEY) === '1';
 }
 
 /** On page load, re-run the access request IFF the user opted in before. Goes

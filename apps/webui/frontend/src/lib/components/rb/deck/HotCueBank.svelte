@@ -7,8 +7,8 @@
 	// slot click = real jump to in_ms via the audio engine (COMPONENT-MAP
 	// 1.3). Empty slot click = SAVE the current playhead there (djmdCue
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
-	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
-	// dropdown selector below-left is visual-only (inert).
+	// (beyond H) is unverified and never exposed (PARITY-TODO.md). The HOT CUE
+	// pad-mode dropdown below-left lives in PadModeMenu.svelte (CHROME-11).
 	//
 	// A locally imported track has no djmdContent row for djmdCue to key
 	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
@@ -25,7 +25,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import PadModeMenu from './PadModeMenu.svelte';
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
@@ -391,9 +391,7 @@
 			</div>
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={plannedTitle('hot-cue-menu')} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
-		HOT CUE <span class="caret">&#9662;</span>
-	</button>
+	<PadModeMenu deckId={deck.deck_id} />
 	{#if undo !== null}
 		<!-- Undo is frequently the control a DJ clicks to LEAVE the open cue-name
 		input, and that click's mousedown blurs the input, which starts the
@@ -580,17 +578,9 @@
 		background: rgba(255, 255, 255, 0.08);
 		outline: none;
 	}
-	.dropdown {
-		align-self: flex-start;
-		height: 18px;
-		box-sizing: border-box;
-	}
 	.undo {
 		align-self: flex-start;
 		height: 18px;
 		box-sizing: border-box;
-	}
-	.caret {
-		color: var(--rb-text-dim);
 	}
 </style>

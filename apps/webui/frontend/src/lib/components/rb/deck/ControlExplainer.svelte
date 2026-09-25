@@ -28,6 +28,8 @@
 		pinOnClick = false,
 		compact = false,
 		disabled = false,
+		programmaticOpen = false,
+		onProgrammaticClose = undefined,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
@@ -59,6 +61,9 @@
 		compact?: boolean;
 		/** Suppress hover help while the control's separate persistent panel is open. */
 		disabled?: boolean;
+		/** Parent-driven pin (e.g. bottom-tray I/O entry). Opens and pins until dismissed. */
+		programmaticOpen?: boolean;
+		onProgrammaticClose?: (() => void) | undefined;
 		children: Snippet;
 	} = $props();
 
@@ -146,8 +151,10 @@
 		hideTimer = undefined;
 		if (showTimer !== undefined) clearTimeout(showTimer);
 		showTimer = undefined;
+		const wasProgrammatic = pinned && programmaticOpen;
 		pinned = false;
 		open = false;
+		if (wasProgrammatic) onProgrammaticClose?.();
 	}
 
 	function _hide(event: FocusEvent | PointerEvent): void {
@@ -206,6 +213,12 @@
 		return () => document.removeEventListener('pointerdown', _onDocumentPointerDown, true);
 	});
 	onDestroy(_close);
+
+	$effect(() => {
+		if (!programmaticOpen) return;
+		pinned = true;
+		void _openNow();
+	});
 
 	$effect(() => {
 		if (!open || popEl == null) return;
