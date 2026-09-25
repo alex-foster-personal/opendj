@@ -23,17 +23,25 @@ from .own_waveform_overlay import apply_own_waveform
 
 
 def apply_own_overlays(
-    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+    payload: dict[str, Any],
+    stable_id: str,
+    state_db_path: Path | None = None,
+    *,
+    has_rb_mapping: bool | None = None,
 ) -> dict[str, Any]:
     """Apply every own-lane overlay. Mutates and returns ``payload``."""
     return apply_own_waveform(
         apply_own_key_segments(
-            apply_own_beatgrid(payload, stable_id, state_db_path),
+            apply_own_beatgrid(
+                payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+            ),
             stable_id,
             state_db_path,
+            has_rb_mapping=has_rb_mapping,
         ),
         stable_id,
         state_db_path,
+        has_rb_mapping=has_rb_mapping,
     )
 
 

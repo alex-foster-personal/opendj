@@ -379,9 +379,11 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
-	key_status?: 'ok' | 'failed' | 'missing';
+	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
@@ -744,6 +746,14 @@ export async function fetchAnlzBypassingHttpCache(
 	);
 	vocalsOf(data);
 	return data;
+}
+
+/** GET /tracks/{sid} with `cache: 'reload'`, paired with
+ * `fetchAnlzBypassingHttpCache` on analysis-source switches: the openapi
+ * client's ordinary `getTrack` can otherwise replay a pre-switch row while
+ * `/anlz` already reflects the new lane. */
+export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
+	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
