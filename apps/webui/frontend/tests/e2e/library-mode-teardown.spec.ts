@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixtureManifestExists, primaryFixtureStableId } from './support/fixture-manifest';
+import { countLiveFamilyMembers } from './support/renderer-process-sample';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
@@ -36,10 +37,12 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	// match anything the endpoint actually sends (.planning/debt/3679.md,
 	// "Stem-worker markers do not match any field the telemetry endpoint
 	// exposes"). A live leaked worker is still a live process-family member
-	// though, so comparing the member COUNT before deck loads to the count
+	// though, so comparing the LIVE member COUNT before deck loads to the count
 	// after Library teardown catches a leak without needing to name it.
+	// Probe-log members (processes from the native probe's last record that are
+	// not live now) are excluded, so an unrelated exit cannot net out a leak.
 	const baselineTelemetry = await _pollTelemetryUntilAvailable(request, API_BASE);
-	const baselineMemberCount = _requireMemberCount(baselineTelemetry);
+	const baselineMemberCount = countLiveFamilyMembers(baselineTelemetry);
 
 	for (const deck of [1, 2, 3, 4] as const) {
 		await page.evaluate(
@@ -68,30 +71,19 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	expect(librarySnapshot.audio_context_state).toBe('uninitialized');
 
 	const finalTelemetry = await _pollTelemetryUntilAvailable(request, API_BASE);
-	const finalMemberCount = _requireMemberCount(finalTelemetry);
+	const finalMemberCount = countLiveFamilyMembers(finalTelemetry);
 	// A stem worker (or anything else) still alive after teardown shows up as
 	// an EXTRA process-family member versus the pre-load baseline; a match or
 	// a drop is fine (teardown is allowed to free members the baseline held).
 	expect(finalMemberCount).toBeLessThanOrEqual(baselineMemberCount);
 });
 
-/** Throws rather than reading an unavailable/malformed `members` list as
- * zero -- a failed measurement is not the same as "zero workers running". */
-function _requireMemberCount(body: Record<string, unknown>): number {
-	if (body.available !== true || !Array.isArray(body.members)) {
-		throw new Error(
-			`process telemetry unavailable or malformed; cannot measure process family size: ${JSON.stringify(body)}`
-		);
-	}
-	return body.members.length;
-}
-
 const _TELEMETRY_POLL_ATTEMPTS = 5;
 const _TELEMETRY_POLL_INTERVAL_MS = 500;
 
 /** Poll the process telemetry endpoint until it reports `available: true`,
  * bounded, so a transiently-cold cache does not read as "no workers running"
- * (see _requireMemberCount -- unavailable is not evidence of a clean teardown). */
+ * (countLiveFamilyMembers throws on it -- unavailable is not evidence of a clean teardown). */
 async function _pollTelemetryUntilAvailable(
 	request: import('@playwright/test').APIRequestContext,
 	apiBase: string
