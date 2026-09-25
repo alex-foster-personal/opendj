@@ -80,7 +80,8 @@ def _rows_read_by_one_add(store: PlaylistStore, playlist_id: str, position: int 
 
 @pytest.mark.parametrize("where", ["append", "middle"])
 def test_one_add_reads_each_existing_member_once(store: PlaylistStore, where: str) -> None:
-    """[if] one track is added to a 400-member playlist [then] each existing member is read once, [else stop]."""
+    """[if] one track is added to a 400-member playlist
+    [then] each existing member is read once, [else stop]."""
     small = _playlist(store, SMALL)
     large = _playlist(store, LARGE)
     small_rows = _rows_read_by_one_add(store, small, None if where == "append" else SMALL // 2)
@@ -95,7 +96,8 @@ def test_one_add_reads_each_existing_member_once(store: PlaylistStore, where: st
 
 
 def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> None:
-    """[if] neighbors are read by a bounded query [then] they are the full list's neighbors, [else stop]."""
+    """[if] neighbors are read by a bounded query
+    [then] they are the full list's neighbors, [else stop]."""
     playlist_id = _playlist(store, 12)
     conn = store._conn
     # Legacy rows with no order_key sort by their zero-padded position, the
@@ -117,14 +119,15 @@ def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> N
 
 
 def test_response_and_undo_snapshot_match_independent_reads(store: PlaylistStore) -> None:
-    """[if] the before-snapshot is derived from the after read [then] it equals the membership before the add, [else stop]."""
+    """[if] the before-snapshot is derived from the after read
+    [then] it equals the membership before the add, [else stop]."""
     playlist_id = _playlist(store, 30)
     conn = store._conn
     before = [m.stable_id for m in _load_live_members(conn, playlist_id)]
     row = store.add_memberships(playlist_id, [_sid(LARGE + 2), _sid(3)], position=7)
     after = [m.stable_id for m in _load_live_members(conn, playlist_id)]
     assert row.items == after
-    assert after == before[:7] + [_sid(LARGE + 2), _sid(3)] + before[7:]
+    assert after == [*before[:7], _sid(LARGE + 2), _sid(3), *before[7:]]
     payload = json.loads(conn.execute(
         "SELECT payload_json FROM events WHERE kind = 'playlist.edit' ORDER BY id DESC LIMIT 1"
     ).fetchone()[0])

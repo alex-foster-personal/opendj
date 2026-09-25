@@ -6,7 +6,7 @@ connection and re-ran two schema probes plus two lookups, so a 500-row page
 paid ~2,500 statements and 500 connections, a 10,000-member playlist 50,000.
 
 The instrument is the real connection's trace callback (``sql_trace``), not a
-mock: a page of 40 unmapped rows must issue exactly the statements a page of
+mock: a page of 20 unmapped rows must issue exactly the statements a page of
 4 does. The overshoot control is the artwork verdict itself: batching the
 path lookup must not change what any row says, so every row is checked
 against the per-row public function the rb-meta route still uses.
@@ -155,7 +155,7 @@ def _assert_constant(client: TestClient, trace: SqlTrace, small_url: str, large_
 
 
 def test_track_listing_statement_count_is_constant_in_page_size(traced_client) -> None:
-    """[if] /tracks lists 40 unmapped rows [then] it issues the statements 4 rows do, [else stop]."""
+    """[if] /tracks lists 20 unmapped rows [then] it issues what 4 rows do, [else stop]."""
     client, trace = traced_client
     _assert_constant(
         client, trace, f"/api/v1/tracks?limit={SMALL}", f"/api/v1/tracks?limit={LARGE}",
@@ -163,7 +163,7 @@ def test_track_listing_statement_count_is_constant_in_page_size(traced_client) -
 
 
 def test_playlist_detail_statement_count_is_constant_in_member_count(traced_client) -> None:
-    """[if] a 40-member playlist opens [then] it issues the statements a 4-member one does, [else stop]."""
+    """[if] a 20-member playlist opens [then] it issues what a 4-member one does, [else stop]."""
     client, trace = traced_client
     _assert_constant(
         client, trace,
@@ -182,7 +182,8 @@ def _oracle(stable_id: str) -> tuple[bool | None, str]:
 
 
 def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> None:
-    """[if] the artwork lookup is batched [then] every row's verdict equals the per-row one, [else stop]."""
+    """[if] the artwork lookup is batched
+    [then] every row's verdict equals the per-row one, [else stop]."""
     client, _trace = traced_client
     listing = client.get(f"/api/v1/tracks?limit={LARGE}").json()["items"]
     detail = client.get(f"/api/v1/playlists/{LARGE_PLAYLIST}").json()["tracks"]
@@ -207,7 +208,8 @@ def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> Non
 
 
 def test_fixture_rows_are_really_unmapped(traced_client, tmp_path: Path) -> None:
-    """[if] the fixture grows a rekordbox mapping [then] the per-row path is not what is measured, [else stop]."""
+    """[if] the fixture grows a rekordbox mapping
+    [then] the unmapped per-row path is no longer what is measured, [else stop]."""
     conn = sqlite3.connect(str(tmp_path / "state.db"))
     try:
         mapped = conn.execute("SELECT COUNT(*) FROM track_vendor_ids").fetchone()[0]

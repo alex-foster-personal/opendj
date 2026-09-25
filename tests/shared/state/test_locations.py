@@ -233,7 +233,8 @@ def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
 def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     state_conn, tmp_path: Path,
 ) -> None:
-    """[if] the listing batches path resolution [then] every id resolves as local_audio_path does, [else stop].
+    """[if] the listing batches path resolution
+    [then] every id resolves as local_audio_path does, [else stop].
 
     Includes the one shape where the two used to differ: an id whose FIRST
     ordered local location has an empty path. The per-id reader takes that
