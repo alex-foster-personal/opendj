@@ -86,7 +86,8 @@
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs,
-		usbPaneSource
+		usbPaneSource,
+		isRemovedStickRow
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -1982,7 +1983,8 @@
 			if (node.kind === 'usb') {
 				// Play from USB (USBPLAY-05): rows come from the stick's export,
 				// read only; the store also grays and restores them on unplug.
-				await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
+				const failure = await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
+				if (failure !== null) pushToast(`playlist load failed: ${failure}`, 'error');
 				return;
 			}
 			if (node.kind === 'autolist') {
@@ -2530,6 +2532,10 @@
 			pushToast('preview: availability still checking (wait for disk probe)', 'error');
 			return;
 		}
+		if (isRemovedStickRow(row)) {
+			pushToast('preview: Stick removed', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2570,6 +2576,10 @@
 			}
 			if (_availabilityPending(row)) {
 				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
+				return;
+			}
+			if (isRemovedStickRow(row)) {
+				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
 			if (!row.file_exists) {

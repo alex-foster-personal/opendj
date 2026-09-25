@@ -11,7 +11,12 @@
 	 */
 	import { onMount } from 'svelte';
 	import type { PlaylistNode } from '$lib/rb/library-types';
-	import { openUsbStick, toggleUsbFolder, usbLibrary } from '$lib/rb/usb-library.svelte';
+	import {
+		openUsbStick,
+		toggleUsbFolder,
+		usbErrorHeadline,
+		usbLibrary
+	} from '$lib/rb/usb-library.svelte';
 	import type { UsbVolumeKnown } from '$lib/rb/usb-tracker.svelte';
 
 	let {
@@ -44,18 +49,6 @@
 		_activate(node);
 	}
 
-	function _errorText(code: string): string {
-		switch (code) {
-			case 'USB_STICK_NOT_MOUNTED':
-				return 'Stick removed';
-			case 'USB_VOLUME_HAS_NO_UUID':
-				return 'no volume id: cannot browse this stick';
-			case 'usb_volume_discovery_unavailable':
-				return 'USB browsing is not available in this build';
-			default:
-				return 'could not read this stick';
-		}
-	}
 </script>
 
 {#snippet branch(nodes: PlaylistNode[], depth: number)}
@@ -111,7 +104,7 @@
 			data-code={view.code}
 			title={view.message}
 		>
-			<span class="name dim">{_errorText(view.code)}</span>
+			<span class="name dim">{usbErrorHeadline(view.code)}</span>
 		</div>
 	{:else}
 		{@render branch(view.tree, 0)}

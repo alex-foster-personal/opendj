@@ -16,11 +16,17 @@
  * - [if] rating a stick row reaches _patchRating [then] the app pretends to
  *   write to a read-only stick
  * - [if] stick rows are sent to rb-meta [then] every visible row 404s
+ * - [if] a grayed stick row is refused as a broken link [then] the DJ reads
+ *   "audio file missing on disk" for a stick that was only pulled
+ * - [if] the stick pane branch toasts String(exc) [then] the DJ reads the
+ *   error class and code instead of "Stick removed"
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 function source(relativePath) {
 	return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), 'utf8');
@@ -101,10 +107,38 @@ test('_loadPane keeps stick panes out of last_playlist and loads them from the s
 	assert.match(persisted, /node\.kind !== 'usb'/);
 	// Control: the slice is the exclusion list (taglists are excluded too).
 	assert.match(persisted, /node\.kind !== 'taglist'/);
-	assert.match(
-		between(load, "if (node.kind === 'usb') {", 'return;'),
-		/loadUsbPane\(p, seq, \(\) => panes\)/
-	);
+	const usbBranch = between(load, "if (node.kind === 'usb') {", 'return;');
+	assert.match(usbBranch, /loadUsbPane\(p, seq, \(\) => panes\)/);
+	// The branch settles its own load and toasts the store's words, never
+	// String(exc) (which would print the error class and code).
+	assert.match(usbBranch, /if \(failure !== null\) pushToast\(`playlist load failed: \$\{failure\}`, 'error'\);/);
+	assert.doesNotMatch(usbBranch, /String\(exc\)/);
+});
+
+test('a grayed stick row is refused as "Stick removed" before the broken-link refusal', async () => {
+	const support = await loadTypeScriptModule('src/lib/components/rb/browser/browser-panel-support.ts');
+	const uuid = 'AAAAAAAA-0000-4000-8000-00000000000A';
+	assert.equal(support.isRemovedStickRow({ stable_id: `usb-${uuid}-1`, file_availability: 'awaiting_volume' }), true);
+	// Controls: a stick row still present, and a library row awaiting its
+	// own volume (library ids are sha1 hex), keep their usual refusals.
+	assert.equal(support.isRemovedStickRow({ stable_id: `usb-${uuid}-1`, file_availability: 'present' }), false);
+	assert.equal(support.isRemovedStickRow({ stable_id: 'a'.repeat(40), file_availability: 'awaiting_volume' }), false);
+
+	const panel = source('src/lib/components/rb/BrowserPanel.svelte');
+	for (const [start, end, refusal] of [
+		['async function _loadOntoDeck(', 'const target = deck ?? _lowestFreeDeck();', 'cannot load: '],
+		['function previewSeek(', 'void previewCueSeek(', 'preview: ']
+	]) {
+		const guard = between(panel, start, end);
+		const removed = guard.indexOf('if (isRemovedStickRow(row)) {');
+		const broken = guard.indexOf('if (!row.file_exists) {');
+		assert.ok(removed >= 0, `${start} has no removed-stick refusal`);
+		assert.ok(broken > removed, `${start}: the removed-stick refusal must run before the broken-link one`);
+		assert.match(
+			guard.slice(removed, broken),
+			new RegExp(`pushToast\\('${refusal}Stick removed', 'error'\\);\\s*return;`)
+		);
+	}
 });
 
 test('stick panes refresh from the stick and navigate by their usbpl: prefix', () => {
