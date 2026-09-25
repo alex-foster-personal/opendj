@@ -21,11 +21,14 @@ Regression intent, one line per guard:
   - if an unanalyzed stick track 404s /anlz or /hot-cues then it cannot load onto a deck
   - if TrackOut flags predict a different answer than the routes give then the deck asks wrongly
   - if any file under PIONEER/ or Contents/ changes while the routes run then USBPLAY-08 broke
+  - if a same-size, same-mtime content change under PIONEER/ is not seen then the hash is gone
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
+import stat as stat_mode
 import statistics
 import time
 from collections.abc import Callable, Iterator
@@ -553,15 +556,21 @@ def test_trackout_flags_predict_what_the_stick_routes_serve(client: TestClient) 
 # ----- USBPLAY-08: nothing on the stick changes ---------------------------------
 
 _WATCHED_DIRS = ("PIONEER", "Contents")
+#: (size, mtime_ns, sha256 of a hashed regular file else None) per relative path.
+Snapshot = dict[str, tuple[int, int, str | None]]
 
 
-def _stick_snapshot(mount: Path) -> dict[str, tuple[int, int]]:
-    """(size, mtime_ns) of every file AND directory under PIONEER/ and Contents/.
+def _stick_snapshot(mount: Path, hash_dirs: tuple[str, ...] = ("PIONEER",)) -> Snapshot:
+    """Every file AND directory under PIONEER/ and Contents/, each regular
+    file under ``hash_dirs`` hashed (USBPLAY-08's hash check).
 
+    The hash sees a rewrite that keeps size and mtime; size and mtime cover
+    the rest (a real stick's Contents/ is too big to hash per run, so the
+    audio files a test streams are hashed by :func:`_digests` instead).
     Directories are included so a file created and deleted again, or an
     added AppleDouble ``._`` sibling, still shows as a changed mtime.
     """
-    snapshot: dict[str, tuple[int, int]] = {}
+    snapshot: Snapshot = {}
     for top in _WATCHED_DIRS:
         root = mount / top
         if not root.is_dir():
@@ -570,15 +579,27 @@ def _stick_snapshot(mount: Path) -> dict[str, tuple[int, int]]:
             for name in (".", *dirnames, *filenames):
                 path = Path(dirpath, name)
                 st = path.lstat()
-                snapshot[str(path.relative_to(mount))] = (st.st_size, st.st_mtime_ns)
+                hashed = top in hash_dirs and stat_mode.S_ISREG(st.st_mode)
+                snapshot[str(path.relative_to(mount))] = (
+                    st.st_size, st.st_mtime_ns, _sha256(path) if hashed else None
+                )
     return snapshot
+
+
+def _sha256(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _digests(mount: Path, stick_paths: list[str]) -> dict[str, str]:
+    return {p: _sha256(mount / p.lstrip("/")) for p in stick_paths}
 
 
 def _raise(error: OSError) -> None:
     raise error
 
 
-def _snapshot_diff(before: dict[str, tuple[int, int]], after: dict[str, tuple[int, int]]) -> str:
+def _snapshot_diff(before: Snapshot, after: Snapshot) -> str:
     changed = sorted(k for k in before.keys() & after.keys() if before[k] != after[k])
     return (
         f"added {sorted(after.keys() - before.keys())[:10]}, "
@@ -589,20 +610,32 @@ def _snapshot_diff(before: dict[str, tuple[int, int]], after: dict[str, tuple[in
 def test_stick_snapshot_detects_a_change_and_the_routes_make_none(
     client: TestClient, mount: Path
 ) -> None:
-    before = _stick_snapshot(mount)
+    every_dir = ("PIONEER", "Contents")
+    before = _stick_snapshot(mount, hash_dirs=every_dir)
     assert "PIONEER/rekordbox/export.pdb" in before, "control: the snapshot sees the export"
     assert f"{SHARED_ANLZ_DIR}/ANLZ0001.2EX" in before
+    assert before["Contents/second.flac"][2] is not None, "control: audio is hashed here"
     for pdb_id in range(1, 14):
         for suffix in _TRACK_SUFFIXES:
             client.get(_track_url(pdb_id, suffix))
         client.head(_track_url(pdb_id, "/audio"))
     client.get(f"{API}/volumes/{VOLUME_ID}/library")
-    assert _stick_snapshot(mount) == before, _snapshot_diff(before, _stick_snapshot(mount))
+    after = _stick_snapshot(mount, hash_dirs=every_dir)
+    assert after == before, _snapshot_diff(before, after)
     # The guard bites: a touched mtime, and an added file, each read as a change.
-    dat = mount / SHARED_ANLZ_DIR / "ANLZ0000.DAT"
+    dat_key = f"{SHARED_ANLZ_DIR}/ANLZ0000.DAT"
+    dat = mount / dat_key
     os.utime(dat, ns=(dat.stat().st_atime_ns, dat.stat().st_mtime_ns + 1))
     assert _stick_snapshot(mount) != before
-    os.utime(dat, ns=(dat.stat().st_atime_ns, before[f"{SHARED_ANLZ_DIR}/ANLZ0000.DAT"][1]))
+    os.utime(dat, ns=(dat.stat().st_atime_ns, before[dat_key][1]))
+    assert _stick_snapshot(mount, hash_dirs=every_dir) == before, "control: mtime restored"
+    # A rewrite that keeps size AND mtime is seen by the hash alone.
+    original = dat.read_bytes()
+    dat.write_bytes(bytes(b ^ 0xFF for b in original))
+    os.utime(dat, ns=(dat.stat().st_atime_ns, before[dat_key][1]))
+    rewritten = _stick_snapshot(mount, hash_dirs=every_dir)
+    assert rewritten[dat_key][:2] == before[dat_key][:2], "control: size and mtime unchanged"
+    assert rewritten[dat_key][2] != before[dat_key][2], "if unseen then the hash check is gone"
     (mount / "Contents" / "._second.flac").write_bytes(b"x")
     assert _stick_snapshot(mount).keys() - before.keys() == {"Contents/._second.flac"}
 
@@ -797,6 +830,8 @@ def test_live_stick_tracks_play_and_the_stick_is_never_written(
         f"slots {[(c.slot, c.color_table_index) for c in richest_cues]}"
     )
     tracks = _live_picks(all_tracks, candidates, richest)
+    # First opened in the loop below (TrackOut does not stat audio): hash them now.
+    audio_before = _digests(live_mount, [row["file_path"] for row in tracks])
     timings: dict[str, list[float]] = {}
     for row in tracks:
         base = f"{API}/tracks/{row['id']}"
@@ -835,6 +870,7 @@ def test_live_stick_tracks_play_and_the_stick_is_never_written(
     with_art = next(t for t in all_tracks if t["has_artwork"])
     assert live_client.get(f"{API}/tracks/{with_art['id']}/artwork").status_code == 200
     after = _stick_snapshot(live_mount)
+    audio_after = _digests(live_mount, list(audio_before))
     print(
         "live timings ms (median / max over "
         f"{len(tracks)} tracks): "
@@ -842,6 +878,7 @@ def test_live_stick_tracks_play_and_the_stick_is_never_written(
             f"{name} {statistics.median(values):.1f}/{max(values):.1f}"
             for name, values in timings.items()
         )
-        + f"; snapshot of {len(before)} entries {snapshot_ms:.0f} ms"
+        + f"; snapshot of {len(before)} entries, PIONEER/ hashed, {snapshot_ms:.0f} ms"
     )
     assert after == before, f"the stick changed during play: {_snapshot_diff(before, after)}"
+    assert audio_after == audio_before, "a streamed audio file's bytes changed"
