@@ -169,7 +169,7 @@ scopes:
   - name: shared
     sources: ["apps/shared/"]
     tests: ["tests/shared/"]
-    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
+    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
   - name: smartlists
     sources: ["apps/smartlists/"]
     tests: ["tests/smartlists/"]
@@ -185,6 +185,10 @@ scopes:
   - name: streaming_transfer
     sources: ["apps/streaming_transfer/"]
     tests: ["tests/streaming_transfer/"]
+  - name: standalone
+    # STANDALONE-01 (issue #3535): guard + acceptance probes; no apps/ package.
+    sources: ["tests/standalone/"]
+    tests: ["tests/standalone/"]
   - name: sync
     sources: ["apps/sync/"]
     tests: ["tests/sync/"]
@@ -207,7 +211,7 @@ scopes:
   - name: webui
     sources: ["apps/webui/"]
     tests: ["tests/webui/"]
-    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice"]
+    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "fleet_mcp", "launcher", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice"]
   - name: webui_frontend
     # The Svelte/TypeScript app under apps/webui/. No Python imports it, so its consumers
     # are the pytest inputs that MENTION it: tests that build it, read its files, or run

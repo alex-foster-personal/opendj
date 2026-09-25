@@ -45,6 +45,7 @@ from scripts.oss_tip_rules import (
     ALLOWED_MAILBOXES,
     ALLOWED_NON_ADDRESSES,
     BINARY_SNIFF_BYTES,
+    GENERATED_TEST_ID_PATHS,
     MAILBOX_EXEMPT_PATHS,
     PATTERNS,
     PLACEHOLDER_USERS,
@@ -58,6 +59,7 @@ __all__ = [
     "ALLOWED_MAILBOXES",
     "ALLOWED_NON_ADDRESSES",
     "BINARY_SNIFF_BYTES",
+    "GENERATED_TEST_ID_PATHS",
     "MAILBOX_EXEMPT_PATHS",
     "PATTERNS",
     "PLACEHOLDER_USERS",
@@ -119,7 +121,9 @@ def is_exempt(finding: Finding) -> bool:
     its own matches cannot be checked, and a NEW address in one of these files
     must still be visible to whoever runs the gate.
     """
-    return finding.rule == "consumer-mailbox" and finding.path in MAILBOX_EXEMPT_PATHS
+    if finding.rule != "consumer-mailbox":
+        return False
+    return finding.path in MAILBOX_EXEMPT_PATHS or finding.path in GENERATED_TEST_ID_PATHS
 
 
 def findings_in_text(path: str, text: str) -> Iterator[Finding]:

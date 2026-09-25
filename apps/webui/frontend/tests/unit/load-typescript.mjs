@@ -76,7 +76,7 @@ const svelteComponentStubs = {
  * one place (for example, once per child process spawned) can esbuild it
  * once and reuse the text, rather than paying a full compile per use.
  */
-export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias = {} } = {}) {
+export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias = {}, dev = false } = {}) {
 	const absolutePath = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
 	const result = await build({
 		entryPoints: [absolutePath],
@@ -85,6 +85,7 @@ export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias 
 		bundle: true,
 		define: {
 			'$state': 'globalThis.__musicDjToolsTestState',
+			'import.meta.env.DEV': dev ? 'true' : 'false',
 			'import.meta.env.VITE_API_BASE':
 				viteApiBase === undefined ? 'undefined' : JSON.stringify(viteApiBase)
 		},

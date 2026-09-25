@@ -243,7 +243,7 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
 )
 
 MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
-
+GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})  # pytest-split cache, not a mailbox
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the
 # agentbox README and `.env.sample`; no Tailscale network carries it. Enumerated,
