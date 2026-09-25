@@ -75,6 +75,14 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
     url, proc, _log_path, prep_code = acquire_nightly_engine(config, base_url=base_url)
     if prep_code != 0:
         return prep_code
+    # Captured BEFORE run_nightly ever touches the tracked ledger (Sol, PR
+    # #3827, P1/BLOCKING, review 4107678114): this is the one point in the
+    # whole flow where REPO_ROOT's own file still holds only whatever the
+    # caller had before tonight's job started, dirty or clean. See
+    # update_ledger_pr's docstring for why it cannot be captured any later.
+    pre_run_content = (
+        config.ledger_path.read_text(encoding="utf-8") if config.ledger_path.exists() else None
+    )
     try:
         outcome = run_nightly(
             config,
@@ -84,7 +92,12 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
             file_issue=not skip_pr,
         )
         if not skip_pr:
-            update_ledger_pr(REPO_ROOT, config.ledger_path, config.ledger_worktree)
+            update_ledger_pr(
+                REPO_ROOT,
+                config.ledger_path,
+                config.ledger_worktree,
+                pre_run_content=pre_run_content,
+            )
         return outcome.exit_code
     finally:
         if proc is not None:
@@ -130,68 +143,97 @@ def _restore_tracked_ledger(
     repo_root: Path,
     ledger_path: Path,
     *,
-    outbox_dir: Path,
-    now: datetime | None = None,
+    pre_run_content: str | None,
 ) -> None:
-    """Undo `run_nightly`'s direct write to a ledger tracked inside `repo_root`.
+    """Put REPO_ROOT's own tracked ledger back exactly as it was before this
+    job touched it, success or failure.
 
     BLOCKING, found by review on PR #3827 (Codex): with the default
     ``MDT_PERF_KPI_LEDGER``, `run_nightly` appends this run's rows straight
     into the CHECKED-OUT, git-tracked ``docs/perf/kpi-ledger.json`` -- the
     same file ``scripts/autoreposync.sh:852-862`` inspects before pulling.
-    This function has already read those rows (into ``local_entries``) and
-    either published them onto the standing branch or given up trying;
-    leaving that local modification in place afterward serves no purpose
-    except to leave `repo_root` permanently dirty. A dirty checkout is
-    exactly what `autoreposync.sh` skips, so the FIRST scheduled run could
-    silently stop this install from ever receiving another `git pull`
-    again. Restored unconditionally -- success or failure -- so a publish
-    attempt never leaves a side effect on `repo_root` beyond what it
-    actually achieved (git history, or nothing).
+    Leaving that local modification in place afterward serves no purpose
+    except to leave `repo_root` permanently dirty, which is exactly what
+    `autoreposync.sh` skips, so the FIRST scheduled run could silently stop
+    this install from ever receiving another `git pull` again. Restored
+    unconditionally -- success or failure -- so a publish attempt never
+    leaves a side effect on `repo_root` beyond what it actually achieved
+    (git history, or nothing).
 
-    Snapshots the pre-checkout content to ``outbox_dir`` FIRST whenever it
-    differs from ``HEAD`` (Sol, PR #3827, P1/BLOCKING, review 5320608598):
-    the old version threw that content away unconditionally, so a night
-    whose publish failed lost its only copy of the measurement, and any
-    unrelated uncommitted edit already sitting in ``ledger_path`` before
-    this job ever ran was destroyed the same way. Neither case is this
-    function's to judge -- it does not know whether the content it is
-    about to discard was ever safely persisted elsewhere -- so it always
-    keeps a durable, timestamped copy outside `repo_root`'s working tree
-    (never inside it, so `repo_root` still ends up exactly as clean as
-    before) rather than silently losing data on a failure path.
+    ``pre_run_content`` is the CALLER's responsibility to capture, and it
+    must be read BEFORE `run_nightly` ever appends this run's own rows (Sol,
+    PR #3827, P1/BLOCKING, review 4107678114, "Preserve the caller's ledger
+    edit instead of checking it out"): the old version restored to
+    ``git checkout -- <path>`` unconditionally, which only reproduces the
+    caller's true prior state when nothing was locally uncommitted before
+    this job ran. Any genuinely pre-existing uncommitted edit -- an
+    operator's or agent's in-progress work on this same file -- was
+    silently destroyed by that checkout exactly as much as this run's own
+    new rows were on a publish failure, because `git checkout --` always
+    goes back to HEAD, never to whatever the caller actually had. Writing
+    back the EXACT content captured before anything ran is correct either
+    way: on success, this run's own new rows are safely on the standing
+    branch and the caller's own prior state (dirty or clean) is exactly
+    restored; on failure, the caller's prior state is still exactly
+    restored, and this run's own new rows are additionally kept in the
+    outbox (see ``_archive_unpublished_ledger`` / ``update_ledger_pr``) so
+    they are never the only copy of a lost measurement.
 
     A no-op when ``ledger_path`` does not live inside `repo_root`'s working
     tree at all (an env override pointing somewhere else, as several tests
     do): nothing was written to `repo_root`'s own checkout to begin with.
     """
     try:
-        relative = ledger_path.resolve().relative_to(repo_root.resolve())
+        ledger_path.resolve().relative_to(repo_root.resolve())
     except ValueError:
         return
-    if ledger_path.exists():
-        on_disk = ledger_path.read_text(encoding="utf-8")
-        committed = subprocess.run(
-            ["git", "show", f"HEAD:{relative.as_posix()}"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        committed_text = committed.stdout if committed.returncode == 0 else None
-        if on_disk != committed_text:
-            outbox_dir.mkdir(parents=True, exist_ok=True)
-            stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
-            (outbox_dir / f"unpublished-ledger-{stamp}.json").write_text(
-                on_disk, encoding="utf-8"
-            )
-    subprocess.run(
-        ["git", "checkout", "--", str(relative)],
-        check=True,
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
+    if pre_run_content is None:
+        # Nothing existed at this path before this job touched the tree;
+        # undo whatever it created rather than leaving a new file dirty.
+        if ledger_path.exists():
+            ledger_path.unlink()
+        return
+    ledger_path.write_text(pre_run_content, encoding="utf-8")
+
+
+#: How many failed-publish snapshots `_archive_unpublished_ledger` keeps
+#: before pruning the oldest (Sol, PR #3827, P2/NON-BLOCKING, review
+#: 4107678146, "bound retained snapshots"): a real, if rare, repeated
+#: failure (a dead `gh` token, a permanently rejected lease) must not grow
+#: this directory without limit.
+_OUTBOX_RETENTION_LIMIT = 20
+
+
+def _archive_unpublished_ledger(
+    ledger_path: Path, *, outbox_dir: Path, now: datetime | None = None
+) -> None:
+    """Snapshot ``ledger_path``'s CURRENT on-disk content to a durable,
+    timestamped file under ``outbox_dir``, pruning old snapshots beyond
+    ``_OUTBOX_RETENTION_LIMIT``.
+
+    Called ONLY when this run's publish attempt did NOT succeed (Sol, PR
+    #3827, P2/NON-BLOCKING, review 4107678146, "Stop archiving every
+    successful publish as unpublished"): an earlier version of this fix
+    archived whenever the on-disk content merely differed from git HEAD,
+    which is true after EVERY ordinary successful nightly append --
+    `run_nightly` writes this run's rows directly into the tracked file
+    before `update_ledger_pr` is ever called -- so a perfectly healthy
+    install accumulated a new complete ledger copy under
+    ``unpublished-ledger-outbox`` every single night, with nothing ever
+    actually failing. Gating this on the caller's own success/failure
+    signal instead of a content diff is what makes "unpublished" mean what
+    it says.
+    """
+    if not ledger_path.exists():
+        return
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+    stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
+    (outbox_dir / f"unpublished-ledger-{stamp}.json").write_text(
+        ledger_path.read_text(encoding="utf-8"), encoding="utf-8"
     )
+    snapshots = sorted(outbox_dir.glob("unpublished-ledger-*.json"))
+    for stale in snapshots[: max(len(snapshots) - _OUTBOX_RETENTION_LIMIT, 0)]:
+        stale.unlink()
 
 
 def _new_entries_since(base_entries: list, local_entries: list) -> list:
@@ -238,6 +280,8 @@ def update_ledger_pr(
     repo_root: Path,
     ledger_path: Path,
     worktree_dir: Path,
+    *,
+    pre_run_content: str | None,
 ) -> None:
     """Open or update the standing docs PR for nightly ledger appends.
 
@@ -276,16 +320,30 @@ def update_ledger_pr(
     with different state dirs could still force-remove each other's
     in-flight worktree. Every real caller must pass ``config.ledger_worktree``.
 
-    Restores REPO_ROOT's own tracked ledger afterward, success or failure
-    (Codex, PR #3827, P1/BLOCKING), preserving anything unpublished to an
-    outbox first (Sol, PR #3827, P1/BLOCKING): see ``_restore_tracked_ledger``.
+    ``pre_run_content`` has no default either, for the same reason (Sol, PR
+    #3827, P1/BLOCKING, review 4107678114): it is REPO_ROOT's own tracked
+    ledger content from immediately before `run_nightly` ran, which only the
+    caller (`cmd_nightly`) can capture at the right moment -- by the time
+    this function is entered, `run_nightly` has already appended tonight's
+    rows directly into the file, so reading it here would just capture that
+    already-mutated state, not the caller's true prior one.
+
+    Restores REPO_ROOT's own tracked ledger to exactly ``pre_run_content``
+    afterward, success or failure (Codex / Sol, PR #3827, P1/BLOCKING): see
+    ``_restore_tracked_ledger``. Archives this run's own rows to an outbox
+    first, but ONLY on failure (Sol, PR #3827, P2/NON-BLOCKING): see
+    ``_archive_unpublished_ledger``.
     """
+    published = False
     try:
         _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir)
+        published = True
     finally:
-        _restore_tracked_ledger(
-            repo_root, ledger_path, outbox_dir=worktree_dir.parent / "unpublished-ledger-outbox"
-        )
+        if not published:
+            _archive_unpublished_ledger(
+                ledger_path, outbox_dir=worktree_dir.parent / "unpublished-ledger-outbox"
+            )
+        _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
 
 
 def _pr_list_argv(repository: str, branch: str) -> list[str]:
@@ -465,6 +523,17 @@ def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Pa
         new_entries = _new_entries_since(base_entries, local_entries)
         if not new_entries and not main_only_entries:
             return
+        # append_entries validates by default now (Sol, PR #3827, P1/BLOCKING,
+        # review 4107678137, "Validate ledger entries before committing
+        # them"): both calls below used to pass validate=False, so a
+        # malformed entry already sitting on main or on the local ledger
+        # would get committed and pushed onto the standing branch as-is,
+        # deferring the failure to whatever later consumer tried to read it.
+        # Every entry reconciled here already came from a REAL ledger
+        # (main's or local's), which only ever gets new rows through this
+        # same validated append path, so re-validating on the way onto the
+        # branch is a cheap, always-safe sanity check, not new strictness.
+        #
         # Actually WRITE main_only_entries into dest (Codex, PR #3827,
         # P2/BLOCKING), not just fold them into the dedup comparison: the
         # union above only ever suppressed duplicate appends -- it never
@@ -474,7 +543,7 @@ def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Pa
         # commit, so the branch's history shows the reconciliation
         # separately from tonight's own new rows.
         if main_only_entries:
-            append_entries(dest, main_only_entries, validate=False)
+            append_entries(dest, main_only_entries)
             subprocess.run(
                 ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
             )
@@ -490,7 +559,7 @@ def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Pa
                 cwd=worktree_dir,
             )
         if new_entries:
-            append_entries(dest, new_entries, validate=False)
+            append_entries(dest, new_entries)
             subprocess.run(
                 ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
             )
