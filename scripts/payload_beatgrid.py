@@ -114,6 +114,87 @@ print(json.dumps({
 """
 
 
+_SITE = f"{RUNNER_SITE_RELATIVE}/"
+_NO_GPU = ("the runner is always started with --device cpu (own_beatgrid.DEFAULT_DEVICE) "
+           "on an arm64 Mac, which has no CUDA, ROCm or XPU stack to load")
+
+#: Runtime library loads inside the runner site's torch 2.14.0 / filelock, merged
+#: into build_engine_payload.RUNTIME_LOAD_ALLOWLIST. Dynamic sites are keyed by
+#: payload path and LINE, so a torch bump moves them and the build fails until
+#: each is re-read, the same contract the pylib torch 2.5.1 entries follow.
+RUNNER_RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
+    f"{_SITE}filelock/_identity.py:162": (
+        "CDLL(None) is dlopen(NULL): binds sysctl symbols from the already-loaded "
+        "libSystem inside filelock's darwin branch; no filesystem search."
+    ),
+    f"{_SITE}torch/__init__.py:348": (
+        "_preload_cuda_deps loads a CUDA wheel soname found under sys.path; it "
+        "raises unless platform.system() == 'Linux'."
+    ),
+    f"{_SITE}torch/__init__.py:424": (
+        "loads libtorch_global_deps.dylib from torch/lib beside __file__: a "
+        "payload-relative path, not a system search."
+    ),
+    f"{_SITE}torch/__init__.py:454": (
+        "retry of libtorch_global_deps after the Linux-only CUDA preload in the "
+        "OSError branch; same payload-relative path as line 424."
+    ),
+    f"{_SITE}torch/_inductor/codecache.py:3799": (
+        "inductor loads a JIT-compiled library it just built; the runner never "
+        "calls torch.compile, so no inductor code path runs."
+    ),
+    f"{_SITE}torch/_inductor/codecache.py:4926": (
+        "inductor DLLWrapper opens a library it compiled; unreachable without "
+        "torch.compile, which the runner never calls."
+    ),
+    f"{_SITE}torch/_inductor/codecache.py:4947": (
+        "CDLL(None) in DLLWrapper's Linux dlclose path; unreachable without "
+        "torch.compile and on darwin."
+    ),
+    "version.dll": "inductor's Windows-only compiler probe; darwin never reaches it.",
+    f"{_SITE}torch/_inductor/cpp_builder.py:1498": (
+        "Windows clang libomp preload in inductor's _IS_WINDOWS OpenMP setup; "
+        "unreachable on darwin."
+    ),
+    f"{_SITE}torch/_inductor/cpp_builder.py:1514": (
+        "Windows Intel icx libomp preload in the same _IS_WINDOWS branch; "
+        "unreachable on darwin."
+    ),
+    "ze_loader": f"Intel Level Zero probe for inductor XPU builds; {_NO_GPU}.",
+    f"{_SITE}torch/_ops.py:1587": (
+        "torch.ops.load_library loads a caller-named extension; the runner and "
+        "beat_this never call it."
+    ),
+    "libamd_smi.so": f"ROCm SMI hook inside torch.cuda device discovery; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/__init__.py:122": f"the same ROCm SMI hook's definition; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/__init__.py:128": f"the same ROCm SMI hook; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/__init__.py:131": f"the same ROCm SMI hook; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/_utils.py:32": f"ROCm HIP runtime for the CUDA driver API; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/_utils.py:35": f"Windows HIP runtime; {_NO_GPU}.",
+    "libamdhip64.so": f"ROCm HIP runtime for the CUDA driver API; {_NO_GPU}.",
+    "nvcuda.dll": f"Windows CUDA driver for the CUDA driver API; {_NO_GPU}.",
+    "libcuda.so.1": f"Linux CUDA driver for the CUDA driver API; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/_utils.py:151": f"ROCm hiprtc for CUDA kernel JIT; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/_utils.py:157": f"Windows hiprtc for CUDA kernel JIT; {_NO_GPU}.",
+    "libhiprtc.so": f"ROCm hiprtc for CUDA kernel JIT; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/_utils.py:188": f"NVRTC for CUDA kernel JIT; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/graphs.py:1031": f"CDLL(None).dladdr inside CUDA graph capture; {_NO_GPU}.",
+    f"{_SITE}torch/cuda/memory.py:1335": (
+        f"CUDAPluggableAllocator loads a caller-named allocator; {_NO_GPU}."
+    ),
+    f"{_SITE}torch/distributed/_token_switch.py:72": (
+        "NCCL EP library for distributed collectives; the runner is one "
+        f"process with no process group, and {_NO_GPU}."
+    ),
+    f"{_SITE}torch/distributed/elastic/multiprocessing/redirects.py:40": (
+        "Windows C runtime for elastic launcher redirects; get_libc returns None "
+        "on macOS before the loop, and the runner never uses torch.distributed."
+    ),
+    f"{_SITE}torch/profiler/_cupti/cupti_python.py:707": f"CUPTI for the CUDA profiler; {_NO_GPU}.",
+    f"{_SITE}torch/xpu/memory.py:516": f"Intel XPU pluggable allocator; {_NO_GPU}.",
+}
+
+
 class PayloadBeatgridError(RuntimeError):
     """The payload cannot stage or prove the beatgrid runner runtime."""
 
@@ -290,6 +371,7 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
 __all__ = [
     "CHECKPOINT_RELATIVE",
     "RUNNER_LAUNCHER_RELATIVE",
+    "RUNNER_RUNTIME_LOAD_ALLOWLIST",
     "RUNNER_SITE_RELATIVE",
     "PayloadBeatgridError",
     "fetch_checkpoint",
