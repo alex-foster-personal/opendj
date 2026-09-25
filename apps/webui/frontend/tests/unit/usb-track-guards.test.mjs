@@ -9,9 +9,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 /**
  * Play from USB, lane D (specs/usb-play-from-stick.md 4b "Frontend guards"):
  * every per-track builder outside api-rb.ts/api.ts routes a stick id or makes
- * no request for it, hot cue writes on a stick deck make no request, the
- * analysis-source confirmation loop exempts stick ids, suggest-next leaves
- * them out, and a failed stick load says what happened in plain words.
+ * no request for it, the analysis-source confirmation loop exempts stick ids,
+ * suggest-next leaves them out, and a failed stick load says what happened in
+ * plain words. Hot cue and rating edits on a stick deck (session only, no
+ * request) are covered by usb-stick-session-edits.test.mjs.
  *
  * Every stick case pairs with a LIBRARY control on the same call: a guard that
  * blocked every id would pass a stick-only assertion, so each control proves
@@ -25,7 +26,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if the source-confirmation loop does not exempt a stick payload then a stick deck spins re-fetching /anlz forever while the lane is own
  * - if refreshAnalysisSourceDecks re-fetches a stick deck then the batch serves rekordbox beside own and every switch throws the split error
  * - if a gridless stick deck asks rb-meta or the beatgrid fallback then two library-only 404s fire per load
- * - if hot_cue_clear or hot_cue_restore reach the network for a stick deck then decision 2 (never written) is broken
  * - if a stick load failure keeps the generic headline then "Stick removed" never reaches the DJ
  * - if suggest-next sends a stick id then the copilot 404s and library suggestions fail too
  */
@@ -279,54 +279,6 @@ test('[if] a gridless stick deck settles its beatgrid [then] it settles gridless
 		requests.some((url) => url.includes(`/api/v1/tracks/${LIBRARY_ID}/`)),
 		`control: a gridless library deck still asks the library routes: ${requests}`
 	);
-});
-
-//-----------------------------------------------------------------------------
-// hot cue writes on a stick deck (spec decision 2)
-//-----------------------------------------------------------------------------
-
-// Driven through the performance IPC (the agent and MIDI entry point) end to
-// end. The refusal itself lives at the one write boundary every caller shares,
-// api-rb.ts saveHotCue/clearHotCue/restoreHotCue: a second copy inside
-// performance-ipc was measured redundant (removing it left this test green),
-// so it is not duplicated there.
-test('[if] hot_cue_clear or hot_cue_restore is dispatched for a stick deck [then] it rejects USB_READ_ONLY with no request, and a library deck still writes', async () => {
-	const ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts', { viteApiBase: API_BASE });
-	// The IPC module reads /api/v1/settings on its own; only per-track
-	// requests are what this test is about.
-	globalThis.fetch = unreachableDaemon();
-	const trackRequests = () => requests.filter((url) => url.includes('/tracks/'));
-	let loaded = STICK_ID;
-	globalThis.window = {};
-	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
-		stableId: () => loaded,
-		refresh: async () => {},
-		hasRbMapping: () => false
-	});
-	const uninstall = ipc.installPerformanceBrowserIpc();
-	try {
-		for (const command of [
-			{ type: 'hot_cue_clear', deck: 1, slot: 'A', revision: 'etag' },
-			{ type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'etag', reversal_id: 'token' }
-		]) {
-			await assert.rejects(window.musicDjToolsPerformance.dispatch(command), (error) => {
-				assert.equal(error.name, 'UsbTrackRefusal', `${command.type}: ${error.message}`);
-				assert.equal(error.code, 'USB_READ_ONLY');
-				return true;
-			});
-		}
-		assert.deepEqual(trackRequests(), []);
-
-		loaded = LIBRARY_ID;
-		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'hot_cue_clear', deck: 1, slot: 'A', revision: 'etag' })
-		);
-		assert.deepEqual(trackRequests(), [`${API_BASE}/api/v1/tracks/${LIBRARY_ID}/hot-cues/A`], 'control: a library clear still writes');
-	} finally {
-		uninstall();
-		resetDriver();
-		delete globalThis.window;
-	}
 });
 
 //-----------------------------------------------------------------------------

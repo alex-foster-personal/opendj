@@ -24,6 +24,7 @@ import { ApiError, api, API_BASE, apiErrorFrom, requireBody, unwrap } from './ap
 import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import { rememberOptionalResources } from './rb/optional-resource-availability';
+import { withSessionRating } from './rb/stick-session-edits';
 import { isUsbTrackId, refuseStickWrite, trackApiPath } from './rb/track-source';
 
 export { API_BASE } from './api/client';
@@ -155,13 +156,15 @@ export async function getTrack(stable_id: string): Promise<{ track: Track; etag:
 /** Spec 4b: a stick track's TrackOut comes from GET /api/v1/usb/tracks/{id}
  * (the same response model). A raw fetch only because that route is not in
  * the generated schema yet; failures still throw ApiError with the route's
- * detail.code (USB_STICK_NOT_MOUNTED and friends), same as a typed call. */
+ * detail.code (USB_STICK_NOT_MOUNTED and friends), same as a typed call.
+ * Carries this session's rating for the track (decision 2). */
 async function _getUsbTrack(stable_id: string): Promise<{ data: Track; response: Response }> {
 	const response = await globalThis.fetch(`${API_BASE}${trackApiPath(stable_id)}`, {
 		headers: { Accept: 'application/json' }
 	});
 	if (!response.ok) throw await apiErrorFrom(response);
-	return requireBody({ data: (await response.json()) as Track | null, response });
+	const { data } = requireBody({ data: (await response.json()) as Track | null, response });
+	return { data: withSessionRating(stable_id, data), response };
 }
 
 export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];

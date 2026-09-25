@@ -25,7 +25,14 @@ import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
-import { isUsbTrackId, refuseStickRead, refuseStickWrite, trackApiPath } from './track-source';
+import {
+	clearSessionHotCue,
+	restoreSessionHotCue,
+	saveSessionHotCue,
+	withSessionHotCues,
+	withSessionHotCueSlots
+} from './stick-session-edits';
+import { isUsbTrackId, refuseStickRead, trackApiPath } from './track-source';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -747,13 +754,16 @@ export async function fetchAnlzBypassingHttpCache(
 /** Validates the vocals contract (priming vocalsOf's memo), and for a stick
  * id also that the payload names that id: anlz-cache exempts stick payloads
  * from the analysis-source confirmation loop by `data.stable_id`, so a stick
- * payload stamped with any other id would make that loop spin (spec 4b). */
+ * payload stamped with any other id would make that loop spin (spec 4b). A
+ * stick payload also carries this session's hot cue edits (decision 2), so
+ * the waveform markers and the display loop match the pads. */
 function _checkedAnlz(stable_id: string, data: AnlzWithVocals): AnlzWithVocals {
 	vocalsOf(data);
-	if (isUsbTrackId(stable_id) && data.stable_id !== stable_id) {
+	if (!isUsbTrackId(stable_id)) return data;
+	if (data.stable_id !== stable_id) {
 		throw new Error(`/anlz for ${stable_id} answered for ${data.stable_id}`);
 	}
-	return data;
+	return withSessionHotCues(stable_id, data);
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
@@ -791,9 +801,11 @@ export interface HotCueSlotState {
 	revision: string;
 }
 
-/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. */
+/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
+ * stick track's slots carry this session's edits (decision 2). */
 export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
-	return _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
+	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
+	return isUsbTrackId(stable_id) ? withSessionHotCueSlots(stable_id, slots) : slots;
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
@@ -805,8 +817,8 @@ export async function saveHotCue(
 	revision: string,
 	comment?: string | null
 ): Promise<HotCueMutation> {
-	// Spec decision 2: nothing is ever written for a stick track.
-	refuseStickWrite(stable_id, `hot cue ${slot} save`);
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		{ in_ms, comment: comment ?? null },
@@ -820,8 +832,8 @@ export async function clearHotCue(
 	slot: HotCueSlot,
 	revision: string
 ): Promise<HotCueMutation> {
-	// Spec decision 2: nothing is ever written for a stick track.
-	refuseStickWrite(stable_id, `hot cue ${slot} clear`);
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return clearSessionHotCue(stable_id, slot, revision);
 	return _deleteRequest<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		revision
@@ -835,8 +847,8 @@ export async function restoreHotCue(
 	revision: string,
 	reversal_id: string
 ): Promise<HotCueMutation> {
-	// Spec decision 2: nothing is ever written for a stick track.
-	refuseStickWrite(stable_id, `hot cue ${slot} restore`);
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return restoreSessionHotCue(stable_id, slot, revision, reversal_id);
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
 		{ reversal_id },

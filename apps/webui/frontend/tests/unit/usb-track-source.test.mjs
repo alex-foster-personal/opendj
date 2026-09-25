@@ -174,17 +174,16 @@ test('[if] a stick /anlz answers for a different id [then] fetchAnlz rejects [el
 	await rb.fetchAnlz(lib, 1200, true);
 });
 
-test('[if] a stick deck edits a hot cue [then] save, clear and restore refuse USB_READ_ONLY with no request', async () => {
-	for (const call of [
-		() => rb.saveHotCue(STICK_ID, 'A', 1000, 'rev'),
-		() => rb.clearHotCue(STICK_ID, 'A', 'rev'),
-		() => rb.restoreHotCue(STICK_ID, 'A', 'rev', 'token')
+// The session behavior itself (revisions, reversals, reads that carry the
+// edit) is covered in usb-stick-session-edits.test.mjs; this pins only that a
+// stick edit never reaches fetch, even when it cannot proceed.
+test('[if] a stick deck edits a hot cue before its slots were read [then] it fails fast with no request', async () => {
+	for (const [call, expected] of [
+		[() => rb.saveHotCue(STICK_ID, 'A', 1000, 'rev'), /were never read/],
+		[() => rb.clearHotCue(STICK_ID, 'A', 'rev'), /were never read/],
+		[() => rb.restoreHotCue(STICK_ID, 'A', 'rev', 'token'), /HOT_CUE_REVERSAL_NOT_FOUND/]
 	]) {
-		await assert.rejects(call(), (error) => {
-			assert.ok(error instanceof rb.RbApiError, 'the refusal must settle as a typed RbApiError');
-			assert.equal(error.code, 'USB_READ_ONLY');
-			return true;
-		});
+		await assert.rejects(call(), expected);
 	}
 	assert.equal(requests.length, 0);
 });

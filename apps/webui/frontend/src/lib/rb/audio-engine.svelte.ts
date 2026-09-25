@@ -137,6 +137,8 @@ import {
 	RbApiError
 } from '$lib/rb/api-rb';
 import { awaitStemArtifact } from '$lib/rb/stem-hydrate-wait';
+import { setSessionRating } from '$lib/rb/stick-session-edits';
+import { isUsbTrackId } from '$lib/rb/track-source';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -979,11 +981,17 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
  * (BrowserPanel._patchRating) - deck-header just has no ETag of its own to
  * carry, so it always fetches one fresh first. A race where a different
  * track loads onto this deck while the request is in flight is guarded by
- * re-checking stable_id before writing the result back. */
+ * re-checking stable_id before writing the result back. A USB stick track's
+ * rating is a session edit with no request (USB Play spec decision 2). */
 export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	const stable_id = deckStates[deck].stable_id;
 	if (stable_id === null) return;
 	try {
+		if (isUsbTrackId(stable_id)) {
+			setSessionRating(stable_id, next);
+			deckStates[deck].rating = next;
+			return;
+		}
 		const etag = (await getTrack(stable_id)).etag;
 		const { track, etag: fresh } = await patchTrack(stable_id, etag, { rating: next });
 		void fresh;
