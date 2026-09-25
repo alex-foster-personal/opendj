@@ -75,6 +75,7 @@ from apps.analysis_key.lane_payload import (
 )
 from apps.analysis_key.version import LANE, PRODUCER, PRODUCER_VERSION
 
+from ..jit_warmup import librosa_numba_cache_roots
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
 from . import register
@@ -413,18 +414,39 @@ class OwnKeyBackfillBackend:
                 f"{audio_path}: {exc}"
             ) from None
 
+    #: Length and rate of the synthetic warm-up signal. Long enough for the
+    #: CQT's lowest-octave filters; numba caches per dtype signature, not per
+    #: rate, so this compiles what a native-rate decode later loads.
+    _WARMUP_SECONDS: float = 3.0
+    _WARMUP_RATE_HZ: int = 22_050
+
     @classmethod
     def jit_cache_roots(cls) -> tuple[Path, ...]:
-        # librosa's CQT runs through numba, and this backend runs in the same
-        # process as the rest of the pipeline, so it shares the process-wide
-        # cache the runner provisions rather than declaring a second one.
-        return ()
+        return librosa_numba_cache_roots()
 
     @classmethod
     def warm_jit_cache(cls) -> str:
+        """Drive ``chroma_cqt`` once, in the parent, before any worker exists.
+
+        ``chroma_cqt`` reaches librosa's ``cache=True`` gufuncs (``piptrack``'s
+        parabolic interpolation via ``estimate_tuning``). Left to the workers,
+        a cold cache is compiled by all of them at once and poisoned for every
+        later loader: issue #1316's SIGSEGV, seen on this lane by the NATIVE-10
+        offline acceptance run. ``float32`` because ``librosa.load`` returns
+        it and numba caches per type signature; fixed seed so a failure here
+        reproduces.
+        """
+        _require_deps()
+        import librosa
+        import numpy as np
+
+        rate = cls._WARMUP_RATE_HZ
+        rng = np.random.default_rng(1316)
+        samples = rng.standard_normal(int(rate * cls._WARMUP_SECONDS)).astype(np.float32)
+        librosa.feature.chroma_cqt(y=samples * np.float32(0.05), sr=rate)
         return (
-            f"{BACKEND_NAME}: no JIT cache to warm of its own; chroma_cqt "
-            "compiles into the process-wide numba cache the runner owns"
+            f"{BACKEND_NAME}: warmed chroma_cqt on {cls._WARMUP_SECONDS:g}s "
+            f"float32 @ {rate}Hz"
         )
 
 
