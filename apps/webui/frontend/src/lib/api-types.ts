@@ -5831,6 +5831,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usb/tracks/{track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track
+         * @description The library's TrackOut for a stick track, so the deck loads it unchanged.
+         *
+         *     The flags predict the stick routes: no lyrics, auto-cues or stems route
+         *     exists under ``/usb/tracks``, so those are False; ``has_rb_mapping`` is
+         *     False because ``/hot-cues`` is read only and ``rb-meta`` cannot resolve a
+         *     stick id; ``artwork_available`` is True only when both served sizes
+         *     exist. ``/anlz`` and ``/hot-cues`` answer for every track whose export
+         *     row names no analysis (empty) or a readable one (the stick's own).
+         */
+        get: operations["get_usb_track_api_v1_usb_tracks__track_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/anlz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Anlz
+         * @description The stick's own waveform / beatgrid / cues / phrases, in the library
+         *     ``/anlz`` shape, decoded from this track's exact ANLZ files.
+         *
+         *     ``vocals`` is always ``not_analyzed`` (a PVDI tag is listed in
+         *     ``unreadable_anlz``); ``beatgrid.source`` and ``beatgrid_source`` are
+         *     always ``rekordbox``. Same ``points`` bounds, ETag and
+         *     ``private, no-cache`` revalidation as the library route; the client's
+         *     ``gen`` cache-buster is ignored here as it is there.
+         */
+        get: operations["get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/artwork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Artwork
+         * @description The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``
+         *     sibling (the largest rendering rekordbox writes to a stick).
+         */
+        get: operations["get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Audio
+         * @description Stream the stick's file. FileResponse handles Range/206 and HEAD, as
+         *     the library's ``/tracks/{id}/audio`` does.
+         *
+         *     A subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,
+         *     so a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)
+         *     answers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.
+         */
+        get: operations["get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Get Usb Track Audio
+         * @description Stream the stick's file. FileResponse handles Range/206 and HEAD, as
+         *     the library's ``/tracks/{id}/audio`` does.
+         *
+         *     A subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,
+         *     so a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)
+         *     answers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.
+         */
+        head: operations["head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head"];
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/hot-cues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Usb Track Hot Cue Slots
+         * @description Eight slots from the stick's own cues, the library's shape. Read only:
+         *     no PUT/DELETE/restore exists here, so a revision is only an identity for
+         *     the slot's current state and edits stay in the deck's session.
+         */
+        get: operations["list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usb/volumes": {
         parameters: {
             query?: never;
@@ -5860,6 +5991,29 @@ export interface paths {
          * @description SSE: keep the scanner warm while a client is subscribed.
          */
         get: operations["usb_volume_events_api_v1_usb_volumes_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/volumes/{volume_id}/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Stick Library
+         * @description The stick's rekordbox library from ``export.pdb`` alone (no ANLZ read).
+         *
+         *     Cached per VolumeUUID while ``export.pdb``'s size and mtime are
+         *     unchanged; ``cache_hit`` and ``read_ms`` say which path this was.
+         */
+        get: operations["get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -14335,8 +14489,121 @@ export interface components {
         UsbCapabilityErrorOut: {
             detail: components["schemas"]["UsbCapabilityDetail"];
         };
+        /** UsbStickCountsOut */
+        UsbStickCountsOut: {
+            /** History Playlists */
+            history_playlists: number;
+            /** Playlist Entries */
+            playlist_entries: number;
+            /** Playlists */
+            playlists: number;
+            /** Tracks */
+            tracks: number;
+        };
+        /** UsbStickErrorDetail */
+        UsbStickErrorDetail: {
+            /** Code */
+            code: ("USB_TRACK_ID_INVALID" | "USB_VOLUME_ID_INVALID" | "USB_VOLUME_HAS_NO_UUID" | "USB_STICK_NOT_MOUNTED" | "USB_STICK_ACCESS_BLOCKED" | "USB_TRACK_NOT_FOUND" | "USB_PATH_OUTSIDE_VOLUME" | "USB_FILE_MISSING") | ("AUDIO_ACCESS_BLOCKED" | "ANALYSIS_NOT_FOUND");
+            /** Message */
+            message: string;
+            /** Reason */
+            reason?: string | null;
+            /** Volume Id */
+            volume_id?: string | null;
+            /** Volume Uuid */
+            volume_uuid?: string | null;
+        };
+        /** UsbStickErrorOut */
+        UsbStickErrorOut: {
+            detail: components["schemas"]["UsbStickErrorDetail"];
+        };
+        /** UsbStickHistoryOut */
+        UsbStickHistoryOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Track Ids */
+            track_ids: string[];
+        };
+        /** UsbStickLibraryOut */
+        UsbStickLibraryOut: {
+            /** Cache Hit */
+            cache_hit: boolean;
+            counts: components["schemas"]["UsbStickCountsOut"];
+            /** History */
+            history: components["schemas"]["UsbStickHistoryOut"][];
+            /** Mount Path */
+            mount_path: string;
+            /** Name */
+            name: string;
+            /** Playlists */
+            playlists: components["schemas"]["UsbStickPlaylistOut"][];
+            /** Read Ms */
+            read_ms: number;
+            /** Tracks */
+            tracks: components["schemas"]["UsbStickTrackOut"][];
+            /** Volume Id */
+            volume_id: string;
+            /** Volume Uuid */
+            volume_uuid: string;
+        };
+        /** UsbStickPlaylistOut */
+        UsbStickPlaylistOut: {
+            /** Id */
+            id: string;
+            /** Is Folder */
+            is_folder: boolean;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Pdb Id */
+            pdb_id: number;
+            /** Sort Order */
+            sort_order: number;
+            /** Track Ids */
+            track_ids: string[];
+        };
+        /** UsbStickTrackOut */
+        UsbStickTrackOut: {
+            /** Album */
+            album: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Bpm */
+            bpm: number | null;
+            /** Date Added */
+            date_added: string | null;
+            /** Duration S */
+            duration_s: number | null;
+            /** File Path */
+            file_path: string;
+            /** Genre */
+            genre: string | null;
+            /** Has Analysis */
+            has_analysis: boolean;
+            /** Has Artwork */
+            has_artwork: boolean;
+            /** Id */
+            id: string;
+            /** Key */
+            key: string | null;
+            /** Pdb Id */
+            pdb_id: number;
+            /** Rating */
+            rating: number;
+            /** Title */
+            title: string;
+        };
         /** UsbVolumeOut */
         UsbVolumeOut: {
+            /**
+             * Access
+             * @default unknown
+             * @enum {string}
+             */
+            access: "ok" | "pending" | "denied" | "unknown";
             /** Hide Reason */
             hide_reason?: string | null;
             /** Id */
@@ -25227,6 +25494,408 @@ export interface operations {
             };
         };
     };
+    get_usb_track_api_v1_usb_tracks__track_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackOut"];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get: {
+        parameters: {
+            query?: {
+                /** @description Max length of each waveform band array after downsampling */
+                points?: number;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get: {
+        parameters: {
+            query?: {
+                /** @description s=80x80 browser rows; m and orig = the 240x240 _m jpg */
+                size?: "s" | "m" | "orig";
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HotCueSlotOut"][];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
     get_usb_volumes_api_v1_usb_volumes_get: {
         parameters: {
             query?: never;
@@ -25281,6 +25950,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsbCapabilityErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                volume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickLibraryOut"];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
                 };
             };
         };
