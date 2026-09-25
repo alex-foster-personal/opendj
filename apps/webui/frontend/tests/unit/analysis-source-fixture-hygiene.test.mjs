@@ -16,6 +16,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
+
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const FIXTURES_DIR = fileURLToPath(new URL('./fixtures/', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
@@ -33,28 +35,27 @@ test('a real fixture server start/stop leaves tests/unit/fixtures untouched and 
 		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
-	const exited = new Promise((resolve) => serverProcess.once('exit', (code, signal) => resolve({ code, signal })));
-	const scratchDir = await new Promise((resolve, reject) => {
+	const { scratchDir, port } = await new Promise((resolve, reject) => {
 		let announced = null;
 		serverProcess.once('exit', (code) => reject(new Error(`fixture server exited early (${code})`)));
 		createInterface({ input: serverProcess.stdout }).on('line', (line) => {
 			const scratch = /^SCRATCH (.+)$/.exec(line);
 			if (scratch) announced = scratch[1];
-			if (/^READY \d+$/.test(line)) resolve(announced);
+			const ready = /^READY (\d+)$/.exec(line);
+			if (ready) resolve({ scratchDir: announced, port: Number(ready[1]) });
 		});
 	});
 
 	// Stop the server on EVERY path: a live child keeps this test process alive,
-	// so a failed assertion here must not turn into a hang.
+	// so a failed assertion here must not turn into a hang. The stop is the
+	// portable /test/shutdown route, which throws unless the server exits 0.
 	try {
 		assert.ok(scratchDir, 'the server must announce its scratch dir before READY');
 		assert.ok(!scratchDir.startsWith(REPOSITORY_ROOT), `scratch dir must live outside the repo, got ${scratchDir}`);
 		assert.ok(existsSync(`${scratchDir}/state.db`), 'the scratch dir must hold the live db while serving');
 	} finally {
-		serverProcess.kill();
+		await stopFixtureServer(serverProcess, `http://127.0.0.1:${port}`);
 	}
-	const { code, signal } = await exited;
-	assert.ok(code === 0 || signal === 'SIGTERM', `server must stop cleanly, got code=${code} signal=${signal}`);
 
 	assert.equal(existsSync(scratchDir), false, `scratch dir ${scratchDir} must be removed on shutdown`);
 	assert.deepEqual(listFixtures(), before, 'a fixture run must not add or remove files in tests/unit/fixtures');

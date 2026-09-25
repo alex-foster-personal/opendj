@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
@@ -161,8 +162,8 @@ function resetCacheDecks() {
 	return Object.fromEntries(DECK_KEYS.map((key, index) => [key, DECKS[index]]));
 }
 
-after(() => {
-	serverProcess?.kill();
+after(async () => {
+	if (serverProcess) await stopFixtureServer(serverProcess, apiBase);
 });
 
 beforeEach(() => {

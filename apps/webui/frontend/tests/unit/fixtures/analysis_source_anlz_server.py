@@ -282,6 +282,13 @@ def create_app() -> FastAPI:
     def _get_requests() -> list[str]:
         return app.state.requests
 
+    @app.post("/test/shutdown")
+    def _shutdown() -> dict[str, bool]:
+        # Cooperative stop: `ChildProcess.kill()` on Windows terminates the process
+        # outright, so neither the SIGTERM handler nor main()'s cleanup would run.
+        app.state.server.should_exit = True
+        return {"stopping": True}
+
     @app.post("/test/delay-next-analysis-source-get")
     def _delay_next_analysis_source_get() -> dict[str, bool]:
         app.state.delay_next_analysis_source_get = True
@@ -335,9 +342,9 @@ async def _hold_if_armed(app: FastAPI, kind: str, request: Request, suffix_of) -
 
 
 def main() -> int:
-    # The JS tests stop this server with SIGTERM. uvicorn shuts down cleanly,
-    # restores the handler installed before it, then re-raises the signal; the
-    # default handler would kill the process and skip the cleanup below.
+    # Preferred stop is POST /test/shutdown (portable). A SIGTERM fallback still
+    # cleans up on POSIX: uvicorn shuts down, restores the handler installed before
+    # it, then re-raises the signal, and the default handler would skip the cleanup.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         _serve()
@@ -361,6 +368,7 @@ def _serve() -> None:
     print(f"READY {port}", flush=True)
     config = uvicorn.Config(app, fd=sock.fileno(), log_level="warning")
     server = uvicorn.Server(config)
+    app.state.server = server
     server.run()
 
 
