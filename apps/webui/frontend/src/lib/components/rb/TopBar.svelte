@@ -65,6 +65,8 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
+	import GigHelperMonitor from './GigHelperMonitor.svelte';
+	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
@@ -408,6 +410,8 @@
 		</div>
 	</details>
 	<AppPostureChip />
+	<GigHelperMonitor />
+	<GigHelperPrompt />
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
