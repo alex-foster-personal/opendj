@@ -39,14 +39,16 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Literal
+from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.analysis.auto_cues import propose_cues
 from apps.analysis.canonical import canonical_pointer
+from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.shared.paths import STATE_DB
 
@@ -113,6 +115,7 @@ class FallbackBeatgridOut(BaseModel):
     """
 
     source: Literal["own"]
+    status: Literal["ok"]
     beat_count: int
     beats: List[FallbackBeatOut]
 
@@ -195,29 +198,57 @@ def _load_latest_record(
     return AnalysisRecord.from_json(row[0])
 
 
-def _own_beatgrid_lane_settled(db_path: Path, stable_id: str) -> bool:
-    """Whether native-analysis v1 has already made ANY beatgrid determination
-    for this track, ok or failed.
+def _canonical_own_beatgrid_lane(
+    db_path: Path, stable_id: str,
+) -> LaneResult | None:
+    """The canonical own ``beatgrid`` lane result, or None when unset.
 
-    ``recompute_canonical`` (apps/analysis/canonical.py) deletes the
-    ``analysis_canonical`` pointer only when no eligible own row exists at
-    all - a FAILED lane result is exactly as eligible as an OK one, so the
-    pointer's presence, not its outcome, is what proves v1 has already
-    answered this question. Serving `/beatgrid-fallback`'s legacy row past
-    that point would let a stale, superseded pre-v1 result override v1's
-    own answer, which is the same shadowing failure ``_load_latest_record``'s
-    own_* exclusion above was written to prevent, just from the other
-    direction (discussion_r3975326241 P1 BLOCKING).
+    Reads through the production read-only state-db path and the stored
+    ``analysis_canonical`` pointer. A pointer naming a missing row or a row
+    without its named lane is corruption and propagates as ``RuntimeError``.
     """
     conn = _open_analysis_ro(db_path)
     try:
-        return canonical_pointer(conn, stable_id, "beatgrid") is not None
+        pointer = canonical_pointer(conn, stable_id, "beatgrid")
+        if pointer is None:
+            return None
+        row = conn.execute(
+            "SELECT record_json FROM analysis "
+            "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+            (stable_id, pointer[0], pointer[1]),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(
+                f"canonical beatgrid pointer for {stable_id} names "
+                f"{pointer[0]}@{pointer[1]} but no such analysis row exists"
+            )
+        result = AnalysisRecord.from_json(row[0]).lanes.get("beatgrid")
+        if result is None:
+            raise RuntimeError(
+                f"canonical beatgrid record {pointer[0]}@{pointer[1]} for "
+                f"{stable_id} carries no 'beatgrid' lane"
+            )
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc):
-            return False
+            return None
         raise
+    else:
+        return result
     finally:
         conn.close()
+
+
+def _own_beatgrid_failure_blocks_legacy(db_path: Path, stable_id: str) -> bool:
+    """Whether a failed native own beatgrid determination blocks legacy fallback.
+
+    A successful native own record does NOT block this endpoint's default
+    lookup: while own is not yet the serving source, the legacy row keeps the
+    deck grid monotonic across backfill (STANDALONE-04). Only a terminal
+    ``failed`` own determination refuses the pre-v1 row, so a superseded
+    legacy grid cannot mask v1's named failure (discussion_r3975326241).
+    """
+    lane = _canonical_own_beatgrid_lane(db_path, stable_id)
+    return lane is not None and lane.status == "failed"
 
 
 def _default_anlz_available(stable_id: str) -> bool:
@@ -302,7 +333,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
         return None
     if record.duration_s <= 0:
         raise _invalid_record(record.stable_id, f"duration_s={record.duration_s}")
-    for a, b in zip(downbeats, downbeats[1:]):
+    for a, b in zip(downbeats, downbeats[1:], strict=False):
         if b <= a:
             raise _invalid_record(
                 record.stable_id, f"downbeats_s not strictly increasing ({a} -> {b})"
@@ -312,7 +343,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
     from .analysis_fallback_beats import fallback_emit, fallback_tail_beats
 
     # Bars between consecutive measured downbeats.
-    for start, end in zip(downbeats, downbeats[1:]):
+    for start, end in zip(downbeats, downbeats[1:], strict=False):
         bar_s = end - start
         if bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
             raise _invalid_record(
@@ -333,7 +364,7 @@ def get_auto_cues(
     backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> AutoCuesOut:
     """PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
 
@@ -374,7 +405,7 @@ def get_beatgrid_fallback(
     backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> BeatgridFallbackOut:
     """Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.
 
@@ -384,20 +415,21 @@ def get_beatgrid_fallback(
     a beatgrid is never invented.
 
     A caller naming ``backend=`` gets exactly what it named. The default
-    newest-row lookup instead defers to native-analysis v1 first: when v1
-    has already settled a beatgrid determination for this track (a
-    canonical own pointer exists, whatever it resolved to), this endpoint
-    preserves that gridless/failed state rather than silently substituting
-    a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+    newest-row lookup instead refuses a superseded pre-v1 legacy row only
+    when the canonical own beatgrid lane is ``failed``; a successful native
+    backfill does not disable the legacy row while own is not yet serving
+    (STANDALONE-04).
     """
     anlz_ok = _anlz_available(request, stable_id)
     db_path = _analysis_db_path(request)
-    own_lane_settled = backend is None and _own_beatgrid_lane_settled(db_path, stable_id)
-    record = None if own_lane_settled else _load_latest_record(db_path, stable_id, backend)
+    own_failure_blocks = (
+        backend is None and _own_beatgrid_failure_blocks_legacy(db_path, stable_id)
+    )
+    record = None if own_failure_blocks else _load_latest_record(db_path, stable_id, backend)
     beats = synthesize_fallback_beats(record) if record is not None else None
     if record is None or beats is None:
-        if own_lane_settled:
-            reason = "own analysis already holds a beatgrid determination for this track"
+        if own_failure_blocks:
+            reason = "own beatgrid analysis failed for this track"
         elif record is None:
             reason = "no apps.analysis record"
         else:
@@ -427,7 +459,9 @@ def get_beatgrid_fallback(
         bpm=record.bpm,
         bpm_confidence=record.bpm_confidence,
         anlz_available=anlz_ok,
-        beatgrid=FallbackBeatgridOut(source="own", beat_count=len(beats), beats=beats),
+        beatgrid=FallbackBeatgridOut(
+            source="own", status="ok", beat_count=len(beats), beats=beats
+        ),
     )
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -77,7 +77,7 @@ def _tsaf_history_item_blob(
 
 def _coredata_ts(wall: datetime) -> float:
     """Convert a wall clock datetime to a Core Data timestamp."""
-    epoch = datetime(2001, 1, 1, tzinfo=timezone.utc)
+    epoch = datetime(2001, 1, 1, tzinfo=UTC)
     return (wall - epoch).total_seconds()
 
 
@@ -143,7 +143,7 @@ def djay_fixture_factory(tmp_path: Path):
 @pytest.fixture
 def djay_three_tracks_two_decks(tmp_path: Path) -> Path:
     """DB with 3 history items: deck A, deck B, deck A (two deck changes)."""
-    start = datetime(2026, 4, 17, 21, 30, tzinfo=timezone.utc)
+    start = datetime(2026, 4, 17, 21, 30, tzinfo=UTC)
     items = [
         {
             "uuid": f"uuid-{i}",

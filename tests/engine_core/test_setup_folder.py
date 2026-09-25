@@ -355,6 +355,49 @@ def test_detect_folder_counts_what_is_there(
     assert len(body["sample"]) == 3
 
 
+@pytest.mark.requirement("SETUP-17")
+def test_detect_folder_strips_trailing_slash(
+    client: TestClient, library: Path
+) -> None:
+    """[if] detect gets a trailing slash [then] path is canonical, [else stop]."""
+    body = client.get(
+        f"{API}/detect/folder", params={"path": f"{library}/"}
+    ).json()
+    assert body["path"] == str(library)
+
+
+@pytest.mark.requirement("SETUP-17")
+def test_folder_import_rejects_duplicate_normalized_paths(
+    client: TestClient, library: Path
+) -> None:
+    """[if] folders differ only by trailing slash [then] 422 duplicate, [else stop]."""
+    response = client.post(
+        f"{API}/import/folder",
+        json={"folders": [f"{library}/", str(library)]},
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.requirement("SETUP-17")
+def test_folder_import_accepts_multiple_roots(
+    client: TestClient, tmp_path: Path, data_dir: Path
+) -> None:
+    """[if] two library roots are posted [then] job carries both, [else stop]."""
+    first = tmp_path / "library-a"
+    second = tmp_path / "library-b"
+    _write_wav(first / "one.wav")
+    _write_wav(second / "two.wav")
+    response = client.post(
+        f"{API}/import/folder",
+        json={"folders": [str(first), str(second)]},
+    )
+    assert response.status_code == 202, response.text
+    job = response.json()
+    assert job["payload"]["mode"] == "folder"
+    assert job["payload"]["roots"] == [str(first), str(second)]
+    assert job["payload"]["data_dir"] == str(data_dir)
+
+
 @pytest.mark.skipif(
     not _CAN_TEST_PERMISSION_DENIAL,
     reason="platform cannot create a real chmod-based permission denial",
@@ -472,6 +515,23 @@ def test_status_renders_a_folder_outcome_as_a_folder_outcome(
     last = client.get(f"{API}/status").json()["last_import"]
     assert last["kind"] == "folder"
     assert last["tracks_without_analysis"] == 3
+
+
+def test_folder_import_reports_unplayable_files_in_last_import(
+    client: TestClient, data_dir: Path, tmp_path: Path
+) -> None:
+    """[if] valid wav and zero-byte wav [then] one track and rejected counter [else stop]."""
+    root = tmp_path / "mixed"
+    root.mkdir()
+    _write_wav(root / "valid.wav")
+    (root / "zero-bytes.wav").write_bytes(b"")
+    _sink, emit = _emit_sink()
+    outcome = importer.run_folder_import(data_dir, emit=emit, roots=[root])
+    assert outcome.tracks_written == 1
+    assert outcome.files_rejected_unplayable >= 1
+    last = client.get(f"{API}/status").json()["last_import"]
+    assert last["files_rejected_unplayable"] >= 1
+    assert last["tracks_written"] == 1
 
 
 def test_permissions_reports_every_probed_root(client: TestClient) -> None:

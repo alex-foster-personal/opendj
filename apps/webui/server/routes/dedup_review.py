@@ -22,6 +22,7 @@ from apps.shared import paths as dedup_paths
 from apps.shared.events import publish
 
 from ..backend import StateBackend
+from ..dedup_cue_presence import CuePresence, bulk_cue_presence
 from ..dedup_decisions import (
     DECISIONS_FILE,
     DecisionRevisionConflict,
@@ -30,7 +31,6 @@ from ..dedup_decisions import (
     commit_decision_store,
     decision_file_lock,
 )
-from ..dedup_cue_presence import CuePresence, bulk_cue_presence
 from ..dedup_review_ops import (
     cluster_key,
     cluster_member_ids,

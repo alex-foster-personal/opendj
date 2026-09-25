@@ -102,7 +102,10 @@ function elementHarness({
 describe('installHeadphoneOutputLiveness', () => {
 	let mod;
 	before(async () => {
-		mod = await loadTypeScriptModule('src/lib/rb/audio-output-liveness.ts');
+		mod = {
+			...(await loadTypeScriptModule('src/lib/rb/audio-output-liveness.ts')),
+			...(await loadTypeScriptModule('src/lib/rb/headphone-output-liveness.ts'))
+		};
 	});
 
 	it('frozen currentTime for >= OUTPUT_STALL_MS => stalled + one error toast', () => {
@@ -220,5 +223,77 @@ describe('headphoneLivenessAlertText', () => {
 		assert.match(headphones.headphoneLivenessAlertText('dead-escalated'), /re-select/);
 		assert.equal(headphones.headphoneLivenessAlertText('ok'), null);
 		assert.equal(headphones.headphoneLivenessAlertText('idle'), null);
+	});
+});
+
+describe('cue bridge liveness recovery', () => {
+	let liveness;
+	before(async () => {
+		liveness = await loadTypeScriptModule('src/lib/rb/headphone-output-liveness.ts');
+	});
+
+	it('a dead headphone leg recovers the cue context, never the master re-bind', () => {
+		let tick = null;
+		let contextTime = 1;
+		const calls = [];
+		const cueCtx = {
+			state: 'running',
+			outputLatency: 0,
+			baseLatency: 0.01,
+			sinkId: 'bt-1',
+			getOutputTimestamp: () => ({ contextTime: (contextTime += 0.25) })
+		};
+		const detector = liveness.installCueBridgeHeadphoneLiveness(
+			cueCtx,
+			{
+				pushToast: () => {},
+				recordPerfEvent: (kind) => calls.push(`perf:${kind}`),
+				setInterval: (fn) => { tick = fn; return 'h'; },
+				clearInterval: () => {},
+				now: () => 0,
+				rebindDeadOutput: () => calls.push('cue-rebind'),
+				recoverOutput: () => calls.push('cue-recover')
+			},
+			() => true,
+			() => true,
+			() => ({ bufferMs: 60, underrunCount: 0 })
+		);
+		for (let i = 0; i < 2; i += 1) tick();
+		assert.equal(detector.verdict(), 'dead');
+		assert.deepEqual(calls.filter((c) => c === 'cue-rebind'), ['cue-rebind'],
+			'if a dead headphone leg does not call the cue recovery then it falls through to the global master re-bind and suspends the room - broken');
+		detector.uninstall();
+	});
+	it('a restarted detector does not read historical underruns as a new stall', () => {
+		let tick = null;
+		let contextTime = 1;
+		const toasts = [];
+		const cueCtx = {
+			state: 'running',
+			outputLatency: 0,
+			baseLatency: 0.01,
+			sinkId: 'bt-1',
+			getOutputTimestamp: () => ({ contextTime: (contextTime += 0.25) })
+		};
+		const detector = liveness.installCueBridgeHeadphoneLiveness(
+			cueCtx,
+			{
+				pushToast: (message) => toasts.push(message),
+				recordPerfEvent: () => {},
+				setInterval: (fn) => { tick = fn; return 'h'; },
+				clearInterval: () => {},
+				now: () => 0,
+				rebindDeadOutput: () => {},
+				recoverOutput: () => {}
+			},
+			() => true,
+			() => true,
+			() => ({ bufferMs: 60, underrunCount: 7 })
+		);
+		tick();
+		assert.deepEqual(toasts.filter((t) => t.startsWith('NO HEADPHONE OUTPUT')), [],
+			'if a restarted detector starts its underrun baseline at 0 then old underruns raise a false NO HEADPHONE OUTPUT - broken');
+		assert.notEqual(detector.verdict(), 'stalled');
+		detector.uninstall();
 	});
 });

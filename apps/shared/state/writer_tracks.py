@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from . import locations as _locations
+from . import provenance as _prov
 from .events import EventBus, FakeEventBus
 from .sync_stamp import Stamp
-from . import provenance as _prov
 from .types import Event, Source
 from .writer_common import (
     MEMBERSHIPS_TABLE,
@@ -99,6 +99,7 @@ class _TrackWriterMixin:
         duration_ms: int | None,
         file_path: str | None,
         content_hash: str | None = None,
+        audio_hash: str | None = None,
     ) -> bool:
         """Insert/update ``tracks``. Returns True on change, False on no-op.
 
@@ -119,7 +120,7 @@ class _TrackWriterMixin:
         with self._tx() as conn:
             existing = conn.execute(
                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                "duration_ms, file_path, content_hash, deleted_at FROM tracks "
+                "duration_ms, file_path, content_hash, audio_hash, deleted_at FROM tracks "
                 "WHERE stable_id = ?",
                 (stable_id,),
             ).fetchone()
@@ -132,6 +133,7 @@ class _TrackWriterMixin:
                 duration_ms,
                 file_path,
                 content_hash,
+                audio_hash,
             )
             existing_deleted_at = existing[-1] if existing is not None else None
             if (
@@ -145,8 +147,8 @@ class _TrackWriterMixin:
                 conn.execute(
                     "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                     "artists_json, album, isrc, duration_ms, file_path, "
-                    "content_hash, created_at, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "content_hash, audio_hash, created_at, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         stable_id,
                         stable_id_tier,
@@ -157,6 +159,7 @@ class _TrackWriterMixin:
                         duration_ms,
                         file_path,
                         content_hash,
+                        audio_hash,
                         now,
                         stamp.updated_at,
                         stamp.origin_device_id,
@@ -167,7 +170,7 @@ class _TrackWriterMixin:
                 reactivated = existing_deleted_at is not None
                 conn.execute(
                     "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
-                    "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
+                    "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, audio_hash=?, "
                     "updated_at=?, origin_device_id=?, deleted_at=NULL "
                     "WHERE stable_id=?",
                     (*new_row, stamp.updated_at, stamp.origin_device_id, stable_id),
@@ -461,10 +464,10 @@ class _TrackWriterMixin:
 
 
 __all__ = [
-    "_TrackWriterMixin",
     "TrackAlreadyRemovedError",
     "TrackLifecycleResult",
     "TrackMembershipRef",
     "TrackNotFoundError",
     "TrackNotRemovedError",
+    "_TrackWriterMixin",
 ]

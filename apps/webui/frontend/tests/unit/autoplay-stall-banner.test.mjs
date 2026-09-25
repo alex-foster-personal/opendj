@@ -22,8 +22,8 @@
  *   way back to sound, and the exact blocked total ⛔️
  * [if] the blocked list is capped [then] the rendered count is still the exact
  *   total [⛔️ if a capped list reads as the whole remainder].
- * [if] a dismiss control is added [then] this reds - an acknowledgement that
- *   leaves the room quiet and the screen blank is the failure being removed ⛔️
+ * [if] issue #3882 transient banner is shown [then] it carries an X dismiss
+ *   control and auto-hides without clearing durable stall state ⛔️
  * [if] the banner wraps to more than one row [then] the list still sits under
  *   it [⛔️ if a hard-coded offset covers the wrapped instructions and the
  *   toggle needed to close the list].
@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const ENTRY = [
 	"export { default as Banner } from '$lib/components/rb/AutoPlayStallBanner.svelte';",
@@ -116,18 +117,18 @@ test('the track list is collapsed until asked for, and never lists more than the
 	);
 });
 
-test('the rendered banner offers no way to dismiss it', () => {
+test('the rendered banner carries an X dismiss control (issue #3882)', () => {
 	const html = renderFor(stallWith(2));
-	const buttons = [...html.matchAll(/<button[\s\S]*?<\/button>/g)].map((match) => match[0]);
-	// Control: the assertion is only meaningful if there IS a rendered button
-	// to misclassify. The show-tracks toggle is that button.
-	assert.equal(buttons.length, 1, `expected exactly the tracks toggle, rendered ${buttons.length}`);
-	assert.match(buttons[0], /Show the 2 tracks/);
-	assert.equal(
-		/dismiss|close|acknowledge|hide banner|×/i.test(buttons[0]),
-		false,
-		'a dismissable stop banner reintroduces the five-second toast this replaces'
-	);
+	assert.match(html, /data-testid="autoplay-stall-dismiss"/);
+	assert.match(html, /ap-stall-dismiss/);
+});
+
+test('timer helpers use 5s default and 10s while hovered', async () => {
+	const timer = await loadTypeScriptModule('src/lib/rb/autoplay-stall-banner-timer.ts');
+	assert.equal(timer.autoplayStallBannerDismissMs(false), 5000);
+	assert.equal(timer.autoplayStallBannerDismissMs(true), 10000);
+	assert.equal(timer.shouldShowAutoplayStallBanner(3, 3), false);
+	assert.equal(timer.shouldShowAutoplayStallBanner(4, 3), true);
 });
 
 test('the performance route mounts it, and the ui-mirror publishes it', () => {

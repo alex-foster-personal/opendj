@@ -62,7 +62,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }), ['headphone']);
-	assert.equal(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), null);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), ['headphone']);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
 		[1, 2, 3, 4, 'sync']
@@ -999,6 +999,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				cue_latency_ms: null,
 				master_latency_ms: null,
 				offset_ms: null,
+				verify_residual_ms: null,
+				probe: null,
 				error: null
 			},
 			outputs: [],

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from apps.analysis import canonical, selection
 from apps.analysis.record import AnalysisRecord
-from apps.shared import platform_paths
+from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -120,7 +120,7 @@ def get_track_artwork(
     size: Literal["s", "m", "orig"] = Query(
         "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> FileResponse | Response:
     """Serve artwork for the track: rekordbox's pre-rendered jpg variant when
     mapped, else the embedded tag picture read straight from the local file.
@@ -357,12 +357,12 @@ def get_track_anlz(
     request: Request,
     stable_id: str,
     points: int = Query(
-        38400,
-        ge=100,
-        le=38400,
+        runtime_policy.ANLZ_POINTS_DEFAULT,
+        ge=runtime_policy.ANLZ_POINTS_MIN,
+        le=runtime_policy.ANLZ_POINTS_MAX,
         description="Max length of each waveform band array after downsampling",
     ),
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> Response:
     """Waveform (preview + detail) / beatgrid / cues / phrases JSON.
 
@@ -534,7 +534,7 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
 def get_track_rb_meta(
     stable_id: str,
     response: Response,
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> RbMetaOut:
     """Rekordbox vendor fields + file-existence flags for browser rows."""
     response.headers["Cache-Control"] = _CACHE_RB_META

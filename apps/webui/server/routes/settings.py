@@ -4,14 +4,17 @@ Surfaces the daemon's effective runtime config so the frontend can render
 a diagnostics page without SSH-ing into the host. Every value below is
 sourced from ``request.app.state``, a middleware/route introspection, or
 an ``apps.shared.paths`` constant -- see the citing comment on each field.
-Nothing here is user-editable; v1 is read-only (no PATCH/POST).
+Nothing here is user-editable; v1 is read-only (no PATCH/POST). Runtime
+policy thresholds (hide-broken ratio, ANLZ points bounds, file_exists TTL)
+are published in the ``Runtime policy`` group from
+``apps.shared.runtime_policy``.
 
 Anything the running process cannot actually introspect is reported with
 ``tbd=true`` and a note instead of a guessed value.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -21,7 +24,8 @@ from starlette.routing import Mount
 from apps.adapters.rekordbox import config as rb_config
 from apps.engine_core.host_info import HOST_INFO_STATE_ATTR
 from apps.shared.paths import DATA_DIR, STATE_DIR
-from apps.shared.perf_tier import HostFacts, resolve_tier, read_override_from_prefs
+from apps.shared.perf_tier import HostFacts, read_override_from_prefs, resolve_tier
+from apps.shared.runtime_policy import settings_items as runtime_policy_items
 from apps.webui.server.frontend_build import frontend_build_dir
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -35,7 +39,7 @@ class SettingItem(BaseModel):
     key: str
     value: Any = None
     tbd: bool = False
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class SettingsGroup(BaseModel):
@@ -49,7 +53,7 @@ class SettingsOut(BaseModel):
 
 # ----- helpers -----------------------------------------------------------
 
-def _cors_middleware(request: Request) -> Optional[dict[str, Any]]:
+def _cors_middleware(request: Request) -> dict[str, Any] | None:
     """Pull the live CORSMiddleware kwargs off the app, if it was added.
 
     ``app.user_middleware`` holds each registered ``Middleware(cls, **kwargs)``
@@ -182,6 +186,13 @@ def get_settings(request: Request) -> SettingsOut:
         SettingsGroup(group="Backend", items=backend_items),
         SettingsGroup(group="Storage", items=storage_items),
         SettingsGroup(group="Frontend", items=frontend_items),
+        SettingsGroup(
+            group="Runtime policy",
+            items=[
+                SettingItem(key=item.key, value=item.value, note=item.note)
+                for item in runtime_policy_items()
+            ],
+        ),
         SettingsGroup(group="Feature toggles", items=toggle_items),
     ])
 

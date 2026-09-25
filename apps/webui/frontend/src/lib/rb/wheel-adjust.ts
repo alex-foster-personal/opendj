@@ -467,6 +467,15 @@ export function wheelDirection(event: WheelEvent): -1 | 0 | 1 {
 	return 0;
 }
 
+/** Horizontal wheel direction when |deltaX| dominates (MIXUX-08 AC7). */
+export function horizontalWheelDirection(event: WheelEvent): -1 | 0 | 1 {
+	if (event.deltaX === 0) return 0;
+	if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return 0;
+	if (event.deltaX < 0) return 1;
+	if (event.deltaX > 0) return -1;
+	return 0;
+}
+
 /** A control's declared step scaled for the device that produced the event.
  * Pure, so the scaling is testable without a DOM. */
 export function scaledWheelStep(step: number, kind: WheelInputKind): number {

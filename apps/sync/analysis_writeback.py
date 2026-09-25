@@ -112,7 +112,7 @@ def write_scalar(
 ) -> bool:
     if field == "bpm":
         try:
-            bpm_raw = int(round(float(value) * 100))
+            bpm_raw = round(float(value) * 100)
         except (TypeError, ValueError):
             return False
         result = conn.execute(
@@ -171,7 +171,7 @@ def verify_scalar(
         if row is None:
             return False
         try:
-            return int(row[0]) == int(round(float(value) * 100))
+            return int(row[0]) == round(float(value) * 100)
         except (TypeError, ValueError):
             return False
 
@@ -434,7 +434,7 @@ def live_writeback(
 def run_undo(
     preimage_path: Path,
     *,
-    rb_db_path: Path,
+    rb_db_path: Path,  # noqa: ARG001 - retained for the caller's keyword contract
     rb_conn: sqlite3.Connection,
 ) -> int:
     from apps.sync.analysis_writeback_pqtz import restore_pqtz_dat, snapshot_pqtz_dat

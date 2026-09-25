@@ -41,7 +41,7 @@ test:
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
 	$(PYTEST) -q -m rb_parity $(pytest_basetemp_flag)
-	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-reporter=tap --test-concurrency=4 tests/unit/*.test.mjs
+	cd apps/webui/frontend && $(FRONTEND_NODE) --experimental-strip-types --test --test-reporter=tap --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
 rb-parity-final: rb-parity-check

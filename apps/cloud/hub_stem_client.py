@@ -1,4 +1,4 @@
-"""Spoke client for hub stem index and bundle-presign endpoints (ADR-0025)."""
+"""Spoke client for hub stem index and bundle-presign endpoints (ADR-0051)."""
 from __future__ import annotations
 
 from typing import Any

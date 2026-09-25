@@ -60,7 +60,12 @@ from .errors import (
 )
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
+from .request_guard import (
+    host_allowlist_middleware,
+    origin_guard_middleware,
+)
 from .routes import analysis as analysis_routes
+from .routes import audio_output_health as audio_output_health_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
@@ -89,11 +94,13 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lifecycle as lifecycle_routes
+from .routes import midi_maps as midi_maps_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
@@ -101,7 +108,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
-from .routes import rescue_snapshots as rescue_snapshots_routes
+from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -113,16 +120,17 @@ from .routes import progress as progress_routes
 from .routes import quality as quality_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
-from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import rb_djay_sync as rb_djay_sync_routes
+from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
+from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
-from .routes import shell as shell_routes
 from .routes import share as share_routes
+from .routes import shell as shell_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import sql_playground as sql_playground_routes
@@ -139,11 +147,6 @@ from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
-from .request_guard import (
-    host_allowlist_middleware,
-    install_request_guard,
-    origin_guard_middleware,
-)
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
@@ -252,8 +255,14 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.library_jobs_watcher = jobs_watcher
         jobs_watcher.start()
+        from . import path_availability_refresh
+
+        path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
+        from . import path_availability_refresh
+
+        path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
@@ -373,7 +382,7 @@ def _install_armed_stem_hydration(
 
 
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
-    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
+    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0051),
     or leave it unset.
 
     Unset is a legitimate machine state, not a failure: local mode, or a
@@ -488,6 +497,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     prefixed = (
         tracks_routes.router,
         client_errors_routes.router,
+        telemetry_consent_routes.router,
         error_feed_routes.router,
         client_events_routes.router,
         performance_telemetry_routes.router,
@@ -532,6 +542,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         relocate_routes.router,
         copilot_routes.router,
         analysis_routes.router,
+        audio_output_health_routes.router,
         analysis_backfill_routes.router,
         analysis_queue_routes.router,
         library_jobs_routes.router,
@@ -539,6 +550,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         auth_routes.router,
         ingest_routes.router,
         ingest_upload_routes.router,
+        ingest_materialize_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
         lifecycle_routes.router,
@@ -548,6 +560,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         preflight_routes.router,
         settings_routes.router,
         settings_ai_routes.router,
+        midi_maps_routes.router,
         state_routes.router,
         commands_routes.router,
         shell_routes.router,

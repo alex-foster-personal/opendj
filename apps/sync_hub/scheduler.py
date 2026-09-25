@@ -53,16 +53,16 @@ from apps.shared.sync_runtime_gates import (
     DEFER_REASON_PRESSURE_SHED,
     refuse_sync_round,
 )
-from apps.sync_hub.scheduler_owed import (
-    clear_scheduler_owed,
-    mark_scheduler_owed,
-    scheduler_owed,
-)
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import heartbeat as sync_heartbeat
 from apps.sync_hub import maintenance
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.scheduler_owed import (
+    clear_scheduler_owed,
+    mark_scheduler_owed,
+    scheduler_owed,
+)
 from apps.sync_hub.single_flight import sync_lock_for
 
 log = logging.getLogger(__name__)

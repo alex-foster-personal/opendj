@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared import platform_paths
-from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.preflight_checks import LIBRARY_ATTACHED_REKORDBOX_UNREACHABLE_REMEDIATION

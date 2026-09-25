@@ -124,6 +124,8 @@ export function _defaultHeadphones(): HeadphoneState {
 			cue_latency_ms: last === null ? null : last.cue_latency_ms,
 			master_latency_ms: last === null ? null : last.master_latency_ms,
 			offset_ms: last === null ? null : last.cue_latency_ms - last.master_latency_ms,
+			verify_residual_ms: null,
+			probe: null,
 			error: null
 		},
 		outputs: [],

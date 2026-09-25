@@ -174,11 +174,33 @@ export async function scanFolder(path: string): Promise<FolderScan> {
 	);
 }
 
-/** Enqueue a folder import: tags only, no analysis, and it says so. */
+/** Enqueue a folder import: tags only, no analysis, and it says so.
+ *
+ * Accepts multiple absolute roots in one job; the first-run wizard posts every
+ * validated row when the operator adds more than one music folder.
+ */
 export async function startFolderImport(
 	options: FolderImportOptions
 ): Promise<SetupJob> {
 	return unwrap(api.POST('/api/v1/setup/import/folder', { body: options }));
+}
+
+/** Canonical setup folder path on the client: trim and strip a trailing slash.
+ *
+ * Does not expand ``~``; the server refuses tilde paths at the wire boundary.
+ * Mirrors ``normalise_path_prefix`` for display and duplicate detection.
+ */
+export function normalizeSetupFolderPath(path: string): string {
+	const trimmed = path.trim();
+	if (trimmed === '/') return trimmed;
+	if (
+		trimmed.length === 3 &&
+		trimmed.charAt(1) === ':' &&
+		(trimmed.charAt(2) === '/' || trimmed.charAt(2) === '\\')
+	) {
+		return trimmed;
+	}
+	return trimmed.replace(/[/\\]+$/, '');
 }
 
 /** What a scanned folder means, in one sentence a human can act on.

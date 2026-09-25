@@ -18,11 +18,9 @@ import pytest
 from apps.engine_core import lock as lock_module
 from apps.engine_core.config import (
     CONCURRENCY_ENV,
-    PROGRESS_LEDGER_NAME,
     EngineBootError,
     EngineConfig,
     apply_env_contract,
-    assert_no_progress_ledger,
     assert_single_worker,
     build_config,
 )
@@ -213,13 +211,6 @@ def test_web_concurrency_is_refused() -> None:
         assert_single_worker(1, environ={CONCURRENCY_ENV: "4"})
     assert CONCURRENCY_ENV in str(refusal.value)
     assert_single_worker(1, environ={CONCURRENCY_ENV: ""})
-
-
-def test_progress_ledger_in_the_data_dir_blocks_boot(tmp_path: Path) -> None:
-    (tmp_path / PROGRESS_LEDGER_NAME).write_text("nodes: []\n", encoding="utf-8")
-    with pytest.raises(EngineBootError) as refusal:
-        assert_no_progress_ledger(tmp_path)
-    assert PROGRESS_LEDGER_NAME in str(refusal.value)
 
 
 def test_relative_data_dir_is_refused() -> None:

@@ -13,6 +13,11 @@
 		rekordboxWriteback,
 		rekordboxWritebackRefusal
 	} from '$lib/rb/rekordbox-writeback.svelte';
+	import { removeFromLibrary } from '$lib/rb/track-library';
+	import {
+		removeFromLibraryConfirmMessage,
+		removeFromLibraryToastMessage
+	} from '$lib/components/rb/browser/track-library-menu';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let broken = $state<BrokenTrack[]>([]);
@@ -23,6 +28,7 @@
 	let candidateVendorId = $state<string | null>(null);
 	let candidatesLoading = $state(false);
 	let applying = $state<string | null>(null);
+	let removing = $state<string | null>(null);
 
 	// Relocate apply patches djmdContent.FolderPath on the LIVE rekordbox
 	// database, so it is inert whenever the daemon is in one-way import mode.
@@ -96,6 +102,21 @@
 		}
 	}
 
+	async function removeFromLibraryRow(track: BrokenTrack): Promise<void> {
+		if (!window.confirm(removeFromLibraryConfirmMessage(1))) return;
+		removing = track.stable_id;
+		try {
+			await removeFromLibrary(track.stable_id);
+			pushToast(removeFromLibraryToastMessage(1), 'info');
+			if (expanded === track.stable_id) expanded = null;
+			await load();
+		} catch (exc) {
+			pushToast(`remove from library failed: ${String(exc)}`, 'error');
+		} finally {
+			removing = null;
+		}
+	}
+
 	onMount(() => {
 		void rekordboxWriteback.probe();
 		void load();
@@ -105,7 +126,8 @@
 <h2>Missing tracks</h2>
 <p style="color: var(--muted);">
 	Local tracks whose recorded path no longer resolves on disk. Streaming
-	tracks and pathless rows never appear here.
+	tracks and pathless rows never appear here. Remove from library drops the
+	track from OpenDJ only; the file stays on disk.
 </p>
 
 {#if loading}
@@ -128,9 +150,16 @@
 					<td><a href={`/track/${track.stable_id}`}>{track.title ?? track.stable_id}</a></td>
 					<td>{track.artist ?? ''}</td>
 					<td><code style="font-size: 0.8rem;">{track.original_path}</code></td>
-					<td>
+					<td class="actions">
 						<button onclick={() => toggle(track)}>
 							{expanded === track.stable_id ? 'Hide' : 'Relocate'}
+						</button>
+						<button
+							disabled={removing === track.stable_id}
+							title="Remove from library (file stays on disk)"
+							onclick={() => void removeFromLibraryRow(track)}
+						>
+							{removing === track.stable_id ? 'Removing...' : 'Remove from library'}
 						</button>
 					</td>
 				</tr>
@@ -183,5 +212,10 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.3rem 0;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 </style>

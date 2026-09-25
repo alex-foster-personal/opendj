@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from starlette.responses import HTMLResponse
 
-from apps.opendj_cli import api_cli
+from apps.opendj_cli import EXIT_FAILED, EXIT_NO_ENGINE, api_cli
 from apps.opendj_cli.__main__ import main
 from apps.webui import port_config
 from apps.webui.server.app import create_app
@@ -308,7 +308,7 @@ def test_api_without_ports_or_lock_names_lock_file(
     _no_worktree_ports(monkeypatch, tmp_path)
     monkeypatch.setenv("OPENDJ_LIVE_LOCK_PATH", str(missing))
 
-    assert main(["api", "GET", "/api/v1/health"]) == api_cli.EXIT_USAGE
+    assert main(["api", "GET", "/api/v1/health"]) == EXIT_NO_ENGINE
 
     captured = capsys.readouterr()
     assert str(missing) in captured.err
@@ -330,13 +330,23 @@ def test_api_dead_lock_names_lock_file(
 
     assert (
         main(["--lock", str(lock), "api", "GET", "/api/v1/health"])
-        == api_cli.EXIT_FAILED
+        == EXIT_NO_ENGINE
     )
 
     captured = capsys.readouterr()
     assert str(lock) in captured.err
     assert str(dead_port) in captured.err
     assert "engine lock file" in captured.err
+
+
+def test_api_bad_method_exits_failed_not_no_engine(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["api", "FLY", "/api/v1/health"])
+    assert code == EXIT_FAILED
+    assert code != EXIT_NO_ENGINE
+    captured = capsys.readouterr()
+    assert "unknown HTTP method" in captured.err
 
 
 @pytest.mark.requirement("AGENT-05")
@@ -404,7 +414,7 @@ def test_api_prefers_worktree_port_over_lock(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    base_url, live_port = library_daemon
+    _base_url, live_port = library_daemon
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         dead_port = int(probe.getsockname()[1])

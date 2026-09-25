@@ -33,7 +33,39 @@ interface ClientErrorPayload {
 	user_agent: string;
 	secure_context: boolean;
 	audio_worklet_available: boolean;
+	/**
+	 * Was any deck playing or audible when this error fired? The engine holds
+	 * the Sentry forward (never the local log) while this is true, which is
+	 * the "never send while a deck is live" rule of the error-reporting
+	 * policy. `null` means no transport probe is registered yet (the audio
+	 * engine has not booted), so the engine falls back to its own UI-mirror
+	 * read rather than trusting a default.
+	 */
+	any_deck_live: boolean | null;
 	context: ClientErrorContext;
+}
+
+/**
+ * The page's cheapest "is the set live" read, registered by app-init once the
+ * audio engine module is loaded. Not imported here: this module runs from
+ * hooks.client.ts on every boot, and pulling audio-engine.svelte.ts into
+ * that path would load the whole graph before the first paint.
+ */
+let liveTransportProbe: (() => boolean) | null = null;
+
+export function setLiveTransportProbe(probe: (() => boolean) | null): void {
+	liveTransportProbe = probe;
+}
+
+function readAnyDeckLive(): boolean | null {
+	if (liveTransportProbe === null) return null;
+	try {
+		return liveTransportProbe() === true;
+	} catch {
+		// A probe that throws is unknown, not "not live": let the engine fall
+		// back to its mirror rather than send on the strength of a failure.
+		return null;
+	}
 }
 
 interface PendingShellError {
@@ -54,6 +86,25 @@ let flushing = false;
 let fallbackId = 0;
 let interceptingConsole = false;
 let consoleSampleGate: () => number = () => Math.random();
+
+export type ClientErrorAck = {
+	client_event_id: string;
+	server_event_id: string;
+	error_id?: string | null;
+	sentry_event_id?: string | null;
+};
+
+const ackListeners = new Set<(ack: ClientErrorAck) => void>();
+
+/** Register for successful POST acks so toasts can attach telemetry ids. */
+export function onClientErrorAck(listener: (ack: ClientErrorAck) => void): () => void {
+	ackListeners.add(listener);
+	return () => ackListeners.delete(listener);
+}
+
+function _notifyAck(ack: ClientErrorAck): void {
+	for (const listener of ackListeners) listener(ack);
+}
 
 export function __resetClientErrorReportingForTests(): void {
 	installed = false;
@@ -110,10 +161,18 @@ async function flushQueue(): Promise<void> {
 			const queue = readQueue();
 			if (queue.length === 0) break;
 			const sent = queue[0];
-			await api.POST('/api/v1/client-errors', {
+			const response = await api.POST('/api/v1/client-errors', {
 				body: sent,
 				keepalive: true
 			});
+			if (response.data !== undefined) {
+				_notifyAck({
+					client_event_id: sent.client_event_id,
+					server_event_id: response.data.event_id,
+					error_id: response.data.error_id ?? null,
+					sentry_event_id: response.data.sentry_event_id ?? null
+				});
+			}
 			const remaining = readQueue();
 			const at = remaining.findIndex((row) => row.client_event_id === sent.client_event_id);
 			if (at >= 0) remaining.splice(at, 1);
@@ -254,11 +313,11 @@ export function reportClientError(
 	cause: unknown,
 	context: ClientErrorContext = {},
 	kind: ClientErrorKind = 'ui-error'
-): void {
-	if (typeof window === 'undefined') return;
+): string | undefined {
+	if (typeof window === 'undefined') return undefined;
 	const described = describe(cause);
 	const fingerprint = `${kind}:${context.source ?? ''}:${described.message}`;
-	if (!shouldReport(kind, fingerprint)) return;
+	if (!shouldReport(kind, fingerprint)) return undefined;
 	const now = Date.now();
 	const clientEventId =
 		typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -273,6 +332,7 @@ export function reportClientError(
 		user_agent: truncate(typeof navigator === 'undefined' ? '' : navigator.userAgent, 2048),
 		secure_context: window.isSecureContext === true,
 		audio_worklet_available: typeof AudioWorkletNode !== 'undefined',
+		any_deck_live: readAnyDeckLive(),
 		context: Object.fromEntries(
 			Object.entries(context)
 				.slice(0, 32)
@@ -283,6 +343,7 @@ export function reportClientError(
 	queue.push(payload);
 	writeQueue(queue);
 	void flushQueue();
+	return clientEventId;
 }
 
 export function installClientErrorReporting(): void {

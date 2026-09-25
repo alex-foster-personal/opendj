@@ -7,7 +7,10 @@ PUT  /api/v1/ui-prefs  - merge patch into data/state/ui-prefs.json
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+import os
+import tempfile
+import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +21,8 @@ from apps.shared.events import publish
 from apps.shared.paths import DATA_DIR
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
+
+_write_lock = threading.Lock()
 
 _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
@@ -38,6 +43,7 @@ _DEFAULT_AUTO_SYNC: dict[str, bool] = {
 _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
+_DEFAULT_SHOW_STEMS = False
 _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
@@ -59,6 +65,7 @@ _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
+    "available_offline_filter": False,
 }
 _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
 _DEFAULT_MIDI_ENABLED = False
@@ -89,6 +96,30 @@ def _path(request: Request) -> Path:
     configured = getattr(request.app.state, "data_dir", None)
     root = Path(configured) if configured is not None else DATA_DIR
     return root / "state" / _FILENAME
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` via same-dir temp file and ``os.replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    if os.name == "posix":
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
 
 
 # Level calibration is stored in dBFS, the same unit the meter reads. The
@@ -377,7 +408,7 @@ def _parse_last_gig_at(value: Any) -> str | None:
                 "message": f"app_mode.last_gig_at is not a valid UTC ISO timestamp: {exc}",
             },
         ) from exc
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _parse_app_mode_id(value: Any) -> str:
@@ -447,6 +478,7 @@ def _load(path: Path) -> dict[str, Any]:
             "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
+            "show_stems": _DEFAULT_SHOW_STEMS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
@@ -511,6 +543,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_agent_pins must be a boolean",
             },
         )
+    show_stems = raw.get("show_stems", _DEFAULT_SHOW_STEMS)
+    if not isinstance(show_stems, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "show_stems must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
@@ -519,6 +560,7 @@ def _load(path: Path) -> dict[str, Any]:
         "technically_working_animate": animate,
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
+        "show_stems": show_stems,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
@@ -579,6 +621,7 @@ class UiPrefsOut(BaseModel):
     technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
+    show_stems: bool = _DEFAULT_SHOW_STEMS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
     lyrics_library_col: bool = _DEFAULT_LYRICS_BOOLS["lyrics_library_col"]
@@ -599,6 +642,7 @@ class UiPrefsOut(BaseModel):
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
+    available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
 
@@ -613,6 +657,7 @@ class UiPrefsPatch(BaseModel):
     technically_working_animate: bool | None = None
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
+    show_stems: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
     lyrics_global: bool | None = None
     lyrics_library_col: bool | None = None
@@ -633,6 +678,7 @@ class UiPrefsPatch(BaseModel):
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
+    available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
 
@@ -670,10 +716,10 @@ def persist_master_muted(request: Request, muted: bool) -> None:
     if not isinstance(muted, bool):
         raise TypeError("muted must be boolean")
     path = _path(request)
-    current = _load(path)
-    current["master_muted"] = muted
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    with _write_lock:
+        current = _load(path)
+        current["master_muted"] = muted
+        _write_atomic(path, json.dumps(current, indent=2) + "\n")
     publish("library.changed", {"kind": "ui_prefs", "ids": []})
 
 
@@ -685,7 +731,15 @@ def get_ui_prefs(request: Request) -> UiPrefsOut:
 @router.put("", response_model=UiPrefsOut)
 def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     path = _path(request)
-    current = _load(path)
+    with _write_lock:
+        current = _load(path)
+        current = _merge_ui_prefs_patch(current, body)
+        _write_atomic(path, json.dumps(current, indent=2) + "\n")
+    publish("library.changed", {"kind": "ui_prefs", "ids": []})
+    return UiPrefsOut.model_validate(current)
+
+
+def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[str, Any]:
     if body.confirm is not None:
         merged = {**current["confirm"], **body.confirm}
         # Drop keys explicitly set to null.
@@ -702,6 +756,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["jog_radial_waveform"] = body.jog_radial_waveform
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
+    if body.show_stems is not None:
+        current["show_stems"] = body.show_stems
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier
@@ -730,7 +786,4 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["level_calibration"] = _parse_level_calibration(
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
-    publish("library.changed", {"kind": "ui_prefs", "ids": []})
-    return UiPrefsOut.model_validate(current)
+    return current

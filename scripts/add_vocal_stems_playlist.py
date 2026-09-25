@@ -23,7 +23,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -70,7 +70,7 @@ def parse(fp: Path) -> dict:
     try:
         audio = MutagenFile(str(fp))
         if audio is not None and audio.info is not None:
-            dur_ms = int(round(audio.info.length * 1000))
+            dur_ms = round(audio.info.length * 1000)
     except Exception as e:
         print(f"  warn: no duration for {fp.name}: {e}", file=sys.stderr)
     sid = hashlib.sha1(str(fp).encode("utf-8")).hexdigest()
@@ -85,7 +85,7 @@ def main() -> None:
         raise SystemExit(f"no vocal mp3s in {VOCALS}")
     rows = [parse(f) for f in files]
     rows.sort(key=lambda r: r["pos"])
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     print(f"parsed {len(rows)} vocal stems (pos {rows[0]['pos']}..{rows[-1]['pos']})")
 
     # --- 1. insert tracks (idempotent) ---

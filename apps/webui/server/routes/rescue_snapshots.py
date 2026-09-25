@@ -35,7 +35,7 @@ def _data_dir(request: Request) -> Path:
 @router.post("", status_code=202, response_model=RescueAppendOut)
 async def post_rescue_snapshot(
     request: Request,
-    payload: dict[str, Any] = Body(...),
+    payload: dict[str, Any] = Body(...),  # noqa: B008  # FastAPI DI
 ) -> RescueAppendOut:
     data_dir = _data_dir(request)
     try:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ from apps.shared.state.writer_tracks import (
     TrackNotFoundError,
     TrackNotRemovedError,
 )
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
@@ -42,7 +43,6 @@ from ..models import (
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
 from ..reveal_path import RevealPathError, reveal_track_path
-from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
@@ -52,13 +52,15 @@ router = APIRouter(prefix="/tracks", tags=["tracks"])
 AvailableFilter = Literal["all", "true", "false"]
 
 
-def keep_by_availability(available: AvailableFilter, file_exists: bool) -> bool:
+def keep_by_availability(available: AvailableFilter, file_exists: bool | None) -> bool:
     """True when a row passes the ?available filter (explicit three-state)."""
     if available == "all":
         return True
-    elif available == "true":
+    if file_exists is None:
+        return False
+    if available == "true":
         return file_exists
-    elif available == "false":
+    if available == "false":
         return not file_exists
     raise AssertionError(f"unhandled available filter: {available}")
 
@@ -234,7 +236,7 @@ def list_tracks(
     key: str | None = None,
     rating_min: int | None = None,
     tag: str | None = None,
-    available: AvailableFilter = Query(
+    available: AvailableFilter = Query(  # noqa: B008  # FastAPI DI
         "all",
         description=(
             "Filter rows on file_exists disk truth (FR-1 agent parity). "
@@ -249,7 +251,7 @@ def list_tracks(
     ),
     cursor: str | None = None,
     limit: int = Query(200, ge=1, le=1000),
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> TracksPage:
     flt = TrackFilter(
         q=q,
@@ -271,8 +273,8 @@ def list_tracks(
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
-    for track, row in zip(page.items, rows):
-        if not keep_by_availability(available, row["file_exists"]):
+    for track, row in zip(page.items, rows, strict=False):
+        if not keep_by_availability(available, row.get("file_exists")):
             continue
         base = _track_to_out(
             track,
@@ -288,6 +290,7 @@ def list_tracks(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
+                file_availability=row["file_availability"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
                 has_remote_copy=bool(row["has_remote_copy"]),
@@ -302,6 +305,8 @@ def list_tracks(
                 lyrics=row.get("lyrics"),
                 is_remix=bool(row.get("is_remix")),
                 is_radio_edit=bool(row.get("is_radio_edit")),
+                genre=row.get("genre"),
+                genre_reason=row.get("genre_reason"),
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)
@@ -369,7 +374,7 @@ def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
 @router.get("/{stable_id}/playlists", response_model=list[TrackPlaylistOut])
 def list_track_playlists(
     stable_id: str,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[TrackPlaylistOut]:
     """Live playlists that currently hold this track (LIBM-29).
 
@@ -461,7 +466,7 @@ def _run_track_lifecycle(
 def remove_track_from_library(
     stable_id: str,
     request: Request,
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> TrackLifecycleOut:
     """Soft-delete a track from the library while keeping the audio file on disk.
 
@@ -484,7 +489,7 @@ def remove_track_from_library(
 def undelete_track_from_library(
     stable_id: str,
     request: Request,
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> TrackLifecycleOut:
     """Restore a tombstoned track and the memberships this remove stamped."""
     result = _run_track_lifecycle(request, stable_id, "undelete")
@@ -504,7 +509,7 @@ def get_track(
     stable_id: str,
     request: Request,
     response: Response,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> TrackOut:
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
@@ -535,7 +540,7 @@ def get_track(
 @router.post("/{stable_id}:reveal", status_code=204, operation_id="reveal_track")
 def reveal_track(
     stable_id: str,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> Response:
     """Reveal a track's local file in the OS file manager."""
     track = backend.get_track(stable_id)
@@ -556,7 +561,7 @@ def patch_track(
     request: Request,
     response: Response,
     if_match: str | None = Header(None, alias="If-Match"),
-    backend: StateBackend = Depends(get_write_state),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ):
     if not if_match:
         return precondition_required(

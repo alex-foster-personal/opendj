@@ -87,7 +87,7 @@ def test_ingest_write_populates_tables(rb_fixture: Path, writer_and_conn) -> Non
 def test_ingest_tier_breakdown_counts_match_ops(
     rb_fixture: Path, writer_and_conn
 ) -> None:
-    writer, conn = writer_and_conn
+    writer, _conn = writer_and_conn
     report = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
     total_from_tiers = sum(report.tier_counts.values())
     total_ops = (
@@ -127,7 +127,7 @@ def test_ingest_appends_expected_event_kinds(
 
 
 def test_ingest_limit_caps_tracks(rb_fixture: Path, writer_and_conn) -> None:
-    writer, conn = writer_and_conn
+    writer, _conn = writer_and_conn
     report = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False, limit=3)
     total_ops = (
         report.tracks_inserted + report.tracks_updated + report.tracks_unchanged

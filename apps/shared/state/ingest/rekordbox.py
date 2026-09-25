@@ -14,6 +14,7 @@ Safety:
   decrypts it into the plain copy first when that copy is missing. The
   live DB itself is never opened.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,12 +26,12 @@ import os
 import sqlite3
 import sys
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
-from apps.shared import hashing
+from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
-from apps.shared import rekordbox_db
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
@@ -58,10 +59,10 @@ class _DryRunSilentBus:
     def __init__(self) -> None:
         self.suppressed: int = 0
 
-    def publish(self, event: Any) -> None:
+    def publish(self, _event: Any) -> None:
         self.suppressed += 1
 
-    def subscribe(self, kind: str, callback: Any) -> None:  # pragma: no cover
+    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
         # Dry-run lifetime is a single call; no-op is safe.
         return None
 
@@ -107,9 +108,7 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
     helper (which the M2 orchestrator also owns)."""
     for row in rb_db.get_content():
         folder_path = row.FolderPath or ""
-        streaming = folder_path.startswith(
-            ("spotify:", "tidal:", "http://", "https://")
-        )
+        streaming = folder_path.startswith(("spotify:", "tidal:", "http://", "https://"))
         bpm_raw = _safe_int(row.BPM)
         # Rekordbox stores BPM as an int*100 (e.g. 12800 = 128.0 BPM). A raw
         # value of 0 is ambiguous (unanalysed tracks and genuine 0.0 share
@@ -126,9 +125,7 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
         key_obj = getattr(row, "Key", None)
         key_name = None
         if key_obj is not None:
-            key_name = getattr(key_obj, "ScaleName", None) or getattr(
-                key_obj, "Name", None
-            )
+            key_name = getattr(key_obj, "ScaleName", None) or getattr(key_obj, "Name", None)
 
         yield {
             "id": str(row.ID),
@@ -150,12 +147,8 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
 def _rb_playlists(rb_db: Any) -> Iterator[tuple[str, str, list[str]]]:
     for p in rb_db.get_playlist():
         songs = list(getattr(p, "Songs", []) or [])
-        songs.sort(key=lambda s: (getattr(s, "TrackNo", 0) or 0))
-        tids = [
-            str(s.ContentID)
-            for s in songs
-            if getattr(s, "ContentID", None) is not None
-        ]
+        songs.sort(key=lambda s: getattr(s, "TrackNo", 0) or 0)
+        tids = [str(s.ContentID) for s in songs if getattr(s, "ContentID", None) is not None]
         yield (str(p.ID), p.Name or "", tids)
 
 
@@ -177,6 +170,16 @@ def _content_hash_for(path_str: str, is_streaming: bool) -> str | None:
         return None
 
 
+def _audio_hash_for(path_str: str, is_streaming: bool) -> str | None:
+    """Hash audio payload bytes while ignoring tags rewritten by DJ tools."""
+    if not path_str or is_streaming:
+        return None
+    try:
+        return hashing.sha256_audio_payload(path_str)
+    except OSError:
+        return None
+
+
 _UNKNOWN_MODIFIED_AT = "1970-01-01T00:00:00+00:00"
 
 
@@ -189,13 +192,13 @@ def _rb_modified_at(raw: Any) -> str:
     if raw is None:
         return _UNKNOWN_MODIFIED_AT
     if isinstance(raw, _dt.datetime):
-        dt = raw if raw.tzinfo is not None else raw.replace(tzinfo=_dt.timezone.utc)
-        return dt.astimezone(_dt.timezone.utc).isoformat()
+        dt = raw if raw.tzinfo is not None else raw.replace(tzinfo=_dt.UTC)
+        return dt.astimezone(_dt.UTC).isoformat()
     try:
         parsed = _dt.datetime.fromisoformat(str(raw))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=_dt.timezone.utc)
-        return parsed.astimezone(_dt.timezone.utc).isoformat()
+            parsed = parsed.replace(tzinfo=_dt.UTC)
+        return parsed.astimezone(_dt.UTC).isoformat()
     except ValueError:
         return _UNKNOWN_MODIFIED_AT
 
@@ -218,7 +221,7 @@ def ingest_rb(
 
     start = time.perf_counter()
     report = IngestReport(rb_path=str(rb_db_path), dry_run=dry_run)
-    now_fn = clock or (lambda: _dt.datetime.now(_dt.timezone.utc))
+    now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
 
     rb_db = Rekordbox6Database(path=str(rb_db_path), unlock=False)
     # [I2] Use the public ``raw_conn`` accessor so this outer SAVEPOINT
@@ -270,11 +273,7 @@ def ingest_rb(
                 # streaming URIs so we do not spuriously call
                 # os.path.exists / os.path.getmtime on schemes that will
                 # never resolve on disk.
-                if (
-                    path_str
-                    and not track["is_streaming"]
-                    and os.path.exists(path_str)
-                ):
+                if path_str and not track["is_streaming"] and os.path.exists(path_str):
                     try:
                         mtime = os.path.getmtime(path_str)
                     except OSError:
@@ -299,11 +298,8 @@ def ingest_rb(
                 seen_sids.add(sid)
 
                 content_hash = _content_hash_for(path_str, track["is_streaming"])
-                if (
-                    content_hash is None
-                    and path_str
-                    and not track["is_streaming"]
-                ):
+                audio_hash = _audio_hash_for(path_str, track["is_streaming"])
+                if content_hash is None and path_str and not track["is_streaming"]:
                     report.content_hash_missing += 1
 
                 changed = writer.upsert_track(
@@ -316,6 +312,7 @@ def ingest_rb(
                     duration_ms=track["duration_ms"],
                     file_path=path_str or None,
                     content_hash=content_hash,
+                    audio_hash=audio_hash,
                 )
                 if changed:
                     existing_vendor = conn.execute(
@@ -336,34 +333,43 @@ def ingest_rb(
                 modified_at = _rb_modified_at(track["updated_at"])
                 if track["bpm"] is not None:
                     if writer.set_field(
-                        sid, "bpm", track["bpm"],
-                        source="rekordbox", modified_at=modified_at,
+                        sid,
+                        "bpm",
+                        track["bpm"],
+                        source="rekordbox",
+                        modified_at=modified_at,
                     ):
                         report.fields_written += 1
                 if track["key_name"]:
                     if writer.set_field(
-                        sid, "key", track["key_name"],
-                        source="rekordbox", modified_at=modified_at,
+                        sid,
+                        "key",
+                        track["key_name"],
+                        source="rekordbox",
+                        modified_at=modified_at,
                     ):
                         report.fields_written += 1
                 if track["rating"] is not None:
                     if writer.set_field(
-                        sid, "rating", track["rating"],
-                        source="rekordbox", modified_at=modified_at,
+                        sid,
+                        "rating",
+                        track["rating"],
+                        source="rekordbox",
+                        modified_at=modified_at,
                     ):
                         report.fields_written += 1
 
             for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
                 pl_id = compute_playlist_id("rekordbox", rb_pl_id)
                 inserted = writer.insert_playlist(
-                    playlist_id=pl_id, name=pl_name,
-                    vendor="rekordbox", vendor_pl_id=rb_pl_id,
+                    playlist_id=pl_id,
+                    name=pl_name,
+                    vendor="rekordbox",
+                    vendor_pl_id=rb_pl_id,
                 )
                 if inserted:
                     report.playlists_inserted += 1
-                member_sids = [
-                    rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable
-                ]
+                member_sids = [rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable]
                 writer.set_playlist_memberships(pl_id, member_sids)
 
             writer.register_adapter(
@@ -403,11 +409,9 @@ def ingest_rb(
     return report
 
 
-def _write_csv_artefact(
-    conn: sqlite3.Connection, out_dir: Path, report: IngestReport
-) -> Path:
+def _write_csv_artefact(conn: sqlite3.Connection, out_dir: Path, _report: IngestReport) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d-%H%M%S")
     out_path = out_dir / f"ingest-rekordbox-{stamp}.csv"
     with out_path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
@@ -523,9 +527,7 @@ def run_cli(args: argparse.Namespace) -> int:
         )
         _print_summary(report)
         if args.write:
-            csv_path = _write_csv_artefact(
-                conn, shared_paths.STATE_DIR, report
-            )
+            csv_path = _write_csv_artefact(conn, shared_paths.STATE_DIR, report)
             print(f"  csv:              {csv_path}")
     except PathCollisionError as exc:
         print(f"error: {exc}", file=sys.stderr)

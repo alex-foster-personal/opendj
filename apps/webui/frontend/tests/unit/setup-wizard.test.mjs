@@ -28,6 +28,8 @@ const API_BASE = 'https://setup.example.test';
 
 let mod;
 let wizard;
+/** The singleton's source as CONSTRUCTED, read before any _resetForTests. */
+let constructedSource;
 let originalFetch;
 let requests;
 
@@ -103,6 +105,14 @@ function folderScan(overrides = {}) {
 	};
 }
 
+function folderRow(path, scan = null, id = 'row-1') {
+	return { id, path, scan };
+}
+
+function emptyFolderRows() {
+	return [folderRow('', null)];
+}
+
 function job(overrides = {}) {
 	return {
 		id: 'job-setup-1',
@@ -145,6 +155,7 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	wizard = mod.setupWizard;
+	constructedSource = wizard.source;
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = async () => jsonResponse(engineHealth());
 	assert.equal(await mod.capabilities.probe(), 'engine');
@@ -173,6 +184,17 @@ test('the steps run welcome -> detect -> confirm -> progress -> stems -> done', 
 	]);
 });
 
+test('an unselected source never visits confirm', () => {
+	const route = mod.visibleSteps(null);
+	assert.ok(!route.includes('confirm'), 'confirm requires an explicit rekordbox choice');
+});
+
+test('selecting rekordbox explicitly restores the confirm route', () => {
+	const route = mod.visibleSteps('rekordbox');
+	assert.ok(route.includes('confirm'));
+	assert.equal(mod.nextStepFor('detect', 'rekordbox'), 'confirm');
+});
+
 test('next and previous clamp at both ends rather than falling off', () => {
 	assert.equal(mod.previousStep('welcome'), 'welcome');
 	assert.equal(mod.nextStep('done'), 'done');
@@ -180,8 +202,13 @@ test('next and previous clamp at both ends rather than falling off', () => {
 	assert.equal(mod.previousStep('done'), 'stems');
 });
 
+test('detect refuses Next until a source is chosen', () => {
+	const ctx = { source: null, detection: detection(), folderScan: null, job: null };
+	assert.match(mod.advanceRefusal('detect', ctx), /choose an import source/);
+});
+
 test('detect refuses Next until detection has answered', () => {
-	const ctx = { source: 'rekordbox', detection: null, folderScan: null, job: null };
+	const ctx = { source: 'rekordbox', detection: null, folderRows: emptyFolderRows(), job: null };
 	assert.match(mod.advanceRefusal('detect', ctx), /has not answered/);
 });
 
@@ -189,7 +216,7 @@ test('a fatal blocker refuses Next and names itself', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
-		folderScan: null,
+		folderRows: emptyFolderRows(),
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /rekordbox_not_found/);
@@ -201,7 +228,7 @@ test('a missing share dir warns but does NOT block the import', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_share_missing'] }),
-		folderScan: null,
+		folderRows: emptyFolderRows(),
 		job: null
 	};
 	assert.equal(mod.advanceRefusal('detect', ctx), null);
@@ -214,7 +241,7 @@ test('a rekordbox blocker never blocks the FOLDER branch', () => {
 	const ctx = {
 		source: 'folder',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
-		folderScan: folderScan(),
+		folderRows: [folderRow('/Users/dj/Music', folderScan())],
 		job: null
 	};
 	assert.equal(mod.advanceRefusal('detect', ctx), null);
@@ -224,7 +251,12 @@ test('the folder branch refuses a denied folder and says to grant access', () =>
 	const ctx = {
 		source: 'folder',
 		detection: null,
-		folderScan: folderScan({ denied: true, readable: false, audio_files: 0 }),
+		folderRows: [
+			folderRow(
+				'/Users/dj/Music',
+				folderScan({ denied: true, readable: false, audio_files: 0 })
+			)
+		],
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /blocking that folder/);
@@ -234,14 +266,70 @@ test('the folder branch refuses a readable folder with nothing in it', () => {
 	const ctx = {
 		source: 'folder',
 		detection: null,
-		folderScan: folderScan({ audio_files: 0 }),
+		folderRows: [folderRow('/Users/dj/Music', folderScan({ audio_files: 0 }))],
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /nothing importable/);
 });
 
+test('the folder branch allows one importable row and one empty row', () => {
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: [
+			folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+			folderRow('', null, 'row-2')
+		],
+		job: null
+	};
+	assert.equal(mod.advanceRefusal('detect', ctx), null);
+});
+
+test('the folder branch refuses a non-empty row that was not checked', () => {
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: [
+			folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+			folderRow('/Users/dj/Other', null, 'row-2')
+		],
+		job: null
+	};
+	assert.match(mod.advanceRefusal('detect', ctx), /check \/Users\/dj\/Other first/);
+});
+
+test('a checked row whose path was retyped is no longer importable (#3681 P1)', () => {
+	// [if] a row checked as one folder is edited to another [then] its old scan
+	// no longer vouches for it: Next asks for a check and nothing is imported,
+	// [else stop]. bind:value edits row.path in place and leaves row.scan alone.
+	const rows = [folderRow('/Users/dj/Other', folderScan({ path: '/Users/dj/Music' }))];
+	const ctx = { source: 'folder', detection: null, folderRows: rows, job: null };
+	assert.equal(mod.currentFolderScan(rows[0]), null);
+	assert.match(mod.advanceRefusal('detect', ctx), /no folder has been checked yet/);
+	assert.deepEqual(mod.importableFolderPathsFromRows(rows), []);
+
+	const mixed = [
+		folderRow('/Users/dj/Music', folderScan(), 'row-1'),
+		folderRow('/Users/dj/Other', folderScan({ path: '/Users/dj/Elsewhere' }), 'row-2')
+	];
+	assert.match(
+		mod.advanceRefusal('detect', { ...ctx, folderRows: mixed }),
+		/check \/Users\/dj\/Other first/
+	);
+	assert.deepEqual(mod.importableFolderPathsFromRows(mixed), ['/Users/dj/Music']);
+});
+
+test('an edit that normalizes to the scanned path keeps the scan (#3681 control)', () => {
+	// [if] the retyped path differs only by a trailing separator [then] the scan
+	// still describes it and the row stays importable, [else stop].
+	const rows = [folderRow('/Users/dj/Music/', folderScan())];
+	const ctx = { source: 'folder', detection: null, folderRows: rows, job: null };
+	assert.equal(mod.advanceRefusal('detect', ctx), null);
+	assert.deepEqual(mod.importableFolderPathsFromRows(rows), ['/Users/dj/Music']);
+});
+
 test('progress refuses Next while the import is still live', () => {
-	const ctx = { source: 'rekordbox', detection: detection(), folderScan: null };
+	const ctx = { source: 'rekordbox', detection: detection(), folderRows: emptyFolderRows() };
 	assert.match(
 		mod.advanceRefusal('progress', { ...ctx, job: job({ status: 'running' }) }),
 		/is running/
@@ -278,6 +366,38 @@ test('load fills status and detection from one status request', async () => {
 	assert.equal(wizard.status.tracks, 0);
 	assert.equal(wizard.detection.import_source, '/data/master.plain.db');
 	assert.equal(wizard.error, null);
+});
+
+test('STANDALONE-08: the wizard is constructed with NO source, before any reset', () => {
+	// Mutation guard: _resetForTests() nulls the source before every test, so
+	// only the value captured at load time proves the class field itself
+	// defaults to null. Reverting the initial state to 'rekordbox' fails here.
+	assert.equal(constructedSource, null, 'a freshly built wizard must not assume rekordbox');
+});
+
+test('STANDALONE-08: detection alone leaves source unselected and makes no import POST', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+
+	await wizard.load();
+
+	assert.equal(wizard.source, null, 'detection must not select rekordbox');
+	const importPosts = requests.filter(
+		(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
+	);
+	assert.equal(importPosts.length, 0, 'detection alone must not enqueue an import');
+
+	wizard.useSource('rekordbox');
+	assert.equal(wizard.source, 'rekordbox', 'the explicit pick is the only way to select it');
+	// The import that follows the explicit pick is NOT driven here: a fabricated
+	// 202 for /api/v1/setup/import would be simulated API success (AGENTS.md,
+	// Codex P1 on #3561). The real endpoint is exercised by the browser test
+	// 'STANDALONE-08: rekordbox detection alone does not opt in or import'.
+});
+
+test('_resetForTests leaves source unselected', () => {
+	wizard.useSource('rekordbox');
+	wizard._resetForTests();
+	assert.equal(wizard.source, null);
 });
 
 test('a failed load records the server message and KEEPS what was on screen', async () => {
@@ -365,8 +485,25 @@ test('useSource folder triggers loadFolderCandidates once', async () => {
 
 // ------------------------------------------------------------------- imports
 
+test('beginImport refuses without rekordbox source and makes no import POST', async () => {
+	routeFetch({ '/api/v1/setup/import': () => jsonResponse(job(), 202) });
+
+	await wizard.beginImport();
+
+	assert.equal(wizard.jobId, null);
+	assert.equal(wizard.step, 'welcome');
+	assert.equal(wizard.error, 'choose rekordbox import before starting');
+	assert.equal(
+		requests.filter(
+			(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
+		).length,
+		0
+	);
+});
+
 test('beginImport advances to progress and records the job id', async () => {
 	routeFetch({ '/api/v1/setup/import': () => jsonResponse(job(), 202) });
+	wizard.useSource('rekordbox');
 
 	await wizard.beginImport();
 
@@ -388,6 +525,7 @@ test('a refused import leaves the step alone and shows the server sentence', asy
 				409
 			)
 	});
+	wizard.useSource('rekordbox');
 	wizard.goTo('confirm');
 
 	await wizard.beginImport();
@@ -405,28 +543,31 @@ test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async
 			return jsonResponse(job(), 202);
 		}
 	});
+	wizard.useSource('rekordbox');
 
 	await wizard.beginImport({ refreshDecrypt: true });
 
 	assert.deepEqual(body, { refresh_decrypt: true });
 });
 
-test('checkFolder scans without importing, and carries the path as a query', async () => {
+test('checkFolderRow scans without importing, and carries the path as a query', async () => {
 	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+	wizard.folderRows = [folderRow('  /Users/dj/Music  ')];
 
-	await wizard.checkFolder('  /Users/dj/Music  ');
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 
 	const url = new URL(requests[0].url);
 	assert.equal(url.pathname, '/api/v1/setup/detect/folder');
 	assert.equal(url.searchParams.get('path'), '/Users/dj/Music');
 	assert.equal(requests[0].method, 'GET');
-	assert.equal(wizard.folderScan.audio_files, 12);
-	assert.equal(wizard.folderPath, '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/Music');
 });
 
-test('checkFolder refuses an empty path without issuing a request', async () => {
+test('checkFolderRow refuses an empty path without issuing a request', async () => {
 	routeFetch({});
-	await wizard.checkFolder('   ');
+	wizard.folderRows = [folderRow('   ')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	assert.equal(requests.length, 0);
 	assert.match(wizard.error, /type a folder path/);
 });
@@ -448,11 +589,41 @@ test('beginFolderImport posts the folder and advances', async () => {
 		}
 	});
 
-	await wizard.checkFolder('/Users/dj/Music');
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	await wizard.beginFolderImport();
 
 	assert.deepEqual(body, { folders: ['/Users/dj/Music'] });
 	assert.equal(wizard.step, 'progress');
+});
+
+test('beginFolderImport posts every validated folder row', async () => {
+	let body;
+	routeFetch({
+		'/api/v1/setup/detect/folder': (request, url) => {
+			const path = url.searchParams.get('path');
+			return jsonResponse(
+				folderScan({
+					path,
+					sample: [`${path}/a.wav`]
+				})
+			);
+		},
+		'/api/v1/setup/import/folder': async (request) => {
+			body = await request.clone().json();
+			return jsonResponse(job({ kind: 'setup.import-rekordbox' }), 202);
+		}
+	});
+
+	wizard.folderRows = [
+		folderRow('/Users/dj/Music', null, 'row-1'),
+		folderRow('/Users/dj/Other', null, 'row-2')
+	];
+	await wizard.checkFolderRow('row-1');
+	await wizard.checkFolderRow('row-2');
+	await wizard.beginFolderImport();
+
+	assert.deepEqual(body, { folders: ['/Users/dj/Music', '/Users/dj/Other'] });
 });
 
 test('a 403 on the folder import keeps the grant instructions verbatim', async () => {
@@ -470,7 +641,8 @@ test('a 403 on the folder import keeps the grant instructions verbatim', async (
 			)
 	});
 
-	await wizard.checkFolder('/Users/dj/Music');
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	await wizard.beginFolderImport();
 
 	assert.match(wizard.error, /Open System Settings/);
@@ -494,13 +666,28 @@ test('skip persists engine-side rather than in this tab', async () => {
 	assert.equal(wizard.status.should_show_wizard, false);
 });
 
+test('STANDALONE-08: declining clears the source, so every reopen door is neutral', async () => {
+	// Codex P2 on #3561: the incomplete chip's "Run setup" raises the overlay
+	// WITHOUT setupWizard.reopen(), so the reset has to happen on the way out.
+	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: true }) });
+	wizard.useSource('rekordbox');
+
+	await wizard.skip();
+
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.status.dismissed, true);
+	assert.equal(wizard.source, null, 'a declined import must not survive as a selection');
+});
+
 test('reopen re-arms the wizard and returns it to the first step', async () => {
 	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: false }) });
+	wizard.useSource('rekordbox');
 	wizard.goTo('done');
 
 	await wizard.reopen();
 
 	assert.equal(wizard.step, 'welcome');
+	assert.equal(wizard.source, null, 'reopen must clear the prior source choice');
 	assert.equal(wizard.status.dismissed, false);
 });
 
@@ -555,6 +742,11 @@ test('folderIsImportable needs a readable folder with something in it', () => {
 	assert.equal(mod.folderIsImportable(folderScan()), true);
 });
 
+test('normalizeSetupFolderPath strips a trailing slash but preserves root', () => {
+	assert.equal(mod.normalizeSetupFolderPath('/Users/dj/Music/'), '/Users/dj/Music');
+	assert.equal(mod.normalizeSetupFolderPath('/'), '/');
+});
+
 // ------------------------------------------------------------- capability gate
 
 test('a legacy daemon issues NO setup request and says why', async () => {
@@ -564,7 +756,8 @@ test('a legacy daemon issues NO setup request and says why', async () => {
 	try {
 		await wizard.load();
 		await wizard.redetect();
-		await wizard.checkFolder('/Users/dj/Music');
+		wizard.folderRows = [folderRow('/Users/dj/Music')];
+		await wizard.checkFolderRow(wizard.folderRows[0].id);
 		await wizard.beginImport();
 		await wizard.beginFolderImport();
 		await wizard.skip();

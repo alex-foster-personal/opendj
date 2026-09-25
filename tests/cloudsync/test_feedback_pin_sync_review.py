@@ -112,7 +112,8 @@ def test_a_bulk_harvest_on_one_machine_never_empties_another_machines_board(
     # The harvest still holds on the machine that ran it, and does not churn.
     again = silver.sync()
     assert (again["exported"], again["imported"]) == (0, 0), again
-    assert pin["id"] not in silver.pins(), "silver's own harvest was undone by sync"
+    assert pin["id"] in silver.pins(), "silver harvest removed pin from live board"
+    assert silver.pins()[pin["id"]]["status"] == "harvested"
     assert silver.status(pin["id"])["pins"][0]["state"] == "harvested"
 
     # A later edit on another machine brings it back, like any newer edit.
@@ -120,6 +121,32 @@ def test_a_bulk_harvest_on_one_machine_never_empties_another_machines_board(
     air.sync()
     silver.sync()
     assert silver.pins()[pin["id"]]["agent_note"] == "still broken after the harvest"
+
+
+@pytest.mark.requirement("FB-15")
+def test_a_sync_tombstone_loses_to_a_newer_local_reply(
+    air: Engine, silver: Engine
+) -> None:
+    """[if] local reply is newer than tombstone [then] tombstone is rejected, [else stop]."""
+    pin = air.drop("survives tombstone")
+    air.patch(pin["id"], status="fixed")
+    air.sync()
+    silver.sync()
+
+    archived = silver.http.post(f"/api/v1/feedback/comments/{pin['id']}/archive")
+    assert archived.status_code == 200, archived.text
+    silver.sync()
+
+    air.http.post(
+        f"/api/v1/feedback/comments/{pin['id']}/replies",
+        json={"text": "still open after fix attempt"},
+    )
+    air.sync()
+
+    assert pin["id"] in air.pins(), "newer local reply lost to sync tombstone"
+    assert air.pins()[pin["id"]]["status"] == "open"
+    row = air.row(pin["id"])
+    assert row is not None and row[3] is None, "tombstone won over newer local reply"
 
 
 # ----- P1-2: version skew between builds -------------------------------------

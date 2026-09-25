@@ -1,7 +1,7 @@
 """Rule-AST walker helpers."""
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from .schema import LOGICAL_OPS
 

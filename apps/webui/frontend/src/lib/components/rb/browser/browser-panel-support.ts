@@ -35,6 +35,7 @@ export {
 } from '$lib/rb/auto-play';
 export { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 export { fillAllTracksPane } from './fill-all-tracks';
+export { fillPlaylistPane, PLAYLIST_FIRST_PAGE } from './fill-playlist-pane';
 export { fillAutolistPane } from './fill-autolist';
 export {
 	autolistNode,
@@ -50,5 +51,6 @@ export {
 export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
+export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';

@@ -1,7 +1,9 @@
 """Playlist endpoints + diff viewer -- CAT-05 (+ parity contract items 2/4)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -13,10 +15,18 @@ from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..etag import compute_etag
-from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
+from ..models import (
+    PlaylistDetail,
+    PlaylistDiff,
+    PlaylistSummary,
+    PlaylistTracksPage,
+    TrackRowOut,
+)
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
+
+AvailabilitySummary = Literal["all", "skip"]
 
 
 class DeletedPlaylistOut(BaseModel):
@@ -41,11 +51,11 @@ ORDER BY p.deleted_at DESC, p.playlist_id
 """
 
 
-@router.get("", response_model=list[PlaylistSummary])
-def list_playlists(
-    backend: StateBackend = Depends(get_read_state),
+def _playlist_summaries(
+    playlists: list,
+    backend: StateBackend,
+    availability: AvailabilitySummary,
 ) -> list[PlaylistSummary]:
-    playlists = backend.list_playlists()
     # Rekordbox playlists carry the user's custom tree order (djmdPlaylist
     # ParentID/Seq - SCREENSHOT-SPEC 5b); resolve it once for the whole list.
     # Only consult Rekordbox when at least one row can actually participate in
@@ -59,24 +69,33 @@ def list_playlists(
     ):
         order = rb_vendor.playlist_order_index()
 
-    # available_count (FR-1 item 4): one bulk vendor lookup + one cached
-    # stat pass across every member of every playlist -- never a per-row
-    # stat fan-out. A membership pointing at a stable_id with no track row
-    # counts as unavailable (it is certainly not playable from disk).
-    member_ids = sorted({sid for pl in playlists for sid in pl.items})
-    # get_file_paths_bulk, not get_tracks_bulk: available_count only ever
-    # reads .file_path, and hydrating a full Track (EAV pass included) per
-    # member for a field the summary discards was ~37% of this route's wall
-    # time (pin e0f3a90652a9, measured Sat 5 Sep 2026 against the real
-    # library: 7155 unique members).
-    file_paths = backend.get_file_paths_bulk(member_ids)
-    available = rb_vendor.bulk_availability(member_ids, file_paths)
+    member_availability: Mapping[str, str] = {}
+    if availability != "skip":
+        # available_count (FR-1 item 4): index-backed availability across every
+        # playlist member with zero in-request filesystem stats (PERF-RB-01).
+        # A membership pointing at a stable_id with no track row counts as
+        # unavailable (it is certainly not playable from disk).
+        member_ids = sorted({sid for pl in playlists for sid in pl.items})
+        # get_file_paths_bulk, not get_tracks_bulk: available_count only ever
+        # reads .file_path, and hydrating a full Track (EAV pass included) per
+        # member for a field the summary discards was ~37% of this route's wall
+        # time (pin e0f3a90652a9, measured Sat 5 Sep 2026 against the real
+        # library: 7155 unique members).
+        file_paths = backend.get_file_paths_bulk(member_ids)
+        member_availability = rb_vendor.bulk_availability_for_playlist_summary(
+            member_ids, file_paths,
+        )
+
     return [
         PlaylistSummary(
             playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,
             track_count=len(pl.items),
-            available_count=sum(
-                1 for sid in pl.items if available.get(sid, False)
+            available_count=(
+                -1
+                if availability == "skip"
+                else sum(
+                    1 for sid in pl.items if member_availability.get(sid) == "present"
+                )
             ),
             updated_at=pl.updated_at,
             forbid_duplicates=pl.forbid_duplicates,
@@ -90,6 +109,21 @@ def list_playlists(
     ]
 
 
+@router.get("", response_model=list[PlaylistSummary])
+def list_playlists(
+    availability: AvailabilitySummary = Query(  # noqa: B008  # FastAPI DI
+        "all",
+        description=(
+            "When ``skip``, omit the bulk available_count pass and return "
+            "``available_count=-1`` per row for fast tree paint (PERF-UI-05)."
+        ),
+    ),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> list[PlaylistSummary]:
+    playlists = backend.list_playlists()
+    return _playlist_summaries(playlists, backend, availability)
+
+
 @router.get(
     "/deleted",
     response_model=list[DeletedPlaylistOut],
@@ -97,7 +131,7 @@ def list_playlists(
 )
 def list_deleted_playlists(
     request: Request,
-    _backend: StateBackend = Depends(get_read_state),
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[DeletedPlaylistOut]:
     db_path = Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
     if not db_path.is_file():
@@ -127,18 +161,61 @@ def list_deleted_playlists(
     ]
 
 
+@router.get("/{playlist_id}/tracks", response_model=PlaylistTracksPage)
+def list_playlist_tracks(
+    playlist_id: str,
+    response: Response,
+    limit: int = Query(100, ge=1, le=500),  # noqa: B008  # FastAPI DI
+    offset: int = Query(0, ge=0),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> PlaylistTracksPage:
+    """Paginated hydrated membership slice for first-page library paint.
+
+    Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.
+    Full detail remains on ``GET /playlists/{playlist_id}``.
+    """
+    pl = backend.get_playlist(playlist_id)
+    response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
+    total = len(pl.items)
+    slice_ids = pl.items[offset : offset + limit]
+    if not slice_ids:
+        next_offset = None if offset >= total else offset + limit
+        return PlaylistTracksPage(tracks=[], total=total, next_offset=next_offset)
+
+    tracks_map = backend.get_tracks_bulk(slice_ids)
+    missing = [sid for sid in slice_ids if sid not in tracks_map]
+    if missing:
+        raise HTTPException(status_code=500, detail={
+            "code": "PLAYLIST_MEMBER_MISSING",
+            "message": (
+                f"playlist {playlist_id} references {len(missing)} stable_ids "
+                f"with no track row (first: {missing[:5]})"
+            ),
+        })
+    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids])
+    item_ids = list(pl.item_ids or [])
+    tracks: list[TrackRowOut] = []
+    for i, row in enumerate(rows):
+        iid = item_ids[offset + i] if offset + i < len(item_ids) else None
+        tracks.append(TrackRowOut(**row, item_id=iid or None))
+    next_offset = offset + len(slice_ids)
+    if next_offset >= total:
+        next_offset = None
+    return PlaylistTracksPage(tracks=tracks, total=total, next_offset=next_offset)
+
+
 @router.get("/{playlist_id}", response_model=PlaylistDetail)
 def get_playlist(
     playlist_id: str,
     response: Response,
-    available: AvailableFilter = Query(
+    available: AvailableFilter = Query(  # noqa: B008  # FastAPI DI
         "all",
         description=(
             "Filter the hydrated `tracks` rows on file_exists disk truth "
             "(FR-1 agent parity). `items` always stays the full membership."
         ),
     ),
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> PlaylistDetail:
     pl = backend.get_playlist(playlist_id)
     # add-remove-reorder-tracks: the write side's PUT .../tracks requires
@@ -166,7 +243,7 @@ def get_playlist(
     for i, row in enumerate(rows):
         iid = item_ids[i] if i < len(item_ids) else None
         out = TrackRowOut(**row, item_id=iid or None)
-        if keep_by_availability(available, row["file_exists"]):
+        if keep_by_availability(available, row.get("file_exists")):
             tracks.append(out)
     return PlaylistDetail(
         playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,
@@ -186,7 +263,7 @@ def get_playlist(
 @router.get("/{playlist_id}/rb-djay-diff")
 def get_playlist_rb_djay_diff(
     playlist_id: str,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> dict:
     """Return saved playlist-plan diff buckets for one playlist when computed."""
     pl = backend.get_playlist(playlist_id)

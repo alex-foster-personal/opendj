@@ -38,12 +38,14 @@
 
 import { pushToast } from '$lib/stores.svelte';
 import { deckStates, engine, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { onMidiFaderMove } from '$lib/rb/fader-ghost.svelte';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
 	midiState,
 	registerActionHandler,
-	sendLed
+	sendLed,
+	unregisterActionHandler
 } from '$lib/rb/midi/webmidi.svelte';
 import type { LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -228,6 +230,7 @@ export function handleMidiAction(
 					pressT0Ms
 				);
 			} else if (action.target === 'fader') {
+				onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
 				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
@@ -387,6 +390,14 @@ export function attachMidiGlue(): () => void {
 	});
 	return () => {
 		stopLeds();
+		// Release the handler webmidi holds, not just this module's latch.
+		// registerActionHandler() throws while one is registered, so leaving it
+		// behind made the next attach (a /performance remount) throw from
+		// inside requestMidiAccess(), whose catch also calls
+		// setMidiEnabledChoice(false) -- losing the user's MIDI opt-in on the
+		// way out. unregisterActionHandler()'s docstring already said the
+		// teardown calls it; only the call was missing.
+		unregisterActionHandler();
 		_attached = false;
 	};
 }

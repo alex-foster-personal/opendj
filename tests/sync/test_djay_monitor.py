@@ -1,7 +1,7 @@
 """Tests for the ported djay now-playing monitor."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -18,7 +18,7 @@ from apps.sync.djay_monitor import (
 def test_coredata_timestamp_roundtrips_to_utc_datetime():
     # 2026-01-01 00:00:00 UTC in Core Data seconds = 788918400
     dt = coredata_timestamp_to_datetime(788918400.0)
-    assert dt == datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert dt == datetime(2026, 1, 1, tzinfo=UTC)
 
 
 @pytest.mark.requirement("SET-01")

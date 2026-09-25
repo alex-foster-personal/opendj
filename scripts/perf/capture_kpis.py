@@ -24,6 +24,7 @@ from typing import Any
 from urllib.error import URLError
 
 from scripts.perf import capture_s5, capture_s12
+from scripts.perf.capture_boot_library import capture_boot_library
 from scripts.perf.capture_kpi_ledger import (
     DEFAULT_LEDGER,
     HEALTH_TIMEOUT_S,
@@ -37,7 +38,6 @@ from scripts.perf.capture_kpi_ledger import (
     required_numeric_present,
     session_meta,
 )
-from scripts.perf.capture_boot_library import capture_boot_library
 from scripts.perf.capture_s2 import capture_s2
 from scripts.perf.capture_s13 import capture_s13
 

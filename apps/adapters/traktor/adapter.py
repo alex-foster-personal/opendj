@@ -147,7 +147,7 @@ class TraktorAdapter:
             playtime_s = info.get("PLAYTIME")
             if playtime_s:
                 try:
-                    playtime = int(round(float(playtime_s) * 1000))
+                    playtime = round(float(playtime_s) * 1000)
                 except ValueError:
                     playtime = None
         cues = tuple(self._read_cues(entry, track_id, report))
@@ -182,7 +182,7 @@ class TraktorAdapter:
             cue_type = traktor_cue_type_to_opendj(cue_el.get("TYPE"))
             start_ms = 0
             try:
-                start_ms = int(round(float(cue_el.get("START", "0"))))
+                start_ms = round(float(cue_el.get("START", "0")))
             except ValueError:
                 report.warn(field="cue_points.position", track_id=track_id,
                             action="dropped", reason="unparseable CUE_V2 @START")
@@ -190,7 +190,7 @@ class TraktorAdapter:
             length_attr = cue_el.get("LEN")
             if length_attr:
                 try:
-                    length_ms = int(round(float(length_attr)))
+                    length_ms = round(float(length_attr))
                 except ValueError:
                     length_ms = None
             cues.append(
@@ -265,7 +265,7 @@ class TraktorAdapter:
     # -------------------------------------------------------------- playlists
 
     def _read_playlists(
-        self, doc: NMLDocument, report: AdapterReport
+        self, doc: NMLDocument, _report: AdapterReport
     ) -> list[Playlist]:
         playlists: list[Playlist] = []
         pls_el = doc.root.find("PLAYLISTS")

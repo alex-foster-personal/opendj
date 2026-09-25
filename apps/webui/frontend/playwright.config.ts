@@ -81,6 +81,7 @@ export default defineConfig({
 		'**/artwork-reader-unavailable.spec.ts', // playwright.rekordbox-gate.config.ts (30s root timeout too tight, #1463 thread 3961468764)
 		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
+		'**/library-playlist-switch-latency.spec.ts', // playwright.playlist-switch-latency.config.ts (PERF-UI-05 gate)
 		'**/stem-decode-bench.spec.ts', // playwright.stem-decode-bench.config.ts (production-build bench)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
@@ -88,6 +89,7 @@ export default defineConfig({
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
+		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (library-mode KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		// Same owner as the line above, and for the same reason: it imports
@@ -108,6 +110,7 @@ export default defineConfig({
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
 		'**/lyrics-words.spec.ts', // playwright.lyrics-words.config.ts (real backend, words fixture)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
+		'**/midi-maps-resync.spec.ts', // playwright.midi-maps-resync.config.ts (engine + real WS)
 		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)

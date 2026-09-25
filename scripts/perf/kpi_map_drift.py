@@ -170,6 +170,12 @@ def _unit_wants(unit: str) -> tuple[bool, bool]:
     return "ms" in lowered, ("%" in unit or "pct" in lowered)
 
 
+def _is_ratio(unit: str) -> bool:
+    """A `ratio` KPI is a fraction (0.6) that its spec cell states as a
+    percentage ("<=60%"), so the two compare after dividing the cell by 100."""
+    return unit.strip().lower() == "ratio"
+
+
 def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | None:
     """Does the FIRST number in `cell` assert `threshold` (recorded in `unit`)?
 
@@ -204,8 +210,11 @@ def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | No
             return None
         if wants_ms:
             value *= 1000
-    elif cell_unit == "%" and not wants_pct:
-        return None
+    elif cell_unit == "%":
+        if _is_ratio(unit):
+            value /= 100
+        elif not wants_pct:
+            return None
     return math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-9)
 
 
@@ -240,6 +249,8 @@ def _direction_matches(lower_is_better: bool, column: str, cell: str) -> bool | 
 
 def _per_kpi_family(unit: str) -> str:
     wants_ms, wants_pct = _unit_wants(unit)
+    if _is_ratio(unit):
+        return "ratio"
     if wants_pct:
         return "pct"
     if wants_ms:
@@ -249,7 +260,8 @@ def _per_kpi_family(unit: str) -> str:
     return "bare"
 
 
-_FAMILY_TAG = {"ms": "ms", "s": "s", "pct": "%", "bare": None}
+_FAMILY_TAG = {"ms": "ms", "s": "s", "pct": "%", "ratio": "%", "bare": None}
+_FAMILY_SCALE = {"ratio": 0.01}
 
 
 def _strict_family_candidates(cell: str, family: str) -> list[float]:
@@ -273,8 +285,9 @@ def _strict_family_candidates(cell: str, family: str) -> list[float]:
     """
     stripped = _PERCENTILE_LABEL.sub("", cell)
     wants_tag = _FAMILY_TAG[family]
+    scale = _FAMILY_SCALE.get(family, 1.0)
     return [
-        float(raw)
+        float(raw) * scale
         for raw, cell_unit in _CELL_NUMBER.findall(stripped)
         if (cell_unit or None) == wants_tag
     ]
@@ -348,7 +361,7 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     problems: list[str] = []
     family_rank: dict[str, int] = {}
     raw_entries = cfg.get("required", [])
-    for raw, req in zip(raw_entries, resolve_required(cfg)):
+    for raw, req in zip(raw_entries, resolve_required(cfg), strict=False):
         if isinstance(raw, str):
             continue
         family = _per_kpi_family(str(req.get("unit", "")))

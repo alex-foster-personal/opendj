@@ -319,6 +319,17 @@ test('subscribeKind receives only its own library.changed kind, with the ids lif
 	assert.deepEqual(errors, [], 'mytags is a known kind with no subscriber, not an error');
 });
 
+test('midi_maps is a known kind, matching what routes/midi_maps.py publishes on PUT/DELETE', () => {
+	const mapIds = [];
+	bus.subscribeKind('midi_maps', (ids) => mapIds.push(...ids));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	socket.deliver('library.changed', 1, { kind: 'midi_maps', ids: ['ddj-400'] });
+
+	assert.deepEqual(mapIds, ['ddj-400']);
+	assert.deepEqual(errors, []);
+});
+
 test('a kind subscriber also sees the envelope, and its handle detaches it', () => {
 	const seen = [];
 	const unsubscribe = bus.subscribeKind('tracks', (ids, envelope) =>

@@ -116,8 +116,11 @@ def test_health_reports_the_contract(probe: dict) -> None:
     assert probe["health_in_schema"]
 
 
-def test_progress_router_is_not_mounted(probe: dict) -> None:
-    assert probe["progress_routes"] == []
+def test_progress_router_is_mounted(probe: dict) -> None:
+    routes = sorted(probe["progress_routes"])
+    assert any(route.endswith("/progress") for route in routes)
+    assert any(route.endswith("/progress/schema") for route in routes)
+    assert any("/progress/nodes/" in route for route in routes)
 
 
 def test_contract_rev_changes_when_the_schema_or_ws_version_changes() -> None:
