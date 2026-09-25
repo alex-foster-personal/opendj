@@ -7,9 +7,9 @@
 #
 # USAGE
 #   MDT_MACOS_SIGNING_IDENTITY=... MDT_MACOS_NOTARY_KEYCHAIN_PROFILE=... \
-#     scripts/install_dmg_smoke_launchd.sh
-#   scripts/install_dmg_smoke_launchd.sh --render-to FILE
-#   scripts/install_dmg_smoke_launchd.sh --install
+#     scripts/install_dmg_smoke_launchd.sh --host-label air
+#   scripts/install_dmg_smoke_launchd.sh --host-label air --render-to FILE
+#   scripts/install_dmg_smoke_launchd.sh --host-label air --install
 set -euo pipefail
 
 shopt -u patsub_replacement 2>/dev/null || true
@@ -47,6 +47,9 @@ if [ "$INSTALL" = 1 ] && [ "$(uname -s)" != "Darwin" ]; then
   exit 2
 fi
 
+# Supersedes: the implicit "air" attribution in ops/dmg-smoke/run.sh
+# (`${MDT_DMG_SMOKE_HOST_LABEL:-air}`), deleted there; run.sh now requires the
+# variable this flag renders into the plist.
 # --host-label has no hidden default (claude-review, PR #3827, round 2, P2):
 # a silent "air" fallback would attribute a second Mac's dmg-smoke runs to
 # Air in the ledger/evidence with no error, exactly the corruption

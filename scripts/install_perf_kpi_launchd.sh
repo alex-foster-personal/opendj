@@ -29,6 +29,9 @@ require_env MDT_PERF_KPI_LARGE_STABLE_ID
 require_env MDT_PERF_KPI_STEMMED_STABLE_ID
 require_env MDT_PERF_KPI_DATA_DIR
 
+# Supersedes: the nightly template's hardcoded `air` MDT_PERF_KPI_MACHINE and
+# perf_kpi_config.py's `or "air"` fallback, both removed; the label now comes
+# only from this flag (or the variable) and the nightly path requires it.
 # --host-label/MDT_PERF_KPI_MACHINE has no hidden default (claude-review,
 # PR #3827, round 3, P1/BLOCKING): a silent "air" fallback would attribute
 # a second Mac's perf-kpi runs to Air in the ledger with no error -- the
