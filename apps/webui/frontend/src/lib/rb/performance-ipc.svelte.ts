@@ -2928,3 +2928,11 @@ export function installPerformanceBrowserIpc(): () => void {
 		delete window.musicDjToolsPerformance;
 	};
 }
+
+/**
+ * Re-exported for Trackify (PERFMODE-15): performance-ipc.svelte.ts is
+ * already a stores.svelte importer, so routing pushToast through here keeps
+ * the frontend.max_fan_in count on stores.svelte from growing when a new
+ * consumer needs it (.planning/debt/1141.md precedent).
+ */
+export { pushToast } from '$lib/stores.svelte';

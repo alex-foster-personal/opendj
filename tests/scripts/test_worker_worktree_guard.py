@@ -54,6 +54,37 @@ def test_preflight_refuses_primary_ahead_of_origin(origin_repo: tuple[Path, Path
         guard.assert_clean_origin_base(checkout, "origin/main")
 
 
+def test_preflight_refuses_dirty_working_tree(origin_repo: tuple[Path, Path]) -> None:
+    """[if] the primary checkout has uncommitted changes [then] worker preflight
+    refuses with a named reason, [else stop].
+
+    This is the half of R-1 that PR #3359's own tests never exercised: both
+    existing checks above cover "ahead of origin" and "source-local base", but
+    nothing dirtied the working tree without also committing. Mutation testing
+    (issue #3352 follow-on, PR #3927) confirmed disabling the dirty branch of
+    `assert_clean_origin_base` left every prior test green.
+    """
+    _, checkout = origin_repo
+    (checkout / "untracked.txt").write_text("uncommitted\n")
+
+    with pytest.raises(guard.PreflightError, match="dirty"):
+        guard.assert_clean_origin_base(checkout, "origin/main")
+
+
+def test_preflight_passes_clean_checkout_at_origin(origin_repo: tuple[Path, Path]) -> None:
+    """[if] the primary checkout is clean and exactly at origin/main [then]
+    preflight raises nothing, [else stop].
+
+    Overshoot control for the dirty-checkout test above: a guard that refuses
+    every checkout (or refuses on any file existing) would also make this test
+    fail, so a passing dirty-check needs this control alongside it, not instead
+    of it.
+    """
+    _, checkout = origin_repo
+
+    guard.assert_clean_origin_base(checkout, "origin/main")
+
+
 def test_preflight_refuses_source_local_base(origin_repo: tuple[Path, Path]) -> None:
     """[if] base is a local branch [then] worker preflight refuses, [else stop]."""
     _, checkout = origin_repo

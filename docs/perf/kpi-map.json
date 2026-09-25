@@ -456,7 +456,7 @@
         "acceptable": "footprint <=75% and CPU (renderer+gpu-process only) <=55%",
         "breaking": "footprint >90% or CPU (renderer+gpu-process only) >70%"
       },
-      "capture_method": "scripts/perf/capture_library_mode.py on the reference Mac with four loaded decks then Library mode; CPU covers the Chrome renderer + gpu-process only, not the python engine family (no endpoint exposes its per-process CPU)",
+      "capture_method": "scripts/perf/capture_library_mode.py on the reference Mac with four loaded decks then Library mode, in Playwright Chrome as the stand-in for the packaged WKWebView (the shell and WKWebView are not measured); footprint sums every Chromium process plus the live engine family (probe_log members excluded); CPU covers the Chromium family only, not the python engine family (no endpoint exposes its per-process CPU)",
       "absent_verdict": "UNKNOWN"
     },
     "BOOT-LIB": {

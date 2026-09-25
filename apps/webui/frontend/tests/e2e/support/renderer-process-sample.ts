@@ -6,14 +6,9 @@ export interface ProcessInfoEntry {
 	type: string;
 }
 
-export interface RendererProcessIds {
-	rendererPid: number | null;
-	gpuPid: number | null;
-}
-
 export interface ProcessFamilyMember {
 	rss_mb?: unknown;
-	physical_footprint_mb?: unknown;
+	source?: unknown;
 }
 
 export interface ProcessTelemetryBody {
@@ -21,48 +16,78 @@ export interface ProcessTelemetryBody {
 	members?: unknown;
 }
 
-export function selectRendererProcessIds(
-	processInfo: readonly ProcessInfoEntry[]
-): RendererProcessIds {
-	let rendererPid: number | null = null;
-	let gpuPid: number | null = null;
-	for (const entry of processInfo) {
-		if (rendererPid === null && entry.type === 'renderer') {
-			rendererPid = entry.id;
-		}
-		if (gpuPid === null && entry.type === 'gpu-process') {
-			gpuPid = entry.id;
-		}
+/** Every Chromium process `SystemInfo.getProcessInfo` lists: browser,
+ * renderers, gpu-process and utility helpers. The page's own renderer cannot
+ * be told apart from spare or extension renderers by type or order, so the
+ * whole family is the measured unit, the same scope PERFMODE-15 samples. */
+export function selectChromiumFamilyPids(processInfo: readonly ProcessInfoEntry[]): number[] {
+	if (!processInfo.some((entry) => entry.type === 'renderer')) {
+		throw new Error('CDP SystemInfo.getProcessInfo reported no renderer process');
 	}
-	return { rendererPid, gpuPid };
+	return processInfo.map((entry) => {
+		if (!Number.isInteger(entry.id) || entry.id <= 0) {
+			throw new Error(`CDP SystemInfo.getProcessInfo entry has no usable pid: ${JSON.stringify(entry)}`);
+		}
+		return entry.id;
+	});
 }
 
-/** Sum of the engine process family's resident footprint (the python engine
- * plus every descendant it spawns, e.g. stem workers) via the same
- * `/api/v1/performance/telemetry/processes` `members` list stem-backend-workers.ts
- * scans -- this is the half of the KPI's process family that never runs
- * inside the browser CDP can see, so a renderer-only sample undercounts it. */
-export function sumEngineFamilyFootprintMb(body: ProcessTelemetryBody): number {
+/** The engine family members walked live this request (`source: 'live'`).
+ *
+ * The endpoint also merges `source: 'probe_log'` members: processes from the
+ * native probe's last JSONL record that are not live now. That record can be
+ * days old (71 h on the reference Mac, Fri 25 Sep 2026) and describes the
+ * packaged app, not this browser session, so counting it adds the same stale
+ * constant to Gig and Library and drags the ratio toward 1. A member with any
+ * other source means an engine older than the provenance field: fail loudly
+ * rather than guess from field shape. */
+function liveFamilyMembers(body: ProcessTelemetryBody): ProcessFamilyMember[] {
 	if (body.available !== true || !Array.isArray(body.members)) {
 		throw new Error(
 			'process telemetry reported available!==true; cannot measure the engine process family'
 		);
 	}
-	let total = 0;
+	const live: ProcessFamilyMember[] = [];
 	for (const raw of body.members) {
 		if (typeof raw !== 'object' || raw === null) {
 			throw new Error(`process telemetry member is not an object: ${JSON.stringify(raw)}`);
 		}
 		const member = raw as ProcessFamilyMember;
-		const mb =
-			typeof member.rss_mb === 'number'
-				? member.rss_mb
-				: typeof member.physical_footprint_mb === 'number'
-					? member.physical_footprint_mb
-					: null;
-		if (mb === null || !Number.isFinite(mb)) {
+		if (member.source === 'live') {
+			live.push(member);
+		} else if (member.source === 'probe_log') {
+			continue;
+		} else {
 			throw new Error(
-				`process telemetry member has no finite rss_mb/physical_footprint_mb: ${JSON.stringify(raw)}`
+				`process telemetry member has no known source (engine predates member provenance?): ${JSON.stringify(raw)}`
+			);
+		}
+	}
+	return live;
+}
+
+/** Live engine family size (the python engine plus every descendant, e.g.
+ * stem workers). A leaked worker is one extra live member; an exited process
+ * still listed from the probe log is not counted at all. */
+export function countLiveFamilyMembers(body: ProcessTelemetryBody): number {
+	return liveFamilyMembers(body).length;
+}
+
+/** Sum of the live engine family's resident footprint (`rss_mb`, one unit for
+ * every counted member) via the same `/api/v1/performance/telemetry/processes`
+ * `members` list -- the half of the KPI's process family that never runs
+ * inside the browser CDP can see, so a renderer-only sample undercounts it. */
+export function sumEngineFamilyFootprintMb(body: ProcessTelemetryBody): number {
+	const live = liveFamilyMembers(body);
+	if (live.length === 0) {
+		throw new Error('process telemetry listed no live member; the engine family was not measured');
+	}
+	let total = 0;
+	for (const member of live) {
+		const mb = member.rss_mb;
+		if (typeof mb !== 'number' || !Number.isFinite(mb)) {
+			throw new Error(
+				`process telemetry live member has no finite rss_mb: ${JSON.stringify(member)}`
 			);
 		}
 		total += mb;
@@ -88,16 +113,19 @@ function readPsSample(pid: number): { rss_mb: number; cpu_percent: number } {
 
 /**
  * One footprint/CPU sample of the FULL process family under test:
- * - the Chrome renderer + gpu-process CDP drives (stands in for the packaged
- *   WKWebView, which Playwright's Chrome is not -- see PR #3679 review),
+ * - every Chromium process CDP's browser target lists (stands in for the
+ *   packaged WKWebView, which Playwright's Chrome is not -- see PR #3679
+ *   review),
  * - PLUS the python engine and every process it spawns (stem workers),
- *   read from the same telemetry endpoint stem-backend-workers.ts uses.
+ *   read from the telemetry endpoint's `source: 'live'` members only.
  *
- * CPU is renderer+gpu only: the telemetry endpoint's `members` carry
- * footprint (rss_mb / physical_footprint_mb) but no per-process CPU or PID,
- * so the engine family's CPU share cannot be attributed from any existing
- * endpoint without a backend change (tracked, not fabricated here -- see the
- * PR's review-thread reply on this file for the explicit note).
+ * `cdp` must be a BROWSER-target session (`browser.newBrowserCDPSession()`):
+ * a page session rejects SystemInfo.getProcessInfo on every call.
+ *
+ * CPU is the Chromium family only: the telemetry endpoint's `members` carry
+ * footprint (`rss_mb`) but no per-process CPU or PID, so the engine family's
+ * CPU share cannot be attributed from any existing endpoint without a backend
+ * change (tracked, not fabricated here).
  *
  * Every read throws rather than degrading to null: a partial-family median is
  * exactly the false-PASS class this KPI exists to catch, so a failed sample is
@@ -114,20 +142,12 @@ export async function sampleProcessFamilyFootprint(
 	if (!Array.isArray(processInfo)) {
 		throw new Error('CDP SystemInfo.getProcessInfo returned no processInfo array');
 	}
-	const { rendererPid, gpuPid } = selectRendererProcessIds(processInfo);
-	if (rendererPid === null) {
-		throw new Error('CDP SystemInfo.getProcessInfo reported no renderer process');
-	}
-	const rendererSample = readPsSample(rendererPid);
-	let footprintMb = rendererSample.rss_mb;
-	let cpuPercent = rendererSample.cpu_percent;
-	if (gpuPid !== null) {
-		// Found a gpu-process entry: its ps read must succeed too, or Gig and
-		// Library medians would silently mix renderer+gpu samples with
-		// renderer-only ones (the exact defect this review thread caught).
-		const gpuSample = readPsSample(gpuPid);
-		footprintMb += gpuSample.rss_mb;
-		cpuPercent += gpuSample.cpu_percent;
+	let footprintMb = 0;
+	let cpuPercent = 0;
+	for (const pid of selectChromiumFamilyPids(processInfo)) {
+		const processSample = readPsSample(pid);
+		footprintMb += processSample.rss_mb;
+		cpuPercent += processSample.cpu_percent;
 	}
 	const telemetryResponse = await request.get(`${apiBase}/api/v1/performance/telemetry/processes`);
 	if (!telemetryResponse.ok()) {

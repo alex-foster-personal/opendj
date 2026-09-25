@@ -380,14 +380,13 @@ def put_analysis_source(
             _commit_default_or_compensate(
                 conn, body.lane, body.default, body.toggle, toggle_write
             )
-        state = sel.source_state(conn)
-        if toggle_write is not None:
-            # Report the revision THIS write produced, not one re-read
-            # separately from `state` a moment later - a concurrent write
-            # landing in that gap must not make this response claim a
-            # revision the request never actually saw (same reasoning as
-            # `_apply_toggle`'s docstring).
-            state["lanes"][body.lane]["toggle_revision"] = toggle_write.revision
+        # Report THIS write's row, not one re-read separately a moment later:
+        # a concurrent write landing in that gap must not make this response
+        # claim a toggle, effective source or revision the request never set
+        # (same reasoning as `_apply_toggle`'s docstring).
+        state = sel.source_state(
+            conn, written=None if toggle_write is None else (body.lane, toggle_write)
+        )
         return AnalysisSourceOut(
             previous_toggle=None if toggle_write is None else toggle_write.previous,
             **state,
