@@ -164,6 +164,11 @@ OWNERSHIP_RULES: list[OwnershipRule] = [
         "repo-sync",
         "cross-machine music-dj-tools git repo sync daemon",
     ),
+    # Supersedes: the fallback classification these three launchd labels got
+    # before PR #3827 (owned=false, area n/a, "not matched to any
+    # music-dj-tools ownership rule; presumed personal/third-party
+    # automation"), which hid the repo's own dmg-smoke and perf-kpi agents
+    # from this registry. They are now owned rows with a named area.
     OwnershipRule(
         "*",
         r"^com\.af\.dmg-smoke$",

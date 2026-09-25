@@ -396,81 +396,72 @@ def _update_ledger_pr_publish(repo_root: Path, worktree_dir: Path, candidate_ent
         base_entries = branch_entries + main_only_entries
         new_entries = _new_entries_since(base_entries, candidate_entries)
         if not new_entries and not main_only_entries:
-            return
-        # append_entries validates by default now (Sol, PR #3827, P1/BLOCKING,
-        # review 4107678137, "Validate ledger entries before committing
-        # them"): both calls below used to pass validate=False, so a
-        # malformed entry already sitting on main or on the local ledger
-        # would get committed and pushed onto the standing branch as-is,
-        # deferring the failure to whatever later consumer tried to read it.
-        # Every entry reconciled here already came from a REAL ledger
-        # (main's or local's), which only ever gets new rows through this
-        # same validated append path, so re-validating on the way onto the
-        # branch is a cheap, always-safe sanity check, not new strictness.
-        #
-        # Actually WRITE main_only_entries into dest (Codex, PR #3827,
-        # P2/BLOCKING), not just fold them into the dedup comparison: the
-        # union above only ever suppressed duplicate appends -- it never
-        # copied main-only entries onto the branch's own published ledger,
-        # so a retained stale branch's snapshot stayed missing everything
-        # merged to main since it diverged. Appended first, in its own
-        # commit, so the branch's history shows the reconciliation
-        # separately from tonight's own new rows.
-        if main_only_entries:
-            append_entries(dest, main_only_entries)
-            subprocess.run(
-                ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
+            # Nothing new to push, but an earlier run may have pushed its rows and
+            # then failed at `gh pr create` (Codex, PR #3827, P1/BLOCKING, review
+            # comment 4108992481, "Retry PR creation when the branch is
+            # unchanged"). Returning here skipped `_create_pr` forever while the
+            # caller cleared the outbox, stranding those rows on a branch no PR
+            # would merge. The branch still needs a PR while it holds rows main lacks.
+            pr_needed = branch_exists_remotely and bool(
+                _new_entries_since(main_entries, branch_entries)
             )
+        else:
+            pr_needed = True
+            if main_only_entries:
+                append_entries(dest, main_only_entries)
+                subprocess.run(
+                    ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"perf(kpi): reconcile ledger with main ({len(main_only_entries)} entries)"
+                        "\n\n-Codex",
+                    ],
+                    check=True,
+                    cwd=worktree_dir,
+                )
+            if new_entries:
+                append_entries(dest, new_entries)
+                subprocess.run(
+                    ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"perf(kpi): nightly ledger append ({len(new_entries)} new)\n\n-Codex",
+                    ],
+                    check=True,
+                    cwd=worktree_dir,
+                )
+            # --force-with-lease against the SHA fetched at the top of this
+            # function (claude-review, PR #3827, round 5, P1/BLOCKING -- round
+            # 4's version re-checked the lease with a fresh `git ls-remote`
+            # immediately before this push, which always matches the current
+            # remote tip and so was an unconditional force push in disguise: a
+            # concurrent push from the other host landing between that
+            # ls-remote and this one would have been silently overwritten
+            # instead of rejected). `lease_value` is the branch's SHA as of
+            # the fetch this run's commit was actually built on top of, so a
+            # push that landed after that point is detected here. The worktree
+            # is DETACHED (round 5, P2), so there is no local branch to push
+            # from by name -- push HEAD to the branch ref explicitly.
             subprocess.run(
                 [
                     "git",
-                    "commit",
-                    "-m",
-                    f"perf(kpi): reconcile ledger with main ({len(main_only_entries)} entries)"
-                    "\n\n-Codex",
+                    "push",
+                    f"--force-with-lease={branch}:{lease_value}",
+                    "origin",
+                    f"HEAD:refs/heads/{branch}",
                 ],
                 check=True,
                 cwd=worktree_dir,
             )
-        if new_entries:
-            append_entries(dest, new_entries)
-            subprocess.run(
-                ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"perf(kpi): nightly ledger append ({len(new_entries)} new)\n\n-Codex",
-                ],
-                check=True,
-                cwd=worktree_dir,
-            )
-        # --force-with-lease against the SHA fetched at the top of this
-        # function (claude-review, PR #3827, round 5, P1/BLOCKING -- round
-        # 4's version re-checked the lease with a fresh `git ls-remote`
-        # immediately before this push, which always matches the current
-        # remote tip and so was an unconditional force push in disguise: a
-        # concurrent push from the other host landing between that
-        # ls-remote and this one would have been silently overwritten
-        # instead of rejected). `lease_value` is the branch's SHA as of
-        # the fetch this run's commit was actually built on top of, so a
-        # push that landed after that point is detected here. The worktree
-        # is DETACHED (round 5, P2), so there is no local branch to push
-        # from by name -- push HEAD to the branch ref explicitly.
-        subprocess.run(
-            [
-                "git",
-                "push",
-                f"--force-with-lease={branch}:{lease_value}",
-                "origin",
-                f"HEAD:refs/heads/{branch}",
-            ],
-            check=True,
-            cwd=worktree_dir,
-        )
     finally:
         _remove_worktree_if_present(repo_root, worktree_dir)
-    if not pr_already_open:
+    if pr_needed and not pr_already_open:
         _create_pr(REPOSITORY, branch, cwd=repo_root)

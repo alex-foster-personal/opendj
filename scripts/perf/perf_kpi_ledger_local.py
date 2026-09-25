@@ -196,6 +196,7 @@ def _restore_tracked_ledger(
 #: set (never rotated) and only ever DELETED on a confirmed successful
 #: publish has no age to prune by: it is retained until published, however
 #: many nights that takes.
+#: Supersedes: nothing; a new state path beside the ledger worktree.
 _OUTBOX_FILENAME = "unpublished-ledger.json"
 
 

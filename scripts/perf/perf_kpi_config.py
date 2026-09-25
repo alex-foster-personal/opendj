@@ -42,6 +42,8 @@ class PerfKpiConfig:
     samples: int
     machine: str  #: may be "" -- required only on the nightly path, see require_machine_label()
     tracks: tuple[TrackProfile, ...]
+    #: Supersedes: REPO_ROOT's own checkout, which update_ledger_pr used to
+    #: `git checkout -B` into on main; publishing now happens only here.
     ledger_worktree: Path
     data_dir: Path | None = None
 
