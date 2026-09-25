@@ -224,6 +224,11 @@ test('Tab still toggles the next-only filter on non-interactive page chrome', ()
 	}
 });
 
+test('performance-hotkeys registers keydown in capture phase so Space cannot scroll the library', async () => {
+	const source = await readFile('src/lib/rb/performance-hotkeys.ts', 'utf8');
+	assert.match(source, /addEventListener\('keydown', onKey, \{ capture: true \}\)/);
+});
+
 test('performance-hotkeys uses the shared predicate via routing, not a second focus check', async () => {
 	const source = await readFile('src/lib/rb/performance-hotkeys.ts', 'utf8');
 	assert.match(source, /handlePerformanceShortcutKeydown/);

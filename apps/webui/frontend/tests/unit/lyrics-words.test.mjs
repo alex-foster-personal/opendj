@@ -30,12 +30,22 @@ after(() => {
 
 test('loadLyrics caches 404 from getTrackLyricsWords as none', async () => {
 	globalThis.fetch = async (request) => {
-		assert.match(String(request.url), /\/api\/v1\/tracks\/missing-track-id\/lyrics\/words(\?include=lines)?$/);
-		return new Response(JSON.stringify({ detail: 'no live lyric_verdict row for missing-track-id' }), {
-			status: 404,
-			statusText: 'Not Found',
-			headers: { 'content-type': 'application/json' }
-		});
+		const url = String(request.url);
+		if (url.includes('/lyrics/words')) {
+			return new Response(JSON.stringify({ detail: 'no live lyric_verdict row for missing-track-id' }), {
+				status: 404,
+				statusText: 'Not Found',
+				headers: { 'content-type': 'application/json' }
+			});
+		}
+		if (url.includes('/lyrics') && !url.includes('/words')) {
+			return new Response(JSON.stringify({ detail: 'no line lyrics' }), {
+				status: 404,
+				statusText: 'Not Found',
+				headers: { 'content-type': 'application/json' }
+			});
+		}
+		throw new Error(`unexpected fetch ${url}`);
 	};
 
 	await cache.loadLyrics('missing-track-id');
