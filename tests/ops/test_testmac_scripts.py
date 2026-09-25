@@ -71,6 +71,47 @@ def test_agt_persona_loop_fails_fast_without_testmac_repo() -> None:
     assert "TESTMAC_REPO" in result.stderr
 
 
+def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
+    """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
+    [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
+    state_dir = tmp_path / "state"
+    env = {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "TESTMAC_REPO": str(REPO_ROOT),
+        "TESTMAC_STATE_DIR": str(state_dir),
+    }
+    result = subprocess.run(
+        ["bash", str(LOOP_SH)], capture_output=True, text=True, timeout=10, env=env, check=False
+    )
+    assert result.returncode != 0
+    assert "AGT_AGENT_CLI" in result.stderr
+    assert not state_dir.exists(), "the loop must refuse before creating its state dir"
+
+
+@pytest.mark.parametrize(
+    ("value", "needle"), [(None, "AGT_AGENT_CLI"), ("gemini", "not one of codex, claude")]
+)
+def test_setup_sh_requires_a_known_agent_cli_before_touching_the_host(
+    value: str | None, needle: str
+) -> None:
+    """[if] setup.sh installs a loop with no driver, or an unknown one [then] fail,
+    [else stop]; the refusal comes before any ssh, so the host name here is never dialed."""
+    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    if value is not None:
+        env["AGT_AGENT_CLI"] = value
+    result = subprocess.run(
+        ["bash", str(SETUP_SH), "no-such-host.invalid"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert needle in result.stderr
+    assert "unreachable" not in result.stderr
+
+
 def _extract_line_function(script_text: str) -> str:
     """Pull the real `line() { ... }` definition out of verify.sh verbatim (it is a
     one-liner today; tolerate a multi-line form too so a future reformat does not
