@@ -1,6 +1,127 @@
 {
   "components": {
     "schemas": {
+      "AccountDeleteOut": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "google_sub",
+          "message"
+        ],
+        "title": "AccountDeleteOut",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "authorisation_enforced": {
+            "title": "Authorisation Enforced",
+            "type": "boolean"
+          },
+          "authorisation_note": {
+            "title": "Authorisation Note",
+            "type": "string"
+          },
+          "local_data": {
+            "items": {
+              "$ref": "#/components/schemas/LocalDataOut"
+            },
+            "title": "Local Data",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "privacy_policy_url": {
+            "title": "Privacy Policy Url",
+            "type": "string"
+          },
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user",
+          "plan",
+          "authorisation_enforced",
+          "authorisation_note",
+          "local_data",
+          "privacy_policy_url"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
+      "AccountUserOut": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "google_sub",
+          "email",
+          "name",
+          "avatar_url",
+          "created_at"
+        ],
+        "title": "AccountUserOut",
+        "type": "object"
+      },
       "AdoptOut": {
         "properties": {
           "created": {
@@ -5737,6 +5858,42 @@
         "title": "EnrollResponse",
         "type": "object"
       },
+      "EntitlementsOut": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureEntitlementOut"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/RefusalOut"
+          }
+        },
+        "required": [
+          "provider",
+          "plan",
+          "refusal",
+          "features"
+        ],
+        "title": "EntitlementsOut",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "details": {
@@ -6045,6 +6202,51 @@
           "beats"
         ],
         "title": "FallbackBeatgridOut",
+        "type": "object"
+      },
+      "FeatureEntitlementOut": {
+        "properties": {
+          "entitled": {
+            "title": "Entitled",
+            "type": "boolean"
+          },
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota"
+          },
+          "server_side": {
+            "title": "Server Side",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feature_id",
+          "label",
+          "entitled",
+          "quota",
+          "server_side",
+          "note"
+        ],
+        "title": "FeatureEntitlementOut",
         "type": "object"
       },
       "FeedbackStoreSyncOut": {
@@ -6399,6 +6601,95 @@
           "etag"
         ],
         "title": "FindReplaceRowOut",
+        "type": "object"
+      },
+      "FlagOut": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefusalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retire_by": {
+            "title": "Retire By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag_id",
+          "enabled",
+          "default",
+          "overridden",
+          "owner",
+          "note",
+          "retire_by"
+        ],
+        "title": "FlagOut",
+        "type": "object"
+      },
+      "FlagsOut": {
+        "properties": {
+          "build_profile": {
+            "title": "Build Profile",
+            "type": "string"
+          },
+          "file_present": {
+            "title": "File Present",
+            "type": "boolean"
+          },
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FlagOut"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sandboxed": {
+            "title": "Sandboxed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "file_present",
+          "build_profile",
+          "sandboxed",
+          "flags"
+        ],
+        "title": "FlagsOut",
         "type": "object"
       },
       "FleetErrorBody": {
@@ -8655,6 +8946,35 @@
           }
         },
         "title": "LinksPatchIn",
+        "type": "object"
+      },
+      "LocalDataOut": {
+        "description": "One store on this machine that holds something about the account.",
+        "properties": {
+          "contents": {
+            "title": "Contents",
+            "type": "string"
+          },
+          "delete_with": {
+            "title": "Delete With",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "location",
+          "contents",
+          "delete_with"
+        ],
+        "title": "LocalDataOut",
         "type": "object"
       },
       "LoginIn": {
@@ -11891,6 +12211,41 @@
         "title": "PlanModel",
         "type": "object"
       },
+      "PlanOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "plan_id",
+          "label",
+          "note",
+          "provider"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
       "PlanRequest": {
         "properties": {
           "playlists": {
@@ -14527,6 +14882,30 @@
           "recently_done_ids"
         ],
         "title": "RefreshStatusOut",
+        "type": "object"
+      },
+      "RefusalOut": {
+        "description": "The one refusal shape, so a control and its tooltip cannot disagree.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "ui_title"
+        ],
+        "title": "RefusalOut",
         "type": "object"
       },
       "RelocateApplyIn": {
@@ -21394,6 +21773,72 @@
         ]
       }
     },
+    "/api/v1/account": {
+      "delete": {
+        "description": "Erase the user row and, by FK cascade, every session it owns.",
+        "operationId": "delete_account_api_v1_account_delete",
+        "parameters": [
+          {
+            "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+              "title": "Confirm",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "description": "Identity, plan, and the full local-storage disclosure.",
+        "operationId": "read_account_api_v1_account_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/v1/admin/ports": {
       "get": {
         "operationId": "get_worktree_ports_api_v1_admin_ports_get",
@@ -24212,6 +24657,71 @@
         ]
       }
     },
+    "/api/v1/entitlements": {
+      "get": {
+        "description": "The plan, the refusal shape, and every gateable feature.",
+        "operationId": "read_entitlements_api_v1_entitlements_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Entitlements",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
+    "/api/v1/entitlements/{feature_id}": {
+      "get": {
+        "description": "May this account use one feature?",
+        "operationId": "read_entitlement_api_v1_entitlements__feature_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "title": "Feature Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureEntitlementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Entitlement",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
     "/api/v1/errors": {
       "get": {
         "operationId": "list_errors_api_v1_errors_get",
@@ -24986,6 +25496,28 @@
         "summary": "Patch Todo",
         "tags": [
           "feedback"
+        ]
+      }
+    },
+    "/api/v1/flags": {
+      "get": {
+        "description": "The declared flags, as resolved once at engine boot.",
+        "operationId": "read_flags_api_v1_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Flags",
+        "tags": [
+          "feature-flags"
         ]
       }
     },

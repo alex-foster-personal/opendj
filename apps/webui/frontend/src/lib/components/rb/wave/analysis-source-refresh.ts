@@ -14,8 +14,8 @@
  *
  * No $state/$derived here, so this is a plain .ts file, not .svelte.ts.
  */
-import { getTrack } from '$lib/api';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { fetchTrackBypassingHttpCache } from '$lib/rb/api-rb';
 import {
 	bumpAnlzFetchGeneration,
 	currentAnlzFetchGeneration
@@ -166,11 +166,11 @@ export async function refreshAnalysisSourceDecks(
 	}
 	const staged = await Promise.all(
 		[...wanted].map(async ([stableId, holders]) => {
-			const [fresh, row] = await Promise.all([
+			const [fresh, track] = await Promise.all([
 				ports.fetchAnlzBypassingHttpCache(stableId),
-				getTrack(stableId)
+				fetchTrackBypassingHttpCache(stableId)
 			]);
-			return { stableId, holders, fresh, track: row.track };
+			return { stableId, holders, fresh, track };
 		})
 	);
 	// Superseded while the fetches were in flight: the answer is discarded

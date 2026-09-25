@@ -748,6 +748,14 @@ export async function fetchAnlzBypassingHttpCache(
 	return data;
 }
 
+/** GET /tracks/{sid} with `cache: 'reload'`, paired with
+ * `fetchAnlzBypassingHttpCache` on analysis-source switches: the openapi
+ * client's ordinary `getTrack` can otherwise replay a pre-switch row while
+ * `/anlz` already reflects the new lane. */
+export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
+	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
+}
+
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);

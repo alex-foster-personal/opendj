@@ -1,4 +1,7 @@
-"""STANDALONE-06: default source follows the library, not a constant."""
+"""STANDALONE-06: default source follows the library, not a constant.
+
+[if] no rekordbox mapping [then] effective source own for all lanes, [else stop].
+"""
 from __future__ import annotations
 
 from collections.abc import Iterator

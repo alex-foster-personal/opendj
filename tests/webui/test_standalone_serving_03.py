@@ -1,4 +1,7 @@
-"""STANDALONE-03: empty analysis cells state why they are empty."""
+"""STANDALONE-03: empty analysis cells state why they are empty.
+
+[if] no track_fields bpm and no own beatgrid [then] bpm_status+reason, [else stop].
+"""
 from __future__ import annotations
 
 from collections.abc import Iterator

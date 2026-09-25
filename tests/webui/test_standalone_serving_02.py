@@ -1,4 +1,7 @@
-"""STANDALONE-02: computed BPM reaches the user without promotion."""
+"""STANDALONE-02: computed BPM reaches the user without promotion.
+
+[if] unmapped own backfill ok and no promotion [then] own_beatgrid bpm, [else stop].
+"""
 from __future__ import annotations
 
 from collections.abc import Iterator

@@ -1811,9 +1811,9 @@
 							title={bpmCellTitle(row)}
 						>
 							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
-								<span class="bpm-status">{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
+								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
 							{:else if row.bpm_status === 'available-not-selected'}
-								<span class="bpm-status">alt</span>
+								<span class="bpm-status" title={bpmCellTitle(row)}>alt</span>
 							{:else}
 								{_fmtBpm(row.bpm)}
 							{/if}
