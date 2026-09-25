@@ -16,10 +16,12 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-
-from pyrekordbox import Rekordbox6Database
+from typing import TYPE_CHECKING
 
 from . import paths, platform_paths
+
+if TYPE_CHECKING:
+    from pyrekordbox import Rekordbox6Database
 
 
 class RekordboxDecryptError(RuntimeError):
@@ -94,6 +96,15 @@ def decrypt_to_plain(
     plain_out.parent.mkdir(parents=True, exist_ok=True)
     tmp_out = plain_out.with_name(plain_out.name + ".decrypting")
     _unlink_db(tmp_out)
+
+    # Deferred (STANDALONE-01, issue #3535/#3456): a module-scope pyrekordbox
+    # import here drags the whole vendor tree into every caller of this
+    # module, including ones (the folder-import onboarding path, app
+    # startup) that never touch a real rekordbox library. Only the two
+    # functions that actually construct a live DB need it at runtime; every
+    # other use in this file is a type annotation, made lazy by the
+    # ``from __future__ import annotations`` at the top.
+    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
 
     db = None
     try:
@@ -220,6 +231,8 @@ def open_db(path: Path | None = None) -> Rekordbox6Database:
     FileNotFoundError
         If neither the working copy nor the live DB can be found.
     """
+    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+
     target = Path(path) if path is not None else paths.REKORDBOX_WORKING_DB
     if not target.exists():
         copied = paths.copy_live_dbs()
