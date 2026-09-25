@@ -88,8 +88,23 @@ def serialize_record(record: TrashRecord) -> bytes:
 
 
 def trash_object_key(body: bytes) -> str:
-    """Return the immutable ``trash/<shard>/<digest>.json`` key."""
-    digest = hashlib.sha256(body).hexdigest()
+    """Return a retry-stable key derived from the losing row's identity."""
+    try:
+        payload = json.loads(body)
+        identity = {
+            "origin_device_id": payload["origin_device_id"],
+            "primary_key": payload["primary_key"],
+            "reason": payload["reason"],
+            "table": payload["table"],
+            "updated_at": payload["updated_at"],
+            "values": payload["values"],
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ConflictTrashError("cannot derive a trash key from invalid JSON") from exc
+    identity_body = json.dumps(
+        identity, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    digest = hashlib.sha256(identity_body).hexdigest()
     return f"{TRASH_PREFIX}/{digest[:2]}/{digest}.json"
 
 
