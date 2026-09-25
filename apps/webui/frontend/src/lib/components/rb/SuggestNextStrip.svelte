@@ -47,6 +47,7 @@
 	import { DECK_IDS } from '$lib/player/constants';
 	import { getDeckState } from '$lib/player/state.svelte';
 	import { pushPlayed } from '$lib/rb/peak-play-timeline';
+	import { isUsbTrackId, withoutUsbTrackIds } from '$lib/rb/track-source';
 	import { visibleRationaleTags } from '$lib/rb/suggest-tags';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import PeakPressureCoach from './PeakPressureCoach.svelte';
@@ -93,6 +94,7 @@
 
 	type StripState =
 		| { kind: 'idle' }
+		| { kind: 'stick' }
 		| { kind: 'loading' }
 		| { kind: 'loaded'; data: SuggestNextWire }
 		| { kind: 'insufficient'; missing: string[]; message: string }
@@ -159,11 +161,13 @@
 
 	$effect(() => {
 		const sid = stableId;
-		const session =
-			sessionIds.length > 0 ? [...sessionIds] : [...localSessionIds];
+		// Spec 4b: stick ids never reach the copilot, which 404s on ids it does
+		// not know - one in the session would fail suggestions for library
+		// tracks too, and a stick track on deck 1 gets none at all.
+		const session = withoutUsbTrackIds(sessionIds.length > 0 ? sessionIds : localSessionIds);
 		const seq = ++requestSeq;
-		if (sid === null) {
-			stripState = { kind: 'idle' };
+		if (sid === null || isUsbTrackId(sid)) {
+			stripState = { kind: sid === null ? 'idle' : 'stick' };
 			oncandidates?.([]);
 			return;
 		}
@@ -242,6 +246,8 @@
 	{/if}
 	{#if stripState.kind === 'idle'}
 		<span class="dim">load a track on deck 1 for suggestions</span>
+	{:else if stripState.kind === 'stick'}
+		<span class="dim" title="Suggestions rank your library; a track playing from a USB stick is not in it">no suggestions for a USB stick track</span>
 	{:else if stripState.kind === 'loading'}
 		<span class="dim">ranking candidates…</span>
 	{:else if stripState.kind === 'insufficient'}
