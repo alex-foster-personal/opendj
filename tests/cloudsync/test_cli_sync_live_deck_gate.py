@@ -18,7 +18,7 @@ below to exercise the REAL production engine (`apps.engine_core.app.
 create_app`) over real HTTP rather than a hand-written stand-in, since this
 suite is the evidence CLOUDSYNC-14 shipped.
 
-A third round (Codex, Thu 25 Sep 2026) found four hand-rolled FastAPI
+A third round (Codex, Fri 25 Sep 2026) found four hand-rolled FastAPI
 "engine" stand-ins still standing after the second round's fix. Two remain
 by design and stay labeled as such where they are defined
 (`test_409_with_unexpected_body_is_inconclusive_not_safe`,
