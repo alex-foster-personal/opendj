@@ -160,7 +160,7 @@
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
-	import { pushToast } from '$lib/stores.svelte';
+	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -1859,6 +1859,30 @@
 		return { rows, truncated: page.total > rows.length, etag: '' };
 	}
 
+	function _pushPaneLoadError(
+		p: PaneStore,
+		node: PlaylistNode,
+		label: string,
+		error: string
+	): void {
+		const paneKey = p.playlist_id ?? node.playlist_id ?? 'pane';
+		pushToast(
+			`${label}: ${error}`,
+			'error',
+			TOAST_DEFAULT_MS,
+			new Error(error),
+			{
+				source: 'browser-pane-load',
+				playlist_id: node.playlist_id,
+				playlist_name: node.name,
+				pane_kind: node.kind
+			},
+			`browser-pane-load:${paneKey}`,
+			undefined,
+			{ feature: 'Library selection' }
+		);
+	}
+
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
 		// Every route into a pane funnels through here (tree click, new tab,
 		// back-stack, post-mutation refresh), so this is the one place that
@@ -1894,7 +1918,7 @@
 					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
 					mapRow: (wire, order) =>
 						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
-					onFillError: (error) => pushToast(`autolist load failed: ${error}`, 'error')
+					onFillError: (error) => _pushPaneLoadError(p, node, 'autolist load failed', error)
 				});
 				return;
 			}
@@ -1915,7 +1939,7 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => _pushPaneLoadError(p, node, 'playlist load failed', error)
 				});
 				return;
 			}
@@ -1932,7 +1956,7 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
+					onFillError: (error) => _pushPaneLoadError(p, node, 'taglist load failed', error)
 				});
 				return;
 			}
@@ -1958,7 +1982,7 @@
 						completeLibraryUsable({ source: 'playlist' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => _pushPaneLoadError(p, node, 'playlist load failed', error)
 				});
 				return;
 			}
@@ -1973,7 +1997,7 @@
 			}
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
-				pushToast(`playlist load failed: ${String(exc)}`, 'error');
+				_pushPaneLoadError(p, node, 'playlist load failed', String(exc));
 			}
 		}
 	}

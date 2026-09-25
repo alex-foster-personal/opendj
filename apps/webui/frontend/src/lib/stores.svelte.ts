@@ -9,10 +9,12 @@ import {
 } from '../routes/admin/health-history';
 import { auth } from './auth.svelte';
 import { onClientErrorAck, reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { classifyToastError, type ToastErrorClass } from './toast-error-classification';
 import {
 	formatToastPresentation,
 	type ToastPresentation
 } from './toast-presentation';
+import { oldestNonExitingIndex, TOAST_MAX_VISIBLE } from './toast-tray-policy';
 import { readShellBuild } from './rb/build-identity';
 import { mintErrorId } from './rb/error-id';
 import { recordPerfEvent } from './rb/perf-event-log';
@@ -66,6 +68,12 @@ export type Toast = {
 	createdAt: string;
 	count: number;
 	groupKey: string | undefined;
+	classification?: ToastErrorClass;
+	settingsSummary?: string;
+	hint?: string;
+	causeStack?: string;
+	/** Tray eviction animation in progress (UX-TOAST-03). */
+	exiting?: boolean;
 };
 
 // The numeric counter now lives in `rb/error-id.ts` and is shared with the deck
@@ -131,6 +139,29 @@ function _removeToast(id: number): void {
 	if (i >= 0) toasts.splice(i, 1);
 }
 
+function _nonExitingCount(): number {
+	return toasts.filter((t) => t.exiting !== true).length;
+}
+
+function _enforceToastTrayCap(): void {
+	while (_nonExitingCount() > TOAST_MAX_VISIBLE) {
+		const index = oldestNonExitingIndex(toasts);
+		if (index < 0) break;
+		const victim = toasts[index];
+		victim.exiting = true;
+		_clearTimer(victim.id);
+	}
+}
+
+/** Remove a toast after its exit animation completes. */
+export function finalizeToastExit(logId: string): void {
+	const toast = _find(logId);
+	if (toast === undefined || toast.exiting !== true) return;
+	_clearTimer(toast.id);
+	_timers.delete(toast.id);
+	_removeToast(toast.id);
+}
+
 function _find(logId: string): Toast | undefined {
 	return toasts.find((t) => t.logId === logId || _toastLogIds.get(t.id)?.has(logId));
 }
@@ -184,13 +215,37 @@ export function pushToast(
 	// search for. Minting it after the logs, or again at copy time, would
 	// produce an id that looks like a correlation key and matches nothing.
 	const logId = formatToastId(_toastSession, id);
+	const diagnostic =
+		kind === 'info'
+			? undefined
+			: classifyToastError({
+					kind,
+					message,
+					cause,
+					context,
+					feature: presentationOverride?.feature
+				});
 	const presentation = {
-		...formatToastPresentation({ kind, message, cause, feature: presentationOverride?.feature }),
+		...formatToastPresentation({
+			kind,
+			message,
+			cause,
+			feature: presentationOverride?.feature ?? diagnostic?.feature,
+			diagnostic
+		}),
 		...presentationOverride
 	};
+	const causeStack =
+		cause instanceof Error && cause.stack !== undefined && cause.stack !== ''
+			? cause.stack.split('\n').slice(0, 6).join('\n')
+			: undefined;
+	const perfMessage =
+		diagnostic !== undefined && diagnostic.classification !== 'unknown'
+			? `${message} | classification=${diagnostic.classification}`
+			: message;
 	const row = recordPerfEvent(
 		`toast-${kind}`,
-		message,
+		perfMessage,
 		null,
 		// recordPerfEvent's severity scale is already info/warn/error, so the
 		// toast kind maps straight onto it rather than being flattened.
@@ -214,7 +269,12 @@ export function pushToast(
 			kind,
 			createdAt: row.t,
 			count: 0,
-			groupKey
+			groupKey,
+			classification: diagnostic?.classification,
+			settingsSummary: diagnostic?.settingsSummary,
+			hint: diagnostic?.hint,
+			causeStack,
+			exiting: false
 		} satisfies Toast);
 	if (groupKey !== undefined) {
 		const logIds = _toastLogIds.get(toast.id) ?? new Set<string>();
@@ -229,9 +289,15 @@ export function pushToast(
 		solutionHint: presentation.solutionHint,
 		createdAt: row.t,
 		count: toast.count + 1,
-		action
+		action,
+		classification: diagnostic?.classification ?? toast.classification,
+		settingsSummary: diagnostic?.settingsSummary ?? toast.settingsSummary,
+		hint: diagnostic?.hint ?? toast.hint,
+		causeStack: causeStack ?? toast.causeStack,
+		exiting: false
 	});
 	if (existing === undefined) toasts.push(toast);
+	_enforceToastTrayCap();
 	// Warm the host lookup now so the eventual click can write the clipboard
 	// synchronously inside its own gesture. See _machineName.
 	void _machineName();
@@ -247,6 +313,7 @@ export function pushToast(
 		const clientEventId = reportClientError(cause ?? new Error(message), {
 			source: 'toast',
 			toast_id: logId,
+			...(diagnostic !== undefined ? { classification: diagnostic.classification } : {}),
 			...context
 		});
 		if (clientEventId !== undefined) toast.clientEventId = clientEventId;
@@ -400,6 +467,10 @@ export async function copyToast(logId: string): Promise<string> {
 		headline: toast.headline,
 		message: `${toast.message}${occurrenceSuffix}`,
 		detail: toast.detail,
+		classification: toast.classification,
+		settingsSummary: toast.settingsSummary,
+		hint: toast.hint,
+		stack: toast.causeStack,
 		clientEventId: toast.clientEventId,
 		serverEventId: toast.serverEventId,
 		errorId: toast.errorId,

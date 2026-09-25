@@ -5,6 +5,9 @@
 	import { page } from '$app/stores';
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
 	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
+	import { selectVisibleToasts } from '$lib/toast-tray-policy';
+
+	const visibleToasts = $derived(selectVisibleToasts(toasts));
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
@@ -415,7 +418,7 @@
      from a deferred boot task, so neither it nor its module is on the
      first-paint path or in the library page's bundle budget. -->
 
-<ToastStack items={toasts} />
+<ToastStack items={visibleToasts} />
 {#if FeedbackPinLayer}
 	<FeedbackPinLayer />
 {/if}
