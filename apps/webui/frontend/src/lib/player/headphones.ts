@@ -236,6 +236,44 @@ export function headphoneMixGains(mix: number): { cue: number; master: number } 
 	};
 }
 
+/** Pure targets for `applyHeadphoneMix` (issue #3982 regression tests). */
+export interface HeadphoneMixTargets {
+	monitorLive: boolean;
+	monitorCueMix: number;
+	monitorMasterMix: number;
+	monitorLevel: number;
+	practiceCueMix: number;
+	practiceMasterMix: number;
+	splitLeft: number;
+	splitRightCue: number;
+	splitRightMaster: number;
+}
+
+export function headphoneMixTargetGains(params: {
+	output_mode: unknown;
+	selected_output_device_id: string | null;
+	mix: number;
+	level: number;
+	active: boolean;
+}): HeadphoneMixTargets {
+	const { mix, level, active, output_mode, selected_output_device_id } = params;
+	const gains = headphoneMixGains(mix);
+	const monitorLive = output_mode === 'two_outputs' && active;
+	const practice = practiceMainGains(output_mode, selected_output_device_id, mix);
+	const split = splitCableGains(output_mode, mix, level);
+	return {
+		monitorLive,
+		monitorCueMix: monitorLive ? gains.cue : 0,
+		monitorMasterMix: monitorLive ? gains.master : 0,
+		monitorLevel: monitorLive ? level : 0,
+		practiceCueMix: practiceCueWithGain(practice.cue, level),
+		practiceMasterMix: practice.master,
+		splitLeft: split.left,
+		splitRightCue: split.rightCue,
+		splitRightMaster: split.rightMaster
+	};
+}
+
 /** MIX knob fill: cue orange at 0 (max left), master accent at 1. Never EQ red. */
 export function headphoneMixAccent(mix: number): string {
 	_assertUnit('headphone mix', mix);
@@ -364,25 +402,21 @@ export async function withHeadphoneOperationTimeout<T>(
 export function applyHeadphoneMix(): void {
 	const nodes = _headphoneNodes;
 	if (nodes === null) return;
-	const mix = mixerState.headphones.mix;
-	const level = mixerState.headphones.level;
-	const gains = headphoneMixGains(mix);
-	const monitorLive =
-		mixerState.headphones.output_mode === 'two_outputs' && mixerState.headphones.active;
-	_setMonitorParam(nodes, nodes.cueMix.gain, monitorLive ? gains.cue : 0);
-	_setMonitorParam(nodes, nodes.masterMix.gain, monitorLive ? gains.master : 0);
-	_setMonitorParam(nodes, nodes.level.gain, monitorLive ? level : 0);
-	const practice = practiceMainGains(
-		mixerState.headphones.output_mode,
-		mixerState.headphones.selected_output_device_id,
-		mix
-	);
-	_setMonitorParam(nodes, nodes.practiceCueMix.gain, practiceCueWithGain(practice.cue, level));
-	_setMonitorParam(nodes, nodes.practiceMasterMix.gain, practice.master);
-	const split = splitCableGains(mixerState.headphones.output_mode, mix, level);
-	_setMonitorParam(nodes, nodes.splitLeftGain.gain, split.left);
-	_setMonitorParam(nodes, nodes.splitRightCueGain.gain, split.rightCue);
-	_setMonitorParam(nodes, nodes.splitRightMasterGain.gain, split.rightMaster);
+	const targets = headphoneMixTargetGains({
+		output_mode: mixerState.headphones.output_mode,
+		selected_output_device_id: mixerState.headphones.selected_output_device_id,
+		mix: mixerState.headphones.mix,
+		level: mixerState.headphones.level,
+		active: mixerState.headphones.active
+	});
+	_setMonitorParam(nodes, nodes.cueMix.gain, targets.monitorCueMix);
+	_setMonitorParam(nodes, nodes.masterMix.gain, targets.monitorMasterMix);
+	_setMonitorParam(nodes, nodes.level.gain, targets.monitorLevel);
+	_setMonitorParam(nodes, nodes.practiceCueMix.gain, targets.practiceCueMix);
+	_setMonitorParam(nodes, nodes.practiceMasterMix.gain, targets.practiceMasterMix);
+	_setMonitorParam(nodes, nodes.splitLeftGain.gain, targets.splitLeft);
+	_setMonitorParam(nodes, nodes.splitRightCueGain.gain, targets.splitRightCue);
+	_setMonitorParam(nodes, nodes.splitRightMasterGain.gain, targets.splitRightMaster);
 	nodes.delay.delayTime.setValueAtTime(
 		headDelaySeconds(mixerState.headphones.head_delay_ms),
 		nodes.level.context.currentTime
