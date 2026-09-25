@@ -73,6 +73,7 @@ rule); these are the twin the sync surface will match.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import sqlite3
@@ -81,6 +82,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +92,7 @@ from apps.shared import engine_origin
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.sync_runtime_gates import (
+    DEFER_REASON_SYNC_IN_PROGRESS,
     SyncDeferredError,
     any_deck_playing,
     refuse_sync_round,
@@ -105,6 +108,7 @@ from apps.sync_hub import (
     hosted_config,
     maintenance_enroll,
     maintenance_policy,
+    single_flight,
     sync_set,
 )
 from apps.sync_hub import status as sync_status
@@ -159,26 +163,44 @@ def sync(
     the CLI never passes it, so an operator always talks real HTTP. Any of
     ``run_sync``'s declared failures (see its docstring) propagate out
     unchanged -- fail fast, no repair.
+
+    ``client.run_sync`` itself is wrapped in ``single_flight.sync_flock_for``,
+    a cross-process ``fcntl.flock`` on a file in ``data_dir`` (claude-review /
+    Codex, PR #3831, P1/BLOCKING): this function is the ONE place the
+    scheduler, the ``POST /api/v1/cloudsync/sync`` route, and this CLI all
+    funnel through to reach ``run_sync``, and the first two already hold an
+    in-process lock (``single_flight.sync_lock_for``) before calling here, but
+    that lock is invisible to the CLI's own separate process. ``force`` skips
+    only the Gig-posture / playing-deck safety gate above; it never skips
+    this -- two concurrent rounds corrupting the same ``state.db`` is a data
+    integrity failure, not a safety judgement call an operator can override.
+    A contended flock defers BEFORE any hub I/O, same as the gate above.
     """
     reason = refuse_sync_round(data_dir, ui_mirror, force=force)
     if reason is not None:
         raise SyncDeferredError(reason)
-    started_at = sync_stamp.canonical_now()
     try:
-        result = client.run_sync(Path(data_dir), hub_url, transport=transport, name=name)
-    except Exception as exc:
-        message = _sync_error_message(exc)
-        sync_status.write_result(
-            Path(data_dir),
-            sync_status.SyncResult(
-                finished_at=sync_stamp.canonical_now(),
-                status="error",
-                message=message,
-                pushed=0,
-                pulled=0,
-            ),
-        )
-        raise
+        with single_flight.sync_flock_for(data_dir):
+            started_at = sync_stamp.canonical_now()
+            try:
+                result = client.run_sync(
+                    Path(data_dir), hub_url, transport=transport, name=name
+                )
+            except Exception as exc:
+                message = _sync_error_message(exc)
+                sync_status.write_result(
+                    Path(data_dir),
+                    sync_status.SyncResult(
+                        finished_at=sync_stamp.canonical_now(),
+                        status="error",
+                        message=message,
+                        pushed=0,
+                        pulled=0,
+                    ),
+                )
+                raise
+    except single_flight.SyncInProgressError as exc:
+        raise SyncDeferredError(DEFER_REASON_SYNC_IN_PROGRESS) from exc
     sync_status.write_result(Path(data_dir), _journal_entry(result, started_at, data_dir))
     return result
 
@@ -615,6 +637,25 @@ _LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
 #: read conclusively -- see `_cli_live_ui_mirror`.
 DEFER_REASON_ENGINE_MIRROR_UNREACHABLE = "engine_mirror_unreachable"
 
+#: Loopback spellings a lock file's ``host`` must be for a refused connection
+#: on it to mean anything (see `_refused_by_loopback_engine`). The lock JSON
+#: is not restricted to loopback by `engine_origin.resolve_origin`, so this
+#: is checked explicitly rather than assumed.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+#: How stale a VERIFIED engine's ui-mirror document may be before the CLI
+#: refuses to trust it (Codex review, PR #3831, P1/BLOCKING). The performance
+#: page republishes every 1 s and the page's OWN stall detector
+#: (``apps/webui/frontend/src/lib/rb/mirror-publish-stall.ts``,
+#: ``MIRROR_STALL_MS``) still calls a gap this size healthy, so reusing that
+#: exact threshold -- rather than inventing a second number -- means a
+#: document this old is a page that has genuinely stopped publishing, not
+#: ordinary jitter. A stale document cannot be trusted either way: if it
+#: shows idle, the deck may have started playing since; if it shows playing,
+#: `any_deck_playing` already reads that as playing regardless of age, which
+#: is the safe direction anyway.
+_UI_MIRROR_FRESHNESS_TOLERANCE_S = 5.0
+
 
 def _candidate_lock_files(data_dir: Path) -> list[Path]:
     """The lock file(s) that might describe the engine playing a deck.
@@ -645,6 +686,75 @@ def _candidate_lock_files(data_dir: Path) -> list[Path]:
     return [data_dir_lock, override_lock]
 
 
+def _refused_by_loopback_engine(host: str, exc: BaseException | None) -> bool:
+    """True only for a VERIFIED loopback ``ECONNREFUSED`` -- see the P1 note
+    in `_probe_engine_lock`.
+
+    ``httpx.ConnectError`` alone is not enough (Sol review, PR #3831,
+    P1/BLOCKING): it also covers a DNS failure and an unreachable network,
+    and the lock file's ``host`` is not restricted to loopback, so neither
+    the exception type nor a non-loopback host refusing to connect proves
+    "genuinely absent" -- it proves only that THIS attempt could not reach
+    THAT host, which says nothing about whether an engine is alive
+    elsewhere. Only a loopback host that itself actively refused the
+    connection -- an OS-level ``ConnectionRefusedError`` (errno
+    ``ECONNREFUSED``) -- means no process is listening on that port at all.
+
+    The OS error is buried under one or two wrapper layers depending on
+    whether it reached us via ``__cause__`` (this module's own ``except ...
+    from exc`` chaining) or ``args[0]`` (how ``httpx``/``httpcore`` nest their
+    own wrapped exceptions), so this walks both.
+    """
+    if host not in _LOOPBACK_HOSTS:
+        return False
+    current: BaseException | None = exc
+    for _ in range(5):
+        if current is None:
+            return False
+        if isinstance(current, ConnectionRefusedError):
+            return True
+        if isinstance(current, OSError) and current.errno == errno.ECONNREFUSED:
+            return True
+        if current.__cause__ is not None:
+            current = current.__cause__
+            continue
+        args = current.args
+        current = args[0] if args and isinstance(args[0], BaseException) else None
+    return False
+
+
+def _ui_mirror_received_at(body: Mapping[str, Any]) -> datetime | None:
+    """Parse the server-stamped ``received_at`` (``apps/webui/server/routes/
+    state.py``), or None when it is missing or not a valid ISO-8601 stamp."""
+    raw = body.get("received_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    text = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _ui_mirror_is_fresh(body: Mapping[str, Any], *, now: datetime | None = None) -> bool:
+    """True when a VERIFIED engine's 200 ui-mirror body is recent enough to
+    trust (Codex review, PR #3831, P1/BLOCKING).
+
+    ``GET /api/v1/state/ui-mirror`` serves the last document it received
+    indefinitely; it is not re-stamped on read. A 200 is therefore only
+    evidence the ROUTE answered, not that the document describes NOW -- if
+    the page's main thread stalls after starting playback but before its
+    next 1 s publish, the route keeps serving the last (idle) snapshot while
+    the deck plays on. See `_UI_MIRROR_FRESHNESS_TOLERANCE_S`.
+    """
+    received_at = _ui_mirror_received_at(body)
+    if received_at is None:
+        return False
+    current = now if now is not None else datetime.now(UTC)
+    return (current - received_at).total_seconds() <= _UI_MIRROR_FRESHNESS_TOLERANCE_S
+
+
 def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
     """The ``ui_mirror`` a single lock file's engine reports, or None if safe.
 
@@ -654,18 +764,19 @@ def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
 
     Only TWO outcomes read as "nothing is playing" here, both because no
     engine is reachable to own a playing deck: no lock file at this path at
-    all, or a verified-origin lookup whose failure cause is
-    ``httpx.ConnectError`` (the port outright refused the connection).
-    ``verify_engine_identity`` raises that case via ``unreachable(...) from
-    error``, so ``exc.__cause__`` names the original transport-error
-    subclass. Every OTHER ``EngineNotRunning`` -- an unusable or unreadable
-    lock, a role/boot_id mismatch, a non-200 health status, or (critically) a
-    ``httpx.TimeoutException`` from a port that accepted the connection and
-    then hung on ``/api/v1/health`` -- is inconclusive, not permissive
-    (claude-review, PR #3831, P1/BLOCKING): the lock names a specific engine,
-    so its failure to check out is a reason to defer, not a reason to assume
-    safety, and a wedged-but-locked engine is exactly the "wedged during a
-    live set" case this gate exists to catch.
+    all, or a verified-origin lookup whose failure is a VERIFIED loopback
+    ``ECONNREFUSED`` -- see `_refused_by_loopback_engine`. ``httpx.
+    ConnectError`` alone is not enough: it also covers a DNS failure or an
+    unreachable network, and the lock's ``host`` is not restricted to
+    loopback, so those must defer, not pass (Sol review, PR #3831,
+    P1/BLOCKING). Every OTHER ``EngineNotRunning`` -- an unusable or
+    unreadable lock, a role/boot_id mismatch, a non-200 health status, or
+    (critically) a ``httpx.TimeoutException`` from a port that accepted the
+    connection and then hung on ``/api/v1/health`` -- is inconclusive, not
+    permissive (claude-review, PR #3831, P1/BLOCKING): the lock names a
+    specific engine, so its failure to check out is a reason to defer, not a
+    reason to assume safety, and a wedged-but-locked engine is exactly the
+    "wedged during a live set" case this gate exists to catch.
 
     A verified engine's own 409 with EXACTLY the documented
     ``{"client_open": False}`` body also reads as safe: no open performance
@@ -674,18 +785,26 @@ def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
     than that exact 409 is a genuine server error, not a "not playing"
     signal; a transport failure on the mirror GET itself (unlike the identity
     check above) means an engine we just confirmed is alive stopped
-    answering mid-probe; and a response body that fails to parse as JSON at
-    all must defer rather than raise an uncaught decode error out of a sync
-    command. All of these raise `SyncDeferredError` so the CLI fails closed
-    (refuses the sync) rather than silently assuming it is safe to proceed,
-    or crashing instead of exiting with the documented deferred code.
+    answering mid-probe; a response body that fails to parse as JSON at all
+    must defer rather than raise an uncaught decode error out of a sync
+    command; and a 200 body whose ``received_at`` is missing, invalid, or
+    older than `_UI_MIRROR_FRESHNESS_TOLERANCE_S` is a stale snapshot that
+    cannot be trusted to describe whether a deck is playing NOW (Codex
+    review, PR #3831, P1/BLOCKING) -- see `_ui_mirror_is_fresh`. All of these
+    raise `SyncDeferredError` so the CLI fails closed (refuses the sync)
+    rather than silently assuming it is safe to proceed, or crashing instead
+    of exiting with the documented deferred code.
     """
     try:
-        origin = engine_origin.resolve_verified_origin(lock_file)
+        origin = engine_origin.resolve_origin(lock_file)
     except engine_origin.EngineNotRunning as exc:
         if not lock_file.exists():
             return None
-        if isinstance(exc.__cause__, httpx.ConnectError):
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    try:
+        engine_origin.verify_engine_identity(origin)
+    except engine_origin.EngineNotRunning as exc:
+        if _refused_by_loopback_engine(origin.host, exc.__cause__):
             return None
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
     try:
@@ -704,6 +823,8 @@ def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
     if response.status_code != 200:
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     if not isinstance(body, dict):
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
+    if not _ui_mirror_is_fresh(body):
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     return body
 
