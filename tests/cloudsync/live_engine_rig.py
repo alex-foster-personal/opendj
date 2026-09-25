@@ -64,7 +64,14 @@ def start_hanging_listener(*, port: int) -> tuple[socket.socket, threading.Threa
             return  # listener closed while waiting -- test is tearing down
         try:
             conn.settimeout(30.0)
-            conn.recv(1)  # never sent; unblocks when the client gives up/closes
+            # Drain the request and keep the connection OPEN, answering
+            # nothing, until the client gives up and closes its end (recv
+            # returns b""). A single recv(1) returned on the request's first
+            # byte and the socket closed at once, so the client saw a reset
+            # (ReadError), not the timeout this listener exists to produce
+            # (Sol, PR #3831, P1/BLOCKING, review comment 4108494701).
+            while conn.recv(4096):
+                pass
         except OSError:
             pass
         finally:

@@ -316,6 +316,18 @@ def test_locked_engine_health_check_timeout_fails_closed(
         with pytest.raises(SyncDeferredError) as excinfo:
             maintenance._cli_live_ui_mirror(tmp_path)
         assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+        # The deferral must come from a real client TIMEOUT, not an EOF or
+        # protocol error (Sol, PR #3831, P1/BLOCKING, review comment
+        # 4108494701): otherwise this test keeps passing if timeout handling
+        # regresses to fail-open while connection-close handling stays closed.
+        chain = []
+        cause: BaseException | None = excinfo.value
+        while cause is not None:
+            chain.append(cause)
+            cause = cause.__cause__ or cause.__context__
+        assert any(isinstance(link, httpx.TimeoutException) for link in chain), [
+            type(link).__name__ for link in chain
+        ]
     finally:
         listener.close()
         thread.join(timeout=10.0)
