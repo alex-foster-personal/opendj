@@ -14,6 +14,9 @@ const POLL_MS = 5000;
 
 export type UsbKind = 'rekordbox' | 'djay' | 'music' | 'unknown';
 export type UsbRole = 'usb_stick' | 'mounted_drive' | 'disk_image' | 'other';
+/** Can Open DJ read the volume (USBPLAY-02)? 'pending' = the macOS
+ * Removable Volumes prompt is still open; 'denied' = the user refused it. */
+export type UsbAccess = 'ok' | 'pending' | 'denied' | 'unknown';
 
 export interface UsbVolumeKnown {
 	id: string;
@@ -36,6 +39,8 @@ export interface UsbVolumeKnown {
 	simulated?: boolean;
 	/** Needs first-seen modal (yours / music / name / forget). */
 	needs_prompt?: boolean;
+	/** Absent until the daemon reports it (older daemons never do). */
+	access?: UsbAccess;
 }
 
 type ApiVolume = {
@@ -49,6 +54,7 @@ type ApiVolume = {
 	role?: UsbRole;
 	protocol?: string | null;
 	hide_reason?: string | null;
+	access?: UsbAccess;
 };
 
 type ApiList = { volumes: ApiVolume[]; scanned_at: number };
@@ -103,14 +109,21 @@ function _persist(): void {
 
 // ----- pure helpers (unit-tested) ----------------------------------------
 
-/** Active ribbon/list: present music sticks that are not forgotten. */
+/** Open DJ cannot read the volume yet (USBPLAY-02), so nothing the daemon
+ * says about its contents (role, is_music) is a verdict. */
+export function usbAccessBlocked(v: { access?: UsbAccess | undefined }): boolean {
+	return v.access === 'pending' || v.access === 'denied';
+}
+
+/** Active ribbon/list: present music sticks that are not forgotten. A drive
+ * Open DJ cannot read stays listed, so it never silently disappears. */
 export function isActiveUsbRow(v: UsbVolumeKnown): boolean {
-	return Boolean(v.present) && !v.forgotten && v.is_music !== false;
+	return Boolean(v.present) && !v.forgotten && (v.is_music !== false || usbAccessBlocked(v));
 }
 
 /** Folded Non-music / Forgotten section. */
 export function isFoldedUsbRow(v: UsbVolumeKnown): boolean {
-	return Boolean(v.forgotten) || v.is_music === false;
+	return Boolean(v.forgotten) || (v.is_music === false && !usbAccessBlocked(v));
 }
 
 export function presentNonForgotten(): UsbVolumeKnown[] {
@@ -272,13 +285,19 @@ function _ingest(remote: ApiVolume[]): void {
 		seen.add(api.id);
 		const prev = byId.get(api.id);
 		const role = api.role ?? 'other';
-		const autoNonMusic = role === 'mounted_drive' || role === 'disk_image' || api.is_music === false;
+		// An unreadable drive looks like a plain disk (no PIONEER/ visible), so
+		// its role is not a verdict: persisting is_music=false here would hide
+		// the stick for good once permission is granted.
+		const blocked = usbAccessBlocked(api);
+		const autoNonMusic =
+			!blocked && (role === 'mounted_drive' || role === 'disk_image' || api.is_music === false);
 		if (prev === undefined) {
 			const row: UsbVolumeKnown = {
 				id: api.id,
 				name: api.name,
 				...(api.mount_path == null ? {} : { mount_path: api.mount_path }),
-				is_music: autoNonMusic ? false : api.is_music,
+				...(blocked ? {} : { is_music: autoNonMusic ? false : api.is_music }),
+				...(api.access === undefined ? {} : { access: api.access }),
 				forgotten: false,
 				forgotten_at: null,
 				yours: null,
@@ -304,10 +323,11 @@ function _ingest(remote: ApiVolume[]): void {
 			prev.protocol = api.protocol ?? prev.protocol ?? null;
 			prev.simulated = api.simulated;
 			if (api.hide_reason) prev.hide_reason = api.hide_reason;
+			if (api.access !== undefined) prev.access = api.access;
 			if (autoNonMusic) {
 				prev.is_music = false;
 				prev.needs_prompt = false;
-			} else if (prev.is_music === undefined) {
+			} else if (!blocked && prev.is_music === undefined) {
 				prev.is_music = api.is_music;
 			}
 			// Keep user rename; only fill empty.
