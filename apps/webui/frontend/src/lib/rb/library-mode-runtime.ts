@@ -82,10 +82,25 @@ function _publishLibraryModeIdle(): void {
 	window.musicDjToolsLibraryMode = api;
 }
 
-/** Called when /performance mounts so a later Library exit can tear down again. */
-export function noteGigRuntimeMounted(): void {
+/**
+ * Called when /performance (Gig) OR Trackify mounts, so a later teardown of
+ * whichever session mounted BEFORE it can detect it has been superseded and
+ * skip disposing an engine the new mount has since claimed. Returns the new
+ * generation so the caller can capture its own and recheck it later (Sol
+ * review, PR #3676: the reverse Trackify-to-Gig teardown race needed the
+ * same ownership check `releaseGigRuntime` already does for Gig-to-Trackify).
+ */
+export function noteGigRuntimeMounted(): number {
 	_releaseGeneration += 1;
 	_releasedGeneration = null;
+	return _releaseGeneration;
+}
+
+/** The engine-ownership generation as of right now: compare a value captured
+ * from `noteGigRuntimeMounted()`'s return against this immediately before an
+ * unconditional `engine.dispose()` outside of `releaseGigRuntime` itself. */
+export function currentGigRuntimeGeneration(): number {
+	return _releaseGeneration;
 }
 
 export async function releaseGigRuntime(opts?: {
