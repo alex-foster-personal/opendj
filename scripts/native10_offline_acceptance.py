@@ -21,10 +21,15 @@ What it does, in order, and what each step rules out:
    lane in beatgrid, key, waveform, loudness (key reads beatgrid's own
    downbeats, so order matters) enqueues every track and drains the batch
    through ``bin/opendj-python -m apps.analysis.queue_cli``.
-5. VERDICT, BY PRESENCE: a lane passes only when EVERY track has an
-   ``own_<lane>.backfill`` record whose lane block is ``ok`` and carries a
-   real measurement (beats, a key, tri-band peaks, a finite LUFS). A clean
-   exit code with no records is a failure, not a pass.
+5. VERDICT, BY PRESENCE: a lane passes only when its drain exits 0, EVERY
+   track has an ``own_<lane>.backfill`` record, and at least one of those
+   records is ``ok`` carrying a real measurement (beats, a key, tri-band
+   peaks, a finite LUFS). A track that is not ``ok`` passes only with a named
+   PRODUCER outcome from ``PRODUCER_OUTCOMES`` (the analysis ran and judged
+   the music, e.g. a key with no tonal center): those are what the same
+   producer returns on the same track from a networked checkout, so they
+   are the lane working, not the install failing. Any other reason, or a
+   missing record, fails. A clean exit code with no records is a failure.
 
 A payload older than ``bin/opendj-python`` gets that ONE file grafted from
 its own engine launcher (the engine launcher with its exec line swapped,
@@ -59,6 +64,15 @@ ENGINE_LAUNCHER = Path("bin/opendj-engine")
 PROBE_HOST = ("1.1.1.1", 443)
 EXIT_PASS, EXIT_FAIL, EXIT_UNKNOWN = 0, 1, 3
 STEP_TIMEOUT_S = 3600
+#: Per lane, the reason prefixes that mean "the producer ran and judged this
+#: track", never "the install could not run it". Observed reasons only: a new
+#: one fails until someone reads it and adds it here on purpose.
+PRODUCER_OUTCOMES: dict[str, tuple[str, ...]] = {
+    "beatgrid": ("bar_phase_below_floor",),
+    "key": ("no_tonal_center",),
+    "waveform": (),
+    "loudness": (),
+}
 
 
 @dataclass
@@ -67,13 +81,16 @@ class LaneVerdict:
     drain_exit: int | None = None
     tracks_total: int = 0
     tracks_ok: int = 0
+    tracks_producer_outcome: int = 0
     seconds: float = 0.0
     evidence: list[dict[str, Any]] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
-        return self.tracks_total > 0 and self.tracks_ok == self.tracks_total
+        judged = self.tracks_ok + self.tracks_producer_outcome
+        return (self.drain_exit == 0 and self.tracks_ok >= 1
+                and judged == self.tracks_total and not self.failures)
 
 
 class Unmeasurable(RuntimeError):
@@ -230,9 +247,15 @@ def judge_lane(db: Path, verdict: LaneVerdict, stable_ids: list[str]) -> LaneVer
             continue
         block = (json.loads(rows[sid]).get("lanes") or {}).get(verdict.lane) or {}
         measured = _measurement(verdict.lane, block.get("payload") or {})
+        reason = str(block.get("reason") or "")
+        # str.startswith(()) is False, so a lane with no outcomes admits none.
+        if block.get("status") == "failed" and reason.startswith(PRODUCER_OUTCOMES[verdict.lane]):
+            verdict.tracks_producer_outcome += 1
+            verdict.evidence.append({"stable_id": sid, "producer_outcome": reason})
+            continue
         if block.get("status") != "ok" or measured is None:
             verdict.failures.append(
-                f"{sid}: {verdict.lane} status={block.get('status')} reason={block.get('reason')}")
+                f"{sid}: {verdict.lane} status={block.get('status')} reason={reason}")
             continue
         verdict.tracks_ok += 1
         verdict.evidence.append({"stable_id": sid, **measured})
@@ -292,8 +315,9 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(text + "\n", encoding="utf-8")
     for lane in report["lanes"]:
         mark = "[OK]" if lane["passed"] else "[FAIL]"
-        print(f"{mark} {lane['lane']}: {lane['tracks_ok']}/{lane['tracks_total']} tracks "
-              f"with an ok own record ({lane['seconds']}s)", file=sys.stderr)
+        print(f"{mark} {lane['lane']}: {lane['tracks_ok']}/{lane['tracks_total']} ok with a "
+              f"measurement, {lane['tracks_producer_outcome']} named producer outcome, "
+              f"drain exit {lane['drain_exit']} ({lane['seconds']}s)", file=sys.stderr)
     return EXIT_PASS if report["passed"] else EXIT_FAIL
 
 
