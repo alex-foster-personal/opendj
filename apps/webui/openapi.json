@@ -16719,6 +16719,97 @@
         "title": "StemUnavailableOut",
         "type": "object"
       },
+      "StemsPlanOut": {
+        "description": "What separating this library at this tier would take.",
+        "properties": {
+          "estimate_seconds": {
+            "description": "wall-clock floor for the pending batch, GPU side only",
+            "title": "Estimate Seconds",
+            "type": "number"
+          },
+          "estimate_usd": {
+            "description": "GPU cost of the pending batch",
+            "title": "Estimate Usd",
+            "type": "number"
+          },
+          "executor": {
+            "description": "modal farm or local on-device worker",
+            "title": "Executor",
+            "type": "string"
+          },
+          "local_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why local stems are inert on this build; null when allowed",
+            "title": "Local Refusal"
+          },
+          "pending": {
+            "description": "audio on disk, no bundle yet: the work",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "already has a stem bundle on disk",
+            "title": "Ready",
+            "type": "integer"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "tier_name": {
+            "title": "Tier Name",
+            "type": "string"
+          },
+          "total": {
+            "description": "library rows carrying a file path",
+            "title": "Total",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "how this build reaches a GPU: relay or direct",
+            "title": "Transport",
+            "type": "string"
+          },
+          "transport_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why a run cannot start on this build; null when it can",
+            "title": "Transport Refusal"
+          },
+          "unavailable": {
+            "description": "library row exists, its file does not",
+            "title": "Unavailable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tier",
+          "tier_name",
+          "executor",
+          "total",
+          "pending",
+          "ready",
+          "unavailable",
+          "estimate_seconds",
+          "estimate_usd",
+          "transport"
+        ],
+        "title": "StemsPlanOut",
+        "type": "object"
+      },
       "StemWaveformOut": {
         "description": "Mono peak envelope for one stem part (issue #1036).",
         "properties": {
@@ -31921,6 +32012,113 @@
         "summary": "Job Status",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/live-capability": {
+      "get": {
+        "description": "Read install-time capability and, when requested, its deck plan.",
+        "operationId": "get_live_stems_capability_api_v1_stems_live_capability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deck_count",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deck Count"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bpm",
+            "required": false,
+            "schema": {
+              "default": 120.0,
+              "title": "Bpm",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Live Stems Capability Api V1 Stems Live Capability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Live Stems Capability",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/plan": {
+      "get": {
+        "operationId": "get_stems_plan_api_v1_stems_plan_get",
+        "parameters": [
+          {
+            "description": "Modal rung S/M/L, or LOCAL when local-only",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "default": "M",
+              "description": "Modal rung S/M/L, or LOCAL when local-only",
+              "title": "Tier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stems Plan",
+        "tags": [
+          "stems"
         ]
       }
     },

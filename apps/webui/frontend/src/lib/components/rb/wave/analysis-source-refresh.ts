@@ -15,7 +15,7 @@
  * No $state/$derived here, so this is a plain .ts file, not .svelte.ts.
  */
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
-import { fetchTrackBypassingHttpCache } from '$lib/rb/api-rb';
+import type { Track } from '$lib/api';
 import {
 	bumpAnlzFetchGeneration,
 	currentAnlzFetchGeneration
@@ -67,6 +67,11 @@ export interface AnalysisSourceRefreshPorts {
 	 * would add a new edge to `api-rb.ts`'s own fan-in ratchet for no reason
 	 * other than this file existing. */
 	fetchAnlzBypassingHttpCache: (stable_id: string) => Promise<AnlzData>;
+	/** Same injection seam as ``fetchAnlzBypassingHttpCache``: the cache
+	 * module's ``api-rb`` binding carries the test/prod ``VITE_API_BASE``,
+	 * and a second direct import here would be a separate bundle instance
+	 * under node unit tests. */
+	fetchTrackBypassingHttpCache: (stable_id: string) => Promise<Track>;
 }
 
 export interface AnalysisSourceRefreshDeck {
@@ -168,7 +173,7 @@ export async function refreshAnalysisSourceDecks(
 		[...wanted].map(async ([stableId, holders]) => {
 			const [fresh, track] = await Promise.all([
 				ports.fetchAnlzBypassingHttpCache(stableId),
-				fetchTrackBypassingHttpCache(stableId)
+				ports.fetchTrackBypassingHttpCache(stableId)
 			]);
 			return { stableId, holders, fresh, track };
 		})
