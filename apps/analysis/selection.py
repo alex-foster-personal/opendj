@@ -329,6 +329,50 @@ def effective_source(conn: sqlite3.Connection, lane: str) -> Source:
     return toggle
 
 
+def effective_source_for_track(
+    conn: sqlite3.Connection,
+    lane: str,
+    *,
+    has_rb_mapping: bool,
+) -> Source:
+    """Per-track effective source (STANDALONE-06).
+
+    PARITY-02 toggle ``rbx``/``own`` wins when set. With toggle ``unset``,
+    unmapped tracks default to ``own``; rekordbox-mapped tracks keep the
+    persisted per-lane default (NATIVE-14 promotion unchanged).
+    """
+    _check_lane(lane)
+    toggle = get_toggle(lane)
+    if toggle != "unset":
+        return toggle
+    if not has_rb_mapping:
+        return "own"
+    return get_default(conn, lane)
+
+
+def bulk_has_rb_mapping(conn: sqlite3.Connection, stable_ids: list[str]) -> frozenset[str]:
+    """``stable_id`` values with a live rekordbox ``track_vendor_ids`` row.
+
+    Does not consult ``djmdContent``; callers on the webui hot path should
+    prefer :func:`apps.webui.server.rb_vendor_pkg.track_rows.bulk_rb_meta`
+    keys when the master DB is already loaded.
+    """
+    if not stable_ids or not _table_exists(conn, "track_vendor_ids"):
+        return frozenset()
+    out: set[str] = set()
+    for i in range(0, len(stable_ids), 500):
+        sub = stable_ids[i : i + 500]
+        placeholders = ",".join("?" * len(sub))
+        for row in conn.execute(
+            "SELECT stable_id FROM track_vendor_ids "
+            "WHERE vendor = 'rekordbox' AND deleted_at IS NULL "
+            f"AND stable_id IN ({placeholders})",
+            tuple(sub),
+        ):
+            out.add(str(row[0]))
+    return frozenset(out)
+
+
 @dataclass(frozen=True)
 class Selection:
     """One resolved read context: lane -> source, plus whether own data can exist.
@@ -420,7 +464,7 @@ class EffectiveField:
     source: str
     confidence: float | None
     modified_at: str
-    status: Literal["ok", "failed", "missing"]
+    status: Literal["ok", "failed", "missing", "available-not-selected"]
     reason: str | None = None
 
 
@@ -477,10 +521,59 @@ def _fetch_projection(
     return out
 
 
+def _missing_own_field(field_name: str) -> EffectiveField:
+    return EffectiveField(
+        value=None,
+        source=OWN_ANALYSIS_SOURCE,
+        confidence=None,
+        modified_at="",
+        status="missing",
+        reason="no own analysis record for this lane yet",
+    )
+
+
+def _annotate_available_not_selected(
+    conn: sqlite3.Connection,
+    sid: str,
+    fields: dict[str, EffectiveField],
+    *,
+    has_rb_mapping: bool,
+) -> None:
+    """When rbx is selected but a canonical own record exists, name it (STANDALONE-03)."""
+    from .canonical import canonical_pointer
+
+    if not _table_exists(conn, "analysis_canonical"):
+        return
+    for field_name, lane in PROJECTION_FIELDS.items():
+        if effective_source_for_track(conn, lane, has_rb_mapping=has_rb_mapping) != "rbx":
+            continue
+        pointer = canonical_pointer(conn, sid, lane)
+        if pointer is None:
+            continue
+        own_row = (
+            _fetch_projection(conn, [sid], (field_name,))[sid].get(field_name)
+            if _table_exists(conn, "analysis_projection")
+            else None
+        )
+        if own_row is None or own_row.status != "ok":
+            continue
+        served = fields.get(field_name)
+        fields[field_name] = EffectiveField(
+            value=served.value if served is not None else None,
+            source=served.source if served is not None else "rekordbox",
+            confidence=served.confidence if served is not None else None,
+            modified_at=served.modified_at if served is not None else "",
+            status="available-not-selected",
+            reason=f"{lane} analysis available (rekordbox source selected)",
+        )
+
+
 def effective_fields(
     conn: sqlite3.Connection,
     stable_ids: Iterable[str],
     selection: Selection,
+    *,
+    rb_mapped: Mapping[str, bool] | None = None,
 ) -> dict[str, dict[str, EffectiveField]]:
     """Per track, per lane-owned field: the value the app must read.
 
@@ -493,36 +586,77 @@ def effective_fields(
 
     Fields rekordbox cannot serve (``loudness_lufs``, ``loudness_dbtp``,
     ``key_change_count``, ``tempo_change_count``) are absent under rbx.
+
+    When ``rb_mapped`` is supplied, each track's lane sources are resolved
+    via :func:`effective_source_for_track` (STANDALONE-06). Otherwise every
+    track shares ``selection`` (legacy global read).
     """
     ids = list(stable_ids)
     if not ids:
         return {}
 
-    own_fields = tuple(
-        f for f, lane in PROJECTION_FIELDS.items() if selection.source(lane) == "own"
+    projection_available = (
+        selection.projection_available
+        if rb_mapped is None
+        else _table_exists(conn, "analysis_projection")
     )
-    rbx_fields = tuple(
-        f for f, lane in PROJECTION_FIELDS.items()
-        if selection.source(lane) == "rbx" and f in _RBX_FIELDS
-    )
+    out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in ids}
 
-    out = _fetch_track_fields(conn, ids, rbx_fields)
-    # No own store means no own records have ever been written. That is ZERO
-    # ROWS, so every own field below resolves to `missing`, which is true.
-    # It is NOT a reason to serve the rekordbox value.
-    projected = (
-        _fetch_projection(conn, ids, own_fields)
-        if selection.projection_available
-        else {sid: {} for sid in ids}
-    )
-    for sid in ids:
-        for field_name in own_fields:
-            found = projected[sid].get(field_name)
-            out[sid][field_name] = found if found is not None else EffectiveField(
-                value=None, source=OWN_ANALYSIS_SOURCE, confidence=None,
-                modified_at="", status="missing",
-                reason="no own analysis record for this lane yet",
+    if rb_mapped is None:
+        own_fields = tuple(
+            f for f, lane in PROJECTION_FIELDS.items() if selection.source(lane) == "own"
+        )
+        rbx_fields = tuple(
+            f for f, lane in PROJECTION_FIELDS.items()
+            if selection.source(lane) == "rbx" and f in _RBX_FIELDS
+        )
+        out = _fetch_track_fields(conn, ids, rbx_fields)
+        projected = (
+            _fetch_projection(conn, ids, own_fields)
+            if projection_available
+            else {sid: {} for sid in ids}
+        )
+        for sid in ids:
+            for field_name in own_fields:
+                found = projected[sid].get(field_name)
+                out[sid][field_name] = (
+                    found if found is not None else _missing_own_field(field_name)
+                )
+        return out
+
+    for field_name, lane in PROJECTION_FIELDS.items():
+        rbx_ids: list[str] = []
+        own_ids: list[str] = []
+        for sid in ids:
+            mapped = bool(rb_mapped.get(sid, False))
+            if effective_source_for_track(conn, lane, has_rb_mapping=mapped) == "own":
+                own_ids.append(sid)
+            elif field_name in _RBX_FIELDS:
+                rbx_ids.append(sid)
+        if rbx_ids:
+            fetched = _fetch_track_fields(conn, rbx_ids, (field_name,))
+            for sid in rbx_ids:
+                if field_name in fetched[sid]:
+                    out[sid][field_name] = fetched[sid][field_name]
+        if own_ids:
+            projected = (
+                _fetch_projection(conn, own_ids, (field_name,))
+                if projection_available
+                else {sid: {} for sid in own_ids}
             )
+            for sid in own_ids:
+                found = projected[sid].get(field_name)
+                out[sid][field_name] = (
+                    found if found is not None else _missing_own_field(field_name)
+                )
+
+    for sid in ids:
+        _annotate_available_not_selected(
+            conn,
+            sid,
+            out[sid],
+            has_rb_mapping=bool(rb_mapped.get(sid, False)),
+        )
     return out
 
 
@@ -603,8 +737,10 @@ __all__ = [
     "check_source",
     "check_toggle_state",
     "compare_and_set_toggle",
+    "bulk_has_rb_mapping",
     "effective_fields",
     "effective_source",
+    "effective_source_for_track",
     "ensure_tables",
     "field_column_sql",
     "get_default",

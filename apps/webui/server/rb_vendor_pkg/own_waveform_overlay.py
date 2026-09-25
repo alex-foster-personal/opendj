@@ -62,7 +62,11 @@ def _waveform_block(result: Any) -> dict[str, Any]:
 
 
 def apply_own_waveform(
-    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+    payload: dict[str, Any],
+    stable_id: str,
+    state_db_path: Path | None = None,
+    *,
+    has_rb_mapping: bool | None = None,
 ) -> dict[str, Any]:
     """Replace the waveform block with the own record when own is selected.
 
@@ -73,7 +77,10 @@ def apply_own_waveform(
     """
     conn = state_conn_ro(state_db_path)
     try:
-        if effective_lane_source(conn, OWN_WAVEFORM_LANE) != SOURCE_OWN:
+        if (
+            effective_lane_source(conn, OWN_WAVEFORM_LANE, has_rb_mapping=has_rb_mapping)
+            != SOURCE_OWN
+        ):
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_WAVEFORM_LANE)
     finally:

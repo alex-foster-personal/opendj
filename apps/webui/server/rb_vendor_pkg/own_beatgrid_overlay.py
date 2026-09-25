@@ -231,7 +231,11 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
 
 
 def apply_own_beatgrid(
-    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+    payload: dict[str, Any],
+    stable_id: str,
+    state_db_path: Path | None = None,
+    *,
+    has_rb_mapping: bool | None = None,
 ) -> dict[str, Any]:
     """Replace the beatgrid block with the own record when own is selected.
 
@@ -241,9 +245,11 @@ def apply_own_beatgrid(
 
     ``state_db_path`` is forwarded to `_state_conn_ro`; see its docstring.
     """
+    from .own_lane_store import effective_lane_source
+
     conn = _state_conn_ro(state_db_path)
     try:
-        if _effective_beatgrid_source(conn) != SOURCE_OWN:
+        if effective_lane_source(conn, OWN_BEATGRID_LANE, has_rb_mapping=has_rb_mapping) != SOURCE_OWN:
             return payload
         result = _own_beatgrid_lane_result(conn, stable_id)
     finally:

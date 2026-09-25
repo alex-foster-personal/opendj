@@ -222,6 +222,27 @@
 		return heat === null ? undefined : `color:${heat.color}`;
 	}
 
+	function bpmCellInert(row: BrowserRow): boolean {
+		return (
+			row.bpm_status === 'failed' ||
+			row.bpm_status === 'missing' ||
+			row.bpm_status === 'available-not-selected'
+		);
+	}
+
+	function bpmCellTitle(row: BrowserRow): string {
+		if (row.bpm_status === 'failed') {
+			return row.bpm_reason ?? 'bpm analysis failed';
+		}
+		if (row.bpm_status === 'missing') {
+			return row.bpm_reason ?? 'bpm not analyzed yet';
+		}
+		if (row.bpm_status === 'available-not-selected') {
+			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
+		}
+		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`;
+	}
+
 	/** Red now-line on library preview when this track is on a deck. Prefer
 	 * a playing deck when the same stable_id is loaded on more than one. */
 	function _nowRatioFor(stableId: string): number | null {
@@ -1785,9 +1806,18 @@
 							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
 							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
+							class:bpm-inert={bpmCellInert(row)}
 							style={bpmCellStyle(row.bpm)}
-							title={`${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`}
-						>{_fmtBpm(row.bpm)}</td>
+							title={bpmCellTitle(row)}
+						>
+							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
+								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
+							{:else if row.bpm_status === 'available-not-selected'}
+								<span class="bpm-status" title={bpmCellTitle(row)}>alt</span>
+							{:else}
+								{_fmtBpm(row.bpm)}
+							{/if}
+						</td>
 						<td
 							class="c-plays"
 							title="play count (rekordbox history + djay)"
