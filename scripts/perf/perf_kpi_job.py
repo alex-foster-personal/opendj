@@ -16,7 +16,6 @@ import argparse
 import json
 import shutil
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.perf.kpi_ledger_append import append_entries, load_ledger
@@ -135,6 +134,23 @@ def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
         return
     if "is not a working tree" not in removed.stderr:
         raise RuntimeError(f"git worktree remove {worktree_dir} failed: {removed.stderr.strip()}")
+    # Refuse to recursively delete a directory this job cannot prove it owns
+    # (Sol, PR #3827, P1/BLOCKING, "Refuse to recursively delete an unowned
+    # worktree directory"): git no longer recognizing this path as a
+    # worktree is not proof that nothing else put it there. `worktree_dir`
+    # is configurable (`config.ledger_worktree`), so a misconfigured path
+    # pointing at a real, unrelated directory would otherwise be silently
+    # `rm -rf`'d the moment git failed to recognize it. A directory `git
+    # worktree add --detach` created still carries its own `.git` FILE (not
+    # a directory) pointing back at this repo's `.git/worktrees/<id>` --
+    # that marker is what proves this directory was ever a worktree at all,
+    # so only its presence licenses the recursive delete.
+    if not (worktree_dir / ".git").is_file():
+        raise RuntimeError(
+            f"{worktree_dir} exists and git no longer recognizes it as a worktree, but it "
+            "also lacks the .git file a real worktree checkout always has -- refusing to "
+            "recursively delete a directory this job cannot prove it created"
+        )
     shutil.rmtree(worktree_dir)
     subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
 
@@ -196,44 +212,66 @@ def _restore_tracked_ledger(
     ledger_path.write_text(pre_run_content, encoding="utf-8")
 
 
-#: How many failed-publish snapshots `_archive_unpublished_ledger` keeps
-#: before pruning the oldest (Sol, PR #3827, P2/NON-BLOCKING, review
-#: 4107678146, "bound retained snapshots"): a real, if rare, repeated
-#: failure (a dead `gh` token, a permanently rejected lease) must not grow
-#: this directory without limit.
-_OUTBOX_RETENTION_LIMIT = 20
+#: A single consolidated file holding whatever entries are still owed to the
+#: standing branch, not one timestamped snapshot per failure (Sol, PR #3827,
+#: P1/BLOCKING, "Retain unpublished entries until they are successfully
+#: published"): an earlier version of this fix kept one timestamped snapshot
+#: per failed run and pruned the OLDEST once more than 20 had piled up, so a
+#: long enough streak of failures (a dead `gh` token, a permanently rejected
+#: lease) discarded the very first night's measurements to make room for a
+#: later night's -- exactly the data loss "unpublished" was supposed to
+#: prevent. A single file that is only ever REWRITTEN with the full pending
+#: set (never rotated) and only ever DELETED on a confirmed successful
+#: publish has no age to prune by: it is retained until published, however
+#: many nights that takes.
+_OUTBOX_FILENAME = "unpublished-ledger.json"
 
 
-def _archive_unpublished_ledger(
-    ledger_path: Path, *, outbox_dir: Path, now: datetime | None = None
-) -> None:
-    """Snapshot ``ledger_path``'s CURRENT on-disk content to a durable,
-    timestamped file under ``outbox_dir``, pruning old snapshots beyond
-    ``_OUTBOX_RETENTION_LIMIT``.
+def _load_outbox_entries(outbox_dir: Path) -> list:
+    """Entries an earlier run failed to publish and still owes the branch.
+
+    Empty when nothing is pending -- there is no failure history to read,
+    or everything pending was already folded into a later successful
+    publish and cleared.
+    """
+    outbox_path = outbox_dir / _OUTBOX_FILENAME
+    if not outbox_path.exists():
+        return []
+    return load_ledger(outbox_path)["entries"]
+
+
+def _archive_unpublished_ledger(entries: list, *, outbox_dir: Path) -> None:
+    """(Re)write the outbox to hold exactly ``entries``.
 
     Called ONLY when this run's publish attempt did NOT succeed (Sol, PR
     #3827, P2/NON-BLOCKING, review 4107678146, "Stop archiving every
     successful publish as unpublished"): an earlier version of this fix
-    archived whenever the on-disk content merely differed from git HEAD,
-    which is true after EVERY ordinary successful nightly append --
-    `run_nightly` writes this run's rows directly into the tracked file
-    before `update_ledger_pr` is ever called -- so a perfectly healthy
-    install accumulated a new complete ledger copy under
-    ``unpublished-ledger-outbox`` every single night, with nothing ever
-    actually failing. Gating this on the caller's own success/failure
-    signal instead of a content diff is what makes "unpublished" mean what
-    it says.
+    archived whenever repo_root's on-disk ledger content merely differed
+    from git HEAD, which is true after EVERY ordinary successful nightly
+    append -- `run_nightly` writes this run's rows directly into the
+    tracked file before `update_ledger_pr` is ever called -- so a
+    perfectly healthy install accumulated a new outbox entry every single
+    night, with nothing ever actually failing. Gating this on the
+    caller's own success/failure signal instead of a content diff is what
+    makes "unpublished" mean what it says.
+
+    ``entries`` is the caller's full pending set for this attempt --
+    typically this run's own new rows plus whatever `_load_outbox_entries`
+    already returned -- not merely tonight's own contribution, so a second
+    consecutive failure does not silently drop the first failure's rows.
     """
-    if not ledger_path.exists():
-        return
     outbox_dir.mkdir(parents=True, exist_ok=True)
-    stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
-    (outbox_dir / f"unpublished-ledger-{stamp}.json").write_text(
-        ledger_path.read_text(encoding="utf-8"), encoding="utf-8"
+    (outbox_dir / _OUTBOX_FILENAME).write_text(
+        json.dumps({"schema_version": 2, "entries": entries}), encoding="utf-8"
     )
-    snapshots = sorted(outbox_dir.glob("unpublished-ledger-*.json"))
-    for stale in snapshots[: max(len(snapshots) - _OUTBOX_RETENTION_LIMIT, 0)]:
-        stale.unlink()
+
+
+def _clear_outbox(outbox_dir: Path) -> None:
+    """Remove the outbox once its entries are confirmed published (or were
+    never actually pending in the first place)."""
+    outbox_path = outbox_dir / _OUTBOX_FILENAME
+    if outbox_path.exists():
+        outbox_path.unlink()
 
 
 def _new_entries_since(base_entries: list, local_entries: list) -> list:
@@ -330,19 +368,16 @@ def update_ledger_pr(
 
     Restores REPO_ROOT's own tracked ledger to exactly ``pre_run_content``
     afterward, success or failure (Codex / Sol, PR #3827, P1/BLOCKING): see
-    ``_restore_tracked_ledger``. Archives this run's own rows to an outbox
-    first, but ONLY on failure (Sol, PR #3827, P2/NON-BLOCKING): see
-    ``_archive_unpublished_ledger``.
+    ``_restore_tracked_ledger``. Publishes only entries genuinely new since
+    ``pre_run_content``, folded together with anything an earlier run
+    failed to publish, and archives that same set to an outbox on failure
+    (Sol, PR #3827, P1/BLOCKING x2): see ``_update_ledger_pr_inner``.
     """
-    published = False
     try:
-        _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir)
-        published = True
+        _update_ledger_pr_inner(
+            repo_root, ledger_path, worktree_dir, pre_run_content=pre_run_content
+        )
     finally:
-        if not published:
-            _archive_unpublished_ledger(
-                ledger_path, outbox_dir=worktree_dir.parent / "unpublished-ledger-outbox"
-            )
         _restore_tracked_ledger(repo_root, ledger_path, pre_run_content=pre_run_content)
 
 
@@ -402,7 +437,48 @@ def _create_pr(repository: str, branch: str, *, cwd: Path) -> None:
     subprocess.run(_create_pr_argv(repository, branch), check=True, cwd=cwd)
 
 
-def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Path) -> None:
+def _update_ledger_pr_inner(
+    repo_root: Path, ledger_path: Path, worktree_dir: Path, *, pre_run_content: str | None
+) -> None:
+    """Compute this run's true publish candidates and archive them on failure.
+
+    Computed FIRST, before anything below that can fail (a network fetch, a
+    worktree operation, the push itself), so a failure at any point still
+    has a captured candidate set to archive -- the candidates are read from
+    REPO_ROOT's own `ledger_path` directly, independent of the worktree
+    machinery `_update_ledger_pr_publish` sets up afterward.
+
+    Publishes only entries genuinely new since ``pre_run_content`` (Sol, PR
+    #3827, P1/BLOCKING, "Publish only entries created by the nightly run"):
+    the tracked ledger at call time can hold more than tonight's own rows --
+    any entry an operator or another process already had sitting there,
+    uncommitted, before this job even started. `_restore_tracked_ledger`
+    preserves that pre-existing edit exactly as it was; it must never also
+    be folded into what gets pushed to the standing branch.
+
+    Folds in whatever an earlier run's own entries never made it onto the
+    branch (Sol, PR #3827, P1/BLOCKING, "Retain unpublished entries until
+    they are successfully published"): see `_load_outbox_entries` /
+    `_archive_unpublished_ledger`. A second consecutive failure re-archives
+    the FULL still-pending set, so nothing from the first failure is ever
+    silently dropped by the second.
+    """
+    local_entries = load_ledger(ledger_path)["entries"]
+    pre_run_entries = json.loads(pre_run_content)["entries"] if pre_run_content else []
+    tonight_entries = _new_entries_since(pre_run_entries, local_entries)
+    outbox_dir = worktree_dir.parent / "unpublished-ledger-outbox"
+    outbox_entries = _load_outbox_entries(outbox_dir)
+    candidate_entries = tonight_entries + _new_entries_since(tonight_entries, outbox_entries)
+    try:
+        _update_ledger_pr_publish(repo_root, worktree_dir, candidate_entries)
+    except Exception:
+        _archive_unpublished_ledger(candidate_entries, outbox_dir=outbox_dir)
+        raise
+    else:
+        _clear_outbox(outbox_dir)
+
+
+def _update_ledger_pr_publish(repo_root: Path, worktree_dir: Path, candidate_entries: list) -> None:
     pr_already_open = _pr_already_open(REPOSITORY, LEDGER_PR_BRANCH)
     branch = LEDGER_PR_BRANCH
     subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
@@ -507,7 +583,6 @@ def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Pa
                     f"git merge origin/main into {branch} failed: {merge.stderr.strip()}"
                 )
         dest = worktree_dir / "docs" / "perf" / "kpi-ledger.json"
-        local_entries = load_ledger(ledger_path)["entries"]
         dest.parent.mkdir(parents=True, exist_ok=True)
         # Dedup against the UNION of the branch's entries and origin/main's
         # (claude-review, PR #3827, round 3, P2), not the branch alone: an
@@ -520,7 +595,7 @@ def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Pa
         main_entries = _ledger_entries_at_ref(repo_root, "origin/main")
         main_only_entries = _new_entries_since(branch_entries, main_entries)
         base_entries = branch_entries + main_only_entries
-        new_entries = _new_entries_since(base_entries, local_entries)
+        new_entries = _new_entries_since(base_entries, candidate_entries)
         if not new_entries and not main_only_entries:
             return
         # append_entries validates by default now (Sol, PR #3827, P1/BLOCKING,
