@@ -191,7 +191,13 @@ const BUDGETS = [
   // The weight is the MIDI entry's status plumbing plus SVG icons replacing the
   // cluster's emoji glyphs (CHROME-01). Main without the IOPIN panel does not
   // carry it, so this raise is not proposed for main.
-  { name: 'performance', limit: 242688, measured: 241874, note: '/performance and children' },
+  // RAISED Sat 26 Sep 2026 (+1 KiB, preview branch af--preview-mixtour-io only):
+  // Play from USB (specs/usb-play-from-stick.md) measured 242,801, 113 bytes over.
+  // The weight is the stick-id routing in the deck load path (track-source.ts,
+  // which rides with api-rb.ts) and the USBs tab access-state rows; the stick
+  // tree itself is lazy-imported and charged to other-lazy. Not proposed for
+  // main until the feature lands there with its own measurement.
+  { name: 'performance', limit: 243712, measured: 242801, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
