@@ -18,13 +18,12 @@ Requirement: CAT-06.
 """
 from __future__ import annotations
 
-__all__: list[str] = []
+__all__ = ["read_usb_export"]
 
-# Prototype A reader is optional — its Kaitai-vendored parser lives in
-# ``reader.py`` which may be absent in some worktrees.
-try:  # pragma: no cover - import guard
-    from .reader import read_usb_export  # type: ignore[import-not-found]
 
-    __all__.append("read_usb_export")
-except Exception:  # noqa: BLE001 — any import failure is non-fatal here.
-    pass
+def __getattr__(name: str):
+    if name == "read_usb_export":
+        from .reader import read_usb_export as _read_usb_export
+
+        return _read_usb_export
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
