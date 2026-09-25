@@ -1,0 +1,312 @@
+/**
+ * Play from USB browse store (USBPLAY-05, USBPLAY-09).
+ *
+ * Owns one cached copy of each opened stick's library, keyed by VolumeUUID,
+ * plus the pane side of stick browsing: building a stick pane's rows and
+ * keeping them honest when the stick comes and goes.
+ *
+ * Fetch discipline: GET /api/v1/usb/volumes/{volume_id}/library runs ONLY
+ * after a user (or agent) action opens a stick or selects a stick pane,
+ * never at mount. On a machine without USB access every /usb route answers
+ * 503, and a mount-time fetch would be a console error on every page load
+ * (setup-entry-points.spec.ts tolerates exactly one: /usb/volumes).
+ *
+ * Unplug and replug: when a stick leaves the volume list its cache is dropped
+ * and every pane showing it grays in place ("stick removed", loads refused).
+ * When the SAME VolumeUUID returns, those panes re-read the stick and come
+ * back with their rows and selection, because stick track ids are stable per
+ * VolumeUUID (USBPLAY-04). The stick tree re-opens from the component side.
+ *
+ * Lazy module: imported by UsbStickTree and by BrowserPanel's stick branch
+ * through a dynamic import, so none of it is charged to the /performance
+ * first-paint bundle.
+ */
+import { untrack } from 'svelte';
+import { pruneSelection } from '$lib/components/rb/browser/pane-row-selection';
+import type { BrowserRow, PaneStore } from '$lib/components/rb/browser/pane-contract.svelte';
+import { fetchRbJson, RbApiError } from './api-rb';
+import type { PlaylistNode } from './library-types';
+import { usbTracker, type UsbVolumeKnown } from './usb-tracker.svelte';
+import {
+	buildUsbTree,
+	parseUsbLibraryWire,
+	parseUsbPaneId,
+	UsbLibraryError,
+	usbNodeTitle,
+	usbRowsForNode,
+	withUsbPresence,
+	type UsbLibraryWire
+} from './usb-row-wire';
+
+export { UsbLibraryError } from './usb-row-wire';
+
+const REMOVED_SUFFIX = ' (stick removed)';
+
+/** What the stick tree renders for one stick. */
+export type UsbStickView =
+	| { status: 'loading' }
+	| { status: 'ready'; name: string; tree: PlaylistNode[]; trackCount: number; readMs: number }
+	| { status: 'error'; code: string; message: string };
+
+export const usbLibrary = $state({
+	/** By volume id (`vol:<uuid>`); present only for sticks that were opened. */
+	sticks: {} as Record<string, UsbStickView>,
+	/** Folder pane ids the user expanded; survives unplug and replug. */
+	openFolders: {} as Record<string, boolean>
+});
+
+/** The parsed libraries themselves: large and immutable, so kept out of the
+ * reactive graph. `usbLibrary.sticks` carries the small view state. */
+const _libraries = new Map<string, UsbLibraryWire>();
+const _inflight = new Map<string, Promise<UsbLibraryWire>>();
+/** Bumped when a stick leaves, so a read that was in flight across the
+ * unplug cannot repopulate the cache for a stick that is gone. */
+const _epochs = new Map<string, number>();
+/** Last seen presence of every stick that was opened. */
+const _tracked = new Map<string, boolean>();
+let _panesOf: (() => readonly PaneStore[]) | null = null;
+let _stopWatch: (() => void) | null = null;
+
+// ------------------------------------------------------------ helpers
+
+/** VolumeUUID of a `vol:<uuid>` volume id. A `path:` id has no UUID, so no
+ * stable track ids can be minted for it (USBPLAY-04): refuse, never guess. */
+export function usbVolumeUuid(volumeId: string): string {
+	if (!volumeId.startsWith('vol:') || volumeId.length === 4) {
+		throw new UsbLibraryError(
+			'USB_VOLUME_HAS_NO_UUID',
+			`${volumeId} has no VolumeUUID, so its tracks cannot get stable ids`
+		);
+	}
+	return volumeId.slice(4);
+}
+
+export function usbLibraryUrl(volumeUuid: string): string {
+	return `/api/v1/usb/volumes/${encodeURIComponent(`vol:${volumeUuid}`)}/library`;
+}
+
+function _setView(volumeUuid: string, view: UsbStickView | null): void {
+	if (view === null) delete usbLibrary.sticks[`vol:${volumeUuid}`];
+	else usbLibrary.sticks[`vol:${volumeUuid}`] = view;
+}
+
+/** The backend's typed code, reworded for the one place a DJ reads it. */
+function _stickError(exc: unknown): UsbLibraryError {
+	if (exc instanceof UsbLibraryError) return exc;
+	if (exc instanceof RbApiError) {
+		// RbApiError's message is `${code}: ${detail}`; UsbLibraryError adds
+		// the code back, so keep only the backend's detail sentence.
+		const detail = exc.message.startsWith(`${exc.code}: `)
+			? exc.message.slice(exc.code.length + 2)
+			: exc.message;
+		return new UsbLibraryError(
+			exc.code,
+			exc.code === 'USB_STICK_NOT_MOUNTED' ? 'Stick removed' : detail
+		);
+	}
+	return new UsbLibraryError(
+		'USB_LIBRARY_READ_FAILED',
+		exc instanceof Error ? exc.message : String(exc)
+	);
+}
+
+function _errorView(error: UsbLibraryError): UsbStickView {
+	return { status: 'error', code: error.code, message: error.message };
+}
+
+// ------------------------------------------------------------ library cache
+
+/** The stick's library, read once per VolumeUUID and then served from cache.
+ * Concurrent callers share one request. */
+export function ensureUsbLibrary(volumeUuid: string): Promise<UsbLibraryWire> {
+	const cached = _libraries.get(volumeUuid);
+	if (cached !== undefined) return Promise.resolve(cached);
+	const pending = _inflight.get(volumeUuid);
+	if (pending !== undefined) return pending;
+	// Only a FIRST open records presence: a replug must stay visible to
+	// applyUsbVolumePresence as a false -> true transition, whichever of the
+	// tree remount or the volume watcher runs first.
+	if (!_tracked.has(volumeUuid)) _tracked.set(volumeUuid, true);
+	_setView(volumeUuid, { status: 'loading' });
+	const read: Promise<UsbLibraryWire> = _readLibrary(
+		volumeUuid,
+		_epochs.get(volumeUuid) ?? 0
+	).finally(() => {
+		if (_inflight.get(volumeUuid) === read) _inflight.delete(volumeUuid);
+	});
+	_inflight.set(volumeUuid, read);
+	return read;
+}
+
+async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibraryWire> {
+	const current = (): boolean => (_epochs.get(volumeUuid) ?? 0) === epoch;
+	try {
+		const library = parseUsbLibraryWire(await fetchRbJson<unknown>(usbLibraryUrl(volumeUuid)));
+		if (library.volume_uuid !== volumeUuid) {
+			throw new UsbLibraryError(
+				'USB_LIBRARY_MALFORMED',
+				`asked for stick ${volumeUuid}, got ${library.volume_uuid}`
+			);
+		}
+		const tree = buildUsbTree(library);
+		if (!current()) throw new UsbLibraryError('USB_STICK_NOT_MOUNTED', 'Stick removed');
+		_libraries.set(volumeUuid, library);
+		_setView(volumeUuid, {
+			status: 'ready',
+			name: library.name.trim(),
+			tree,
+			trackCount: library.tracks.length,
+			readMs: library.read_ms
+		});
+		return library;
+	} catch (exc) {
+		const error = _stickError(exc);
+		if (current()) _setView(volumeUuid, _errorView(error));
+		throw error;
+	}
+}
+
+/** Open a stick from the tree: read its library unless already cached. A
+ * failure is recorded on the stick's view, which is where the tree shows it,
+ * so the rejection is consumed here on purpose rather than dropped. */
+export function openUsbStick(volume: Pick<UsbVolumeKnown, 'id'>): void {
+	let volumeUuid: string;
+	try {
+		volumeUuid = usbVolumeUuid(volume.id);
+	} catch (exc) {
+		usbLibrary.sticks[volume.id] = _errorView(_stickError(exc));
+		return;
+	}
+	watchUsbVolumes();
+	ensureUsbLibrary(volumeUuid).catch((exc: unknown) => {
+		console.warn(`[usb] ${volume.id} library read failed:`, exc);
+	});
+}
+
+export function toggleUsbFolder(paneId: string): void {
+	usbLibrary.openFolders[paneId] = !usbLibrary.openFolders[paneId];
+}
+
+// ------------------------------------------------------------ presence
+
+/**
+ * React to the volume list (USBPLAY-09). A tracked stick that left drops its
+ * cache and grays its panes in place; one that came back re-reads into its
+ * panes. Returns the VolumeUUIDs whose presence changed. Called by the
+ * watcher on every volume poll; exported for tests, which cannot run
+ * Svelte effects.
+ */
+export function applyUsbVolumePresence(volumes: readonly UsbVolumeKnown[]): string[] {
+	const present = new Set(
+		volumes
+			.filter((v) => v.present === true && v.id.startsWith('vol:'))
+			.map((v) => v.id.slice(4))
+	);
+	const changed: string[] = [];
+	for (const [volumeUuid, wasPresent] of _tracked) {
+		const isPresent = present.has(volumeUuid);
+		if (isPresent === wasPresent) continue;
+		_tracked.set(volumeUuid, isPresent);
+		changed.push(volumeUuid);
+		if (!isPresent) {
+			_epochs.set(volumeUuid, (_epochs.get(volumeUuid) ?? 0) + 1);
+			_libraries.delete(volumeUuid);
+			_inflight.delete(volumeUuid);
+			_setView(volumeUuid, null);
+		}
+		for (const pane of _panesOf?.() ?? []) {
+			if (pane.kind !== 'usb' || pane.playlist_id === null || pane.loading) continue;
+			if (parseUsbPaneId(pane.playlist_id)?.volumeUuid !== volumeUuid) continue;
+			if (isPresent) {
+				refreshUsbPane(pane).catch((exc: unknown) => {
+					console.error(`[usb] ${pane.playlist_id} did not come back after replug:`, exc);
+				});
+			} else {
+				const view = _removedView({ rows: pane.rows, title: pane.title });
+				pane.rows = view.rows;
+				pane.title = view.title;
+			}
+		}
+	}
+	return changed;
+}
+
+/** Arm the presence watcher once, on the first stick a user opens. */
+export function watchUsbVolumes(): void {
+	if (_stopWatch !== null) return;
+	_stopWatch = $effect.root(() => {
+		$effect(() => {
+			// Tracks only the list itself: the tracker reassigns it on every
+			// poll, and the pane writes below must not re-trigger this effect.
+			const volumes = usbTracker.volumes;
+			untrack(() => applyUsbVolumePresence(volumes));
+		});
+	});
+}
+
+// ------------------------------------------------------------ panes
+
+interface PaneView {
+	rows: BrowserRow[];
+	title: string;
+}
+
+function _removedView(current: PaneView): PaneView {
+	return {
+		rows: withUsbPresence(current.rows, false),
+		title: current.title.endsWith(REMOVED_SUFFIX)
+			? current.title
+			: `${current.title}${REMOVED_SUFFIX}`
+	};
+}
+
+/** Rows and title for a stick pane. `shown` is what the pane already holds:
+ * null on a first load, which fails with the typed error when the stick is
+ * gone; a loaded pane grays what it shows instead. */
+export async function usbPaneView(paneId: string, shown: PaneView | null): Promise<PaneView> {
+	const ref = parseUsbPaneId(paneId);
+	if (ref === null) {
+		throw new UsbLibraryError('USB_PANE_ID_INVALID', `${paneId} is not a stick pane id`);
+	}
+	try {
+		const library = await ensureUsbLibrary(ref.volumeUuid);
+		return {
+			rows: usbRowsForNode(library, ref.nodeKey, true),
+			title: usbNodeTitle(library, ref.nodeKey)
+		};
+	} catch (exc) {
+		const error = _stickError(exc);
+		if (error.code === 'USB_STICK_NOT_MOUNTED' && shown !== null) return _removedView(shown);
+		throw error;
+	}
+}
+
+/**
+ * BrowserPanel's stick branch of _loadPane. `panesOf` lets a later unplug or
+ * replug find every pane showing this stick. Publishes through the pane's
+ * load token, so a newer selection always wins.
+ */
+export async function loadUsbPane(
+	pane: PaneStore,
+	seq: number,
+	panesOf: () => readonly PaneStore[]
+): Promise<void> {
+	_panesOf = panesOf;
+	watchUsbVolumes();
+	const paneId = pane.playlist_id;
+	if (paneId === null) throw new UsbLibraryError('USB_PANE_ID_INVALID', 'blank pane');
+	const view = await usbPaneView(paneId, null);
+	if (pane.completeLoad(seq, view.rows, false)) pane.title = view.title;
+}
+
+/** Background refresh of a loaded stick pane, in place: keeps selection and
+ * scroll, as BrowserPanel's library refresh does for its own panes. */
+export async function refreshUsbPane(pane: PaneStore): Promise<void> {
+	const requested = pane.playlist_id;
+	if (requested === null || pane.loading) return;
+	const view = await usbPaneView(requested, { rows: pane.rows, title: pane.title });
+	if (pane.playlist_id !== requested || pane.loading) return;
+	pane.rows = view.rows;
+	pane.title = view.title;
+	pruneSelection(pane, view.rows);
+}
