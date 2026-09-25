@@ -379,9 +379,11 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
-	key_status?: 'ok' | 'failed' | 'missing';
+	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;

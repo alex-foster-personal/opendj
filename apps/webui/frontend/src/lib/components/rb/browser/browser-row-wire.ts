@@ -77,6 +77,8 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		energy_reason: wire.energy_reason,
 		key_status: wire.key_status ?? 'ok',
 		key_reason: wire.key_reason ?? null,
+		bpm_status: wire.bpm_status ?? 'ok',
+		bpm_reason: wire.bpm_reason ?? null,
 		loudness_status: wire.loudness_status ?? 'ok',
 		loudness_reason: wire.loudness_reason ?? null,
 		...availability,
