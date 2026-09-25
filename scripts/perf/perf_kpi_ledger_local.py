@@ -8,6 +8,9 @@ unpublished-entry outbox that holds tonight's rows until they reach the branch.
 [if] a publish fails [then] tonight's rows survive in the outbox or the tracked file,
 and REPO_ROOT is restored only once they do, [else stop].
 
+Supersedes: nothing on main; these helpers are new in PR #3827, split out of
+`scripts/perf/perf_kpi_job.py` within that PR, which no longer defines them.
+
 -Claude
 """
 

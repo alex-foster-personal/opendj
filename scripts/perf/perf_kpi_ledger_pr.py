@@ -9,6 +9,10 @@ REPO_ROOT-side state (restore, outbox, worktree cleanup) lives in
 [if] two hosts publish the same night [then] both hosts' entries survive on the branch
 and neither overwrites the other, [else stop].
 
+Supersedes: `update_ledger_pr` in `scripts/perf/perf_kpi_job.py`, which on main
+ran `git checkout -B` inside REPO_ROOT; moved here and deleted there, and
+`perf_kpi_job` now imports it. The gh PR helpers are new in PR #3827.
+
 -Claude
 """
 

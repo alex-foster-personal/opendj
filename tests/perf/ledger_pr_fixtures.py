@@ -5,6 +5,9 @@ A real upstream repo plus a clone of it, and schema-valid ledger rows, used by
 `test_perf_kpi_ledger_local.py`. Nothing
 here fakes git: every helper runs the real `git` binary against a temp directory.
 
+Supersedes: nothing on main; these helpers were private to
+`test_perf_kpi_ledger_pr_worktree.py` within PR #3827 and are deleted there.
+
 -Claude
 """
 

@@ -7,6 +7,10 @@ previously known. That is a genuinely separate question from "how do we
 query a host" (``process_registry_gen.py`` collectors) or "how do we render
 the snapshot" (``process_registry_gen.render_markdown``), so it lives here
 rather than being cut for line count alone.
+
+Supersedes: `_load_previous` and `merge_with_previous` in
+`scripts/process_registry_gen.py`; moved here and deleted there.
+`carry_forward_unqueried_host` is new in PR #3827.
 """
 
 from __future__ import annotations
