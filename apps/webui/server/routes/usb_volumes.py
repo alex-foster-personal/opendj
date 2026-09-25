@@ -44,6 +44,7 @@ from apps.webui.server.routes.usb_classify import (
     VolumeRole,
     classify_mount,
     classify_role,
+    has_dj_export_at_root,
     hide_reason_for,
 )
 from apps.webui.server.routes.usb_gate import UsbExportGate, usb_export_gate
@@ -236,6 +237,7 @@ def _scan_volumes(
         role = classify_role(
             protocol=info.protocol,
             removable=info.removable,
+            has_dj_export=has_dj_export_at_root(entry),
             internal=info.internal,
         )
         # Never shallow-walk huge Fixed / disk-image mounts (hang risk).

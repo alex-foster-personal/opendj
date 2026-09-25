@@ -38,11 +38,9 @@ def classify_mount(root: Path) -> VolumeKind:
         names = {p.name for p in root.iterdir()}
     except OSError:
         return "unknown"
-    lower = {n.lower() for n in names}
-    if "pioneer" in lower or "rekordbox" in lower:
-        return "rekordbox"
-    if "djay" in lower or "djay media library.djaymediadatabase" in lower:
-        return "djay"
+    dj_kind = _dj_export_kind_from_names(names)
+    if dj_kind is not None:
+        return dj_kind
     if _has_audio_shallow(root, max_entries=80):
         return "music"
     return "unknown"
@@ -52,18 +50,24 @@ def classify_role(
     *,
     protocol: str | None,
     removable: bool | None,
+    has_dj_export: bool,
     internal: bool | None = None,
 ) -> VolumeRole:
     """Map diskutil BusProtocol / RemovableMedia / Internal to a volume role.
 
     Human `diskutil info` prints Removable Media as Fixed/Removable; the plist
     exposes RemovableMedia as a bool (False ~= Fixed, True ~= Removable).
+
+    A USB SSD reports Fixed exactly like a USB backup disk, so Fixed alone
+    cannot tell them apart. ``has_dj_export`` (from :func:`has_dj_export_at_root`)
+    is what does: a Fixed USB volume carrying a PIONEER / djay export at its
+    root is a DJ stick, anything else Fixed on USB stays a mounted drive.
     """
     proto = (protocol or "").strip().lower()
     if "disk image" in proto:
         return "disk_image"
     if "usb" in proto:
-        if removable is False:
+        if removable is False and not has_dj_export:
             return "mounted_drive"
         return "usb_stick"
     if internal is True or removable is False:
@@ -117,6 +121,28 @@ def _short_name(name: str | None) -> str | None:
     return cleaned
 
 
+def has_dj_export_at_root(root: Path) -> bool:
+    """True when the volume root holds a PIONEER / rekordbox / djay export.
+
+    One directory listing of the root, never a walk, so it is safe on a large
+    Fixed drive where :func:`classify_mount` must not descend.
+    """
+    try:
+        names = {p.name for p in root.iterdir()}
+    except OSError:
+        return False
+    return _dj_export_kind_from_names(names) is not None
+
+
+def _dj_export_kind_from_names(names: set[str]) -> VolumeKind | None:
+    lower = {n.lower() for n in names}
+    if "pioneer" in lower or "rekordbox" in lower:
+        return "rekordbox"
+    if "djay" in lower or "djay media library.djaymediadatabase" in lower:
+        return "djay"
+    return None
+
+
 def _has_audio_shallow(root: Path, *, max_entries: int) -> bool:
     seen = 0
     try:
@@ -156,5 +182,6 @@ __all__ = [
     "VolumeRole",
     "classify_mount",
     "classify_role",
+    "has_dj_export_at_root",
     "hide_reason_for",
 ]
