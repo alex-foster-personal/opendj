@@ -589,12 +589,8 @@
 		transition:
 			box-shadow 50ms ease-out,
 			background 50ms ease-out;
-		background: radial-gradient(
-			ellipse 90% 80% at 50% 40%,
-			rgba(255, 255, 255, 0.07) 0%,
-			transparent 70%
-		);
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+		background: var(--rb-deck-hover-bg);
+		box-shadow: var(--rb-deck-hover-inset);
 	}
 	.rb-deck.selected {
 		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
