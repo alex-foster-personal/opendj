@@ -54,6 +54,7 @@ def discovered_fixed_ports(roots: tuple[Path, ...] = (E2E_DIR, DESKTOP_DIR)) -> 
     return discovered
 
 
+# REQ: INFRA-08
 def test_every_declared_fixed_port_is_discovered_and_excluded() -> None:
     """if a configuration gains a pinned port without RESERVED_FIXED_PORTS
     gaining it -- or stops declaring one the set still excludes -- then broken

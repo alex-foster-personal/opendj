@@ -18,6 +18,7 @@ def test_require_post_head_unchanged_refuses_moved_head() -> None:
         _require_post_head_unchanged(PR, OLD_SHA, NEW_SHA)
 
 
+# REQ: REVIEW-10
 def test_post_review_refuses_when_head_moves_before_upload(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] PR head changes after review completes [then] post_review posts nothing, [else stop]."""
     monkeypatch.setattr("scripts.review_lane.pinned_head", lambda _pr: NEW_SHA)

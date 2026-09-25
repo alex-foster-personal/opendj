@@ -276,6 +276,7 @@ def a_failed_ledger_still_fails_the_job(workflow: dict) -> bool:
     )
 
 
+# REQ: DEVOPS-13
 def test_the_ledger_step_survives_its_own_failure() -> None:
     """A broken credential must not take the alarm steps down with it."""
     ledger = _step(_workflow(), LEDGER_STEP)
@@ -286,6 +287,7 @@ def test_the_ledger_step_survives_its_own_failure() -> None:
     )
 
 
+# REQ: DEVOPS-13
 def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
     """WARN, STOP, and a failed ledger reuse the same alert-issue step."""
     workflow = _workflow()
@@ -301,6 +303,7 @@ def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
         )
 
 
+# REQ: DEVOPS-13
 def test_a_ledger_failure_still_keeps_the_job_red() -> None:
     """continue-on-error on the ledger step must not let a blind run go green."""
     assert a_failed_ledger_still_fails_the_job(_workflow()), (
@@ -310,6 +313,7 @@ def test_a_ledger_failure_still_keeps_the_job_red() -> None:
     )
 
 
+# REQ: DEVOPS-13
 def test_the_alert_issue_step_also_fires_on_an_unknown_state() -> None:
     """The ledger's own UNKNOWN verdict is the same 'cannot measure' bug."""
     assert alert_issue_step_fires_on_unknown_state(_workflow()), (

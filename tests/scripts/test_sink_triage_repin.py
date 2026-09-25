@@ -109,6 +109,7 @@ def _kpi(jobs_dir: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# REQ: OPS-38
 def test_stale_worktree_is_repinned_to_origin_main_and_logged(tmp_path: Path) -> None:
     """[if] worktree stale at c1 and origin/main is at c2 [then] repinned to c2, logged."""
     origin, sha1, sha2 = _init_origin(tmp_path)
@@ -126,6 +127,7 @@ def test_stale_worktree_is_repinned_to_origin_main_and_logged(tmp_path: Path) ->
     assert f"pinned ref=origin/main sha={sha2}" in log
 
 
+# REQ: OPS-38
 def test_dirty_tracked_file_refuses_without_touching_worktree(tmp_path: Path) -> None:
     """[if] worktree has a tracked-file edit [then] refuses, logs why, leaves HEAD alone."""
     origin, sha1, _sha2 = _init_origin(tmp_path)
@@ -162,6 +164,7 @@ def test_untracked_stray_does_not_block_repin(tmp_path: Path) -> None:
     assert head == sha2
 
 
+# REQ: OPS-38
 def test_fetch_failure_refuses_and_leaves_worktree_alone(tmp_path: Path) -> None:
     """[if] origin remote is unreachable [then] refuses, logs why, leaves HEAD alone."""
     origin, sha1, _sha2 = _init_origin(tmp_path)
@@ -205,6 +208,7 @@ def test_pinned_sha_ref_skips_fetch(tmp_path: Path) -> None:
     assert f"pinned ref={sha1} sha={sha1}" in log
 
 
+# REQ: OPS-38
 def test_kpi_records_sha_and_preserves_existing_fields(tmp_path: Path) -> None:
     """[if] triage succeeds and writes a kpi file [then] sha/ref merge in, old fields survive."""
     origin, sha1, sha2 = _init_origin(tmp_path)

@@ -97,6 +97,7 @@ def _app_line(stdout: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
+# REQ: TESTMAC-11
 def test_app_line_passes_for_a_current_build(tmp_path: Path) -> None:
     _fake_ssh(tmp_path, state_rc=0, built_at_utc=_iso(1))
     status, detail = _app_line(_run_verify(tmp_path, tmp_path))
@@ -105,6 +106,7 @@ def test_app_line_passes_for_a_current_build(tmp_path: Path) -> None:
     assert f"bound {MAX_AGE_H}h" in detail
 
 
+# REQ: TESTMAC-11
 def test_app_line_fails_for_a_stale_build_with_working_cli(tmp_path: Path) -> None:
     """The middle case: CLI present and answering, but the build it answers for is old.
     This is the clause a check built on CLI-presence alone would miss entirely."""
@@ -115,6 +117,7 @@ def test_app_line_fails_for_a_stale_build_with_working_cli(tmp_path: Path) -> No
     assert f"{MAX_AGE_H}h bound" in detail
 
 
+# REQ: TESTMAC-11
 def test_app_line_fails_when_cli_is_absent_negative_control(tmp_path: Path) -> None:
     """demon-llama's actual issue #2887 state: app installed and signed, no working CLI.
     This is the negative control the issue's acceptance check names explicitly."""

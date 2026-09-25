@@ -57,6 +57,7 @@ def _claude_review_at(sha: str) -> dict:
     }
 
 
+# REQ: REVIEW-08
 def test_triage_prints_carry_proof(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     reviewed = _commit(repo, _DEBT, "debt v1\n")
     head = _commit(repo, _DEBT, "debt v2\n")

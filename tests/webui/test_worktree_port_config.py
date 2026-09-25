@@ -768,6 +768,7 @@ def test_a_reservation_from_another_lane_is_reallocated_not_restored(tmp_path: P
 # set) could legitimately allocate one of those exact ports.
 
 
+# REQ: INFRA-08
 def test_allocate_pair_never_returns_a_reserved_fixed_port() -> None:
     """if the dynamic allocator hands a fixed CI/desktop suite's own port to
     a caller then broken (issue #1613)"""
@@ -815,6 +816,7 @@ def test_allocate_pair_falls_through_a_reserved_slot_to_the_next_free_one() -> N
     )
 
 
+# REQ: INFRA-08
 def test_claim_ports_rejects_an_explicit_request_for_a_reserved_fixed_port(
     tmp_path: Path,
 ) -> None:
@@ -881,6 +883,7 @@ def test_release_ports_removes_its_ownership_markers(
     assert describe_port_owner(claimed.frontend) is None
 
 
+# REQ: INFRA-08
 def test_claim_ports_reallocates_a_pre_existing_now_reserved_env_pair(
     tmp_path: Path,
 ) -> None:

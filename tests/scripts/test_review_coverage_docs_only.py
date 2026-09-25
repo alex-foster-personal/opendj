@@ -69,6 +69,7 @@ def _run(
 # ----- docs-only PR: coverage is waived, exemption stays visible ----------
 
 
+# REQ: REVIEW-09
 def test_docs_only_pr_passes_without_ever_fetching_reviewer_evidence() -> None:
     """The whole point: a docs-only PR must not touch `_checks` or the
     reviews/inline/issue-comments endpoints at all, not just skip failing on
