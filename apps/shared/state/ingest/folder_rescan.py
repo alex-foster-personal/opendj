@@ -105,7 +105,8 @@ def _existing_live_by_path(conn: Any, roots: list[Path]) -> dict[str, list[str]]
     """
     rows = conn.execute(
         "SELECT stable_id, file_path FROM tracks "
-        "WHERE deleted_at IS NULL AND file_path IS NOT NULL"
+        "WHERE deleted_at IS NULL AND file_path IS NOT NULL "
+        "AND stable_id_tier = 'inferred'"
     ).fetchall()
     by_path: dict[str, list[str]] = {}
     for stable_id, file_path in rows:
@@ -250,6 +251,10 @@ def reconcile_folders(
         )
     if warning is not None:
         report.warning = warning
+        # A refused scan must be evaluated again on the next cycle. Keeping
+        # the filesystem signature would cheap-skip the same unsafe state
+        # and make the warning disappear from status and logs.
+        report.signature = ""
         report.duration_s = round(time.perf_counter() - start, 3)
         return report
 

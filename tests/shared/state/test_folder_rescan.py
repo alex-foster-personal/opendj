@@ -174,7 +174,7 @@ def test_denied_root_warns_every_cycle_and_never_mass_tombstones(
 
     # AC: "fails loudly" -> the warning re-surfaces every cycle, not just once.
     assert third.warning is not None
-    assert third.skipped_no_changes is True, "a stable denial must stay on the cheap path"
+    assert third.skipped_no_changes is False, "a denied root must be re-evaluated every cycle"
     assert len(_live_tracks(state_conn)) == 1
 
 
@@ -199,6 +199,33 @@ def test_mass_missing_guard_refuses_when_files_vanish_without_a_denial(
     assert second.warning is not None
     assert "LIBM-41" in second.warning
     assert len(_live_tracks(state_conn)) == 3, "guard must block the tombstone, not just warn"
+
+
+def test_rescan_never_tombstones_a_non_folder_identity_at_a_folder_path(
+    state_conn, tmp_path: Path
+) -> None:
+    root = tmp_path / "music"
+    audio_path = root / "a.wav"
+    _write_wav(audio_path)
+    writer = _writer(state_conn)
+    first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    inferred_id = _live_tracks(state_conn)[0][0]
+    rekordbox_id = "rekordbox-track-at-same-path"
+    writer.upsert_track(
+        stable_id=rekordbox_id,
+        stable_id_tier="isrc",
+        title="Imported",
+        artists=[],
+        album=None,
+        isrc="US-TEST-00001",
+        duration_ms=None,
+        file_path=str(audio_path),
+    )
+
+    second = folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
+
+    assert second.tracks_removed == 0
+    assert {row[0] for row in _live_tracks(state_conn)} == {inferred_id, rekordbox_id}
 
 
 def test_mass_missing_guard_does_not_block_a_genuine_small_removal(

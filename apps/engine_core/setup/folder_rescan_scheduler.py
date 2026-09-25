@@ -119,8 +119,9 @@ class FolderRescanScheduler:
         """
         self.rounds_started += 1
         state_path = self._data_dir / "state" / detect.STATE_DB_NAME
-        conn = state_db.open_rw(state_path)
+        conn: Any | None = None
         try:
+            conn = state_db.open_rw(state_path)
             writer = StateWriter(conn, actor="folder-rescan")
             try:
                 report = self._reconcile_fn(writer, roots, self._signature)
@@ -131,7 +132,8 @@ class FolderRescanScheduler:
             log.exception("folder-rescan round failed (%d in a row)", self.consecutive_failures)
             return "error"
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
             self.rounds_completed += 1
             self._next_due = time.monotonic() + next_delay_s(
                 self._cfg.INTERVAL_S, self.consecutive_failures, self._cfg.MAX_BACKOFF_S
@@ -183,9 +185,9 @@ class FolderRescanScheduler:
             return None
         self._last_record_error = None
         last_import = saved.last_import
-        if last_import is None or last_import.get("kind") != "folder":
-            return None
-        roots = last_import.get("roots")
+        roots = saved.folder_watch_roots
+        if not roots and last_import is not None and last_import.get("kind") == "folder":
+            roots = last_import.get("roots", [])
         if not roots:
             return None
         return [Path(root) for root in roots]

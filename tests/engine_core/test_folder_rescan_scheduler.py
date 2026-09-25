@@ -25,6 +25,7 @@ import itertools
 import threading
 import time
 from pathlib import Path
+from unittest import mock
 
 from apps.engine_core.setup import folder_rescan_scheduler as fr_scheduler
 from apps.engine_core.setup import record as setup_record
@@ -112,6 +113,34 @@ def test_a_rekordbox_only_import_does_not_start_rounds(tmp_path: Path) -> None:
 
     assert asyncio.run(scenario()) == 0
     assert calls == []
+
+
+def test_saved_watch_roots_survive_a_later_rekordbox_import(tmp_path: Path) -> None:
+    setup_record.write(
+        tmp_path,
+        setup_record.SetupRecord(
+            dismissed=True,
+            last_import={"kind": "rekordbox"},
+            folder_watch_roots=["/first", "/second"],
+        ),
+    )
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    assert scheduler._roots() == [Path("/first"), Path("/second")]
+
+
+def test_state_db_open_failure_is_a_retryable_round_failure(tmp_path: Path) -> None:
+    _mark_folder_import(tmp_path, [str(tmp_path / "music")])
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    with mock.patch.object(
+        fr_scheduler.state_db, "open_rw", side_effect=OSError("busy")
+    ):
+        outcome = scheduler.run_round([tmp_path / "music"])
+
+    assert outcome == "error"
+    assert scheduler.consecutive_failures == 1
+    assert scheduler.rounds_completed == 1
 
 
 def test_folder_import_landing_after_boot_is_picked_up_without_restart(tmp_path: Path) -> None:
