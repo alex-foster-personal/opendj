@@ -18,6 +18,7 @@
 -->
 <script lang="ts">
 	import { API_BASE } from '$lib/api';
+	import { trackApiPath } from '$lib/rb/track-source';
 	import { getDeckState } from '$lib/rb/audio-engine.svelte';
 	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
 	import { closeStage, stageState, type StageDeck } from '$lib/lyrics/stage-store.svelte';
@@ -52,7 +53,7 @@
 	const audioUrl = $derived(
 		stageState.stableId === null
 			? null
-			: `${API_BASE}/api/v1/tracks/${encodeURIComponent(stageState.stableId)}/audio`
+			: `${API_BASE}${trackApiPath(stageState.stableId, '/audio')}` // spec 4b: stick ids stream from the usb route
 	);
 	const perfDeck = $derived(stageState.deck === null ? null : getDeckState(stageState.deck));
 	const deckMismatch = $derived(
