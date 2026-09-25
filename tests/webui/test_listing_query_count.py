@@ -1,5 +1,7 @@
 """Library listing and playlist detail cost O(1) sqlite work per call (LIBM-128, #3962).
 
+[if] a listing page issues sqlite work per row [then] fail, [else stop].
+
 Found at 10k folder-imported tracks (LIBM-120 measurement, Fri 25 Sep 2026):
 every row with no rekordbox mapping opened its OWN read-only state.db
 connection and re-ran two schema probes plus two lookups, so a 500-row page
@@ -182,8 +184,7 @@ def _oracle(stable_id: str) -> tuple[bool | None, str]:
 
 
 def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> None:
-    """[if] the artwork lookup is batched
-    [then] every row's verdict equals the per-row one, [else stop]."""
+    """[if] artwork is batched [then] each row matches the per-row verdict, [else stop]."""
     client, _trace = traced_client
     listing = client.get(f"/api/v1/tracks?limit={LARGE}").json()["items"]
     detail = client.get(f"/api/v1/playlists/{LARGE_PLAYLIST}").json()["tracks"]
@@ -208,8 +209,7 @@ def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> Non
 
 
 def test_fixture_rows_are_really_unmapped(traced_client, tmp_path: Path) -> None:
-    """[if] the fixture grows a rekordbox mapping
-    [then] the unmapped per-row path is no longer what is measured, [else stop]."""
+    """[if] the fixture gains a rekordbox mapping [then] fail loudly, [else stop]."""
     conn = sqlite3.connect(str(tmp_path / "state.db"))
     try:
         mapped = conn.execute("SELECT COUNT(*) FROM track_vendor_ids").fetchone()[0]

@@ -1,5 +1,7 @@
 """Adding to a playlist reads each existing member once (LIBM-129, #3963).
 
+[if] adding one track reads a member more than once [then] fail, [else stop].
+
 Found at 10k members (LIBM-120 measurement, Fri 25 Sep 2026): one
 ``items:add`` cost 634 ms against 5.8 ms at 50 members, because the add read
 every existing member THREE times - a full load for the before-snapshot, a
@@ -80,8 +82,7 @@ def _rows_read_by_one_add(store: PlaylistStore, playlist_id: str, position: int 
 
 @pytest.mark.parametrize("where", ["append", "middle"])
 def test_one_add_reads_each_existing_member_once(store: PlaylistStore, where: str) -> None:
-    """[if] one track is added to a 400-member playlist
-    [then] each existing member is read once, [else stop]."""
+    """[if] one track is added at 400 members [then] each member is read once, [else stop]."""
     small = _playlist(store, SMALL)
     large = _playlist(store, LARGE)
     small_rows = _rows_read_by_one_add(store, small, None if where == "append" else SMALL // 2)
@@ -96,8 +97,7 @@ def test_one_add_reads_each_existing_member_once(store: PlaylistStore, where: st
 
 
 def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> None:
-    """[if] neighbors are read by a bounded query
-    [then] they are the full list's neighbors, [else stop]."""
+    """[if] neighbors come from a bounded read [then] they match the full list, [else stop]."""
     playlist_id = _playlist(store, 12)
     conn = store._conn
     # Legacy rows with no order_key sort by their zero-padded position, the
@@ -119,8 +119,7 @@ def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> N
 
 
 def test_response_and_undo_snapshot_match_independent_reads(store: PlaylistStore) -> None:
-    """[if] the before-snapshot is derived from the after read
-    [then] it equals the membership before the add, [else stop]."""
+    """[if] the before-snapshot is derived [then] it equals the pre-add read, [else stop]."""
     playlist_id = _playlist(store, 30)
     conn = store._conn
     before = [m.stable_id for m in _load_live_members(conn, playlist_id)]
