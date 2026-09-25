@@ -16,6 +16,7 @@ import argparse
 import json
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.perf.kpi_ledger_append import append_entries, load_ledger
@@ -125,7 +126,13 @@ def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
     subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
 
 
-def _restore_tracked_ledger(repo_root: Path, ledger_path: Path) -> None:
+def _restore_tracked_ledger(
+    repo_root: Path,
+    ledger_path: Path,
+    *,
+    outbox_dir: Path,
+    now: datetime | None = None,
+) -> None:
     """Undo `run_nightly`'s direct write to a ledger tracked inside `repo_root`.
 
     BLOCKING, found by review on PR #3827 (Codex): with the default
@@ -140,11 +147,19 @@ def _restore_tracked_ledger(repo_root: Path, ledger_path: Path) -> None:
     silently stop this install from ever receiving another `git pull`
     again. Restored unconditionally -- success or failure -- so a publish
     attempt never leaves a side effect on `repo_root` beyond what it
-    actually achieved (git history, or nothing): a night whose publish
-    failed loses that night's local copy of the measurement, the same way
-    it would if the process had simply crashed before writing anything, and
-    the crash itself is what surfaces the failure, not a silently
-    accumulating dirty tree.
+    actually achieved (git history, or nothing).
+
+    Snapshots the pre-checkout content to ``outbox_dir`` FIRST whenever it
+    differs from ``HEAD`` (Sol, PR #3827, P1/BLOCKING, review 5320608598):
+    the old version threw that content away unconditionally, so a night
+    whose publish failed lost its only copy of the measurement, and any
+    unrelated uncommitted edit already sitting in ``ledger_path`` before
+    this job ever ran was destroyed the same way. Neither case is this
+    function's to judge -- it does not know whether the content it is
+    about to discard was ever safely persisted elsewhere -- so it always
+    keeps a durable, timestamped copy outside `repo_root`'s working tree
+    (never inside it, so `repo_root` still ends up exactly as clean as
+    before) rather than silently losing data on a failure path.
 
     A no-op when ``ledger_path`` does not live inside `repo_root`'s working
     tree at all (an env override pointing somewhere else, as several tests
@@ -154,6 +169,22 @@ def _restore_tracked_ledger(repo_root: Path, ledger_path: Path) -> None:
         relative = ledger_path.resolve().relative_to(repo_root.resolve())
     except ValueError:
         return
+    if ledger_path.exists():
+        on_disk = ledger_path.read_text(encoding="utf-8")
+        committed = subprocess.run(
+            ["git", "show", f"HEAD:{relative.as_posix()}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        committed_text = committed.stdout if committed.returncode == 0 else None
+        if on_disk != committed_text:
+            outbox_dir.mkdir(parents=True, exist_ok=True)
+            stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%S.%fZ")
+            (outbox_dir / f"unpublished-ledger-{stamp}.json").write_text(
+                on_disk, encoding="utf-8"
+            )
     subprocess.run(
         ["git", "checkout", "--", str(relative)],
         check=True,
@@ -246,12 +277,15 @@ def update_ledger_pr(
     in-flight worktree. Every real caller must pass ``config.ledger_worktree``.
 
     Restores REPO_ROOT's own tracked ledger afterward, success or failure
-    (Codex, PR #3827, P1/BLOCKING): see ``_restore_tracked_ledger``.
+    (Codex, PR #3827, P1/BLOCKING), preserving anything unpublished to an
+    outbox first (Sol, PR #3827, P1/BLOCKING): see ``_restore_tracked_ledger``.
     """
     try:
         _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir)
     finally:
-        _restore_tracked_ledger(repo_root, ledger_path)
+        _restore_tracked_ledger(
+            repo_root, ledger_path, outbox_dir=worktree_dir.parent / "unpublished-ledger-outbox"
+        )
 
 
 def _pr_list_argv(repository: str, branch: str) -> list[str]:
