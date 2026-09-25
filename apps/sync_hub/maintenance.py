@@ -735,7 +735,17 @@ def _refused_by_loopback_engine(host: str, exc: BaseException | None) -> bool:
 
 def _ui_mirror_received_at(body: Mapping[str, Any]) -> datetime | None:
     """Parse the server-stamped ``received_at`` (``apps/webui/server/routes/
-    state.py``), or None when it is missing or not a valid ISO-8601 stamp."""
+    state.py``), or None when it is missing, not a valid ISO-8601 stamp, or
+    not explicitly timezone-aware (Sol review, PR #3831, P1/BLOCKING).
+
+    The real route always stamps this with an explicit UTC offset (a
+    trailing ``Z`` or ``+00:00``), so a NAIVE timestamp is never something a
+    genuine server response can produce. Silently assuming UTC for one
+    invented a description that was never verified -- exactly the
+    "malformed response reads as safe" failure mode this whole probe exists
+    to close -- so a naive stamp fails closed here instead, same as an
+    unparseable one.
+    """
     raw = body.get("received_at")
     if not isinstance(raw, str) or not raw:
         return None
@@ -744,7 +754,7 @@ def _ui_mirror_received_at(body: Mapping[str, Any]) -> datetime | None:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _ui_mirror_is_fresh(body: Mapping[str, Any], *, now: datetime | None = None) -> bool:
@@ -757,12 +767,21 @@ def _ui_mirror_is_fresh(body: Mapping[str, Any], *, now: datetime | None = None)
     the page's main thread stalls after starting playback but before its
     next 1 s publish, the route keeps serving the last (idle) snapshot while
     the deck plays on. See `_UI_MIRROR_FRESHNESS_TOLERANCE_S`.
+
+    Age must fall in ``[0, tolerance]``, not merely ``<= tolerance`` (Sol
+    review, PR #3831, P1/BLOCKING): ``current - received_at`` goes NEGATIVE
+    for any FUTURE timestamp, and a negative number is always ``<=`` a
+    positive tolerance, so that comparison alone waved through a malformed
+    response or a backward clock jump as if it were freshly stamped. A
+    stamp from the future is exactly as untrustworthy as a stale one -- it
+    proves the server clock or the wire is not describing NOW either.
     """
     received_at = _ui_mirror_received_at(body)
     if received_at is None:
         return False
     current = now if now is not None else datetime.now(UTC)
-    return (current - received_at).total_seconds() <= _UI_MIRROR_FRESHNESS_TOLERANCE_S
+    age_s = (current - received_at).total_seconds()
+    return 0 <= age_s <= _UI_MIRROR_FRESHNESS_TOLERANCE_S
 
 
 def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:

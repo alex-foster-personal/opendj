@@ -577,3 +577,48 @@ def test_ui_mirror_is_fresh_false_just_outside_the_tolerance() -> None:
     received = now - timedelta(seconds=maintenance._UI_MIRROR_FRESHNESS_TOLERANCE_S + 0.5)
     body = {"received_at": received.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
     assert maintenance._ui_mirror_is_fresh(body, now=now) is False
+
+
+# ----- CLOUDSYNC-14 round 3, finding 2: naive and future timestamps --------
+
+
+def test_ui_mirror_received_at_rejects_a_naive_timestamp() -> None:
+    """[if] ``received_at`` parses but carries no timezone [then] it reads as
+    unparseable, not as an assumed UTC (Sol review, PR #3831, P1/BLOCKING):
+    the real route always stamps an explicit UTC offset, so a naive stamp is
+    never something a genuine 200 can produce, and silently assuming UTC for
+    one fabricates a timestamp nothing verified."""
+    naive = "2026-09-25T10:00:00.000000"
+    assert maintenance._ui_mirror_received_at({"received_at": naive}) is None
+
+
+def test_ui_mirror_is_fresh_false_for_a_naive_timestamp_even_within_tolerance() -> None:
+    """Same as above, through the caller a malformed response actually
+    reaches: a naive stamp that LOOKS recent must still defer, not pass."""
+    now = datetime.now(UTC)
+    naive_now = now.replace(tzinfo=None).isoformat(timespec="milliseconds")
+    assert maintenance._ui_mirror_is_fresh({"received_at": naive_now}, now=now) is False
+
+
+def test_ui_mirror_is_fresh_false_for_a_future_timestamp() -> None:
+    """[if] ``received_at`` is in the future [then] the body reads as NOT
+    fresh (Sol review, PR #3831, P1/BLOCKING): ``current - received_at`` is
+    NEGATIVE for a future stamp, and a bare ``<= tolerance`` check let any
+    negative age through -- a malformed response or a backward clock jump on
+    the engine could make a stale idle snapshot look freshly stamped. Ten
+    minutes ahead is used so this cannot be mistaken for ordinary clock
+    skew across a tolerance measured in single-digit seconds."""
+    now = datetime.now(UTC)
+    future = now + timedelta(minutes=10)
+    body = {"received_at": future.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+    assert maintenance._ui_mirror_is_fresh(body, now=now) is False
+
+
+def test_ui_mirror_is_fresh_true_at_exactly_zero_age() -> None:
+    """Boundary check for the ``[0, tolerance]`` range: a stamp exactly AT
+    ``now`` (age 0) is fresh, confirming the fix did not flip the inclusive
+    lower bound into an exclusive one while closing the future-timestamp
+    gap."""
+    now = datetime.now(UTC)
+    body = {"received_at": now.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+    assert maintenance._ui_mirror_is_fresh(body, now=now) is True
