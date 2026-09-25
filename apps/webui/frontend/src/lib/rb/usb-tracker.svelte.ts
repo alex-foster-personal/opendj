@@ -22,7 +22,12 @@ export interface UsbVolumeKnown {
 	id: string;
 	name: string;
 	mount_path?: string;
+	/** The verdict the list folds on. Recomputed from the daemon on every
+	 * poll (see _musicVerdict), so an automatic verdict never outlives it. */
 	is_music?: boolean;
+	/** The user's own answer to "Music stick?" in the first-seen dialog;
+	 * absent until answered. Only a "Not music" answer outranks the daemon. */
+	music_answer?: boolean;
 	forgotten?: boolean;
 	/** Epoch ms when user clicked forget (for reason tag). */
 	forgotten_at?: number | null;
@@ -66,7 +71,10 @@ export const usbTracker = $state({
 	panelOpen: false,
 	promptId: null as string | null,
 	polling: false,
-	lastError: null as string | null
+	lastError: null as string | null,
+	/** Daemon `scanned_at` of the last successful poll this session; null
+	 * until one lands, while every `present` flag is still last session's. */
+	scannedAt: null as number | null
 });
 
 let _pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -109,21 +117,23 @@ function _persist(): void {
 
 // ----- pure helpers (unit-tested) ----------------------------------------
 
-/** Open DJ cannot read the volume yet (USBPLAY-02), so nothing the daemon
- * says about its contents (role, is_music) is a verdict. */
+/** Open DJ cannot read the volume's root yet (USBPLAY-02): 'pending' is an
+ * open macOS prompt (or a drive still spinning up), 'denied' a refusal. The
+ * daemon answers a blocked USB stick as role usb_stick, is_music true, so it
+ * stays listed with its state; a blocked Fixed drive or disk image keeps its
+ * own role and folds away as before. */
 export function usbAccessBlocked(v: { access?: UsbAccess | undefined }): boolean {
 	return v.access === 'pending' || v.access === 'denied';
 }
 
-/** Active ribbon/list: present music sticks that are not forgotten. A drive
- * Open DJ cannot read stays listed, so it never silently disappears. */
+/** Active ribbon/list: present music sticks that are not forgotten. */
 export function isActiveUsbRow(v: UsbVolumeKnown): boolean {
-	return Boolean(v.present) && !v.forgotten && (v.is_music !== false || usbAccessBlocked(v));
+	return Boolean(v.present) && !v.forgotten && v.is_music !== false;
 }
 
 /** Folded Non-music / Forgotten section. */
 export function isFoldedUsbRow(v: UsbVolumeKnown): boolean {
-	return Boolean(v.forgotten) || (v.is_music === false && !usbAccessBlocked(v));
+	return Boolean(v.forgotten) || v.is_music === false;
 }
 
 export function presentNonForgotten(): UsbVolumeKnown[] {
@@ -218,7 +228,10 @@ export function applyFirstSeen(
 	const row = usbTracker.volumes.find((v) => v.id === id);
 	if (!row) return;
 	if (patch.yours !== undefined) row.yours = patch.yours;
-	if (patch.is_music !== undefined) row.is_music = patch.is_music;
+	if (patch.is_music !== undefined) {
+		row.music_answer = patch.is_music;
+		row.is_music = patch.is_music;
+	}
 	if (patch.name !== undefined && patch.name.trim() !== '') row.name = patch.name.trim();
 	if (patch.forgotten !== undefined) {
 		row.forgotten = patch.forgotten;
@@ -263,6 +276,7 @@ export async function refreshUsbVolumes(): Promise<void> {
 	try {
 		const body = await unwrap(api.GET('/api/v1/usb/volumes'));
 		_ingest(body.volumes ?? []);
+		usbTracker.scannedAt = body.scanned_at;
 		usbTracker.lastError = null;
 	} catch (exc) {
 		if (exc instanceof ApiError) {
@@ -271,6 +285,19 @@ export async function refreshUsbVolumes(): Promise<void> {
 			usbTracker.lastError = exc instanceof Error ? exc.message : String(exc);
 		}
 	}
+}
+
+/**
+ * The music verdict to store for a volume on this poll. The user's "Not
+ * music" answer wins. Otherwise it is the daemon's current verdict, with Fixed
+ * drives and disk images never music. Recomputed on every poll, so a verdict
+ * the tracker stored automatically never outlives the daemon's opinion: a
+ * stick an older daemon reported as a mounted drive while permission was
+ * refused, or one whose root did not list in time, is re-judged once it reads.
+ */
+function _musicVerdict(api: ApiVolume, role: UsbRole, answer: boolean | undefined): boolean {
+	if (answer === false) return false;
+	return role !== 'mounted_drive' && role !== 'disk_image' && api.is_music;
 }
 
 function _ingest(remote: ApiVolume[]): void {
@@ -285,18 +312,13 @@ function _ingest(remote: ApiVolume[]): void {
 		seen.add(api.id);
 		const prev = byId.get(api.id);
 		const role = api.role ?? 'other';
-		// An unreadable drive looks like a plain disk (no PIONEER/ visible), so
-		// its role is not a verdict: persisting is_music=false here would hide
-		// the stick for good once permission is granted.
-		const blocked = usbAccessBlocked(api);
-		const autoNonMusic =
-			!blocked && (role === 'mounted_drive' || role === 'disk_image' || api.is_music === false);
+		const autoNonMusic = !_musicVerdict(api, role, undefined);
 		if (prev === undefined) {
 			const row: UsbVolumeKnown = {
 				id: api.id,
 				name: api.name,
 				...(api.mount_path == null ? {} : { mount_path: api.mount_path }),
-				...(blocked ? {} : { is_music: autoNonMusic ? false : api.is_music }),
+				is_music: !autoNonMusic,
 				...(api.access === undefined ? {} : { access: api.access }),
 				forgotten: false,
 				forgotten_at: null,
@@ -324,12 +346,8 @@ function _ingest(remote: ApiVolume[]): void {
 			prev.simulated = api.simulated;
 			if (api.hide_reason) prev.hide_reason = api.hide_reason;
 			if (api.access !== undefined) prev.access = api.access;
-			if (autoNonMusic) {
-				prev.is_music = false;
-				prev.needs_prompt = false;
-			} else if (!blocked && prev.is_music === undefined) {
-				prev.is_music = api.is_music;
-			}
+			if (autoNonMusic) prev.needs_prompt = false;
+			prev.is_music = _musicVerdict(api, role, prev.music_answer);
 			// Keep user rename; only fill empty.
 			if (!prev.name) prev.name = api.name;
 		}
