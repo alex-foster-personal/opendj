@@ -56,7 +56,7 @@ const INTERACTIVE_ROLES = new Set([
  * exception off tabindex sign alone would have swallowed every one of those
  * keystrokes into the global performance hotkeys instead.
  */
-const POINTER_ONLY_HOTKEY_PASSTHROUGH_ATTR = 'data-hotkey-pointer-only';
+export const POINTER_ONLY_HOTKEY_PASSTHROUGH_ATTR = 'data-hotkey-pointer-only';
 
 /**
  * True when the browser owns the focused element's keyboard behavior.
