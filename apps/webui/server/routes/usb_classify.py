@@ -26,18 +26,25 @@ _AUDIO_EXTS = frozenset(
 )
 
 
-def classify_mount(root: Path) -> VolumeKind:
+def classify_mount(root: Path, *, root_names: frozenset[str] | None = None) -> VolumeKind:
     """Classify a mounted volume by shallow folder / audio presence.
 
     Order: Pioneer/rekordbox export layout, djay, any audio files, else unknown.
     Never descends deep - one level for DJ folders, shallow walk for audio.
+
+    ``root_names`` is the root listing the scanner already took under its
+    bounded probe (``usb_root_access``); passing it skips listing the root a
+    second time here, unbounded.
     """
-    if not root.is_dir():
+    if root_names is not None:
+        names: set[str] | frozenset[str] = root_names
+    elif not root.is_dir():
         return "unknown"
-    try:
-        names = {p.name for p in root.iterdir()}
-    except OSError:
-        return "unknown"
+    else:
+        try:
+            names = {p.name for p in root.iterdir()}
+        except OSError:
+            return "unknown"
     dj_kind = _dj_export_kind_from_names(names)
     if dj_kind is not None:
         return dj_kind
@@ -52,6 +59,7 @@ def classify_role(
     removable: bool | None,
     has_dj_export: bool,
     internal: bool | None = None,
+    root_listed: bool = True,
 ) -> VolumeRole:
     """Map diskutil BusProtocol / RemovableMedia / Internal to a volume role.
 
@@ -59,15 +67,20 @@ def classify_role(
     exposes RemovableMedia as a bool (False ~= Fixed, True ~= Removable).
 
     A USB SSD reports Fixed exactly like a USB backup disk, so Fixed alone
-    cannot tell them apart. ``has_dj_export`` (from :func:`has_dj_export_at_root`)
+    cannot tell them apart. ``has_dj_export`` (from :func:`root_has_dj_export`)
     is what does: a Fixed USB volume carrying a PIONEER / djay export at its
     root is a DJ stick, anything else Fixed on USB stays a mounted drive.
+
+    ``root_listed=False`` says the root could not be read (permission prompt
+    open or refused, USBPLAY-02), so ``has_dj_export`` is not evidence either
+    way: a USB volume then stays a ``usb_stick``, shown with its access state,
+    rather than folding away as a mounted drive the user cannot find.
     """
     proto = (protocol or "").strip().lower()
     if "disk image" in proto:
         return "disk_image"
     if "usb" in proto:
-        if removable is False and not has_dj_export:
+        if removable is False and not has_dj_export and root_listed:
             return "mounted_drive"
         return "usb_stick"
     if internal is True or removable is False:
@@ -121,20 +134,17 @@ def _short_name(name: str | None) -> str | None:
     return cleaned
 
 
-def has_dj_export_at_root(root: Path) -> bool:
-    """True when the volume root holds a PIONEER / rekordbox / djay export.
+def root_has_dj_export(root_names: frozenset[str]) -> bool:
+    """True when a volume root's listing holds a PIONEER / rekordbox / djay export.
 
-    One directory listing of the root, never a walk, so it is safe on a large
-    Fixed drive where :func:`classify_mount` must not descend.
+    Takes the listing, not a path: the scanner lists each root once, under the
+    bounded probe in ``usb_root_access``, because an unbounded listing blocks
+    while the macOS Removable Volumes prompt is open.
     """
-    try:
-        names = {p.name for p in root.iterdir()}
-    except OSError:
-        return False
-    return _dj_export_kind_from_names(names) is not None
+    return _dj_export_kind_from_names(root_names) is not None
 
 
-def _dj_export_kind_from_names(names: set[str]) -> VolumeKind | None:
+def _dj_export_kind_from_names(names: set[str] | frozenset[str]) -> VolumeKind | None:
     lower = {n.lower() for n in names}
     if "pioneer" in lower or "rekordbox" in lower:
         return "rekordbox"
@@ -182,6 +192,6 @@ __all__ = [
     "VolumeRole",
     "classify_mount",
     "classify_role",
-    "has_dj_export_at_root",
     "hide_reason_for",
+    "root_has_dj_export",
 ]

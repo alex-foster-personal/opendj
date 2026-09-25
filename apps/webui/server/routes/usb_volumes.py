@@ -44,10 +44,19 @@ from apps.webui.server.routes.usb_classify import (
     VolumeRole,
     classify_mount,
     classify_role,
-    has_dj_export_at_root,
     hide_reason_for,
+    root_has_dj_export,
 )
 from apps.webui.server.routes.usb_gate import UsbExportGate, usb_export_gate
+from apps.webui.server.routes.usb_root_access import (
+    RootAccess,
+    await_root_listing,
+    root_listing_deadline,
+    start_root_listing,
+)
+from apps.webui.server.routes.usb_root_access import (
+    _reset_for_tests as _reset_root_listings_for_tests,
+)
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +113,10 @@ class UsbVolume:
     protocol: str | None = None
     removable: bool | None = None
     hide_reason: str | None = None
+    #: USBPLAY-02. Set by every real scan from the bounded root listing
+    #: (usb_root_access); stays "unknown" only where no listing ran, which is
+    #: the simulated rows built by usb_volumes_sim.
+    access: RootAccess = "unknown"
 
 
 # ----- module state (process-local; cheap) ---------------------------------
@@ -228,23 +241,33 @@ def _scan_volumes(
             exc,
         )
         raise UsbDiscoveryUnavailable("volumes_root_unreadable") from exc
-    for entry in entries:
-        if not entry.is_dir():
-            continue
-        if _skip_volume_name(entry.name):
-            continue
+    volumes = [
+        entry
+        for entry in entries
+        if entry.is_dir() and not _skip_volume_name(entry.name)
+    ]
+    # USBPLAY-02: every root listing starts now and shares one deadline, so a
+    # listing parked behind an open permission prompt costs the whole scan
+    # at most ROOT_LISTING_TIMEOUT_S, while diskutil runs for the others.
+    deadline = root_listing_deadline()
+    probes = [start_root_listing(entry) for entry in volumes]
+    for entry, probe in zip(volumes, probes, strict=True):
         info = _diskutil_info(entry, resolved_discovery.diskutil_command)
+        listing = await_root_listing(probe, deadline_mono=deadline)
+        root_listed = listing.access == "ok"
         role = classify_role(
             protocol=info.protocol,
             removable=info.removable,
-            has_dj_export=has_dj_export_at_root(entry),
+            has_dj_export=root_listed and root_has_dj_export(listing.names),
             internal=info.internal,
+            root_listed=root_listed,
         )
-        # Never shallow-walk huge Fixed / disk-image mounts (hang risk).
-        if role in ("mounted_drive", "disk_image"):
+        # Never shallow-walk huge Fixed / disk-image mounts (hang risk), nor
+        # a root that did not list (it would block on the same prompt).
+        if role in ("mounted_drive", "disk_image") or not root_listed:
             kind: VolumeKind = "unknown"
         else:
-            kind = classify_mount(entry)
+            kind = classify_mount(entry, root_names=listing.names)
         vol_id = (
             f"vol:{info.volume_uuid}" if info.volume_uuid else f"path:{entry.name}"
         )
@@ -262,6 +285,7 @@ def _scan_volumes(
                 hide_reason=hide_reason_for(
                     role, protocol=info.protocol, name=entry.name
                 ),
+                access=listing.access,
             )
         )
     _cached = found
@@ -377,6 +401,11 @@ class UsbVolumeOut(BaseModel):
     role: VolumeRole = "other"
     protocol: str | None = None
     hide_reason: str | None = None
+    #: USBPLAY-02: whether the volume's root could be read. "pending" is an
+    #: open permission prompt (or a drive still spinning up), "denied" a
+    #: refused Removable Volumes permission, "unknown" no listing ran
+    #: (simulated volumes) or it failed for another reason.
+    access: RootAccess = "unknown"
 
 
 class UsbVolumesOut(BaseModel):
@@ -433,7 +462,14 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
     metadata_unavailable = (
         v.role == "other" and v.protocol is None and v.removable is None
     )
-    is_music = kind_is_music and (v.role == "usb_stick" or metadata_unavailable)
+    # USBPLAY-02: a USB stick whose root did not list has an UNMEASURED kind.
+    # The panel keeps is_music=false sticky per volume, so answering false here
+    # would hide the stick for good; true keeps it listed with its access
+    # state, and the first readable scan corrects it.
+    unreadable_stick = v.role == "usb_stick" and v.access in ("pending", "denied")
+    is_music = unreadable_stick or (
+        kind_is_music and (v.role == "usb_stick" or metadata_unavailable)
+    )
     return UsbVolumeOut(
         id=v.id,
         name=v.name,
@@ -447,6 +483,7 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
         hide_reason=v.hide_reason
         if not is_music
         else None,
+        access=v.access,
     )
 
 
@@ -538,3 +575,4 @@ def _reset_state_for_tests() -> None:
     _cached = []
     with _FAKES_LOCK:
         _fakes = {}
+    _reset_root_listings_for_tests()
