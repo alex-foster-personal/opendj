@@ -19,7 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from apps.sync.usb.pioneer._vendor.rekordbox_pdb import RekordboxPdb
+# The vendored parser is a whole-file ``# type: ignore``, so mypy sees no names in it.
+from apps.sync.usb.pioneer._vendor.rekordbox_pdb import RekordboxPdb  # type: ignore[attr-defined]
 
 _PT = RekordboxPdb.PageType
 PAGE_SIZE = 4096

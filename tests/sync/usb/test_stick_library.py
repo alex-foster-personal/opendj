@@ -28,11 +28,17 @@ import pytest
 from apps.shared.harmonic import CamelotKey, key_to_camelot
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.sync.usb import stick_library as sl
-from tests.sync.usb.export_pdb_builder import PdbExport, PdbPlaylist, PdbTrack, write_export_pdb
+from tests.sync.usb.export_pdb_builder import PdbTrack, write_export_pdb
+from tests.sync.usb.synthetic_stick import (
+    OTHER_UUID,
+    STICK_NAME,
+    STICK_UUID,
+    synthetic_export,
+    synthetic_tracks,
+    write_synthetic_stick,
+)
 
-UUID = "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9"
-OTHER_UUID = "11111111-2222-4333-8444-555555555555"
-STICK_NAME = "SYN STICK "  # trailing space on purpose, like the real test stick
+UUID = STICK_UUID
 
 
 @pytest.fixture(autouse=True)
@@ -40,88 +46,9 @@ def _fresh_resolver_state() -> None:
     sl._reset_for_tests()
 
 
-def _tracks() -> list[PdbTrack]:
-    return [
-        PdbTrack(
-            id=1,
-            title="  First Synthetic  ",
-            file_path="/Contents/Synth Artist/First Synthetic .mp3",
-            analyze_path="/PIONEER/USBANLZ/P001/0000A001/ANLZ0000.DAT",
-            artist_id=1,
-            album_id=1,
-            genre_id=1,
-            key_id=1,
-            artwork_id=1,
-            tempo_x100=12450,
-            duration_s=301,
-            rating=4,
-            date_added="2026-09-01",
-        ),
-        PdbTrack(id=2, title="Second", file_path="/Contents/second.flac", key_id=2),
-        PdbTrack(id=3, title="Third", file_path="/Contents/notes.txt", key_id=3),
-        PdbTrack(id=4, title="Escapes", file_path="/../outside.mp3"),
-        PdbTrack(id=5, title="Linked", file_path="/Contents/link.mp3"),
-        PdbTrack(id=6, title="Loose art", file_path="/Contents/second.flac", artwork_id=2),
-        PdbTrack(id=7, title="Png art", file_path="/Contents/second.flac", artwork_id=3),
-        PdbTrack(
-            id=8,
-            title="Loose anlz",
-            file_path="/Contents/second.flac",
-            analyze_path="/Contents/ANLZ0000.DAT",
-        ),
-        PdbTrack(id=9, title="Nul", file_path="/Contents/bad\x00.mp3"),
-    ]
-
-
-def _export(tracks: Sequence[PdbTrack] | None = None) -> PdbExport:
-    return PdbExport(
-        tracks=_tracks() if tracks is None else tracks,
-        artists={1: " Synth Artist "},
-        albums={1: "Synth Album"},
-        genres={1: "Techno"},
-        keys={1: "6m", 2: "Am", 3: "8A"},
-        artwork={
-            1: "/PIONEER/Artwork/00001/a1.jpg",
-            2: "/Contents/cover.jpg",
-            3: "/PIONEER/Artwork/00001/a3.png",
-        },
-        playlists=[
-            PdbPlaylist(id=3, name="Root Set", sort_order=1),
-            PdbPlaylist(id=5, name="Folder ", sort_order=0, is_folder=True),
-            PdbPlaylist(id=6, name="Child B", parent_id=5, sort_order=2),
-            PdbPlaylist(id=7, name="Child A", parent_id=5, sort_order=1),
-            PdbPlaylist(id=9, name="Stranded", parent_id=42, sort_order=0),
-        ],
-        playlist_entries=[(3, 2, 2), (3, 1, 1), (7, 1, 1)],
-        history={1: "HISTORY 001"},
-        history_entries=[(1, 2, 2), (1, 1, 1)],
-    )
-
-
-def _write(path: Path, data: bytes = b"\xff\xfb\x90\x00synthetic") -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return path
-
-
 @pytest.fixture
 def mount(tmp_path: Path) -> Path:
-    root = tmp_path / "Volumes" / STICK_NAME
-    write_export_pdb(root, _export())
-    _write(root / "Contents" / "Synth Artist" / "First Synthetic .mp3")
-    _write(root / "Contents" / "second.flac")
-    _write(root / "Contents" / "notes.txt", b"not audio")
-    _write(root / "Contents" / "cover.jpg")
-    _write(tmp_path / "Volumes" / "outside.mp3")
-    _write(tmp_path / "host-secret.mp3")
-    (root / "Contents" / "link.mp3").symlink_to(tmp_path / "host-secret.mp3")
-    _write(root / "PIONEER" / "Artwork" / "00001" / "a1.jpg", b"small")
-    _write(root / "PIONEER" / "Artwork" / "00001" / "a1_m.jpg", b"medium")
-    _write(root / "PIONEER" / "Artwork" / "00001" / "a3.png")
-    for suffix in (".DAT", ".EXT"):
-        _write(root / "PIONEER" / "USBANLZ" / "P001" / "0000A001" / f"ANLZ0000{suffix}")
-    _write(root / "Contents" / "ANLZ0000.DAT")
-    return root
+    return write_synthetic_stick(tmp_path / "Volumes")
 
 
 class CountingScan:
@@ -254,7 +181,7 @@ def test_playlists_come_in_tree_order_with_entries_in_entry_order(scan: Counting
 
 def test_a_stick_named_pioneer_still_reads_its_own_pioneer_dir(tmp_path: Path) -> None:
     root = tmp_path / "PIONEER"
-    write_export_pdb(root, _export())
+    write_export_pdb(root, synthetic_export())
     library = sl.open_stick_library(UUID, CountingScan([_volume(root)])).library
     assert len(library.tracks) == 9
 
@@ -293,7 +220,7 @@ def test_size_change_at_the_same_mtime_reparses(mount: Path, scan: CountingScan)
         PdbTrack(id=10 + n, title="Added later " + "x" * 100, file_path="/Contents/second.flac")
         for n in range(40)
     ]
-    write_export_pdb(mount, _export([*_tracks(), *extra]))
+    write_export_pdb(mount, synthetic_export([*synthetic_tracks(), *extra]))
     os.utime(pdb, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert pdb.stat().st_size != before.st_size
     again = sl.open_stick_library(UUID, scan)
@@ -308,7 +235,7 @@ def test_unmounted_stick_is_not_mounted_with_its_uuid(mount: Path) -> None:
 
 def test_swapped_stick_at_the_same_path_is_not_served(mount: Path, scan: CountingScan) -> None:
     sl.open_stick_library(UUID, scan)
-    write_export_pdb(mount, _export(_tracks()[:2]))
+    write_export_pdb(mount, synthetic_export(synthetic_tracks()[:2]))
     scan.volumes = [_volume(mount, OTHER_UUID)]
     error = _refusal(lambda: sl.open_stick_library(UUID, scan))
     assert error.code == "USB_STICK_NOT_MOUNTED"
