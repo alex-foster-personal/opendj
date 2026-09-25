@@ -71,6 +71,17 @@ def test_agt_persona_loop_fails_fast_without_testmac_repo() -> None:
     assert "TESTMAC_REPO" in result.stderr
 
 
+def test_setup_plist_relaunches_on_crash_but_honors_the_stop_flag() -> None:
+    """[if] the plist uses a bare KeepAlive=true (relaunch on the clean stop-flag exit,
+    which re-creates RUN) [then] fail, [else stop]."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    assert "<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>" in text
+    assert "<key>KeepAlive</key><true/>" not in text
+    assert "<key>RunAtLoad</key><true/>" in text
+    loop = LOOP_SH.read_text(encoding="utf-8").rstrip().splitlines()
+    assert loop[-1] == "exit 0", "a stop-flag exit must be a clean 0 so launchd leaves it stopped"
+
+
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
     """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
     [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
