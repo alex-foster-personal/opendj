@@ -214,14 +214,17 @@ def all_toggle_revisions() -> dict[str, int]:
 
 @dataclass(frozen=True)
 class ToggleWrite:
-    """One toggle mutation's result: the displaced value and the revision
-    the write landed at, both read under ONE lock acquisition so a caller
-    compensating this exact write later has the REVISION, not just the
-    value that can repeat after an own -> rbx -> own round trip
-    (discussion_r3974993963 P1 BLOCKING).
+    """One toggle mutation's result: the displaced value, the value it set
+    and the revision the write landed at, all read under ONE lock
+    acquisition so a caller compensating this exact write later has the
+    REVISION, not just the value that can repeat after an own -> rbx -> own
+    round trip (discussion_r3974993963 P1 BLOCKING), and a caller REPORTING
+    this write can describe it without a second, separately-locked read that
+    a concurrent write could land before (see `source_state`).
     """
 
     previous: ToggleState
+    current: ToggleState
     revision: int
 
 
@@ -257,7 +260,7 @@ def write_toggle(
             return None
         _TOGGLE[lane] = new  # type: ignore[assignment]
         _TOGGLE_REVISION[lane] += 1
-        return ToggleWrite(previous=current, revision=_TOGGLE_REVISION[lane])
+        return ToggleWrite(previous=current, current=_TOGGLE[lane], revision=_TOGGLE_REVISION[lane])
 
 
 def set_toggle(lane: str, state: str) -> ToggleState:
@@ -296,6 +299,13 @@ def compare_and_set_toggle(
 def all_toggles() -> dict[str, ToggleState]:
     with _TOGGLE_LOCK:
         return dict(_TOGGLE)
+
+
+def _toggle_snapshot() -> tuple[dict[str, ToggleState], dict[str, int]]:
+    """Every lane's toggle AND revision from one lock acquisition, so a value
+    is never paired with a revision some other write produced."""
+    with _TOGGLE_LOCK:
+        return dict(_TOGGLE), dict(_TOGGLE_REVISION)
 
 
 def reset_toggles() -> None:
@@ -357,11 +367,28 @@ class Selection:
         return cls(by_lane={lane: "rbx" for lane in LANES})
 
 
-def source_state(conn: sqlite3.Connection) -> dict[str, Any]:
-    """The whole selection surface, as the HTTP endpoint and CLI report it."""
+def source_state(
+    conn: sqlite3.Connection, *, written: tuple[str, ToggleWrite] | None = None
+) -> dict[str, Any]:
+    """The whole selection surface, as the HTTP endpoint and CLI report it.
+
+    `written` pins one lane's row to a `ToggleWrite` the caller just made, so
+    a PUT response describes ITS OWN write. The snapshot below is a separate
+    lock acquisition from that write, and a concurrent write landing in
+    between would otherwise surface as this request's toggle and effective
+    source: a switch to own answered with an agent's later `unset`, which
+    the client adopts as "no deck disagrees" and resolves a switch it never
+    refreshed for (analysis-source.test.mjs "a failed switch never clobbers
+    a concurrent agent-driven HTTP change during rollback", about 1 in 25
+    runs under load). Patching the revision alone left `toggle` and
+    `effective` from the later read, a row no single moment ever held.
+    """
     defaults = all_defaults(conn)
-    toggles = all_toggles()
-    revisions = all_toggle_revisions()
+    toggles, revisions = _toggle_snapshot()
+    if written is not None:
+        lane, write = written
+        toggles[lane] = write.current
+        revisions[lane] = write.revision
     return {
         "lanes": {
             lane: {
