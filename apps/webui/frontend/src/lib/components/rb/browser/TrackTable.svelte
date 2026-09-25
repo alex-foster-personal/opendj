@@ -87,7 +87,6 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import SpinnerIcon from './SpinnerIcon.svelte';
 	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
@@ -1751,11 +1750,7 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{#if isLoading}
-											<SpinnerIcon size={9} />
-										{:else}
-											{d}
-										{/if}
+										{d}
 									</button>
 								{/each}
 								{#if removable}

@@ -21,7 +21,11 @@
 	} from '$lib/lyrics/pointer-word';
 	import type { PreviewStripData, Vocals } from '$lib/rb/api-rb';
 	import type { AnlzData } from '$lib/rb/anlz-types';
+	import { previewStripDataToStripBands } from '$lib/rb/deck-strip-preview';
+	import type { WaveformDesign } from '$lib/rb/waveform-design';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
+	import { ensureAnlzPrefetch, getAnlzEntry } from '../wave/anlz-cache.svelte';
 	import {
 		drawLoopCueBands,
 		drawPhraseMarkers,
@@ -31,9 +35,6 @@
 	} from '../wave/cues';
 	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
-	const COL_LOW = '#3d7dd9';
-	const COL_MID = '#e8a13a';
-	const COL_HIGH = '#cfe0f2';
 	const W = 165;
 	const H = 14;
 	const PREVIEW_MARKER_BAND_PX = markerBandHeightForSurface(H);
@@ -118,20 +119,25 @@
 		return () => mq.removeEventListener('change', onChange);
 	});
 
-	$effect(() => {
-		if (canvas && strip !== null && revealed) {
-			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr);
-		}
+	const stripLoading = $derived.by(() => {
+		if (strip !== null || stable_id === null || !revealed) return false;
+		const entry = getAnlzEntry(stable_id);
+		if (entry === undefined) return true;
+		if (entry.status === 'loading') return true;
+		if (entry.status === 'ready' && entry.data.local_waveform?.status === 'decoded') return true;
+		return false;
 	});
 
-	function _bandMax(bands: Uint8Array, band: 0 | 1 | 2, c0: number, c1: number): number {
-		let max = 0;
-		for (let c = c0; c <= c1; c++) {
-			const v = bands[c * 3 + band];
-			if (v > max) max = v;
+	$effect(() => {
+		if (revealed && stable_id !== null && strip === null) ensureAnlzPrefetch(stable_id);
+	});
+
+	$effect(() => {
+		const design = uiPrefs.waveform_design;
+		if (canvas && strip !== null && revealed) {
+			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design);
 		}
-		return max;
-	}
+	});
 
 	function _draw(
 		el: HTMLCanvasElement,
@@ -139,7 +145,8 @@
 		voc: Vocals | null,
 		markerAnlz: AnlzData | null,
 		durMs: number | null,
-		ratio: number
+		ratio: number,
+		design: WaveformDesign
 	): void {
 		el.width = W * ratio;
 		el.height = H * ratio;
@@ -149,16 +156,8 @@
 		ctx.scale(ratio, ratio);
 		ctx.clearRect(0, 0, W, H);
 		if (data.max > 0) {
-			for (let x = 0; x < W; x++) {
-				const c0 = Math.floor((x / W) * data.cols);
-				const c1 = Math.min(
-					data.cols - 1,
-					Math.max(c0, Math.ceil(((x + 1) / W) * data.cols) - 1)
-				);
-				_bar(ctx, x, _bandMax(data.bands, 0, c0, c1) / data.max, COL_LOW);
-				_bar(ctx, x, _bandMax(data.bands, 1, c0, c1) / data.max, COL_MID);
-				_bar(ctx, x, _bandMax(data.bands, 2, c0, c1) / data.max, COL_HIGH);
-			}
+			const bands = previewStripDataToStripBands(data);
+			drawStripPreviewBands(ctx, bands.preview, bands.kind, W, H, design);
 		}
 		if (
 			voc !== null &&
@@ -193,13 +192,6 @@
 			drawPhraseMarkers(ctx, markerAnlz.phrases, 0, pxPerS, W, palette);
 			drawPointCueMarkers(ctx, markerAnlz.cues, 0, pxPerS, W, palette);
 		}
-	}
-
-	function _bar(ctx: CanvasRenderingContext2D, x: number, v: number, colour: string): void {
-		const h = Math.max(0, Math.min(1, v)) * H;
-		if (h <= 0) return;
-		ctx.fillStyle = colour;
-		ctx.fillRect(x, H - h, 1, h);
 	}
 
 	function _ratioFromEvent(event: MouseEvent): number {
@@ -263,7 +255,17 @@
 </script>
 
 {#if strip === null}
-	<span class="no-anlz" title="no preview data (no ANLZ waveform for this track)">-</span>
+	{#if stripLoading}
+		<span
+			class="strip-loading"
+			data-testid="preview-strip-loading"
+			aria-busy="true"
+			title="Loading waveform preview"
+			>…</span
+		>
+	{:else}
+		<span class="no-anlz" title="no preview data (no ANLZ waveform for this track)">-</span>
+	{/if}
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
@@ -365,5 +367,13 @@
 		color: var(--rb-text-dim);
 		text-align: center;
 		line-height: 14px;
+	}
+	.strip-loading {
+		display: inline-block;
+		width: 165px;
+		color: var(--rb-text-dim);
+		text-align: center;
+		line-height: 14px;
+		letter-spacing: 1px;
 	}
 </style>

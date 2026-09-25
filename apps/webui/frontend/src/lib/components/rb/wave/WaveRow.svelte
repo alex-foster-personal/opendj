@@ -7,8 +7,10 @@
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
+		queryPerformanceState,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
+	import { hasTrustedBeatGrid } from '$lib/player/grid-features';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
@@ -53,7 +55,8 @@
 		snapWaveTargetMs,
 		waveClickTargetMs,
 		waveDragTargetMs,
-		waveSnapModeFromModifiers
+		waveSnapModeFromModifiers,
+		type WaveSnapMode
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
 	import LyricLanes from './LyricLanes.svelte';
@@ -180,6 +183,19 @@
 	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
 
 	const showStems = $derived(uiPrefs.show_stems);
+	const waveformSeekArmed = $derived(queryPerformanceState().decks[deckId].waveform_seek_armed);
+	const ghostBlinkOn = $derived(Math.floor(performance.now() / 120) % 2 === 0);
+	const masterDownbeatOverlay = $derived.by(() => {
+		if (!uiPrefs.beat_sync_max || masterState === null || masterBeats === null) return null;
+		if (masterState.anlz === null || !hasTrustedBeatGrid(masterState.anlz)) return null;
+		return {
+			masterBeats,
+			masterPositionSec: masterState.position_ms / 1000,
+			followerPositionSec: deck.position_ms / 1000,
+			masterPitch: masterState.pitch,
+			followerPitch: deck.pitch
+		};
+	});
 
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
@@ -286,7 +302,11 @@
 			pitch: deck.pitch,
 			loop: deck.loop,
 			playheadTone: syncPlayheadTone,
-			playheadTimeMs: performance.now()
+			playheadTimeMs: performance.now(),
+			waveformDesign: uiPrefs.waveform_design,
+			masterDownbeatOverlay,
+			ghostSeekMs: waveformSeekArmed?.target_position_ms ?? null,
+			ghostSeekVisible: waveformSeekArmed !== null && ghostBlinkOn
 		});
 	}
 
@@ -310,7 +330,7 @@
 	$effect(() => {
 		const pulse = syncPlayheadTone === 'drift';
 		const hovered = deckHoverUi.deckId === deckId;
-		if (!(deck.playing || seeking || (hovered && (pulse || masterMoving)))) return;
+		if (!(deck.playing || seeking || waveformSeekArmed !== null || (hovered && (pulse || masterMoving)))) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
@@ -410,8 +430,14 @@
 		scrubMoved = false;
 		scrubDispatchError = null;
 		seeking = true;
-		// SPIKE-PERF: jump the painted window under the pointer immediately.
-		scrubPreviewMs = _clickTarget(event.clientX, event);
+		const snapOnDown = waveSnapModeFromModifiers(event);
+		const deferBeatSyncSeek =
+			snapOnDown === 'downbeat' && deck.playing && uiPrefs.beat_sync_max;
+		// SPIKE-PERF: jump the painted window under the pointer immediately,
+		// except BeatSyncMax deferred seeks (ghost cursor until arm fires).
+		if (!deferBeatSyncSeek) {
+			scrubPreviewMs = _clickTarget(event.clientX, event);
+		}
 	}
 
 	async function onPointerMove(event: PointerEvent): Promise<void> {
@@ -426,12 +452,23 @@
 		if (!seeking || event.pointerId !== scrubPointerId) return;
 		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
+			const snap: WaveSnapMode = waveSnapModeFromModifiers(event);
 			const targetMs = scrubMoved
 				? _dragTarget(event.clientX, event)
 				: _clickTarget(event.clientX, event);
-			scrubPreviewMs = targetMs;
-			await seekDispatcher.request(targetMs);
-			if (scrubDispatchError !== null) throw scrubDispatchError;
+			if (!scrubMoved && snap === 'downbeat' && deck.playing && uiPrefs.beat_sync_max) {
+				scrubPreviewMs = null;
+				await runPerformanceCommandFromUi({
+					type: 'waveform_seek',
+					deck: deckId,
+					position_ms: targetMs,
+					snap
+				});
+			} else {
+				scrubPreviewMs = targetMs;
+				await seekDispatcher.request(targetMs);
+				if (scrubDispatchError !== null) throw scrubDispatchError;
+			}
 		} finally {
 			_clearGesture();
 			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);

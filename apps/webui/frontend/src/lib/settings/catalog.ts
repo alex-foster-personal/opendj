@@ -218,6 +218,24 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'waveform_design',
+		label: 'Waveform design',
+		group: 'performance',
+		keywords: ['waveform', 'design', 'tri-band', 'mono', 'line', 'wavestack', 'strip'],
+		title: 'Deck and library waveform paint style',
+		detail:
+			'Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. The preview below updates when you change the selection.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'tri-band', label: 'Tri-band bars' },
+				{ value: 'mono', label: 'Mono envelope' },
+				{ value: 'line', label: 'Line outline' }
+			]
+		}
+	},
+	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
 		group: 'performance',

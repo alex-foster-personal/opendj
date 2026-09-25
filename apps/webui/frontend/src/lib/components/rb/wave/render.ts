@@ -15,6 +15,7 @@ import { vocalsOf } from '$lib/rb/api-rb';
 import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
+import type { WaveformDesign } from '$lib/rb/waveform-design';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
 import {
 	drawLoopCueBands,
@@ -175,6 +176,19 @@ export interface WaveRowFrame {
 	playheadTone?: PlayheadTone;
 	/** Wall time for drift pulse animation. */
 	playheadTimeMs?: number;
+	/** DECKUX-20: user-selected paint style; default tri-band. */
+	waveformDesign?: WaveformDesign;
+	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
+	masterDownbeatOverlay?: {
+		masterBeats: readonly AnlzBeat[];
+		masterPositionSec: number;
+		followerPositionSec: number;
+		masterPitch: number;
+		followerPitch: number;
+	} | null;
+	/** Pending deferred seek ghost playhead (ms). */
+	ghostSeekMs?: number | null;
+	ghostSeekVisible?: boolean;
 }
 
 /** Paint one full row frame. ctx must already be DPR-scaled so all
@@ -196,8 +210,19 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const tLeft = frame.positionMs / 1000 - trackWindowS / 2;
 	const pxPerS = w / trackWindowS;
 
+	const design = frame.waveformDesign ?? 'tri-band';
 	if (frame.anlz !== null && durS > 0) {
-		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
+		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design);
+		if (frame.masterDownbeatOverlay !== undefined && frame.masterDownbeatOverlay !== null) {
+			_drawMasterDownbeatOverlay(
+				ctx,
+				frame.masterDownbeatOverlay,
+				tLeft,
+				pxPerS,
+				w,
+				h
+			);
+		}
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
@@ -212,6 +237,66 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
 	}
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
+	if (frame.ghostSeekMs !== undefined && frame.ghostSeekMs !== null && frame.ghostSeekVisible === true) {
+		_drawGhostSeekPlayhead(ctx, frame.ghostSeekMs, tLeft, pxPerS, w, h);
+	}
+}
+
+export function resolveStripWaveformKind(
+	waveformKind: 'tri' | 'mono',
+	design: WaveformDesign
+): 'tri' | 'mono' {
+	if (design === 'mono') return 'mono';
+	return waveformKind;
+}
+
+function _drawGhostSeekPlayhead(
+	ctx: CanvasRenderingContext2D,
+	targetMs: number,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number
+): void {
+	const x = (targetMs / 1000 - tLeft) * pxPerS;
+	if (x < -2 || x > w + 2) return;
+	ctx.save();
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+	ctx.lineWidth = 2;
+	ctx.setLineDash([3, 3]);
+	ctx.beginPath();
+	ctx.moveTo(x, 0);
+	ctx.lineTo(x, h);
+	ctx.stroke();
+	ctx.restore();
+}
+
+function _drawMasterDownbeatOverlay(
+	ctx: CanvasRenderingContext2D,
+	overlay: NonNullable<WaveRowFrame['masterDownbeatOverlay']>,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number
+): void {
+	const { masterBeats, masterPositionSec, followerPositionSec, masterPitch, followerPitch } = overlay;
+	if (masterPitch <= 0 || followerPitch <= 0) return;
+	const ratio = followerPitch / masterPitch;
+	ctx.save();
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+	ctx.lineWidth = 1;
+	for (const beat of masterBeats) {
+		if (beat.n !== 1) continue;
+		const delta = beat.t - masterPositionSec;
+		const followerT = followerPositionSec + delta * ratio;
+		const x = (followerT - tLeft) * pxPerS;
+		if (x < -2 || x > w + 2) continue;
+		ctx.beginPath();
+		ctx.moveTo(x, 0);
+		ctx.lineTo(x, h);
+		ctx.stroke();
+	}
+	ctx.restore();
 }
 
 export interface StemWaveRowFrame {
@@ -277,19 +362,20 @@ function _drawCachedBands(
 	durS: number,
 	w: number,
 	h: number,
-	palette: WavePalette
+	palette: WavePalette,
+	design: WaveformDesign
 ): void {
 	// Node painter tests intentionally provide only Path2D. Browser production
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
 	if (typeof document === 'undefined') {
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
 		return;
 	}
-	const key = `${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}`;
+	const key = `${design}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}`;
 	let image = _bandImages.get(waveform);
 	if (image === undefined || image.key !== key) {
-		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette), key };
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design), key };
 		_bandImages.set(waveform, image);
 	}
 	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
@@ -300,7 +386,8 @@ function _buildBandImage(
 	pxPerS: number,
 	durS: number,
 	h: number,
-	palette: WavePalette
+	palette: WavePalette,
+	design: WaveformDesign
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -311,7 +398,7 @@ function _buildBandImage(
 	canvas.height = h;
 	const ctx = canvas.getContext('2d');
 	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
-	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
 	return canvas;
 }
 
@@ -323,14 +410,16 @@ function _drawBands(
 	durS: number,
 	w: number,
 	h: number,
-	palette: WavePalette
+	palette: WavePalette,
+	design: WaveformDesign
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
 	if (n === 0) return;
 	const centerY = MARKER_BAND_PX + (h - MARKER_BAND_PX) / 2;
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
-	const mono = waveform.kind === 'mono';
+	const mono = design === 'mono' || waveform.kind === 'mono';
+	const line = design === 'line';
 	const norms = _normsFor(waveform);
 	// Mono payloads mix all three arrays into one height, so normalize by
 	// the loudest band's p99 rather than any single band's.
@@ -339,10 +428,32 @@ function _drawBands(
 	const lowPath = new Path2D();
 	const midPath = new Path2D();
 	const highPath = new Path2D();
+	const linePath = new Path2D();
+	let lineStarted = false;
 
 	for (let x = 0; x < w; x++) {
 		const p0 = Math.max(0, Math.floor((x / w) * n));
 		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
+		if (line) {
+			const v = _amp(
+				Math.max(
+					_bucketMax(bands.low, p0, p1),
+					_bucketMax(bands.mid, p0, p1),
+					_bucketMax(bands.high, p0, p1)
+				),
+				monoNorm
+			);
+			const yTop = centerY - v * halfH;
+			const yBot = centerY + v * halfH;
+			if (!lineStarted) {
+				linePath.moveTo(x, yTop);
+				lineStarted = true;
+			} else {
+				linePath.lineTo(x, yTop);
+			}
+			linePath.lineTo(x, yBot);
+			continue;
+		}
 		if (mono) {
 			// Heights only (PWAV/PWV3): the contract does not pin which band
 			// array carries them, so take the per-point max across all three.
@@ -365,6 +476,12 @@ function _drawBands(
 		if (hi > 0) _mirrorRect(highPath, x, centerY, hi * halfH * HIGH_BAND_SCALE);
 	}
 
+	if (line) {
+		ctx.strokeStyle = palette.mid;
+		ctx.lineWidth = 1.5;
+		ctx.stroke(lowPath);
+		return;
+	}
 	if (mono) {
 		// Single-colour waveform - never synthesised tri-bands.
 		ctx.fillStyle = palette.mid;

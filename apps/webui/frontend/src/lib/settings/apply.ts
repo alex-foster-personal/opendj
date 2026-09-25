@@ -2,6 +2,7 @@
  * Allowlisted setting mutators. Used by the overlay controls and AI apply.
  * Unknown keys throw (fail-loud).
  */
+import { parseWaveformDesign } from '$lib/rb/waveform-design';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -20,6 +21,7 @@ import {
 	setHorizontalWheelKnob,
 	setJogRadialWaveform,
 	setShowStems,
+	setWaveformDesign,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -75,6 +77,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'waveform_design',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -143,6 +146,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'waveform_design':
+			return uiPrefs.waveform_design;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -260,6 +265,14 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
 			return;
+		case 'waveform_design': {
+			const design = parseWaveformDesign(value);
+			if (design === undefined) {
+				throw new Error(`waveform_design must be tri-band|mono|line, got ${String(value)}`);
+			}
+			setWaveformDesign(design);
+			return;
+		}
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {
 				throw new Error(`deck_layout must be more|less, got ${String(value)}`);
