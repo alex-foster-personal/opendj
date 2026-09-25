@@ -21,7 +21,7 @@ from __future__ import annotations
 __all__ = ["read_usb_export"]
 
 
-def __getattr__(name: str):  # noqa: ANN001 - PEP 562 lazy export
+def __getattr__(name: str):
     if name == "read_usb_export":
         from .reader import read_usb_export as _read_usb_export
 

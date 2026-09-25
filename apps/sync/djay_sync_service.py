@@ -156,7 +156,7 @@ def run_playlist_plan(
     max_ops: int = MAX_OPS_BEFORE_ABORT,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
-    from apps.sync.playlist_diff import (  # noqa: PLC0415
+    from apps.sync.playlist_diff import (
         generate_plan,
         write_diff_md,
         write_patch_csv,
