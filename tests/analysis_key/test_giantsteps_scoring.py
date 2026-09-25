@@ -120,6 +120,22 @@ def test_matching_is_one_to_one_not_double_counted() -> None:
     assert score.n_matched == 1
 
 
+def test_greedy_nearest_first_would_undercount_this_maximum_matching() -> None:
+    """sol-review #3948 P1 BLOCKING counter-example: annotated at 10s/12s,
+    detected at 8.5s/11s, tolerance 2s. Processing annotations in input
+    order and grabbing each one's NEAREST free detection gives 10<->11 (the
+    nearer pair), which then starves 12 (only 8.5 is left, dist 3.5, outside
+    tolerance) -- a greedy matched=1. The true maximum matching is size 2:
+    10<->8.5 (dist 1.5) and 12<->11 (dist 1), both individually within
+    tolerance and mutually compatible. `score_track` must find the maximum,
+    not the greedy-nearest-first result."""
+    grid = _grid(60, bar_s=2.0)  # tolerance_bars=1.0 * 2.0s/bar = 2s tolerance
+    score = score_track(
+        detected_boundaries_s=[8.5, 11.0], annotated_boundaries_s=[10.0, 12.0], grid=grid,
+    )
+    assert score.n_matched == 2, "a valid size-2 matching exists; greedy nearest-first finds only 1"
+
+
 def test_no_annotated_and_no_detected_scores_zero_not_a_divide_by_zero() -> None:
     """A single-key track (no modulation) is out of this scorer's domain, so
     the empty case is defined as 0.0 rather than raising or faking a 1.0:

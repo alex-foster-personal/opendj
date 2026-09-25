@@ -138,6 +138,7 @@ def fetch(out_dir: Path) -> int:
             tid = row["id"]
             mp3_path = audio_dir / f"{tid}.mp3"
             wav_path = audio_dir / f"{tid}.wav"
+            mp3_replaced = False
             if mp3_path.exists() and _sha256_bytes(mp3_path.read_bytes()) == row["mp3_sha256"]:
                 print(f"[giantsteps+] {tid}.mp3 already cached and verified")
             else:
@@ -151,8 +152,18 @@ def fetch(out_dir: Path) -> int:
                         "cache a mismatched fixture"
                     )
                 mp3_path.write_bytes(data)
+                mp3_replaced = True
                 print(f"[giantsteps+]   wrote {mp3_path} ({len(data)} bytes, sha256 verified)")
 
+            # A replaced MP3 must invalidate any existing WAV: an
+            # `mp3_path.exists()` hash mismatch above (corruption, a bumped
+            # manifest digest) means whatever WAV is already on disk was
+            # decoded from the OLD bytes, and the measurement test reads only
+            # the WAV -- so a stale WAV would silently keep serving the wrong
+            # audio as the real test subject even though the MP3 hash just
+            # passed (sol-review #3948 P1 BLOCKING).
+            if mp3_replaced and wav_path.exists():
+                wav_path.unlink()
             if not wav_path.exists():
                 proc = subprocess.run(
                     [

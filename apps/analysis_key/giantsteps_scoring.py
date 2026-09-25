@@ -18,11 +18,20 @@ returned and reads off the bar covering the queried time, so the tolerance a
 132 BPM track gets is shorter than the one a 90 BPM track gets, which is what
 "1 bar" actually means.
 
-BOUNDARY MATCHING IS GREEDY AND ONE-TO-ONE. Two annotated boundaries could
-both fall within tolerance of the same detected one (or vice versa) on a
-messy real signal; a naive "any pair within tolerance counts" double-counts.
-Matching nearest-first and removing both sides once matched keeps precision
-and recall meaningful counts rather than inflated ones.
+BOUNDARY MATCHING IS MAXIMUM-CARDINALITY, NOT GREEDY. Two annotated
+boundaries could both fall within tolerance of the same detected one (or vice
+versa) on a messy real signal; a naive "any pair within tolerance counts"
+double-counts. The one-to-one fix has to be a real maximum bipartite matching
+(Kuhn's algorithm, augmenting paths), not "process annotations in input order,
+grab each one's nearest still-free detection" -- that greedy version can
+UNDERCOUNT: annotated at 10s/12s, detected at 8.5s/11s, tolerance 2s. Both
+10<->8.5 (dist 1.5) and 12<->11 (dist 1) are individually valid, and together
+form a size-2 matching. Greedy nearest-first processes 10 first, sees both
+8.5 (dist 1.5) and 11 (dist 1) as candidates, takes the nearer one (11), which
+then starves 12 (only 8.5 is left, dist 3.5, outside tolerance) -- reporting
+matched=1 when a valid matched=2 assignment exists (sol-review #3948 P1
+BLOCKING, `discussion_r3948_giantsteps_scoring`). Kuhn's algorithm finds the
+true maximum regardless of input order.
 
 -Claude Sonnet 5
 """
@@ -86,6 +95,44 @@ class BoundaryScore:
         return 2 * p * r / (p + r) if (p + r) else 0.0
 
 
+def _max_cardinality_matched_count(
+    annotated_boundaries_s: Sequence[float],
+    detected_boundaries_s: Sequence[float],
+    grid: BarGrid,
+    *,
+    tolerance_bars: float,
+) -> int:
+    """True maximum one-to-one matching count via Kuhn's algorithm.
+
+    `adjacency[a_idx]` lists every detected index within tolerance of
+    annotated boundary `a_idx`. Each annotated index tries to claim a free
+    (or re-augmentable) detected index by depth-first search over alternating
+    paths; this finds the graph's true maximum matching regardless of the
+    order boundaries arrive in, unlike a single greedy nearest-first pass.
+    """
+    adjacency = [
+        [
+            d_idx for d_idx, detected in enumerate(detected_boundaries_s)
+            if boundary_within_tolerance(detected, annotated, grid, tolerance_bars=tolerance_bars)
+        ]
+        for annotated in annotated_boundaries_s
+    ]
+    owner_of_detected: list[int | None] = [None] * len(detected_boundaries_s)
+
+    def try_augment(a_idx: int, visited: set[int]) -> bool:
+        for d_idx in adjacency[a_idx]:
+            if d_idx in visited:
+                continue
+            visited.add(d_idx)
+            holder = owner_of_detected[d_idx]
+            if holder is None or try_augment(holder, visited):
+                owner_of_detected[d_idx] = a_idx
+                return True
+        return False
+
+    return sum(try_augment(a_idx, set()) for a_idx in range(len(annotated_boundaries_s)))
+
+
 def score_track(
     detected_boundaries_s: Sequence[float],
     annotated_boundaries_s: Sequence[float],
@@ -93,19 +140,10 @@ def score_track(
     *,
     tolerance_bars: float = 1.0,
 ) -> BoundaryScore:
-    """Greedy nearest-first one-to-one matching within `tolerance_bars`."""
-    remaining_detected = list(detected_boundaries_s)
-    matched = 0
-    for annotated in annotated_boundaries_s:
-        candidates = [
-            d for d in remaining_detected
-            if boundary_within_tolerance(d, annotated, grid, tolerance_bars=tolerance_bars)
-        ]
-        if not candidates:
-            continue
-        nearest = min(candidates, key=lambda d: abs(d - annotated))
-        remaining_detected.remove(nearest)
-        matched += 1
+    """Maximum-cardinality one-to-one matching within `tolerance_bars`."""
+    matched = _max_cardinality_matched_count(
+        annotated_boundaries_s, detected_boundaries_s, grid, tolerance_bars=tolerance_bars
+    )
     return BoundaryScore(
         n_annotated=len(annotated_boundaries_s),
         n_detected=len(detected_boundaries_s),
