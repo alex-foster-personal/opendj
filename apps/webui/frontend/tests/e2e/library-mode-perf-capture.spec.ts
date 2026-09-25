@@ -19,10 +19,10 @@ const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
 const MANIFEST_PATH = join(DATA_DIR, 'fixture-manifest.json');
 const SAMPLE_INTERVAL_S = Number(process.env.KPI_CAPTURE_SAMPLE_INTERVAL_S ?? '5');
 const SAMPLING_METHOD =
-	'CDP SystemInfo.getProcessInfo selects Chrome renderer + gpu-process PIDs (ps -o rss=,%cpu=) ' +
+	'CDP SystemInfo.getProcessInfo (browser target) lists the whole Chromium process family (ps -o rss=,%cpu=) ' +
 	'plus the python engine + stem worker family from ' +
-	`GET /api/v1/performance/telemetry/processes members[].rss_mb, every ${SAMPLE_INTERVAL_S}s. ` +
-	'CPU covers renderer+gpu only (no per-process CPU is exposed for the engine family).';
+	`GET /api/v1/performance/telemetry/processes members[source=live].rss_mb (probe_log members excluded), every ${SAMPLE_INTERVAL_S}s. ` +
+	'CPU covers the Chromium family only (no per-process CPU is exposed for the engine family).';
 const MIN_SAMPLE_FRACTION = 0.5;
 
 interface ModeCapture {
@@ -140,7 +140,7 @@ async function selectLibraryMode(page: import('@playwright/test').Page): Promise
 	await page.waitForURL((url) => url.pathname === '/');
 }
 
-test('captures Gig vs Library steady-state footprint and CPU medians', async ({ page, request }) => {
+test('captures Gig vs Library steady-state footprint and CPU medians', async ({ browser, page, request }) => {
 	const captureBudgetS = kpiCaptureTimeoutS(process.env.KPI_CAPTURE_TIMEOUT_S);
 	test.setTimeout(captureBudgetS * 1000 + 30_000);
 	const captureId =
@@ -164,7 +164,9 @@ test('captures Gig vs Library steady-state footprint and CPU medians', async ({ 
 			);
 		}
 
-		const cdp = await page.context().newCDPSession(page);
+		// SystemInfo.getProcessInfo answers only on the BROWSER target; a page
+		// session rejects every call, so no Gig or Library sample could land.
+		const cdp = await browser.newBrowserCDPSession();
 		const gig = await dwellSample(cdp, request, API_BASE, DWELL_SECONDS, SAMPLE_INTERVAL_MS);
 		await selectLibraryMode(page);
 		await page.waitForFunction(() => window.__mdtLibraryModeIdle === true);

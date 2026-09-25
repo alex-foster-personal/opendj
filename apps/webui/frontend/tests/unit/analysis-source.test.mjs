@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const ALL_SOURCE_FEATURES = ['beatgrid', 'key', 'waveform', 'loudness', 'vocal'];
 
@@ -227,8 +228,8 @@ before(async () => {
 	});
 });
 
-after(() => {
-	serverProcess?.kill();
+after(async () => {
+	if (serverProcess) await stopFixtureServer(serverProcess, apiBase);
 });
 
 beforeEach(() => {
