@@ -125,6 +125,44 @@ def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
     subprocess.run(["git", "worktree", "prune"], check=True, cwd=repo_root, capture_output=True)
 
 
+def _restore_tracked_ledger(repo_root: Path, ledger_path: Path) -> None:
+    """Undo `run_nightly`'s direct write to a ledger tracked inside `repo_root`.
+
+    BLOCKING, found by review on PR #3827 (Codex): with the default
+    ``MDT_PERF_KPI_LEDGER``, `run_nightly` appends this run's rows straight
+    into the CHECKED-OUT, git-tracked ``docs/perf/kpi-ledger.json`` -- the
+    same file ``scripts/autoreposync.sh:852-862`` inspects before pulling.
+    This function has already read those rows (into ``local_entries``) and
+    either published them onto the standing branch or given up trying;
+    leaving that local modification in place afterward serves no purpose
+    except to leave `repo_root` permanently dirty. A dirty checkout is
+    exactly what `autoreposync.sh` skips, so the FIRST scheduled run could
+    silently stop this install from ever receiving another `git pull`
+    again. Restored unconditionally -- success or failure -- so a publish
+    attempt never leaves a side effect on `repo_root` beyond what it
+    actually achieved (git history, or nothing): a night whose publish
+    failed loses that night's local copy of the measurement, the same way
+    it would if the process had simply crashed before writing anything, and
+    the crash itself is what surfaces the failure, not a silently
+    accumulating dirty tree.
+
+    A no-op when ``ledger_path`` does not live inside `repo_root`'s working
+    tree at all (an env override pointing somewhere else, as several tests
+    do): nothing was written to `repo_root`'s own checkout to begin with.
+    """
+    try:
+        relative = ledger_path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return
+    subprocess.run(
+        ["git", "checkout", "--", str(relative)],
+        check=True,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _new_entries_since(base_entries: list, local_entries: list) -> list:
     """Entries in ``local_entries`` whose exact content isn't already in ``base_entries``."""
     seen = {json.dumps(entry, sort_keys=True) for entry in base_entries}
@@ -206,9 +244,37 @@ def update_ledger_pr(
     argument out would silently get the shared path again, and two installs
     with different state dirs could still force-remove each other's
     in-flight worktree. Every real caller must pass ``config.ledger_worktree``.
+
+    Restores REPO_ROOT's own tracked ledger afterward, success or failure
+    (Codex, PR #3827, P1/BLOCKING): see ``_restore_tracked_ledger``.
     """
+    try:
+        _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir)
+    finally:
+        _restore_tracked_ledger(repo_root, ledger_path)
+
+
+def _pr_list_argv(repository: str, branch: str) -> list[str]:
+    return ["gh", "pr", "list", "--repo", repository, "--head", branch, "--json", "number"]
+
+
+def _parse_pr_list_result(stdout: str) -> bool:
+    """Does ``stdout`` (a `gh pr list --json number` response) show an open PR?
+
+    Pulled out of `_pr_already_open` as its own pure function (Codex, PR
+    #3827, P1/BLOCKING, review comment 4106092917) so the interesting part
+    -- parsing GitHub's real response shape -- has its own direct test
+    against REAL captured `gh pr list` output
+    (``tests/fixtures/github/perf_kpi_pr_list_exchanges.json``), with no
+    subprocess, no monkeypatch, and nothing simulated: this function never
+    touches a process at all.
+    """
+    return stdout.strip() not in ("", "[]")
+
+
+def _pr_already_open(repository: str, branch: str) -> bool:
     completed = subprocess.run(
-        ["gh", "pr", "list", "--repo", REPOSITORY, "--head", LEDGER_PR_BRANCH, "--json", "number"],
+        _pr_list_argv(repository, branch),
         check=True,
         capture_output=True,
         text=True,
@@ -219,7 +285,33 @@ def update_ledger_pr(
     # against the branch a PR already existed for, or `gh pr create` failed
     # for the same auth/network reason -- both far from the real cause.
     # `check=True` now raises with gh's own stderr immediately instead.
-    pr_already_open = completed.stdout.strip() not in ("", "[]")
+    return _parse_pr_list_result(completed.stdout)
+
+
+def _create_pr_argv(repository: str, branch: str) -> list[str]:
+    return [
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        repository,
+        "--base",
+        "main",
+        "--head",
+        branch,
+        "--title",
+        LEDGER_PR_TITLE,
+        "--body",
+        "Standing docs PR for nightly perf KPI ledger appends. Never merges by itself.",
+    ]
+
+
+def _create_pr(repository: str, branch: str, *, cwd: Path) -> None:
+    subprocess.run(_create_pr_argv(repository, branch), check=True, cwd=cwd)
+
+
+def _update_ledger_pr_inner(repo_root: Path, ledger_path: Path, worktree_dir: Path) -> None:
+    pr_already_open = _pr_already_open(REPOSITORY, LEDGER_PR_BRANCH)
     branch = LEDGER_PR_BRANCH
     subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
     # The branch is now ALWAYS fetched, and the lease taken from THAT same
@@ -289,6 +381,39 @@ def update_ledger_pr(
         cwd=repo_root,
     )
     try:
+        # Reconcile a RETAINED branch with current main before anything is
+        # appended (Codex, PR #3827, P2/BLOCKING): a branch can exist
+        # remotely with no open PR because an earlier ledger PR already
+        # merged (or was closed) without its head branch being deleted.
+        # `base_ref` above still has to build from that branch, never from
+        # origin/main, whenever the branch exists -- round 6's mid-race
+        # fix depends on that to avoid force-pushing a sibling history
+        # over a branch another host just pushed for real (see the
+        # comment on `base_ref`). But a STALE retained branch's tree can
+        # be arbitrarily far behind: real merge it forward onto
+        # origin/main so the commit this run builds carries a tree that
+        # matches current main everywhere except the ledger, instead of
+        # reviving whatever main looked like when the branch was cut.
+        # `-X ours` on conflicts because this branch, by construction,
+        # never carries a change to any file this bot did not itself
+        # commit -- docs/perf/kpi-ledger.json is the only file it ever
+        # touches, and that file's real reconciliation is done explicitly
+        # below via `_new_entries_since`, not left to git's text merge.
+        # A no-op ("Already up to date") whenever the worktree was already
+        # built from origin/main (branch_exists_remotely is False, or the
+        # branch was already current).
+        if branch_exists_remotely:
+            merge = subprocess.run(
+                ["git", "merge", "--no-edit", "-X", "ours", "origin/main"],
+                cwd=worktree_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if merge.returncode != 0:
+                raise RuntimeError(
+                    f"git merge origin/main into {branch} failed: {merge.stderr.strip()}"
+                )
         dest = worktree_dir / "docs" / "perf" / "kpi-ledger.json"
         local_entries = load_ledger(ledger_path)["entries"]
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -301,27 +426,50 @@ def update_ledger_pr(
         # duplicate once this branch also merges.
         branch_entries = load_ledger(dest)["entries"] if dest.exists() else []
         main_entries = _ledger_entries_at_ref(repo_root, "origin/main")
-        base_entries = branch_entries + [
-            entry
-            for entry in main_entries
-            if json.dumps(entry, sort_keys=True)
-            not in {json.dumps(e, sort_keys=True) for e in branch_entries}
-        ]
+        main_only_entries = _new_entries_since(branch_entries, main_entries)
+        base_entries = branch_entries + main_only_entries
         new_entries = _new_entries_since(base_entries, local_entries)
-        if not new_entries:
+        if not new_entries and not main_only_entries:
             return
-        append_entries(dest, new_entries, validate=False)
-        subprocess.run(["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir)
-        subprocess.run(
-            [
-                "git",
-                "commit",
-                "-m",
-                f"perf(kpi): nightly ledger append ({len(new_entries)} new)\n\n-Codex",
-            ],
-            check=True,
-            cwd=worktree_dir,
-        )
+        # Actually WRITE main_only_entries into dest (Codex, PR #3827,
+        # P2/BLOCKING), not just fold them into the dedup comparison: the
+        # union above only ever suppressed duplicate appends -- it never
+        # copied main-only entries onto the branch's own published ledger,
+        # so a retained stale branch's snapshot stayed missing everything
+        # merged to main since it diverged. Appended first, in its own
+        # commit, so the branch's history shows the reconciliation
+        # separately from tonight's own new rows.
+        if main_only_entries:
+            append_entries(dest, main_only_entries, validate=False)
+            subprocess.run(
+                ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"perf(kpi): reconcile ledger with main ({len(main_only_entries)} entries)"
+                    "\n\n-Codex",
+                ],
+                check=True,
+                cwd=worktree_dir,
+            )
+        if new_entries:
+            append_entries(dest, new_entries, validate=False)
+            subprocess.run(
+                ["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=worktree_dir
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"perf(kpi): nightly ledger append ({len(new_entries)} new)\n\n-Codex",
+                ],
+                check=True,
+                cwd=worktree_dir,
+            )
         # --force-with-lease against the SHA fetched at the top of this
         # function (claude-review, PR #3827, round 5, P1/BLOCKING -- round
         # 4's version re-checked the lease with a fresh `git ls-remote`
@@ -348,25 +496,7 @@ def update_ledger_pr(
     finally:
         _remove_worktree_if_present(repo_root, worktree_dir)
     if not pr_already_open:
-        subprocess.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--repo",
-                REPOSITORY,
-                "--base",
-                "main",
-                "--head",
-                branch,
-                "--title",
-                LEDGER_PR_TITLE,
-                "--body",
-                "Standing docs PR for nightly perf KPI ledger appends. Never merges by itself.",
-            ],
-            check=True,
-            cwd=repo_root,
-        )
+        _create_pr(REPOSITORY, branch, cwd=repo_root)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
