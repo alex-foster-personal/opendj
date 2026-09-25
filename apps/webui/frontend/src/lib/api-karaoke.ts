@@ -26,6 +26,7 @@
  */
 import type { components } from './api-types';
 import { ApiError, api, unwrap } from './api/client';
+import { isUsbTrackId, refuseStickWrite } from './rb/track-source';
 
 export type KaraokeWord = components['schemas']['KaraokeWordOut'];
 export type KaraokeTrack = components['schemas']['KaraokeTrackOut'];
@@ -49,6 +50,8 @@ export async function getTrackLyricsWords(
 	stableId: string,
 	opts: { includeLines?: boolean } = {}
 ): Promise<KaraokeTrack | null> {
+	// Spec 4b: a stick track has no lyrics route, so it is the no-lyrics state.
+	if (isUsbTrackId(stableId)) return null;
 	try {
 		return await unwrap(
 			api.GET('/api/v1/tracks/{stable_id}/lyrics/words', {
@@ -72,6 +75,8 @@ export async function putLyricOverride(
 	override: LyricVerdictValue | null,
 	note?: string
 ): Promise<CoverageVerdict> {
+	// Spec decision 2: nothing is ever written for a stick track.
+	refuseStickWrite(stableId, 'lyric override');
 	return unwrap(
 		api.PUT('/api/v1/tracks/{stable_id}/lyrics/override', {
 			params: { path: { stable_id: stableId } },
