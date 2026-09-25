@@ -8,6 +8,13 @@ ANLZ files are real PMAI containers built by ``anlz_bytes``: track 1 and
 track 10 share one ANLZ directory (``ANLZ0000.*`` and ``ANLZ0001.*``), track
 11's .DAT is not a PMAI container, track 12 names a .DAT that is absent, and
 track 13's .EXT carries a PCO2 tag that will not decode.
+
+Order is part of the fixture: every playlist and history entry's
+``entry_index`` disagrees with both its track id order and its row order, and
+the history playlists' row order disagrees with their id order, so a reader
+that sorts by the wrong key reorders a list here and a test goes red.
+Track 10's artwork is named by the export but its files are not written (the
+reference stick has 42 such rows).
 """
 from __future__ import annotations
 
@@ -52,6 +59,18 @@ SHARED_HOT_CUE = (4, 19, None, 19, None)
 # Track 13: grid fine, PCO2 hot list corrupt -> hot cue B from the .DAT PCOB copy.
 BAD_TAG_GRID = grid(100, 120.0, 8)
 BAD_TAG_PCOB_MS = 1500
+# Named by the export (track 10), never written: artwork_id > 0 is not a file.
+MISSING_ARTWORK_PATH = "/PIONEER/Artwork/00002/a4.jpg"
+
+# (list id, track id, entry_index). pl-3 plays [1, 10, 2]: by track id it
+# would read [1, 2, 10], in row order [2, 1, 10].
+PLAYLIST_ENTRIES = ((3, 2, 3), (3, 1, 1), (3, 10, 2), (7, 1, 1))
+PLAYLIST_ORDER = {3: (1, 10, 2), 7: (1,)}
+# Rows are written in dict order: HISTORY 002 (id 4) first, so a reader that
+# keeps row order, or reverses id order, lists it before id 1.
+HISTORY = {4: "HISTORY 002", 1: "HISTORY 001"}
+HISTORY_ENTRIES = ((1, 1, 2), (1, 2, 1), (4, 1, 2), (4, 10, 1))
+HISTORY_ORDER = {1: (2, 1), 4: (10, 1)}
 
 
 def synthetic_tracks() -> list[PdbTrack]:
@@ -89,6 +108,7 @@ def synthetic_tracks() -> list[PdbTrack]:
             title="Shared dir",
             file_path="/Contents/second.flac",
             analyze_path=f"/{SHARED_ANLZ_DIR}/ANLZ0001.DAT",
+            artwork_id=4,
         ),
         PdbTrack(
             id=11,
@@ -122,6 +142,7 @@ def synthetic_export(tracks: Sequence[PdbTrack] | None = None) -> PdbExport:
             1: "/PIONEER/Artwork/00001/a1.jpg",
             2: "/Contents/cover.jpg",
             3: "/PIONEER/Artwork/00001/a3.png",
+            4: MISSING_ARTWORK_PATH,
         },
         playlists=[
             PdbPlaylist(id=3, name="Root Set", sort_order=1),
@@ -130,9 +151,9 @@ def synthetic_export(tracks: Sequence[PdbTrack] | None = None) -> PdbExport:
             PdbPlaylist(id=7, name="Child A", parent_id=5, sort_order=1),
             PdbPlaylist(id=9, name="Stranded", parent_id=42, sort_order=0),
         ],
-        playlist_entries=[(3, 2, 2), (3, 1, 1), (7, 1, 1)],
-        history={1: "HISTORY 001"},
-        history_entries=[(1, 2, 2), (1, 1, 1)],
+        playlist_entries=PLAYLIST_ENTRIES,
+        history=HISTORY,
+        history_entries=HISTORY_ENTRIES,
     )
 
 

@@ -149,10 +149,13 @@ class StickTrack:
 
     @property
     def has_analysis(self) -> bool:
+        """The export names an ANLZ path; not a stat of the stick."""
         return self.analyze_path is not None
 
     @property
-    def has_artwork(self) -> bool:
+    def names_artwork(self) -> bool:
+        """The export names artwork; NOT that its files are on the stick
+        (``stick_library.stick_artwork_available`` answers that)."""
         return self.artwork_id > 0
 
 

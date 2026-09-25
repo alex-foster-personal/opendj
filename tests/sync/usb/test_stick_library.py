@@ -8,8 +8,12 @@ Regression intent, one line per guard:
   - if a minted stick id does not parse back to the same (uuid, pdb id) then ids are broken
   - if parse accepts a colon, lowercase uuid, leading zero or missing prefix then parse is loose
   - if Open Key 6m/9m/1d do not become Abm/Fm/C then deck key sync breaks on sticks
+  - if a playlist or history list is ordered by track id or row order then the stick's order is lost
+  - if history playlists do not come in id order then the history tree reorders
   - if a second open re-parses or re-scans (or takes 100 ms) then the cache is broken
   - if an mtime or size change serves the old parse then the cache is stale
+  - if a new device at the same mount path is trusted without a rescan then another stick is served
+  - if artwork named by the export but absent reads as available then the browser fetches a 404
   - if a vanished stick answers anything but USB_STICK_NOT_MOUNTED then the load toast lies
   - if ``..`` or a symlink out of the mount is served then containment is broken
   - if a non-audio file is served as audio then the extension allowlist is broken
@@ -30,7 +34,12 @@ from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.sync.usb import stick_library as sl
 from tests.sync.usb.export_pdb_builder import PdbTrack, write_export_pdb
 from tests.sync.usb.synthetic_stick import (
+    HISTORY,
+    HISTORY_ENTRIES,
+    HISTORY_ORDER,
     OTHER_UUID,
+    PLAYLIST_ENTRIES,
+    PLAYLIST_ORDER,
     STICK_NAME,
     STICK_UUID,
     synthetic_export,
@@ -158,13 +167,39 @@ def test_library_model_trims_display_strings_and_keeps_paths(
     )
     assert (first.key, first.bpm, first.duration_s, first.rating) == ("Abm", 124.5, 301.0, 4)
     assert first.file_path == "/Contents/Synth Artist/First Synthetic .mp3"
-    assert first.has_analysis and first.has_artwork
+    assert first.has_analysis and first.names_artwork
     assert first.artwork_path == "/PIONEER/Artwork/00001/a1.jpg"
     assert first.date_added == "2026-09-01"
     second = library.tracks_by_pdb_id[2]
     assert (second.artist, second.key, second.duration_s) == (None, "Am", None)
-    assert not second.has_analysis and not second.has_artwork
-    assert len(library.tracks) == 13 and library.playlist_entry_count == 3
+    assert not second.has_analysis and not second.names_artwork
+    assert len(library.tracks) == 13
+    assert library.playlist_entry_count == len(PLAYLIST_ENTRIES)
+
+
+def _ids(pdb_ids: tuple[int, ...]) -> tuple[str, ...]:
+    return tuple(f"usb-{UUID}-{pdb_id}" for pdb_id in pdb_ids)
+
+
+def _row_order(entries: tuple[tuple[int, int, int], ...], list_id: int) -> tuple[int, ...]:
+    return tuple(track for owner, track, _ in entries if owner == list_id)
+
+
+@pytest.mark.parametrize(
+    "entries,list_id",
+    [(PLAYLIST_ENTRIES, 3), (HISTORY_ENTRIES, 1), (HISTORY_ENTRIES, 4)],
+)
+def test_fixture_order_disagrees_with_every_wrong_key(
+    entries: tuple[tuple[int, int, int], ...], list_id: int
+) -> None:
+    """Control: the fixture tells entry_index order from each wrong key, so
+    the order tests below can fail."""
+    order = (PLAYLIST_ORDER if entries is PLAYLIST_ENTRIES else HISTORY_ORDER)[list_id]
+    own = sorted((e for e in entries if e[0] == list_id), key=lambda e: e[2])
+    assert tuple(track for _, track, _ in own) == order, "the expected order is entry_index order"
+    wrong = {tuple(sorted(order)), _row_order(entries, list_id)}
+    assert order not in wrong, (list_id, order, wrong)
+    assert list(HISTORY) != sorted(HISTORY), "history rows must not already be in id order"
 
 
 def test_playlists_come_in_tree_order_with_entries_in_entry_order(scan: CountingScan) -> None:
@@ -173,9 +208,11 @@ def test_playlists_come_in_tree_order_with_entries_in_entry_order(scan: Counting
     by_id = {p.id: p for p in library.playlists}
     assert by_id["pl-5"].is_folder and by_id["pl-5"].name == "Folder"
     assert by_id["pl-7"].parent_id == "pl-5" and by_id["pl-3"].parent_id is None
-    assert by_id["pl-3"].track_ids == (f"usb-{UUID}-1", f"usb-{UUID}-2")
+    assert by_id["pl-3"].track_ids == _ids(PLAYLIST_ORDER[3]) == _ids((1, 10, 2))
+    assert by_id["pl-7"].track_ids == _ids(PLAYLIST_ORDER[7])
     assert [(h.id, h.name, h.track_ids) for h in library.history] == [
-        ("hist-1", "HISTORY 001", (f"usb-{UUID}-1", f"usb-{UUID}-2"))
+        ("hist-1", "HISTORY 001", _ids(HISTORY_ORDER[1])),
+        ("hist-4", "HISTORY 002", _ids(HISTORY_ORDER[4])),
     ]
 
 
@@ -342,6 +379,33 @@ def test_audio_path_needs_no_stat_but_audio_file_does(mount: Path, scan: Countin
     (mount / "Contents" / "second.flac").unlink()
     assert sl.stick_audio_path(resolved).name == "second.flac"
     assert _refusal(lambda: sl.stick_audio_file(resolved)).code == "USB_FILE_MISSING"
+
+
+def test_artwork_available_needs_both_served_sizes_on_the_stick(
+    mount: Path, scan: CountingScan
+) -> None:
+    """artwork_id > 0 names artwork; only files on the stick make it available."""
+    named = {t.pdb_id for t in sl.open_stick_library(UUID, scan).library.tracks if t.names_artwork}
+    assert named == {1, 6, 7, 10}, "control: the fixture names artwork the stick lacks"
+    live = {pdb_id for pdb_id in named if sl.stick_artwork_available(_resolve(pdb_id, scan))}
+    assert live == {1}, "tracks 6/7 are outside policy and track 10's files were never written"
+    assert sl.open_stick_library(UUID, scan).artwork_available == frozenset({1})
+    (mount / "PIONEER" / "Artwork" / "00001" / "a1_m.jpg").unlink()
+    assert not sl.stick_artwork_available(_resolve(1, scan)), "the m size alone is missing"
+
+
+def test_listing_artwork_set_is_checked_once_per_parse(mount: Path, scan: CountingScan) -> None:
+    """Cached with the parse: a warm open does not stat artwork, and a new
+    export.pdb re-checks it."""
+    assert sl.open_stick_library(UUID, scan).artwork_available == frozenset({1})
+    small = mount / "PIONEER" / "Artwork" / "00001" / "a1.jpg"
+    small.unlink()
+    assert sl.open_stick_library(UUID, scan).artwork_available == frozenset({1})
+    pdb = mount.joinpath(*sl.EXPORT_PDB_PARTS)
+    stat = pdb.stat()
+    os.utime(pdb, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    reparsed = sl.open_stick_library(UUID, scan)
+    assert not reparsed.cache_hit and reparsed.artwork_available == frozenset()
 
 
 def test_artwork_sizes_pick_the_pdb_jpg_or_its_m_sibling(mount: Path, scan: CountingScan) -> None:

@@ -10,10 +10,13 @@ library model live in :mod:`apps.sync.usb.stick_model`, re-exported here.
 Cache. A parse is kept per VolumeUUID and reused while ``export.pdb``'s
 ``(st_size, st_mtime_ns)`` is unchanged, which one ``stat`` proves per
 request. A mount is bound to its UUID by a fresh scan and trusted while the
-mount's ``st_dev`` is unchanged; any change to the pdb under a trusted
-binding re-proves the binding with a fresh scan first, so a different stick
-remounted at the same path (two sticks both named "NO NAME") is never served
-under the first stick's ids.
+mount's device id (``st_dev``) is unchanged; a new device, or any change to
+the pdb under a trusted binding, re-proves the binding with a fresh scan
+first, so a different stick remounted at the same path (two sticks both
+named "NO NAME", even with byte-identical exports) is never served under the
+first stick's ids. The parse carries which tracks' artwork is on the stick
+(both served sizes), checked once per parse, so the listing's flag is a
+fact about files and never costs a stat on a warm read.
 
 Read only: nothing here opens a stick file for writing (USBPLAY-08).
 """
@@ -94,6 +97,9 @@ class OpenedStickLibrary:
     stick: MountedStick
     library: StickLibrary
     cache_hit: bool
+    #: pdb ids whose artwork both served sizes (``s`` and ``_m``) were on the
+    #: stick when this ``export.pdb`` was parsed.
+    artwork_available: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,7 @@ class _Binding:
 class _CachedLibrary:
     fingerprint: tuple[int, int]
     library: StickLibrary
+    artwork_available: frozenset[int]
 
 
 _LOCK = threading.Lock()
@@ -135,14 +142,14 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
         fingerprint = _pdb_fingerprint(stick)
         cached = _libraries.get(volume_uuid)
         if cached is not None and fingerprint == cached.fingerprint:
-            return OpenedStickLibrary(stick=stick, library=cached.library, cache_hit=True)
+            return _opened(stick, cached, cache_hit=True)
         if not freshly_bound:
             # The pdb changed or vanished under a trusted binding: prove which
             # stick is mounted there before parsing anything under this UUID.
             stick = _bind_from_fresh_scan(volume_uuid, scan)
             fingerprint = _pdb_fingerprint(stick)
             if cached is not None and fingerprint == cached.fingerprint:
-                return OpenedStickLibrary(stick=stick, library=cached.library, cache_hit=True)
+                return _opened(stick, cached, cache_hit=True)
         if fingerprint is None:
             raise StickError(
                 "USB_FILE_MISSING",
@@ -150,8 +157,24 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
                 volume_uuid=volume_uuid,
             )
         library = _parse_library(stick, fingerprint)
-        _libraries[volume_uuid] = _CachedLibrary(fingerprint=fingerprint, library=library)
-        return OpenedStickLibrary(stick=stick, library=library, cache_hit=False)
+        parsed = _CachedLibrary(
+            fingerprint=fingerprint,
+            library=library,
+            artwork_available=frozenset(
+                track.pdb_id for track in library.tracks if _artwork_available(stick, track)
+            ),
+        )
+        _libraries[volume_uuid] = parsed
+        return _opened(stick, parsed, cache_hit=False)
+
+
+def _opened(stick: MountedStick, cached: _CachedLibrary, *, cache_hit: bool) -> OpenedStickLibrary:
+    return OpenedStickLibrary(
+        stick=stick,
+        library=cached.library,
+        cache_hit=cache_hit,
+        artwork_available=cached.artwork_available,
+    )
 
 
 def resolve_stick_track(track_id: str, scan: VolumeScan) -> ResolvedStickTrack:
@@ -287,7 +310,8 @@ class StickAudioFile:
 def stick_audio_file(resolved: ResolvedStickTrack) -> StickAudioFile:
     """The track's audio: contained, audio-extension allowlisted, present."""
     path = _existing_stick_file(
-        resolved,
+        resolved.stick,
+        resolved.track,
         resolved.track.file_path,
         allowed_dir=(),
         allowed_suffixes=frozenset(AUDIO_MEDIA_TYPES),
@@ -300,7 +324,7 @@ def stick_audio_path(resolved: ResolvedStickTrack) -> Path:
     """Where the audio must be, policy-checked, WITHOUT a stat (metadata use)."""
     return _contained_stick_path(
         resolved.stick,
-        _required(resolved, resolved.track.file_path, "audio file"),
+        _required(resolved.stick, resolved.track, resolved.track.file_path, "audio file"),
         allowed_dir=(),
         allowed_suffixes=frozenset(AUDIO_MEDIA_TYPES),
     )
@@ -309,7 +333,29 @@ def stick_audio_path(resolved: ResolvedStickTrack) -> Path:
 def stick_artwork_file(resolved: ResolvedStickTrack, size: ArtworkSize) -> Path:
     """``s`` is the pdb's jpg (80x80); ``m`` and ``orig`` are its ``_m``
     sibling (240x240), the largest rendering rekordbox writes to a stick."""
-    relative = _required(resolved, resolved.track.artwork_path, "artwork")
+    return _artwork_file(resolved.stick, resolved.track, size)
+
+
+def stick_artwork_available(resolved: ResolvedStickTrack) -> bool:
+    """Now, would GET /artwork serve both sizes the UI asks for (s and m)?"""
+    return _artwork_available(resolved.stick, resolved.track)
+
+
+def _artwork_available(stick: MountedStick, track: StickTrack) -> bool:
+    if not track.names_artwork:
+        return False
+    try:
+        for size in ("s", "m"):
+            _artwork_file(stick, track, size)
+    except StickError as exc:
+        if exc.code in ("USB_FILE_MISSING", "USB_PATH_OUTSIDE_VOLUME"):
+            return False
+        raise
+    return True
+
+
+def _artwork_file(stick: MountedStick, track: StickTrack, size: ArtworkSize) -> Path:
+    relative = _required(stick, track, track.artwork_path, "artwork")
     if size == "s":
         target = relative
     elif size in ("m", "orig"):
@@ -318,7 +364,8 @@ def stick_artwork_file(resolved: ResolvedStickTrack, size: ArtworkSize) -> Path:
     else:
         raise ValueError(f"artwork size must be s, m or orig, got {size!r}")
     return _existing_stick_file(
-        resolved,
+        stick,
+        track,
         target,
         allowed_dir=ARTWORK_DIR_PARTS,
         allowed_suffixes=_ARTWORK_SUFFIXES,
@@ -330,10 +377,11 @@ def stick_anlz_file(resolved: ResolvedStickTrack, suffix: AnlzSuffix) -> Path:
     """One of the track's own ANLZ files, from its exact ``analyze_path``
     (never by scanning the directory: ``ANLZ0000.*`` and ``ANLZ0001.*`` can
     share one, USBPLAY-07)."""
-    relative = _required(resolved, resolved.track.analyze_path, "analysis")
+    relative = _required(resolved.stick, resolved.track, resolved.track.analyze_path, "analysis")
     target = str(PurePosixPath(relative).with_suffix(suffix))
     return _existing_stick_file(
-        resolved,
+        resolved.stick,
+        resolved.track,
         target,
         allowed_dir=ANLZ_DIR_PARTS,
         allowed_suffixes=_ANLZ_SUFFIXES,
@@ -341,18 +389,19 @@ def stick_anlz_file(resolved: ResolvedStickTrack, suffix: AnlzSuffix) -> Path:
     )
 
 
-def _required(resolved: ResolvedStickTrack, relative: str | None, what: str) -> str:
+def _required(stick: MountedStick, track: StickTrack, relative: str | None, what: str) -> str:
     if not relative:
         raise StickError(
             "USB_FILE_MISSING",
-            f"the export names no {what} for track {resolved.track.pdb_id}",
-            volume_uuid=resolved.stick.volume_uuid,
+            f"the export names no {what} for track {track.pdb_id}",
+            volume_uuid=stick.volume_uuid,
         )
     return relative
 
 
 def _existing_stick_file(
-    resolved: ResolvedStickTrack,
+    stick: MountedStick,
+    track: StickTrack,
     relative: str,
     *,
     allowed_dir: tuple[str, ...],
@@ -360,8 +409,8 @@ def _existing_stick_file(
     what: str,
 ) -> Path:
     path = _contained_stick_path(
-        resolved.stick,
-        _required(resolved, relative, what),
+        stick,
+        _required(stick, track, relative, what),
         allowed_dir=allowed_dir,
         allowed_suffixes=allowed_suffixes,
     )
@@ -369,7 +418,7 @@ def _existing_stick_file(
         raise StickError(
             "USB_FILE_MISSING",
             f"{what} {relative} is not on the stick",
-            volume_uuid=resolved.stick.volume_uuid,
+            volume_uuid=stick.volume_uuid,
         )
     return path
 
@@ -445,6 +494,7 @@ __all__ = [
     "parse_stick_track_id",
     "resolve_stick_track",
     "stick_anlz_file",
+    "stick_artwork_available",
     "stick_artwork_file",
     "stick_audio_file",
     "stick_audio_path",

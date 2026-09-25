@@ -55,6 +55,7 @@ from apps.sync.usb.stick_library import (
     open_stick_library,
     resolve_stick_track,
     stick_anlz_file,
+    stick_artwork_available,
     stick_artwork_file,
     stick_audio_file,
     stick_audio_path,
@@ -124,6 +125,8 @@ class UsbStickTrackOut(BaseModel):
     file_path: str
     #: The pdb names an ANLZ path; not a stat of the stick.
     has_analysis: bool
+    #: Both served artwork sizes (s and _m) were on the stick when this
+    #: export.pdb was parsed: TrackOut's ``artwork_available`` for the list.
     has_artwork: bool
     date_added: str | None
 
@@ -318,7 +321,10 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
         volume_uuid=opened.stick.volume_uuid,
         name=opened.stick.name.strip(),
         mount_path=str(opened.stick.mount),
-        tracks=[_track_out(track) for track in library.tracks],
+        tracks=[
+            _track_out(track, has_artwork=track.pdb_id in opened.artwork_available)
+            for track in library.tracks
+        ],
         playlists=[
             UsbStickPlaylistOut(
                 id=p.id,
@@ -346,7 +352,7 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
     )
 
 
-def _track_out(track: StickTrack) -> UsbStickTrackOut:
+def _track_out(track: StickTrack, *, has_artwork: bool) -> UsbStickTrackOut:
     return UsbStickTrackOut(
         id=track.id,
         pdb_id=track.pdb_id,
@@ -360,7 +366,7 @@ def _track_out(track: StickTrack) -> UsbStickTrackOut:
         rating=track.rating,
         file_path=track.file_path,
         has_analysis=track.has_analysis,
-        has_artwork=track.has_artwork,
+        has_artwork=has_artwork,
         date_added=track.date_added,
     )
 
@@ -382,7 +388,7 @@ def get_usb_track(track_id: str, request: Request, response: Response) -> TrackO
     with _stick_errors():
         resolved = _resolve_track(request, track_id)
         audio_path = stick_audio_path(resolved)
-        artwork_available = _artwork_available(resolved)
+        artwork_available = stick_artwork_available(resolved)
     track = resolved.track
     library = resolved.library
     exported_at = _pdb_modified_iso(library)
@@ -408,20 +414,6 @@ def get_usb_track(track_id: str, request: Request, response: Response) -> TrackO
         stems_available=False,
         artwork_available=artwork_available,
     )
-
-
-def _artwork_available(resolved: ResolvedStickTrack) -> bool:
-    """Predicts GET /artwork for the sizes the UI asks for (s and m)."""
-    if not resolved.track.has_artwork:
-        return False
-    try:
-        for size in ("s", "m"):
-            stick_artwork_file(resolved, size)
-    except StickError as exc:
-        if exc.code in ("USB_FILE_MISSING", "USB_PATH_OUTSIDE_VOLUME"):
-            return False
-        raise
-    return True
 
 
 def _pdb_modified_iso(library: StickLibrary) -> str:

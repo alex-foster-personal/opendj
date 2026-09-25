@@ -20,6 +20,8 @@ Regression intent, one line per guard:
   - if /hot-cues disagrees with /anlz's hot cues then the deck's cue bank and waveform disagree
   - if an unanalyzed stick track 404s /anlz or /hot-cues then it cannot load onto a deck
   - if TrackOut flags predict a different answer than the routes give then the deck asks wrongly
+  - if the listing's has_artwork disagrees with TrackOut's artwork_available then rows fetch 404s
+  - if a playlist's track_ids are not the stick's entry_index order then USBPLAY-05 order is lost
   - if any file under PIONEER/ or Contents/ changes while the routes run then USBPLAY-08 broke
   - if a same-size, same-mtime content change under PIONEER/ is not seen then the hash is gone
 """
@@ -47,6 +49,7 @@ from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
 from apps.shared import runtime_policy
 from apps.sync.usb import stick_library as sl
 from apps.sync.usb.pioneer.anlz_track import read_stick_track_analysis
+from apps.sync.usb.pioneer.reader import read_export_pdb
 from apps.webui.server import rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
@@ -62,6 +65,9 @@ from tests.sync.usb.synthetic_stick import (
     FIRST_GRID,
     FIRST_HOT_CUES,
     FIRST_MEMORY_MS,
+    HISTORY_ORDER,
+    PLAYLIST_ENTRIES,
+    PLAYLIST_ORDER,
     SHARED_ANLZ_DIR,
     SHARED_GRID,
     SHARED_HOT_CUE,
@@ -85,6 +91,10 @@ LIBRARY_TRACK_KEYS = {
 
 def _track_url(pdb_id: int, suffix: str = "") -> str:
     return f"{API}/tracks/usb-{STICK_UUID}-{pdb_id}{suffix}"
+
+
+def _ids(pdb_ids: tuple[int, ...]) -> list[str]:
+    return [f"usb-{STICK_UUID}-{pdb_id}" for pdb_id in pdb_ids]
 
 
 @pytest.fixture(autouse=True)
@@ -158,7 +168,8 @@ def test_library_route_returns_the_locked_contract(client: TestClient, mount: Pa
     assert (body["volume_id"], body["volume_uuid"]) == (VOLUME_ID, STICK_UUID)
     assert body["name"] == STICK_NAME.strip() and body["mount_path"] == str(mount)
     assert body["counts"] == {
-        "tracks": 13, "playlists": 5, "playlist_entries": 3, "history_playlists": 1
+        "tracks": 13, "playlists": 5, "playlist_entries": len(PLAYLIST_ENTRIES),
+        "history_playlists": len(HISTORY_ORDER),
     }
     first = next(t for t in body["tracks"] if t["pdb_id"] == 1)
     assert set(first) == LIBRARY_TRACK_KEYS
@@ -170,11 +181,13 @@ def test_library_route_returns_the_locked_contract(client: TestClient, mount: Pa
         "has_analysis": True, "has_artwork": True, "date_added": "2026-09-01",
     }
     assert [p["id"] for p in body["playlists"]] == ["pl-5", "pl-7", "pl-6", "pl-3", "pl-9"]
-    assert body["playlists"][3]["track_ids"] == [f"usb-{STICK_UUID}-1", f"usb-{STICK_UUID}-2"]
+    assert body["playlists"][3]["track_ids"] == _ids(PLAYLIST_ORDER[3]) == _ids((1, 10, 2))
     assert body["history"] == [
-        {"id": "hist-1", "name": "HISTORY 001",
-         "track_ids": [f"usb-{STICK_UUID}-1", f"usb-{STICK_UUID}-2"]}
+        {"id": "hist-1", "name": "HISTORY 001", "track_ids": _ids(HISTORY_ORDER[1])},
+        {"id": "hist-4", "name": "HISTORY 002", "track_ids": _ids(HISTORY_ORDER[4])},
     ]
+    # Named by the export is not on the stick: 6/7 are outside policy, 10's files are absent.
+    assert {t["pdb_id"] for t in body["tracks"] if t["has_artwork"]} == {1}
     assert isinstance(body["read_ms"], float) and body["cache_hit"] is False
     assert client.get(f"{API}/volumes/{VOLUME_ID}/library").json()["cache_hit"] is True
 
@@ -544,6 +557,7 @@ def test_trackout_flags_predict_what_the_stick_routes_serve(client: TestClient) 
             for size in ("s", "m")
         )
         assert body["artwork_available"] is artwork_ok, row["pdb_id"]
+        assert row["has_artwork"] is artwork_ok, (row["pdb_id"], "listing and TrackOut disagree")
         assert body["has_rb_mapping"] is False, "hot cues are read only: no SAVE may be offered"
         anlz = client.get(_track_url(row["pdb_id"], "/anlz"))
         hot = client.get(_track_url(row["pdb_id"], "/hot-cues"))
@@ -737,6 +751,52 @@ def test_live_stick_library_counts_and_cold_budget(
     assert sum(len(p["track_ids"]) for p in body["playlists"]) == _LIVE_COUNTS["playlist_entries"]
     assert body["cache_hit"] is False and warm.json()["cache_hit"] is True
     assert cold_ms < _LIVE_COLD_BUDGET_MS
+    raw = read_export_pdb(live_mount)
+    _assert_live_playlist_order(body, raw)
+    _assert_live_artwork_flags(body, raw, live_mount)
+
+
+def _assert_live_playlist_order(body: dict[str, Any], raw: dict[str, Any]) -> None:
+    """USBPLAY-05: each playlist is the raw rows sorted by entry_index."""
+    uuid = body["volume_uuid"]
+    rows: dict[int, list[tuple[int, int]]] = {}
+    for entry in raw["playlist_entries"]:
+        rows.setdefault(entry["playlist_id"], []).append((entry["entry_index"], entry["track_id"]))
+    served = {p["pdb_id"]: p["track_ids"] for p in body["playlists"]}
+    expected = {
+        pl["id"]: [f"usb-{uuid}-{t}" for _, t in sorted(rows.get(pl["id"], []))]
+        for pl in raw["playlists"]
+    }
+    assert served == expected
+    by_track_id = sum(
+        1 for pl_rows in rows.values()
+        if [t for _, t in sorted(pl_rows)] != sorted(t for _, t in pl_rows)
+    )
+    assert by_track_id > 0, "control: no playlist here tells entry order from track id order"
+    history_ids = [int(h["id"].removeprefix("hist-")) for h in body["history"]]
+    assert history_ids == sorted(history_ids), "history playlists come in id order"
+    print(f"live order: {by_track_id} of {len(rows)} playlists differ from track id order")
+
+
+def _assert_live_artwork_flags(
+    body: dict[str, Any], raw: dict[str, Any], live_mount: Path
+) -> None:
+    """has_artwork is both served files on the stick, checked here without the resolver."""
+    named = {
+        t["id"]: raw["artwork"].get(t["artwork_id"]) for t in raw["tracks"] if t["artwork_id"]
+    }
+    on_stick: set[int] = set()
+    for pdb_id, small in named.items():
+        if small is None:
+            continue  # an artwork id with no artwork row names no file
+        small_path = live_mount / small.lstrip("/")
+        if small_path.is_file() and small_path.with_name(
+            f"{small_path.stem}_m{small_path.suffix}"
+        ).is_file():
+            on_stick.add(pdb_id)
+    served = {t["pdb_id"] for t in body["tracks"] if t["has_artwork"]}
+    print(f"live artwork: {len(named)} named, {len(on_stick)} on the stick, {len(served)} served")
+    assert served == on_stick
 
 
 def test_live_stick_track_audio_and_artwork(live_client: TestClient, live_mount: Path) -> None:
