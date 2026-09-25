@@ -6,12 +6,13 @@ import { before, describe, it, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // Pin 5a5c3b8033d8 (PARTIAL half): the ten-segment / red-amber-green meter
-// shipped in PR #1062 for the per-CHANNEL taps only. Those tap post-EQ,
-// pre-fader on purpose (see meter-tap.ts's header) and so, by the same DJM
-// convention, they do NOT move with the master volume control. This file
-// pins the still-open half: a MASTER OUTPUT meter, fed from the master bus
-// post master-gain, reusing meter-tap.ts for measurement and meter-math.ts
-// for every threshold/colour decision - never a second set of numbers.
+// shipped in PR #1062 for the per-CHANNEL taps only. Those tap post-trim,
+// post-EQ, and post-channel-fader (issue #3529, see meter-tap.ts's header)
+// and so they track each deck's channel fader, not the master volume control.
+// This file pins the still-open half: a MASTER OUTPUT meter, fed from the
+// master bus post master-gain, reusing meter-tap.ts for measurement and
+// meter-math.ts for every threshold/colour decision - never a second set of
+// numbers.
 //
 // Regression lines:
 // - if the master tap reads from anywhere except _masterGain (or a node

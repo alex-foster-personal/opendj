@@ -10,8 +10,6 @@
 	 */
 	import { onMount } from 'svelte';
 
-	import { readApiErrorStatus } from '$lib/api/client';
-	import { api } from '$lib/api/client';
 	import { getIdentityBacklog, getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
 	import {
 		getCloudSyncConfig,
@@ -20,14 +18,15 @@
 		type CloudSyncConfigOut
 	} from '$lib/api-cloudsync-ops';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { pushToast } from '$lib/stores.svelte';
 
+	import { warnForceSyncBypassesGate } from './cloudsync-toasts';
 	import {
 		CLOUDSYNC_TECHNICAL_DETAILS_LABEL,
 		FORCE_SYNC_LABEL,
 		STATUS_CHANGED_EVENT,
 		configPutBody,
 		envOverrideNotes,
+		fetchUiMirrorForGate,
 		forceSyncNowRequest,
 		formFromConfig,
 		identityBacklogNote,
@@ -79,19 +78,6 @@
 
 	function message(exc: unknown): string {
 		return exc instanceof Error ? exc.message : String(exc);
-	}
-
-	async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
-		try {
-			const { data } = await api.GET('/api/v1/state/ui-mirror', {});
-			if (data !== undefined && typeof data === 'object') {
-				return data as { decks?: UiMirrorDecks };
-			}
-			return null;
-		} catch (exc) {
-			if (readApiErrorStatus(exc) === 409) return null;
-			return null;
-		}
 	}
 
 	/**
@@ -183,10 +169,7 @@
 			notice = { kind: 'error', text: forceSyncDecision.reason };
 			return;
 		}
-		pushToast(
-			'Force sync bypasses Gig and playing-deck protection for one round.',
-			'warn'
-		);
+		warnForceSyncBypassesGate();
 		syncing = true;
 		try {
 			const result = await runCloudSyncNow(forceSyncDecision.body);

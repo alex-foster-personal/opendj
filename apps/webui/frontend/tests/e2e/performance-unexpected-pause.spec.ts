@@ -91,10 +91,10 @@ test('suspended AudioContext records audio-unexpected-pause fault and client err
 		.toBe(true);
 });
 
-test('paused deck under armed AutoPlay raises no-deck-playing stall after five seconds', async ({
+test('paused deck under armed AutoPlay raises no-deck-playing stall after thirty seconds', async ({
 	page
 }) => {
-	test.setTimeout(60_000);
+	test.setTimeout(90_000);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto(`${UI_BASE}/performance`);
 	await waitForIpc(page);

@@ -25,6 +25,10 @@ import {
 } from '$lib/rb/performance-session-snapshot';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 import { restoreStemControls } from '$lib/rb/stem-restore';
+import {
+	consumeLibraryModeExitFlag,
+	shouldSkipPerformanceSessionRestore
+} from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
@@ -319,7 +323,9 @@ export function installPerformanceSessionRestore(
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
 	activeSessionWriter = null;
-	const skipDeckRestore = opts.skipDeckRestore ?? false;
+	const skipFromLibrary = shouldSkipPerformanceSessionRestore();
+	if (skipFromLibrary) consumeLibraryModeExitFlag();
+	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
 	let disposed = false;
 	const assertActive = (): void => {
 		if (disposed) throw new Error('performance session restore was disposed');

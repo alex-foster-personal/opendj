@@ -173,7 +173,15 @@ export interface ToastEnvironment {
 export interface ToastReportInput {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
+	/** Human headline shown on screen. */
+	headline: string;
+	/** Raw message written to the perf-event ring. */
 	message: string;
+	detail?: string | undefined;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	/** ISO 8601 UTC, and the SAME instant the log row carries. */
 	createdAt: string;
 	env: ToastEnvironment;
@@ -191,17 +199,26 @@ export interface ToastReportInput {
  */
 export function buildToastReport(input: ToastReportInput): string {
 	const { env } = input;
-	return [
+	const lines = [
 		`id: ${input.id}`,
+		...(input.clientEventId !== undefined ? [`client_event_id: ${input.clientEventId}`] : []),
+		...(input.serverEventId !== undefined ? [`server_event_id: ${input.serverEventId}`] : []),
+		...(input.errorId !== undefined ? [`error_id: ${input.errorId}`] : []),
+		...(input.sentryEventId !== undefined ? [`sentry_event_id: ${input.sentryEventId}`] : []),
 		`when: ${input.createdAt}`,
 		`kind: ${input.kind}`,
+		`headline: ${input.headline}`,
 		`message: ${input.message}`,
+		...(input.detail !== undefined && input.detail !== input.headline
+			? [`detail: ${input.detail}`]
+			: []),
 		`machine: ${env.machine}`,
 		`user: ${env.user}`,
 		`client: ${env.client.name} ${env.client.version}`,
 		`page: ${env.url}`,
 		`find in logs: search ${input.id}`
-	].join('\n');
+	];
+	return lines.join('\n');
 }
 
 // ----- the clipboard ------------------------------------------------------

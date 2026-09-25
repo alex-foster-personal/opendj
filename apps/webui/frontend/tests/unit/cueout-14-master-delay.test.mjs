@@ -104,6 +104,21 @@ describe('the room delay node', () => {
 		assert.equal(node.delayTime.value, 0);
 	});
 
+	test('provisional calibration delays move the graph without reaching storage', () => {
+		const { ctx } = fakeAudioContext();
+		headphones.setMasterDelayMs(100);
+		headphones.setHeadDelayMs(0);
+		const node = headphones.createMasterDelayNode(ctx);
+		const stored = () => JSON.parse(globalThis.window.localStorage.getItem('mdt.rb.mixer-config.v1') ?? '{}');
+		const before = stored();
+		headphones.applyUnsavedAlignmentDelays({ head_delay_ms: 40, master_delay_ms: 900 });
+		assert.equal(node.delayTime.value, 0.9, 'if the provisional room delay is not applied then verification measures the old plan - broken');
+		assert.deepEqual([stored().master_delay_ms, stored().head_delay_ms], [before.master_delay_ms, before.head_delay_ms],
+			'if a provisional delay reaches storage then a reload mid-verification boots with an unverified room delay - broken');
+		headphones.applyUnsavedAlignmentDelays({ head_delay_ms: 0, master_delay_ms: 100 });
+		assert.equal(node.delayTime.value, 0.1);
+	});
+
 	test('the headphone monitor tap is upstream of the room delay: the phones are never delayed by ROOM', () => {
 		const { ctx, edges } = fakeAudioContext();
 		headphones.disposeHeadphoneMonitor();
@@ -115,7 +130,7 @@ describe('the room delay node', () => {
 		masterGain.connect(mute);
 		mute.connect(roomDelay);
 		roomDelay.connect(ctx.destination);
-		const monitorAncestors = ancestorsOf(nodes.destination, edges);
+		const monitorAncestors = ancestorsOf(nodes.bridgeInput, edges);
 		assert.ok(monitorAncestors.has(masterGain), 'the monitor must still hear the master bus');
 		assert.ok(!monitorAncestors.has(roomDelay), 'if the room delay sits upstream of the monitor tap then HEAD DELAY and ROOM stack and the phones lag the room - broken');
 		assert.ok(!monitorAncestors.has(mute), 'the monitor tap is upstream of the mute belt too, as before');

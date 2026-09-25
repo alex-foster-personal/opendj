@@ -168,8 +168,15 @@
 		_show();
 	}
 
+	function _pinPlacementArmed(): boolean {
+		const g = window as unknown as Record<string, unknown>;
+		const armed = g.__mdtPinPlacementArmed as { get?: () => boolean } | undefined;
+		return armed?.get?.() === true;
+	}
+
 	function _onDocumentPointerDown(event: PointerEvent): void {
 		if (!pinned) return;
+		if (_pinPlacementArmed()) return;
 		const target = event.target;
 		if (target instanceof Node && wrapEl?.contains(target)) return;
 		if (target instanceof Node && popEl?.contains(target)) return;

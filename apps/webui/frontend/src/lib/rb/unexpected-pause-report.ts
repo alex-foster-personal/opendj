@@ -3,7 +3,7 @@
  */
 
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
-import { pushToast } from '$lib/stores.svelte';
+import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 import {
 	diagnoseUnexpectedPause,
 	formatUnexpectedPauseDiagnostic,
@@ -64,12 +64,17 @@ export function recordUnexpectedPause(input: {
 	context_state?: string;
 	decoded_duration_ms?: number | null;
 	metadata_duration_ms?: number | null;
+	cause_error?: unknown;
 }): void {
 	const diagnostic = formatUnexpectedPauseDiagnostic(input);
 	const human = formatUnexpectedPauseMessage(input);
 	recordPerfEvent('audio-unexpected-pause', diagnostic, input.deck, 'error');
 	if (input.cause !== 'context-suspended') {
-		pushToast(human, 'error');
+		pushToast(human, 'error', TOAST_DEFAULT_MS, input.cause_error, {
+			source: 'unexpected-pause',
+			cause: input.cause,
+			deck: input.deck
+		});
 	}
 }
 

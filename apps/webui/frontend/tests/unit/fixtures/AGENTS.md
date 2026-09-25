@@ -700,6 +700,7 @@ tracks:
     updated_at: RFC 3339 UTC timestamp of the most recent write to this row. Also this table's LWW sync timestamp (design_decision_04.md, CONFLICT RULE).
     origin_device_id: machine_id of the machine that made the most recent write. NULL on rows written before migration v6 -- such rows sync as epoch-old until a real edit or the seed push touches them (design_decision_04.md consequence 7).
     deleted_at: RFC 3339 UTC tombstone timestamp; NULL means live. A synced delete is an ordinary update that sets this column and propagates like any other write -- readers MUST filter deleted_at IS NULL or ghosts reappear (design_decision_04.md, DELETES).
+    audio_hash: Tag-independent SHA-256 of the decoded container audio payload; used beside content_hash for CloudSync identity merges.
   schema:
     stable_id: TEXT PRIMARY KEY
     stable_id_tier: TEXT NOT NULL
@@ -714,6 +715,7 @@ tracks:
     updated_at: TEXT NOT NULL
     origin_device_id: TEXT
     deleted_at: TEXT
+    audio_hash: TEXT
   foreign_keys: []
 ```
 

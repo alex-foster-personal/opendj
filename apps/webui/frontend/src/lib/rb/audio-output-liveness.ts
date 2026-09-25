@@ -47,6 +47,13 @@ export interface LivenessEffects {
 	now?: () => number;
 	recoverOutput?(): void;
 	/**
+	 * Re-bind a context whose output went dead. Omitted = the MASTER context,
+	 * which re-binds through the global `noteOutputStall` fan-out. Any other
+	 * context (the headphone cue context) must pass its own, or a dead headphone
+	 * leg would suspend and resume the room.
+	 */
+	rebindDeadOutput?(): void;
+	/**
 	 * Fired after EVERY poll (idle included), not only on a verdict change, so a
 	 * UI indicator (pin 93c82bb36eb7: the 1px bar under master volume) can show
 	 * the live verdict rather than only the toast trail of past transitions.
@@ -180,7 +187,8 @@ export function installOutputLiveness(
 				'error'
 			);
 			effects.pushToast('NO AUDIO OUTPUT: the browser is rendering into a dead device. Re-binding...', 'error');
-			noteOutputStall(0);
+			if (effects.rebindDeadOutput !== undefined) effects.rebindDeadOutput();
+			else noteOutputStall(0);
 		} else if (deadPolls === LIVENESS_ESCALATE_POLLS) {
 			verdict = 'dead-escalated';
 			effects.recordPerfEvent(
@@ -197,239 +205,5 @@ export function installOutputLiveness(
 		verdict: () => verdict,
 		snapshot: () => snapshotAudioOutput(ctx, verdict),
 		uninstall: () => effects.clearInterval(handle)
-	};
-}
-
-/** `HTMLMediaElement.readyState` value that means current playback data exists. */
-export const HTML_MEDIA_HAVE_CURRENT_DATA = 2;
-
-export interface HeadphoneLivenessElement {
-	readonly currentTime: number;
-	readonly readyState: number;
-	readonly paused: boolean;
-	readonly ended: boolean;
-	readonly error: MediaError | null;
-	addEventListener(type: string, listener: () => void): void;
-	removeEventListener(type: string, listener: () => void): void;
-}
-
-export interface HeadphoneLivenessEffects {
-	pushToast(message: string, kind: 'info' | 'error'): void;
-	recordPerfEvent(kind: string, message: string, severity: 'info' | 'error'): void;
-	setInterval(fn: () => void, ms: number): unknown;
-	clearInterval(handle: unknown): void;
-	now?: () => number;
-	onSnapshot?(snapshot: HeadphoneOutputSnapshot): void;
-	/** Subscribe to `navigator.mediaDevices` devicechange; return an unsubscribe. */
-	watchDeviceChanges?: ((handler: () => void) => () => void) | undefined;
-}
-
-export interface HeadphoneOutputSnapshot {
-	current_time_s: number | null;
-	ready_state: number;
-	paused: boolean;
-	has_error: boolean;
-	verdict: LivenessVerdict;
-}
-
-function _mediaTimeAdvancing(currentTime: number, previousTime: number | null): boolean {
-	return currentTime > 0 && (previousTime === null || currentTime > previousTime);
-}
-
-export function snapshotHeadphoneOutput(
-	element: HeadphoneLivenessElement,
-	verdict: LivenessVerdict
-): HeadphoneOutputSnapshot {
-	return {
-		current_time_s: Number.isFinite(element.currentTime) ? element.currentTime : null,
-		ready_state: element.readyState,
-		paused: element.paused,
-		has_error: element.error !== null,
-		verdict
-	};
-}
-
-/**
- * Detect a detached headphone `HTMLAudioElement` that stopped delivering audio.
- * Mirrors the master-output poll/stall/dead timing but uses `currentTime`,
- * `readyState`, media error/ended events, and optional devicechange instead of
- * `outputLatency` / `getOutputTimestamp`. Detection only: no automatic re-bind.
- */
-export function installHeadphoneOutputLiveness(
-	element: HeadphoneLivenessElement,
-	effects: HeadphoneLivenessEffects,
-	shouldMonitor: () => boolean,
-	isDevicePresent: () => boolean = () => true
-): { verdict(): LivenessVerdict; snapshot(): HeadphoneOutputSnapshot; uninstall(): void } {
-	let deadPolls = 0;
-	let verdict: LivenessVerdict = 'idle';
-	let lastCurrentTime: number | null = null;
-	let lastAdvanceAtMs = 0;
-	let stallEdgeReported = false;
-	let deadEdgeReported = false;
-	let escalateEdgeReported = false;
-	const now = (): number => effects.now?.() ?? Date.now();
-
-	function tick(): void {
-		tickVerdict();
-		effects.onSnapshot?.(snapshotHeadphoneOutput(element, verdict));
-	}
-
-	function _restoreFromBroken(): void {
-		if (verdict === 'dead' || verdict === 'dead-escalated' || verdict === 'stalled') {
-			effects.recordPerfEvent(
-				'headphone-output-alive',
-				'headphone playback time is advancing again; audio is reaching the monitor device',
-				'info'
-			);
-			effects.pushToast('Headphone output restored', 'info');
-		}
-	}
-
-	function _reportStall(stalledForMs: number): void {
-		if (stallEdgeReported) return;
-		stallEdgeReported = true;
-		effects.recordPerfEvent(
-			'headphone-output-stalled',
-			`headphone playback time frozen for ${Math.round(stalledForMs)}ms ` +
-				`(>= ${OUTPUT_STALL_MS}ms) while a deck is playing`,
-			'error'
-		);
-		effects.pushToast('NO HEADPHONE OUTPUT: playback time stalled on the monitor device.', 'error');
-	}
-
-	function _reportDead(message: string, kind: string): void {
-		if (deadEdgeReported) return;
-		deadEdgeReported = true;
-		verdict = 'dead';
-		effects.recordPerfEvent(kind, message, 'error');
-		effects.pushToast('NO HEADPHONE OUTPUT: the monitor device is not producing sound.', 'error');
-	}
-
-	function _reportEscalation(): void {
-		if (escalateEdgeReported) return;
-		escalateEdgeReported = true;
-		verdict = 'dead-escalated';
-		effects.recordPerfEvent(
-			'headphone-output-dead-persistent',
-			'the monitor output stayed silent; re-select the headphone device or reload the page',
-			'error'
-		);
-		effects.pushToast(
-			'NO HEADPHONE OUTPUT after sustained silence. Re-select the headphone device or reload (Cmd+R).',
-			'error'
-		);
-	}
-
-	function tickVerdict(): void {
-		if (!shouldMonitor()) {
-			deadPolls = 0;
-			lastCurrentTime = null;
-			lastAdvanceAtMs = 0;
-			stallEdgeReported = false;
-			deadEdgeReported = false;
-			escalateEdgeReported = false;
-			verdict = 'idle';
-			return;
-		}
-
-		if (!isDevicePresent()) {
-			deadPolls = LIVENESS_DEAD_POLLS;
-			_reportDead(
-				'selected headphone output vanished from device enumeration (disconnect or OS reroute)',
-				'headphone-output-device-vanished'
-			);
-			if (deadPolls >= LIVENESS_ESCALATE_POLLS) _reportEscalation();
-			return;
-		}
-
-		if (element.error !== null || element.ended) {
-			deadPolls = LIVENESS_DEAD_POLLS;
-			_reportDead(
-				element.error !== null
-					? `headphone element media error: ${element.error.message}`
-					: 'headphone element ended while a deck is playing',
-				'headphone-output-dead'
-			);
-			if (deadPolls >= LIVENESS_ESCALATE_POLLS) _reportEscalation();
-			return;
-		}
-
-		const currentTime = element.currentTime;
-		if (!Number.isFinite(currentTime)) return;
-
-		if (_mediaTimeAdvancing(currentTime, lastCurrentTime)) {
-			if (verdict === 'stalled' || verdict === 'dead' || verdict === 'dead-escalated') {
-				_restoreFromBroken();
-			}
-			lastCurrentTime = currentTime;
-			lastAdvanceAtMs = now();
-			stallEdgeReported = false;
-			deadEdgeReported = false;
-			escalateEdgeReported = false;
-			deadPolls = 0;
-			verdict = 'ok';
-			return;
-		}
-
-		if (lastCurrentTime !== null) {
-			const stalledForMs = now() - lastAdvanceAtMs;
-			if (stalledForMs >= OUTPUT_STALL_MS) {
-				_reportStall(stalledForMs);
-				deadPolls += 1;
-				if (deadPolls >= LIVENESS_ESCALATE_POLLS) {
-					_reportEscalation();
-				} else if (deadPolls >= LIVENESS_DEAD_POLLS) {
-					_reportDead(
-						'headphone playback time stayed frozen through the stall alarm window',
-						'headphone-output-dead'
-					);
-				} else {
-					verdict = 'stalled';
-				}
-				return;
-			}
-			if (element.readyState >= HTML_MEDIA_HAVE_CURRENT_DATA) {
-				verdict = 'ok';
-				return;
-			}
-		} else if (currentTime > 0) {
-			lastCurrentTime = currentTime;
-			lastAdvanceAtMs = now();
-		}
-
-		if (!element.paused && element.readyState < HTML_MEDIA_HAVE_CURRENT_DATA) {
-			deadPolls += 1;
-			if (deadPolls === LIVENESS_DEAD_POLLS) {
-				_reportDead(
-					`headphone element readyState ${element.readyState} stayed below HAVE_CURRENT_DATA while playing`,
-					'headphone-output-dead'
-				);
-			} else if (deadPolls === LIVENESS_ESCALATE_POLLS) {
-				_reportEscalation();
-			}
-			return;
-		}
-
-		if (verdict !== 'stalled') verdict = 'ok';
-	}
-
-	const onMediaSignal = (): void => tick();
-	for (const type of ['error', 'stalled', 'ended'] as const) {
-		element.addEventListener(type, onMediaSignal);
-	}
-	const unwatchDevice = effects.watchDeviceChanges?.(() => tick());
-
-	const handle = effects.setInterval(tick, LIVENESS_POLL_MS);
-	return {
-		verdict: () => verdict,
-		snapshot: () => snapshotHeadphoneOutput(element, verdict),
-		uninstall: () => {
-			effects.clearInterval(handle);
-			unwatchDevice?.();
-			for (const type of ['error', 'stalled', 'ended'] as const) {
-				element.removeEventListener(type, onMediaSignal);
-			}
-		}
 	};
 }

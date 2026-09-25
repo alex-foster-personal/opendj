@@ -1136,6 +1136,71 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioInterferenceItemOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "why",
+          "matched"
+        ],
+        "title": "AudioInterferenceItemOut",
+        "type": "object"
+      },
+      "AudioInterferenceOut": {
+        "properties": {
+          "detected": {
+            "items": {
+              "$ref": "#/components/schemas/AudioInterferenceItemOut"
+            },
+            "title": "Detected",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "detected"
+        ],
+        "title": "AudioInterferenceOut",
+        "type": "object"
+      },
       "AudioOutputHealthOut": {
         "properties": {
           "checked_at": {
@@ -3351,9 +3416,31 @@
       },
       "ClientErrorOut": {
         "properties": {
+          "error_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
+          },
+          "sentry_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentry Event Id"
           },
           "stored": {
             "title": "Stored",
@@ -7858,9 +7945,30 @@
             ],
             "title": "Offset Ms"
           },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadphoneCalibrationProbeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "step": {
             "title": "Step",
             "type": "string"
+          },
+          "verify_residual_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Residual Ms"
           }
         },
         "required": [
@@ -7868,9 +7976,64 @@
           "cue_latency_ms",
           "master_latency_ms",
           "offset_ms",
+          "verify_residual_ms",
+          "probe",
           "error"
         ],
         "title": "HeadphoneCalibrationOut",
+        "type": "object"
+      },
+      "HeadphoneCalibrationProbeOut": {
+        "description": "CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.\n\nThe ear-cup step is interactive, so this is the feedback an agent needs to\ndrive it the way the operator does, watching `best` climb toward `threshold`.",
+        "properties": {
+          "best": {
+            "title": "Best",
+            "type": "number"
+          },
+          "bus": {
+            "title": "Bus",
+            "type": "string"
+          },
+          "gain": {
+            "title": "Gain",
+            "type": "number"
+          },
+          "lag_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Ms"
+          },
+          "peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bus",
+          "gain",
+          "peak",
+          "lag_ms",
+          "best",
+          "threshold"
+        ],
+        "title": "HeadphoneCalibrationProbeOut",
         "type": "object"
       },
       "HeadphoneOutputDeviceOut": {
@@ -20839,6 +21002,11 @@
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
+          "available_offline_filter": {
+            "default": false,
+            "title": "Available Offline Filter",
+            "type": "boolean"
+          },
           "beat_sync_max": {
             "default": true,
             "title": "Beat Sync Max",
@@ -21047,6 +21215,17 @@
                 "type": "null"
               }
             ]
+          },
+          "available_offline_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Offline Filter"
           },
           "beat_sync_max": {
             "anyOf": [
@@ -24254,6 +24433,27 @@
         "summary": "Assistant Status",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/audio-interference": {
+      "get": {
+        "operationId": "audio_interference_api_v1_audio_interference_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioInterferenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Interference",
+        "tags": [
+          "health"
         ]
       }
     },

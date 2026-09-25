@@ -600,6 +600,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-interference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audio Interference */
+        get: operations["audio_interference_api_v1_audio_interference_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audio/output-health": {
         parameters: {
             query?: never;
@@ -6347,6 +6364,28 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** AudioInterferenceItemOut */
+        AudioInterferenceItemOut: {
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Matched */
+            matched: string;
+            /** Why */
+            why: string;
+        };
+        /** AudioInterferenceOut */
+        AudioInterferenceOut: {
+            /** Detected */
+            detected: components["schemas"]["AudioInterferenceItemOut"][];
+            /** Error */
+            error?: string | null;
+            /** Supported */
+            supported: boolean;
+        };
         /** AudioOutputHealthOut */
         AudioOutputHealthOut: {
             /** Checked At */
@@ -7235,8 +7274,12 @@ export interface components {
         };
         /** ClientErrorOut */
         ClientErrorOut: {
+            /** Error Id */
+            error_id?: string | null;
             /** Event Id */
             event_id: string;
+            /** Sentry Event Id */
+            sentry_event_id?: string | null;
             /** Stored */
             stored: boolean;
         };
@@ -8929,8 +8972,32 @@ export interface components {
             master_latency_ms: number | null;
             /** Offset Ms */
             offset_ms: number | null;
+            probe: components["schemas"]["HeadphoneCalibrationProbeOut"] | null;
             /** Step */
             step: string;
+            /** Verify Residual Ms */
+            verify_residual_ms: number | null;
+        };
+        /**
+         * HeadphoneCalibrationProbeOut
+         * @description CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.
+         *
+         *     The ear-cup step is interactive, so this is the feedback an agent needs to
+         *     drive it the way the operator does, watching `best` climb toward `threshold`.
+         */
+        HeadphoneCalibrationProbeOut: {
+            /** Best */
+            best: number;
+            /** Bus */
+            bus: string;
+            /** Gain */
+            gain: number;
+            /** Lag Ms */
+            lag_ms: number | null;
+            /** Peak */
+            peak: number | null;
+            /** Threshold */
+            threshold: number;
         };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
@@ -13898,6 +13965,11 @@ export interface components {
             auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /**
+             * Available Offline Filter
+             * @default false
+             */
+            available_offline_filter: boolean;
+            /**
              * Beat Sync Max
              * @default true
              */
@@ -14025,6 +14097,8 @@ export interface components {
             /** Auto Play Maximize Reach */
             auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Available Offline Filter */
+            available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
             /** Confirm */
@@ -15761,6 +15835,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    audio_interference_api_v1_audio_interference_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioInterferenceOut"];
                 };
             };
         };

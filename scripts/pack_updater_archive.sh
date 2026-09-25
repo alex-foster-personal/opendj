@@ -22,8 +22,10 @@ rm -f "$out"
 # land inside the installed bundle and break its seal.
 COPYFILE_DISABLE=1 tar -czf "$out" -C "$(dirname "$app")" "$(basename "$app")"
 
-magic="$(head -c 2 "$out" | od -An -tx1 | tr -d ' \n')"
+# `… | head` under pipefail SIGPIPEs tar/od (exit 141) on some CI runners.
+magic="$(od -An -tx1 -N 2 "$out" | tr -d ' \n')"
 [ "$magic" = "1f8b" ] || { echo "[ERROR] $out is not gzip (magic $magic); the updater would refuse it" >&2; exit 3; }
-first="$(tar -tzf "$out" | head -1)"
+listing="$(tar -tzf "$out")"
+first="${listing%%$'\n'*}"
 [ "$first" = "$(basename "$app")/" ] || { echo "[ERROR] archive top-level entry is '$first', expected '$(basename "$app")/'" >&2; exit 3; }
 echo "[OK] updater archive $out: gzip, top-level $(basename "$app")/, $(stat -f %z "$out" 2>/dev/null || stat -c %s "$out") bytes"

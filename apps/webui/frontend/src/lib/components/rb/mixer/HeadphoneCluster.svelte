@@ -11,7 +11,7 @@
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertText, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
-	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
+	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
@@ -132,6 +132,10 @@
 	const inputPickBullets = [
 		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
+
+	function stepHeadDelay(delta: number): void {
+		ondelay(Math.min(500, Math.max(0, headphoneState.head_delay_ms + delta)));
+	}
 
 	function openIo(): void {
 		ioOpen = true;
@@ -256,7 +260,7 @@
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
 					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━▶</span><span>CUE ━━━━━▶</span></div>
 					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
-						<label class="hp-delay"><span>HEAD DELAY</span><input type="number" min="0" max="500" step="1" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
+						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
 					<p class="hp-context">Click the value, then use ↑/↓ or two-finger scroll. Hover HEAD DELAY for timing guidance.</p>
 					{#if headphoneState.master_delay_ms > 0}<p class="hp-room" data-performance-control="room-delay">ROOM +{headphoneState.master_delay_ms} ms. {roomBullets[0]}</p>{/if}
@@ -476,6 +480,21 @@
 		font-size: 10px;
 		color: var(--rb-text-dim, #838990);
 	}
+	.hp-delay-stepper {
+		display: inline-flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	.hp-delay-step {
+		font: inherit;
+		line-height: 0;
+		padding: 1px 2px;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
+		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
 	.hp-delay input {
 		font: inherit;
 		font-size: 11px;
@@ -483,7 +502,13 @@
 		padding: 0 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
+	.hp-delay-step:hover {
+		color: var(--rb-text, #c8cdd2);
+		border-color: var(--rb-accent, #2f6fd6);
 	}
 	.hp-btn:disabled {
 		opacity: 0.45;

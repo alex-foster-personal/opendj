@@ -130,6 +130,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -639,6 +640,9 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
 	message: string;
+	headline: string;
+	detail?: string | undefined;
+	expanded: boolean;
 	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
@@ -1791,8 +1795,12 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode' ||
-		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
-		command.type === 'headphone_calibrate'
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps, so the
+		// delay writes wait behind it rather than moving the nodes it is verifying.
+		command.type === 'headphone_calibrate' ||
+		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms'
 	) {
 		return ['headphone'];
 	}
@@ -1817,9 +1825,6 @@ export function performanceCommandQueueScopes(
 		command.type === 'midi_takeover_mode' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
-		command.type === 'head_delay_ms' ||
-		command.type === 'headphone_alignment_mode' ||
-		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
 		// CUEOUT-15: the preview owns no deck, so serializing it behind one
@@ -2705,6 +2710,9 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (command.type === 'load') {
+		onDeckLoadStart(command.deck);
+	}
 	if (_presetClaim !== null) {
 		const error = new Error(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
@@ -2899,6 +2907,9 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				headline: toast.headline,
+				detail: toast.detail,
+				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)

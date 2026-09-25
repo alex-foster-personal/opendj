@@ -87,6 +87,10 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import {
+	registerAudioContext,
+	unregisterAudioContext
+} from '$lib/rb/audio-context-registry';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
 	beginDeckLoad,
@@ -130,9 +134,9 @@ import {
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
 	patchTrack,
-	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
+import { awaitStemArtifact } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -603,8 +607,8 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 };
 
 /**
- * Channel level meter reading, taken POST-EQ and PRE-FADER through an
- * AudioWorklet tap: level, held peak, lit segment count and clip latch.
+ * Channel level meter reading, taken POST-TRIM, POST-EQ, POST-FADER (issue
+ * #3529) through an AudioWorklet tap: level, peak, segment count, clip latch.
  *
  * REPLACED `peekDeckMeter`, which returned `Math.min(1, rms * 5.5)`: linear
  * amplitude against a magic constant, no dB scale, no ballistics, and tapped
@@ -752,7 +756,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			);
 		},
 		maybeUpgradeStems: (snap, buffer, ctx) => {
-			if (snap.stemsReady && snap.stableId.length > 0) {
+			if ((snap.stemsReady || snap.stemsLoading) && snap.stableId.length > 0) {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
@@ -768,6 +772,7 @@ function _ensureGraph(): AudioContext {
 	// Construction options travel through ONE named constant so a future
 	// user-facing buffer/latency setting has a single place to write to.
 	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+	registerAudioContext(_ctx);
 	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
@@ -1276,14 +1281,14 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 		position_ms: positionMs,
 		context_state: _ctx?.state ?? 'uninitialized',
 		decoded_duration_ms: decodedDurationMs,
-		metadata_duration_ms: metadataDurationMs
+		metadata_duration_ms: metadataDurationMs,
+		cause_error: error
 	});
 	withPauseOrigin('worklet', () => {
 		_clearLoadedTrackState(st);
 		st.processor_error = message;
 		st.sync_error = message;
 	});
-	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
 }
 
 export function stretchScheduleChange(
@@ -2830,11 +2835,11 @@ async function _upgradeDeckStems(
 			stages[name] = Math.round(performance.now() - started);
 		}
 	};
-	const stale = (): boolean => token !== rt.loadToken;
+	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx; // a graph rebuild restarts it
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
-		const probe = await time('probeStem', probeStemArtifact(stableId));
-		if (stale()) return;
+		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
+		if (probe === null || stale()) return;
 		if (probe.status !== 'ready') {
 			// A settled "this track has no bundle". Not an error, and not a
 			// spinner: the deck is finished loading.
@@ -2969,12 +2974,13 @@ class RbAudioEngine implements AudioEngine {
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
 		nodes.push(..._djOutputNodes);
+		const closingContext = _ctx;
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
 			nodes,
 			masterGain: _masterGain,
-			context: _ctx
+			context: closingContext
 		});
 
 		_rafId = null;
@@ -2988,6 +2994,7 @@ class RbAudioEngine implements AudioEngine {
 		_externalMerger = _externalRouteAnalyser = null;
 		_djOutputNodes = [];
 		_djOutputProfileActive = null;
+		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';
@@ -4373,6 +4380,11 @@ class RbAudioEngine implements AudioEngine {
 
 /** The singleton engine every /performance unit imports. */
 export const engine: RbAudioEngine = new RbAudioEngine();
+
+/** PERFMODE-14: whether the Gig deck graph is still armed. */
+export function gigDeckGraphIsPresent(): boolean {
+	return _ctx !== null;
+}
 
 export function getMasterMode(): MasterMode {
 	return _masterMode;
