@@ -227,3 +227,59 @@ def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
     assert once == unicodedata.normalize("NFC", "café")
     assert locations.normalize_stored_text(once) == once
     assert locations.normalize_stored_text(None) is None
+
+
+@pytest.mark.requirement("LIBM-128")
+def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] the listing batches path resolution [then] every id resolves as local_audio_path does, [else stop].
+
+    Includes the one shape where the two used to differ: an id whose FIRST
+    ordered local location has an empty path. The per-id reader takes that
+    row (LIMIT 1) and drops it; the bulk reader used to fall through to the
+    next location instead, so the listing could report a file its own
+    single-track routes cannot find.
+    """
+    present = _flac(tmp_path / "present.flac")
+    via_location = _flac(tmp_path / "via-location.flac")
+    # A path is one location row per machine, so c's fallback is its own file.
+    c_fallback = _flac(tmp_path / "c-fallback.flac")
+    shapes = {
+        "a" * 40: str(present),
+        "b" * 40: str(tmp_path / "moved.flac"),
+        "c" * 40: str(tmp_path / "missing.flac"),
+        "e" * 40: "spotify:track:1",
+        "f" * 40: None,
+    }
+    # Raw inserts: upsert_track would add a primary location mirroring
+    # file_path, and the per-id reader only ever considers the FIRST location.
+    state_conn.executemany(
+        "INSERT INTO tracks (stable_id, stable_id_tier, duration_ms, file_path, "
+        "created_at, updated_at) VALUES (?, 'inferred', 1000, ?, '2026-09-25', '2026-09-25')",
+        list(shapes.items()),
+    )
+    state_conn.commit()
+    writer = StateWriter(state_conn, actor="unit-test")
+    try:
+        writer.upsert_track_location(stable_id="b" * 40, kind="local", file_path=str(via_location))
+        empty_first = writer.upsert_track_location(
+            stable_id="c" * 40, kind="local", file_path=str(tmp_path / "placeholder.flac"),
+            role="primary",
+        )
+        writer.upsert_track_location(stable_id="c" * 40, kind="local", file_path=str(c_fallback))
+    finally:
+        writer.close()
+    # The schema CHECK admits an empty path only beside a remote_url.
+    state_conn.execute(
+        "UPDATE track_locations SET file_path = '', remote_url = 'https://example.invalid/c' "
+        "WHERE location_id = ?",
+        (empty_first,),
+    )
+    state_conn.commit()
+
+    per_id = {sid: locations.local_audio_path(state_conn, sid) for sid in shapes}
+    assert locations.bulk_local_audio_paths(state_conn, list(shapes)) == per_id
+    # Control: the fixture reaches both answers, so equality is not vacuous.
+    assert per_id["a" * 40] == present and per_id["b" * 40] == via_location
+    assert per_id["c" * 40] is None

@@ -354,12 +354,19 @@ def bulk_local_audio_paths(
     machine_id: str | None = None,
     path_map: PathMap | None = None,
 ) -> dict[str, Path | None]:
-    """Materialised local audio paths for many ``stable_ids`` on this machine."""
+    """Materialised local audio paths for many ``stable_ids`` on this machine.
+
+    Answers exactly what :func:`local_audio_path` answers per id (the listing
+    batches through this, and a listed row must agree with its single-track
+    routes): the FIRST local location row in :func:`_local_audio_raw_candidates`
+    order is the location candidate, then ``tracks.file_path``.
+    """
     out: dict[str, Path | None] = {sid: None for sid in stable_ids}
     if not stable_ids:
         return out
     owner = machine_id or _sync_stamp.local_machine_id(conn)
     location_by_id: dict[str, str] = {}
+    first_location_seen: set[str] = set()
     track_paths: dict[str, str | None] = {}
 
     if _locations_machine_scoped(conn):
@@ -378,7 +385,13 @@ def bulk_local_audio_paths(
             ).fetchall()
             for stable_id, file_path, *_rest in rows:
                 sid = str(stable_id)
-                if sid not in location_by_id and file_path:
+                # Only the first row per id counts, even when its path is
+                # empty: the per-id reader takes LIMIT 1 and then drops an
+                # empty path rather than falling through to the next row.
+                if sid in first_location_seen:
+                    continue
+                first_location_seen.add(sid)
+                if file_path:
                     location_by_id[sid] = str(file_path)
 
     tracks_deleted_filter = (
