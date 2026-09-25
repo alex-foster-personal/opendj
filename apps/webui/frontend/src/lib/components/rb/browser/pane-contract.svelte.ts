@@ -45,7 +45,15 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
+export interface BrowserRow extends Pick<
+	TrackRow,
+	| 'key_status'
+	| 'key_reason'
+	| 'bpm_status'
+	| 'bpm_reason'
+	| 'loudness_status'
+	| 'loudness_reason'
+> {
 	stable_id: string;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;

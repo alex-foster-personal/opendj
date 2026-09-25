@@ -1,40 +1,6 @@
 {
   "components": {
     "schemas": {
-      "AccessProbeOut": {
-        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
-        "properties": {
-          "denied": {
-            "title": "Denied",
-            "type": "boolean"
-          },
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "readable": {
-            "title": "Readable",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "path",
-          "exists",
-          "readable",
-          "denied",
-          "detail"
-        ],
-        "title": "AccessProbeOut",
-        "type": "object"
-      },
       "AccountDeleteOut": {
         "properties": {
           "deleted": {
@@ -893,68 +859,6 @@
         "title": "AppModeOut",
         "type": "object"
       },
-      "AppPostureOut": {
-        "properties": {
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "posture": {
-            "title": "Posture",
-            "type": "string"
-          },
-          "scalers": {
-            "$ref": "#/components/schemas/AppPostureScalersOut"
-          }
-        },
-        "required": [
-          "posture",
-          "label",
-          "scalers"
-        ],
-        "title": "AppPostureOut",
-        "type": "object"
-      },
-      "AppPostureScalersOut": {
-        "properties": {
-          "library_poll_ms": {
-            "title": "Library Poll Ms",
-            "type": "integer"
-          },
-          "prefetch_bytes_floor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefetch Bytes Floor"
-          },
-          "prefetch_tracks_floor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefetch Tracks Floor"
-          },
-          "worker_divisor": {
-            "title": "Worker Divisor",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "library_poll_ms",
-          "worker_divisor"
-        ],
-        "title": "AppPostureScalersOut",
-        "type": "object"
-      },
       "ApplyIn": {
         "additionalProperties": false,
         "properties": {
@@ -1088,25 +992,6 @@
         "title": "ArchiveOut",
         "type": "object"
       },
-      "AssistantStatusOut": {
-        "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
-        "properties": {
-          "configured": {
-            "title": "Configured",
-            "type": "boolean"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "configured",
-          "model"
-        ],
-        "title": "AssistantStatusOut",
-        "type": "object"
-      },
       "AttachmentOut": {
         "description": "A screenshot pasted into a comment pin (issue #1333, part 2 of #928).\n\n``url`` is the GET route that streams the stored bytes back (relative,\nsame convention as ``issue_url`` on ``CommentOut``); ``content_type`` and\n``size_bytes`` are recorded once, at upload time, so a caller can decide\nwhether to fetch the bytes without a HEAD round trip first. The bytes\nthemselves live under ``<data-dir>/feedback/attachments/`` - see\n``feedback_attachments.py``, the module that actually writes and serves\nthem; this file only owns the small record ``comments.json`` carries.",
         "properties": {
@@ -1134,71 +1019,6 @@
           "url"
         ],
         "title": "AttachmentOut",
-        "type": "object"
-      },
-      "AudioInterferenceItemOut": {
-        "properties": {
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "matched": {
-            "title": "Matched",
-            "type": "string"
-          },
-          "why": {
-            "title": "Why",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "label",
-          "kind",
-          "why",
-          "matched"
-        ],
-        "title": "AudioInterferenceItemOut",
-        "type": "object"
-      },
-      "AudioInterferenceOut": {
-        "properties": {
-          "detected": {
-            "items": {
-              "$ref": "#/components/schemas/AudioInterferenceItemOut"
-            },
-            "title": "Detected",
-            "type": "array"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "supported": {
-            "title": "Supported",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "supported",
-          "detected"
-        ],
-        "title": "AudioInterferenceOut",
         "type": "object"
       },
       "AudioOutputHealthOut": {
@@ -1703,136 +1523,6 @@
           }
         },
         "title": "AutolistSelectionIn",
-        "type": "object"
-      },
-      "AvailabilityProbeIn": {
-        "properties": {
-          "allow_mass_missing": {
-            "default": false,
-            "title": "Allow Mass Missing",
-            "type": "boolean"
-          },
-          "full": {
-            "default": false,
-            "title": "Full",
-            "type": "boolean"
-          },
-          "stable_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stable Ids"
-          }
-        },
-        "title": "AvailabilityProbeIn",
-        "type": "object"
-      },
-      "AvailabilityProbeOut": {
-        "properties": {
-          "accepted": {
-            "default": true,
-            "title": "Accepted",
-            "type": "boolean"
-          },
-          "phase": {
-            "enum": [
-              "idle",
-              "queued",
-              "running",
-              "complete",
-              "refused",
-              "failed"
-            ],
-            "title": "Phase",
-            "type": "string"
-          }
-        },
-        "required": [
-          "phase"
-        ],
-        "title": "AvailabilityProbeOut",
-        "type": "object"
-      },
-      "AvailabilityStatusOut": {
-        "properties": {
-          "awaiting_volume": {
-            "description": "Rows under an unmounted /Volumes path to re-check",
-            "title": "Awaiting Volume",
-            "type": "integer"
-          },
-          "complete": {
-            "description": "True when no unknown/stale/awaiting_volume rows remain",
-            "title": "Complete",
-            "type": "boolean"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "pending": {
-            "description": "Tracks still needing a probe pass",
-            "title": "Pending",
-            "type": "integer"
-          },
-          "phase": {
-            "enum": [
-              "idle",
-              "queued",
-              "running",
-              "complete",
-              "refused",
-              "failed"
-            ],
-            "title": "Phase",
-            "type": "string"
-          },
-          "present": {
-            "description": "Current present count in track_availability",
-            "title": "Present",
-            "type": "integer"
-          },
-          "processed_total": {
-            "description": "Rows classified across this worker lifetime",
-            "title": "Processed Total",
-            "type": "integer"
-          },
-          "stale": {
-            "description": "Rows whose tracks.updated_at is newer than checked_at",
-            "title": "Stale",
-            "type": "integer"
-          },
-          "unknown": {
-            "description": "Live tracks with no availability row",
-            "title": "Unknown",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "phase",
-          "pending",
-          "unknown",
-          "stale",
-          "awaiting_volume",
-          "processed_total",
-          "present",
-          "complete"
-        ],
-        "title": "AvailabilityStatusOut",
         "type": "object"
       },
       "BackfillBatchIn": {
@@ -2700,118 +2390,6 @@
         "title": "BrowseLoad",
         "type": "object"
       },
-      "BuildInfoOut": {
-        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
-        "properties": {
-          "app_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "App Version"
-          },
-          "built_at_kind": {
-            "enum": [
-              "payload-build",
-              "head-commit"
-            ],
-            "title": "Built At Kind",
-            "type": "string"
-          },
-          "built_at_utc": {
-            "title": "Built At Utc",
-            "type": "string"
-          },
-          "bundle_identifier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bundle Identifier"
-          },
-          "engine_version": {
-            "title": "Engine Version",
-            "type": "string"
-          },
-          "git_branch": {
-            "title": "Git Branch",
-            "type": "string"
-          },
-          "git_dirty": {
-            "title": "Git Dirty",
-            "type": "boolean"
-          },
-          "git_sha": {
-            "title": "Git Sha",
-            "type": "string"
-          },
-          "git_sha_full": {
-            "title": "Git Sha Full",
-            "type": "string"
-          },
-          "lane_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lane Label"
-          },
-          "manifest_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Manifest Path"
-          },
-          "product_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Name"
-          },
-          "source": {
-            "enum": [
-              "payload",
-              "repo"
-            ],
-            "title": "Source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source",
-          "engine_version",
-          "git_sha",
-          "git_sha_full",
-          "git_branch",
-          "git_dirty",
-          "built_at_utc",
-          "built_at_kind"
-        ],
-        "title": "BuildInfoOut",
-        "type": "object"
-      },
       "BuildPatchIn": {
         "additionalProperties": false,
         "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
@@ -3196,49 +2774,6 @@
           "deck"
         ],
         "title": "ChannelCue",
-        "type": "object"
-      },
-      "ChatIn": {
-        "description": "A whole conversation, resent every turn -- the engine stores none of it.",
-        "properties": {
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/ChatMessage"
-            },
-            "minItems": 1,
-            "title": "Messages",
-            "type": "array"
-          }
-        },
-        "required": [
-          "messages"
-        ],
-        "title": "ChatIn",
-        "type": "object"
-      },
-      "ChatMessage": {
-        "description": "One turn. Same three roles OpenRouter accepts, no tool calls.",
-        "properties": {
-          "content": {
-            "minLength": 1,
-            "title": "Content",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "system",
-              "user",
-              "assistant"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role",
-          "content"
-        ],
-        "title": "ChatMessage",
         "type": "object"
       },
       "CheckedViolationOut": {
@@ -6178,85 +5713,6 @@
         "title": "DigestResponse",
         "type": "object"
       },
-      "EngineHealthOut": {
-        "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
-        "properties": {
-          "bind_host": {
-            "title": "Bind Host",
-            "type": "string"
-          },
-          "boot_id": {
-            "title": "Boot Id",
-            "type": "string"
-          },
-          "cloud": {
-            "$ref": "#/components/schemas/HealthCloud"
-          },
-          "contract_rev": {
-            "title": "Contract Rev",
-            "type": "string"
-          },
-          "engine_version": {
-            "title": "Engine Version",
-            "type": "string"
-          },
-          "google_oauth_configured": {
-            "title": "Google Oauth Configured",
-            "type": "boolean"
-          },
-          "process_env_forbidden_keys": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Process Env Forbidden Keys",
-            "type": "array"
-          },
-          "process_env_home_present": {
-            "title": "Process Env Home Present",
-            "type": "boolean"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/HealthStateDb"
-          },
-          "status": {
-            "default": "ok",
-            "title": "Status",
-            "type": "string"
-          },
-          "syncthing": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HealthSyncthing"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          },
-          "waveform_materialization": {
-            "$ref": "#/components/schemas/HealthWaveformMaterialization"
-          }
-        },
-        "required": [
-          "state_db",
-          "cloud",
-          "waveform_materialization",
-          "bind_host",
-          "version",
-          "google_oauth_configured",
-          "process_env_forbidden_keys",
-          "process_env_home_present",
-          "contract_rev",
-          "engine_version",
-          "boot_id"
-        ],
-        "title": "EngineHealthOut",
-        "type": "object"
-      },
       "EnrollCredentialModel": {
         "description": "The credential the joining machine presents. Rides the BODY, not a header.\n\n:class:`apps.sync_hub.transport.HubTransport` is a two-method protocol\nwith no header support, and a grant is not a bearer for ``push`` or\n``pull``. Widening the transport for it would create a credential slot\nthose endpoints would then be expected to fill.",
         "properties": {
@@ -6906,47 +6362,6 @@
         "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
-      "FileProbeOut": {
-        "description": "One real path and whether it is actually there.",
-        "properties": {
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "modified_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modified At"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "size_bytes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size Bytes"
-          }
-        },
-        "required": [
-          "path",
-          "exists"
-        ],
-        "title": "FileProbeOut",
-        "type": "object"
-      },
       "FindReplaceApplyIn": {
         "properties": {
           "case_sensitive": {
@@ -7432,255 +6847,6 @@
           "foreign"
         ],
         "title": "FleetOut",
-        "type": "object"
-      },
-      "FolderCandidatesOut": {
-        "description": "Existing folders under the user's home worth offering as one-click\nsetup suggestions, instead of making them type a path blind.",
-        "properties": {
-          "candidates": {
-            "items": {
-              "$ref": "#/components/schemas/AccessProbeOut"
-            },
-            "title": "Candidates",
-            "type": "array"
-          }
-        },
-        "title": "FolderCandidatesOut",
-        "type": "object"
-      },
-      "FolderImportIn": {
-        "description": "Point at one or more folders of audio files. No rekordbox involved.",
-        "properties": {
-          "folders": {
-            "description": "absolute paths to walk; at least one",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Folders",
-            "type": "array"
-          },
-          "limit": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "import at most N files",
-            "title": "Limit"
-          }
-        },
-        "required": [
-          "folders"
-        ],
-        "title": "FolderImportIn",
-        "type": "object"
-      },
-      "FolderLastImportOut": {
-        "description": "What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.\n\nA different model rather than optional fields on the rekordbox one,\nbecause the two describe different work: there is no decrypt here, no\nplaylists, and -- the field that matters --\n``tracks_without_analysis``, which equals the tracks written.",
-        "properties": {
-          "analysis_available": {
-            "default": false,
-            "title": "Analysis Available",
-            "type": "boolean"
-          },
-          "analysis_detail": {
-            "title": "Analysis Detail",
-            "type": "string"
-          },
-          "files_dataless": {
-            "title": "Files Dataless",
-            "type": "integer"
-          },
-          "files_rejected_unplayable": {
-            "default": 0,
-            "title": "Files Rejected Unplayable",
-            "type": "integer"
-          },
-          "files_seen": {
-            "title": "Files Seen",
-            "type": "integer"
-          },
-          "files_without_tags": {
-            "title": "Files Without Tags",
-            "type": "integer"
-          },
-          "finished_at": {
-            "title": "Finished At",
-            "type": "string"
-          },
-          "kind": {
-            "const": "folder",
-            "default": "folder",
-            "title": "Kind",
-            "type": "string"
-          },
-          "roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Roots",
-            "type": "array"
-          },
-          "started_at": {
-            "title": "Started At",
-            "type": "string"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          },
-          "tracks_without_analysis": {
-            "title": "Tracks Without Analysis",
-            "type": "integer"
-          },
-          "tracks_written": {
-            "title": "Tracks Written",
-            "type": "integer"
-          },
-          "unreadable_roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "started_at",
-          "finished_at",
-          "files_seen",
-          "files_dataless",
-          "files_without_tags",
-          "tracks",
-          "tracks_written",
-          "tracks_without_analysis",
-          "analysis_detail"
-        ],
-        "title": "FolderLastImportOut",
-        "type": "object"
-      },
-      "FolderScanOut": {
-        "description": "What a candidate folder actually holds, before anything is imported.\n\n``audio_files`` counts what could be READ. When ``denied`` is true that\nnumber is not a count of the folder, it is a count of nothing, and\n``detail`` says so -- which is the difference between \"this folder is\nempty\" and \"macOS would not let me look\".",
-        "properties": {
-          "audio_files": {
-            "title": "Audio Files",
-            "type": "integer"
-          },
-          "denied": {
-            "title": "Denied",
-            "type": "boolean"
-          },
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "exists": {
-            "title": "Exists",
-            "type": "boolean"
-          },
-          "how_to_grant": {
-            "title": "How To Grant",
-            "type": "string"
-          },
-          "icloud_placeholders": {
-            "title": "Icloud Placeholders",
-            "type": "integer"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "readable": {
-            "title": "Readable",
-            "type": "boolean"
-          },
-          "sample": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Sample",
-            "type": "array"
-          }
-        },
-        "required": [
-          "path",
-          "exists",
-          "readable",
-          "denied",
-          "detail",
-          "audio_files",
-          "icloud_placeholders",
-          "how_to_grant"
-        ],
-        "title": "FolderScanOut",
-        "type": "object"
-      },
-      "FolderWatchOut": {
-        "description": "LIBM-128: the continuous folder-rescan scheduler's own status.\n\n``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not\nrun in this process (no lifespan, or not yet its first cycle) -- a\ngenuinely different fact from a scheduler that ran and found nothing,\nwhich is ``warning=None`` with a real ``last_cycle_at``.",
-        "properties": {
-          "consecutive_failures": {
-            "default": 0,
-            "title": "Consecutive Failures",
-            "type": "integer"
-          },
-          "interval_s": {
-            "title": "Interval S",
-            "type": "number"
-          },
-          "last_cycle_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Cycle At"
-          },
-          "running": {
-            "title": "Running",
-            "type": "boolean"
-          },
-          "tracks_added_last_cycle": {
-            "default": 0,
-            "title": "Tracks Added Last Cycle",
-            "type": "integer"
-          },
-          "tracks_removed_last_cycle": {
-            "default": 0,
-            "title": "Tracks Removed Last Cycle",
-            "type": "integer"
-          },
-          "unreadable_roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Roots",
-            "type": "array"
-          },
-          "warning": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Warning"
-          }
-        },
-        "required": [
-          "running",
-          "interval_s"
-        ],
-        "title": "FolderWatchOut",
         "type": "object"
       },
       "GateErrorBody": {
@@ -8213,6 +7379,69 @@
         "title": "HealthCloud",
         "type": "object"
       },
+      "HealthOut": {
+        "properties": {
+          "bind_host": {
+            "title": "Bind Host",
+            "type": "string"
+          },
+          "cloud": {
+            "$ref": "#/components/schemas/HealthCloud"
+          },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
+          "process_env_forbidden_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Forbidden Keys",
+            "type": "array"
+          },
+          "process_env_home_present": {
+            "title": "Process Env Home Present",
+            "type": "boolean"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/HealthStateDb"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "syncthing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthSyncthing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
+          }
+        },
+        "required": [
+          "state_db",
+          "cloud",
+          "waveform_materialization",
+          "bind_host",
+          "version",
+          "google_oauth_configured",
+          "process_env_forbidden_keys",
+          "process_env_home_present"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      },
       "HealthStateDb": {
         "properties": {
           "last_writer_at": {
@@ -8612,62 +7841,6 @@
         "title": "HistoryGetOut",
         "type": "object"
       },
-      "HostInfoOut": {
-        "properties": {
-          "canary_elapsed_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Elapsed Ms"
-          },
-          "canary_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Error"
-          },
-          "canary_hashes_per_second": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Canary Hashes Per Second"
-          },
-          "logical_cpus": {
-            "title": "Logical Cpus",
-            "type": "integer"
-          },
-          "ram_bytes": {
-            "title": "Ram Bytes",
-            "type": "integer"
-          },
-          "ram_gib": {
-            "title": "Ram Gib",
-            "type": "number"
-          }
-        },
-        "required": [
-          "logical_cpus",
-          "ram_bytes",
-          "ram_gib"
-        ],
-        "title": "HostInfoOut",
-        "type": "object"
-      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -8884,213 +8057,6 @@
           "survivor_pk"
         ],
         "title": "IdentityRejectModel",
-        "type": "object"
-      },
-      "JobIn": {
-        "properties": {
-          "external_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Ref"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "JobIn",
-        "type": "object"
-      },
-      "JobKindsOut": {
-        "properties": {
-          "kinds": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Kinds",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kinds"
-        ],
-        "title": "JobKindsOut",
-        "type": "object"
-      },
-      "JobOut": {
-        "properties": {
-          "attempt": {
-            "title": "Attempt",
-            "type": "integer"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "external_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Ref"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "owner_boot_id": {
-            "title": "Owner Boot Id",
-            "type": "string"
-          },
-          "owner_pid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Pid"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          },
-          "progress": {
-            "title": "Progress",
-            "type": "number"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "worker_argv": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Argv"
-          },
-          "worker_pgid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Pgid"
-          },
-          "worker_pid": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Pid"
-          },
-          "worker_started_at": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worker Started At"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "payload",
-          "status",
-          "progress",
-          "attempt",
-          "created_at",
-          "owner_boot_id"
-        ],
-        "title": "JobOut",
         "type": "object"
       },
       "KaraokeLineOut": {
@@ -9402,88 +8368,6 @@
           "effective"
         ],
         "title": "LaneSourceOut",
-        "type": "object"
-      },
-      "LastImportOut": {
-        "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
-        "properties": {
-          "analyses_expected": {
-            "title": "Analyses Expected",
-            "type": "integer"
-          },
-          "analyses_linked": {
-            "title": "Analyses Linked",
-            "type": "integer"
-          },
-          "finished_at": {
-            "title": "Finished At",
-            "type": "string"
-          },
-          "ingested_from": {
-            "title": "Ingested From",
-            "type": "string"
-          },
-          "kind": {
-            "const": "rekordbox",
-            "default": "rekordbox",
-            "title": "Kind",
-            "type": "string"
-          },
-          "playlists": {
-            "title": "Playlists",
-            "type": "integer"
-          },
-          "rekordbox_tracks": {
-            "title": "Rekordbox Tracks",
-            "type": "integer"
-          },
-          "rekordbox_was_running": {
-            "title": "Rekordbox Was Running",
-            "type": "boolean"
-          },
-          "share_root": {
-            "title": "Share Root",
-            "type": "string"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "source_was_encrypted": {
-            "title": "Source Was Encrypted",
-            "type": "boolean"
-          },
-          "started_at": {
-            "title": "Started At",
-            "type": "string"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          },
-          "unreadable_music_roots": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Music Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "started_at",
-          "finished_at",
-          "source",
-          "source_was_encrypted",
-          "ingested_from",
-          "tracks",
-          "playlists",
-          "analyses_linked",
-          "analyses_expected",
-          "rekordbox_tracks",
-          "share_root",
-          "rekordbox_was_running"
-        ],
-        "title": "LastImportOut",
         "type": "object"
       },
       "LastResultOut": {
@@ -12974,88 +11858,6 @@
         "title": "PerfSpanIn",
         "type": "object"
       },
-      "PerfTierHostOut": {
-        "properties": {
-          "logical_cpus": {
-            "title": "Logical Cpus",
-            "type": "integer"
-          },
-          "ram_bytes": {
-            "title": "Ram Bytes",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "logical_cpus",
-          "ram_bytes"
-        ],
-        "title": "PerfTierHostOut",
-        "type": "object"
-      },
-      "PerfTierOut": {
-        "properties": {
-          "auto_tier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Tier"
-          },
-          "host": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PerfTierHostOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "min_local_stems_tier": {
-            "title": "Min Local Stems Tier",
-            "type": "string"
-          },
-          "override": {
-            "title": "Override",
-            "type": "string"
-          },
-          "scalers": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "string"
-                }
-              ]
-            },
-            "title": "Scalers",
-            "type": "object"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "tier": {
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "source",
-          "override",
-          "min_local_stems_tier",
-          "scalers"
-        ],
-        "title": "PerfTierOut",
-        "type": "object"
-      },
       "PerformanceFeedbackMarkIn": {
         "properties": {
           "decks": {
@@ -13116,39 +11918,6 @@
           "last_mark"
         ],
         "title": "PerformanceFeedbackMarksOut",
-        "type": "object"
-      },
-      "PermissionsOut": {
-        "description": "The folder-access answer, and what to do about a refusal.",
-        "properties": {
-          "all_readable": {
-            "title": "All Readable",
-            "type": "boolean"
-          },
-          "denied": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Denied",
-            "type": "array"
-          },
-          "how_to_grant": {
-            "title": "How To Grant",
-            "type": "string"
-          },
-          "roots": {
-            "items": {
-              "$ref": "#/components/schemas/AccessProbeOut"
-            },
-            "title": "Roots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "all_readable",
-          "how_to_grant"
-        ],
-        "title": "PermissionsOut",
         "type": "object"
       },
       "PinCellIn": {
@@ -14938,7 +13707,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Status",
             "type": "string"
@@ -16138,80 +14908,6 @@
         "title": "RefusalOut",
         "type": "object"
       },
-      "RekordboxDetectionOut": {
-        "description": "The 'detect rekordbox' step, reported without touching the install.",
-        "properties": {
-          "blockers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Blockers",
-            "type": "array"
-          },
-          "import_source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Import Source"
-          },
-          "import_source_encrypted": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Import Source Encrypted"
-          },
-          "installed": {
-            "title": "Installed",
-            "type": "boolean"
-          },
-          "key_available": {
-            "title": "Key Available",
-            "type": "boolean"
-          },
-          "key_detail": {
-            "title": "Key Detail",
-            "type": "string"
-          },
-          "live_db": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "plain_copy": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "rekordbox_running": {
-            "title": "Rekordbox Running",
-            "type": "boolean"
-          },
-          "share_dir": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "working_copy": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          }
-        },
-        "required": [
-          "installed",
-          "live_db",
-          "share_dir",
-          "working_copy",
-          "plain_copy",
-          "key_available",
-          "key_detail",
-          "rekordbox_running"
-        ],
-        "title": "RekordboxDetectionOut",
-        "type": "object"
-      },
       "RelocateApplyIn": {
         "properties": {
           "confirm": {
@@ -16420,154 +15116,6 @@
         "title": "RescueAppendOut",
         "type": "object"
       },
-      "RescueDeckOutcomeOut": {
-        "properties": {
-          "outcome": {
-            "enum": [
-              "resumed",
-              "paused",
-              "missing"
-            ],
-            "title": "Outcome",
-            "type": "string"
-          },
-          "stable_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stable Id"
-          }
-        },
-        "required": [
-          "outcome"
-        ],
-        "title": "RescueDeckOutcomeOut",
-        "type": "object"
-      },
-      "RescueRestoreIn": {
-        "properties": {
-          "play": {
-            "default": false,
-            "title": "Play",
-            "type": "boolean"
-          },
-          "snapshot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snapshot Id"
-          }
-        },
-        "title": "RescueRestoreIn",
-        "type": "object"
-      },
-      "RescueRestoreOut": {
-        "properties": {
-          "captured_at_ms": {
-            "title": "Captured At Ms",
-            "type": "integer"
-          },
-          "decks": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RescueDeckOutcomeOut"
-            },
-            "title": "Decks",
-            "type": "object"
-          },
-          "mode": {
-            "enum": [
-              "layout",
-              "play"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          },
-          "snapshot_id": {
-            "title": "Snapshot Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "snapshot_id",
-          "captured_at_ms",
-          "mode",
-          "payload",
-          "decks"
-        ],
-        "title": "RescueRestoreOut",
-        "type": "object"
-      },
-      "RescueSnapshotMeta": {
-        "properties": {
-          "age_ms": {
-            "title": "Age Ms",
-            "type": "integer"
-          },
-          "captured_at_ms": {
-            "title": "Captured At Ms",
-            "type": "integer"
-          },
-          "deck_count_loaded": {
-            "description": "Decks with a non-empty stable_id at capture",
-            "title": "Deck Count Loaded",
-            "type": "integer"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "playlist_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Playlist Id"
-          }
-        },
-        "required": [
-          "id",
-          "captured_at_ms",
-          "age_ms",
-          "deck_count_loaded"
-        ],
-        "title": "RescueSnapshotMeta",
-        "type": "object"
-      },
-      "RescueSnapshotsOut": {
-        "properties": {
-          "snapshots": {
-            "items": {
-              "$ref": "#/components/schemas/RescueSnapshotMeta"
-            },
-            "title": "Snapshots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "snapshots"
-        ],
-        "title": "RescueSnapshotsOut",
-        "type": "object"
-      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -16737,6 +15285,27 @@
               }
             ],
             "title": "Bpm"
+          },
+          "bpm_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Reason"
+          },
+          "bpm_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Bpm Status",
+            "type": "string"
           },
           "cloud_transfer": {
             "anyOf": [
@@ -16909,7 +15478,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Key Status",
             "type": "string"
@@ -16929,7 +15499,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Loudness Status",
             "type": "string"
@@ -17048,6 +15619,7 @@
           "energy_reason",
           "key_status",
           "key_reason",
+          "bpm_status",
           "loudness_status",
           "loudness_reason",
           "match_context"
@@ -17159,162 +15731,6 @@
           "groups"
         ],
         "title": "SettingsOut",
-        "type": "object"
-      },
-      "SetupDismissIn": {
-        "properties": {
-          "dismissed": {
-            "default": true,
-            "title": "Dismissed",
-            "type": "boolean"
-          }
-        },
-        "title": "SetupDismissIn",
-        "type": "object"
-      },
-      "SetupImportIn": {
-        "description": "Import options. Both are the same knobs the CLI exposes.",
-        "properties": {
-          "limit": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ingest at most N tracks (smoke-test aid)",
-            "title": "Limit"
-          },
-          "refresh_decrypt": {
-            "default": false,
-            "description": "re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt",
-            "title": "Refresh Decrypt",
-            "type": "boolean"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "explicit rekordbox database to read; omit to auto-detect",
-            "title": "Source"
-          }
-        },
-        "title": "SetupImportIn",
-        "type": "object"
-      },
-      "SetupStatusOut": {
-        "description": "Everything the wizard needs to decide whether to show itself.",
-        "properties": {
-          "data_dir": {
-            "title": "Data Dir",
-            "type": "string"
-          },
-          "dev_mode": {
-            "title": "Dev Mode",
-            "type": "boolean"
-          },
-          "dismissed": {
-            "title": "Dismissed",
-            "type": "boolean"
-          },
-          "folder_stages": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Folder Stages",
-            "type": "array"
-          },
-          "folder_watch": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/FolderWatchOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "last_import": {
-            "anyOf": [
-              {
-                "discriminator": {
-                  "mapping": {
-                    "folder": "#/components/schemas/FolderLastImportOut",
-                    "rekordbox": "#/components/schemas/LastImportOut"
-                  },
-                  "propertyName": "kind"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/LastImportOut"
-                  },
-                  {
-                    "$ref": "#/components/schemas/FolderLastImportOut"
-                  }
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Import"
-          },
-          "library_empty": {
-            "title": "Library Empty",
-            "type": "boolean"
-          },
-          "permissions": {
-            "$ref": "#/components/schemas/PermissionsOut"
-          },
-          "playlists": {
-            "title": "Playlists",
-            "type": "integer"
-          },
-          "rekordbox": {
-            "$ref": "#/components/schemas/RekordboxDetectionOut"
-          },
-          "should_show_wizard": {
-            "title": "Should Show Wizard",
-            "type": "boolean"
-          },
-          "stages": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Stages",
-            "type": "array"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/FileProbeOut"
-          },
-          "tracks": {
-            "title": "Tracks",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "library_empty",
-          "tracks",
-          "playlists",
-          "state_db",
-          "data_dir",
-          "dismissed",
-          "should_show_wizard",
-          "dev_mode",
-          "stages",
-          "folder_stages",
-          "rekordbox",
-          "permissions"
-        ],
-        "title": "SetupStatusOut",
         "type": "object"
       },
       "ShiftModifier": {
@@ -18264,40 +16680,6 @@
         "title": "StemPushMissingIn",
         "type": "object"
       },
-      "StemTierOut": {
-        "description": "One real separation rung, straight out of apps.stems.tiers.",
-        "properties": {
-          "availability": {
-            "title": "Availability",
-            "type": "string"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "unavailable_because": {
-            "title": "Unavailable Because",
-            "type": "string"
-          },
-          "where": {
-            "title": "Where",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "name",
-          "where",
-          "availability",
-          "unavailable_because"
-        ],
-        "title": "StemTierOut",
-        "type": "object"
-      },
       "StemUnavailableOut": {
         "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
         "properties": {
@@ -18335,48 +16717,6 @@
           "message"
         ],
         "title": "StemUnavailableOut",
-        "type": "object"
-      },
-      "StemWaveformOut": {
-        "description": "Mono peak envelope for one stem part (issue #1036).",
-        "properties": {
-          "envelope": {
-            "items": {
-              "type": "number"
-            },
-            "title": "Envelope",
-            "type": "array"
-          },
-          "layout": {
-            "title": "Layout",
-            "type": "string"
-          },
-          "part": {
-            "title": "Part",
-            "type": "string"
-          },
-          "points": {
-            "title": "Points",
-            "type": "integer"
-          },
-          "schema": {
-            "default": 1,
-            "title": "Schema",
-            "type": "integer"
-          },
-          "stable_id": {
-            "title": "Stable Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "stable_id",
-          "part",
-          "layout",
-          "points",
-          "envelope"
-        ],
-        "title": "StemWaveformOut",
         "type": "object"
       },
       "StemsPlanOut": {
@@ -18470,51 +16810,46 @@
         "title": "StemsPlanOut",
         "type": "object"
       },
-      "StemsSetupOut": {
-        "description": "Whether a library-wide separation pass can be started here.\n\nThe agent-facing half of the wizard's stems step. The browser mounts\naf--stems-modal's StemsPrompt component, which asks\n``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same\nverdict, and is told exactly which two calls drive the flow.\n\n``available`` is EVIDENCE, not a constant: it reports whether the\n``stems.separate`` job kind is actually registered in this engine. The\n``tiers`` list is real data either way, never a placeholder.",
+      "StemWaveformOut": {
+        "description": "Mono peak envelope for one stem part (issue #1036).",
         "properties": {
-          "available": {
-            "title": "Available",
-            "type": "boolean"
-          },
-          "enqueue_endpoint": {
-            "title": "Enqueue Endpoint",
-            "type": "string"
-          },
-          "job_kind": {
-            "title": "Job Kind",
-            "type": "string"
-          },
-          "per_track_endpoint": {
-            "title": "Per Track Endpoint",
-            "type": "string"
-          },
-          "plan_endpoint": {
-            "title": "Plan Endpoint",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "tiers": {
+          "envelope": {
             "items": {
-              "$ref": "#/components/schemas/StemTierOut"
+              "type": "number"
             },
-            "title": "Tiers",
+            "title": "Envelope",
             "type": "array"
+          },
+          "layout": {
+            "title": "Layout",
+            "type": "string"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "schema": {
+            "default": 1,
+            "title": "Schema",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
           }
         },
         "required": [
-          "available",
-          "reason",
-          "job_kind",
-          "plan_endpoint",
-          "enqueue_endpoint",
-          "per_track_endpoint",
-          "tiers"
+          "stable_id",
+          "part",
+          "layout",
+          "points",
+          "envelope"
         ],
-        "title": "StemsSetupOut",
+        "title": "StemWaveformOut",
         "type": "object"
       },
       "SuggestNextIn": {
@@ -20576,6 +18911,27 @@
             ],
             "title": "Bpm"
           },
+          "bpm_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Reason"
+          },
+          "bpm_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Bpm Status",
+            "type": "string"
+          },
           "cloud_transfer": {
             "anyOf": [
               {
@@ -20747,7 +19103,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Key Status",
             "type": "string"
@@ -20767,7 +19124,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Loudness Status",
             "type": "string"
@@ -20882,6 +19240,7 @@
           "energy_reason",
           "key_status",
           "key_reason",
+          "bpm_status",
           "loudness_status",
           "loudness_reason"
         ],
@@ -21576,256 +19935,6 @@
           "playlist_ids"
         ],
         "title": "UndoRecordOut",
-        "type": "object"
-      },
-      "UpdateApplyAccepted": {
-        "properties": {
-          "accepted": {
-            "default": true,
-            "title": "Accepted",
-            "type": "boolean"
-          },
-          "available_version": {
-            "title": "Available Version",
-            "type": "string"
-          },
-          "command_id": {
-            "title": "Command Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "available_version",
-          "command_id"
-        ],
-        "title": "UpdateApplyAccepted",
-        "type": "object"
-      },
-      "UpdateApplyRefused": {
-        "properties": {
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "update-available",
-              "up-to-date",
-              "ahead-of-channel",
-              "endpoint-unreachable",
-              "endpoint-refused",
-              "manifest-malformed",
-              "platform-unsupported",
-              "identity-unavailable"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "detail"
-        ],
-        "title": "UpdateApplyRefused",
-        "type": "object"
-      },
-      "UpdateApplyStatusOut": {
-        "properties": {
-          "claimed_at_utc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Claimed At Utc"
-          },
-          "command_id": {
-            "title": "Command Id",
-            "type": "string"
-          },
-          "completed_at_utc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At Utc"
-          },
-          "enqueued_at_utc": {
-            "title": "Enqueued At Utc",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "outcome": {
-            "anyOf": [
-              {
-                "enum": [
-                  "installed",
-                  "no-update",
-                  "refused"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Outcome"
-          },
-          "state": {
-            "enum": [
-              "pending",
-              "claimed",
-              "succeeded",
-              "failed"
-            ],
-            "title": "State",
-            "type": "string"
-          }
-        },
-        "required": [
-          "command_id",
-          "state",
-          "enqueued_at_utc"
-        ],
-        "title": "UpdateApplyStatusOut",
-        "type": "object"
-      },
-      "UpdateCheckOut": {
-        "description": "What the UI and any agent read.\n\n``applies_via`` is stated because the answer and the action come from\ndifferent components: this route answers, and the Tauri updater inside\nthe desktop shell is what can act. A browser tab can learn an update\nexists and cannot install it, and saying so beats a dead button.",
-        "properties": {
-          "applies_via": {
-            "default": "the desktop shell's Tauri updater; this endpoint only reports",
-            "title": "Applies Via",
-            "type": "string"
-          },
-          "available_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Available Version"
-          },
-          "current_built_at_utc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Built At Utc"
-          },
-          "current_git_sha": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Git Sha"
-          },
-          "current_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Version"
-          },
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Detail"
-          },
-          "endpoint": {
-            "title": "Endpoint",
-            "type": "string"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "platform_key": {
-            "title": "Platform Key",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
-          },
-          "same_version_different_build": {
-            "default": false,
-            "title": "Same Version Different Build",
-            "type": "boolean"
-          },
-          "status": {
-            "enum": [
-              "update-available",
-              "up-to-date",
-              "ahead-of-channel",
-              "endpoint-unreachable",
-              "endpoint-refused",
-              "manifest-malformed",
-              "platform-unsupported",
-              "identity-unavailable"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "endpoint",
-          "platform_key"
-        ],
-        "title": "UpdateCheckOut",
         "type": "object"
       },
       "UpdateRequiredOut": {
@@ -23757,7 +21866,7 @@
     },
     "/api/v1/account": {
       "delete": {
-        "description": "Erase the user row and, by FK cascade, every session it owns.\n\nThe deletion half of https://open-dj.com/privacy (ACCT-03). The session\ncookie is cleared on the way out, because leaving the browser holding a\ntoken for a row that no longer exists would leave the UI showing a signed\nin state that resolves to nobody.",
+        "description": "Erase the user row and, by FK cascade, every session it owns.",
         "operationId": "delete_account_api_v1_account_delete",
         "parameters": [
           {
@@ -23801,7 +21910,7 @@
         ]
       },
       "get": {
-        "description": "Identity, plan, and the full local-storage disclosure.\n\nAnswers signed OUT too, with ``user: null``: what is stored and what is\ngated are questions somebody is entitled to ask BEFORE handing over an\nidentity, and refusing to answer until they sign in would be a strange\nreading of a privacy disclosure.",
+        "description": "Identity, plan, and the full local-storage disclosure.",
         "operationId": "read_account_api_v1_account_get",
         "responses": {
           "200": {
@@ -24362,114 +22471,6 @@
         ]
       }
     },
-    "/api/v1/app-posture": {
-      "get": {
-        "operationId": "app_posture_api_v1_app_posture_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppPostureOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "App Posture",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/assistant/chat": {
-      "post": {
-        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
-        "operationId": "assistant_chat_api_v1_assistant_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {}
-            },
-            "description": "The completion, streamed as plain UTF-8 text."
-          },
-          "409": {
-            "description": "No OPENROUTER_API_KEY is configured."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "502": {
-            "description": "OpenRouter refused or could not be reached."
-          }
-        },
-        "summary": "Assistant Chat",
-        "tags": [
-          "assistant"
-        ]
-      }
-    },
-    "/api/v1/assistant/status": {
-      "get": {
-        "description": "Whether a chat can work at all, and which model would answer it.",
-        "operationId": "assistant_status_api_v1_assistant_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssistantStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Assistant Status",
-        "tags": [
-          "assistant"
-        ]
-      }
-    },
-    "/api/v1/audio-interference": {
-      "get": {
-        "operationId": "audio_interference_api_v1_audio_interference_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AudioInterferenceOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Audio Interference",
-        "tags": [
-          "health"
-        ]
-      }
-    },
     "/api/v1/audio/output-health": {
       "get": {
         "operationId": "get_output_health_api_v1_audio_output_health_get",
@@ -24791,75 +22792,6 @@
         ]
       }
     },
-    "/api/v1/availability/probe": {
-      "post": {
-        "operationId": "availability_probe_api_v1_availability_probe_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/AvailabilityProbeIn"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AvailabilityProbeOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Availability Probe",
-        "tags": [
-          "library"
-        ]
-      }
-    },
-    "/api/v1/availability/status": {
-      "get": {
-        "operationId": "availability_status_api_v1_availability_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AvailabilityStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Availability Status",
-        "tags": [
-          "library"
-        ]
-      }
-    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -25034,30 +22966,6 @@
         "summary": "Get Ratings File",
         "tags": [
           "bench"
-        ]
-      }
-    },
-    "/api/v1/build-info": {
-      "get": {
-        "operationId": "build_info_api_v1_build_info_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BuildInfoOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "this build cannot state its own identity"
-          }
-        },
-        "summary": "Build Info",
-        "tags": [
-          "health"
         ]
       }
     },
@@ -26842,7 +24750,7 @@
     },
     "/api/v1/entitlements": {
       "get": {
-        "description": "The plan, the refusal shape, and every gateable feature.\n\n``features`` is empty while the catalog is, and that is the honest answer\nrather than a missing one: openDJ has no paid features, so there is\nnothing an account could fail to be entitled to.",
+        "description": "The plan, the refusal shape, and every gateable feature.",
         "operationId": "read_entitlements_api_v1_entitlements_get",
         "responses": {
           "200": {
@@ -26864,7 +24772,7 @@
     },
     "/api/v1/entitlements/{feature_id}": {
       "get": {
-        "description": "May this account use one feature?\n\nAn id the catalog does not know is answered, not 404'd: while no provider\nis configured everything is entitled (ENT-04), and a 404 here would let a\ncaller mistake \"we have never heard of that\" for \"you may not\".",
+        "description": "May this account use one feature?",
         "operationId": "read_entitlement_api_v1_entitlements__feature_id__get",
         "parameters": [
           {
@@ -27682,6 +25590,28 @@
         ]
       }
     },
+    "/api/v1/flags": {
+      "get": {
+        "description": "The declared flags, as resolved once at engine boot.",
+        "operationId": "read_flags_api_v1_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Flags",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
     "/api/v1/find-replace/apply": {
       "post": {
         "operationId": "apply_api_v1_find_replace_apply_post",
@@ -27764,68 +25694,22 @@
         ]
       }
     },
-    "/api/v1/flags": {
-      "get": {
-        "description": "The declared flags, as resolved once at engine boot.\n\nA separate surface from /entitlements on purpose (FLAG-01): these are\nengineering-owned code-path toggles, not anything an account is entitled\nto, and folding them into one response is the first step toward one store.",
-        "operationId": "read_flags_api_v1_flags_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FlagsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Read Flags",
-        "tags": [
-          "feature-flags"
-        ]
-      }
-    },
     "/api/v1/health": {
       "get": {
-        "operationId": "engine_health_api_v1_health_get",
+        "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EngineHealthOut"
+                  "$ref": "#/components/schemas/HealthOut"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Engine Health",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/host-info": {
-      "get": {
-        "operationId": "host_info_api_v1_host_info_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HostInfoOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "host facts could not be measured"
-          }
-        },
-        "summary": "Host Info",
+        "summary": "Health",
         "tags": [
           "health"
         ]
@@ -28172,242 +26056,6 @@
         "summary": "Decide Upload",
         "tags": [
           "ingest"
-        ]
-      }
-    },
-    "/api/v1/jobs": {
-      "get": {
-        "operationId": "list_jobs_api_v1_jobs_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 200,
-              "maximum": 1000,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/JobOut"
-                  },
-                  "title": "Response List Jobs Api V1 Jobs Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Jobs",
-        "tags": [
-          "jobs"
-        ]
-      },
-      "post": {
-        "operationId": "enqueue_job_api_v1_jobs_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/JobIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Enqueue Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/kinds": {
-      "get": {
-        "description": "The registered worker kinds. Empty until a kind registers one.",
-        "operationId": "list_kinds_api_v1_jobs_kinds_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobKindsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Kinds",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}": {
-      "get": {
-        "operationId": "get_job_api_v1_jobs__job_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}/cancel": {
-      "post": {
-        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Job",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
-    "/api/v1/jobs/{job_id}/reenqueue": {
-      "post": {
-        "operationId": "reenqueue_job_api_v1_jobs__job_id__reenqueue_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reenqueue Job",
-        "tags": [
-          "jobs"
         ]
       }
     },
@@ -29991,30 +27639,6 @@
         "summary": "Delete Pairing",
         "tags": [
           "pairings"
-        ]
-      }
-    },
-    "/api/v1/perf-tier": {
-      "get": {
-        "operationId": "perf_tier_api_v1_perf_tier_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PerfTierOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "auto tier cannot resolve without host facts"
-          }
-        },
-        "summary": "Perf Tier",
-        "tags": [
-          "health"
         ]
       }
     },
@@ -33198,71 +30822,6 @@
         ]
       }
     },
-    "/api/v1/rescue/restore": {
-      "post": {
-        "operationId": "rescue_restore_api_v1_rescue_restore_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RescueRestoreIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RescueRestoreOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "503": {
-            "description": "library unreadable (state/state.db missing, locked, or corrupt)"
-          }
-        },
-        "summary": "Rescue Restore",
-        "tags": [
-          "performance"
-        ]
-      }
-    },
-    "/api/v1/rescue/snapshots": {
-      "get": {
-        "operationId": "rescue_snapshots_list_api_v1_rescue_snapshots_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RescueSnapshotsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Rescue Snapshots List",
-        "tags": [
-          "performance"
-        ]
-      }
-    },
     "/api/v1/search": {
       "get": {
         "operationId": "search_collection_api_v1_search_get",
@@ -33431,294 +30990,6 @@
         "summary": "Ai Search",
         "tags": [
           "settings-ai"
-        ]
-      }
-    },
-    "/api/v1/setup/detect/folder": {
-      "get": {
-        "description": "Look inside a candidate folder WITHOUT importing it.\n\nThis is the no-rekordbox branch's version of the detect step. The count\nit returns is only meaningful when ``denied`` is false: macOS answers a\nblocked listing with an empty one, so \"0 audio files\" from a denied\nfolder would be a fabrication.",
-        "operationId": "detect_folder_api_v1_setup_detect_folder_get",
-        "parameters": [
-          {
-            "description": "absolute folder path to inspect",
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "description": "absolute folder path to inspect",
-              "minLength": 1,
-              "title": "Path",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FolderScanOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Detect Folder",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/detect/music-folders": {
-      "get": {
-        "description": "Existing folders under HOME worth suggesting, before typing a path.\n\nNever a guess: only paths that exist on this machine are returned, and\na candidate macOS refuses to list is still reported, marked denied,\nrather than silently omitted.",
-        "operationId": "music_folder_candidates_api_v1_setup_detect_music_folders_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FolderCandidatesOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Music Folder Candidates",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/detect/rekordbox": {
-      "get": {
-        "description": "Report the rekordbox install WITHOUT opening or copying anything.",
-        "operationId": "detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RekordboxDetectionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Detect Rekordbox Endpoint",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/dismiss": {
-      "post": {
-        "description": "Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.",
-        "operationId": "dismiss_api_v1_setup_dismiss_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetupDismissIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetupStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "503": {
-            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
-          }
-        },
-        "summary": "Dismiss",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/import": {
-      "post": {
-        "description": "Queue the import as a job, so progress streams over the events bus.\n\nRefuses BEFORE enqueueing on anything detection can already see: a job\nthat is certain to fail is worse than a 409, because it turns a clear\nrefusal into a failed row somebody has to go and read.",
-        "operationId": "start_import_api_v1_setup_import_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetupImportIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Import",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/import/folder": {
-      "post": {
-        "description": "Queue a folder import: tags only, no analysis, and it says so.\n\nIts own endpoint rather than a mode flag on /import, because its\nrefusals are different ones: a folder can be absent, unreadable, or\ngenuinely empty, and none of those is a rekordbox problem.",
-        "operationId": "start_folder_import_api_v1_setup_import_folder_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FolderImportIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Folder Import",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/permissions": {
-      "get": {
-        "description": "Can this process read the folders the music lives in?\n\nReported, never refused on. macOS answers a blocked listing with an\nEMPTY one rather than an error, which is how a library with 40,000\ntracks in it becomes a library with none and nobody is told. Every\ncount this API reports afterwards has to be read against the ``denied``\nlist here: zero files in a folder we were not allowed to open is not\nzero files.",
-        "operationId": "permissions_api_v1_setup_permissions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Permissions",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/status": {
-      "get": {
-        "description": "Is this a first run? Counts come from state.db, not from memory.",
-        "operationId": "setup_status_api_v1_setup_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetupStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
-          }
-        },
-        "summary": "Setup Status",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/api/v1/setup/stems": {
-      "get": {
-        "description": "Can a library-wide stems pass be started from setup?\n\nANSWERED FROM EVIDENCE, never from a constant. The verdict is whether\nthis engine actually has a worker registered for ``stems.separate``: a\nlegacy boot, or a chassis whose composition root never wired the kind,\ngenuinely cannot run one and says so in the tester's own words.\n\nThe tier ladder is real either way. An unavailable rung carries the\nreason it is unavailable, so the wizard renders true choices rather\nthan a placeholder list.",
-        "operationId": "stems_availability_api_v1_setup_stems_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StemsSetupOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stems Availability",
-        "tags": [
-          "setup"
         ]
       }
     },
@@ -37572,103 +34843,6 @@
         "summary": "Put Ui Prefs",
         "tags": [
           "ui-prefs"
-        ]
-      }
-    },
-    "/api/v1/update/apply": {
-      "post": {
-        "operationId": "update_apply_api_v1_update_apply_post",
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateApplyAccepted"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateApplyRefused"
-                }
-              }
-            },
-            "description": "apply refused; no shell command enqueued"
-          }
-        },
-        "summary": "Update Apply",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/update/apply/{command_id}": {
-      "get": {
-        "operationId": "update_apply_status_api_v1_update_apply__command_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "command_id",
-            "required": true,
-            "schema": {
-              "title": "Command Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Apply Status",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/api/v1/update/check": {
-      "get": {
-        "operationId": "update_check_api_v1_update_check_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateCheckOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "502": {
-            "description": "the update channel could not be read"
-          }
-        },
-        "summary": "Update Check",
-        "tags": [
-          "health"
         ]
       }
     },
