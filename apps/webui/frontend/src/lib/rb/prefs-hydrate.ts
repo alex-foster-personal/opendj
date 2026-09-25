@@ -105,6 +105,8 @@ export type DiskPrefsPatch = {
 	available_offline_filter?: boolean;
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
+	deck_right_mirror?: boolean;
+	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
 };
 
@@ -157,6 +159,8 @@ export interface PrefsHydrateTarget {
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	deck_right_mirror: boolean;
+	playlist_tree_view: 'tree' | 'column';
 	level_calibration: LevelCalibrationPrefs;
 	last_playlist: LastPlaylistPref | null;
 	lyrics_global: boolean;
@@ -242,6 +246,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
 			) {
 				uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
+			}
+			if (typeof body.deck_right_mirror === 'boolean') {
+				uiPrefs.deck_right_mirror = body.deck_right_mirror;
+			}
+			if (body.playlist_tree_view === 'tree' || body.playlist_tree_view === 'column') {
+				uiPrefs.playlist_tree_view = body.playlist_tree_view;
 			}
 			if (body.level_calibration !== undefined && typeof body.level_calibration === 'object') {
 				uiPrefs.level_calibration = parseLevelCalibration(

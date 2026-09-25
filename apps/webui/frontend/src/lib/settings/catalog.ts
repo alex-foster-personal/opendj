@@ -246,6 +246,33 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'deck_right_mirror',
+		label: 'Mirror deck 2 controls',
+		group: 'performance',
+		keywords: ['deck', 'mirror', 'symmetry', 'deck 2', 'layout', 'right column'],
+		title: 'Mirror deck 2 main control row for mixer-facing symmetry',
+		detail:
+			'When on, deck 2 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'playlist_tree_view',
+		label: 'Playlist sidebar layout',
+		group: 'library',
+		keywords: ['playlist', 'tree', 'column', 'browser', 'library', 'sidebar'],
+		title: 'Playlist sidebar tree vs column browser',
+		detail: 'Tree shows the playlist list; column browser shows genre/artist/album columns. Persisted across sessions.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'tree', label: 'Tree list' },
+				{ value: 'column', label: 'Column browser' }
+			]
+		}
+	},
+	{
 		id: 'deck_layout_duration_ms',
 		label: 'Deck layout switch duration',
 		group: 'performance',
