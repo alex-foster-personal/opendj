@@ -11,11 +11,15 @@
  * 503, and a mount-time fetch would be a console error on every page load
  * (setup-entry-points.spec.ts tolerates exactly one: /usb/volumes).
  *
- * Unplug and replug: when a stick leaves the volume list its cache is dropped
- * and every pane showing it grays in place ("stick removed", loads refused).
- * When the SAME VolumeUUID returns, those panes re-read the stick and come
- * back with their rows and selection, because stick track ids are stable per
- * VolumeUUID (USBPLAY-04). The stick tree re-opens from the component side.
+ * Unplug and replug: when the volume tracker lists a stick as no longer
+ * present, its cache is dropped and every pane showing it grays in place
+ * ("stick removed", loads refused). When the SAME VolumeUUID is present
+ * again, those panes re-read the stick and come back with their rows and
+ * selection, because stick track ids are stable per VolumeUUID (USBPLAY-04).
+ * The stick tree re-opens from the component side. A stick the tracker has
+ * not listed yet, or any stick before the tracker's first poll this session,
+ * is UNKNOWN rather than unplugged: an agent can open a stick pane before the
+ * first poll lands, and that read must not be killed as a removal.
  *
  * Lazy module: imported by UsbStickTree and by BrowserPanel's stick branch
  * through a dynamic import, so none of it is charged to the /performance
@@ -110,6 +114,26 @@ function _stickError(exc: unknown): UsbLibraryError {
 	);
 }
 
+const USB_ERROR_HEADLINES: ReadonlyMap<string, string> = new Map([
+	['USB_STICK_NOT_MOUNTED', 'Stick removed'],
+	['USB_VOLUME_HAS_NO_UUID', 'no volume id: cannot browse this stick'],
+	['usb_volume_discovery_unavailable', 'USB browsing is not available in this build']
+]);
+
+/** Short words for a stick failure code, as the stick tree shows them. */
+export function usbErrorHeadline(code: string): string {
+	return USB_ERROR_HEADLINES.get(code) ?? 'could not read this stick';
+}
+
+/** The toast a DJ reads for a stick failure: plain words for the known codes
+ * (spec 4b: USB_STICK_NOT_MOUNTED reads "Stick removed"), and the typed cause
+ * after the headline for anything else, so it is never hidden. */
+export function usbErrorWords(error: UsbLibraryError): string {
+	return USB_ERROR_HEADLINES.has(error.code)
+		? usbErrorHeadline(error.code)
+		: `${usbErrorHeadline(error.code)} (${error.message})`;
+}
+
 function _errorView(error: UsbLibraryError): UsbStickView {
 	return { status: 'error', code: error.code, message: error.message };
 }
@@ -148,13 +172,20 @@ async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibra
 				`asked for stick ${volumeUuid}, got ${library.volume_uuid}`
 			);
 		}
-		const tree = buildUsbTree(library);
 		if (!current()) throw new UsbLibraryError('USB_STICK_NOT_MOUNTED', 'Stick removed');
+		// Cached before the tree is built: panes read the library, not the tree.
 		_libraries.set(volumeUuid, library);
+		const tree = buildUsbTree(library);
+		if (tree.stranded.length > 0) {
+			console.warn(
+				`[usb] ${library.name.trim()}: ${tree.stranded.length} playlist(s) have no folder parent in the export and are shown at the root:`,
+				tree.stranded
+			);
+		}
 		_setView(volumeUuid, {
 			status: 'ready',
 			name: library.name.trim(),
-			tree,
+			tree: tree.nodes,
 			trackCount: library.tracks.length,
 			readMs: library.read_ms
 		});
@@ -190,22 +221,22 @@ export function toggleUsbFolder(paneId: string): void {
 // ------------------------------------------------------------ presence
 
 /**
- * React to the volume list (USBPLAY-09). A tracked stick that left drops its
- * cache and grays its panes in place; one that came back re-reads into its
- * panes. Returns the VolumeUUIDs whose presence changed. Called by the
- * watcher on every volume poll; exported for tests, which cannot run
- * Svelte effects.
+ * React to the volume list (USBPLAY-09). A tracked stick the list shows as
+ * not present drops its cache and grays its panes in place; one shown present
+ * again re-reads into its panes. A tracked stick the list does not name is
+ * unknown, not unplugged: the tracker keeps every stick it has seen, present
+ * or not, so absence only means it has not listed that stick yet. Returns the
+ * VolumeUUIDs whose presence changed. Called by the watcher on every volume
+ * poll; exported for tests, which cannot run Svelte effects.
  */
 export function applyUsbVolumePresence(volumes: readonly UsbVolumeKnown[]): string[] {
-	const present = new Set(
-		volumes
-			.filter((v) => v.present === true && v.id.startsWith('vol:'))
-			.map((v) => v.id.slice(4))
+	const listed = new Map(
+		volumes.filter((v) => v.id.startsWith('vol:')).map((v) => [v.id.slice(4), v.present === true])
 	);
 	const changed: string[] = [];
 	for (const [volumeUuid, wasPresent] of _tracked) {
-		const isPresent = present.has(volumeUuid);
-		if (isPresent === wasPresent) continue;
+		const isPresent = listed.get(volumeUuid);
+		if (isPresent === undefined || isPresent === wasPresent) continue;
 		_tracked.set(volumeUuid, isPresent);
 		changed.push(volumeUuid);
 		if (!isPresent) {
@@ -231,14 +262,18 @@ export function applyUsbVolumePresence(volumes: readonly UsbVolumeKnown[]): stri
 	return changed;
 }
 
-/** Arm the presence watcher once, on the first stick a user opens. */
+/** Arm the presence watcher once, on the first stick a user opens. Until
+ * the tracker's first poll this session lands, its presence flags are the
+ * last session's (restored from storage), so none of them is applied. */
 export function watchUsbVolumes(): void {
 	if (_stopWatch !== null) return;
 	_stopWatch = $effect.root(() => {
 		$effect(() => {
-			// Tracks only the list itself: the tracker reassigns it on every
-			// poll, and the pane writes below must not re-trigger this effect.
+			// Tracks only the list and the poll stamp: the tracker reassigns
+			// both on every poll, and the pane writes below must not
+			// re-trigger this effect.
 			const volumes = usbTracker.volumes;
+			if (usbTracker.scannedAt === null) return;
 			untrack(() => applyUsbVolumePresence(volumes));
 		});
 	});
@@ -283,20 +318,28 @@ export async function usbPaneView(paneId: string, shown: PaneView | null): Promi
 
 /**
  * BrowserPanel's stick branch of _loadPane. `panesOf` lets a later unplug or
- * replug find every pane showing this stick. Publishes through the pane's
- * load token, so a newer selection always wins.
+ * replug find every pane showing this stick. Settles the load itself, through
+ * the pane's load token so a newer selection always wins: rows on success,
+ * the DJ's words on failure. Returns the toast for a failure that still owns
+ * the pane, or null.
  */
 export async function loadUsbPane(
 	pane: PaneStore,
 	seq: number,
 	panesOf: () => readonly PaneStore[]
-): Promise<void> {
+): Promise<string | null> {
 	_panesOf = panesOf;
 	watchUsbVolumes();
-	const paneId = pane.playlist_id;
-	if (paneId === null) throw new UsbLibraryError('USB_PANE_ID_INVALID', 'blank pane');
-	const view = await usbPaneView(paneId, null);
-	if (pane.completeLoad(seq, view.rows, false)) pane.title = view.title;
+	try {
+		const paneId = pane.playlist_id;
+		if (paneId === null) throw new UsbLibraryError('USB_PANE_ID_INVALID', 'blank pane');
+		const view = await usbPaneView(paneId, null);
+		if (pane.completeLoad(seq, view.rows, false)) pane.title = view.title;
+		return null;
+	} catch (exc) {
+		const words = usbErrorWords(_stickError(exc));
+		return pane.failLoad(seq, words) ? words : null;
+	}
 }
 
 /** Background refresh of a loaded stick pane, in place: keeps selection and

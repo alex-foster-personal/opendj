@@ -17,6 +17,10 @@
  *   [then] the stick browses differently from the CDJ
  * - [if] two sticks' pane ids can collide [then] their tracks mix
  * - [if] a malformed payload is accepted [then] a guessed row reaches a deck
+ * - [if] one playlist with a missing or non-folder parent throws [then] the
+ *   whole stick reads "could not read this stick", All tracks included
+ * - [if] a stranded or cycled playlist is dropped or shown twice [then] the
+ *   tree disagrees with the export the backend serves
  */
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
@@ -227,7 +231,7 @@ describe('buildUsbTree', () => {
 			],
 			history: [{ id: 'hist-1', name: 'HISTORY 001', track_ids: [] }]
 		});
-		const tree = wire.buildUsbTree(lib);
+		const tree = wire.buildUsbTree(lib).nodes;
 		assert.deepEqual(names(tree), ['All tracks', 'First', 'Second', 'Third', 'History']);
 		assert.equal(tree[0].kind, 'usb');
 		assert.equal(tree[0].playlist_id, `usbpl:${UUID_A}:all`);
@@ -247,7 +251,7 @@ describe('buildUsbTree', () => {
 				playlist(8, { name: 'Top', sort_order: 2 })
 			]
 		});
-		const tree = wire.buildUsbTree(lib);
+		const tree = wire.buildUsbTree(lib).nodes;
 		assert.deepEqual(names(tree), ['All tracks', 'Folder', 'Top']);
 		const folder = tree[1];
 		assert.equal(folder.kind, 'folder');
@@ -264,43 +268,105 @@ describe('buildUsbTree', () => {
 				playlist(4, { name: 'Four', sort_order: 0 })
 			]
 		});
-		assert.deepEqual(names(wire.buildUsbTree(lib)), ['All tracks', 'Four', 'Nine']);
+		assert.deepEqual(names(wire.buildUsbTree(lib).nodes), ['All tracks', 'Four', 'Nine']);
 	});
 
 	it('has no History folder when the stick has no history', () => {
 		const tree = wire.buildUsbTree(library(UUID_A, { playlists: [playlist(1)] }));
-		assert.deepEqual(names(tree), ['All tracks', 'List 1']);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'List 1']);
+		assert.deepEqual(tree.stranded, []);
 	});
 
-	it('fails typed for a dangling parent, a non-folder parent, or a cycle', () => {
-		// Each case names its own cause: a list nested under a list would
-		// otherwise only surface as a "cycle", which sends the reader looking
-		// for the wrong defect in the export.
-		const dangling = library(UUID_A, { playlists: [playlist(1, { parent_id: 'pl-99' })] });
-		const danglingError = errorOf(() => wire.buildUsbTree(dangling));
-		assert.equal(danglingError.code, 'USB_TREE_INVALID');
-		assert.match(danglingError.message, /pl-99, which is not a folder/);
-		const underList = library(UUID_A, {
-			playlists: [playlist(1), playlist(2, { parent_id: 'pl-1' })]
+	/** Every pane id in the tree, depth first. */
+	function paneIds(nodes) {
+		return nodes.flatMap((n) => [n.playlist_id, ...paneIds(n.children)]);
+	}
+
+	/** Each playlist of `lib` appears exactly once, and nothing else does. */
+	function assertEachPlaylistOnce(lib, nodes) {
+		const shown = paneIds(nodes).filter((id) => /:pl-\d+$/.test(id));
+		assert.deepEqual(
+			[...shown].sort(),
+			lib.playlists.map((p) => `usbpl:${UUID_A}:${p.id}`).sort(),
+			`shown: ${shown}`
+		);
+	}
+
+	it('shows a playlist whose parent is missing at the root, never failing the stick', () => {
+		// The backend keeps such a row and serves it last (stick_model.py
+		// _playlists_in_tree_order); the tree must agree, not throw.
+		const lib = library(UUID_A, {
+			playlists: [playlist(1, { name: 'Rooted' }), playlist(2, { name: 'Stranded', parent_id: 'pl-99' })]
 		});
-		const underListError = errorOf(() => wire.buildUsbTree(underList));
-		assert.equal(underListError.code, 'USB_TREE_INVALID');
-		assert.match(underListError.message, /pl-2 names parent pl-1, which is not a folder/);
-		const cycle = library(UUID_A, {
+		const tree = wire.buildUsbTree(lib);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'Rooted', 'Stranded']);
+		assert.equal(tree.nodes[2].playlist_id, `usbpl:${UUID_A}:pl-2`);
+		assert.deepEqual(tree.stranded, ['pl-2']);
+		assertEachPlaylistOnce(lib, tree.nodes);
+	});
+
+	it('shows a list filed under a list (not a folder) at the root', () => {
+		const lib = library(UUID_A, {
+			playlists: [playlist(1, { name: 'Parent list' }), playlist(2, { name: 'Under a list', parent_id: 'pl-1' })]
+		});
+		const tree = wire.buildUsbTree(lib);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'Parent list', 'Under a list']);
+		assert.deepEqual(tree.nodes[1].children, [], 'a list has no children');
+		assert.deepEqual(tree.stranded, ['pl-2']);
+		assertEachPlaylistOnce(lib, tree.nodes);
+	});
+
+	it('keeps a stranded folder whole, its children still inside it', () => {
+		const lib = library(UUID_A, {
 			playlists: [
-				playlist(1, { is_folder: true, parent_id: 'pl-2' }),
-				playlist(2, { is_folder: true, parent_id: 'pl-1' })
+				// The child sorts BEFORE its stranded folder on purpose: it must
+				// still land inside the folder, not at the root.
+				playlist(3, { name: 'Child', parent_id: 'pl-2', sort_order: 0 }),
+				playlist(2, { name: 'Lost folder', is_folder: true, parent_id: 'pl-99', sort_order: 5 })
 			]
 		});
-		const cycleError = errorOf(() => wire.buildUsbTree(cycle));
-		assert.equal(cycleError.code, 'USB_TREE_INVALID');
-		assert.match(cycleError.message, /cycle/);
+		const tree = wire.buildUsbTree(lib);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'Lost folder']);
+		assert.deepEqual(names(tree.nodes[1].children), ['Child']);
+		assert.deepEqual(tree.stranded, ['pl-2']);
+		assertEachPlaylistOnce(lib, tree.nodes);
+	});
+
+	it('shows a parent cycle once each, without looping', () => {
+		const lib = library(UUID_A, {
+			playlists: [
+				playlist(1, { name: 'Cycle A', is_folder: true, parent_id: 'pl-2' }),
+				playlist(2, { name: 'Cycle B', is_folder: true, parent_id: 'pl-1' }),
+				playlist(3, { name: 'Fine' })
+			]
+		});
+		const tree = wire.buildUsbTree(lib);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'Fine', 'Cycle A']);
+		assert.deepEqual(names(tree.nodes[2].children), ['Cycle B']);
+		assert.deepEqual(tree.nodes[2].children[0].children, []);
+		assert.deepEqual(tree.stranded, ['pl-1']);
+		assertEachPlaylistOnce(lib, tree.nodes);
+	});
+
+	it('re-roots nothing in a well formed export (control)', () => {
+		const lib = library(UUID_A, {
+			playlists: [
+				playlist(5, { is_folder: true }),
+				playlist(6, { parent_id: 'pl-5' }),
+				playlist(7, { is_folder: true, parent_id: 'pl-5' }),
+				playlist(8, { parent_id: 'pl-7' })
+			]
+		});
+		const tree = wire.buildUsbTree(lib);
+		assert.deepEqual(tree.stranded, []);
+		assert.deepEqual(names(tree.nodes), ['All tracks', 'List 5']);
+		assertEachPlaylistOnce(lib, tree.nodes);
 	});
 
 	it('gives two sticks disjoint pane ids, so their trees never mix', () => {
 		const idsOf = (nodes) => nodes.flatMap((n) => [n.playlist_id, ...idsOf(n.children)]);
-		const a = idsOf(wire.buildUsbTree(library(UUID_A, { playlists: [playlist(1)] })));
-		const b = idsOf(wire.buildUsbTree(library(UUID_B, { playlists: [playlist(1)] })));
+		const a = idsOf(wire.buildUsbTree(library(UUID_A, { playlists: [playlist(1)] })).nodes);
+		const b = idsOf(wire.buildUsbTree(library(UUID_B, { playlists: [playlist(1)] })).nodes);
 		assert.equal(a.filter((id) => b.includes(id)).length, 0, `shared ids: ${a.filter((id) => b.includes(id))}`);
 		assert.ok(a.every((id) => wire.parseUsbPaneId(id)?.volumeUuid === UUID_A));
 	});
@@ -343,7 +409,12 @@ describe('parseUsbLibraryWire', () => {
 		['a missing track_ids', (raw) => delete raw.playlists[0].track_ids],
 		['a non-boolean is_folder', (raw) => (raw.playlists[0].is_folder = 0)],
 		['a missing counts object', (raw) => delete raw.counts],
-		['a NaN read_ms', (raw) => (raw.read_ms = Number.NaN)]
+		['a NaN read_ms', (raw) => (raw.read_ms = Number.NaN)],
+		['a repeated track id', (raw) => raw.tracks.push({ ...raw.tracks[0] })],
+		['a repeated playlist id', (raw) => raw.playlists.push({ ...raw.playlists[0] })],
+		['a history id that repeats a playlist id', (raw) => (raw.history[0].id = raw.playlists[0].id)],
+		['a playlist id that shadows All tracks', (raw) => (raw.playlists[0].id = 'all')],
+		['a history id that shadows History', (raw) => (raw.history[0].id = 'history')]
 	]) {
 		it(`rejects ${label} as USB_LIBRARY_MALFORMED`, () => {
 			const raw = good();

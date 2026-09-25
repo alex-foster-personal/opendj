@@ -253,49 +253,78 @@ function _folder(volumeUuid: string, nodeKey: string, name: string, children: Pl
 	};
 }
 
+/** A stick's tree, plus the playlists it had to re-root. */
+export interface UsbTree {
+	nodes: PlaylistNode[];
+	/** Playlists the export files under a missing parent, under a list rather
+	 * than a folder, or inside a parent cycle. They are shown at the root. */
+	stranded: string[];
+}
+
+function _bySortOrder(a: UsbPlaylistWire, b: UsbPlaylistWire): number {
+	return a.sort_order - b.sort_order || a.pdb_id - b.pdb_id;
+}
+
 /**
  * The stick's tree: All tracks, then its playlists and folders in rekordbox
  * order (`parent_id` + `sort_order`, ties broken by pdb id so the order is
  * deterministic), then a History folder when the stick has history lists.
- * A dangling parent, a playlist nested under a non-folder, or a cycle is a
- * broken export and fails rather than silently re-rooting a playlist.
+ *
+ * Total over a parsed library: a playlist whose parent is missing or is not a
+ * folder, or one caught in a parent cycle, is shown at the root after the
+ * rooted playlists (the backend's flat order puts them last too) and named in
+ * `stranded`. One odd row in a guest's export must never hide the rest of the
+ * stick, and every playlist appears exactly once.
  */
-export function buildUsbTree(library: UsbLibraryWire): PlaylistNode[] {
+export function buildUsbTree(library: UsbLibraryWire): UsbTree {
 	const uuid = library.volume_uuid;
 	const byId = new Map(library.playlists.map((p) => [p.id, p]));
 	const childrenOf = new Map<string | null, UsbPlaylistWire[]>();
 	for (const pl of library.playlists) {
-		if (pl.parent_id !== null) {
-			const parent = byId.get(pl.parent_id);
-			if (parent === undefined || !parent.is_folder) {
-				throw new UsbLibraryError(
-					'USB_TREE_INVALID',
-					`${pl.id} names parent ${pl.parent_id}, which is not a folder on this stick`
-				);
-			}
-		}
 		const siblings = childrenOf.get(pl.parent_id) ?? [];
 		siblings.push(pl);
 		childrenOf.set(pl.parent_id, siblings);
 	}
 	const placed = new Set<string>();
-	const build = (parentId: string | null): PlaylistNode[] =>
-		(childrenOf.get(parentId) ?? [])
+	const stranded: string[] = [];
+	/** Nodes for `lists` in rekordbox order, skipping any already shown; a
+	 * `strandedPass` records each list it places as re-rooted. */
+	const unplacedNodes = (lists: readonly UsbPlaylistWire[], strandedPass = false): PlaylistNode[] =>
+		lists
 			.slice()
-			.sort((a, b) => a.sort_order - b.sort_order || a.pdb_id - b.pdb_id)
-			.map((pl) => {
-				placed.add(pl.id);
-				return pl.is_folder
-					? _folder(uuid, pl.id, pl.name, build(pl.id))
-					: _leaf(uuid, pl.id, pl.name, pl.track_ids.length);
+			.sort(_bySortOrder)
+			.flatMap((pl) => {
+				if (placed.has(pl.id)) return [];
+				if (strandedPass) stranded.push(pl.id);
+				return [node(pl)];
 			});
-	const roots = build(null);
-	if (placed.size !== library.playlists.length) {
-		throw new UsbLibraryError('USB_TREE_INVALID', 'the playlist tree has a cycle');
-	}
-	const tree = [_leaf(uuid, USB_ALL_TRACKS_NODE, 'All tracks', library.tracks.length), ...roots];
+	const node = (pl: UsbPlaylistWire): PlaylistNode => {
+		placed.add(pl.id);
+		return pl.is_folder
+			? _folder(uuid, pl.id, pl.name, unplacedNodes(childrenOf.get(pl.id) ?? []))
+			: _leaf(uuid, pl.id, pl.name, pl.track_ids.length);
+	};
+	const rooted = unplacedNodes(childrenOf.get(null) ?? []);
+	const notUnderAFolder = (pl: UsbPlaylistWire): boolean =>
+		pl.parent_id !== null && byId.get(pl.parent_id)?.is_folder !== true;
+	// Re-root the rows whose parent is missing or a list first, so a stranded
+	// folder keeps its own children; whatever is still unplaced sits in a cycle.
+	const reRooted = unplacedNodes(
+		library.playlists.filter((pl) => !placed.has(pl.id) && notUnderAFolder(pl)),
+		true
+	);
+	const inCycles = unplacedNodes(
+		library.playlists.filter((pl) => !placed.has(pl.id)),
+		true
+	);
+	const nodes = [
+		_leaf(uuid, USB_ALL_TRACKS_NODE, 'All tracks', library.tracks.length),
+		...rooted,
+		...reRooted,
+		...inCycles
+	];
 	if (library.history.length > 0) {
-		tree.push(
+		nodes.push(
 			_folder(
 				uuid,
 				USB_HISTORY_NODE,
@@ -304,7 +333,7 @@ export function buildUsbTree(library: UsbLibraryWire): PlaylistNode[] {
 			)
 		);
 	}
-	return tree;
+	return { nodes, stranded };
 }
 
 // ------------------------------------------------------------ validation
@@ -405,18 +434,44 @@ function _history(raw: unknown, i: number): UsbHistoryWire {
 	return { id: _str(o, 'id', where), name: _str(o, 'name', where), track_ids: _ids(o, where) };
 }
 
+/** Ids key rows, panes and the tree's keyed blocks: a repeat would show one
+ * list twice or shadow All tracks / History, so it is a malformed payload. */
+function _requireUnique(ids: readonly string[], what: string): void {
+	const seen = new Set<string>();
+	for (const id of ids) {
+		if (seen.has(id)) _fail(`duplicate ${what} id ${id}`);
+		seen.add(id);
+	}
+}
+
 /** Validate the library payload against the route contract, field by field. */
 export function parseUsbLibraryWire(raw: unknown): UsbLibraryWire {
 	const o = _obj(raw, 'library');
 	const counts = _obj(o['counts'], 'counts');
+	const tracks = _arr(o, 'tracks', 'library').map(_track);
+	const playlists = _arr(o, 'playlists', 'library').map(_playlist);
+	const history = _arr(o, 'history', 'library').map(_history);
+	_requireUnique(
+		tracks.map((t) => t.id),
+		'track'
+	);
+	_requireUnique(
+		[
+			USB_ALL_TRACKS_NODE,
+			USB_HISTORY_NODE,
+			...playlists.map((p) => p.id),
+			...history.map((h) => h.id)
+		],
+		'list'
+	);
 	return {
 		volume_id: _str(o, 'volume_id', 'library'),
 		volume_uuid: _str(o, 'volume_uuid', 'library'),
 		name: _str(o, 'name', 'library'),
 		mount_path: _str(o, 'mount_path', 'library'),
-		tracks: _arr(o, 'tracks', 'library').map(_track),
-		playlists: _arr(o, 'playlists', 'library').map(_playlist),
-		history: _arr(o, 'history', 'library').map(_history),
+		tracks,
+		playlists,
+		history,
 		counts: {
 			tracks: _num(counts, 'tracks', 'counts'),
 			playlists: _num(counts, 'playlists', 'counts'),
