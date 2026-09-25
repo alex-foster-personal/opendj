@@ -11,11 +11,15 @@ list instead of a library.
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 
 from apps.shared import platform_paths
+from apps.shared.ffmpeg import FfmpegUnavailable, probe_duration_s, resolve_ffmpeg
 from apps.shared.state import locations as track_locations
 
 from . import admission
@@ -24,6 +28,10 @@ from .queue import QueueError, TargetResolver
 
 # Keep IN (...) under SQLite's default 999 bind cap (see apps.shared.state.queries).
 _SQL_CHUNK: int = 500
+#: Concurrent ffmpeg header probes for rows with no stored duration.
+_PROBE_WORKERS: int = 8
+
+log = logging.getLogger("apps.analysis.queue_targets")
 
 #-----------------------------------------------------------------------------
 # target resolution
@@ -49,6 +57,28 @@ def _tracks_by_stable_id(
         )
     return rows
 
+
+def _measured_durations(paths: dict[str, str]) -> dict[str, float | None]:
+    """ffmpeg's stated length for each track whose row stores none.
+
+    An installed app has no mutagen (the GPL ``tags`` extra is omitted), so a
+    folder import writes ``duration_ms = NULL`` for every track and admission
+    would refuse the whole library. ffmpeg is the decoder every lane already
+    requires, so its header is the one honest source here. Without ffmpeg no
+    lane can run anyway: every such track stays ``None`` and is refused by
+    name, and the cause is logged once rather than per track.
+    """
+    if not paths:
+        return {}
+    try:
+        resolve_ffmpeg()
+    except FfmpegUnavailable as exc:
+        log.warning("cannot measure %d track duration(s): %s", len(paths), exc)
+        return dict.fromkeys(paths)
+    with ThreadPoolExecutor(max_workers=_PROBE_WORKERS) as pool:
+        lengths = pool.map(lambda path: probe_duration_s(Path(path)), paths.values())
+        return dict(zip(paths, lengths, strict=True))
+
 def candidates_from_state(
     conn: sqlite3.Connection,
     stable_ids: Sequence[str],
@@ -59,9 +89,11 @@ def candidates_from_state(
     """Resolve stable_ids against the state layer into queue candidates.
 
     Duration comes from ``tracks.duration_ms``, which is what the library
-    already knows; a row with no duration becomes a candidate with
-    ``duration_s=None`` and is REFUSED by the admission rule with
-    ``duration_unknown`` rather than admitted at an invented length.
+    already knows. A row with none is measured from the resolved file's
+    header by ffmpeg (:func:`_measured_durations`); one ffmpeg cannot state a
+    length for becomes a candidate with ``duration_s=None`` and is REFUSED by
+    the admission rule with ``duration_unknown`` rather than admitted at an
+    invented length.
 
     Paths go through the same resolution the backlog drain uses
     (``platform_paths.resolve_library_path`` over the legacy column plus
@@ -88,7 +120,7 @@ def candidates_from_state(
         )
     path_map = platform_paths.load_path_map()
     locations = track_locations.list_location_paths(conn, wanted)
-    out: list[admission.Candidate] = []
+    resolved_rows: list[tuple[str, str | None, int | None]] = []
     for stable_id, file_path, duration_ms in rows:
         resolved: str | None = None
         for candidate in _candidate_paths(
@@ -100,6 +132,12 @@ def candidates_from_state(
             if mapped.resolved is not None:
                 resolved = str(mapped.resolved)
                 break
+        resolved_rows.append((stable_id, resolved, duration_ms))
+    measured = _measured_durations(
+        {sid: path for sid, path, ms in resolved_rows if path is not None and not ms}
+    )
+    out: list[admission.Candidate] = []
+    for stable_id, resolved, duration_ms in resolved_rows:
         if resolved is None:
             # No local bytes on THIS machine. Offered anyway, with no
             # duration, so the admission rule refuses it by name instead of
@@ -120,7 +158,7 @@ def candidates_from_state(
                 lane=lane,
                 backend=backend,
                 file_path=resolved,
-                duration_s=(duration_ms / 1000.0) if duration_ms else None,
+                duration_s=(duration_ms / 1000.0) if duration_ms else measured[stable_id],
             )
         )
     return out
