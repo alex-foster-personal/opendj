@@ -1741,7 +1741,7 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'analysis'", specifier = ">=0.12" },
     { name = "soundfile", marker = "extra == 'vocals'", specifier = ">=0.12" },
     { name = "spotipy", marker = "extra == 'spotify'", specifier = ">=2.23.0" },
-    { name = "sqlalchemy", specifier = ">=2.0,<3" },
+    { name = "sqlalchemy", specifier = ">=2.0,<2.1" },
     { name = "torch", marker = "extra == 'vocals'", specifier = "==2.5.1" },
     { name = "torchaudio", marker = "extra == 'vocals'", specifier = "==2.5.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
