@@ -346,7 +346,7 @@ def test_unreaped_workers_report_that_the_signal_was_unreadable() -> None:
 
 @pytest.mark.requirement("META-08")
 def test_traced_signals_match_the_platform_signal_set() -> None:
-    """[if] a traced signal is missing on this platform (SIGBUS on Windows) [then] import and trace the rest, [else stop].
+    """[if] a traced signal is missing (SIGBUS on Windows) [then] trace the rest, [else stop].
 
     The module import above is the regression check on Windows, where the old
     `signal.SIGBUS` read raised at collection. This asserts the set is exactly the
