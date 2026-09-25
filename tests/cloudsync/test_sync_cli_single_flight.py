@@ -34,7 +34,11 @@ from apps.sync_hub import maintenance, single_flight
 from apps.sync_hub import status as sync_status
 
 from .enrollment_transport import TestClientTransport
-from .test_hub_sync import hub, hub_dir, spoke_a  # noqa: F401 -- pytest fixtures
+
+# `hub` and `spoke_a` are conftest.py fixtures (re-exported from
+# test_hub_sync.py there) -- no local import needed, and importing them here
+# too would shadow the fixture names as unused-import/redefinition warnings
+# (see conftest.py's own comment on this exact trap).
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-14")
 
@@ -130,9 +134,11 @@ def test_maintenance_sync_journals_success_while_still_holding_the_flock(
     real_write_result = sync_status.write_result
 
     def _spy_write_result(data_dir: Path, result: sync_status.SyncResult) -> None:
-        with pytest.raises(single_flight.SyncInProgressError):
-            with single_flight.sync_flock_for(data_dir):
-                pass  # pragma: no cover -- must never be reached
+        with (
+            pytest.raises(single_flight.SyncInProgressError),
+            single_flight.sync_flock_for(data_dir),
+        ):
+            pass  # pragma: no cover -- must never be reached
         checked["write_result_ran_under_the_flock"] = True
         real_write_result(data_dir, result)
 
