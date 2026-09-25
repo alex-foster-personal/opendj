@@ -33,7 +33,7 @@
 	import { SETUP_HOST_ROUTE, SETUP_ROUTE } from '$lib/setup/run-setup';
 	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
-	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
+	import { isPerformanceRoutePath, isTrackifyRoutePath } from '$lib/rb/performance-preset';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
@@ -72,6 +72,8 @@
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
+	const isTrackify = $derived(isTrackifyRoutePath($page.url.pathname));
+	const isFullBleedRoute = $derived(isPerformance || isTrackify);
 
 	const setupOpen = $derived(setupOverlay.open);
 	// The wizard component also draws the "Setup incomplete" note, which lives
@@ -267,9 +269,11 @@
 	<BannerWarning message={health.bindWarning} />
 {/if}
 
-{#if isPerformance}
+{#if isFullBleedRoute}
 	{@render children()}
-	<PerformanceAppNav />
+	{#if isPerformance}
+		<PerformanceAppNav />
+	{/if}
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">

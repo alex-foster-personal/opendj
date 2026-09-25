@@ -1,14 +1,13 @@
-<main class="mode-stub">
-	<h1>Trackify</h1>
-	<p>
-		Single-deck listening player contract lands in PERFMODE-15. This route exists
-		so the mode chooser can navigate here without a 404.
-	</p>
-</main>
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import TrackifyPlayer from '$lib/components/rb/TrackifyPlayer.svelte';
+	import { installTrackifySession } from '$lib/rb/trackify-session.svelte';
 
-<style>
-	.mode-stub {
-		padding: 2rem;
-		max-width: 40rem;
-	}
-</style>
+	onMount(() => installTrackifySession());
+</script>
+
+<svelte:head>
+	<title>Open DJ - Trackify</title>
+</svelte:head>
+
+<TrackifyPlayer />

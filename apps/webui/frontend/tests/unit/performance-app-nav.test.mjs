@@ -23,8 +23,15 @@ const APP_MODE = source('lib/rb/app-mode.ts');
 
 test('the root layout mounts PerformanceAppNav only on performance routes', () => {
 	assert.match(LAYOUT, /import PerformanceAppNav from '\$lib\/components\/PerformanceAppNav\.svelte'/);
-	const perfBranch = LAYOUT.slice(LAYOUT.indexOf('{#if isPerformance}'));
-	assert.match(perfBranch, /\{@render children\(\)\}\s*\n\s*<PerformanceAppNav \/>/);
+	// The full-bleed branch (PERFMODE-15) also covers Trackify routes, which
+	// must NOT get PerformanceAppNav - so the nav is nested one level deeper,
+	// inside its own isPerformance check, rather than unconditional across
+	// the whole full-bleed branch.
+	const fullBleedBranch = LAYOUT.slice(LAYOUT.indexOf('{#if isFullBleedRoute}'));
+	assert.match(
+		fullBleedBranch,
+		/\{@render children\(\)\}\s*\n\s*\{#if isPerformance\}\s*\n\s*<PerformanceAppNav \/>\s*\n\s*\{\/if\}/
+	);
 	const shellBranch = LAYOUT.slice(LAYOUT.indexOf('<div class="app-shell">'));
 	assert.doesNotMatch(shellBranch, /PerformanceAppNav/);
 });
