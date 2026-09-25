@@ -171,14 +171,20 @@ def _trusted_binding(volume_uuid: str) -> MountedStick | None:
     binding = _bindings.get(volume_uuid)
     if binding is None:
         return None
-    try:
-        st_dev = os.stat(binding.stick.mount).st_dev
-    except (FileNotFoundError, NotADirectoryError):
-        st_dev = None
-    if st_dev != binding.st_dev:
+    if _mount_device(binding.stick.mount) != binding.st_dev:
         del _bindings[volume_uuid]
         return None
     return binding.stick
+
+
+def _mount_device(mount: Path) -> int | None:
+    """The mount's device id, or None when nothing is mounted there. A
+    module-level seam: tests substitute this host fact as they substitute
+    discovery's."""
+    try:
+        return os.stat(mount).st_dev
+    except (FileNotFoundError, NotADirectoryError):
+        return None
 
 
 def _bind_from_fresh_scan(volume_uuid: str, scan: VolumeScan) -> MountedStick:
@@ -203,7 +209,14 @@ def _bind_from_fresh_scan(volume_uuid: str, scan: VolumeScan) -> MountedStick:
         mount=volume.mount_path,
     )
     _probe_export_readable(stick)
-    _bindings[volume_uuid] = _Binding(stick=stick, st_dev=os.stat(stick.mount).st_dev)
+    st_dev = _mount_device(stick.mount)
+    if st_dev is None:
+        raise StickError(
+            "USB_STICK_NOT_MOUNTED",
+            f"{stick.mount} went away while it was being bound",
+            volume_uuid=volume_uuid,
+        )
+    _bindings[volume_uuid] = _Binding(stick=stick, st_dev=st_dev)
     return stick
 
 

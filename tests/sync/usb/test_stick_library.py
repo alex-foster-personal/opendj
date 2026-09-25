@@ -227,6 +227,36 @@ def test_size_change_at_the_same_mtime_reparses(mount: Path, scan: CountingScan)
     assert not again.cache_hit and 100 in again.library.tracks_by_pdb_id
 
 
+def test_new_device_at_the_same_path_rescans_even_with_an_identical_pdb(
+    mount: Path, scan: CountingScan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another stick, byte-identical export (a clone), remounted at this path:
+    only the device id tells them apart, so it alone must force a rescan."""
+    sl.open_stick_library(UUID, scan)
+    first_device = sl._mount_device(mount)
+    assert first_device is not None
+    # Control: same device, same pdb -> trusted, no rescan (the overshoot guard).
+    assert sl.open_stick_library(UUID, scan).cache_hit and scan.calls == 1
+    monkeypatch.setattr(sl, "_mount_device", lambda _mount: first_device + 1)
+    scan.volumes = [_volume(mount, OTHER_UUID)]
+    error = _refusal(lambda: sl.open_stick_library(UUID, scan))
+    assert error.code == "USB_STICK_NOT_MOUNTED"
+    assert scan.calls == 2, "if the new device is trusted then the other stick's pdb is served"
+
+
+def test_new_device_carrying_the_same_uuid_rebinds_and_keeps_the_cache(
+    mount: Path, scan: CountingScan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same stick replugged gets a new device id: a rescan proves it, and
+    the unchanged pdb is still a cache hit (no reparse on replug)."""
+    cold = sl.open_stick_library(UUID, scan)
+    first_device = sl._mount_device(mount)
+    assert first_device is not None
+    monkeypatch.setattr(sl, "_mount_device", lambda _mount: first_device + 1)
+    again = sl.open_stick_library(UUID, scan)
+    assert again.cache_hit and again.library is cold.library and scan.calls == 2
+
+
 def test_unmounted_stick_is_not_mounted_with_its_uuid(mount: Path) -> None:
     error = _refusal(lambda: sl.open_stick_library(UUID, CountingScan([])))
     assert error.code == "USB_STICK_NOT_MOUNTED"
