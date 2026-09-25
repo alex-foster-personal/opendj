@@ -1,8 +1,10 @@
-"""Play from USB: a stick's rekordbox library and its files (USBPLAY-03/04/06).
+"""Play from USB: a stick's rekordbox library and its files (USBPLAY-03/04/06/07).
 
 GET       /api/v1/usb/volumes/{volume_id}/library   - the stick's tracks, playlists, history
 GET       /api/v1/usb/tracks/{track_id}              - TrackOut, the library's own shape
 GET|HEAD  /api/v1/usb/tracks/{track_id}/audio        - the file, Range/206 like the library
+GET       /api/v1/usb/tracks/{track_id}/anlz         - the stick's own ANLZ, library /anlz shape
+GET       /api/v1/usb/tracks/{track_id}/hot-cues     - eight slots, library shape, read only
 GET       /api/v1/usb/tracks/{track_id}/artwork      - the pdb's jpg (s) or its _m sibling
 
 Every handler resolves through :mod:`apps.sync.usb.stick_library`, which
@@ -17,19 +19,29 @@ the volume list answers. Read only: no write route exists under
 from __future__ import annotations
 
 import errno
+import hashlib
+import json
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, assert_never
+from typing import Any, Literal, assert_never, get_args
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 
-from apps.shared import audio_quality
+from apps.shared import audio_quality, runtime_policy
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S, probe_readable_byte
+from apps.sync.usb.pioneer.anlz_track import (
+    StickAnlzError,
+    StickAnlzFileMissing,
+    StickAnlzPathRefused,
+    StickAnlzUnreadable,
+    StickTrackAnalysis,
+    read_stick_track_analysis,
+)
 from apps.sync.usb.stick_library import (
     ArtworkSize,
     MountedVolume,
@@ -42,14 +54,18 @@ from apps.sync.usb.stick_library import (
     is_canonical_volume_uuid,
     open_stick_library,
     resolve_stick_track,
+    stick_anlz_file,
     stick_artwork_file,
     stick_audio_file,
     stick_audio_path,
 )
 
+from .. import rb_vendor
 from ..etag import compute_etag
 from ..models import TrackOut
+from .rb_assets import _CACHE_ANLZ, _etag_matches
 from .rb_assets_audio import _BLOCKED_ACCESS_ERRNOS
+from .rb_hot_cues import AnlzCueOut, HotCueSlot, HotCueSlotOut
 from .usb_gate import usb_export_gate
 from .usb_volumes import (
     UsbCapabilityErrorOut,
@@ -75,7 +91,7 @@ _CACHE_ARTWORK = "private, no-cache"
 class UsbStickErrorDetail(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    code: StickErrorCode | Literal["AUDIO_ACCESS_BLOCKED"]
+    code: StickErrorCode | Literal["AUDIO_ACCESS_BLOCKED", "ANALYSIS_NOT_FOUND"]
     message: str
     #: Which stick, for the "Stick removed" toast and for agents.
     volume_uuid: str | None = None
@@ -166,8 +182,9 @@ def _error_doc(description: str) -> dict[str, object]:
 _STICK_RESPONSES: dict[int | str, dict[str, object]] = {
     403: _error_doc("USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick "
                     "or outside the directory/extension this route may serve"),
-    404: _error_doc("USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND "
-                    "or USB_FILE_MISSING"),
+    404: _error_doc("USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, "
+                    "USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND "
+                    "(the track's ANLZ files hold no readable tag)"),
     409: _error_doc("USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID "
                     "is not canonical, so its stick ids would not be stable"),
     422: _error_doc("USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"),
@@ -352,8 +369,12 @@ def _track_out(track: StickTrack) -> UsbStickTrackOut:
 def get_usb_track(track_id: str, request: Request, response: Response) -> TrackOut:
     """The library's TrackOut for a stick track, so the deck loads it unchanged.
 
-    Stick tracks have no rekordbox mapping, lyrics, auto-cues or stems here;
-    ``artwork_available`` is True only when both served sizes exist.
+    The flags predict the stick routes: no lyrics, auto-cues or stems route
+    exists under ``/usb/tracks``, so those are False; ``has_rb_mapping`` is
+    False because ``/hot-cues`` is read only and ``rb-meta`` cannot resolve a
+    stick id; ``artwork_available`` is True only when both served sizes
+    exist. ``/anlz`` and ``/hot-cues`` answer for every track whose export
+    row names no analysis (empty) or a readable one (the stick's own).
     """
     with _stick_errors():
         resolved = _resolve_track(request, track_id)
@@ -406,6 +427,134 @@ def _pdb_modified_iso(library: StickLibrary) -> str:
 
 def _duration_ms(duration_s: float | None) -> int | None:
     return None if duration_s is None else round(duration_s * 1000)
+
+
+# ----- analysis -----------------------------------------------------------
+
+
+def _stick_analysis(resolved: ResolvedStickTrack, points: int) -> StickTrackAnalysis | None:
+    """The stick's own ANLZ for this track; None when its export row names no
+    analysis (rekordbox never analyzed it, a fact about the track).
+
+    The .DAT is gated through the resolver first, so a refusal carries the
+    same typed ``reason`` as the audio and artwork routes; the decoder then
+    re-proves containment itself for its .EXT/.2EX siblings.
+    """
+    analyze_path = resolved.track.analyze_path
+    if analyze_path is None:
+        return None
+    stick_anlz_file(resolved, ".DAT")
+    try:
+        return read_stick_track_analysis(
+            volume_root=resolved.stick.mount, analyze_path=analyze_path, points=points
+        )
+    except StickAnlzError as exc:
+        raise _anlz_refusal(resolved, exc) from exc
+
+
+def _anlz_refusal(resolved: ResolvedStickTrack, exc: StickAnlzError) -> HTTPException:
+    if isinstance(exc, StickAnlzPathRefused):
+        status = 403
+    elif isinstance(exc, StickAnlzFileMissing | StickAnlzUnreadable):
+        status = 404
+    else:
+        raise TypeError(f"no HTTP status for stick ANLZ refusal {type(exc).__name__}") from exc
+    return HTTPException(
+        status_code=status,
+        detail={"code": exc.code, "message": str(exc), "volume_uuid": resolved.stick.volume_uuid},
+    )
+
+
+def _anlz_payload(
+    track_id: str, analysis: StickTrackAnalysis | None, points: int
+) -> dict[str, Any]:
+    if analysis is None:
+        payload = rb_vendor.empty_anlz_payload(track_id, points)
+    else:
+        payload = {"stable_id": track_id, "points": points, **analysis.payload}
+    # The stick's own grid, always (spec decision 5). The PARITY-02 toggle
+    # chooses between the LIBRARY's two lanes; a stick has no own lane, and
+    # the deck's source-confirmation loop exempts stick ids.
+    payload["beatgrid_source"] = "rekordbox"
+    payload["beatgrid_own_unavailable_reason"] = None
+    return payload
+
+
+@router.get("/tracks/{track_id}/anlz", responses=_STICK_RESPONSES)
+def get_usb_track_anlz(
+    track_id: str,
+    request: Request,
+    points: int = Query(
+        runtime_policy.ANLZ_POINTS_DEFAULT,
+        ge=runtime_policy.ANLZ_POINTS_MIN,
+        le=runtime_policy.ANLZ_POINTS_MAX,
+        description="Max length of each waveform band array after downsampling",
+    ),
+) -> Response:
+    """The stick's own waveform / beatgrid / cues / phrases, in the library
+    ``/anlz`` shape, decoded from this track's exact ANLZ files.
+
+    ``vocals`` is always ``not_analyzed`` (a PVDI tag is listed in
+    ``unreadable_anlz``); ``beatgrid.source`` and ``beatgrid_source`` are
+    always ``rekordbox``. Same ``points`` bounds, ETag and
+    ``private, no-cache`` revalidation as the library route; the client's
+    ``gen`` cache-buster is ignored here as it is there.
+    """
+    with _stick_errors():
+        resolved = _resolve_track(request, track_id)
+        analysis = _stick_analysis(resolved, points)
+    payload = _anlz_payload(resolved.track.id, analysis, points)
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    etag = f'"{hashlib.sha256(body.encode("utf-8")).hexdigest()}"'
+    headers = {"Cache-Control": _CACHE_ANLZ, "ETag": etag}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
+@router.get(
+    "/tracks/{track_id}/hot-cues",
+    response_model=list[HotCueSlotOut],
+    responses=_STICK_RESPONSES,
+)
+def list_usb_track_hot_cue_slots(track_id: str, request: Request) -> list[HotCueSlotOut]:
+    """Eight slots from the stick's own cues, the library's shape. Read only:
+    no PUT/DELETE/restore exists here, so a revision is only an identity for
+    the slot's current state and edits stay in the deck's session."""
+    with _stick_errors():
+        resolved = _resolve_track(request, track_id)
+        # Smallest waveform: only the cues are used, and they do not depend on it.
+        analysis = _stick_analysis(resolved, runtime_policy.ANLZ_POINTS_MIN)
+    cues: list[dict[str, Any]] = [] if analysis is None else analysis.payload["cues"]
+    return _hot_cue_slots(resolved.track.id, cues)
+
+
+def _hot_cue_slots(track_id: str, cues: list[dict[str, Any]]) -> list[HotCueSlotOut]:
+    hot = [cue for cue in cues if cue["kind"] == "hot_cue"]
+    by_slot = {cue["slot"]: cue for cue in hot}
+    if len(by_slot) != len(hot):
+        raise RuntimeError(f"{track_id} has two hot cues in one slot: {hot}")
+    slots: list[HotCueSlotOut] = []
+    for slot in get_args(HotCueSlot):
+        cue = by_slot.get(slot)
+        revision = _hot_cue_revision(track_id, slot, cue)
+        slots.append(
+            HotCueSlotOut(
+                slot=slot,
+                cue=None if cue is None else AnlzCueOut(**cue, revision=revision),
+                revision=revision,
+            )
+        )
+    return slots
+
+
+def _hot_cue_revision(track_id: str, slot: str, cue: dict[str, Any] | None) -> str:
+    encoded = json.dumps(
+        {"stick_track": track_id, "slot": slot, "cue": cue},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 # ----- files --------------------------------------------------------------
@@ -498,7 +647,9 @@ __all__ = [
     "UsbStickLibraryOut",
     "get_usb_stick_library",
     "get_usb_track",
+    "get_usb_track_anlz",
     "get_usb_track_artwork",
     "get_usb_track_audio",
+    "list_usb_track_hot_cue_slots",
     "router",
 ]

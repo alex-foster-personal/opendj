@@ -164,7 +164,7 @@ def test_library_model_trims_display_strings_and_keeps_paths(
     second = library.tracks_by_pdb_id[2]
     assert (second.artist, second.key, second.duration_s) == (None, "Am", None)
     assert not second.has_analysis and not second.has_artwork
-    assert len(library.tracks) == 9 and library.playlist_entry_count == 3
+    assert len(library.tracks) == 13 and library.playlist_entry_count == 3
 
 
 def test_playlists_come_in_tree_order_with_entries_in_entry_order(scan: CountingScan) -> None:
@@ -183,7 +183,7 @@ def test_a_stick_named_pioneer_still_reads_its_own_pioneer_dir(tmp_path: Path) -
     root = tmp_path / "PIONEER"
     write_export_pdb(root, synthetic_export())
     library = sl.open_stick_library(UUID, CountingScan([_volume(root)])).library
-    assert len(library.tracks) == 9
+    assert len(library.tracks) == 13
 
 
 # ----- binding and cache ----------------------------------------------------
@@ -217,14 +217,14 @@ def test_size_change_at_the_same_mtime_reparses(mount: Path, scan: CountingScan)
     before = pdb.stat()
     # Pages are fixed-size, so the export only grows once a new page is needed.
     extra = [
-        PdbTrack(id=10 + n, title="Added later " + "x" * 100, file_path="/Contents/second.flac")
+        PdbTrack(id=100 + n, title="Added later " + "x" * 100, file_path="/Contents/second.flac")
         for n in range(40)
     ]
     write_export_pdb(mount, synthetic_export([*synthetic_tracks(), *extra]))
     os.utime(pdb, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert pdb.stat().st_size != before.st_size
     again = sl.open_stick_library(UUID, scan)
-    assert not again.cache_hit and 10 in again.library.tracks_by_pdb_id
+    assert not again.cache_hit and 100 in again.library.tracks_by_pdb_id
 
 
 def test_unmounted_stick_is_not_mounted_with_its_uuid(mount: Path) -> None:
