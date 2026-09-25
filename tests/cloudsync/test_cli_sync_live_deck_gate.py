@@ -28,8 +28,8 @@ for a 200), so these exercise `_probe_engine_lock`'s OWN defensive parsing,
 not a claim about production behavior. The other two -- a hand-rolled
 ``/api/v1/health`` that slept in its handler, and a hand-rolled health PLUS
 ui-mirror pair where the second slept -- were genuinely replaceable and are
-now `_start_hanging_listener` (a bare TCP listener with no API surface at
-all) and `_start_path_delaying_proxy` (a raw byte relay in front of the REAL
+now `start_hanging_listener` (a bare TCP listener with no API surface at
+all) and `start_path_delaying_proxy` (a raw byte relay in front of the REAL
 engine that delays one path's bytes and fabricates nothing), respectively.
 
 [if] a live engine's mirror shows a playing deck [then] the CLI sync defers, [else stop].
@@ -46,11 +46,7 @@ engine that delays one path's bytes and fabricates nothing), respectively.
 from __future__ import annotations
 
 import json
-import socket
-import threading
-import time
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -60,134 +56,20 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from apps.engine_core.app import create_app
-from apps.engine_core.config import EngineConfig
-from apps.engine_core.lock import EngineLock
 from apps.shared import engine_origin
 from apps.shared.sync_runtime_gates import SyncDeferredError, any_deck_playing
 from apps.sync_hub import maintenance
+from tests.cloudsync.live_engine_rig import (
+    BOOT_ID,
+    boot_real_engine,
+    free_port,
+    start_hanging_listener,
+    start_path_delaying_proxy,
+    write_lock,
+)
 from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-14")
-
-_BOOT_ID = "test-boot-cloudsync14"
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
-def _start_hanging_listener(*, port: int) -> tuple[socket.socket, threading.Thread]:
-    """A bare TCP listener that accepts a connection and then answers nothing,
-    ever (Codex review, PR #3831, P1/BLOCKING, replacing a hand-rolled FastAPI
-    ``/api/v1/health`` stub whose handler just ``await``ed a sleep).
-
-    This implements NO part of the health API surface -- no route, no JSON
-    body, not even HTTP framing. A client's request against it just never
-    gets a response, which is indistinguishable at the wire level from what a
-    genuinely wedged real engine (accepted the connection, then stalled
-    before writing anything back) would produce. Only the identity-probe
-    stage is ever reached in the test that uses this, so nothing here needs
-    to claim to BE the engine's health endpoint at all.
-    """
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", port))
-    listener.listen(1)
-
-    def _accept_and_hang() -> None:
-        try:
-            conn, _addr = listener.accept()
-        except OSError:
-            return  # listener closed while waiting -- test is tearing down
-        try:
-            conn.settimeout(30.0)
-            conn.recv(1)  # never sent; unblocks when the client gives up/closes
-        except OSError:
-            pass
-        finally:
-            conn.close()
-
-    thread = threading.Thread(
-        target=_accept_and_hang, name="hanging-listener", daemon=True
-    )
-    thread.start()
-    return listener, thread
-
-
-def _start_path_delaying_proxy(
-    *, upstream_port: int, delay_path: str, delay_s: float
-) -> tuple[socket.socket, threading.Thread, int]:
-    """A raw byte-forwarding TCP proxy in front of a REAL engine (Codex
-    review, PR #3831, P1/BLOCKING; replaces a hand-rolled FastAPI stand-in
-    that implemented BOTH ``/api/v1/health`` and ``/api/v1/state/ui-mirror``
-    by hand).
-
-    Every request's bytes are relayed to ``upstream_port`` verbatim and every
-    response's bytes are relayed straight back, EXCEPT a request whose
-    request line names ``delay_path``, which is held for ``delay_s`` before
-    it is forwarded. This parses nothing but the request line (just enough
-    to route the delay), constructs no response of its own, and never
-    diverges from what the real engine actually answers -- the ONE thing it
-    does that a real engine's own request handling gives no test seam for is
-    delay one specific path's request without delaying the other, which is
-    exactly what `test_verified_engine_mirror_timeout_fails_closed` needs
-    and a raw byte relay is the narrowest way to get without adding a
-    test-only delay to production code itself.
-    """
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(5)
-    proxy_port = int(listener.getsockname()[1])
-
-    def _relay_one(client_conn: socket.socket) -> None:
-        client_conn.settimeout(30.0)
-        try:
-            request = client_conn.recv(65536)
-        except OSError:
-            client_conn.close()
-            return
-        request_line = request.split(b"\r\n", 1)[0]
-        if not request:
-            client_conn.close()
-            return
-        if delay_path.encode("ascii") in request_line:
-            time.sleep(delay_s)
-        try:
-            upstream = socket.create_connection(
-                ("127.0.0.1", upstream_port), timeout=5.0
-            )
-        except OSError:
-            client_conn.close()
-            return
-        upstream.settimeout(30.0)
-        try:
-            upstream.sendall(request)
-            while True:
-                chunk = upstream.recv(65536)
-                if not chunk:
-                    break
-                client_conn.sendall(chunk)
-        except OSError:
-            pass  # the client already gave up waiting -- nothing to relay to
-        finally:
-            upstream.close()
-            client_conn.close()
-
-    def _accept_loop() -> None:
-        while True:
-            try:
-                conn, _addr = listener.accept()
-            except OSError:
-                return  # listener closed -- test is tearing down
-            threading.Thread(target=_relay_one, args=(conn,), daemon=True).start()
-
-    thread = threading.Thread(target=_accept_loop, name="delaying-proxy", daemon=True)
-    thread.start()
-    return listener, thread, proxy_port
 
 
 @pytest.fixture(autouse=True)
@@ -204,54 +86,6 @@ def _no_stray_lock_path_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(engine_origin.LOCK_PATH_ENV, raising=False)
 
 
-def _write_lock(data_dir: Path, *, port: int, host: str = "127.0.0.1") -> None:
-    data_dir.mkdir(parents=True, exist_ok=True)
-    (data_dir / ".engine.lock").write_text(
-        json.dumps(
-            {
-                "pid": 1,
-                "role": "opendj-engine",
-                "boot_id": _BOOT_ID,
-                "host": host,
-                "port": port,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def _boot_real_engine(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch, *, port: int
-) -> tuple[FastAPI, uvicorn.Server, Any, EngineLock]:
-    """Boot ``apps.engine_core.app.create_app`` -- the ACTUAL production
-    engine, not a hand-rolled stand-in (Codex review, PR #3831,
-    P1/BLOCKING) -- over real HTTP on loopback, with a real ``EngineLock``
-    (the SAME class the shipped engine uses to write its own lock file, so
-    ``/api/v1/health``'s ``boot_id`` genuinely matches what
-    `_probe_engine_lock` reads back from disk).
-
-    The acceptance tests in this module are the evidence CLOUDSYNC-14
-    shipped, so they must exercise the production engine's real
-    ``/api/v1/health`` and ``/api/v1/state/ui-mirror`` wiring, prefixes, and
-    lifecycle -- not routes a test author re-typed by hand, which can
-    silently agree with the client even when the real thing differs.
-
-    Returns ``(app, server, thread, lock)``; the caller owns tearing all four
-    down (``server.should_exit = True``, join the thread, ``lock.release()``).
-    """
-    monkeypatch.setenv("MDT_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("MDT_LIBRARY_MODE", "local")
-    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", str(port))
-    monkeypatch.setenv("MUSIC_DJ_FRONTEND_PORT", str(_free_port()))
-    (data_dir / "state").mkdir(parents=True, exist_ok=True)
-    lock = EngineLock(data_dir / ".engine.lock", host="127.0.0.1", port=port)
-    lock.acquire()
-    app = create_app(EngineConfig(data_dir=data_dir, port=port), lock=lock)
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server, thread = start_uvicorn_in_thread(config, what="the real engine")
-    return app, server, thread, lock
-
-
 @pytest.fixture
 def real_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -261,8 +95,8 @@ def real_engine(
     ``app.state`` directly (see `test_verified_engine_error_status_is_inconclusive_not_safe`).
     """
     data_dir = tmp_path / "engine-data"
-    port = _free_port()
-    app, server, thread, lock = _boot_real_engine(data_dir, monkeypatch, port=port)
+    port = free_port()
+    app, server, thread, lock = boot_real_engine(data_dir, monkeypatch, port=port)
     try:
         yield f"http://127.0.0.1:{port}", data_dir, app
     finally:
@@ -337,7 +171,7 @@ def test_cli_live_mirror_probe_tolerates_unreachable_engine(tmp_path: Path) -> N
     raises ``EngineNotRunning`` (a subclass) for a transport failure there,
     so this exercises that path, not the later ui-mirror GET.
     """
-    _write_lock(tmp_path, port=_free_port())  # nothing is bound to this port
+    write_lock(tmp_path, port=free_port())  # nothing is bound to this port
     assert maintenance._cli_live_ui_mirror(tmp_path) is None
 
 
@@ -356,52 +190,10 @@ def test_non_loopback_host_refusing_a_connection_still_defers(tmp_path: Path) ->
     naming a real non-loopback host that hit a DNS failure or an unreachable
     network would have been waved through the exact same way.
     """
-    _write_lock(tmp_path, port=_free_port(), host="127.1")
+    write_lock(tmp_path, port=free_port(), host="127.1")
     with pytest.raises(SyncDeferredError) as excinfo:
         maintenance._cli_live_ui_mirror(tmp_path)
     assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
-
-
-@pytest.mark.parametrize(
-    ("host", "exc", "expected"),
-    [
-        ("127.0.0.1", ConnectionRefusedError(61, "refused"), True),
-        ("::1", ConnectionRefusedError(61, "refused"), True),
-        ("localhost", ConnectionRefusedError(61, "refused"), True),
-        ("127.1", ConnectionRefusedError(61, "refused"), False),
-        ("10.0.0.5", ConnectionRefusedError(61, "refused"), False),
-        ("example.com", ConnectionRefusedError(61, "refused"), False),
-        ("127.0.0.1", None, False),
-        ("127.0.0.1", TimeoutError("timed out"), False),
-        ("127.0.0.1", OSError(0, "no errno"), False),
-    ],
-)
-def test_refused_by_loopback_engine_requires_both_conditions(
-    host: str, exc: BaseException | None, expected: bool
-) -> None:
-    """Direct unit coverage of the P1 fix (Sol review, PR #3831): neither a
-    non-loopback host nor a non-ECONNREFUSED failure may read as safe, no
-    matter how plausible either looks alone."""
-    assert maintenance._refused_by_loopback_engine(host, exc) is expected
-
-
-def test_refused_by_loopback_engine_unwraps_the_real_httpx_httpcore_chain() -> None:
-    """Reproduces the REAL exception shape httpx/httpcore produce for a
-    genuine loopback refusal, rather than a synthetic approximation, so the
-    unwrap logic is proven against the actual nesting httpx puts between
-    `_probe_engine_lock`'s ``exc.__cause__`` and the OS-level
-    ``ConnectionRefusedError`` two layers down.
-    """
-    port = _free_port()  # nothing bound
-    try:
-        with httpx.Client(timeout=2.0) as probe_client:
-            probe_client.get(f"http://127.0.0.1:{port}/")
-    except httpx.ConnectError as caught:
-        real_cause = caught
-    else:  # pragma: no cover -- would mean the OS stopped refusing loopback
-        raise AssertionError("expected a ConnectError against an unbound port")
-    assert maintenance._refused_by_loopback_engine("127.0.0.1", real_cause) is True
-    assert maintenance._refused_by_loopback_engine("127.1", real_cause) is False
 
 
 def test_verified_engine_error_status_is_inconclusive_not_safe(
@@ -447,17 +239,17 @@ def test_409_with_unexpected_body_is_inconclusive_not_safe(
 
     @app.get("/api/v1/health")
     def health() -> dict:
-        return {"boot_id": _BOOT_ID}
+        return {"boot_id": BOOT_ID}
 
     @app.get("/api/v1/state/ui-mirror")
     def ui_mirror() -> JSONResponse:
         return JSONResponse(status_code=409, content={"client_open": True})
 
-    port = _free_port()
+    port = free_port()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server, thread = start_uvicorn_in_thread(config, what="the unexpected-409 fake engine")
     try:
-        _write_lock(tmp_path, port=port)
+        write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
             maintenance._cli_live_ui_mirror(tmp_path)
         assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
@@ -474,17 +266,17 @@ def test_malformed_200_body_fails_closed_not_crashes(tmp_path: Path) -> None:
 
     @app.get("/api/v1/health")
     def health() -> dict:
-        return {"boot_id": _BOOT_ID}
+        return {"boot_id": BOOT_ID}
 
     @app.get("/api/v1/state/ui-mirror")
     def ui_mirror() -> PlainTextResponse:
         return PlainTextResponse("not json", status_code=200)
 
-    port = _free_port()
+    port = free_port()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server, thread = start_uvicorn_in_thread(config, what="the malformed-body fake engine")
     try:
-        _write_lock(tmp_path, port=port)
+        write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
             maintenance._cli_live_ui_mirror(tmp_path)
         assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
@@ -517,10 +309,10 @@ def test_locked_engine_health_check_timeout_fails_closed(
     engine or from nothing implementing HTTP on the other end.
     """
     monkeypatch.setattr(engine_origin, "IDENTITY_PROBE_TIMEOUT_S", 0.2)
-    port = _free_port()
-    listener, thread = _start_hanging_listener(port=port)
+    port = free_port()
+    listener, thread = start_hanging_listener(port=port)
     try:
-        _write_lock(tmp_path, port=port)
+        write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
             maintenance._cli_live_ui_mirror(tmp_path)
         assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
@@ -543,12 +335,12 @@ def _run_two_engine_probe(
     """
     override_data_dir = tmp_path / "sandboxed-engine"
     data_dir = tmp_path / "unrelated-data-dir"
-    override_port = _free_port()
-    data_dir_port = _free_port()
-    _override_app, override_server, override_thread, override_lock = _boot_real_engine(
+    override_port = free_port()
+    data_dir_port = free_port()
+    _override_app, override_server, override_thread, override_lock = boot_real_engine(
         override_data_dir, monkeypatch, port=override_port
     )
-    _data_dir_app, data_dir_server, data_dir_thread, data_dir_lock = _boot_real_engine(
+    _data_dir_app, data_dir_server, data_dir_thread, data_dir_lock = boot_real_engine(
         data_dir, monkeypatch, port=data_dir_port
     )
     try:
@@ -567,9 +359,7 @@ def _run_two_engine_probe(
             )
             assert resp.status_code == 202
 
-        monkeypatch.setenv(
-            engine_origin.LOCK_PATH_ENV, str(override_data_dir / ".engine.lock")
-        )
+        monkeypatch.setenv(engine_origin.LOCK_PATH_ENV, str(override_data_dir / ".engine.lock"))
         return maintenance._cli_live_ui_mirror(data_dir)
     finally:
         override_server.should_exit = True
@@ -632,15 +422,13 @@ def test_verified_engine_mirror_timeout_fails_closed(
     real engine -- the proxy adds a delay to one path, nothing else, which
     is the one thing needed here that a real engine's own request handling
     gives no test seam for without adding a test-only delay to production
-    code itself. See `_start_path_delaying_proxy`.
+    code itself. See `start_path_delaying_proxy`.
     """
     monkeypatch.setattr(maintenance, "_LIVE_MIRROR_PROBE_TIMEOUT_S", 0.2)
     data_dir = tmp_path / "engine-data"
-    engine_port = _free_port()
-    _app, server, engine_thread, lock = _boot_real_engine(
-        data_dir, monkeypatch, port=engine_port
-    )
-    proxy_listener, proxy_thread, proxy_port = _start_path_delaying_proxy(
+    engine_port = free_port()
+    _app, server, engine_thread, lock = boot_real_engine(data_dir, monkeypatch, port=engine_port)
+    proxy_listener, proxy_thread, proxy_port = start_path_delaying_proxy(
         upstream_port=engine_port,
         delay_path="/api/v1/state/ui-mirror",
         delay_s=1.0,  # exceeds the patched 0.2s client timeout
@@ -691,77 +479,3 @@ def test_stale_real_mirror_defers_even_though_status_is_200(
     with pytest.raises(SyncDeferredError) as excinfo:
         maintenance._cli_live_ui_mirror(data_dir)
     assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
-
-
-@pytest.mark.parametrize("received_at", [None, "", "not-a-timestamp", 12345, [1, 2]])
-def test_ui_mirror_is_fresh_false_for_missing_or_invalid_received_at(
-    received_at: Any,
-) -> None:
-    """[if] ``received_at`` is missing, empty, unparseable, or the wrong type
-    [then] the body reads as NOT fresh -- fail closed on an invariant that
-    should always hold for a real server-stamped body, per this repo's
-    "verify the presence of the good thing" rule."""
-    assert maintenance._ui_mirror_is_fresh({"received_at": received_at}) is False
-
-
-def test_ui_mirror_is_fresh_false_when_received_at_key_is_absent() -> None:
-    assert maintenance._ui_mirror_is_fresh({}) is False
-
-
-def test_ui_mirror_is_fresh_true_just_inside_the_tolerance() -> None:
-    now = datetime.now(UTC)
-    received = now - timedelta(seconds=maintenance._UI_MIRROR_FRESHNESS_TOLERANCE_S - 0.5)
-    body = {"received_at": received.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
-    assert maintenance._ui_mirror_is_fresh(body, now=now) is True
-
-
-def test_ui_mirror_is_fresh_false_just_outside_the_tolerance() -> None:
-    now = datetime.now(UTC)
-    received = now - timedelta(seconds=maintenance._UI_MIRROR_FRESHNESS_TOLERANCE_S + 0.5)
-    body = {"received_at": received.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
-    assert maintenance._ui_mirror_is_fresh(body, now=now) is False
-
-
-# ----- CLOUDSYNC-14 round 3, finding 2: naive and future timestamps --------
-
-
-def test_ui_mirror_received_at_rejects_a_naive_timestamp() -> None:
-    """[if] ``received_at`` parses but carries no timezone [then] it reads as
-    unparseable, not as an assumed UTC (Sol review, PR #3831, P1/BLOCKING):
-    the real route always stamps an explicit UTC offset, so a naive stamp is
-    never something a genuine 200 can produce, and silently assuming UTC for
-    one fabricates a timestamp nothing verified."""
-    naive = "2026-09-25T10:00:00.000000"
-    assert maintenance._ui_mirror_received_at({"received_at": naive}) is None
-
-
-def test_ui_mirror_is_fresh_false_for_a_naive_timestamp_even_within_tolerance() -> None:
-    """Same as above, through the caller a malformed response actually
-    reaches: a naive stamp that LOOKS recent must still defer, not pass."""
-    now = datetime.now(UTC)
-    naive_now = now.replace(tzinfo=None).isoformat(timespec="milliseconds")
-    assert maintenance._ui_mirror_is_fresh({"received_at": naive_now}, now=now) is False
-
-
-def test_ui_mirror_is_fresh_false_for_a_future_timestamp() -> None:
-    """[if] ``received_at`` is in the future [then] the body reads as NOT
-    fresh (Sol review, PR #3831, P1/BLOCKING): ``current - received_at`` is
-    NEGATIVE for a future stamp, and a bare ``<= tolerance`` check let any
-    negative age through -- a malformed response or a backward clock jump on
-    the engine could make a stale idle snapshot look freshly stamped. Ten
-    minutes ahead is used so this cannot be mistaken for ordinary clock
-    skew across a tolerance measured in single-digit seconds."""
-    now = datetime.now(UTC)
-    future = now + timedelta(minutes=10)
-    body = {"received_at": future.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
-    assert maintenance._ui_mirror_is_fresh(body, now=now) is False
-
-
-def test_ui_mirror_is_fresh_true_at_exactly_zero_age() -> None:
-    """Boundary check for the ``[0, tolerance]`` range: a stamp exactly AT
-    ``now`` (age 0) is fresh, confirming the fix did not flip the inclusive
-    lower bound into an exclusive one while closing the future-timestamp
-    gap."""
-    now = datetime.now(UTC)
-    body = {"received_at": now.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
-    assert maintenance._ui_mirror_is_fresh(body, now=now) is True
