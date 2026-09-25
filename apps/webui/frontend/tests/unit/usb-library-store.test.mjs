@@ -131,6 +131,7 @@ async function handle(req, res) {
 
 let store;
 let PaneStore;
+let canMutatePlaylist;
 let effects;
 let hitsAtImport;
 
@@ -155,7 +156,9 @@ before(async () => {
 
 	store = await loadTypeScriptModule('src/lib/rb/usb-library.svelte.ts', { viteApiBase: apiBase });
 	hitsAtImport = hits.length;
-	({ PaneStore } = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts'));
+	({ PaneStore, canMutatePlaylist } = await loadTypeScriptModule(
+		'src/lib/components/rb/browser/pane-contract.svelte.ts'
+	));
 });
 
 after(async () => {
@@ -268,7 +271,7 @@ test('a payload for a different stick is rejected as malformed', async () => {
 	await assert.rejects(store.ensureUsbLibrary(uuid), (exc) => exc.code === 'USB_LIBRARY_MALFORMED');
 });
 
-test('a stick pane loads in the stick order, titled by stick, through its load token', async () => {
+test('a stick pane loads in the stick order, titled by stick, read only', async () => {
 	const panes = [];
 	const pane = await loadedPane(UUID_A, 'pl-1', panes);
 	assert.equal(pane.loading, false);
@@ -279,7 +282,9 @@ test('a stick pane loads in the stick order, titled by stick, through its load t
 		pane.rows.map((r) => r.stable_id),
 		[`usb-${UUID_A}-3`, `usb-${UUID_A}-1`]
 	);
-
+	// Read only: no etag, so BrowserPanel offers no remove or reorder on it.
+	assert.equal(pane.etag, '');
+	assert.equal(canMutatePlaylist(pane), false);
 });
 
 test('a newer selection wins over a stick read still in flight', async () => {
