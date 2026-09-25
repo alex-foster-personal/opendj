@@ -288,6 +288,36 @@ def test_process_endpoint_labels_members_by_opendj_name(tmp_path: Path) -> None:
     assert "opendj-engine" in names
 
 
+@pytest.mark.requirement("PERFMODE-14")
+def test_process_endpoint_tags_each_member_with_its_source(tmp_path: Path) -> None:
+    """[if] live and probe-log members merge [then] each names its source, [else stop]."""
+    record = _captured_process_record()
+    record["processes"] = [
+        {"pid": 11, "role": "python-engine", "physical_footprint_mb": 151.4,
+         "command": "opendj-engine"},
+        {"pid": 99, "role": "desktop-shell", "physical_footprint_mb": 2.7,
+         "command": "opendj-desktop"},
+    ]
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    live = [{"name": "opendj-engine", "rss_mb": 53.8}, {"name": "unnamed"}]
+    with (
+        patch(
+            "apps.webui.server.routes.performance_telemetry.live_process_family_state",
+            return_value=(live, {11, 12}),
+        ),
+        TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client,
+    ):
+        members = client.get("/api/v1/performance/telemetry/processes").json()["members"]
+
+    assert [(m["name"], m["source"]) for m in members] == [
+        ("opendj-engine", "live"),
+        ("unnamed", "live"),
+        ("opendj-desktop", "probe_log"),
+    ]
+
+
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
     """[if] a probe log includes a WebKit helper without [then] endpoint lists it, [else stop]."""
