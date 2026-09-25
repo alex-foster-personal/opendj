@@ -308,7 +308,10 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
     """
     started = time.perf_counter()
     with _stick_errors():
-        opened = open_stick_library(_volume_uuid_from_id(volume_id), _stick_scan(request))
+        # The gate first, as on every track route: a gated-off build answers
+        # the volume list's 503 whatever the volume id looks like.
+        scan = _stick_scan(request)
+        opened = open_stick_library(_volume_uuid_from_id(volume_id), scan)
     library = opened.library
     return UsbStickLibraryOut(
         volume_id=opened.stick.volume_id,

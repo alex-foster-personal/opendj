@@ -216,6 +216,11 @@ def test_every_stick_route_answers_the_volume_lists_refusal_when_gated_off(
         assert listing.status_code == 503
         for url in (
             f"{API}/volumes/{VOLUME_ID}/library",
+            # Bad ids too: the gate answers before any id is parsed.
+            f"{API}/volumes/path:{NO_UUID_NAME}/library",
+            f"{API}/volumes/vol:{STICK_UUID.lower()}/library",
+            f"{API}/volumes/garbage/library",
+            f"{API}/tracks/garbage",
             *(_track_url(1, suffix) for suffix in _TRACK_SUFFIXES),
         ):
             response = store_client.get(url)
