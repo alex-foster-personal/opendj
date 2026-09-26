@@ -10,6 +10,7 @@ import {
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setPreviewBeatSync,
+	clearConfirmPref,
 	setConfirmPref,
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
@@ -321,7 +322,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'confirm.playlist_drop_mode':
 			if (value === 'ask') {
-				setConfirmPref('playlist_drop_mode', undefined);
+				clearConfirmPref('playlist_drop_mode');
 			} else if (value === 'add' || value === 'move') {
 				setConfirmPref('playlist_drop_mode', value);
 			} else {

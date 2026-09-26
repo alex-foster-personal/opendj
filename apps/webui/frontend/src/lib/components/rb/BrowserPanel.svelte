@@ -3636,8 +3636,8 @@
 			browserConfirmPending?.resolve({ ok: true, ...opts });
 			browserConfirmPending = null;
 		}}
-		onSecondary={() => {
-			browserConfirmPending?.resolve({ ok: false, remember: false, setDefault: false });
+		onSecondary={(opts) => {
+			browserConfirmPending?.resolve({ ok: false, ...opts });
 			browserConfirmPending = null;
 		}}
 	/>

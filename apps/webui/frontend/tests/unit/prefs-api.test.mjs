@@ -526,6 +526,89 @@ test('hydrateConfirmPrefsFromDisk applies jog_radial_waveform from disk', async 
 	assert.equal(prefs.uiPrefs.jog_radial_waveform, true);
 });
 
+test('clearConfirmPref PUTs null deletion marker for one confirm key', async () => {
+	const storage = installPrefsStorage();
+	try {
+		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+		isolated.uiPrefs.confirm = { playlist_drop_mode: 'add', delete_playlist: false };
+		let body;
+		let release;
+		const gate = new Promise((resolve) => {
+			release = resolve;
+		});
+		globalThis.fetch = async (request) => {
+			body = await request.clone().json();
+			release();
+			return jsonResponse({ theme: 'dark', confirm: {} });
+		};
+
+		isolated.clearConfirmPref('playlist_drop_mode');
+		await gate;
+
+		assert.equal(isolated.uiPrefs.confirm.playlist_drop_mode, undefined);
+		assert.equal(isolated.uiPrefs.confirm.delete_playlist, false);
+		assert.deepEqual(body, { confirm: { playlist_drop_mode: null } });
+	} finally {
+		storage.restore();
+	}
+});
+
+test('hydrateConfirmPrefsFromDisk ignores invalid confirm values for known keys', async () => {
+	prefs.uiPrefs.confirm = { delete_playlist: true, playlist_drop_mode: 'add' };
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			theme: 'dark',
+			confirm: {
+				delete_playlist: 'move',
+				playlist_drop_mode: false,
+				dblclick_load_play: null
+			}
+		});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.confirm.delete_playlist, true);
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'add');
+	assert.equal(prefs.uiPrefs.confirm.dblclick_load_play, undefined);
+});
+
+test('setLibraryWatcherFolders fires PUT with library_watcher_folders body', async () => {
+	let body;
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	globalThis.fetch = async (request) => {
+		body = await request.clone().json();
+		release();
+		return jsonResponse({ library_watcher_folders: ['/Users/dev/watch-a'] });
+	};
+
+	prefs.setLibraryWatcherFolders(['/Users/dev/watch-a']);
+	await gate;
+
+	assert.deepEqual(body, { library_watcher_folders: ['/Users/dev/watch-a'] });
+	assert.deepEqual(prefs.uiPrefs.library_watcher_folders, ['/Users/dev/watch-a']);
+});
+
+test('hydrateConfirmPrefsFromDisk applies library_watcher_folders from GET', async () => {
+	prefs.uiPrefs.library_watcher_folders = [];
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			theme: 'dark',
+			library_watcher_folders: ['/Users/dev/watch-a', '/Users/dev/watch-b']
+		});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.deepEqual(prefs.uiPrefs.library_watcher_folders, [
+		'/Users/dev/watch-a',
+		'/Users/dev/watch-b'
+	]);
+});
+
 // Real-http-transport write-ordering tests (Codex P2/P1 on #1503, and the
 // cross-setter follow-on from issue #1578) live in
 // prefs-write-ordering.test.mjs - split out once a second such test pushed

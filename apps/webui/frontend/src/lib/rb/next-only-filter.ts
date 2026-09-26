@@ -6,6 +6,9 @@ import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
 import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
 
+/** Same-BPM mode: one-decimal presentation tolerance, not the symmetric ±window. */
+export const SAME_BPM_TOLERANCE = 0.1;
+
 /** Pin 007fed0da025 (the maintainer, Wed 2 Sep 2026): only a tiny exact search result
  * may be shown outside active filters. */
 export const SEARCH_FILTER_FALLBACK_MAX_ROWS = 2;
@@ -83,12 +86,13 @@ export function bpmMatchesCompatiblePrefs(
 	) {
 		return false;
 	}
+	if (prefs.bpm_direction === 'same') {
+		return Math.abs(candidateBpm - refBpm) <= SAME_BPM_TOLERANCE;
+	}
 	const window = prefs.bpm_window_bpm;
 	const delta = candidateBpm - refBpm;
 	let within = false;
-	if (prefs.bpm_direction === 'same') {
-		within = Math.abs(delta) <= window;
-	} else if (prefs.bpm_direction === 'above') {
+	if (prefs.bpm_direction === 'above') {
 		within = delta >= 0 && delta <= window;
 	} else if (prefs.bpm_direction === 'below') {
 		within = delta <= 0 && -delta <= window;

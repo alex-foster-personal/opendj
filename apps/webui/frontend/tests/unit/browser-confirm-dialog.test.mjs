@@ -15,4 +15,18 @@ describe('browser-confirm-dialog', () => {
 		assert.match(src, /Don't show this again/);
 		assert.match(src, /Default to this/);
 	});
+
+	it('forwards checkbox state through the secondary (Move) callback', () => {
+		const dialogSrc = readFileSync(
+			join(root, 'src/lib/components/rb/browser/BrowserConfirmDialog.svelte'),
+			'utf8'
+		);
+		const panelSrc = readFileSync(
+			join(root, 'src/lib/components/rb/BrowserPanel.svelte'),
+			'utf8'
+		);
+		assert.match(dialogSrc, /onSecondary\?\.\(\{ remember, setDefault \}\)/);
+		assert.match(panelSrc, /onSecondary=\{\(opts\) =>/);
+		assert.match(panelSrc, /resolve\(\{ ok: false, \.\.\.opts \}\)/);
+	});
 });

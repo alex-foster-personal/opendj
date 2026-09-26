@@ -22,7 +22,7 @@
 		showDefault?: boolean;
 		defaultLabel?: string;
 		onPrimary: (opts: { remember: boolean; setDefault: boolean }) => void;
-		onSecondary?: () => void;
+		onSecondary?: (opts: { remember: boolean; setDefault: boolean }) => void;
 	} = $props();
 
 	let remember = $state(false);
@@ -36,7 +36,7 @@
 	}
 
 	function _secondary(): void {
-		onSecondary?.();
+		onSecondary?.({ remember, setDefault });
 		open = false;
 		remember = false;
 		setDefault = false;

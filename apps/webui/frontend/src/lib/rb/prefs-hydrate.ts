@@ -69,12 +69,49 @@ export function setTopbarDiskPref(
 	void sync({ [key]: next });
 }
 
+/** Live confirm map: missing keys mean "ask"; no null members. */
+export type LiveConfirmPrefs = {
+	delete_playlist?: boolean;
+	playlist_drop_mode?: 'add' | 'move';
+	dblclick_load_play?: boolean;
+};
+
+/** Disk/wire confirm patch: null deletes a key; values are per-key typed. */
+export type DiskConfirmPatch = {
+	delete_playlist?: boolean | null;
+	playlist_drop_mode?: 'add' | 'move' | null;
+	dblclick_load_play?: boolean | null;
+};
+
+function _hydrateConfirmFromDisk(uiPrefs: PrefsHydrateTarget, diskConfirm: DiskConfirmPatch): void {
+	const next: LiveConfirmPrefs & Record<string, unknown> = { ...uiPrefs.confirm };
+	for (const [key, value] of Object.entries(diskConfirm)) {
+		if (value === null) {
+			delete next[key];
+			continue;
+		}
+		if (value === undefined) continue;
+		if (key === 'delete_playlist' && typeof value === 'boolean') {
+			next.delete_playlist = value;
+			continue;
+		}
+		if (key === 'playlist_drop_mode' && (value === 'add' || value === 'move')) {
+			next.playlist_drop_mode = value;
+			continue;
+		}
+		if (key === 'dblclick_load_play' && typeof value === 'boolean') {
+			next.dblclick_load_play = value;
+			continue;
+		}
+		if (typeof value === 'boolean') {
+			next[key] = value;
+		}
+	}
+	uiPrefs.confirm = next;
+}
+
 export type DiskPrefsPatch = {
-	confirm?: {
-		delete_playlist?: boolean;
-		playlist_drop_mode?: 'add' | 'move';
-		dblclick_load_play?: boolean;
-	};
+	confirm?: DiskConfirmPatch;
 	theme?: UiTheme;
 	hide_todo_settings?: boolean;
 	auto_sync?: AutoSyncPrefs;
@@ -153,7 +190,7 @@ export function createDiskPrefsSync() {
 export const syncDiskPrefs = createDiskPrefsSync();
 
 export interface PrefsHydrateTarget {
-	confirm: DiskPrefsPatch['confirm'] & Record<string, unknown>;
+	confirm: LiveConfirmPrefs & Record<string, unknown>;
 	theme: UiTheme;
 	hide_todo_settings: boolean;
 	auto_sync: AutoSyncPrefs;
@@ -188,6 +225,7 @@ export interface PrefsHydrateTarget {
 	remixes_filter: boolean;
 	vocals_filter: boolean;
 	available_offline_filter: boolean;
+	library_watcher_folders: string[];
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -216,8 +254,8 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 	return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		try {
 			const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-			if (body.confirm !== undefined) {
-				uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
+			if (body.confirm !== undefined && typeof body.confirm === 'object') {
+				_hydrateConfirmFromDisk(uiPrefs, body.confirm);
 			}
 			if (body.theme === 'dark' || body.theme === 'light') {
 				uiPrefs.theme = body.theme;
@@ -328,6 +366,11 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			hydrateMidiEnabledFromDisk(body);
 			if (typeof body.master_muted === 'boolean') {
 				hydrateMasterMutedFromDisk(body.master_muted);
+			}
+			if (Array.isArray(body.library_watcher_folders)) {
+				uiPrefs.library_watcher_folders = body.library_watcher_folders.filter(
+					(p): p is string => typeof p === 'string'
+				);
 			}
 			persist();
 		} catch {

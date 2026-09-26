@@ -759,17 +759,23 @@ export function setLibraryWatcherFolders(paths: readonly string[]): void {
 	void _syncDiskPrefs({ library_watcher_folders: uiPrefs.library_watcher_folders });
 }
 
+export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): void {
+	delete uiPrefs.confirm[key];
+	_persist();
+	void _syncDiskPrefs({ confirm: { [key]: null } });
+}
+
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
 	value: RbUiPrefs['confirm'][K] | undefined
 ): void {
 	if (value === undefined) {
-		delete uiPrefs.confirm[key];
-	} else {
-		uiPrefs.confirm[key] = value;
+		clearConfirmPref(key);
+		return;
 	}
+	uiPrefs.confirm[key] = value;
 	_persist();
-	void _syncDiskPrefs({ confirm: uiPrefs.confirm });
+	void _syncDiskPrefs({ confirm: { [key]: value } });
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */

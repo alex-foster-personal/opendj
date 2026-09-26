@@ -14097,6 +14097,8 @@ export interface components {
              * @enum {string}
              */
             library_density: "compact" | "cosy";
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[];
             /**
              * Lyrics Deck Line
              * @default true
@@ -14221,6 +14223,8 @@ export interface components {
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Library Density */
             library_density?: ("compact" | "cosy") | null;
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[] | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */

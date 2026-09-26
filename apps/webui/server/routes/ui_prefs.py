@@ -473,6 +473,32 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
+    if "library_watcher_folders" not in raw:
+        return []
+    value = raw["library_watcher_folders"]
+    if not isinstance(value, list):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_watcher_folders must be a list of strings",
+            },
+        )
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "library_watcher_folders must be a list of strings",
+                },
+            )
+        out.append(item)
+    return out
+
+
 def _parse_gig_helper(raw: dict[str, Any]) -> str:
     if "gig_helper" not in raw:
         return _DEFAULT_GIG_HELPER
@@ -509,6 +535,7 @@ def _load(path: Path) -> dict[str, Any]:
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
+            "library_watcher_folders": [],
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -592,6 +619,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
+        "library_watcher_folders": _parse_library_watcher_folders(raw),
     }
 
 
@@ -670,6 +698,7 @@ class UiPrefsOut(BaseModel):
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
+    library_watcher_folders: list[str] = Field(default_factory=list)
 
 
 class UiPrefsPatch(BaseModel):
@@ -709,6 +738,7 @@ class UiPrefsPatch(BaseModel):
     midi_enabled: bool | None = None
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
+    library_watcher_folders: list[str] | None = None
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -820,6 +850,10 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["deck_right_mirror"] = body.deck_right_mirror
     if body.playlist_tree_view is not None:
         current["playlist_tree_view"] = body.playlist_tree_view
+    if body.library_watcher_folders is not None:
+        current["library_watcher_folders"] = _parse_library_watcher_folders(
+            {"library_watcher_folders": body.library_watcher_folders}
+        )
     return current
 
 

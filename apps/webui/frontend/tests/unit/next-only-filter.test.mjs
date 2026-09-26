@@ -96,4 +96,23 @@ describe('next-only-filter', () => {
 			true
 		);
 	});
+
+	it('same BPM mode uses equality tolerance, not the symmetric window or half/double', () => {
+		const { bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS, SAME_BPM_TOLERANCE } = mod;
+		const samePrefs = {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			bpm_direction: 'same',
+			bpm_window_bpm: 20,
+			allow_half_double: true,
+			bpm_enabled: true
+		};
+		assert.equal(SAME_BPM_TOLERANCE, 0.1);
+		assert.equal(bpmMatchesCompatiblePrefs(128, 128, samePrefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(128.05, 128, samePrefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(110, 128, samePrefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(127, 128, samePrefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(64, 128, samePrefs), false);
+		const bothPrefs = { ...samePrefs, bpm_direction: 'both' };
+		assert.equal(bpmMatchesCompatiblePrefs(110, 128, bothPrefs), true);
+	});
 });

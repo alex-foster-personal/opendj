@@ -21212,6 +21212,13 @@
             "title": "Library Density",
             "type": "string"
           },
+          "library_watcher_folders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Library Watcher Folders",
+            "type": "array"
+          },
           "lyrics_deck_line": {
             "default": true,
             "title": "Lyrics Deck Line",
@@ -21511,6 +21518,20 @@
               }
             ],
             "title": "Library Density"
+          },
+          "library_watcher_folders": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Watcher Folders"
           },
           "lyrics_deck_line": {
             "anyOf": [

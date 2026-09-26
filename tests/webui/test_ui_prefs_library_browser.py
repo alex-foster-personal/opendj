@@ -161,6 +161,115 @@ def test_ui_prefs_rejects_wheel_sensitivity_out_of_range(prefs_client: TestClien
     assert r.status_code == 422
 
 
+def test_ui_prefs_defaults_include_empty_library_watcher_folders(
+    prefs_client: TestClient,
+) -> None:
+    body = prefs_client.get("/api/v1/ui-prefs").json()
+    assert body["library_watcher_folders"] == []
+
+
+@pytest.mark.requirement("LIBM-129")
+def test_ui_prefs_library_watcher_folders_round_trips_to_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] watcher folders are PUT [then] they persist in ui-prefs.json, [else stop]."""
+    paths = ["/Users/dev/watch-a", "/Users/dev/watch-b"]
+    r = prefs_client.put("/api/v1/ui-prefs", json={"library_watcher_folders": paths})
+    assert r.status_code == 200
+    assert r.json()["library_watcher_folders"] == paths
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["library_watcher_folders"] == paths
+    assert prefs_client.get("/api/v1/ui-prefs").json()["library_watcher_folders"] == paths
+
+
+@pytest.mark.requirement("LIBM-129")
+def test_ui_prefs_library_watcher_folders_put_preserves_sibling_prefs(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] watcher folders are PUT [then] unrelated prefs remain, [else stop]."""
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "theme": "light",
+                "hide_broken_links": True,
+                "library_watcher_folders": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    paths = ["/Users/dev/watch-a"]
+    r = prefs_client.put("/api/v1/ui-prefs", json={"library_watcher_folders": paths})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["library_watcher_folders"] == paths
+    assert body["theme"] == "light"
+    assert body["hide_broken_links"] is True
+    on_disk = json.loads(path.read_text())
+    assert on_disk["library_watcher_folders"] == paths
+    assert on_disk["theme"] == "light"
+    assert on_disk["hide_broken_links"] is True
+
+
+@pytest.mark.requirement("LIBM-129")
+def test_ui_prefs_library_watcher_folders_clear_round_trips(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] watcher folders are cleared [then] GET returns [], [else stop]."""
+    prefs_client.put(
+        "/api/v1/ui-prefs", json={"library_watcher_folders": ["/Users/dev/watch"]}
+    )
+    r = prefs_client.put("/api/v1/ui-prefs", json={"library_watcher_folders": []})
+    assert r.status_code == 200
+    assert r.json()["library_watcher_folders"] == []
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["library_watcher_folders"] == []
+
+
+def test_ui_prefs_confirm_null_deletes_playlist_drop_mode_on_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "theme": "dark",
+                "confirm": {"playlist_drop_mode": "add", "delete_playlist": False},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    r = prefs_client.put(
+        "/api/v1/ui-prefs", json={"confirm": {"playlist_drop_mode": None}}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "playlist_drop_mode" not in body["confirm"]
+    assert body["confirm"]["delete_playlist"] is False
+    on_disk = json.loads(path.read_text())
+    assert "playlist_drop_mode" not in on_disk["confirm"]
+    assert on_disk["confirm"]["delete_playlist"] is False
+    assert prefs_client.get("/api/v1/ui-prefs").json()["confirm"] == {
+        "delete_playlist": False
+    }
+
+
+def test_ui_prefs_rejects_malformed_library_watcher_folders_on_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"theme": "dark", "library_watcher_folders": "not-a-list"}) + "\n",
+        encoding="utf-8",
+    )
+    assert prefs_client.get("/api/v1/ui-prefs").status_code == 422
+
+
 def test_ui_prefs_reads_a_blob_written_before_the_library_browser_keys_existed(
     prefs_client: TestClient, tmp_path: Path
 ) -> None:
