@@ -22,8 +22,9 @@ one thing whose only observable effect is to break the filter.
 
 `beat_this_runner.py` is a PEP 723 script. In a checkout it runs under
 ``uv run --no-project --script``; in a packaged build there is no ``uv``, and
-`native-analysis-queue` provisions an interpreter that already carries the
-``analysis-backfill`` closure. Both are supported and the choice is explicit:
+the payload ships an interpreter carrying the runner's own locked PEP 723
+closure (``scripts/payload_beatgrid.py``, NATIVE-10). Both are supported and
+the choice is explicit:
 set ``MDT_BEATGRID_RUNNER_PYTHON`` to that interpreter and the runner is invoked
 as a plain script under it; leave it unset in a checkout and ``uv`` is used. A
 missing ``uv`` with no interpreter named is a loud failure naming both, never a
