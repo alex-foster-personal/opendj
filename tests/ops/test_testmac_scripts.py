@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -190,33 +191,26 @@ def _run_stats_snippet(agent_cli: str) -> str:
     return body.replace('\\"', '"').replace("\\$", "$")
 
 
-def _age(path: Path, seconds_ago: int) -> None:
-    stamp = time.time() - seconds_ago
-    os.utime(path, (stamp, stamp))
-
-
 def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path) -> None:
-    """[if] after a driver switch verify.sh still counts, or blames, attempts made before
-    the plist was last written [then] a new driver passes on old completions or reads as
-    walled on the old driver's wall, [else stop]. Runs verify.sh's real remote snippet."""
+    """[if] after a driver switch or reinstall verify.sh counts, or reads as latest, an
+    attempt that STARTED before the plist was last written [then] a new driver passes on
+    old completions or is blamed for the old driver's wall, [else stop]. Attempts are
+    keyed on the UTC start stamp in their log name. Runs verify.sh's real remote snippet."""
     runs = tmp_path / ".local/state/af-agt/runs"
     runs.mkdir(parents=True)
     plist = tmp_path / "Library/LaunchAgents/opendj-agt-persona-loop.plist"
     plist.parent.mkdir(parents=True)
-    env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
+    plist.write_text("<plist/>", encoding="utf-8")
+    written = datetime(2026, 9, 26, 2, 5, 0, tzinfo=UTC).timestamp()
+    os.utime(plist, (written, written))
+    env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "TZ": "Europe/London"}
 
-    def attempt(name: str, cli: str, log: str, started_ago: int, ended_ago: int) -> Path:
-        run_dir = runs / name
-        run_dir.mkdir()
-        # run.provenance is written once as the attempt starts; the rest as it ends.
-        (run_dir / "run.provenance").write_text('{"origin": "live"}', encoding="utf-8")
-        (run_dir / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
-        (run_dir / "agent.cli").write_text(f"{cli}\n", encoding="utf-8")
+    def attempt(name: str, log: str, cli: str | None) -> None:
         (runs / f"{name}.log").write_text(log, encoding="utf-8")
-        _age(run_dir / "run.provenance", started_ago)
-        for path in (run_dir / "run-state.json", run_dir / "agent.cli", runs / f"{name}.log"):
-            _age(path, ended_ago)
-        return run_dir
+        if cli is not None:  # None: refused before its bundle dir existed
+            (runs / name).mkdir()
+            (runs / name / "run-state.json").write_text('{"state": "completed"}', "utf-8")
+            (runs / name / "agent.cli").write_text(f"{cli}\n", encoding="utf-8")
 
     def stats(agent_cli: str) -> list[str]:
         done = subprocess.run(
@@ -228,18 +222,18 @@ def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path)
         )
         return done.stdout.split()
 
-    attempt("20260926T020000Z-hostile-s1", "claude", "Claude CLI is walled: weekly\n", 900, 600)
-    plist.write_text("<plist/>", encoding="utf-8")
-    _age(plist, 300)
-    assert stats("codex") == ["0", "0"], "pre-switch attempts leaked into the new driver's view"
-    # An attempt in flight across a same-driver reinstall: started before the plist was
-    # rewritten, completed after it. It is not post-configuration evidence.
-    attempt("20260926T021000Z-hostile-s2", "claude", "ok\n", 400, 200)
-    assert stats("claude")[1] == "0", "an attempt started before the reinstall was counted"
-    new = attempt("20260926T030000Z-hostile-s3", "codex", "ok\n", 100, 50)
-    assert stats("codex") == ["2", "1", f"{new.name}.log"]
-    # Control: the same post-switch run does not count for a driver it was not run by.
-    assert stats("claude")[1] == "0"
+    attempt("20260926T020000Z-hostile-s1", "Claude CLI is walled: weekly\n", "claude")
+    # In flight across the reinstall: started 02:04:00Z, before the 02:05:00Z plist, and
+    # its log and completion are written only now, long after it.
+    attempt("20260926T020400Z-hostile-s2", "Claude CLI is walled: weekly\n", "claude")
+    assert stats("claude") == ["0", "0"], "an attempt started before the plist leaked in"
+    attempt("20260926T030000Z-hostile-s3", "ok\n", "codex")
+    assert stats("codex") == ["1", "1", "20260926T030000Z-hostile-s3.log"]
+    # A later attempt refused before its bundle existed is still the latest attempt.
+    attempt("20260926T031000Z-hostile-s4", "Claude CLI refused: ANTHROPIC_BASE_URL\n", None)
+    assert stats("codex") == ["2", "1", "20260926T031000Z-hostile-s4.log"]
+    # Control: the post-switch completion does not count for a driver it was not run by.
+    assert stats("claude")[:2] == ["2", "0"]
 
 
 def test_verify_reports_a_dead_engine_before_a_wall() -> None:
