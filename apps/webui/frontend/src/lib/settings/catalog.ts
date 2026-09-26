@@ -19,8 +19,10 @@ import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stub
 
 /** Canonical PARITY-TODO stub title. Declared here, not just in
  * catalog-parity-stubs.ts, so the shared-constant drift check (H13 + M20 in
- * inert-controls.test.mjs) still finds it verbatim in this module. */
-export const INERT_TITLE = 'not implemented - see PARITY-TODO';
+ * inert-controls.test.mjs) still finds it verbatim in this module. Not
+ * exported: the test reads this file's own source text, it never imports
+ * this constant, and an unused export is its own quality-gate regression. */
+const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },

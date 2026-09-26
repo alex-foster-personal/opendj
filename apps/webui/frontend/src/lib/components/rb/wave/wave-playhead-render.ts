@@ -3,9 +3,6 @@
  * Split from render.ts to keep file-size ratchet under the frontend ceiling.
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
-import { PLAYHEAD_COLORS } from './render';
-
-export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
 
 export interface MasterDownbeatOverlay {
 	masterBeats: readonly AnlzBeat[];
@@ -16,23 +13,26 @@ export interface MasterDownbeatOverlay {
 }
 
 /** Fixed center playhead. Always drawn (busy waveforms + empty decks).
- * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red). */
-export function drawPlayhead(
+ * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red).
+ * Colours are supplied by the caller (render.ts owns PLAYHEAD_COLORS) rather
+ * than imported, so this module never imports back from render.ts. */
+export function drawPlayheadWithColors(
 	ctx: CanvasRenderingContext2D,
 	w: number,
 	h: number,
-	tone: PlayheadTone = 'now',
+	colors: Record<string, string>,
+	tone: string = 'now',
 	timeMs: number = 0
 ): void {
 	const centerX = Math.round(w / 2);
 	if (tone === 'masterSynced') {
-		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
-		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.synced, centerX, h);
-		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
-		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.synced, centerX, h);
+		_drawPlayheadGlow(ctx, colors.master, centerX - 1, h);
+		_drawPlayheadGlow(ctx, colors.synced, centerX, h);
+		_drawPlayheadCore(ctx, colors.master, centerX - 1, h);
+		_drawPlayheadCore(ctx, colors.synced, centerX, h);
 		return;
 	}
-	const color = PLAYHEAD_COLORS[tone];
+	const color = colors[tone];
 	let glow = 0.45;
 	let core = 1;
 	if (tone === 'drift') {

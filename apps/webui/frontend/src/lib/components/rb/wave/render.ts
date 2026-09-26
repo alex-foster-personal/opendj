@@ -27,17 +27,17 @@ import {
 import {
 	drawGhostSeekPlayhead,
 	drawMasterDownbeatOverlay,
-	drawPlayhead,
-	type MasterDownbeatOverlay,
-	type PlayheadTone
+	drawPlayheadWithColors,
+	type MasterDownbeatOverlay
 } from './wave-playhead-render';
 
-export { drawPlayhead, type PlayheadTone } from './wave-playhead-render';
-
-/** Beat Sync follower playhead colours, keyed by PlayheadTone. Declared here
- * (not in wave-playhead-render.ts, which imports it back) so this module's
- * own source text still carries the literal tests/unit/stopped-deck-
- * presentation.test.mjs reads for the stopped-deck-is-white regression. */
+/** Beat Sync follower playhead colours, keyed by PlayheadTone. Declared here,
+ * not in wave-playhead-render.ts: that module draws with whatever colour map
+ * it is handed (drawPlayheadWithColors) precisely so it never imports back
+ * from this file - a real frontend.import_cycles regression, not a style
+ * preference. This is also why this module's own source text still carries
+ * the literal tests/unit/stopped-deck-presentation.test.mjs reads for the
+ * stopped-deck-is-white regression. */
 export const PLAYHEAD_COLORS = {
 	stopped: '#fff',
 	now: '#e23a32',
@@ -46,6 +46,18 @@ export const PLAYHEAD_COLORS = {
 	synced: '#7ed992',
 	drift: '#ff2d2d'
 } as const;
+
+export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
+
+export function drawPlayhead(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	tone: PlayheadTone = 'now',
+	timeMs: number = 0
+): void {
+	drawPlayheadWithColors(ctx, w, h, PLAYHEAD_COLORS, tone, timeMs);
+}
 
 // Cue-marker painting, the wavestack palette and its WCAG contrast floor
 // live in ./cues (issue #877) - readPalette/WavePalette re-exported here so
