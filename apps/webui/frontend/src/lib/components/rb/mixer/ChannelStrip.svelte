@@ -454,8 +454,8 @@
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+		background: var(--rb-deck-hover-bg);
+		box-shadow: var(--rb-deck-hover-inset);
 	}
 	.strip.selected {
 		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
