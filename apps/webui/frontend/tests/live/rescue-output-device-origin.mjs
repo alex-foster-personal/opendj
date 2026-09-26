@@ -1,36 +1,41 @@
 /**
- * RESCUE-05 on real hardware: does a Crash Rescue sink saved under ONE origin
- * restore under ANOTHER, through the shipped restore path, in a real browser?
+ * RESCUE-05 end to end on real hardware: pick an output in the app on ONE
+ * origin, let the app's own ring writer capture it, then boot the app on
+ * ANOTHER origin and check that its own Crash Rescue auto-restore routes the
+ * master to the same physical output.
  *
  * Why live: the bug only exists where the browser salts device ids per origin
  * and the page origin changes per launch (the desktop shell's fresh loopback
- * port). Unit tests can replay the resolution logic; only a real browser with
- * real outputs can show an id captured on origin A failing on origin B and the
- * label bringing it back. Nothing here is simulated: the ids, labels, IPC
- * dispatcher, headphones.ts enumeration and auto-pin policy, and setSinkId are
- * the real ones, imported from the running dev server's module graph.
+ * port). Nothing here is simulated or hand-built. The pick goes through the
+ * app's IPC, the snapshot is built and posted by the production ring writer to
+ * the real engine ring, and the restore is the page's boot-time
+ * runPerformanceRescueAutoRestore reading that ring back. The ids and labels
+ * come from the real outputs.
  *
- * Run (from apps/webui/frontend, with the dev server up: `pnpm dev`):
+ * The two origins are one dev server reached as `localhost` and as
+ * `127.0.0.1`: different origins to the browser, so they get different salted
+ * ids, the same way two launches on two ports do.
+ *
+ * Run (from apps/webui/frontend, with the engine and `pnpm dev` up, and a
+ * FRESH engine data dir so no older snapshot is newer than the one this makes):
  *
  *   node tests/live/rescue-output-device-origin.mjs --url http://127.0.0.1:<frontend port>
  *   node tests/live/rescue-output-device-origin.mjs --url ... --channel msedge
  *
- * Origin A is a blank page this probe serves on another loopback port, standing
- * in for the crashed launch. Origin B is the app. Prints JSON; exit 0 PASS,
- * 1 FAIL, 2 UNAVAILABLE (no real labeled output, or this engine does not salt,
- * so the cross-origin case cannot be shown here).
+ * Prints JSON. Exit 0 PASS, 1 FAIL, 2 UNAVAILABLE (no suitable real output, or
+ * this engine does not salt per origin, so the case cannot be shown here).
  *
  * Regression lines:
- *  - if the NEGATIVE CONTROL (the foreign id handed straight to the selector)
- *    does not refuse, then this browser did not reproduce the bifrost1 defect and
- *    every other line proves nothing
- *  - if an id saved under origin A with its label is not restored under origin B
- *    as `restored_by_label` onto origin B's id for that label, RESCUE-05 is broken
- *  - if a saved output that is absent, or a legacy id-only snapshot, makes the
- *    restore throw, the bifrost1 boot abort is back
+ *  - if picking a sink while nothing plays writes no ring snapshot, a crash
+ *    after setting up outputs restores none of them
+ *  - if the boot restore on the second origin does not route the master to the
+ *    same labeled output under that origin's id, RESCUE-05 is broken
+ *  - if that boot throws "is not an enumerated headphone output", the bifrost1
+ *    boot abort is back
+ *  - NEGATIVE CONTROL: if the first origin's id handed straight to the selector
+ *    on the second origin is NOT refused, this browser did not reproduce the
+ *    defect and the lines above prove nothing
  */
-import { createServer } from 'node:http';
-
 import { chromium } from '@playwright/test';
 
 function arg(name, fallback = null) {
@@ -39,138 +44,96 @@ function arg(name, fallback = null) {
 }
 const APP_URL = arg('url');
 const CHANNEL = arg('channel', 'chromium');
-if (APP_URL === null) throw new Error('--url <frontend dev server origin> is required');
-const PSEUDO_DEVICE_IDS = new Set(['default', 'communications']);
-
+if (APP_URL === null) throw new Error('--url <frontend dev server origin on 127.0.0.1> is required');
+const ORIGIN_B = new URL(APP_URL).origin;
+const ORIGIN_A = ORIGIN_B.replace('127.0.0.1', 'localhost');
+if (ORIGIN_A === ORIGIN_B) throw new Error('--url must use 127.0.0.1 so localhost can serve as the other origin');
 const EXIT_CODE = { PASS: 0, FAIL: 1, UNAVAILABLE: 2 };
+const RESTORE_WAIT_MS = 30_000;
+/** Labels the enumeration policy would auto-pin as master on its own
+ * (outputLooksLikeSpeakers). Picking one of those could pass without the
+ * restore doing anything, so the probe never picks one. */
+const AUTO_PIN_LABEL = /speaker|built-in output|macbook/i;
 
-function serveBlankOrigin() {
-	return new Promise((resolve) => {
-		const server = createServer((_request, response) => {
-			response.writeHead(200, { 'content-type': 'text/html' });
-			response.end('<!doctype html><title>crashed-launch origin</title>');
-		});
-		server.listen(0, '127.0.0.1', () => resolve(server));
+async function openPerformance(context, origin, pageErrors) {
+	const page = await context.newPage();
+	page.on('pageerror', (error) => pageErrors.push(`${origin}: ${String(error)}`));
+	await page.goto(`${origin}/performance`);
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, null, { timeout: 60_000 });
+	return page;
+}
+
+/** captured_at_ms of the newest ring snapshot (0 when the ring is empty). Not a
+ * count: the ring is capped at 8 slots, so a count stops moving once it is full. */
+const newestSnapshotAt = (page) =>
+	page.evaluate(async () => {
+		const response = await fetch('/api/v1/rescue/snapshots');
+		if (!response.ok) throw new Error(`GET /api/v1/rescue/snapshots: HTTP ${response.status}`);
+		return (await response.json()).snapshots[0]?.captured_at_ms ?? 0;
 	});
-}
-
-const listOutputs = () =>
-	navigator.mediaDevices
-		.enumerateDevices()
-		.then((devices) =>
-			devices
-				.filter((device) => device.kind === 'audiooutput')
-				.map((device) => ({ id: device.deviceId, label: device.label }))
-		);
-
-/** One restore of a sink-only snapshot through the SHIPPED executeRescueRestore,
- * with its real defaults (IPC dispatcher, mirror query, toast store). Empty decks
- * and play mode, so nothing but the mixer and sink steps runs. */
-async function restoreSinkOnly(page, master) {
-	return page.evaluate(async (savedMaster) => {
-		const restore = await import('/src/lib/rb/rescue-restore.svelte.ts');
-		const snapshots = await import('/src/lib/rb/rescue-snapshot.ts');
-		const emptyDeck = (deck_id) => ({
-			deck_id,
-			stable_id: null,
-			source_path: null,
-			playing: false,
-			position_ms: 0,
-			beat_stamp: { kind: 'sample', position_ms: 0 },
-			pitch: 1,
-			pitch_range: 8,
-			master_tempo_enabled: true,
-			key_sync_enabled: false,
-			quantize_enabled: true,
-			beat_sync_enabled: true,
-			sync_mode: 'bar',
-			is_master: false,
-			cue_ms: null,
-			loop: null,
-			hot_cue_armed: null,
-			stems: {
-				vocal: { muted: false, solo: false, gain: 0.5 },
-				instrumental: { muted: false, solo: false, gain: 0.5 },
-				drums: { muted: false, solo: false, gain: 0.5 }
-			},
-			mixer_channel: {
-				trim: 0.5,
-				eq_high: 0.5,
-				eq_mid: 0.5,
-				eq_low: 0.5,
-				filter: 0.5,
-				fader: 1,
-				assign: 'THRU',
-				cue_enabled: false
-			}
-		});
-		const ipc = window.musicDjToolsPerformance;
-		const headphones = {
-			mix: 0,
-			level: 0.5,
-			output_mode: ipc.query().mixer.headphones.output_mode,
-			selected_output_device_id: null,
-			selected_master_output_device_id: savedMaster.device_id
-		};
-		if (savedMaster.label !== undefined) headphones.selected_master_output_device_label = savedMaster.label;
-		const snapshot = snapshots.parseRescueSnapshot({
-			schema: 1,
-			captured_at_ms: Date.now(),
-			reason: 'transport',
-			app_posture: 'gig',
-			master_deck: null,
-			playlist_id: null,
-			decks: { 1: emptyDeck(1), 2: emptyDeck(2), 3: emptyDeck(3), 4: emptyDeck(4) },
-			mixer: { crossfader: 0.5, master: ipc.query().mixer.master, headphones }
-		});
-		try {
-			const result = await restore.executeRescueRestore({ snapshot, mode: 'play' });
-			return {
-				threw: null,
-				sink: result.sinks.master,
-				mirror_master: ipc.query().mixer.headphones.selected_master_output_device_id
-			};
-		} catch (error) {
-			return { threw: String(error), sink: null, mirror_master: null };
-		}
-	}, master);
-}
 
 /** The whole measurement; returns a verdict instead of exiting, so the browser
- * and the foreign-origin server are always closed first. */
-async function probe(browser, originA) {
+ * is always closed first. */
+async function probe(browser) {
 	const context = await browser.newContext();
-	await context.grantPermissions(['microphone'], { origin: originA });
-	await context.grantPermissions(['microphone'], { origin: new URL(APP_URL).origin });
+	for (const origin of [ORIGIN_A, ORIGIN_B]) await context.grantPermissions(['microphone'], { origin });
+	const pageErrors = [];
 
-	const pageA = await context.newPage();
-	await pageA.goto(`${originA}/`);
-	const outputsA = await pageA.evaluate(listOutputs);
-	await pageA.close();
+	// Launch 1, origin A: pick an output the app would not pick by itself.
+	const pageA = await openPerformance(context, ORIGIN_A, pageErrors);
+	await pageA.evaluate(async () => {
+		const prefs = await import('/src/lib/rb/prefs.svelte.ts');
+		prefs.setAppPosture('gig');
+		await window.musicDjToolsPerformance.dispatch({ type: 'headphone_outputs_refresh' });
+	});
+	const stateA = await pageA.evaluate(() => window.musicDjToolsPerformance.query().mixer.headphones);
 	const labelCounts = new Map();
-	for (const output of outputsA) labelCounts.set(output.label, (labelCounts.get(output.label) ?? 0) + 1);
-	const chosen = outputsA.find(
-		(output) => !PSEUDO_DEVICE_IDS.has(output.id) && output.label !== '' && labelCounts.get(output.label) === 1
+	for (const output of stateA.outputs) labelCounts.set(output.label, (labelCounts.get(output.label) ?? 0) + 1);
+	const chosen = stateA.outputs.find(
+		(output) =>
+			!['default', 'communications'].includes(output.id) &&
+			output.label !== '' &&
+			labelCounts.get(output.label) === 1 &&
+			!AUTO_PIN_LABEL.test(output.label) &&
+			output.id !== stateA.selected_master_output_device_id
 	);
 	if (chosen === undefined) {
-		return { verdict: 'UNAVAILABLE', reason: 'no real audio output with a unique visible label', outputs_a: outputsA.length };
+		return {
+			verdict: 'UNAVAILABLE',
+			reason: 'no real output with a unique visible label that the auto-pin policy would not choose anyway',
+			outputs: stateA.outputs.map((output) => output.label)
+		};
 	}
+	const ringBefore = await newestSnapshotAt(pageA);
+	await pageA.evaluate(
+		(id) => window.musicDjToolsPerformance.dispatch({ type: 'headphone_master_select', device_id: id }),
+		chosen.id
+	);
+	await pageA.waitForTimeout(1_000);
+	const ringAfter = await newestSnapshotAt(pageA);
+	await pageA.close();
 
-	const pageB = await context.newPage();
-	const pageErrors = [];
-	pageB.on('pageerror', (error) => pageErrors.push(String(error)));
-	await pageB.goto(`${APP_URL}/performance`);
-	await pageB.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, null, { timeout: 60_000 });
+	// Launch 2, origin B: the page's own boot restore reads the ring back.
+	const pageB = await openPerformance(context, ORIGIN_B, pageErrors);
 	await pageB.evaluate(() => window.musicDjToolsPerformance.dispatch({ type: 'headphone_outputs_refresh' }));
 	const outputsB = await pageB.evaluate(() => window.musicDjToolsPerformance.query().mixer.headphones.outputs);
 	const sameDeviceB = outputsB.find((output) => output.label === chosen.label);
 	if (sameDeviceB === undefined) {
-		return { verdict: 'FAIL', reason: `label '${chosen.label}' missing under the app origin` };
+		return { verdict: 'FAIL', reason: `'${chosen.label}' is not enumerated under ${ORIGIN_B}` };
 	} else if (sameDeviceB.id === chosen.id) {
-		return { verdict: 'UNAVAILABLE', reason: 'this engine did not salt the id per origin; the cross-origin case cannot be shown' };
+		return { verdict: 'UNAVAILABLE', reason: 'this engine did not salt the id per origin; the case cannot be shown' };
+	}
+	let masterB = null;
+	const deadline = Date.now() + RESTORE_WAIT_MS;
+	while (Date.now() < deadline) {
+		masterB = await pageB.evaluate(
+			() => window.musicDjToolsPerformance.query().mixer.headphones.selected_master_output_device_id
+		);
+		if (masterB === sameDeviceB.id) break;
+		await pageB.waitForTimeout(250);
 	}
 
-	// NEGATIVE CONTROL: the pre-fix replay, the foreign id straight into the selector.
+	// NEGATIVE CONTROL: the pre-fix replay, origin A's id straight into the selector.
 	const control = await pageB.evaluate(async (foreignId) => {
 		try {
 			await window.musicDjToolsPerformance.dispatch({ type: 'headphone_master_select', device_id: foreignId });
@@ -180,48 +143,31 @@ async function probe(browser, originA) {
 		}
 	}, chosen.id);
 
-	const byLabel = await restoreSinkOnly(pageB, { device_id: chosen.id, label: chosen.label });
-	const absent = await restoreSinkOnly(pageB, {
-		device_id: chosen.id,
-		label: 'RESCUE-05 live probe: an output that is not plugged in'
-	});
-	const legacy = await restoreSinkOnly(pageB, { device_id: chosen.id });
-
 	const checks = {
-		control_refused_foreign_id: control !== null && /not an enumerated headphone output/.test(control),
-		by_label_restored_onto_origin_b_id:
-			byLabel.threw === null &&
-			byLabel.sink.outcome === 'restored_by_label' &&
-			byLabel.sink.device_id === sameDeviceB.id &&
-			byLabel.mirror_master === sameDeviceB.id,
-		absent_reported_not_thrown: absent.threw === null && absent.sink.outcome === 'not_found',
-		absent_names_output_in_effect: absent.threw === null && absent.sink.device_id === absent.mirror_master,
-		legacy_id_only_reported_not_thrown: legacy.threw === null && legacy.sink.outcome === 'not_found',
-		no_uncaught_enumeration_error: !pageErrors.some((error) => /enumerated headphone output/.test(error))
+		pick_wrote_ring_snapshot: ringAfter > ringBefore,
+		boot_restore_routed_master_to_same_output: masterB === sameDeviceB.id,
+		no_uncaught_enumeration_error: !pageErrors.some((error) => /enumerated headphone output/.test(error)),
+		control_refused_foreign_id: control !== null && /not an enumerated headphone output/.test(control)
 	};
 	return {
 		verdict: Object.values(checks).every(Boolean) ? 'PASS' : 'FAIL',
 		chosen_label: chosen.label,
 		id_origin_a: chosen.id.slice(0, 12),
 		id_origin_b: sameDeviceB.id.slice(0, 12),
+		master_after_boot_b: masterB === null ? null : masterB.slice(0, 12),
+		ring_newest_captured_at_ms: { before: ringBefore, after: ringAfter },
 		control,
-		by_label: byLabel,
-		absent,
-		legacy,
 		page_errors: pageErrors,
 		checks
 	};
 }
 
-const foreignOrigin = await serveBlankOrigin();
-const originA = `http://127.0.0.1:${foreignOrigin.address().port}`;
 const browser = await chromium.launch({ channel: CHANNEL === 'chromium' ? undefined : CHANNEL });
 let outcome;
 try {
-	outcome = await probe(browser, originA);
+	outcome = await probe(browser);
 } finally {
-	foreignOrigin.close();
 	await browser.close();
 }
-console.log(JSON.stringify({ channel: CHANNEL, app: APP_URL, ...outcome }, null, 2));
+console.log(JSON.stringify({ channel: CHANNEL, origins: [ORIGIN_A, ORIGIN_B], ...outcome }, null, 2));
 process.exitCode = EXIT_CODE[outcome.verdict];
