@@ -172,8 +172,10 @@ def _archived_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
         if comment.get("status") == ARCHIVED:
             version = _version(comment, machine_id, archived=True)
         else:
+            # Agent bulk harvest (issue #3981): archive file is provenance only;
+            # live pins stay on the board, so this must not export as a tombstone.
             version = _version(
-                comment, machine_id, archived=True, harvested=True,
+                comment, machine_id, archived=False, harvested=True,
                 updated_at=sync_stamp.to_canonical(_harvest_stamp(path, archived_at)),
             )
         versions[version.doc["id"]] = _newer(versions.get(version.doc["id"]), version)
