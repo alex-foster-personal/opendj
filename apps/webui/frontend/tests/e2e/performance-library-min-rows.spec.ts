@@ -464,10 +464,20 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	await expect(tableWrap).toBeVisible();
 	const rows = page.locator('[data-testid="track-row"]');
 	const count = await rows.count();
-	if (count < 2) {
-		test.skip(true, 'needs at least 2 library rows');
-	}
-	const target = rows.nth(Math.min(7, count - 1));
+	expect(count).toBeGreaterThanOrEqual(8);
+	const target = rows.nth(7);
+	await tableWrap.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	const offScreenBeforeSelect = await page.evaluate(() => {
+		const wrap = document.querySelector('.table-wrap');
+		const row = document.querySelectorAll('[data-testid="track-row"]')[7];
+		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
+		const w = wrap.getBoundingClientRect();
+		const r = row.getBoundingClientRect();
+		return r.bottom <= w.top || r.top >= w.bottom;
+	});
+	expect(offScreenBeforeSelect).toBe(true);
 	await target.scrollIntoViewIfNeeded();
 	await target.click();
 	await expect(target).toHaveClass(/rb-row-selected/);

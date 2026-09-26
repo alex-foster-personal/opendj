@@ -38,10 +38,17 @@ test('performance: title text is vertically centered in the row and separator sp
 	await expect(row).toBeVisible({ timeout: 60_000 });
 	await row.click();
 
+	// Separator geometry uses tbody tr::after (left:0; right:0 on the row). Pseudo-elements
+	// have no getBoundingClientRect in Playwright, so read computed left/right/width and
+	// compare to the row box. Artwork must be a real column (nonzero width) so this cannot
+	// pass vacuously when .c-art is missing.
 	const geometry = await page.evaluate(() => {
 		const selected = document.querySelector('[data-testid="track-row"].rb-row-selected');
+		const nextRow = selected?.nextElementSibling;
 		const title = selected?.querySelector('.title-text');
 		const art = selected?.querySelector('.c-art');
+		const artImg = selected?.querySelector('.c-art img');
+		const nextTitle = nextRow?.querySelector('.title-text');
 		if (!(selected instanceof HTMLElement) || !(title instanceof HTMLElement)) {
 			return null;
 		}
@@ -49,16 +56,52 @@ test('performance: title text is vertically centered in the row and separator sp
 		const titleBox = title.getBoundingClientRect();
 		const rowCenterY = (rowBox.top + rowBox.bottom) / 2;
 		const titleCenterY = (titleBox.top + titleBox.bottom) / 2;
-		const artRight = art instanceof HTMLElement ? art.getBoundingClientRect().right : rowBox.left;
+
+		const artEl = artImg instanceof HTMLElement ? artImg : art;
+		if (!(artEl instanceof HTMLElement)) {
+			return { error: 'missing artwork column' as const };
+		}
+		const artBox = artEl.getBoundingClientRect();
+		if (artBox.width < 4) {
+			return { error: 'artwork column has zero rendered width' as const };
+		}
+
+		const afterStyle = window.getComputedStyle(selected, '::after');
+		const afterLeft = parseFloat(afterStyle.left);
+		const afterRight = parseFloat(afterStyle.right);
+		const afterWidth = parseFloat(afterStyle.width);
+		const separatorSpanPx =
+			Number.isFinite(afterWidth) && afterWidth > 0
+				? afterWidth
+				: rowBox.width - afterLeft - afterRight;
+		const separatorY = rowBox.bottom - 0.5;
+
+		let separatorBalanceDelta: number | null = null;
+		if (nextRow instanceof HTMLElement && nextTitle instanceof HTMLElement) {
+			const nextTitleBox = nextTitle.getBoundingClientRect();
+			const nextTitleCenterY = (nextTitleBox.top + nextTitleBox.bottom) / 2;
+			const gapAbove = separatorY - titleCenterY;
+			const gapBelow = nextTitleCenterY - separatorY;
+			separatorBalanceDelta = Math.abs(gapAbove - gapBelow);
+		}
+
 		return {
 			titleCenterDelta: Math.abs(rowCenterY - titleCenterY),
 			rowWidth: rowBox.width,
-			separatorLeft: rowBox.left,
-			artDoesNotCoverSeparator: artRight <= rowBox.left + 2
+			separatorSpanPx,
+			separatorSpanDelta: Math.abs(separatorSpanPx - rowBox.width),
+			separatorBalanceDelta,
+			artWidth: artBox.width
 		};
 	});
 	expect(geometry).not.toBeNull();
+	if (geometry && 'error' in geometry) {
+		throw new Error(`artwork precondition failed: ${geometry.error}`);
+	}
 	expect(geometry!.titleCenterDelta).toBeLessThan(4);
 	expect(geometry!.rowWidth).toBeGreaterThan(200);
-	expect(geometry!.artDoesNotCoverSeparator).toBe(true);
+	expect(geometry!.artWidth).toBeGreaterThan(4);
+	expect(geometry!.separatorSpanDelta).toBeLessThan(2);
+	expect(geometry!.separatorBalanceDelta).not.toBeNull();
+	expect(geometry!.separatorBalanceDelta!).toBeLessThanOrEqual(1);
 });

@@ -282,6 +282,9 @@ html[data-theme='light'] .perf-root {
 .perf-root tbody tr.rb-row-selected > td {
 	background: transparent;
 }
+.perf-root tbody tr.rb-row-selected .art-slate {
+	background: transparent;
+}
 
 /* -------- finished-track eject: overlaid on the waveform once the transport
  * has actually settled at silence, reusing WaveRow's own unload dispatcher -------- */
