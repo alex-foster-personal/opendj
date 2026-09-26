@@ -15,8 +15,7 @@ from apps.database.generate_agents_md import (
     agents_md_cache_marker,
 )
 from apps.shared.state import schema as state_schema
-from apps.shared.state import schema_markers
-from apps.shared.state import sync_stamp
+from apps.shared.state import schema_markers, sync_stamp
 from apps.shared.state.db import open_dry_run, open_rw
 
 _AGENTS_HEADER = "# state.db -- generated table reference"
@@ -230,11 +229,15 @@ def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:
 
 
 def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> None:
-    """if sqlite schema version, owned tables, or generator version differ then the marker differs - broken"""
-    base = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks"}))
-    other_schema = agents_md_cache_marker(sqlite_schema_version=20, owned_tables=frozenset({"tracks"}))
-    other_tables = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks", "playlists"}))
-    same_again = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks"}))
+    """if schema version, owned tables, or generator version differ, the marker differs - broken"""
+    tracks_only = frozenset({"tracks"})
+    tracks_and_playlists = frozenset({"tracks", "playlists"})
+    base = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=tracks_only)
+    other_schema = agents_md_cache_marker(sqlite_schema_version=20, owned_tables=tracks_only)
+    other_tables = agents_md_cache_marker(
+        sqlite_schema_version=19, owned_tables=tracks_and_playlists
+    )
+    same_again = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=tracks_only)
 
     assert base == same_again
     assert base != other_schema

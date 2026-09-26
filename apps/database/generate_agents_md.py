@@ -429,9 +429,9 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "GENERATOR_VERSION",
     "ColumnInfo",
     "ForeignKeyInfo",
-    "GENERATOR_VERSION",
     "MissingColumnDocsError",
     "TableInfo",
     "agents_md_cache_marker",
