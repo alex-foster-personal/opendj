@@ -82,6 +82,15 @@ def test_setup_plist_relaunches_on_crash_but_honors_the_stop_flag() -> None:
     assert loop[-1] == "exit 0", "a stop-flag exit must be a clean 0 so launchd leaves it stopped"
 
 
+def test_setup_retires_x86_hosts_before_any_toolchain_step() -> None:
+    """[if] the x86_64 retirement runs after uv sync / pnpm / playwright [then] a toolchain
+    failure under set -e leaves the old loop installed on a retired host, [else stop]."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    gate = text.index('= x86_64 ]; then')
+    for step in ("uv sync", "pnpm install", "playwright install webkit", "codex login status"):
+        assert gate < text.index(step), f"the x86_64 retirement must run before `{step}`"
+
+
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
     """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
     [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
