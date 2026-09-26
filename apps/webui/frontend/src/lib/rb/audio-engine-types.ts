@@ -25,6 +25,9 @@ export type MasterReason =
 export interface DeckLoadOptions {
 	/** Whether the asynchronous stem probe and decode may run for this load. */
 	stems?: boolean;
+	/** The caller shows its own toast for a failed load (Trackify, #4036). The
+	 * engine still reports the failure and its stage context to the server. */
+	suppressFailureToast?: boolean;
 }
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';

@@ -37,7 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
-import type { ClientErrorContext } from '$lib/client-error-reporting';
+import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
 import { pressureLabels, readMachinePressure } from '$lib/rb/machine-pressure';
 import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
@@ -291,9 +291,13 @@ export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,
 	cause: unknown,
-	stages: Readonly<Record<string, number>>
+	stages: Readonly<Record<string, number>>,
+	showToast: boolean
 ): void {
 	const failureContext = deckLoadFailureContext(deck, stages);
-	pushToast(`Deck ${deck} load failed - ${message}`, 'error', undefined, cause, failureContext);
+	// A caller with its own toast (Trackify, #4036) still owes the server this
+	// report: it is the only record of which stage the load died in.
+	if (showToast) pushToast(`Deck ${deck} load failed - ${message}`, 'error', undefined, cause, failureContext);
+	else reportClientError(cause ?? new Error(message), failureContext);
 	recordPerfEvent('deck-load-fail', message, deck);
 }

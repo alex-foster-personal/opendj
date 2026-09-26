@@ -179,7 +179,9 @@ test('the deck-load catch block reports through the extracted module, after stam
 	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
 
 	const stampAt = body.indexOf('stages.failedAt = perfMs();');
-	const reportAt = body.indexOf('reportDeckLoadFailure(deck, msg, exc, stages)');
+	const reportAt = body.indexOf(
+		'reportDeckLoadFailure(deck, msg, exc, stages, options.suppressFailureToast !== true)'
+	);
 	assert.ok(
 		reportAt !== -1,
 		'if the catch stops handing the SAME stages map it just stamped failedAt onto ' +
@@ -191,12 +193,13 @@ test('the deck-load catch block reports through the extracted module, after stam
 		'if the report runs before failedAt is stamped then the one number that ' +
 			'says when the load died is missing from every report'
 	);
-	// The connect() failure further down raises its own `${message}` toast and is
-	// a different failure with no stage map, so only the stage-carrying one moved.
+	// The connect() failure further down goes through the same reporter (#4036),
+	// so a caller that shows its own toast mutes it there too.
 	assert.ok(
-		!body.includes('pushToast(`Deck ${deck} load failed - ${msg}`'),
-		'the stage-carrying toast belongs to the reporter module (convention D5: the ' +
-			'fat file gets a call site, not a formula), so a copy here would double-report'
+		!body.includes('pushToast(`Deck ${deck} load failed'),
+		'the deck-load toast belongs to the reporter module (convention D5: the fat ' +
+			'file gets a call site, not a formula), and a raw copy here would toast even ' +
+			'when the caller (Trackify) shows its own, which is issue #4036'
 	);
 	assert.ok(
 		!body.includes("recordPerfEvent('deck-load-fail'"),

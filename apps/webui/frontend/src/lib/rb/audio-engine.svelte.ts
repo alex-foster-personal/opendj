@@ -3014,8 +3014,8 @@ class RbAudioEngine implements AudioEngine {
 
 	async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
-		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
-			throw new TypeError('load: options.stems must be boolean when provided');
+		for (const key of ['stems', 'suppressFailureToast'] as const) {
+			if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new TypeError(`load: options.${key} must be boolean when provided`);
 		}
 		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
@@ -3124,7 +3124,7 @@ class RbAudioEngine implements AudioEngine {
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
 			deckLoadErrors[deck] = msg;
-			reportDeckLoadFailure(deck, msg, exc, stages);
+			reportDeckLoadFailure(deck, msg, exc, stages, options.suppressFailureToast !== true);
 			throw exc;
 		}
 		if (
@@ -3163,7 +3163,7 @@ class RbAudioEngine implements AudioEngine {
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
-					pushToast(`Deck ${deck} load failed - ${message}`, 'error');
+					reportDeckLoadFailure(deck, message, error, stages, options.suppressFailureToast !== true);
 				}
 				throw error;
 			}
