@@ -94,6 +94,7 @@ test('mergeCueWarning is null for unknown survivor id', () => {
 	assert.equal(mergeCueWarning([member({ stable_id: 'alias', cue_count: 3 })], 'missing'), null);
 });
 
+// REQ: LIBM-76
 test('+page.svelte wires mergeCueWarning and confirm before apply', () => {
 	const src = stripComments(readFileSync(dedupPagePath, 'utf8'));
 	assert.match(src, /import\s*\{[^}]*mergeCueWarning[^}]*\}\s*from\s*['"]\.\/cue-warning['"]/);

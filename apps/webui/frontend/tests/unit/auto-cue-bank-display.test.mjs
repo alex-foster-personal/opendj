@@ -26,6 +26,7 @@ const PROPOSAL_LABEL = 'lib/components/rb/deck/HotCueProposalLabel.svelte';
 const CACHE = 'lib/components/rb/deck/auto-cues-cache.svelte.ts';
 const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!deck\.has_rb_mapping\s*\)\s*return/;
 
+// REQ: DECKUX-15
 test('class:filled remains committed-cue only; class:proposal is empty-plus-visible', () => {
 	const text = source(HOT_CUE_BANK);
 	assert.match(

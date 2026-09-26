@@ -1904,8 +1904,7 @@
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
-				{emptyMessage}
-				{#if onemptyretry !== undefined}
+				{emptyMessage}{#if onemptyretry !== undefined}
 					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>
