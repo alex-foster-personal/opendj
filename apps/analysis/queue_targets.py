@@ -79,6 +79,31 @@ def _measured_durations(paths: dict[str, str]) -> dict[str, float | None]:
         lengths = pool.map(lambda path: probe_duration_s(Path(path)), paths.values())
         return dict(zip(paths, lengths, strict=True))
 
+
+def _resolve_local_path(
+    file_path: str | None,
+    locations: Sequence[str],
+    path_map: platform_paths.PathMap,
+) -> str | None:
+    """The first of a track's recorded paths that exists on THIS machine."""
+    for candidate in _candidate_paths(file_path, locations):
+        mapped = platform_paths.resolve_library_path(candidate, path_map=path_map)
+        if mapped.resolved is not None:
+            return str(mapped.resolved)
+    return None
+
+
+def _admission_duration_s(
+    resolved: str | None, duration_ms: int | None, measured_s: float | None
+) -> float | None:
+    """The stored length wins; else ffmpeg's; a track with no local bytes has none."""
+    if resolved is None:
+        return None
+    if duration_ms:
+        return duration_ms / 1000.0
+    return measured_s
+
+
 def candidates_from_state(
     conn: sqlite3.Connection,
     stable_ids: Sequence[str],
@@ -120,48 +145,26 @@ def candidates_from_state(
         )
     path_map = platform_paths.load_path_map()
     locations = track_locations.list_location_paths(conn, wanted)
-    resolved_rows: list[tuple[str, str | None, int | None]] = []
-    for stable_id, file_path, duration_ms in rows:
-        resolved: str | None = None
-        for candidate in _candidate_paths(
-            file_path, locations.get(stable_id, ())
-        ):
-            mapped = platform_paths.resolve_library_path(
-                candidate, path_map=path_map
-            )
-            if mapped.resolved is not None:
-                resolved = str(mapped.resolved)
-                break
-        resolved_rows.append((stable_id, resolved, duration_ms))
+    resolved_rows = [
+        (sid, _resolve_local_path(file_path, locations.get(sid, ()), path_map), ms)
+        for sid, file_path, ms in rows
+    ]
     measured = _measured_durations(
         {sid: path for sid, path, ms in resolved_rows if path is not None and not ms}
     )
-    out: list[admission.Candidate] = []
-    for stable_id, resolved, duration_ms in resolved_rows:
-        if resolved is None:
-            # No local bytes on THIS machine. Offered anyway, with no
-            # duration, so the admission rule refuses it by name instead of
-            # the queue dropping it silently.
-            out.append(
-                admission.Candidate(
-                    stable_id=stable_id,
-                    lane=lane,
-                    backend=backend,
-                    file_path="",
-                    duration_s=None,
-                )
-            )
-            continue
-        out.append(
-            admission.Candidate(
-                stable_id=stable_id,
-                lane=lane,
-                backend=backend,
-                file_path=resolved,
-                duration_s=(duration_ms / 1000.0) if duration_ms else measured[stable_id],
-            )
+    # A track with no local bytes on THIS machine is offered anyway, with no
+    # duration, so the admission rule refuses it by name instead of the queue
+    # dropping it silently.
+    return [
+        admission.Candidate(
+            stable_id=sid,
+            lane=lane,
+            backend=backend,
+            file_path=resolved or "",
+            duration_s=_admission_duration_s(resolved, ms, measured.get(sid)),
         )
-    return out
+        for sid, resolved, ms in resolved_rows
+    ]
 
 
 def with_lane(

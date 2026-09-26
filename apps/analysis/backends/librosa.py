@@ -25,7 +25,6 @@ from typing import Any
 import numpy as np
 
 from .. import config as _analysis_config
-from ..jit_warmup import librosa_numba_cache_roots
 from ..record import AnalysisRecord
 from . import register
 from .base import (
@@ -33,6 +32,7 @@ from .base import (
     TrackTooLong,
     TrackUnreadable,
     TrackVanished,
+    librosa_numba_cache_roots,
 )
 
 log = logging.getLogger(__name__)

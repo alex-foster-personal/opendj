@@ -75,11 +75,15 @@ from apps.analysis_key.lane_payload import (
 )
 from apps.analysis_key.version import LANE, PRODUCER, PRODUCER_VERSION
 
-from ..jit_warmup import librosa_numba_cache_roots
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
 from . import register
-from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
+from .base import (
+    BackendNotAvailable,
+    TrackUnreadable,
+    TrackVanished,
+    librosa_numba_cache_roots,
+)
 
 log = logging.getLogger("apps.analysis.backends.own_key")
 
