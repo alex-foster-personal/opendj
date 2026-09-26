@@ -37765,6 +37765,52 @@
         ]
       }
     },
+    "/api/v1/ui-prefs/watcher-folders:validate": {
+      "post": {
+        "description": "LIBM-129 v1: existence check only; no watcher daemon.",
+        "operationId": "validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatcherFoldersValidateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Validate Watcher Folders Api V1 Ui Prefs Watcher Folders Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Watcher Folders",
+        "tags": [
+          "ui-prefs"
+        ]
+      }
+    },
     "/api/v1/update/apply": {
       "post": {
         "operationId": "update_apply_api_v1_update_apply_post",
