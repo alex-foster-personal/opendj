@@ -553,8 +553,8 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 		deckSource,
 		/<div class="loop-col">\s*<LoopCluster\b[\s\S]*?<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
 	);
-	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
-	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
+	const cueRegionStart = deckSource.indexOf('class="cue-flex"');
+	const cueRegionEnd = deckSource.indexOf('class="loop-col"');
 	assert.ok(cueRegionStart >= 0 && cueRegionEnd > cueRegionStart, 'cue-flex region is present');
 	assert.doesNotMatch(deckSource.slice(cueRegionStart, cueRegionEnd), /<BeatJump\b/);
 	assert.match(
