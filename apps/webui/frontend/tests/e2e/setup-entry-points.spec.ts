@@ -591,7 +591,7 @@ test.describe('setup entry points', () => {
 		await expect(urlLink).toBeVisible();
 		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
 		const href = await urlLink.getAttribute('href');
-		if (browserName === 'chromium' && href) {
+		if (href) {
 			const pagePromise = context.waitForEvent('page');
 			await urlLink.click();
 			const engineTab = await pagePromise;
