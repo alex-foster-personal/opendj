@@ -30,17 +30,11 @@
 	flex: 1;
 	min-width: 0;
 }
-/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
-   mixer's translucent panel-raised mix, because the canvas is opaque. */
-.rb-waverow.secondary {
-	background: var(--rb-waverow-secondary);
-}
+/* .rb-waverow.secondary and .rb-waverow.secondary.deck-focus are declared in
+   WaveRow.svelte's own <style> block, not here - see the comment there. */
 .rb-waverow.deck-focus {
 	background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-}
-.rb-waverow.secondary.deck-focus {
-	background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
 }
 .canvas-wrap {
 	position: relative;

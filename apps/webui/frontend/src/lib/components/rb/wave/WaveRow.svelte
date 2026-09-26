@@ -19,8 +19,7 @@
 	import {
 		ghostSeekBlinkVisible,
 		masterBeatsForDeck,
-		masterDownbeatOverlayForDeck,
-		syncPlayheadToneForDeck
+		masterDownbeatOverlayForDeck
 	} from './wave-row-deckux-overlays';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
@@ -51,7 +50,7 @@
 		paintScrollPx,
 		shouldSkipRepaint
 	} from './paint-position';
-	import { barsToNextCueLabel } from './wave-math';
+	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
 		drawWaveRow,
@@ -149,20 +148,29 @@
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
 	const masterBeats = $derived(masterBeatsForDeck(masterState, getAnlzEntry));
 
-	const syncPlayheadTone = $derived.by((): PlayheadTone =>
-		syncPlayheadToneForDeck({
-			audible: deck.audible,
+	const syncPlayheadTone = $derived.by((): PlayheadTone => {
+		if (!deck.audible) return 'stopped';
+		if (deck.is_master && deck.stable_id !== null) {
+			// MASTER remains yellow; green is reserved for the explicit Beat
+			// Sync-enabled state, even on the MASTER itself.
+			return deck.beat_sync_enabled ? 'masterSynced' : 'master';
+		}
+		const followerBeats = paintAnlz?.beatgrid.beats;
+		if (followerBeats === undefined || masterBeats === null || masterState === null) {
+			return 'now';
+		}
+		const tone = followerSyncPlayheadTone({
+			beatSyncEnabled: deck.beat_sync_enabled,
 			isMaster: deck.is_master,
-			stable_id: deck.stable_id,
-			beat_sync_enabled: deck.beat_sync_enabled,
-			sync_error: deck.sync_error,
-			sync_mode: deck.sync_mode,
-			position_ms: deck.position_ms,
-			paintAnlz,
+			syncError: deck.sync_error,
+			syncMode: deck.sync_mode,
+			followerBeats,
 			masterBeats,
-			masterState
-		})
-	);
+			followerPosMs: deck.position_ms,
+			masterPosMs: masterState.position_ms
+		});
+		return tone ?? 'now';
+	});
 
 	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): see vocals-title.ts.
 	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
@@ -546,4 +554,16 @@ estimated from the render clock and may run ahead of what you hear."
 
 <style>
 	@import './WaveRow.chrome.css';
+
+	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
+	   mixer's translucent panel-raised mix, because the canvas is opaque.
+	   Kept inline (not in WaveRow.chrome.css) so this file's own source text
+	   still carries the exact selectors tests/unit/wave-track-summary-
+	   emphasis.test.mjs reads for the A11Y-03 dim-token contrast check. */
+	.rb-waverow.secondary {
+		background: var(--rb-waverow-secondary);
+	}
+	.rb-waverow.secondary.deck-focus {
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
+	}
 </style>

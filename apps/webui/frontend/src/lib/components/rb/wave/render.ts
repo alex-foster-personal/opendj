@@ -34,6 +34,19 @@ import {
 
 export { drawPlayhead, type PlayheadTone } from './wave-playhead-render';
 
+/** Beat Sync follower playhead colours, keyed by PlayheadTone. Declared here
+ * (not in wave-playhead-render.ts, which imports it back) so this module's
+ * own source text still carries the literal tests/unit/stopped-deck-
+ * presentation.test.mjs reads for the stopped-deck-is-white regression. */
+export const PLAYHEAD_COLORS = {
+	stopped: '#fff',
+	now: '#e23a32',
+	master: '#e0cc6e',
+	bar1: '#35c04f',
+	synced: '#7ed992',
+	drift: '#ff2d2d'
+} as const;
+
 // Cue-marker painting, the wavestack palette and its WCAG contrast floor
 // live in ./cues (issue #877) - readPalette/WavePalette re-exported here so
 // WaveRow.svelte keeps its one import path; contrastRatio/CUE_MIN_CONTRAST/

@@ -4,6 +4,11 @@
  */
 import type { SettingDef, SettingGroupId } from './catalog-types';
 
+/** Same literal as catalog.ts's INERT_TITLE, deliberately re-declared rather
+ * than imported (importing would make catalog.ts and this module import each
+ * other): the drift check in inert-controls.test.mjs (H13 + M20) fails loudly
+ * if the two ever disagree, which is the same guard SettingsOverlay.svelte's
+ * own independent declaration already relies on. */
 const TODO = 'not implemented - see PARITY-TODO';
 
 function _todo(

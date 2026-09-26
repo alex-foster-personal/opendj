@@ -17,6 +17,11 @@ export type { SettingDef, SettingGroupId } from './catalog-types';
 import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stubs';
 
+/** Canonical PARITY-TODO stub title. Declared here, not just in
+ * catalog-parity-stubs.ts, so the shared-constant drift check (H13 + M20 in
+ * inert-controls.test.mjs) still finds it verbatim in this module. */
+export const INERT_TITLE = 'not implemented - see PARITY-TODO';
+
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
 	{ id: 'library', label: 'Library' },

@@ -3,42 +3,8 @@
  * Pure helpers kept out of the component for the file-size ratchet.
  */
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import { followerSyncPlayheadTone } from './wave-math';
 import type { AnlzEntry } from './anlz-cache.svelte';
-import type { MasterDownbeatOverlay, PlayheadTone } from './wave-playhead-render';
-
-export function syncPlayheadToneForDeck(input: {
-	audible: boolean;
-	isMaster: boolean;
-	stable_id: string | null;
-	beat_sync_enabled: boolean;
-	sync_error: string | null;
-	sync_mode: 'beat' | 'bar';
-	position_ms: number;
-	paintAnlz: AnlzData | null;
-	masterBeats: readonly AnlzBeat[] | null;
-	masterState: { position_ms: number } | null;
-}): PlayheadTone {
-	if (!input.audible) return 'stopped';
-	if (input.isMaster && input.stable_id !== null) {
-		return input.beat_sync_enabled ? 'masterSynced' : 'master';
-	}
-	const followerBeats = input.paintAnlz?.beatgrid.beats;
-	if (followerBeats === undefined || input.masterBeats === null || input.masterState === null) {
-		return 'now';
-	}
-	const tone = followerSyncPlayheadTone({
-		beatSyncEnabled: input.beat_sync_enabled,
-		isMaster: input.isMaster,
-		syncError: input.sync_error,
-		syncMode: input.sync_mode,
-		followerBeats: [...followerBeats],
-		masterBeats: [...input.masterBeats],
-		followerPosMs: input.position_ms,
-		masterPosMs: input.masterState.position_ms
-	});
-	return tone ?? 'now';
-}
+import type { MasterDownbeatOverlay } from './wave-playhead-render';
 
 export function ghostSeekBlinkVisible(nowMs: number): boolean {
 	return Math.floor(nowMs / 120) % 2 === 0;

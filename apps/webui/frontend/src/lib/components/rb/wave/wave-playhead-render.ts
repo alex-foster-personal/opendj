@@ -3,15 +3,7 @@
  * Split from render.ts to keep file-size ratchet under the frontend ceiling.
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
-
-const PLAYHEAD_COLORS = {
-	stopped: '#fff',
-	now: '#e23a32',
-	master: '#e0cc6e',
-	bar1: '#35c04f',
-	synced: '#7ed992',
-	drift: '#ff2d2d'
-} as const;
+import { PLAYHEAD_COLORS } from './render';
 
 export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
 
