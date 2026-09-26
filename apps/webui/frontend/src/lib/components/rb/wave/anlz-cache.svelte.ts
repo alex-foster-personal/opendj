@@ -10,7 +10,12 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-rb';
+import {
+	fetchAnlz,
+	fetchAnlzBypassingHttpCache,
+	fetchTrackBypassingHttpCache,
+	RbApiError
+} from '$lib/rb/api-rb';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
@@ -752,6 +757,7 @@ export function refreshAnalysisSourceDecks(
 			refreshAnlzCacheEntry,
 			notifyGridlessSettlement,
 			fetchAnlzBypassingHttpCache,
+			fetchTrackBypassingHttpCache,
 			getReadyAnlz: (stable_id) => {
 				const entry = getAnlzEntry(stable_id);
 				return isAnlzEntryUsable(entry) ? entry.data : null;

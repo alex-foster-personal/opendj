@@ -16,6 +16,7 @@ here is what kept scripts/review_coverage.py's own module-resolution guard
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 
@@ -68,7 +69,7 @@ class TriageError(RuntimeError):
     """Measurement failed. Never rendered as a verdict."""
 
 
-def _gh(args: list[str], payload: dict | None = None) -> str:
+def _gh(args: list[str], payload: dict | None = None, *, as_human: bool = False) -> str:
     """Run `gh` and return stdout, raising on any nonzero exit.
 
     `payload` is written to the child's stdin as JSON, for the one call shape
@@ -76,6 +77,12 @@ def _gh(args: list[str], payload: dict | None = None) -> str:
     `pulls/<n>/reviews` POST that `scripts/sol_review.py` submits, whose
     `comments` array is a list of objects. Kept here rather than shelling out
     separately so every `gh` call in the review tooling fails the same way.
+
+    `as_human=True` strips `GH_APP` from the child env and sets
+    `GH_ALLOW_HUMAN=1` (issue #3951). Sol/Claude reviews count toward coverage
+    only when posted as login ``maintainer`` plus a marker comment; with
+    `GH_APP` set the fleet `gh` shim posts as the GitHub App bot instead, and
+    the coverage gate silently treats that as a MISS.
 
     `require_gh_min_version()` runs first so a too-old `gh` reports its own
     version and the minimum needed, instead of the opaque `unknown flag:
@@ -85,13 +92,26 @@ def _gh(args: list[str], payload: dict | None = None) -> str:
     covers both call sites.
     """
     require_gh_min_version()
-    proc = subprocess.run(
-        ["gh", *args],
-        input=json.dumps(payload) if payload is not None else None,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    if as_human:
+        env = dict(os.environ)
+        env.pop("GH_APP", None)
+        env["GH_ALLOW_HUMAN"] = "1"
+        proc = subprocess.run(
+            ["gh", *args],
+            input=json.dumps(payload) if payload is not None else None,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    else:
+        proc = subprocess.run(
+            ["gh", *args],
+            input=json.dumps(payload) if payload is not None else None,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     if proc.returncode != 0:
         raise TriageError(
             f"gh {' '.join(args)} failed ({proc.returncode}): "

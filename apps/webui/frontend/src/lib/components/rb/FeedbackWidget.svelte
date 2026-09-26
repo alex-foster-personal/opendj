@@ -9,7 +9,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { describePinStatusSummary } from '$lib/rb/feedback';
-	import { readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
+	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		armPinPlacement,
@@ -48,6 +48,7 @@
 		}
 		return [
 			describePinStatusSummary(feedbackState.pins),
+			'Press M to arm comment placement (or Cmd+Shift+M from a text field).',
 			'Delegated / in-progress / queued are not tracked by the comment API yet.'
 		];
 	});
@@ -60,8 +61,19 @@
 
 	let pinsVisible = $state(false);
 
-	onMount(() => {
+	/* Other surfaces also write this preference (the `M` hotkey reveal in
+	 * FeedbackPinLayer, the agent-facing `__mdtPinsVisible` twin), so the
+	 * checkbox re-reads on every change rather than trusting its mount read. */
+	function syncPinsVisible(): void {
 		pinsVisible = readPinsVisible(window.localStorage);
+	}
+
+	onMount(() => {
+		syncPinsVisible();
+		const offPinsVisibleChanged = onPinsVisibleChanged(syncPinsVisible);
+		return () => {
+			offPinsVisibleChanged();
+		};
 	});
 
 	function togglePinsVisible(): void {

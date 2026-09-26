@@ -161,18 +161,18 @@ def get_track_artwork(
 _BEATGRID_SOURCE_LABELS: dict[str, str] = {"rbx": "rekordbox", "own": "own"}
 
 
-def _current_beatgrid_source(request: Request) -> str:
-    """The PARITY-02 rbx-vs-own selection currently in effect for beatgrids.
+def _beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> str:
+    """Per-track beatgrid source label for ``/anlz`` (STANDALONE-06).
 
-    Reads through :mod:`apps.analysis.selection` (persisted default plus
-    in-memory dev toggle), via the same read-only, missing-file-safe
-    connection its own ``GET /api/v1/analysis/source`` endpoint uses -- a
-    test app that mounts only this router still gets the documented
-    ``"rekordbox"`` default rather than a 500 on a fresh daemon.
+    Reads through :mod:`apps.analysis.selection` once per request; callers
+    thread the returned string through rescue branches and
+    :func:`_resolve_beatgrid_source` without re-reading (ADR-0099).
     """
     conn = analysis_source_routes._open_ro(request)
     try:
-        source = selection.effective_source(conn, "beatgrid")
+        source = selection.effective_source_for_track(
+            conn, "beatgrid", has_rb_mapping=has_rb_mapping
+        )
     finally:
         conn.close()
     return _BEATGRID_SOURCE_LABELS[source]
@@ -377,7 +377,8 @@ def get_track_anlz(
     # two independent reads can rescue a 404 into an empty payload this
     # function then stamps with the OTHER, newer source
     # (discussion_r3974235458 P2 BLOCKING).
-    beatgrid_source = _current_beatgrid_source(request)
+    has_rb_mapping = stable_id in rb_vendor.bulk_rb_meta([stable_id])
+    beatgrid_source = _beatgrid_source_for_track(request, has_rb_mapping=has_rb_mapping)
     state_db_path = _state_db_override(request)
     rescued_missing_analysis_path = False
     try:
@@ -406,14 +407,18 @@ def get_track_anlz(
             # PR #1587). Applied here rather than inside `local_anlz_payload`, which
             # belongs to the waveform lane; this route already owns choosing between
             # the two branches.
-            payload = apply_own_overlays(payload, stable_id, state_db_path)
+            payload = apply_own_overlays(
+                payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+            )
         elif code == "ANALYSIS_NOT_FOUND":
             if vendor_analysis_path_absent(content):
                 rescued_missing_analysis_path = True
                 share = getattr(request.state, "share_audience", "local") == "share"
                 payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
                 payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-                payload = apply_own_overlays(payload, stable_id, state_db_path)
+                payload = apply_own_overlays(
+                    payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+                )
                 payload = apply_own_beatgrid_when_vendor_absent(
                     payload, stable_id, state_db_path
                 )
@@ -431,7 +436,9 @@ def get_track_anlz(
                 # from `empty_anlz_payload`'s local-import stub.
                 payload = rb_vendor.empty_anlz_payload(stable_id, points)
                 payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-                payload = apply_own_overlays(payload, stable_id, state_db_path)
+                payload = apply_own_overlays(
+                    payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+                )
             if (
                 not rescued_missing_analysis_path
                 and payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN

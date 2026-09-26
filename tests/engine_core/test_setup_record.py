@@ -57,6 +57,18 @@ def test_setting_the_import_keeps_the_dismissal(data_dir: Path) -> None:
     assert saved.last_import == {"tracks": 3}
 
 
+def test_folder_imports_accumulate_watch_roots_independently_of_last_import(
+    data_dir: Path,
+) -> None:
+    record.set_last_import(data_dir, {"kind": "folder", "roots": ["/one"]})
+    record.set_last_import(data_dir, {"kind": "rekordbox", "roots": ["/ignored"]})
+    record.set_last_import(data_dir, {"kind": "folder", "roots": ["/two", "/one"]})
+
+    saved = record.read(data_dir)
+
+    assert saved.folder_watch_roots == ["/one", "/two"]
+
+
 @pytest.mark.parametrize(
     "contents",
     [

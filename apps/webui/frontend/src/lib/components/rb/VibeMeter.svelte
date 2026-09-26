@@ -74,6 +74,8 @@
 
 <style>
 	.vibe-wrap {
+		--vibe-thumb-up: #00c853;
+		--vibe-thumb-down: color-mix(in srgb, var(--rb-red) 65%, var(--rb-text-dim));
 		display: flex;
 		align-items: center;
 		gap: 3px;
@@ -93,17 +95,19 @@
 		cursor: pointer;
 		line-height: 1;
 	}
-	.vibe-thumb:hover {
-		color: var(--rb-text);
-		border-color: color-mix(in srgb, var(--rb-text-dim) 40%, var(--rb-border));
+	.vibe-thumb.up {
+		color: var(--vibe-thumb-up);
+	}
+	.vibe-thumb.down {
+		color: var(--vibe-thumb-down);
 	}
 	.vibe-thumb.up:hover {
-		color: var(--rb-orange);
-		border-color: color-mix(in srgb, var(--rb-orange) 45%, var(--rb-border));
+		color: #00e676;
+		border-color: color-mix(in srgb, var(--vibe-thumb-up) 50%, var(--rb-border));
 	}
 	.vibe-thumb.down:hover {
-		color: var(--rb-red);
-		border-color: color-mix(in srgb, var(--rb-red) 45%, var(--rb-border));
+		color: color-mix(in srgb, var(--rb-red) 78%, var(--rb-text-dim));
+		border-color: color-mix(in srgb, var(--rb-red) 35%, var(--rb-border));
 	}
 	.vibe-thumb:focus-visible {
 		outline: 1px solid var(--rb-accent);
