@@ -57,6 +57,7 @@ import {
 	decodeSource
 } from '$lib/rb/midi/decode';
 import { rearmMidiTakeoverDevice } from '$lib/rb/midi/takeover-state.svelte';
+import { djioRedirectTarget } from '$lib/rb/audio-output-topology';
 
 // The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
 // limit). Re-exported here so callers and tests keep their import path.
@@ -132,6 +133,7 @@ let _access: MIDIAccess | null = null;
 let _transport: 'none' | 'webmidi' | 'native' = 'none';
 let _nativeUnlisten: (() => void) | null = null;
 let _nativePollTimer: ReturnType<typeof setInterval> | null = null;
+let _djioRedirectIssued = false;
 
 interface _NativeMidiDevice {
 	id: string;
@@ -330,11 +332,16 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 		console.error('[native-midi] connected controller maps request conflicting audio profiles', [
 			...profiles
 		]);
-	} else if (profiles.size === 1 && !new URL(window.location.href).searchParams.has('djio')) {
-		const next = new URL(window.location.href);
-		next.searchParams.set('djio', [...profiles][0]);
-		window.location.replace(next);
-		return true;
+	} else if (profiles.size === 1) {
+		// IOPIN-12: a page already on djio (a stereo-fallback page keeps its
+		// param) or on extroute returns null, so a rescan can never loop the
+		// reload; the flag stops repeat replace() calls before navigation lands.
+		const target = djioRedirectTarget(window.location.href, [...profiles][0]);
+		if (target !== null && !_djioRedirectIssued) {
+			_djioRedirectIssued = true;
+			window.location.replace(target);
+			return true;
+		}
 	}
 	return false;
 }

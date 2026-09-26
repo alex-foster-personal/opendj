@@ -85,7 +85,8 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
-import { cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
+import { cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
+import { clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/audio-output-status.svelte';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import {
 	registerAudioContext,
@@ -715,21 +716,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 				masterGain: _masterGain,
 				context: _ctx
 			}),
-		resetGraphState: () => {
-			disposeHeadphoneMonitor();
-			_rafId = null;
-			_masterGain = null;
-			releaseMasterMeterTap();
-			attachMasterMuteNode(null);
-			_masterMuteGain = null;
-			_masterDelay = null;
-			_externalMerger = _externalRouteAnalyser = null;
-			_djOutputNodes = [];
-			_djOutputProfileActive = null;
-			_ctx = null;
-			resetMasterSilenceWatch();
-			resetPresentationClockStall();
-		},
+		resetGraphState: _resetGraphState,
 		ensureGraph: () => _ensureGraph(),
 		resetPresentation: (deck, positionSec) => {
 			_rt[deck].presentation = createPresentedTransportTimeline(positionSec);
@@ -766,98 +753,147 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 	await _resumeContext();
 }
 
+/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing. */
+function _resetGraphState(): void {
+	disposeHeadphoneMonitor();
+	_rafId = null;
+	_masterGain = null;
+	releaseMasterMeterTap();
+	attachMasterMuteNode(null);
+	_masterMuteGain = null;
+	_masterDelay = null;
+	_externalMerger = _externalRouteAnalyser = null;
+	_djOutputNodes = [];
+	_djOutputProfileActive = null;
+	clearDjOutputResolution();
+	_ctx = null;
+	resetMasterSilenceWatch();
+	resetPresentationClockStall();
+}
+
+/** IOPIN-12: release whatever a throwing `_ensureGraph()` built, deck nodes included,
+ * and close its context. Loaded processors are untouched: none exists before a graph. */
+function _discardFailedGraph(): void {
+	const failed = _ctx;
+	const nodes: AudioNode[] = [..._djOutputNodes];
+	for (const deck of DECK_IDS) {
+		const deckNodes = _rt[deck].nodes;
+		if (deckNodes !== null) nodes.push(...Object.values(deckNodes).filter((node): node is AudioNode => node !== null));
+		_rt[deck].nodes = null;
+		_meterTaps[deck] = null;
+	}
+	if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
+	if (_masterDelay !== null) nodes.push(_masterDelay);
+	disarmContextInstrumentation();
+	const closing = disposeAudioResources({ rafId: _rafId, processors: [], nodes, masterGain: _masterGain, context: failed });
+	_resetGraphState();
+	if (failed !== null) unregisterAudioContext(failed);
+	void closing.catch((error: unknown) => recordPerfEvent('audio-graph-discard-failed', `failed graph teardown: ${String(error)}`, null, 'error'));
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
 	}
 	if (_ctx !== null) return _ctx;
-	// Construction options travel through ONE named constant so a future
-	// user-facing buffer/latency setting has a single place to write to.
-	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
-	registerAudioContext(_ctx);
-	stampContextDeviceFloors(_ctx);
-	// A context that is allowed to start running immediately never fires
-	// statechange, so the build stamp above already caught it; one that starts
-	// suspended is re-stamped the moment it runs, whichever path resumed it.
-	// The watchdog owns that re-stamp AND every non-running state: suspended,
-	// interrupted and closed used to fall through in silence, which is how
-	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
-	armAudioContextWatchdog(
-		_ctx,
-		() => DECK_IDS.some((deck) => deckStates[deck].playing),
-		rebuildAudioGraphKeepingDecks
-	);
-	setPlayingPositionReader(() =>
-		DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
-			deck: d,
-			position_ms: deckStates[d].position_ms,
-			decoded_duration_ms: deckStates[d].duration_ms,
-			metadata_duration_ms: _rt[d].metadataDurationMs
-		}))
-	);
-	_masterGain = _ctx.createGain();
-	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
-	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
-	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
-	_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
-	resetMasterSilenceWatch(); resetPresentationClockStall();
-	// Silence belt for headless test agents (`?muted=1`): the LAST node before
-	// the destination, so a mute is one gain value and every node upstream --
-	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
-	// identically. See player/master-mute.svelte.ts.
-	_masterMuteGain = _ctx.createGain();
-	attachMasterMuteNode(_masterMuteGain);
-	_masterDelay = createMasterDelayNode(_ctx);
-	const routing = parseExternalRouting();
-	_djOutputProfileActive = parseDjOutputProfile(window.location.search);
-	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	const output = wireAudioOutputTopology({
-		context: _ctx,
-		routing,
-		profile: _djOutputProfileActive,
-		masterGain: _masterGain,
-		masterMuteGain: _masterMuteGain,
-		masterDelay: _masterDelay,
-		headphoneDelay: headphones.delay
-	});
-	_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
-	_djOutputNodes = output.ownedNodes;
-	setMultichannelMonitorActive(output.multichannelMonitorActive);
-	if (routing === null && _djOutputProfileActive === null) {
-		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
-		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
-	}
-	// Post-fader channel tap points, one per deck, PLUS one master tap sourced
-	// from `_masterGain` itself (post master gain, so the master volume
-	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
-	// Collected here and armed after the loop because addModule is async and
-	// the graph build is not.
-	const meterSources: MeterTapSource[] = [];
-	meterSources.push(createMasterMeterSource(_masterGain));
-	meterSources.push(
-		...buildDeckChannelGraph({
-			ctx: _ctx,
-			mixerState,
-			masterGain: _masterGain,
-			externalMerger: _externalMerger,
-			routing,
-			cueSum: headphones.cueSum,
-			xfGainFor: _xfGainFor,
-			onDeck: (deck, nodes, tap) => {
-				_rt[deck].nodes = nodes;
-				_meterTaps[deck] = tap;
-			}
-		})
-	);
-	void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
-		recordPerfEvent(
-			'stretch-worklet-preload-failed',
-			`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+	try {
+		// Construction options travel through ONE named constant so a future
+		// user-facing buffer/latency setting has a single place to write to.
+		_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+		registerAudioContext(_ctx);
+		stampContextDeviceFloors(_ctx);
+		// A context that is allowed to start running immediately never fires
+		// statechange, so the build stamp above already caught it; one that starts
+		// suspended is re-stamped the moment it runs, whichever path resumed it.
+		// The watchdog owns that re-stamp AND every non-running state: suspended,
+		// interrupted and closed used to fall through in silence, which is how
+		// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
+		armAudioContextWatchdog(
+			_ctx,
+			() => DECK_IDS.some((deck) => deckStates[deck].playing),
+			rebuildAudioGraphKeepingDecks
 		);
-	});
-	armXrunSentinel(_ctx);
-	armDeckMeters(_ctx, meterSources);
-	return _ctx;
+		setPlayingPositionReader(() =>
+			DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
+				deck: d,
+				position_ms: deckStates[d].position_ms,
+				decoded_duration_ms: deckStates[d].duration_ms,
+				metadata_duration_ms: _rt[d].metadataDurationMs
+			}))
+		);
+		_masterGain = _ctx.createGain();
+		_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
+		// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
+		// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
+		_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
+		resetMasterSilenceWatch(); resetPresentationClockStall();
+		// Silence belt for headless test agents (`?muted=1`): the LAST node before
+		// the destination, so a mute is one gain value and every node upstream --
+		// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
+		// identically. See player/master-mute.svelte.ts.
+		_masterMuteGain = _ctx.createGain();
+		attachMasterMuteNode(_masterMuteGain);
+		_masterDelay = createMasterDelayNode(_ctx);
+		const routing = parseExternalRouting();
+		// IOPIN-12: a djio request on an output with < 4 channels plays stereo master.
+		const djio = resolveDjOutputProfile(parseDjOutputProfile(window.location.search), _ctx.destination.maxChannelCount);
+		_djOutputProfileActive = djio.profile;
+		const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
+		const output = wireAudioOutputTopology({
+			context: _ctx,
+			routing,
+			profile: _djOutputProfileActive,
+			masterGain: _masterGain,
+			masterMuteGain: _masterMuteGain,
+			masterDelay: _masterDelay,
+			headphoneDelay: headphones.delay
+		});
+		_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
+		_djOutputNodes = output.ownedNodes;
+		setMultichannelMonitorActive(output.multichannelMonitorActive);
+		if (routing === null && _djOutputProfileActive === null) {
+			wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+			wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+		}
+		// Post-fader channel tap points, one per deck, PLUS one master tap sourced
+		// from `_masterGain` itself (post master gain, so the master volume
+		// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
+		// Collected here and armed after the loop because addModule is async and
+		// the graph build is not.
+		const meterSources: MeterTapSource[] = [];
+		meterSources.push(createMasterMeterSource(_masterGain));
+		meterSources.push(
+			...buildDeckChannelGraph({
+				ctx: _ctx,
+				mixerState,
+				masterGain: _masterGain,
+				externalMerger: _externalMerger,
+				routing,
+				cueSum: headphones.cueSum,
+				xfGainFor: _xfGainFor,
+				onDeck: (deck, nodes, tap) => {
+					_rt[deck].nodes = nodes;
+					_meterTaps[deck] = tap;
+				}
+			})
+		);
+		void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
+			recordPerfEvent(
+				'stretch-worklet-preload-failed',
+				`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+			);
+		});
+		armXrunSentinel(_ctx);
+		armDeckMeters(_ctx, meterSources);
+		publishDjOutputResolution(djio);
+		return _ctx;
+	} catch (error) {
+		// IOPIN-12: `_ctx !== null` is the early return above, so a half-built graph
+		// kept here hands every later load a context with no deck nodes ("load: deck
+		// N audio graph is missing") for the rest of the page session.
+		_discardFailedGraph();
+		throw error;
+	}
 }
 
 /** Equal-power crossfade gain for one bus assignment at position x (0..1). */
@@ -3002,6 +3038,7 @@ class RbAudioEngine implements AudioEngine {
 		_externalMerger = _externalRouteAnalyser = null;
 		_djOutputNodes = [];
 		_djOutputProfileActive = null;
+		clearDjOutputResolution();
 		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
 		_masterDeck = null;

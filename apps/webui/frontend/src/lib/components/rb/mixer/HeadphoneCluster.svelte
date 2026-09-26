@@ -17,6 +17,8 @@
 	import CueAlignModal from './CueAlignModal.svelte';
 	import { PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
+	import { audioOutputStatus } from '$lib/rb/audio-output-status.svelte';
+	import { djioFallbackTitle } from '$lib/rb/audio-output-topology';
 	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
@@ -286,6 +288,9 @@
 					<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button></ControlExplainer>
 				</div>
 				<p class="hp-context">{modeBullets[headphoneState.output_mode === 'practice' ? 0 : headphoneState.output_mode === 'two_outputs' ? 1 : 2]}</p>
+				{#if audioOutputStatus.fallback !== null}
+					<p class="hp-warn" role="status" data-djio-fallback-notice title={djioFallbackTitle(audioOutputStatus.fallback)}>{audioOutputStatus.fallback.message}</p>
+				{/if}
 				{#if headphoneState.output_mode === 'split_cable'}
 					<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}><p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}

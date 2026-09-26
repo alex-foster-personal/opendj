@@ -13,12 +13,16 @@ const root = new URL('../../', import.meta.url);
 const read = (path) => readFile(new URL(path, root), 'utf8');
 
 test('Mixtour Pro requests the native master 1/2 plus cue 3/4 topology', async () => {
-	const [map, runtime] = await Promise.all([
+	const [map, runtime, topology] = await Promise.all([
 		read('src/lib/rb/midi/maps/reloop-mixtour-pro.ts'),
-		read('src/lib/rb/midi/webmidi.svelte.ts')
+		read('src/lib/rb/midi/webmidi.svelte.ts'),
+		read('src/lib/rb/audio-output-topology.ts')
 	]);
 	assert.match(map, /nativeAudioProfile:\s*'master12-cue34'/);
-	assert.match(runtime, /next\.searchParams\.set\('djio', \[\.\.\.profiles\]\[0\]\)/);
+	// IOPIN-12 moved the URL edit into a pure, unit-tested helper (see
+	// iopin-12-djio-stereo-fallback.test.mjs for its behavior).
+	assert.match(runtime, /djioRedirectTarget\(window\.location\.href, \[\.\.\.profiles\]\[0\]\)/);
+	assert.match(topology, /url\.searchParams\.set\('djio', profile\)/);
 });
 
 test('installed-shell MIDI is a bounded CoreMIDI transport into the shared runtime', async () => {
