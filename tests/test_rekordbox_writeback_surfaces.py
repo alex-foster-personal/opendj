@@ -169,6 +169,11 @@ READ_ONLY_DB_HANDLES: dict[str, str] = {
         "diffs/plans; compare/plan only, writes CSVs under data/sync; live rekordbox "
         "writes are HTTP-guarded in routes/rb_djay_sync.py and guard_site on this module"
     ),
+    "apps/webui/frontend/tests/e2e/support/vocals_demucs_fixture.py": (
+        "e2e fixture builder: writes one vendor row only into its own disposable "
+        "fixture dir's master.plain.db and refuses the canonical data/ copy or any "
+        "path under ~/Library/Pioneer (_refuse_canonical_master); never a live handle"
+    ),
 }
 
 # Writers keyed off an INJECTED handle. No constructor and no path, so neither
