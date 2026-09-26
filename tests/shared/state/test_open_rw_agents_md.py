@@ -19,6 +19,7 @@ from apps.database.generate_agents_md import (
 )
 from apps.shared.state import schema as state_schema
 from apps.shared.state import schema_markers, sync_stamp
+from apps.shared.state.agents_md_cache import regenerate_agents_md_cached
 from apps.shared.state.db import open_dry_run, open_rw
 
 _AGENTS_HEADER = "# state.db -- generated table reference"
@@ -285,7 +286,7 @@ def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> No
         agents_md = tmp_path / "AGENTS.md"
         before = agents_md.stat().st_ino
         # Same call shape open_rw already made: the cache HIT this fix exists for.
-        assert regenerate_agents_md_if_writable(
+        assert regenerate_agents_md_cached(
             conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
         ) is False
         assert agents_md.stat().st_ino == before
@@ -294,7 +295,7 @@ def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> No
         # so it must MISS: the gate does not just always skip.
         narrowed = frozenset({"tracks"})
         assert narrowed != state_schema.ALL_KNOWN_TABLES
-        assert regenerate_agents_md_if_writable(conn, tmp_path, owned_tables=narrowed) is True
+        assert regenerate_agents_md_cached(conn, tmp_path, owned_tables=narrowed) is True
         assert agents_md.stat().st_ino != before
     finally:
         conn.close()
@@ -315,7 +316,7 @@ def test_regenerate_reruns_for_a_marker_an_older_generator_wrote(tmp_path: Path)
         conn.commit()
         assert not schema_markers.has_marker(conn, current)
 
-        assert regenerate_agents_md_if_writable(conn, tmp_path, owned_tables=tables) is True
+        assert regenerate_agents_md_cached(conn, tmp_path, owned_tables=tables) is True
         assert schema_markers.has_marker(conn, current)
     finally:
         conn.close()
