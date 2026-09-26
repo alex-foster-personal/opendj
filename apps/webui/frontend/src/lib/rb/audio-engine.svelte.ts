@@ -136,8 +136,7 @@ import {
 	RbApiError
 } from '$lib/rb/api-rb';
 import { awaitStemArtifact, stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-hydrate-wait';
-import { setSessionRating } from '$lib/rb/stick-session-edits';
-import { isUsbTrackId } from '$lib/rb/track-source';
+import { isUsbTrackId, loadStickSessionEdits } from '$lib/rb/track-source';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -982,8 +981,9 @@ export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	if (stable_id === null) return;
 	try {
 		if (isUsbTrackId(stable_id)) {
-			setSessionRating(stable_id, next);
-			deckStates[deck].rating = next;
+			(await loadStickSessionEdits()).setSessionRating(stable_id, next);
+			// The on-demand import is a yield: the same guard as the library path.
+			if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = next;
 			return;
 		}
 		const etag = (await getTrack(stable_id)).etag;

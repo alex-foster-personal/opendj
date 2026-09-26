@@ -47,6 +47,7 @@ import type {
 	MidiInputValue,
 	MidiSource
 } from '$lib/rb/midi/midi-types';
+import { midiState, type MidiDeviceInfo, type MidiPermission } from '$lib/rb/midi/midi-state.svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
@@ -56,7 +57,6 @@ import {
 	decodeRelative,
 	decodeSource
 } from '$lib/rb/midi/decode';
-import { rearmMidiTakeoverDevice } from '$lib/rb/midi/takeover-state.svelte';
 
 // The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
 // limit). Re-exported here so callers and tests keep their import path.
@@ -77,31 +77,10 @@ export const MIDI_STATUS_CC = 0xb0;
 
 // ------------------------------------------------------------ rune stores
 
-export type MidiPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';
-
-/** One connected MIDI device as the UI + glue see it. */
-export interface MidiDeviceInfo {
-	/** WebMIDI input port id (primary identity for dispatch + LEDs). */
-	id: string;
-	name: string;
-	manufacturer: string;
-	/** vendor of the resolved DeviceMap; null = no map matched (learn-log
-	 * only device). */
-	mapVendor: string | null;
-	/** True when a same-named output port exists (LED feedback possible). */
-	hasOutput: boolean;
-}
-
-/** Reactive WebMIDI surface state. */
-export const midiState: {
-	permission: MidiPermission;
-	devices: MidiDeviceInfo[];
-	shiftHeld: boolean;
-} = $state({
-	permission: 'prompt',
-	devices: [],
-	shiftHeld: false
-});
+// midiState and its types live in the midi-state.svelte.ts leaf (see its
+// docstring); re-exported so callers and tests keep their import path.
+export { midiState };
+export type { MidiDeviceInfo, MidiPermission };
 
 /** Rolling learn log, newest first. THE debugging tool for writing device
  * maps: unmapped traffic is captured here, never dropped. */
@@ -164,6 +143,14 @@ let _actionHandler:
 	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void)
 	| null =
 	null;
+/** THE takeover rearm listener, registered by takeover-state.svelte.ts at
+ * import. Inverted (rather than imported) so the takeover policy loads with the
+ * rest of the on-demand MIDI engine instead of wherever webmidi's reactive
+ * state is read on first paint. Null means the policy module has not loaded,
+ * which means no absolute value has ever been observed and there is nothing to
+ * rearm: the policy is only fed through the action glue, and loading the glue
+ * loads the policy (and this registration) before initMidi resolves a port. */
+let _takeoverRearm: ((deviceId: string) => void) | null = null;
 /** Synchronous dispatch context. The public handler signature remains the
  * receipt-stamp contract; action glue reads this only during that call. */
 let _activeControlId: string | undefined;
@@ -261,7 +248,7 @@ function _rescanWebMidiPorts(): void {
 		};
 		input.onmidimessage = (ev: MIDIMessageEvent) => _dispatch(device, ev);
 		_resolved.set(input.id, device);
-		rearmMidiTakeoverDevice(input.id);
+		_rearmTakeover(input.id);
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (!seen.has(id)) {
@@ -269,7 +256,7 @@ function _rescanWebMidiPorts(): void {
 			if (dev !== undefined) dev.detachInput();
 			_resolved.delete(id);
 			_ledQueues.delete(id);
-			rearmMidiTakeoverDevice(id);
+			_rearmTakeover(id);
 		}
 	}
 	_publishResolvedDevices();
@@ -311,14 +298,14 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 			msbValues: new Map(),
 			lsbIndex
 		});
-		rearmMidiTakeoverDevice(found.id);
+		_rearmTakeover(found.id);
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (seen.has(id)) continue;
 		_resolved.get(id)?.detachInput();
 		_resolved.delete(id);
 		_ledQueues.delete(id);
-		rearmMidiTakeoverDevice(id);
+		_rearmTakeover(id);
 	}
 	_publishResolvedDevices();
 	const profiles = new Set(
@@ -377,7 +364,7 @@ function _emit(
 		// Layer changes can rebind an identical physical CC to a different
 		// scalar. Require a fresh pickup rather than carrying its old position
 		// into that layer.
-		rearmMidiTakeoverDevice(device.id);
+		_rearmTakeover(device.id);
 		_pushLearnLog({
 			...log,
 			mapped: true,
@@ -605,6 +592,15 @@ export function registerActionHandler(
 		throw new Error('registerActionHandler: a handler is already registered');
 	}
 	_actionHandler = handler;
+}
+
+/** Register THE takeover rearm listener (takeover-state, at import). */
+export function registerTakeoverRearm(listener: (deviceId: string) => void): void {
+	_takeoverRearm = listener;
+}
+
+function _rearmTakeover(deviceId: string): void {
+	_takeoverRearm?.(deviceId);
 }
 
 /** The physical source of the action currently being synchronously handled.

@@ -27,7 +27,7 @@
 		toggleMidiPanelExpanded
 	} from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
-	import { midiTakeoverUi } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverUi } from '$lib/rb/midi/takeover-ui.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {

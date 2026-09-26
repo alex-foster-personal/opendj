@@ -17,6 +17,14 @@
  */
 import { RbApiError } from './api-rb-error';
 
+/** A stick track's session edits (hot cues, rating; decision 2) load on
+ * demand: every caller already knows the id is a stick id and is async, and a
+ * boot that never plays from USB never needs them. Module-cached, so every
+ * caller shares the one session store. */
+export function loadStickSessionEdits(): Promise<typeof import('./stick-session-edits')> {
+	return import('./stick-session-edits');
+}
+
 export function isUsbTrackId(id: string): boolean {
 	return id.startsWith('usb-');
 }

@@ -8,7 +8,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { coalesceLatest } from '$lib/rb/coalesce';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 	import { thumbOffsetPx, valueFromPointer } from '$lib/rb/pitch-fader-geometry';
 

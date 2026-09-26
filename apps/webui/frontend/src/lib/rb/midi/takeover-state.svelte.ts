@@ -1,4 +1,5 @@
-/** IOPIN-06 runtime bridge: reactive ghosts + local Preview preference. */
+/** IOPIN-06 runtime bridge: the takeover policy, feeding the reactive ghosts
+ * and the Preview preference that live in the takeover-ui.svelte.ts leaf. */
 
 import { untrack } from 'svelte';
 import type { MidiAction } from './midi-types';
@@ -6,26 +7,15 @@ import {
 	AbsoluteTakeoverPolicy,
 	continuousTakeoverFunction,
 	makeTakeoverIdentity,
-	type MidiTakeoverMode,
-	type TakeoverDecision,
-	type TakeoverGhost
+	type TakeoverDecision
 } from './takeover-policy';
+import { midiTakeoverUi, onMidiTakeoverModeChange } from './takeover-ui.svelte';
+import { registerTakeoverRearm } from './webmidi.svelte';
 
-const TAKEOVER_MODE_KEY = 'opendj.midi.takeover-mode';
-
-function initialMode(): MidiTakeoverMode {
-	if (typeof document === 'undefined') return 'pickup';
-	return window.localStorage.getItem(TAKEOVER_MODE_KEY) === 'jump' ? 'jump' : 'pickup';
-}
-
-const policy = new AbsoluteTakeoverPolicy(initialMode());
+// Seeded from the leaf, which may have been set (IPC, MIDI settings) before
+// this module loaded with the rest of the MIDI runtime.
+const policy = new AbsoluteTakeoverPolicy(midiTakeoverUi.mode);
 const knownFunctions = new Set<string>();
-
-/** Shared by MIDI settings and reusable scalar controls. */
-export const midiTakeoverUi: {
-	mode: MidiTakeoverMode;
-	ghosts: Record<string, TakeoverGhost | null>;
-} = $state({ mode: policy.mode, ghosts: {} });
 
 function refreshGhost(functionId: string): void {
 	knownFunctions.add(functionId);
@@ -45,12 +35,10 @@ function refreshGhost(functionId: string): void {
 	midiTakeoverUi.ghosts = { ...ghosts, [functionId]: next };
 }
 
-export function setMidiTakeoverMode(mode: MidiTakeoverMode): void {
+onMidiTakeoverModeChange((mode) => {
 	policy.setMode(mode);
-	midiTakeoverUi.mode = mode;
-	if (typeof document !== 'undefined') window.localStorage.setItem(TAKEOVER_MODE_KEY, mode);
 	for (const functionId of knownFunctions) refreshGhost(functionId);
-}
+});
 
 /** Apply the policy at the real action-glue boundary. Undefined identity is
  * intentionally immediate: direct programmatic glue calls have no physical
@@ -97,11 +85,8 @@ export function rearmMidiTakeoverDevice(deviceId: string): void {
 	for (const functionId of knownFunctions) refreshGhost(functionId);
 }
 
-/** Reusable mixer chrome queries this by function id; no control invents a
- * ghost until MIDI has actually delivered an absolute value. */
-export function midiTakeoverGhost(functionId: string): TakeoverGhost | null {
-	return midiTakeoverUi.ghosts[functionId] ?? null;
-}
+// webmidi calls this on connect, disconnect and a shift-layer change.
+registerTakeoverRearm(rearmMidiTakeoverDevice);
 
 /** The action-glue uses this to make the engine effect exhaustive without
  * duplicating action-union knowledge. */

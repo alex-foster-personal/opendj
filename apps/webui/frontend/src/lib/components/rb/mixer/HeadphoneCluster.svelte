@@ -19,7 +19,7 @@
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
-	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import { midiState } from '$lib/rb/midi/midi-state.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 

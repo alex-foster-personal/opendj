@@ -12,7 +12,7 @@
 		crossfaderValueFromPointerX
 	} from '$lib/rb/crossfader-geometry';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** 0..1; 0 = full A, 1 = full B. */

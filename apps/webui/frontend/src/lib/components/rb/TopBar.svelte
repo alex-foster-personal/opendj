@@ -87,10 +87,13 @@
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
-	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
-	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
-	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import {
+		loadMidiLearnLogPopout,
+		loadMidiPanel,
+		midiSurfaceLoadFailure
+	} from '$lib/components/rb/midi/midi-panel-loader';
+	import { maybeAutoEnableMidi, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -829,17 +832,45 @@
 
 <CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
-<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
-<MidiPanel />
+<!-- MIDI drawer: fixed overlay, mounted (and its chunk fetched) only while
+     midiUi.panelOpen. A chunk that did not arrive shows as an alert where the
+     drawer would have opened. -->
+{#if midiUi.panelOpen}
+	{#await loadMidiPanel() then { default: MidiPanel }}
+		<MidiPanel />
+	{:catch error}
+		<div class="midi-load-error rb-panel" role="alert">{midiSurfaceLoadFailure('MIDI panel', error)}</div>
+	{/await}
+{/if}
 
 <!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
 <JobsDrawer />
 
 <!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
      panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
-<MidiLearnLogPopout />
+{#if midiUi.logPopoutOpen}
+	{#await loadMidiLearnLogPopout() then { default: MidiLearnLogPopout }}
+		<MidiLearnLogPopout />
+	{:catch error}
+		<div class="midi-load-error rb-panel" role="alert">
+			{midiSurfaceLoadFailure('MIDI learn-log pop-out', error)}
+		</div>
+	{/await}
+{/if}
 
 <style>
+	/* Stands where the MIDI drawer / pop-out would have opened (drawer geometry
+	 * from MidiPanel.svelte) so a failed chunk load is visible, not silent. */
+	.midi-load-error {
+		position: fixed;
+		top: var(--rb-topbar-h);
+		right: 0;
+		z-index: 41;
+		width: min(420px, 92vw);
+		padding: 10px;
+		color: var(--rb-red);
+	}
+
 	.rb-topbar {
 		position: relative;
 		grid-area: topbar;
