@@ -117,6 +117,22 @@ def test_x86_retirement_covers_every_persona_loop_label() -> None:
         )
 
 
+def test_agt_loop_holds_after_a_walled_attempt() -> None:
+    """[if] the loop re-probes a walled seat every minute [then] a weekly limit churns an
+    empty run dir per minute for days (live on demon-llama Sat 26 Sep 2026), [else stop].
+    The hold keys on the harness's own rc=3 AND its `CLI is walled` line, so an ordinary
+    failed run keeps the normal cadence."""
+    text = LOOP_SH.read_text(encoding="utf-8")
+    assert 'AGT_WALLED_BACKOFF_S="${AGT_WALLED_BACKOFF_S:-' in text
+    hold = re.search(
+        r'if \[ "\$rc" = 3 \] && grep -q "CLI is walled" "\$out\.log".*?\n'
+        r'\s*sleep "\$AGT_WALLED_BACKOFF_S"',
+        text,
+        re.S,
+    )
+    assert hold, "the walled hold must be gated on rc=3 plus the harness's walled line"
+
+
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
     """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
     [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
