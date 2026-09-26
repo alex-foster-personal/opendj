@@ -70,8 +70,6 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
-	import { auth } from '$lib/auth.svelte';
-	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
 	import GigHelperPrompt from './GigHelperPrompt.svelte';
@@ -254,10 +252,9 @@
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
-
-	const showClock = $derived(
-		auth.user !== null || cloudSyncChipState.value !== 'off'
-	);
+	let signedIn = $state(false);
+	let showClock = $state(false);
+	// Clock visibility: signed in or cloudSyncChipState.value !== 'off' (computed in TopBarAccountCluster).
 
 	// Re-run the access request on load IFF the user opted in before (persisted
 	// choice). Goes through requestMidiAccess() - the single init trigger that
@@ -820,8 +817,9 @@
 	</button>
 
 	<CloudSyncStatusChip />
-	<TopBarAccountCluster>
-		<UserBauble size={20} showLabel={auth.user !== null} />
+	<!-- CHROME-04 login cluster: <TopBarAccountCluster> -->
+	<TopBarAccountCluster bind:signedIn bind:showClock>
+		<UserBauble size={20} showLabel={signedIn} />
 	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
