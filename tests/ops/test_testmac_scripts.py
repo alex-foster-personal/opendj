@@ -395,7 +395,8 @@ def test_plist_driver_survives_a_zshenv_that_exports_another(tmp_path: Path) -> 
     probe = tmp_path / "loop.sh"
     probe.write_text('printf %s "$AGT_AGENT_CLI"\n', encoding="utf-8")
     command = command.replace("${AGENT_CLI}", "claude")
-    command = re.sub(r"/Users/\$\{REMOTE_USER\}/\S+", str(probe), command)
+    command, swapped = re.subn(r"\S+/opendj-agt-persona-loop\.sh", str(probe), command)
+    assert swapped == 1, f"control: the plist command must exec the loop script: {command}"
     (tmp_path / ".zshenv").write_text("export AGT_AGENT_CLI=codex\n", encoding="utf-8")
     env = {"PATH": "/usr/bin:/bin", "ZDOTDIR": str(tmp_path), "AGT_AGENT_CLI": "claude"}
     done = subprocess.run(
