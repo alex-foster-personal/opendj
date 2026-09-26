@@ -640,6 +640,9 @@ export interface ToastIpcRow {
 	message: string;
 	headline: string;
 	detail?: string | undefined;
+	classification?: string | undefined;
+	settings_summary?: string | undefined;
+	exiting?: boolean;
 	expanded: boolean;
 	count: number;
 	created_at: string;
@@ -2896,6 +2899,9 @@ export function installPerformanceBrowserIpc(): () => void {
 				message: toast.message,
 				headline: toast.headline,
 				detail: toast.detail,
+				classification: toast.classification,
+				settings_summary: toast.settingsSummary,
+				exiting: toast.exiting === true,
 				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
