@@ -20,8 +20,9 @@ import { api, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
-import type { AnlzCue, AnlzData } from './anlz-types';
+import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
+export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
@@ -803,22 +804,6 @@ export async function fetchQualityLadder(): Promise<QualityRung[]> {
 // Slots beyond H (Kind 9-11) are unverified and never exposed here - the
 // backend route param type rejects them with 422 before this client is
 // even asked to serialize one.
-
-export interface HotCueReversal {
-	reversal_id: string;
-}
-
-export interface HotCueMutation {
-	cue: AnlzCue | null;
-	revision: string;
-	reversal?: HotCueReversal;
-}
-
-export interface HotCueSlotState {
-	slot: HotCueSlot;
-	cue: AnlzCue | null;
-	revision: string;
-}
 
 /** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
  * stick track's slots carry this session's edits (decision 2). */

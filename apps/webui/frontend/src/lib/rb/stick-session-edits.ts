@@ -21,8 +21,7 @@
  * the library routes (apps/adapters/rekordbox/cues.py, reversal.py).
  */
 import { RbApiError } from './api-rb-error';
-import type { AnlzCue } from './anlz-types';
-import type { HotCueMutation, HotCueSlotState } from './api-rb';
+import type { AnlzCue, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 
 interface SlotState {
