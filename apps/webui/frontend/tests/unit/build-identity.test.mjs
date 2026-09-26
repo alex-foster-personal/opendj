@@ -385,6 +385,8 @@ test('the chip is a tray citizen, not a floating overlay', async () => {
 	assert.match(source, /bottom:\s*100%/);
 });
 
+// requirement: INSTALL-29
+// [if] foldout open with engine url ok [then] link and copy-all controls exist, [else stop].
 test('the foldout states the address as a link with copy-all controls', async () => {
 	const { readFileSync } = await import('node:fs');
 	const source = readFileSync(
@@ -397,11 +399,31 @@ test('the foldout states the address as a link with copy-all controls', async ()
 	assert.match(source, /<a[\s\S]*class="url"/);
 	assert.match(source, /copy all details/);
 	assert.match(source, /Copy build identity to clipboard/);
-	assert.match(source, /formatBuildIdentityReport/);
-	assert.match(source, /clipboard\.writeText/);
-	assert.match(source, /copy refused/);
+	assert.match(source, /copyBuildIdentityToClipboard/);
 });
 
+// requirement: INSTALL-29
+// [if] writeText rejects [then] copy note is copy refused fault, [else stop].
+test('copyBuildIdentityToClipboard surfaces clipboard write failure', async () => {
+	const note = await mod.copyBuildIdentityToClipboard(
+		{
+			shell: { kind: 'absent', reason: 'browser' },
+			engine: { kind: 'ok', value: ENGINE_OK },
+			engineUrl: { kind: 'ok', url: 'http://127.0.0.1:56146', source: 'served' },
+			drift: 'unknown',
+			updateSummary: null
+		},
+		{
+			writeText: async () => {
+				throw new Error('NotAllowedError: no user gesture');
+			}
+		}
+	);
+	assert.match(note, /^copy refused: NotAllowedError: no user gesture$/);
+});
+
+// requirement: INSTALL-29
+// [if] copy-all runs [then] report includes url drift and git_sha, [else stop].
 test('formatBuildIdentityReport includes url drift and engine git_sha', () => {
 	const report = mod.formatBuildIdentityReport({
 		shell: { kind: 'absent', reason: 'browser' },

@@ -569,6 +569,8 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
+	// requirement: INSTALL-29
+	// [if] user opens foldout [then] url link and copy controls work, [else stop].
 	test('the build identity chip states this app address in its foldout', async ({
 		page,
 		context,
@@ -588,7 +590,18 @@ test.describe('setup entry points', () => {
 		const urlLink = chip.locator('a.url');
 		await expect(urlLink).toBeVisible();
 		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		const href = await urlLink.getAttribute('href');
+		if (browserName === 'chromium' && href) {
+			const pagePromise = context.waitForEvent('page');
+			await urlLink.click();
+			const engineTab = await pagePromise;
+			await engineTab.waitForLoadState('domcontentloaded');
+			expect(engineTab.url().replace(/\/$/, '')).toBe(href.replace(/\/$/, ''));
+			await engineTab.close();
+		}
 		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		const copyIcon = chip.getByRole('button', { name: 'Copy build identity to clipboard' });
+		await expect(copyIcon).toBeVisible();
 		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
 		// WebKit rejects the grant outright ("Unknown permission:
 		// clipboard-write"), and this spec also runs under the webkit artifact
@@ -612,6 +625,19 @@ test.describe('setup entry points', () => {
 				}, {
 					timeout: 30_000,
 					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
+				})
+				.toMatch(/git_sha:/);
+		}
+		await copyIcon.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			await expect
+				.poll(async () => {
+					await copyIcon.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the clipboard icon must copy the full build identity report'
 				})
 				.toMatch(/git_sha:/);
 		}
