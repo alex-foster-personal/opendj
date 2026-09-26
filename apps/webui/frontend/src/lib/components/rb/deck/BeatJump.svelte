@@ -82,7 +82,12 @@
 	}
 </script>
 
-	<div class="beat-jump" role="group" aria-label={`beat jump deck ${deck.deck_id}`} title="Beat jump: move the transport by whole beatgrid beats">
+<div
+	class="beat-jump"
+	role="group"
+	aria-label={`beat jump deck ${deck.deck_id}`}
+	title="Beat jump: move the transport by whole beatgrid beats"
+>
 	<span class="column-label">JUMP</span>
 	{#each JUMPS as delta (delta)}
 		<button
@@ -100,7 +105,7 @@
 </div>
 
 <style>
-	/* Two compact columns keep BeatJump to the left of LoopCluster without
+	/* Two compact columns sit to the right of LoopCluster in loop-col without
 	 * borrowing any hot-cue-bank space. The local group is horizontal, so the
 	 * grid's second row uses the loop cluster's existing vertical footprint. */
 	.beat-jump {
