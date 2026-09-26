@@ -1,4 +1,5 @@
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import { resolveCommentPinHotkey } from './comment-pin-hotkey-routing';
 import { isNativeInteractiveTarget } from './performance-hotkeys-target';
 
 export type PerformanceShortcutAction =
@@ -15,6 +16,7 @@ export interface PerformanceShortcutKeyEvent {
 	metaKey: boolean;
 	ctrlKey: boolean;
 	altKey: boolean;
+	shiftKey?: boolean;
 }
 
 export interface PerformanceShortcutKeydownEvent extends PerformanceShortcutKeyEvent {
@@ -43,6 +45,18 @@ export function resolvePerformanceShortcutAction(
 		if (e.altKey) return null;
 		return { kind: 'space', quantize: false };
 	}
+	if (e.key === 'm' || e.key === 'M') {
+		return resolveCommentPinHotkey({
+			key: e.key,
+			target: e.target,
+			metaKey: e.metaKey,
+			ctrlKey: e.ctrlKey,
+			altKey: e.altKey,
+			shiftKey: e.shiftKey ?? false
+		}) === 'arm'
+			? { kind: 'm' }
+			: null;
+	}
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
 	// Tab is the browser's own focus-traversal key: unlike Space/M/loop-resize
 	// (which A11Y-01 deliberately fires over buttons, sliders and rows), a
@@ -57,7 +71,6 @@ export function resolvePerformanceShortcutAction(
 	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
 	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
-	if (e.key === 'm' || e.key === 'M') return { kind: 'm' };
 	return null;
 }
 

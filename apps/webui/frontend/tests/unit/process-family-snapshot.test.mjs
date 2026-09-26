@@ -90,3 +90,24 @@ test('processFamilyFrom omits kernel when the field is missing', () => {
 	assert.equal(result.kernelLevel, null);
 	assert.equal(Object.hasOwn(result, 'kernelLevel'), true);
 });
+
+test('processFamilyFrom maps probe role slugs to opendj labels in by_role_mb fallback', () => {
+	const body = {
+		available: true,
+		by_role_mb: {
+			'python-engine': 120.2,
+			'webkit-webcontent': 44.1,
+			'unknown-role': 1.0
+		}
+	};
+
+	const result = snapshot.processFamilyFrom(body);
+
+	assert.ok(result);
+	const labels = result.members.map((member) => member.label);
+	assert.deepEqual(labels, ['opendj-engine', 'opendj-webcontent', 'unnamed']);
+	for (const label of labels) {
+		assert.doesNotMatch(label, /^python-engine$/);
+		assert.doesNotMatch(label, /^webkit-/);
+	}
+});

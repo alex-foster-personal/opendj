@@ -19,13 +19,17 @@ const hotkeys = read('src/lib/rb/performance-hotkeys.ts');
 // performance-hotkeys handler is attached.
 const commentPinHotkeys = read('src/lib/rb/comment-pin-hotkeys.ts');
 const routing = read('src/lib/rb/performance-shortcut-routing.ts');
+// #4000 (issue #3980) moved the key check out of the installer into the pure
+// router, which comment-pin-hotkey-routing.test.mjs exercises behaviorally.
+const commentPinRouting = read('src/lib/rb/comment-pin-hotkey-routing.ts');
 // savePinDraft's textarea moved into its own component (Thu 3 Sep 2026,
 // pin review v2) to bring FeedbackWidget.svelte back under the 600-line
 // file-size gate.
 const draftBubble = read('src/lib/components/rb/FeedbackPinDraftBubble.svelte');
 
 test("'m' arms comment pin placement", () => {
-	assert.match(commentPinHotkeys, /e\.key !== 'm' && e\.key !== 'M'/);
+	assert.match(commentPinRouting, /e\.key !== 'm' && e\.key !== 'M'/);
+	assert.match(commentPinHotkeys, /resolveCommentPinHotkey\(e,/);
 	assert.match(commentPinHotkeys, /armPinPlacement\(\)/);
 	assert.match(hotkeys, /armPinPlacement/);
 	assert.match(routing, /kind: 'm'/);

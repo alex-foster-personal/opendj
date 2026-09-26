@@ -202,9 +202,9 @@ test('a known-empty track is not refetched', async () => {
 	};
 
 	await cache.load('t-empty');
+	assert.equal(calls, 2, 'words 404 then line-cache 404 before settling on none');
 	await cache.load('t-empty');
-
-	assert.equal(calls, 1, "state 'none' must stop the re-request fan-out");
+	assert.equal(calls, 2, "state 'none' must stop the re-request fan-out");
 });
 
 test('applyVerdict replaces the verdict and nothing else', async () => {

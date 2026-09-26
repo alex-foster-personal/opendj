@@ -53,7 +53,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const source = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
 
 test('load() publishes resolvePublishedAnlz\'s freshness-checked answer at swap time, not the pre-revalidation candidate', () => {
-	const loadStart = source.indexOf('async load(deck: DeckId, stable_id: string): Promise<void> {');
+	const loadStart = source.indexOf('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
 	assert.ok(loadStart > 0, 'load() not found - this test is reading the wrong file');
 	const swapStart = source.indexOf('await _withDeckSwap(rt, async () => {', loadStart);
 	assert.ok(swapStart > loadStart, 'the deck-swap block was not found inside load()');
