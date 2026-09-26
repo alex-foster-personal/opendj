@@ -52,6 +52,7 @@ def _write_wav(path: Path, seconds: float = 1.0) -> None:
         )
 
 
+# REQ: LYR-02
 def test_push_missing_dry_run_lists_work_without_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

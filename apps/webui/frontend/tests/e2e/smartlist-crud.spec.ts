@@ -29,6 +29,7 @@ test.describe('smartlist tree CRUD', () => {
 		});
 	});
 
+	// REQ: LIBMX-10
 	test('new smartlist from Playlists tab context menu', async ({ page }) => {
 		const name = `New SL ${Date.now()}`;
 		const createdIds: string[] = [];

@@ -19798,6 +19798,19 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackLibraryRevisionOut": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "TrackLibraryRevisionOut",
+        "type": "object"
+      },
       "TrackLifecycleOut": {
         "properties": {
           "deleted_at": {
@@ -36236,6 +36249,28 @@
           }
         },
         "summary": "Get Quality Ladder",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/revision": {
+      "get": {
+        "description": "Return a cheap revision probe for clients holding library snapshots.",
+        "operationId": "get_library_revision_api_v1_tracks_revision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLibraryRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Revision",
         "tags": [
           "tracks"
         ]
