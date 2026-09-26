@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from construct.core import ConstructError  # type: ignore[import-untyped]
+from construct.core import ConstructError
 from pyrekordbox.anlz import AnlzFile
 
 from apps.sync.usb.pioneer.anlz_track import (
@@ -403,7 +403,7 @@ STICK_TIMING_PASSES = 3
 
 
 def _stick_root() -> Path:
-    raw = os.environ.get(STICK_ENV)
+    raw = os.environ.get(STICK_ENV, "")
     if not raw:
         reason = f"{STICK_ENV} is unset: live stick ANLZ decode not run (set it to a mounted stick)"
         print(f"[SKIP] {reason}")
