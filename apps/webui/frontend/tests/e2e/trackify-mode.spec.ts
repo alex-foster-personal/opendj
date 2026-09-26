@@ -1,5 +1,6 @@
 // requirement: PERFMODE-15
 // [if] Trackify route is opened from the mode chooser [then] the listening shell renders
+// [if] a Trackify load fails [then] exactly one toast shows, the skip toast (#4036)
 
 import { expect, test } from '@playwright/test';
 
@@ -70,6 +71,10 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	const elapsedMs = await page.evaluate((started) => performance.now() - started, startedAt);
 	expect(elapsedMs).toBeLessThan(2_000);
 	await expect(page.locator('[data-toast-dismiss]').first()).toBeVisible();
+	// #4036: the engine's own "Deck 1 could not load the track" toast used to
+	// appear beside the skip toast. One failed load, one toast.
+	await expect(page.locator('[data-toast-id]')).toHaveCount(1);
+	await expect(page.getByText(/could not load the track/)).toHaveCount(0);
 	await page.waitForFunction(
 		(goodId) => window.musicDjToolsTrackify?.query().deck.stable_id === goodId,
 		goodId,
