@@ -172,6 +172,7 @@ test('an unparseable timestamp renders nothing rather than "Invalid Date"', () =
 	assert.equal(mod.formatStamp(''), null);
 });
 
+// REQ: INSTALL-18
 test('build age reads in whole days and hours, never minutes', () => {
 	const now = new Date('2026-09-14T06:30:00Z');
 	assert.equal(mod.formatAge('2026-09-13T01:00:00Z', now), '1d 5h');
@@ -180,6 +181,7 @@ test('build age reads in whole days and hours, never minutes', () => {
 	assert.equal(mod.formatAge('2026-09-14T06:00:00Z', now), '<1h');
 });
 
+// REQ: INSTALL-18
 test('a build stamped in the future or unparseable has no age, never a negative one', () => {
 	const now = new Date('2026-09-14T06:30:00Z');
 	assert.equal(mod.formatAge('2026-09-14T07:30:00Z', now), null);
@@ -277,6 +279,18 @@ test('the component carries no build-time literal of its own', async () => {
 	assert.match(source, /release_channel/);
 	assert.match(source, /evidence_written_at_utc/);
 	assert.match(source, /evidenceStamp/);
+});
+
+// REQ: INSTALL-18
+test('the compact built-at reads as age ago and ticks once a minute', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /setInterval\(\(\) => \(now = new Date\(\)\), 60_000\)/);
+	assert.match(source, /evidenceAge !== null \? `\$\{evidenceAge\} ago` : evidenceStamp\.local/);
+	assert.match(source, /engineAge !== null \? `\$\{engineAge\} ago` : engineStamp\.local/);
 });
 
 // ----- where this app is --------------------------------------------------

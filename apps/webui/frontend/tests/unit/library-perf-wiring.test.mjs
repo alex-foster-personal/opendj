@@ -94,6 +94,7 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	);
 });
 
+// REQ: PERF-UI-05
 test('TrackTable row artwork stays thumbnail-sized', () => {
 	const src = source('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(src, /artworkUrl\(row\.stable_id, 's'\)/);

@@ -78,6 +78,7 @@ def test_version_ordering_is_numeric_not_lexical(db) -> None:
     assert canonical_pointer(db, "t1", "beatgrid") == ("own_beatgrid.backfill", "0.10.0")
 
 
+# REQ: NATIVE-11
 def test_cand_rows_are_never_eligible(db) -> None:
     store_mod.upsert_record(
         own_record(producer="cand", version="9.9.9",

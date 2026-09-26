@@ -52,6 +52,7 @@ function renderHidden(count) {
 	return mod.render(mod.Hidden, { props: { hiddenBrokenPlaylistCount: count } }).body;
 }
 
+// REQ: PERF-UI-05
 test('loading: shows playlists-loading and not empty/error/hidden copy', () => {
 	const html = renderStates({ playlistsLoading: true });
 	assert.match(html, /data-testid="playlists-loading"/);

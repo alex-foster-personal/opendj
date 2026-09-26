@@ -148,6 +148,7 @@ def test_arch_is_refused_rather_than_defaulted() -> None:
 
 
 # ----- the real config ---------------------------------------------------
+# REQ: INSTALL-16
 def test_shipped_config_does_not_ask_tauri_for_a_dmg() -> None:
     """#1711: Tauri's dmg target cannot be built where nobody is logged in.
 
@@ -191,6 +192,7 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
+# REQ: INSTALL-16
 def test_the_image_is_created_outside_the_signing_branch() -> None:
     """An unsigned run must still produce the artifact.
 

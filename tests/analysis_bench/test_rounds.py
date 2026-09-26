@@ -59,6 +59,7 @@ def test_append_writes_a_greppable_block(tmp_path: Path) -> None:
     assert rounds.next_round_number(text, "beatgrid", floor=2) == 3
 
 
+# REQ: NATIVE-11
 def test_a_round_without_both_controls_is_refused(tmp_path: Path) -> None:
     """Spec section 6: every table carries a positive and a negative control."""
     log = tmp_path / "log.md"

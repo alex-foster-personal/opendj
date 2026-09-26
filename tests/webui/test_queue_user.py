@@ -57,6 +57,7 @@ def _enqueue(conn, lane: str, ids: list[str], tmp: Path, placement: str = "next"
     )
 
 
+# REQ: PERFBATCH-05
 def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c", "backlog"])
@@ -72,6 +73,7 @@ def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["run", "n1", "n2"])
@@ -89,6 +91,7 @@ def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["t1", "t2"])
@@ -105,6 +108,7 @@ def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["fresh", "need"])
@@ -123,6 +127,7 @@ def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["has", "need"])
@@ -139,6 +144,7 @@ def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])
@@ -152,6 +158,7 @@ def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a", "b"])
@@ -164,6 +171,7 @@ def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a"])
@@ -186,6 +194,7 @@ def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_release_running_keeps_pending_order(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])

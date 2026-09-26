@@ -29,6 +29,7 @@ def bundle(tmp_path: Path) -> Path:
     return staged
 
 
+# REQ: NATIVE-11
 def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     store_root = tmp_path / "asset-store"
     assert cli.main(["fixtures", "push", "--lane", "beatgrid", "--version", "v1",

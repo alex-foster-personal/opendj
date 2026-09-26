@@ -78,6 +78,7 @@ def _seed_library(db: Path, ids: list[str]) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
 def test_every_control_exists_on_http_and_on_the_cli() -> None:
     paths = _router_paths()
     subcommands = _cli_subcommands()
@@ -89,6 +90,7 @@ def test_every_control_exists_on_http_and_on_the_cli() -> None:
     assert "user-cancel" in subcommands
 
 
+# REQ: PERFBATCH-05
 def test_every_control_is_documented_in_openapi_json() -> None:
     spec = json.loads(OPENAPI.read_text())
     documented = set(spec["paths"])
@@ -98,6 +100,7 @@ def test_every_control_is_documented_in_openapi_json() -> None:
     assert "/api/v1/library-jobs/{lane}/{stable_id}/cancel" in documented
 
 
+# REQ: PERFBATCH-05
 def test_every_control_is_reachable_from_the_ui_panel() -> None:
     assert PANEL.exists(), f"{PANEL} is missing; the UI half of parity is absent"
     assert API_CLIENT.exists(), f"{API_CLIENT} is missing"

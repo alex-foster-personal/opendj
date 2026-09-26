@@ -48,6 +48,7 @@ def test_sealed_bundle_verifies(tmp_path: Path) -> None:
     assert report["bundle_id"] == (bundle / bundles.ID_NAME).read_text().strip()
 
 
+# REQ: NATIVE-11
 def test_changed_payload_is_refused(tmp_path: Path) -> None:
     """The 28-percent-zero-filled-copy failure: same name, same size, other bytes."""
     bundle = _sealed(tmp_path)
@@ -86,6 +87,7 @@ def test_edited_manifest_is_refused(tmp_path: Path) -> None:
     assert bundles.MANIFEST_NAME in str(excinfo.value)
 
 
+# REQ: NATIVE-11
 def test_bundle_id_separates_two_bundles_sharing_a_version(tmp_path: Path) -> None:
     """The waveform lane's P1: `v1` alone cannot tell two fixture sets apart."""
     first = _sealed(tmp_path / "one")
@@ -115,6 +117,7 @@ def test_push_then_pull_round_trips_through_a_directory_store(tmp_path: Path) ->
     assert bundles.verify_bundle(pulled)["bundle_id"] == bundles.verify_bundle(bundle)["bundle_id"]
 
 
+# REQ: NATIVE-11
 def test_pull_refuses_and_removes_a_corrupted_download(tmp_path: Path) -> None:
     """A store whose bytes rotted must not leave a scorable directory behind."""
     bundle = _sealed(tmp_path)
