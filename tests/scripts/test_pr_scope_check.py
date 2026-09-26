@@ -1,6 +1,6 @@
 """PR scope check against declared issue limits (OPS-41 acceptance line 3, issue #3352).
 
-[if] a PR exceeds its declared issue scope [then] the scope check fails with both counts.
+[if] a PR exceeds its declared scope [then] the scope check fails with both counts, [else stop].
 
 Acceptance:
   - [if] a linked issue declares `Scope limit:` and the PR exceeds it [then] exit 1, both counts.
