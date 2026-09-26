@@ -6,7 +6,13 @@ import type { AppPosturePref } from './app-posture-prefs';
 import type { GigHelperPref } from './gig-helper-prefs';
 import { shouldOfferGigHelper } from './gig-helper-prompt';
 
-export let gigHelperPromptVisible = $state(false);
+// Private rune plus a getter: Svelte 5 refuses to export reassigned $state
+// (state_invalid_export), which broke every importer's compile.
+let gigHelperPromptVisible = $state(false);
+
+export function isGigHelperPromptVisible(): boolean {
+	return gigHelperPromptVisible;
+}
 
 export function tryOfferGigHelperPromptOnPostureChange(
 	previous: AppPosturePref,

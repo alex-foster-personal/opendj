@@ -14,12 +14,12 @@ test('shouldOfferGigHelper only when gig posture and unset pref', async () => {
 test('tryOfferGigHelperPromptOnPostureChange opens only on prep to gig with unset pref', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/gig-helper-prompt.svelte.ts');
 	mod.dismissGigHelperPrompt();
-	assert.equal(mod.gigHelperPromptVisible, false);
+	assert.equal(mod.isGigHelperPromptVisible(), false);
 	mod.tryOfferGigHelperPromptOnPostureChange('prep', 'gig', 'unset');
-	assert.equal(mod.gigHelperPromptVisible, true);
+	assert.equal(mod.isGigHelperPromptVisible(), true);
 	mod.dismissGigHelperPrompt();
 	mod.tryOfferGigHelperPromptOnPostureChange('gig', 'gig', 'unset');
-	assert.equal(mod.gigHelperPromptVisible, false);
+	assert.equal(mod.isGigHelperPromptVisible(), false);
 	mod.tryOfferGigHelperPromptOnPostureChange('prep', 'gig', 'off');
-	assert.equal(mod.gigHelperPromptVisible, false);
+	assert.equal(mod.isGigHelperPromptVisible(), false);
 });

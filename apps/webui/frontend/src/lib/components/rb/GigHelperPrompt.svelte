@@ -1,7 +1,7 @@
 <script lang="ts">
 	import {
 		dismissGigHelperPrompt,
-		gigHelperPromptVisible
+		isGigHelperPromptVisible
 	} from '$lib/rb/gig-helper-prompt.svelte';
 	import { setGigHelper } from '$lib/rb/prefs.svelte';
 
@@ -20,7 +20,7 @@
 	}
 </script>
 
-{#if gigHelperPromptVisible}
+{#if isGigHelperPromptVisible()}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="gh-backdrop" role="presentation" onclick={() => deferGigHelper()}>
