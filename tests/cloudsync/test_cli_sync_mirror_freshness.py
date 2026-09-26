@@ -5,10 +5,8 @@ crossed the 600-line limit). These exercise `_ui_mirror_is_fresh`,
 `_ui_mirror_received_at` and `_refused_by_loopback_engine` directly, with no engine;
 the end-to-end probe scenarios against the real engine stay in the original file.
 
-[if] a mirror body is stale, naive, future-dated or missing its timestamp [then] it is
-not trusted as fresh, [else stop].
-[if] a connection refusal is not a verified loopback refusal [then] it is not read as
-safely absent, [else stop].
+[if] a mirror body is stale, naive, future-dated or untimestamped [then] distrust it, [else stop].
+[if] a refusal is not a verified loopback refusal [then] it is not safely absent, [else stop].
 
 -Claude
 """
