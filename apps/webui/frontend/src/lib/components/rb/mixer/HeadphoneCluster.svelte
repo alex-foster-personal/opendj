@@ -10,7 +10,7 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertText, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
@@ -22,7 +22,6 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
-	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 
 	interface Props {
 		state: HeadphoneState;
@@ -81,21 +80,7 @@
 			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_master_output_device_id)?.label ?? null)
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
-	const livenessVerdict = $derived(
-		(headphoneState as HeadphoneState & { liveness_verdict?: LivenessVerdict }).liveness_verdict ?? 'idle'
-	);
-	const livenessAlert = $derived(headphoneLivenessAlertText(livenessVerdict));
-	type SignalReading = {
-		state: 'inactive' | 'unavailable' | 'measured';
-		rms: number | null;
-		peak: number | null;
-		measured_at: string | null;
-		source: 'application_bus' | 'captured_input';
-		physical_output_proven: false;
-	};
-	const signals = $derived(
-		(headphoneState as HeadphoneState & { signals?: Record<'master' | 'cue' | 'input', SignalReading> }).signals
-	);
+	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
 	const mixBullets = [
 		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
 		'Single-click the knob to step toward the other extreme.',
@@ -387,7 +372,7 @@
 {/snippet}
 
 {#snippet signalIndicator(bus: 'master' | 'cue' | 'input')}
-	{@const reading = signals?.[bus]}
+	{@const reading = headphoneState.signals[bus]}
 	<span
 		class="hp-signal"
 		class:lit={reading?.state === 'measured' && reading.rms !== null && reading.rms > 0.002}

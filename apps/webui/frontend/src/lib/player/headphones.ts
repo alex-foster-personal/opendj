@@ -608,6 +608,13 @@ export function headphoneLivenessAlertText(verdict: LivenessVerdict | undefined)
 	return null;
 }
 
+/** Headphone cluster alert line from the serialized headphone read model. */
+export function headphoneLivenessAlertForState(
+	state: import('$lib/rb/mixer-types').HeadphoneState
+): string | null {
+	return headphoneLivenessAlertText(state.liveness_verdict);
+}
+
 /** Case-insensitive label match for Bluetooth-class monitor devices. */
 export function monitorLabelIsBluetooth(label: string): boolean {
 	if (label === '') return false;
