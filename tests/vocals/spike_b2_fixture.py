@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.disposable_dirs import refuse_protected_target
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import PathMap, load_path_map, resolve_asset_path
 from apps.vocals.cli import pvdi_present
@@ -203,6 +204,7 @@ def build_disposable_data_dir(dest: Path, source_data_dir: Path) -> SpikeB2Fixtu
     """Build a writable disposable root with the two SPIKE-B2 tracks."""
     manifest = load_manifest()
     dest = dest.resolve()
+    refuse_protected_target(dest, source_data_dir)
     if dest.exists():
         shutil.rmtree(dest)
     (dest / "state").mkdir(parents=True)

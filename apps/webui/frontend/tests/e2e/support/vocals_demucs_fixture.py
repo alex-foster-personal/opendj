@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from apps.shared.paths import DATA_DIR
+from apps.shared.disposable_dirs import refuse_protected_target
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from apps.vocals import cache as vcache
@@ -110,19 +110,10 @@ def _write_anlz_siblings(audio_path: Path) -> tuple[Path, Path]:
     return dat, twoex
 
 
-def _refuse_canonical_master(data_dir: Path) -> None:
-    """Fail fast unless the vendor db this fixture writes is a disposable one."""
-    target = (data_dir / "master.plain.db").resolve()
-    canonical = (DATA_DIR / "master.plain.db").resolve()
-    live_rekordbox = (Path.home() / "Library" / "Pioneer").resolve()
-    if target == canonical or live_rekordbox in target.parents:
-        raise SystemExit(f"[ERROR] refusing to write a non-disposable vendor db: {target}")
-
-
 def _write_vendor_rows(
     data_dir: Path, stable_id: str, title: str, audio_path: Path, dat_path: Path
 ) -> None:
-    _refuse_canonical_master(data_dir)
+    refuse_protected_target(data_dir)
     master = sqlite3.connect(data_dir / "master.plain.db")
     # Columns the hydrated listing reads (rb_vendor_pkg.track_rows.bulk_rb_meta).
     master.execute(
@@ -293,6 +284,7 @@ def build(data_dir: Path, source_audio: Path, clip_start_s: float) -> VocalsDemu
                     revision=FIXTURE_REVISION_VOCALS,
                     demucs_ready=True,
                 )
+    refuse_protected_target(data_dir)
     if data_dir.exists():
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True)

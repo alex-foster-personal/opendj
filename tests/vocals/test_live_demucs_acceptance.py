@@ -173,7 +173,9 @@ def test_cuda_cache_import_path(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
     inbox.mkdir()
     outbox.mkdir()
     batch.mkdir()
-    staged = inbox / track.audio_path.name
+    # Stage under the stable id, as cmd_stage_playlist ships it: the runner names the
+    # outbox JSON after the staged stem, and cmd_import_outbox keys the manifest by it.
+    staged = inbox / f"{track.stable_id}{track.audio_path.suffix}"
     shutil.copy2(track.audio_path, staged)
     audio_mtime = staged.stat().st_mtime
     worker_sha256 = hashlib.sha256(WORKER_SCRIPT.read_bytes()).hexdigest()
@@ -183,9 +185,7 @@ def test_cuda_cache_import_path(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
         "audio_mtime": audio_mtime,
         "worker_sha256": worker_sha256,
     }
-    (batch / "manifest.jsonl").write_text(
-        json.dumps(manifest_line) + "\n", encoding="utf-8"
-    )
+    (batch / "manifest.jsonl").write_text(json.dumps(manifest_line) + "\n", encoding="utf-8")
     from scripts import vocal_worker_runner as runner
 
     rc = runner.main(
@@ -203,10 +203,10 @@ def test_cuda_cache_import_path(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
     )
     assert rc == 0
     outbox_files = list(outbox.glob("*.json"))
-    assert outbox_files, "CUDA runner produced no outbox JSON"
+    assert [path.stem for path in outbox_files] == [track.stable_id]
     payload = json.loads(outbox_files[0].read_text(encoding="utf-8"))
     assert payload.get("worker", {}).get("device_used") == "cuda"
-    cmd_import_outbox(batch, outbox, spike_b2_fixture.data_dir)
+    assert cmd_import_outbox(batch, outbox, spike_b2_fixture.data_dir) == 0
     cache_file = vcache.cache_path(spike_b2_fixture.data_dir, track.stable_id)
     entry = vcache.load_valid_entry(cache_file, track.audio_path)
     assert entry is not None
@@ -294,9 +294,7 @@ def test_worker_timeout_leaves_no_worker_descendants(
 
 
 @live_demucs
-def test_manual_recovery_claim_operable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_manual_recovery_claim_operable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] manual_recovery_required set [then] lock delete allows reclaim [else stop]."""
     # Operator recovery: confirm manual_recovery_required, verify no live PIDs,
     # delete .json.lock, then re-run `python -m apps.vocals one --stable-id <id>`.
