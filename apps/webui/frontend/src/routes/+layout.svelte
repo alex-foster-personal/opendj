@@ -47,6 +47,7 @@
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
+	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
 
 	let { children } = $props();
 
@@ -332,6 +333,7 @@
 				{/if}
 			</div>
 			<CloudSyncStatusChip />
+			<FeedbackPinTopbarControls />
 			{#if FeedbackPinShellButton}
 				<FeedbackPinShellButton />
 			{:else if pinShellError}

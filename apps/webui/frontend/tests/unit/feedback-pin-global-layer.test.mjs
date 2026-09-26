@@ -34,6 +34,14 @@ test('FeedbackPinLayer owns placement overlay and resolvePinAnchorAt', () => {
 	assert.match(LAYER, /onpointerdowncapture=\{handlePlacementPointerDown\}/);
 });
 
+test('FeedbackPinLayer keeps pathname in sync after client navigations', () => {
+	assert.match(LAYER, /afterNavigate/);
+});
+
+test('app-shell topbar exposes pins-visible checkbox (FB-18)', () => {
+	assert.match(LAYOUT, /FeedbackPinTopbarControls/);
+});
+
 test('FeedbackPinLayer armed placement sits above boot and quit gates', () => {
 	assert.match(LAYER, /OVERLAY_Z_INDEX\.feedbackDock/);
 	assert.match(LAYER, /style:z-index=\{OVERLAY_Z_INDEX\.feedbackDock\}/);
