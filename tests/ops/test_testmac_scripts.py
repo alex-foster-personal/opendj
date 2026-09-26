@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from ops.agentic_testing.driver_claude import BILLING_REROUTE_ENV_VARS
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTMAC_DIR = REPO_ROOT / "ops/testmac"
 VERIFY_SH = TESTMAC_DIR / "verify.sh"
@@ -127,12 +129,44 @@ def test_agt_loop_holds_after_a_walled_attempt() -> None:
     text = LOOP_SH.read_text(encoding="utf-8")
     assert 'AGT_WALLED_BACKOFF_S="${AGT_WALLED_BACKOFF_S:-' in text
     hold = re.search(
-        r'if \[ "\$rc" = 3 \] && grep -q "CLI is walled" "\$out\.log".*?\n'
-        r'\s*sleep "\$AGT_WALLED_BACKOFF_S"',
+        r'if \[ "\$rc" = 3 \] && grep -qE "CLI is walled\|CLI refused" "\$out\.log".*?\n'
+        r'\s*hold_while_running "\$AGT_WALLED_BACKOFF_S"',
         text,
         re.S,
     )
     assert hold, "the walled hold must be gated on rc=3 plus the harness's walled line"
+
+
+def _hold_helper() -> str:
+    text = LOOP_SH.read_text(encoding="utf-8")
+    start = text.index("hold_while_running() {")
+    return text[start : text.index("\n}\n", start) + 3]
+
+
+def test_walled_hold_returns_as_soon_as_the_stop_flag_is_gone(tmp_path: Path) -> None:
+    """[if] the walled hold sleeps its full backoff after RUN is removed [then] the loop's
+    promised clean stop waits up to 30 min, [else stop]. Runs the loop's real helper."""
+    script = _hold_helper() + "hold_while_running 600\n"
+    env = {"PATH": "/usr/bin:/bin", "STATE_DIR": str(tmp_path), "AGT_HOLD_CHUNK_S": "1"}
+    started = time.monotonic()
+    subprocess.run(["bash", "-c", script], env=env, check=True, timeout=10)
+    assert time.monotonic() - started < 3, "a hold with no RUN flag must return at once"
+    # Control: with RUN present the helper really holds, one chunk here.
+    (tmp_path / "RUN").touch()
+    started = time.monotonic()
+    subprocess.run(
+        ["bash", "-c", _hold_helper() + "hold_while_running 1\n"], env=env, check=True, timeout=10
+    )
+    assert time.monotonic() - started >= 1
+
+
+def test_setup_refuses_the_same_billing_reroutes_as_the_driver() -> None:
+    """[if] setup.sh's reroute list drifts from the driver's [then] setup installs a loop
+    whose every run the driver refuses, [else stop]."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    listed = re.search(r'BILLING_REROUTE_ENV_VARS="([^"]+)"', text)
+    assert listed, "setup.sh must name the reroute vars it refuses"
+    assert tuple(listed.group(1).split()) == BILLING_REROUTE_ENV_VARS
 
 
 def test_setup_never_overwrites_the_live_loop_script_in_place() -> None:
