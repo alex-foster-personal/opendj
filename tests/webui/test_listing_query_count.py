@@ -1,4 +1,4 @@
-"""Library listing and playlist detail cost O(1) sqlite work per call (LIBM-130, #3962).
+"""Library listing and playlist detail do no sqlite work per row (LIBM-130, #3962).
 
 [if] a listing page issues sqlite work per row [then] fail, [else stop].
 
@@ -9,7 +9,13 @@ paid ~2,500 statements and 500 connections, a 10,000-member playlist 50,000.
 
 The instrument is the real connection's trace callback (``sql_trace``), not a
 mock: a page of 20 unmapped rows must issue exactly the statements a page of
-4 does. The engine runs in a child process that finds the fixture through the
+4 does. Both sizes sit inside ONE 500-id bind batch, so this pins "no work per
+row", not "fixed work at any size": past a batch boundary each batched read
+adds one SELECT per 500 ids, which
+``tests/shared/state/test_locations.py::test_bulk_local_audio_paths_issues_one_select_per_bind_batch``
+pins at 501 and 1001 ids.
+
+The engine runs in a child process that finds the fixture through the
 production ``MDT_DATA_DIR`` contract (``listing_probe``), so nothing in the
 application path is rebound or replaced. The overshoot control is the artwork
 verdict itself: batching the path lookup must not change what any row says,
