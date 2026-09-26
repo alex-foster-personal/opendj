@@ -139,6 +139,27 @@ async function settle() {
 	for (let i = 0; i < 200; i += 1) await Promise.resolve();
 }
 
+async function _waitForWatchdogGiveUp({ harness, perf, ctx, deadlineMs = 5000 }) {
+	const deadline = Date.now() + deadlineMs;
+	const giveUpToast = () =>
+		harness.toasts.some(
+			(toast) => toast.kind === 'error' && toast.message.includes('did not come back')
+		);
+	const deadPerf = () =>
+		perf.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error');
+	for (;;) {
+		if (ctx.resumeAtMs.length >= 2 && giveUpToast() && deadPerf()) return;
+		if (Date.now() > deadline) {
+			throw new Error(
+				'timed out waiting for watchdog give-up after hung resumes ' +
+					`(resumeAtMs=${ctx.resumeAtMs.length}, giveUpToast=${giveUpToast()}, deadPerf=${deadPerf()})`
+			);
+		}
+		await settle();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 async function driveDrop(state, { playing = true, resumeSucceeds = false } = {}) {
 	const mod = _watchdog();
 	const harness = fakeEffects();
@@ -899,7 +920,7 @@ test('a hanging resume during watchdog recover continues the backoff and still g
 	ctx.state = 'interrupted';
 	for (const handler of listeners) handler();
 	await settle();
-	await new Promise((r) => setTimeout(r, 250));
+	await _waitForWatchdogGiveUp({ harness, perf, ctx });
 	assert.ok(
 		ctx.resumeAtMs.length >= 2,
 		'if a hanging resume blocks the recover loop then broken - the backoff must continue'
