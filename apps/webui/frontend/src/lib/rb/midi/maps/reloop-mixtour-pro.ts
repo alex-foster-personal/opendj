@@ -19,7 +19,7 @@ import type {
 	MidiBinding,
 	MidiMeterOutput
 } from '$lib/rb/midi/midi-types';
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
 import { CONTROLLER_NEURAL_STEMS } from '$lib/rb/midi/controller-stem-pads';

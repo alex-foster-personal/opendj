@@ -4,7 +4,7 @@
  * boundary independent avoids loading MIDI transport and pad actions merely
  * to register the library panel's selection callbacks.
  */
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 
 export interface BrowseAdapter {
 	moveSelection(delta: number): void;
