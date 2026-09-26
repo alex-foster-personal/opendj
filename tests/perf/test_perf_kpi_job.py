@@ -288,6 +288,34 @@ def test_install_render_includes_data_dir_and_path(
     assert "MDT_PERF_KPI_DATA_DIR" not in health.get("EnvironmentVariables", {})
 
 
+def test_install_nightly_only_skips_health(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--nightly-only renders and would bootstrap the nightly agent only, for a host
+    (e.g. demon-llama) with no live-review-preview service for the health leg to probe."""
+    home = tmp_path / "home"
+    launch_agents = home / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
+    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
+    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
+    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
+    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+
+    completed = subprocess.run(
+        [str(INSTALL_SCRIPT), "--nightly-only"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (launch_agents / "com.af.perf-kpi-nightly.plist").exists()
+    assert not (launch_agents / "com.af.perf-kpi-health.plist").exists()
+
+
 def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If MDT_PERF_KPI_DATA_DIR is unset then the installer exits non-zero."""
     home = tmp_path / "home"

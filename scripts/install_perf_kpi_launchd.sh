@@ -6,12 +6,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
 HOST_LABEL="${MDT_PERF_KPI_MACHINE:-}"
+NIGHTLY_ONLY=0
 
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --state-dir) STATE_DIR="${2:?}"; shift 2 ;;
     --host-label) HOST_LABEL="${2:?}"; shift 2 ;;
+    --nightly-only) NIGHTLY_ONLY=1; shift ;;
     *) echo "[ERROR] unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -61,8 +63,18 @@ render() {
 
 render "$REPO_ROOT/ops/perf/com.af.perf-kpi-nightly.plist.template" \
   "$HOME/Library/LaunchAgents/com.af.perf-kpi-nightly.plist"
-render "$REPO_ROOT/ops/perf/com.af.perf-kpi-health.plist.template" \
-  "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+
+# --nightly-only: for a host with no live-review-preview service at the health leg's
+# target (no com.af.opendj-preview-engine listener, e.g. demon-llama), skip the health
+# unit entirely rather than install a job shaped to fail every 10 minutes with an
+# invalid restart. Both plist templates already stamp their own AF_SERVICE_ID in
+# EnvironmentVariables (process-identity attribution), unchanged by this flag.
+labels=(com.af.perf-kpi-nightly)
+if [[ "$NIGHTLY_ONLY" -ne 1 ]]; then
+  render "$REPO_ROOT/ops/perf/com.af.perf-kpi-health.plist.template" \
+    "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+  labels+=(com.af.perf-kpi-health)
+fi
 
 if [[ "$INSTALL" -ne 1 ]]; then
   echo "[OK] rendered perf KPI launchd plists (launchctl not touched)"
@@ -70,7 +82,7 @@ if [[ "$INSTALL" -ne 1 ]]; then
 fi
 
 uid="$(id -u)"
-for label in com.af.perf-kpi-nightly com.af.perf-kpi-health; do
+for label in "${labels[@]}"; do
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$uid" "$HOME/Library/LaunchAgents/$label.plist"
 done
