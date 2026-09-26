@@ -305,6 +305,24 @@ describe('every stem decode entry point goes through the gated engine functions 
 		assert.match(upgrade.text, /const stale = \(\): boolean =>[^\n]*_stemDecodeBlocked\(\)/);
 	});
 
+	// Found by the exact-SHA evidence run on PR #4039: Trackify loads pass
+	// `stems: false` (#3975), so `_upgradeDeckStems` never runs for them, and the
+	// deck published the `loading` placeholder with nothing left to settle it.
+	it('a load with stems off publishes a settled unavailable state, never the loading placeholder', () => {
+		const loadStart = engineSource.indexOf('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {})');
+		assert.ok(loadStart > 0, 'load() not found');
+		const load = engineSource.slice(loadStart, engineSource.indexOf('\n\t}\n', loadStart));
+		const assignments = [...load.matchAll(/candidateStemState = ([^;]+);/g)].map((match) => match[1]);
+		assert.ok(assignments.length > 0, 'load() never sets the candidate stem state');
+		for (const value of assignments) {
+			assert.match(
+				value,
+				/^loadStems \? loadingStemDeckState\(\) : \(stemsBlockedState\(\) \?\? unavailableStemDeckState\('stems disabled for this load'\)\)$/,
+				`a stems-off load can publish \`${value}\`, a loading state nothing will settle`
+			);
+		}
+	});
+
 	it('a held stem upgrade is only ever adopted by the gated upgrade or the gated drain', () => {
 		const sites = callSites(engineSource, '_adoptStemProcessor');
 		assert.ok(sites.length > 0, '_adoptStemProcessor not called at all');

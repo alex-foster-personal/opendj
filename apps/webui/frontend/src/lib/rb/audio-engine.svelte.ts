@@ -3101,9 +3101,9 @@ class RbAudioEngine implements AudioEngine {
 			buffer = decodedMix;
 			await time('stretchLoad', mixProcessor.load(buffer));
 			processor = mixProcessor;
-			// `loading`, not `unavailable`: the probe has not run yet, so claiming
-			// "no stems" here would be a guess. _upgradeDeckStems settles it.
-			candidateStemState = loadingStemDeckState();
+			// `loading`, not `unavailable`: the probe has not run yet and _upgradeDeckStems settles it. A stems-off load
+			// (Trackify, #3975) never runs that upgrade, so it publishes its settled answer now (PERFMODE-15).
+			candidateStemState = loadStems ? loadingStemDeckState() : (stemsBlockedState() ?? unavailableStemDeckState('stems disabled for this load'));
 			latencySec = await time('processorLatency', processor.latencySec());
 			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
