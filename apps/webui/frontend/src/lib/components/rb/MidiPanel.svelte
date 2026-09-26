@@ -16,7 +16,7 @@
 	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
 	 *     [if] Esc while open doesn't close [then] broken
 	 */
-	import MidiDeviceList from '$lib/components/rb/midi/MidiDeviceList.svelte';
+	import type { Component } from 'svelte';
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
 	import {
 		floatMidiPanel,
@@ -40,6 +40,22 @@
 			toggleMidiPanel();
 		}
 	}
+
+	// This whole panel already only RENDERS while panelOpen (the {#if} below),
+	// but a static import still puts a module's bytes in the eager /performance
+	// bundle regardless of runtime visibility. The device list (per-device map
+	// match, binding count, LED test) is the heavier of the panel's two
+	// sub-views, so it is the one deferred to a real network fetch, triggered
+	// by the same open flip that reveals it.
+	let MidiDeviceListComponent: Component | null = $state(null);
+
+	$effect(() => {
+		if (midiUi.panelOpen && MidiDeviceListComponent === null) {
+			void import('$lib/components/rb/midi/MidiDeviceList.svelte').then((m) => {
+				MidiDeviceListComponent = m.default;
+			});
+		}
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -109,7 +125,9 @@
 
 		<section class="drawer-section">
 			<h3 class="section-title">Devices ({midiState.devices.length})</h3>
-			<MidiDeviceList />
+			{#if MidiDeviceListComponent}
+				<MidiDeviceListComponent />
+			{/if}
 		</section>
 
 		<section class="drawer-section grow">

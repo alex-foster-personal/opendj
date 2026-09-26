@@ -3,10 +3,11 @@
 
 	let { view }: { view: TrackCloudView } = $props();
 
+	// Tidal has no distinct brand color here; it shares the same
+	// `currentColor` fallback every other/unrecognized provider takes.
 	const providerColor = $derived.by(() => {
 		if (view.provider === 'spotify') return '#35c04f';
 		if (view.provider === 'soundcloud') return '#ff5500';
-		if (view.provider === 'tidal') return 'currentColor';
 		return 'currentColor';
 	});
 </script>
