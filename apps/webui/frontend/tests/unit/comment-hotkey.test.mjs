@@ -31,6 +31,7 @@ test("'m' arms comment pin placement", () => {
 	assert.match(commentPinRouting, /e\.key !== 'm' && e\.key !== 'M'/);
 	assert.match(commentPinHotkeys, /resolveCommentPinHotkey\(e,/);
 	assert.match(commentPinHotkeys, /armPinPlacement\(\)/);
+	assert.match(commentPinHotkeys, /resolveCommentPinHotkey/);
 	assert.match(hotkeys, /armPinPlacement/);
 	assert.match(routing, /kind: 'm'/);
 });
@@ -38,6 +39,9 @@ test("'m' arms comment pin placement", () => {
 test('no shortcut fires while a text field has focus, or with a modifier held', () => {
 	assert.match(routing, /if \(isTextEntryTarget\(e\.target\)\) return null;/);
 	assert.match(routing, /if \(isTextEntryTarget\(e\.target\) \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) return null;/);
+	assert.match(commentPinRouting, /isTextEntryTarget\(e\.target\)/);
+	assert.doesNotMatch(commentPinHotkeys, /isNativeInteractiveTarget/);
+	assert.doesNotMatch(commentPinRouting, /isNativeInteractiveTarget/);
 	assert.doesNotMatch(hotkeys, /isNativeInteractiveTarget/);
 });
 
