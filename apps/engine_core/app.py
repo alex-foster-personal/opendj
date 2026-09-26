@@ -68,6 +68,8 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
+from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
+from apps.engine_core.setup.library_events import on_setup_import_progress
 from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
@@ -237,6 +239,7 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    register_progress_observer(SETUP_IMPORT_KIND, on_setup_import_progress)
     register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
     register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 

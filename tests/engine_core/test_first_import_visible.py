@@ -46,7 +46,7 @@ from typing import Any
 
 import pytest
 
-pytestmark = pytest.mark.requirement("SETUP-18")
+pytestmark = pytest.mark.requirement("SETUP-20")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FILES = 40

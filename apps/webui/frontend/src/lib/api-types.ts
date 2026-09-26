@@ -7683,6 +7683,8 @@ export interface components {
             agent_kind?: string | null;
             /** Agent Note */
             agent_note?: string | null;
+            /** Agent Snapshot At */
+            agent_snapshot_at?: string | null;
             /** Anchor */
             anchor: string | null;
             attachment?: components["schemas"]["AttachmentOut"] | null;

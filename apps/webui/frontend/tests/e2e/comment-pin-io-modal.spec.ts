@@ -112,9 +112,9 @@ test.describe('comment pin on Audio I/O modal', () => {
 		const settings = page.getByRole('dialog', { name: 'Settings' });
 		await expect(settings).toBeVisible({ timeout: 5_000 });
 
-		const floatPin = page.locator('.fb-pin-affordance-float .fb-shell-pin');
-		await expect(floatPin).toBeVisible();
-		await floatPin.click();
+		const dockPin = page.locator('.fb-dock .fb-shell-pin');
+		await expect(dockPin).toBeVisible();
+		await dockPin.click();
 		await expect
 			.poll(async () => (await readFeedbackState(page)).placementArmed)
 			.toBe(true);
