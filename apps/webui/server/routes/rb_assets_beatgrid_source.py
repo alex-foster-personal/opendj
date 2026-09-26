@@ -31,16 +31,15 @@ def beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> tupl
     """Per-track beatgrid source label and its basis for ``/anlz`` (STANDALONE-06).
 
     Reads through :mod:`apps.analysis.selection` once per request, source and
-    basis off the SAME connection so they cannot straddle a PUT; callers
-    thread the returned pair through rescue branches and
+    basis from ONE toggle read and ONE default read so they cannot straddle a
+    PUT; callers thread the returned pair through rescue branches and
     ``rb_assets._resolve_beatgrid_source`` without re-reading (ADR-0099).
     """
     conn = analysis_source_routes._open_ro(request)
     try:
-        source = selection.effective_source_for_track(
+        source, implicit = selection.effective_source_and_implicit_own_for_track(
             conn, "beatgrid", has_rb_mapping=has_rb_mapping
         )
-        implicit = selection.implicit_own_default(conn, "beatgrid", has_rb_mapping=has_rb_mapping)
     finally:
         conn.close()
     basis = BASIS_UNMAPPED_DEFAULT if implicit else BASIS_SELECTION
