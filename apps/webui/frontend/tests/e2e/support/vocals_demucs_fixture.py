@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -270,7 +271,12 @@ def build(data_dir: Path, source_audio: Path, clip_start_s: float) -> VocalsDemu
     if not source_audio.is_file():
         raise SystemExit(f"[ERROR] --source-audio is not a file: {source_audio}")
     marker = data_dir / ".vocals-demucs-fixture-revision"
-    marker_text = f"{FIXTURE_REVISION_VOCALS}|{source_audio.resolve()}|{clip_start_s}"
+    # Content identity, not just the path: replacing the audio at the same path must
+    # rebuild the clip and the demucs cache rather than reuse the old ones.
+    source_sha256 = hashlib.sha256(source_audio.read_bytes()).hexdigest()
+    marker_text = (
+        f"{FIXTURE_REVISION_VOCALS}|{source_audio.resolve()}|{source_sha256}|{clip_start_s}"
+    )
     state_db = data_dir / "state" / "state.db"
     if marker.is_file() and marker.read_text(encoding="utf-8").strip() == marker_text:
         rows = _track_rows(state_db)
@@ -284,7 +290,7 @@ def build(data_dir: Path, source_audio: Path, clip_start_s: float) -> VocalsDemu
                     revision=FIXTURE_REVISION_VOCALS,
                     demucs_ready=True,
                 )
-    refuse_protected_target(data_dir)
+    refuse_protected_target(data_dir, source_audio.parent)
     if data_dir.exists():
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True)
