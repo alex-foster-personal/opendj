@@ -428,6 +428,8 @@
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
+		/** Purple pairing underline: partner ids of the current master. */
+		pairedPartnerIds?: ReadonlySet<string>;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
 	} = $props();

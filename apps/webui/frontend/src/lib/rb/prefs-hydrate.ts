@@ -25,6 +25,7 @@ import {
 	type WheelSensitivityDisk
 } from './wheel-adjust';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
+import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
@@ -108,6 +109,8 @@ export type DiskPrefsPatch = {
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
 	app_mode?: DiskAppModePatch;
+	compatible_filter?: CompatibleFilterPrefs;
+	library_watcher_folders?: string[];
 };
 
 function _diskPrefsToWirePatch(patch: DiskPrefsPatch): components['schemas']['UiPrefsPatch'] {

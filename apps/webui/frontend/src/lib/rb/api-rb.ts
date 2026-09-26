@@ -391,6 +391,9 @@ export interface PlaylistTrackRowWire {
 	key_reason?: string | null;
 	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	bpm_reason?: string | null;
+	bpm_source?: string | null;
+	bpm_method?: string | null;
+	bpm_confidence?: number | null;
 	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
@@ -603,6 +606,9 @@ export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
 	duration_ms?: number | null;
+	bpm_source?: string | null;
+	bpm_method?: string | null;
+	bpm_confidence?: number | null;
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
