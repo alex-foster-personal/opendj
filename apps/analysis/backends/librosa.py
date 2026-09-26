@@ -16,9 +16,7 @@ development backend.
 """
 from __future__ import annotations
 
-import importlib.util
 import logging
-import os
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -34,6 +32,7 @@ from .base import (
     TrackTooLong,
     TrackUnreadable,
     TrackVanished,
+    librosa_numba_cache_roots,
 )
 
 log = logging.getLogger(__name__)
@@ -371,29 +370,8 @@ class LibrosaBackend:
 
     @classmethod
     def jit_cache_roots(cls) -> tuple[Path, ...]:
-        """Where numba writes this backend's cached compilations.
-
-        ``NUMBA_CACHE_DIR`` wins when set, because numba then puts every
-        artifact there instead of beside the source. Otherwise the artifacts
-        land in ``__pycache__`` directories inside the installed ``librosa``
-        package, so the package directory is the root to walk.
-
-        Located with ``find_spec`` rather than ``import librosa``: this runs
-        on the fast path, where skipping the librosa import is most of the
-        saving. Returns ``()`` when librosa is not installed, which makes the
-        caller warm unconditionally and get the honest ``BackendNotAvailable``
-        from :meth:`warm_jit_cache` instead of a silent skip.
-        """
-        override = os.environ.get("NUMBA_CACHE_DIR")
-        if override:
-            return (Path(override),)
-        try:
-            spec = importlib.util.find_spec("librosa")
-        except (ImportError, ValueError):  # pragma: no cover - broken install
-            return ()
-        if spec is None or not spec.origin:
-            return ()
-        return (Path(spec.origin).parent,)
+        """Where numba writes this backend's cached compilations (librosa's)."""
+        return librosa_numba_cache_roots()
 
     @classmethod
     def warm_jit_cache(cls) -> str:

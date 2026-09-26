@@ -131,6 +131,7 @@ test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => 
 	assert.equal(plan.action, 'continue');
 });
 
+// REQ: PLAY-09
 test('RUNNING it: idle disarm drops the pref after every deck stops', async () => {
 	mock.timers.enable({ apis: ['Date'] });
 	const probe = installTimerProbe();
@@ -290,6 +291,7 @@ test('RUNNING it: playback before armed-empty grace expires uses normal idle tim
 	}
 });
 
+// REQ: PLAY-09
 test('RUNNING it: idle disarm keeps a PLAY-08 stall visible', async () => {
 	mock.timers.enable({ apis: ['Date'] });
 	const probe = installTimerProbe();

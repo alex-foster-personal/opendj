@@ -163,6 +163,7 @@ def _apply(
     )
 
 
+# REQ: LIBM-76
 def test_apply_without_confirmation_blocks_cue_loss(client: TestClient) -> None:
     cluster_key, revision = _revision(client)
     playlist_id = _create_playlist(client, "Cued", [ALIAS])

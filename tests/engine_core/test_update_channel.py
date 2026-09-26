@@ -93,7 +93,7 @@ def _repo_identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
             git_branch="main",
             git_dirty=False,
             built_at_utc="2026-08-31T12:00:00Z",
-            built_at_kind="head-commit",
+            built_at_kind="engine-start",
             app_version=app_version,
         ),
         failure=None,

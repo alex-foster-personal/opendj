@@ -4,6 +4,7 @@
 import { deckAudioClockPositionMs, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { currentGigRuntimeGeneration } from '$lib/rb/library-mode-runtime';
+import { onSilenceDropoutStopped } from '$lib/rb/silence-dropout-act';
 import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -32,6 +33,14 @@ let _quarantinedIds = new Set<string>();
 let _playedFeedEpoch = -1;
 let _lastSkipReason: string | null = null;
 let _queueHead: string | null = null;
+/**
+ * The track the master silence watchdog (issue #2069) stopped on the Trackify
+ * deck, until a tick acts on it. A watchdog stop is not a Pause: it lands
+ * wherever the silence crossed SILENT_WHILE_PLAYING_MS, which for a track with
+ * a silent outro is short of its decoded end, where `shouldAdvanceTrackify`
+ * would otherwise wait forever (silver, Fri 25 Sep 2026: 49 min on f58d2482).
+ */
+let _dropoutStoppedId: string | null = null;
 /**
  * Bumped by every install/uninstall of the controller. `_loadAndPlay`
  * captures it on entry and re-checks it after every await: a load sequence
@@ -220,7 +229,13 @@ async function _dispatchLoadSequence(
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
-		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId });
+		await dispatchPerformanceCommand({
+			type: 'load',
+			deck,
+			stable_id: nextId,
+			stems: false,
+			suppressCommandErrorToast: true
+		});
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
@@ -313,6 +328,7 @@ async function _tick(): Promise<void> {
 		// moment -- not the one the operator was looking at when they
 		// pressed it (Sol review, PR #3676).
 		readTrackifySkipNext();
+		_dropoutStoppedId = null;
 		return;
 	}
 	_syncEpoch();
@@ -344,6 +360,21 @@ async function _tick(): Promise<void> {
 		return;
 	}
 	const deck = _deckSnap();
+	const dropoutStoppedId = _dropoutStoppedId;
+	_dropoutStoppedId = null;
+	if (dropoutStoppedId !== null && deck.stable_id === dropoutStoppedId && !deck.playing) {
+		// Marked played by _advance, like a track that ended: the watchdog
+		// stopped it for silence, so it is not retried in this feed epoch.
+		_lastSkipReason = `silence dropout stopped ${dropoutStoppedId}; advanced`;
+		_triggeredFor = dropoutStoppedId;
+		_inFlight = true;
+		try {
+			await _advance('end');
+		} finally {
+			if (_installEpoch === ownEpoch) _inFlight = false;
+		}
+		return;
+	}
 	if (deck.stable_id === null) {
 		const feed = getTrackifyFeedRows();
 		if (feed.length === 0) return;
@@ -408,7 +439,13 @@ export function installTrackifyAutoplay(): () => void {
 	_timer = setInterval(() => {
 		void _tick();
 	}, POLL_MS);
+	const offDropout = onSilenceDropoutStopped((decks) => {
+		if (!decks.includes(TRACKIFY_DECK_ID)) return;
+		_dropoutStoppedId = deckStates[TRACKIFY_DECK_ID].stable_id;
+	});
 	return () => {
+		offDropout();
+		_dropoutStoppedId = null;
 		if (_timer !== null) clearInterval(_timer);
 		_timer = null;
 		_inFlight = false;
