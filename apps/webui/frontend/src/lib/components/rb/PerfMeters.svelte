@@ -287,12 +287,7 @@
 		aria-controls="perf-meters-panel"
 		onclick={_toggleMonitor}
 	>
-		<span
-			class="perf-meter"
-			class:warn={hzDisplayLevel === 'warn'}
-			class:crit={hzDisplayLevel === 'crit'}
-			title={audioHealthHover()}
-		>{hz === null ? '--' : `${hz}`}</span>
+		<span class="perf-meter" class:warn={hzDisplayLevel === 'warn'} class:crit={hzDisplayLevel === 'crit'} title={audioHealthHover()}>{hz === null ? '--' : `${hz}`}</span>
 		<span class="perf-meter cache-n" title={cacheHover}>{cacheN}</span>
 		<span class="perf-meter" class:warn={waveformStutterWarn} title={waveformStutterHover()}>{waveformStutter.active ? `W${waveformStutter.stutters}` : 'W--'}</span>
 		<span

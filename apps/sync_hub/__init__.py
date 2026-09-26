@@ -27,4 +27,4 @@ engine can enforce it without importing this package (no package cycle).
 
 from __future__ import annotations
 
-__all__ = ["client", "engine", "protocol", "service", "sync_set"]
+__all__ = ["client", "conflict_trash", "engine", "protocol", "service", "sync_set"]

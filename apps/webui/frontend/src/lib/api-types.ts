@@ -7035,10 +7035,12 @@ export interface components {
          * BuildInfoOut
          * @description The identity contract the UI and any agent read.
          *
-         *     ``built_at_kind`` exists because the two sources measure different
-         *     moments: a payload knows when it was packaged, a checkout only knows when
-         *     HEAD was committed. Labelling which one is on screen costs one field and
-         *     removes a whole class of "why does this say yesterday" confusion.
+         *     ``built_at_kind`` exists because the sources measure different moments: a
+         *     payload knows when it was packaged; a repo checkout stamps the running
+         *     engine's start instant at identity resolution (``engine-start``). The
+         *     legacy ``head-commit`` literal remains on the wire for older readers only.
+         *     Labelling which moment is on screen removes "why does this say yesterday"
+         *     confusion.
          */
         BuildInfoOut: {
             /** App Version */
@@ -7047,7 +7049,7 @@ export interface components {
              * Built At Kind
              * @enum {string}
              */
-            built_at_kind: "payload-build" | "head-commit";
+            built_at_kind: "payload-build" | "head-commit" | "engine-start";
             /** Built At Utc */
             built_at_utc: string;
             /** Bundle Identifier */
@@ -8846,6 +8848,42 @@ export interface components {
             readable: boolean;
             /** Sample */
             sample?: string[];
+        };
+        /**
+         * FolderWatchOut
+         * @description LIBM-128: the continuous folder-rescan scheduler's own status.
+         *
+         *     ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+         *     run in this process (no lifespan, or not yet its first cycle) -- a
+         *     genuinely different fact from a scheduler that ran and found nothing,
+         *     which is ``warning=None`` with a real ``last_cycle_at``.
+         */
+        FolderWatchOut: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Interval S */
+            interval_s: number;
+            /** Last Cycle At */
+            last_cycle_at?: string | null;
+            /** Running */
+            running: boolean;
+            /**
+             * Tracks Added Last Cycle
+             * @default 0
+             */
+            tracks_added_last_cycle: number;
+            /**
+             * Tracks Removed Last Cycle
+             * @default 0
+             */
+            tracks_removed_last_cycle: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+            /** Warning */
+            warning?: string | null;
         };
         /**
          * GateErrorBody
@@ -11686,7 +11724,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "failed" | "missing";
+            status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Value */
             value: unknown;
         };
@@ -12361,6 +12399,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -12416,14 +12461,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
@@ -12537,6 +12582,7 @@ export interface components {
             dismissed: boolean;
             /** Folder Stages */
             folder_stages: string[];
+            folder_watch?: components["schemas"]["FolderWatchOut"] | null;
             /** Last Import */
             last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
             /** Library Empty */
@@ -13797,6 +13843,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -13852,14 +13905,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
