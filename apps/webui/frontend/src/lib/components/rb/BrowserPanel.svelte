@@ -41,6 +41,8 @@
 		anyDeckPlaying,
 		createPlayingGate,
 		resolveRowMarkerAnlz,
+		resolveRowPreviewStrip,
+		resolveRowStripLoading,
 		resolveRowVocals,
 		isAppropriateNext,
 		resolveSearchFilterFallback,
@@ -445,6 +447,18 @@
 				const entry = getAnlzEntry(stable_id);
 				return entry !== undefined && entry.status === 'ready' ? entry.data : undefined;
 			}
+		})
+	);
+	const previewStripById = $derived.by(() =>
+		resolveRowPreviewStrip({
+			rows: pane.rows,
+			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
+		})
+	);
+	const stripLoadingById = $derived.by(() =>
+		resolveRowStripLoading({
+			rows: pane.rows,
+			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
 		})
 	);
 	/** Reactively copies a decoded local waveform strip into the selected
@@ -3376,6 +3390,8 @@
 			{loadedIds}
 			{vocalsById}
 			{markerAnlzById}
+			{previewStripById}
+			{stripLoadingById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}

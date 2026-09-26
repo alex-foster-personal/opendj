@@ -25,7 +25,6 @@
 	import type { WaveformDesign } from '$lib/rb/waveform-design';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
-	import { ensureAnlzPrefetch, getAnlzEntry } from '../wave/anlz-cache.svelte';
 	import {
 		drawLoopCueBands,
 		drawPhraseMarkers,
@@ -43,6 +42,7 @@
 
 	let {
 		strip,
+		stripLoading = false,
 		vocals,
 		markerAnlz = null,
 		duration_ms,
@@ -55,6 +55,8 @@
 		enabled = true
 	}: {
 		strip: PreviewStripData | null;
+		/** Resolved by BrowserPanel from listing hydrate + pure cache reads. */
+		stripLoading?: boolean;
 		vocals: Vocals | null;
 		/** The same real ANLZ object used by a loaded deck/main waveform, or an
 		 * already-populated shared cache entry. Null deliberately means no
@@ -117,19 +119,6 @@
 		};
 		mq.addEventListener('change', onChange);
 		return () => mq.removeEventListener('change', onChange);
-	});
-
-	const stripLoading = $derived.by(() => {
-		if (strip !== null || stable_id === null || !revealed) return false;
-		const entry = getAnlzEntry(stable_id);
-		if (entry === undefined) return true;
-		if (entry.status === 'loading') return true;
-		if (entry.status === 'ready' && entry.data.local_waveform?.status === 'decoded') return true;
-		return false;
-	});
-
-	$effect(() => {
-		if (revealed && stable_id !== null && strip === null) ensureAnlzPrefetch(stable_id);
 	});
 
 	$effect(() => {

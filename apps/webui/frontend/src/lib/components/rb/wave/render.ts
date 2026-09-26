@@ -24,6 +24,14 @@ import {
 	MARKER_BAND_PX,
 	type WavePalette
 } from './cues';
+import {
+	drawGhostSeekPlayhead,
+	drawMasterDownbeatOverlay,
+	drawPlayhead,
+	type MasterDownbeatOverlay
+} from './wave-playhead-render';
+
+export { drawPlayhead, type PlayheadTone } from './wave-playhead-render';
 
 // Cue-marker painting, the wavestack palette and its WCAG contrast floor
 // live in ./cues (issue #877) - readPalette/WavePalette re-exported here so
@@ -69,19 +77,6 @@ export function vocalAlpha(intensity: number): number {
 /** Seconds of track visible across one row (window is centered on the
  * fixed playhead). 24s keeps the <=38400-point detail waveform dense. */
 export const WAVE_WINDOW_S = 24;
-
-/** Playhead is pure white in the screenshot; not a themed surface colour. */
-/** Center 'now' line - red by default; Beat Sync followers override via tone. */
-const PLAYHEAD_COLORS = {
-	stopped: '#fff',
-	now: '#e23a32',
-	master: '#e0cc6e',
-	bar1: '#35c04f',
-	synced: '#7ed992',
-	drift: '#ff2d2d'
-} as const;
-
-export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
 
 /** Rendering style only (matches rekordbox's white core): highs are drawn
  * at reduced height so the white band reads as the inner core. The band
@@ -179,13 +174,7 @@ export interface WaveRowFrame {
 	/** DECKUX-20: user-selected paint style; default tri-band. */
 	waveformDesign?: WaveformDesign;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
-	masterDownbeatOverlay?: {
-		masterBeats: readonly AnlzBeat[];
-		masterPositionSec: number;
-		followerPositionSec: number;
-		masterPitch: number;
-		followerPitch: number;
-	} | null;
+	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
 	ghostSeekMs?: number | null;
 	ghostSeekVisible?: boolean;
@@ -214,14 +203,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	if (frame.anlz !== null && durS > 0) {
 		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design);
 		if (frame.masterDownbeatOverlay !== undefined && frame.masterDownbeatOverlay !== null) {
-			_drawMasterDownbeatOverlay(
-				ctx,
-				frame.masterDownbeatOverlay,
-				tLeft,
-				pxPerS,
-				w,
-				h
-			);
+			drawMasterDownbeatOverlay(ctx, frame.masterDownbeatOverlay, tLeft, pxPerS, w, h);
 		}
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
@@ -238,7 +220,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	}
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
 	if (frame.ghostSeekMs !== undefined && frame.ghostSeekMs !== null && frame.ghostSeekVisible === true) {
-		_drawGhostSeekPlayhead(ctx, frame.ghostSeekMs, tLeft, pxPerS, w, h);
+		drawGhostSeekPlayhead(ctx, frame.ghostSeekMs, tLeft, pxPerS, w, h);
 	}
 }
 
@@ -248,55 +230,6 @@ export function resolveStripWaveformKind(
 ): 'tri' | 'mono' {
 	if (design === 'mono') return 'mono';
 	return waveformKind;
-}
-
-function _drawGhostSeekPlayhead(
-	ctx: CanvasRenderingContext2D,
-	targetMs: number,
-	tLeft: number,
-	pxPerS: number,
-	w: number,
-	h: number
-): void {
-	const x = (targetMs / 1000 - tLeft) * pxPerS;
-	if (x < -2 || x > w + 2) return;
-	ctx.save();
-	ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-	ctx.lineWidth = 2;
-	ctx.setLineDash([3, 3]);
-	ctx.beginPath();
-	ctx.moveTo(x, 0);
-	ctx.lineTo(x, h);
-	ctx.stroke();
-	ctx.restore();
-}
-
-function _drawMasterDownbeatOverlay(
-	ctx: CanvasRenderingContext2D,
-	overlay: NonNullable<WaveRowFrame['masterDownbeatOverlay']>,
-	tLeft: number,
-	pxPerS: number,
-	w: number,
-	h: number
-): void {
-	const { masterBeats, masterPositionSec, followerPositionSec, masterPitch, followerPitch } = overlay;
-	if (masterPitch <= 0 || followerPitch <= 0) return;
-	const ratio = followerPitch / masterPitch;
-	ctx.save();
-	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-	ctx.lineWidth = 1;
-	for (const beat of masterBeats) {
-		if (beat.n !== 1) continue;
-		const delta = beat.t - masterPositionSec;
-		const followerT = followerPositionSec + delta * ratio;
-		const x = (followerT - tLeft) * pxPerS;
-		if (x < -2 || x > w + 2) continue;
-		ctx.beginPath();
-		ctx.moveTo(x, 0);
-		ctx.lineTo(x, h);
-		ctx.stroke();
-	}
-	ctx.restore();
 }
 
 export interface StemWaveRowFrame {
@@ -604,75 +537,4 @@ export function resolvePaintPalette(deckId: number, palette: WavePalette): WaveP
 	return palette.secondaryBg === palette.bg
 		? palette
 		: { ...palette, bg: palette.secondaryBg };
-}
-
-/** Fixed center playhead. Always drawn (busy waveforms + empty decks).
- * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red). */
-export function drawPlayhead(
-	ctx: CanvasRenderingContext2D,
-	w: number,
-	h: number,
-	tone: PlayheadTone = 'now',
-	timeMs: number = 0
-): void {
-	const centerX = Math.round(w / 2);
-	if (tone === 'masterSynced') {
-		// Two adjacent cores are deliberate: yellow says MASTER, while green
-		// retains its established meaning, Beat Sync is engaged. Their matching
-		// 3px glows / 1px cores keep the original equal-weight contract.
-		// Both translucent glows must land before either opaque core. Painting
-		// green's glow after yellow's core visibly contaminates the yellow core.
-		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
-		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.synced, centerX, h);
-		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
-		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.synced, centerX, h);
-		return;
-	}
-	const color = PLAYHEAD_COLORS[tone];
-	// One weight for every tone. The geometry was always identical, but the
-	// glow alpha ran 0.32 (synced) to 0.55 (bar1), and a dimmer line at the
-	// same width reads as a THINNER line - which is why pin 4a1e7e603f49
-	// reported this as a width bug when nothing was ever a different width.
-	// The tone carries its meaning in the colour; making it carry meaning in
-	// the weight as well meant neither read cleanly.
-	let glow = 0.45;
-	let core = 1;
-	if (tone === 'drift') {
-		// Bright pulsing red - light-touch warning, still unmissable. The
-		// exception that stays: a pulse is a change over time, not a
-		// permanently different weight.
-		const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(timeMs / 160));
-		glow = 0.45 * pulse;
-		core = pulse;
-	}
-	ctx.fillStyle = color;
-	ctx.globalAlpha = glow;
-	ctx.fillRect(centerX - 1, 0, 3, h);
-	ctx.globalAlpha = core;
-	ctx.fillRect(centerX, 0, 1, h);
-	ctx.globalAlpha = 1;
-}
-
-function _drawPlayheadGlow(
-	ctx: CanvasRenderingContext2D,
-	color: string,
-	coreX: number,
-	h: number
-): void {
-	ctx.fillStyle = color;
-	ctx.globalAlpha = 0.45;
-	ctx.fillRect(coreX - 1, 0, 3, h);
-	ctx.globalAlpha = 1;
-}
-
-function _drawPlayheadCore(
-	ctx: CanvasRenderingContext2D,
-	color: string,
-	coreX: number,
-	h: number
-): void {
-	ctx.fillStyle = color;
-	ctx.globalAlpha = 1;
-	ctx.fillRect(coreX, 0, 1, h);
-	ctx.globalAlpha = 1;
 }

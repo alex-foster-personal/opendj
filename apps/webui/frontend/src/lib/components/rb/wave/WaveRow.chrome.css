@@ -1,0 +1,70 @@
+/* Deliberately loud and deliberately not a toast: a stalled clock is a
+   condition that persists, and it belongs on the deck it applies to. */
+.clock-stalled {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	z-index: 3;
+	padding: 0 4px;
+	border-radius: 2px;
+	background: #b3261e;
+	color: #fff;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	pointer-events: auto;
+}
+.rb-waverow {
+	display: flex;
+	height: calc(var(--rb-waverow-h) + var(--rb-waverow-stem-extra, 0px));
+	background: var(--rb-bg);
+	/* Strong channel separator so beat lines can be compared across rows. */
+	border-bottom: 2px solid #3d4652;
+	transition:
+		background 50ms ease-out,
+		box-shadow 50ms ease-out;
+}
+.wave-col {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+}
+/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
+   mixer's translucent panel-raised mix, because the canvas is opaque. */
+.rb-waverow.secondary {
+	background: var(--rb-waverow-secondary);
+}
+.rb-waverow.deck-focus {
+	background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+.rb-waverow.secondary.deck-focus {
+	background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
+}
+.canvas-wrap {
+	position: relative;
+	flex: 1 1 var(--rb-waverow-h);
+	min-height: var(--rb-waverow-h);
+	min-width: 0;
+}
+canvas {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	cursor: ew-resize;
+	outline: none;
+	touch-action: none;
+}
+.anlz-state {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	color: var(--rb-text-dim);
+	font-size: var(--rb-fs-label);
+	letter-spacing: 1px;
+	pointer-events: none;
+}

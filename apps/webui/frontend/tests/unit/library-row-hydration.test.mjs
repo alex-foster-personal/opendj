@@ -55,7 +55,9 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 	[
 		'lib/player/beatgrid-upgrade.ts',
 		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
-	]
+	],
+	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row'],
+	['lib/rb/performance-ipc.svelte.ts', 'deck load']
 ]);
 
 let rowVocals;
@@ -221,6 +223,52 @@ test('strip markers resolve from memory: playing deck wins, cache fills, a miss 
 	assert.equal(out.b, cached, 'a ready cache entry answers for a row on no deck');
 	assert.equal('c' in out, false, 'a cache miss must stay a miss, not a placeholder');
 	assert.deepEqual(asked, ['b', 'c'], 'the cache is consulted once per row with no deck answer');
+});
+
+test('preview strips resolve from memory without per-row fetch', () => {
+	const hydrated = { cols: 120, bands: new Uint8Array(360), max: 1 };
+	const out = rowVocals.resolveRowPreviewStrip({
+		rows: [
+			{ stable_id: 'a', strip: null },
+			{ stable_id: 'b', strip: hydrated },
+			{ stable_id: 'c', strip: null }
+		],
+		cachedAnlzEntry: (sid) => {
+			if (sid === 'a') {
+				return {
+					status: 'ready',
+					data: {
+						local_waveform: {
+							status: 'decoded',
+							preview_b64: null,
+							preview_max: null
+						}
+					}
+				};
+			}
+			if (sid === 'c') return { status: 'loading' };
+			return undefined;
+		}
+	});
+	assert.equal(out.b, hydrated, 'listing-hydrated strip must win');
+	assert.equal(out.a, null, 'decoded-with-null-preview stays absent');
+	assert.equal(out.c, null, 'loading cache must not invent strip bytes');
+	const loading = rowVocals.resolveRowStripLoading({
+		rows: [
+			{ stable_id: 'a', strip: null },
+			{ stable_id: 'b', strip: hydrated },
+			{ stable_id: 'c', strip: null },
+			{ stable_id: 'd', strip: null }
+		],
+		cachedAnlzEntry: (sid) => {
+			if (sid === 'c') return { status: 'loading' };
+			if (sid === 'd') return undefined;
+			return { status: 'ready', data: {} };
+		}
+	});
+	assert.equal(loading.b, false, 'hydrated strip is never loading');
+	assert.equal(loading.c, true, 'cache loading shows spinner');
+	assert.equal(loading.d, false, 'no cache entry must not spin forever');
 });
 
 test('TrackTable draws strip markers from its markerAnlzById prop', () => {
