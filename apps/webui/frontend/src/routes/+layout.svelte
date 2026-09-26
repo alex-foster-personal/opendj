@@ -10,7 +10,11 @@
 	const visibleToasts = $derived(selectVisibleToasts(toasts));
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
-	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
+	import {
+		isStageOverlayOpen,
+		loadStageOverlay,
+		prefetchStageOverlay
+	} from '$lib/components/lyrics/stage-overlay-loader';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
@@ -127,15 +131,22 @@
 	function retrySetupOverlay(): void {
 		window.location.assign(SETUP_ROUTE);
 	}
-	function reportHotkeysOverlayLoadFailure(error: unknown): void {
-		const message = error instanceof Error ? error.message : String(error);
-		pushToast(
-			`Hotkeys overlay failed to load: ${message}. Reload the page to retry.`,
-			'error',
-			TOAST_DEFAULT_MS,
-			error
-		);
+	// The hotkeys cheatsheet and the stage view are lazy chunks with one
+	// failure shape: an error toast naming the overlay, raised again on every
+	// open that fails (each loader forgets a failed attempt).
+	function overlayLoadFailureReporter(overlay: string): (error: unknown) => void {
+		return (error: unknown): void => {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(
+				`${overlay} failed to load: ${message}. Reload the page to retry.`,
+				'error',
+				TOAST_DEFAULT_MS,
+				error
+			);
+		};
 	}
+	const reportHotkeysOverlayLoadFailure = overlayLoadFailureReporter('Hotkeys overlay');
+	const reportStageOverlayLoadFailure = overlayLoadFailureReporter('Stage view');
 
 	const yieldBootGate = $derived(
 		bootGateYielded({
@@ -237,6 +248,7 @@
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		prefetchHotkeysOverlay(reportHotkeysOverlayLoadFailure);
+		prefetchStageOverlay(reportStageOverlayLoadFailure);
 		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
@@ -389,7 +401,15 @@
 {/if}
 
 <SettingsOverlay />
-<StageOverlay />
+<!-- STAGE lyric view: mounted at the root so it survives navigation, but only
+     while open, from a lazy chunk (see stage-overlay-loader.ts). -->
+{#if isStageOverlayOpen()}
+	{#await loadStageOverlay(reportStageOverlayLoadFailure) then { default: StageOverlay }}
+		<StageOverlay />
+	{:catch}
+		<!-- Already reported as an error toast by reportStageOverlayLoadFailure. -->
+	{/await}
+{/if}
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
      root for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the one surface a brand new user meets cannot be missing there
