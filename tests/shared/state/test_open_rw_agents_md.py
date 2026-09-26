@@ -9,10 +9,13 @@ import pytest
 
 from apps.database import regenerate_agents_md_if_writable
 from apps.database.generate_agents_md import (
+    GENERATOR_VERSION,
     ForeignAgentsMdError,
     MissingColumnDocsError,
+    agents_md_cache_marker,
 )
 from apps.shared.state import schema as state_schema
+from apps.shared.state import schema_markers
 from apps.shared.state import sync_stamp
 from apps.shared.state.db import open_dry_run, open_rw
 
@@ -105,7 +108,17 @@ def test_regenerate_raises_on_undocumented_table(tmp_path: Path) -> None:
 
 
 def test_open_rw_propagates_missing_column_docs_error_on_reopen(tmp_path: Path) -> None:
-    """if reopen hits a docs gap on an owned table then open_rw raises - broken"""
+    """if reopen hits a docs gap on an owned table then open_rw raises - broken
+
+    Doubles as the cache-vs-drift-guard regression test for issue #4015: the
+    ALTER TABLE below never touches ``schema.SCHEMA_VERSION`` or
+    ``owned_tables``, so if the AGENTS.md cache marker were keyed on the
+    app's own schema version instead of sqlite's ``PRAGMA schema_version``,
+    this reopen would hit the marker cache, skip regeneration entirely, and
+    this test would go from "raises" to "silently reuses the stale file" --
+    which is exactly the regression the first draft of this fix introduced
+    and this test caught.
+    """
     db_path = tmp_path / "state.db"
     conn = open_rw(db_path)
     conn.execute("ALTER TABLE tracks ADD COLUMN totally_fake_injected_column TEXT")
@@ -214,6 +227,110 @@ def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:
         dry.close()
 
     assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> None:
+    """if sqlite schema version, owned tables, or generator version differ then the marker differs - broken"""
+    base = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks"}))
+    other_schema = agents_md_cache_marker(sqlite_schema_version=20, owned_tables=frozenset({"tracks"}))
+    other_tables = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks", "playlists"}))
+    same_again = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=frozenset({"tracks"}))
+
+    assert base == same_again
+    assert base != other_schema
+    assert base != other_tables
+    # A live bump of GENERATOR_VERSION must also move the marker -- this
+    # assertion is the mutation check for that path: revert the constant to
+    # 1 and this line goes red, because a marker gate that ignores the
+    # generator's own version would keep serving a stale AGENTS.md forever
+    # after the render logic or curated docs change underneath it.
+    assert f"v{GENERATOR_VERSION}" in base
+
+
+def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -> None:
+    """if schema and owned tables are unchanged then a reopen does not rewrite AGENTS.md - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    conn.close()
+
+    agents_md = tmp_path / "AGENTS.md"
+    assert agents_md.is_file()
+    verify_conn = open_rw(db_path)
+    try:
+        sqlite_schema_version = verify_conn.execute("PRAGMA schema_version").fetchone()[0]
+        marker = agents_md_cache_marker(
+            sqlite_schema_version=sqlite_schema_version,
+            owned_tables=state_schema.ALL_KNOWN_TABLES,
+        )
+        assert schema_markers.has_marker(verify_conn, marker)
+    finally:
+        verify_conn.close()
+
+    # Delete the file so a real regeneration is the ONLY way it comes back --
+    # this is the positive-presence proof the fleet verification rule asks
+    # for: absence after reopen is not "nothing happened to look the same",
+    # it is "regeneration provably did not run", because if it had run the
+    # file would exist again.
+    agents_md.unlink()
+
+    reopened = open_rw(db_path)
+    reopened.close()
+
+    assert not agents_md.exists()
+
+
+def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> None:
+    """if owned_tables differs from the cached marker then regenerate writes again - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    try:
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.unlink()
+
+        # Same call shape open_rw already made (schema_version unchanged,
+        # same owned_tables) -- this is the cache HIT this fix exists for.
+        assert regenerate_agents_md_if_writable(
+            conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
+        ) is False
+        assert not agents_md.exists()
+
+        # A genuinely different owned_tables set is a different real input,
+        # so it must be a cache MISS: this is the direct counterpart to the
+        # skip test above, proving the gate does not just always skip.
+        narrowed = frozenset({"tracks"})
+        assert narrowed != state_schema.ALL_KNOWN_TABLES
+        assert regenerate_agents_md_if_writable(
+            conn, tmp_path, owned_tables=narrowed
+        ) is True
+        assert agents_md.is_file()
+    finally:
+        conn.close()
+
+
+def test_regenerate_reruns_when_generator_version_bumps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if GENERATOR_VERSION bumps then a previously-cached marker misses - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    try:
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.unlink()
+
+        assert regenerate_agents_md_if_writable(
+            conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
+        ) is False
+        assert not agents_md.exists()
+
+        monkeypatch.setattr(
+            "apps.database.generate_agents_md.GENERATOR_VERSION", GENERATOR_VERSION + 1
+        )
+        assert regenerate_agents_md_if_writable(
+            conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
+        ) is True
+        assert agents_md.is_file()
+    finally:
+        conn.close()
 
 
 def test_open_dry_run_does_not_overwrite_existing_agents_md(tmp_path: Path) -> None:

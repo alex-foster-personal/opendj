@@ -50,6 +50,50 @@ from apps.database.column_docs import COLUMN_DOCS, TABLE_DOCS
 # import that reintroduces the dependency fails there, by name, instead of
 # reappearing as a red CI job that names PyYAML rather than drift.
 
+GENERATOR_VERSION: int = 1
+"""Bump this whenever :func:`render`, :func:`introspect`, ``_HEADER``, or a
+curated docs module (``column_docs.py`` and the modules it merges in) changes
+in a way that changes the bytes ``write_agents_md`` produces. The bump is
+the code-side half of :func:`agents_md_cache_marker`'s cache key (issue
+#4015); the DB-side half is sqlite's own ``PRAGMA schema_version``, so
+``open_rw`` regenerates AGENTS.md once after either moves and skips it on
+every reopen where neither did, instead of re-running introspection and
+YAML rendering on every request that opens a connection.
+"""
+
+
+def agents_md_cache_marker(
+    *, sqlite_schema_version: int, owned_tables: frozenset[str] | None
+) -> str:
+    """The ``schema_meta_markers`` key that gates AGENTS.md regeneration.
+
+    ``sqlite_schema_version`` MUST be a fresh ``PRAGMA schema_version`` read
+    on the connection being checked, not this app's own
+    :data:`apps.shared.state.schema.SCHEMA_VERSION`. sqlite's schema-version
+    counter is bumped by sqlite itself on every DDL statement that touches
+    this file -- CREATE/ALTER/DROP TABLE -- whether it ran through this
+    app's migration ladder or not (an ad-hoc ``ALTER TABLE`` from a test, a
+    foreign-authority table created by another subsystem, a hand-run DDL
+    script). The app's own ``SCHEMA_VERSION`` constant only advances on a
+    migration and would miss all of those, silently caching a stale
+    AGENTS.md past the drift guard's whole purpose
+    (:class:`MissingColumnDocsError`, specs/cloudsync-spec.md D3). It costs
+    one pragma read, not a walk of ``sqlite_master``, so the cache still
+    pays for itself against the introspect-and-render cost this exists to
+    skip.
+
+    The other input, this module's own :data:`GENERATOR_VERSION`, changes
+    whenever the code that turns a schema into text changes, and a cache hit
+    means none of the three moved since the marker was inserted, so the
+    DB's AGENTS.md is still correct.
+    """
+    tables_part = ",".join(sorted(owned_tables)) if owned_tables else ""
+    return (
+        f"agents_md_generated:v{GENERATOR_VERSION}:"
+        f"sqliteschema{sqlite_schema_version}:{tables_part}"
+    )
+
+
 _FTS5_SHADOW_SUFFIXES: tuple[str, ...] = (
     "_data",
     "_idx",
@@ -387,8 +431,10 @@ if __name__ == "__main__":
 __all__ = [
     "ColumnInfo",
     "ForeignKeyInfo",
+    "GENERATOR_VERSION",
     "MissingColumnDocsError",
     "TableInfo",
+    "agents_md_cache_marker",
     "introspect",
     "main",
     "render",

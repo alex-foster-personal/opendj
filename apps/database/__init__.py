@@ -52,6 +52,25 @@ def regenerate_agents_md_if_writable(
     the current ladder cannot abort the open, while foreign-authority
     tables stay in the sidecar. The CLI and tests that omit it keep the
     strict every-live-table guard.
+
+    Regeneration itself is gated by a ``schema_meta_markers`` row keyed on
+    :func:`apps.database.generate_agents_md.agents_md_cache_marker` (issue
+    #4015): every ``open_rw`` on an unchanged schema was re-running full
+    sqlite introspection plus YAML rendering on the request thread, 80 of
+    513 py-spy samples in a 10k-row listing walk. A present marker means
+    AGENTS.md for this exact (sqlite schema version, owned tables, generator
+    version) triple was already written by *some* prior open and returns
+    False after one ``PRAGMA schema_version`` read, without touching the
+    filesystem; a marker miss still runs the real generator (and still
+    raises ``MissingColumnDocsError`` before any write, unchanged) and then
+    records the marker so the next open on an unchanged schema is a cache
+    hit. ``PRAGMA schema_version`` -- not this app's own
+    ``schema.SCHEMA_VERSION`` -- is the key precisely because it is sqlite's
+    own DDL counter: it also catches ad-hoc/foreign DDL that never went
+    through this app's migration ladder, which an app-level version would
+    miss (see :func:`agents_md_cache_marker`'s docstring). The one-shot
+    marker table already exists for the v15/v17 backfills, so this reuses it
+    rather than inventing a second mechanism.
     """
     if not os.access(state_dir, os.W_OK):
         return False
@@ -62,7 +81,20 @@ def regenerate_agents_md_if_writable(
     # this ("found in sys.modules ... prior to execution ... unpredictable
     # behaviour"). Deferring the import here, off the CLI's hot path,
     # avoids it.
-    from apps.database.generate_agents_md import write_agents_md
+    from apps.database.generate_agents_md import (
+        agents_md_cache_marker,
+        write_agents_md,
+    )
+    from apps.shared.state import schema_markers as _markers
+
+    sqlite_schema_version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    marker = agents_md_cache_marker(
+        sqlite_schema_version=sqlite_schema_version, owned_tables=owned_tables
+    )
+    if _markers.has_marker(conn, marker):
+        return False
 
     write_agents_md(conn, state_dir / "AGENTS.md", owned_tables=owned_tables)
+    if _markers.table_exists(conn, _markers.MARKER_TABLE):
+        _markers.insert_marker(conn, marker)
     return True
