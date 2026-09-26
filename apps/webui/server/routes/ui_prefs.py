@@ -61,7 +61,10 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
+PlaylistTreeView = Literal["tree", "column"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
+_DEFAULT_DECK_RIGHT_MIRROR = False
+_DEFAULT_PLAYLIST_TREE_VIEW: PlaylistTreeView = "tree"
 _DEFAULT_LIBRARY_DENSITY: LibraryDensity = "compact"
 _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
@@ -665,6 +668,8 @@ class UiPrefsOut(BaseModel):
     available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
+    deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
+    playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
 
 
 class UiPrefsPatch(BaseModel):
@@ -702,6 +707,8 @@ class UiPrefsPatch(BaseModel):
     available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
+    deck_right_mirror: bool | None = None
+    playlist_tree_view: PlaylistTreeView | None = None
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -809,4 +816,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["level_calibration"] = _parse_level_calibration(
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
+    if body.deck_right_mirror is not None:
+        current["deck_right_mirror"] = body.deck_right_mirror
+    if body.playlist_tree_view is not None:
+        current["playlist_tree_view"] = body.playlist_tree_view
     return current

@@ -14,6 +14,8 @@ import {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
 	setDeckLayoutMode,
+	setDeckRightMirror,
+	setPlaylistTreeView,
 	setCrossfadeCurve,
 	setHideBrokenLinks,
 	setHideTodoSettings,
@@ -80,6 +82,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
+	'deck_right_mirror',
+	'playlist_tree_view',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
@@ -152,6 +156,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.deck_layout_animate;
 		case 'deck_layout_duration_ms':
 			return String(uiPrefs.deck_layout_duration_ms);
+		case 'deck_right_mirror':
+			return uiPrefs.deck_right_mirror;
+		case 'playlist_tree_view':
+			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -283,6 +291,16 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				);
 			}
 			setDeckLayoutDurationMs(n as DeckLayoutDurationMs);
+			return;
+		}
+		case 'deck_right_mirror':
+			setDeckRightMirror(_asBool(value, key));
+			return;
+		case 'playlist_tree_view': {
+			if (value !== 'tree' && value !== 'column') {
+				throw new Error(`playlist_tree_view must be tree|column, got ${String(value)}`);
+			}
+			setPlaylistTreeView(value);
 			return;
 		}
 		case 'auto_sync.rekordbox':

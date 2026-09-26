@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 	import { cancelQuit, confirmQuit } from '$lib/shell/quit-gate';
 	import { isQuitConfirmOpen, subscribeQuitConfirmOpen } from '$lib/shell/quit-gate-state';
 
@@ -16,7 +17,11 @@
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="qc-backdrop" role="presentation">
+	<div
+		class="qc-backdrop"
+		role="presentation"
+		style:z-index={OVERLAY_Z_INDEX.quitConfirm}
+	>
 		<div
 			class="qc-panel"
 			role="dialog"
@@ -43,7 +48,6 @@
 	.qc-backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: 10000;
 		display: flex;
 		align-items: center;
 		justify-content: center;
