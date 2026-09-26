@@ -18,6 +18,7 @@
 	import { readShellBuild } from '$lib/rb/build-identity';
 	import { attachmentSizeRefusal, pastedImageFile } from '$lib/rb/feedback-pin-attachment';
 	import type { ClientErrorContext } from '$lib/client-error-reporting';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 
 	/** Signature of `$lib/stores.svelte`'s `pushToast`, taken as a prop
 	 * instead of imported directly: the parent (FeedbackWidget.svelte)
@@ -270,7 +271,7 @@
 {#if pinDraft !== null}
 	<div
 		class="fb-bubble"
-		style={bodyStyle}
+		style="{bodyStyle}; z-index: {OVERLAY_Z_INDEX.feedbackPinBubble}"
 		role="dialog"
 		aria-label="New comment pin"
 		bind:this={bubbleElement}
@@ -323,7 +324,6 @@
 <style>
 	.fb-bubble {
 		position: fixed;
-		z-index: 310;
 		width: 200px;
 		max-height: 320px;
 		overflow-y: auto;
