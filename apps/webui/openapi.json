@@ -7642,7 +7642,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Last Cycle At"
           },
           "running": {
@@ -7675,7 +7674,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Warning"
           }
         },
@@ -17268,9 +17266,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null,
-            "title": "Folder Watch"
+            ]
           },
           "last_import": {
             "anyOf": [

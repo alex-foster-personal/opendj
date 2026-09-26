@@ -33,7 +33,7 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
-from apps.webui.server.backend import ConflictError
+from apps.webui.server.backend import ConflictError, Track
 from apps.webui.server.etag import compute_etag
 from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
 
@@ -64,17 +64,28 @@ def state_db_path(tmp_path: Path) -> Path:
     return db_path
 
 
+def _served_etag(track: Track) -> str:
+    """The etag the API serves for ``track``, selection variant included.
+
+    Every serving path passes ``track.selection_tag`` (``routes/tracks.py``,
+    ``track_rows.py``, the batch write guard). Since STANDALONE-06 (#3926) an
+    unmapped track's lane-owned fields default to own, so its variant is not
+    empty and the two-argument form no longer names the served validator.
+    """
+    return compute_etag(track.stable_id, track.updated_at, track.selection_tag)
+
+
 def _patch_all_fields(backend: SqliteBackend) -> str:
     """Apply a rating+notes+tags patch; return the post-write etag."""
     current = backend.get_track(SID)
-    etag = compute_etag(current.stable_id, current.updated_at)
+    etag = _served_etag(current)
     updated = backend.update_track(
         SID,
         {"rating": 5, "notes": "set from webui", "tags_add": ["peak-time"]},
         expected_etag=etag,
         source="webui",
     )
-    return compute_etag(updated.stable_id, updated.updated_at)
+    return _served_etag(updated)
 
 
 class TestRestartPersistence:
@@ -133,7 +144,7 @@ class TestRestartPersistence:
     ) -> None:
         backend = SqliteBackend(state_db_path)
         current = backend.get_track(SID)
-        stale_etag = compute_etag(current.stable_id, current.updated_at)
+        stale_etag = _served_etag(current)
         new_etag = _patch_all_fields(backend)
         assert new_etag != stale_etag
 
@@ -147,7 +158,7 @@ class TestRestartPersistence:
         # by a NEW backend instance (etag survives restart too).
         reborn = SqliteBackend(state_db_path)
         track = reborn.get_track(SID)
-        assert compute_etag(track.stable_id, track.updated_at) == new_etag
+        assert _served_etag(track) == new_etag
         reborn.update_track(
             SID, {"rating": 3}, expected_etag=new_etag, source="webui",
         )
@@ -272,7 +283,7 @@ class TestSchemaMigration:
         backend = make_backend(db_path)
         assert isinstance(backend, SqliteBackend)
         current = backend.get_track(SID)
-        etag = compute_etag(current.stable_id, current.updated_at)
+        etag = _served_etag(current)
         updated = backend.update_track(
             SID, {"rating": 5}, expected_etag=etag, source="webui",
         )
