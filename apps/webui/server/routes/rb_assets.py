@@ -161,11 +161,26 @@ def get_track_artwork(
 _BEATGRID_SOURCE_LABELS: dict[str, str] = {"rbx": "rekordbox", "own": "own"}
 
 
-def _beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> str:
-    """Per-track beatgrid source label for ``/anlz`` (STANDALONE-06).
+# `beatgrid_source_basis` on `/anlz`: WHY this track resolved to the source
+# `beatgrid_source` names. "unmapped-default" is STANDALONE-06's per-track own
+# (an unmapped track, the PARITY-02 toggle unset, the lane default still rbx),
+# which legitimately differs from the lane-wide selection GET
+# /api/v1/analysis/source reports. The client compares every payload against
+# that lane-wide selection to reject stragglers from a source switch, so
+# without this field it read every unmapped track as a straggler and refetched
+# it forever (deck load never settled, trunk red Fri 25 Sep 2026).
+BASIS_SELECTION = "selection"
+BASIS_UNMAPPED_DEFAULT = "unmapped-default"
 
-    Reads through :mod:`apps.analysis.selection` once per request; callers
-    thread the returned string through rescue branches and
+
+def _beatgrid_source_for_track(
+    request: Request, *, has_rb_mapping: bool
+) -> tuple[str, str]:
+    """Per-track beatgrid source label and its basis for ``/anlz`` (STANDALONE-06).
+
+    Reads through :mod:`apps.analysis.selection` once per request, source and
+    basis off the SAME connection so they cannot straddle a PUT; callers
+    thread the returned pair through rescue branches and
     :func:`_resolve_beatgrid_source` without re-reading (ADR-0099).
     """
     conn = analysis_source_routes._open_ro(request)
@@ -173,9 +188,13 @@ def _beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> str
         source = selection.effective_source_for_track(
             conn, "beatgrid", has_rb_mapping=has_rb_mapping
         )
+        implicit = selection.implicit_own_default(
+            conn, "beatgrid", has_rb_mapping=has_rb_mapping
+        )
     finally:
         conn.close()
-    return _BEATGRID_SOURCE_LABELS[source]
+    basis = BASIS_UNMAPPED_DEFAULT if implicit else BASIS_SELECTION
+    return _BEATGRID_SOURCE_LABELS[source], basis
 
 
 def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:
@@ -378,7 +397,9 @@ def get_track_anlz(
     # function then stamps with the OTHER, newer source
     # (discussion_r3974235458 P2 BLOCKING).
     has_rb_mapping = stable_id in rb_vendor.bulk_rb_meta([stable_id])
-    beatgrid_source = _beatgrid_source_for_track(request, has_rb_mapping=has_rb_mapping)
+    beatgrid_source, beatgrid_source_basis = _beatgrid_source_for_track(
+        request, has_rb_mapping=has_rb_mapping
+    )
     state_db_path = _state_db_override(request)
     rescued_missing_analysis_path = False
     try:
@@ -460,6 +481,7 @@ def get_track_anlz(
     _resolve_beatgrid_source(
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
+    payload["beatgrid_source_basis"] = beatgrid_source_basis
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

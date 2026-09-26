@@ -224,4 +224,15 @@ export interface AnlzData {
 	 * this track: `beatgrid` is then the real empty grid, never a silent
 	 * fallback to the rekordbox one, and this names why. */
 	beatgrid_own_unavailable_reason: string | null;
+	/** WHY `beatgrid_source` is what it is for THIS track (rb_assets.py
+	 * `_beatgrid_source_for_track`). 'unmapped-default' is STANDALONE-06's
+	 * per-track own for a track rekordbox never mapped, which legitimately
+	 * differs from the lane-wide selection; 'selection' means the track
+	 * follows that selection. The engine always sends it; it is optional only
+	 * for payloads the client builds itself, and absence reads as the stricter
+	 * 'selection' (see beatgrid-source-basis.ts). */
+	beatgrid_source_basis?: AnlzBeatgridSourceBasis;
 }
+
+/** See `AnlzData.beatgrid_source_basis`. */
+export type AnlzBeatgridSourceBasis = 'selection' | 'unmapped-default';
