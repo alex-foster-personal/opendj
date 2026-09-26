@@ -556,6 +556,36 @@ def test_setup_auth_section_confirms_demon_llamas_real_logins() -> None:
     assert "claude auth status reports a first-party subscription login" in done.stdout
 
 
+def test_setup_engine_discovery_survives_a_failed_probe() -> None:
+    """[if] a checkout whose port probe fails (no claim, no checkout) aborts setup.sh
+    under `set -euo pipefail` [then] the -wt-agt-mini fallback is never examined and
+    the warn-and-install path never runs, [else stop]. setup.sh's real functions over
+    real ssh on demon-llama, pointed at checkouts that do not exist there, so both
+    probes really fail. UNAVAILABLE off the tailnet."""
+    if not _host_reachable(LIVE_ENGINE_HOST):
+        pytest.skip(f"UNAVAILABLE: {LIVE_ENGINE_HOST} is not reachable over BatchMode ssh")
+    harness = "\n".join(
+        [
+            "set -euo pipefail",
+            f"HOST={LIVE_ENGINE_HOST}",
+            "REMOTE_REPO=/nonexistent-opendj-checkout/music-dj-tools",
+            _setup_function("log"),
+            _setup_function("run"),
+            _setup_function("probe_engine_repo"),
+            _setup_function("engine_serves_app"),
+            _setup_function("choose_engine_repo"),
+            "choose_engine_repo",
+            'echo "ENGINE_REPO=$ENGINE_REPO"',
+        ]
+    )
+    done = subprocess.run(
+        ["bash", "-c", harness], capture_output=True, text=True, check=False, timeout=180
+    )
+    assert done.returncode == 0, done.stderr
+    assert "ENGINE_REPO=/nonexistent-opendj-checkout/music-dj-tools\n" in done.stdout
+    assert "-wt-agt-mini" in done.stderr and "[WARN]" in done.stderr, "both were examined"
+
+
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
     """[if] setup.sh writes the new plist while the old loop or the legacy duplicate still
     runs [then] its attempt can start after verify's cutoff and count as new evidence
