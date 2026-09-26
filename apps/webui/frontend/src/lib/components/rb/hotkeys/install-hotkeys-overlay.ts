@@ -13,7 +13,6 @@
  */
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
-import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import {
 	beginHotkeysOverlayHold,
@@ -36,27 +35,33 @@ export { isHotkeysOverlayOpen };
 // it off the first paint changes nothing observable then. The chunk is warmed
 // once the boot window closes (prefetchHotkeysOverlay, from the layout's
 // onMount), so the first "/" hold or "?" draws it without waiting on a fetch. A
-// chunk that cannot be fetched is reported as an error toast, the pin shell's way.
+// chunk that cannot be fetched is handed to the caller's reporter (the layout
+// raises an error toast, the pin shell's way), so this module stays off the
+// toast store.
 type HotkeysOverlayModule = typeof import('./HotkeysOverlay.svelte');
 let hotkeysOverlayModule: Promise<HotkeysOverlayModule> | null = null;
 
-export function loadHotkeysOverlay(): Promise<HotkeysOverlayModule> {
+export function loadHotkeysOverlay(
+	reportLoadFailure: (error: unknown) => void
+): Promise<HotkeysOverlayModule> {
 	if (hotkeysOverlayModule === null) {
 		const attempt = import('./HotkeysOverlay.svelte');
 		hotkeysOverlayModule = attempt;
 		attempt.catch((error: unknown) => {
-			// Forget the failed attempt so the next "/" or "?" fetches again
-			// instead of replaying this rejection until a reload.
+			// Forget the failed attempt so the next "/" or "?" imports again and
+			// reports again, rather than awaiting this rejection in silence.
+			// Chromium keeps a failed module fetch in its module map (see the
+			// setup overlay note in +layout.svelte), so there the re-import
+			// rejects without a request and only a reload recovers.
 			if (hotkeysOverlayModule === attempt) hotkeysOverlayModule = null;
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hotkeys overlay failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+			reportLoadFailure(error);
 		});
 	}
 	return hotkeysOverlayModule;
 }
 
-export function prefetchHotkeysOverlay(): void {
-	bootScheduler.defer('hotkeys-overlay:prefetch', () => void loadHotkeysOverlay());
+export function prefetchHotkeysOverlay(reportLoadFailure: (error: unknown) => void): void {
+	bootScheduler.defer('hotkeys-overlay:prefetch', () => void loadHotkeysOverlay(reportLoadFailure));
 }
 
 const OVERLAY_SEARCH_ATTR = 'data-hotkeys-overlay-search';

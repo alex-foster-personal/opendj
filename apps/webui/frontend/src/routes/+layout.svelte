@@ -127,6 +127,15 @@
 	function retrySetupOverlay(): void {
 		window.location.assign(SETUP_ROUTE);
 	}
+	function reportHotkeysOverlayLoadFailure(error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error);
+		pushToast(
+			`Hotkeys overlay failed to load: ${message}. Reload the page to retry.`,
+			'error',
+			TOAST_DEFAULT_MS,
+			error
+		);
+	}
 
 	const yieldBootGate = $derived(
 		bootGateYielded({
@@ -227,7 +236,7 @@
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
-		prefetchHotkeysOverlay();
+		prefetchHotkeysOverlay(reportHotkeysOverlayLoadFailure);
 		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
@@ -423,10 +432,10 @@
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
 {#if isHotkeysOverlayOpen()}
-	{#await loadHotkeysOverlay() then { default: HotkeysOverlay }}
+	{#await loadHotkeysOverlay(reportHotkeysOverlayLoadFailure) then { default: HotkeysOverlay }}
 		<HotkeysOverlay />
 	{:catch}
-		<!-- Already reported as an error toast by loadHotkeysOverlay. -->
+		<!-- Already reported as an error toast by reportHotkeysOverlayLoadFailure. -->
 	{/await}
 {/if}
 <QuitConfirmOverlay />
