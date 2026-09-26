@@ -179,12 +179,6 @@
 
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
-	const keyCompatRef = $derived(
-		uiPrefs.next_only_filter && compatibleReferenceKey !== null
-			? compatibleReferenceKey
-			: masterKey
-	);
-	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
 	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
@@ -444,7 +438,16 @@
 		suggestHoverId?: string | null;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey?: string | null;
 	} = $props();
+
+	const keyCompatRef = $derived(
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null
+			? compatibleReferenceKey
+			: masterKey
+	);
+	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
 	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
 	 * height is density-dependent (`--tt-row-h`), so a constant would drift
