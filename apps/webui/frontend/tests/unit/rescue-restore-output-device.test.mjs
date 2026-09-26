@@ -6,6 +6,7 @@
 // [if] a sink select is refused [then] only that sink is reported refused; the other sink and every deck still restore
 // [if] the bifrost1 ring (legacy snapshot, id only, new origin) is restored [then] nothing throws; master reported not_found
 // [if] a snapshot is captured with a selected sink [then] the enumerated label is saved beside the id
+// [if] a sink is picked while nothing plays in gig posture [then] the pick alone writes a ring snapshot
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -549,4 +550,43 @@ test('capture: no selection, an unenumerated id, or a hidden label saves a null 
 	);
 	assert.equal(none.mixer.headphones.selected_output_device_label, null);
 	assert.equal(none.mixer.headphones.selected_master_output_device_label, null);
+});
+
+//------------------------------------------------------------------ ring trigger
+
+test('ring: picking a sink while nothing plays writes a snapshot on its own (gig posture)', async () => {
+	const writer = await loadTypeScriptModule('tests/unit/fixtures/rescue-ring-writer-entry.ts', {
+		viteApiBase: 'https://engine.example.test'
+	});
+	writer.resetRescueRingWriterForTest();
+	writer.uiPrefs.app_posture = 'gig';
+	writer.installRescueRingWriterHooks();
+	const posted = [];
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async (url, init) => {
+		posted.push({ url, body: JSON.parse(init.body) });
+		return new Response('{}', { status: 202 });
+	};
+	try {
+		for (const command of [
+			{ type: 'headphone_master_select', device_id: 'x' },
+			{ type: 'headphone_output_select', device_id: 'y' },
+			{ type: 'headphone_output_acquire' }
+		]) {
+			writer.resetRescueRingWriterForTest();
+			const before = posted.length;
+			writer.notifyRescueTransportEvent(command);
+			await new Promise((resolve) => setTimeout(resolve, writer.RESCUE_TRANSPORT_DEBOUNCE_MS + 30));
+			assert.equal(posted.length, before + 1, `${command.type} must write a ring snapshot`);
+			assert.equal(posted.at(-1).url, 'https://engine.example.test/api/v1/performance/rescue-snapshots');
+			assert.equal(posted.at(-1).body.reason, 'transport');
+		}
+		writer.resetRescueRingWriterForTest();
+		writer.notifyRescueTransportEvent({ type: 'headphone_input_select', device_id: 'mic' });
+		await new Promise((resolve) => setTimeout(resolve, writer.RESCUE_TRANSPORT_DEBOUNCE_MS + 30));
+		assert.equal(posted.length, 3, 'an INPUT pick is not a sink and writes nothing (control)');
+	} finally {
+		globalThis.fetch = originalFetch;
+		writer.uninstallRescueRingWriterHooks();
+	}
 });
