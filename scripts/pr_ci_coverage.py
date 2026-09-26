@@ -208,8 +208,8 @@ def _recently_merged_prs(cutoff: datetime) -> list[tuple[int, str]]:
         page += 1
 
 
-def _changed_files(pr_number: int) -> list[str]:
-    """Read every changed filename for one PR, without a partial-page blind spot."""
+def _changed_files(pr_number: int, head_sha: str) -> list[str]:
+    """Read every changed filename for one PR head, without a partial-page blind spot."""
     files: list[str] = []
     for payload in _pages(f"repos/{REPO}/pulls/{pr_number}/files"):
         for item in payload:
@@ -220,7 +220,8 @@ def _changed_files(pr_number: int) -> list[str]:
                 )
             files.append(filename)
     if not files:
-        require_corroborated_empty_diff(pr_number, _gh_api_json(f"repos/{REPO}/pulls/{pr_number}"))
+        pull = _gh_api_json(f"repos/{REPO}/pulls/{pr_number}")
+        require_corroborated_empty_diff(pr_number, head_sha, pull)
     return files
 
 
@@ -361,8 +362,7 @@ def _requires_ci(files: list[str]) -> bool:
 
     Exactly ``not is_docs_only``, so ``[]`` still requires CI (a PROVEN-empty diff is
     ``_inspect_pr``'s call). Delegates to ``scripts.review_docs_only.is_docs_only``, which
-    parses ci.yml's own `pull_request.paths` filter, instead of a
-    hand-maintained prefix list that could drift from it.
+    parses ci.yml's `pull_request.paths` filter rather than a drift-prone prefix list.
     """
     return not is_docs_only(files)
 
@@ -371,7 +371,7 @@ def _inspect_pr(pr: tuple[int, str] | OpenPr) -> Inspection:
     """Return one PR's number, head, docs-only state, coverage, and unbuildable flag."""
     number, head_sha, mergeable_state = (*pr, None)[:3]
     unbuildable = mergeable_state == "dirty"
-    files = _changed_files(number)
+    files = _changed_files(number, head_sha)
     requires_ci = bool(files) and _requires_ci(files)
     covered = False if unbuildable or not requires_ci else _has_actions_run_at_head(head_sha)
     return number, head_sha, requires_ci, covered, unbuildable
