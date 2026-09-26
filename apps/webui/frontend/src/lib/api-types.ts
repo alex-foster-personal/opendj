@@ -7742,6 +7742,144 @@ export interface components {
             unowned: number;
         };
         /**
+         * FolderCandidatesOut
+         * @description Existing folders under the user's home worth offering as one-click
+         *     setup suggestions, instead of making them type a path blind.
+         */
+        FolderCandidatesOut: {
+            /** Candidates */
+            candidates?: components["schemas"]["AccessProbeOut"][];
+        };
+        /**
+         * FolderImportIn
+         * @description Point at one or more folders of audio files. No rekordbox involved.
+         */
+        FolderImportIn: {
+            /**
+             * Folders
+             * @description absolute paths to walk; at least one
+             */
+            folders: string[];
+            /**
+             * Limit
+             * @description import at most N files
+             */
+            limit?: number | null;
+        };
+        /**
+         * FolderLastImportOut
+         * @description What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
+         *
+         *     A different model rather than optional fields on the rekordbox one,
+         *     because the two describe different work: there is no decrypt here, no
+         *     playlists, and -- the field that matters --
+         *     ``tracks_without_analysis``, which equals the tracks written.
+         */
+        FolderLastImportOut: {
+            /**
+             * Analysis Available
+             * @default false
+             */
+            analysis_available: boolean;
+            /** Analysis Detail */
+            analysis_detail: string;
+            /** Files Dataless */
+            files_dataless: number;
+            /**
+             * Files Rejected Unplayable
+             * @default 0
+             */
+            files_rejected_unplayable: number;
+            /** Files Seen */
+            files_seen: number;
+            /** Files Without Tags */
+            files_without_tags: number;
+            /** Finished At */
+            finished_at: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "folder";
+            /** Roots */
+            roots?: string[];
+            /** Started At */
+            started_at: string;
+            /** Tracks */
+            tracks: number;
+            /** Tracks Without Analysis */
+            tracks_without_analysis: number;
+            /** Tracks Written */
+            tracks_written: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+        };
+        /**
+         * FolderScanOut
+         * @description What a candidate folder actually holds, before anything is imported.
+         *
+         *     ``audio_files`` counts what could be READ. When ``denied`` is true that
+         *     number is not a count of the folder, it is a count of nothing, and
+         *     ``detail`` says so -- which is the difference between "this folder is
+         *     empty" and "macOS would not let me look".
+         */
+        FolderScanOut: {
+            /** Audio Files */
+            audio_files: number;
+            /** Denied */
+            denied: boolean;
+            /** Detail */
+            detail: string;
+            /** Exists */
+            exists: boolean;
+            /** How To Grant */
+            how_to_grant: string;
+            /** Icloud Placeholders */
+            icloud_placeholders: number;
+            /** Path */
+            path: string;
+            /** Readable */
+            readable: boolean;
+            /** Sample */
+            sample?: string[];
+        };
+        /**
+         * FolderWatchOut
+         * @description LIBM-128: the continuous folder-rescan scheduler's own status.
+         *
+         *     ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+         *     run in this process (no lifespan, or not yet its first cycle) -- a
+         *     genuinely different fact from a scheduler that ran and found nothing,
+         *     which is ``warning=None`` with a real ``last_cycle_at``.
+         */
+        FolderWatchOut: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Interval S */
+            interval_s: number;
+            /** Last Cycle At */
+            last_cycle_at?: string | null;
+            /** Running */
+            running: boolean;
+            /**
+             * Tracks Added Last Cycle
+             * @default 0
+             */
+            tracks_added_last_cycle: number;
+            /**
+             * Tracks Removed Last Cycle
+             * @default 0
+             */
+            tracks_removed_last_cycle: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * GateErrorBody
          * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
          */
@@ -11142,6 +11280,66 @@ export interface components {
         SettingsOut: {
             /** Groups */
             groups: components["schemas"]["SettingsGroup"][];
+        };
+        /** SetupDismissIn */
+        SetupDismissIn: {
+            /**
+             * Dismissed
+             * @default true
+             */
+            dismissed: boolean;
+        };
+        /**
+         * SetupImportIn
+         * @description Import options. Both are the same knobs the CLI exposes.
+         */
+        SetupImportIn: {
+            /**
+             * Limit
+             * @description ingest at most N tracks (smoke-test aid)
+             */
+            limit?: number | null;
+            /**
+             * Refresh Decrypt
+             * @description re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt
+             * @default false
+             */
+            refresh_decrypt: boolean;
+            /**
+             * Source
+             * @description explicit rekordbox database to read; omit to auto-detect
+             */
+            source?: string | null;
+        };
+        /**
+         * SetupStatusOut
+         * @description Everything the wizard needs to decide whether to show itself.
+         */
+        SetupStatusOut: {
+            /** Data Dir */
+            data_dir: string;
+            /** Dev Mode */
+            dev_mode: boolean;
+            /** Dismissed */
+            dismissed: boolean;
+            /** Folder Stages */
+            folder_stages: string[];
+            folder_watch?: components["schemas"]["FolderWatchOut"] | null;
+            /** Last Import */
+            last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
+            /** Library Empty */
+            library_empty: boolean;
+            permissions: components["schemas"]["PermissionsOut"];
+            /** Playlists */
+            playlists: number;
+            rekordbox: components["schemas"]["RekordboxDetectionOut"];
+            /** Should Show Wizard */
+            should_show_wizard: boolean;
+            /** Stages */
+            stages: string[];
+            state_db: components["schemas"]["FileProbeOut"];
+            /** Tracks */
+            tracks: number;
         };
         /** ShiftModifier */
         ShiftModifier: {
