@@ -597,9 +597,22 @@ class JobRunner:
         if stream is None:
             raise RuntimeError("worker was spawned without a stdout pipe")
         writer = _ProgressWriter(self.store, job_id, PROGRESS_WRITE_INTERVAL_S)
+        reader = asyncio.create_task(self._read_progress(stream, tail, writer))
         try:
-            broken = await self._read_progress(stream, tail, writer)
+            # Race the reader against the writer: a failed write must fail
+            # the run NOW, as the inline write did, not when the worker next
+            # prints a line or exits. A worker that goes quiet after its last
+            # line would otherwise keep running on a store that is refusing
+            # writes.
+            await asyncio.wait(
+                {reader, writer.stopped}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if not reader.done():
+                writer.raise_if_stopped()
+            broken = reader.result()
         except BaseException:
+            reader.cancel()
+            await asyncio.wait([reader])
             await writer.abort()
             raise
         # Every line read is on disk before the caller writes a terminal
@@ -641,9 +654,10 @@ class _ProgressWriter:
     that write produced -- so an observer still sees every line, and still
     never announces a line the store has not recorded.
 
-    A failed write is not swallowed: the next ``offer`` or the final
-    ``close`` re-raises it, and the runner fails the job exactly as it did
-    when the write ran inline.
+    A failed write is not swallowed: the pump waits on ``stopped`` alongside
+    its reader and re-raises the error the moment the write fails, so the
+    runner fails the job and reaps the worker exactly as it did when the
+    write ran inline. ``offer`` and ``close`` re-raise it too.
     """
 
     def __init__(self, store: JobStore, job_id: str, interval_s: float) -> None:
@@ -655,9 +669,12 @@ class _ProgressWriter:
         self._closed = asyncio.Event()
         self._task = asyncio.create_task(self._drain())
 
-    def offer(
-        self, progress: float, message: str | None, parsed: dict[str, Any]
-    ) -> None:
+    @property
+    def stopped(self) -> asyncio.Task[None]:
+        """The drain task. It finishes before close() only on a failed write."""
+        return self._task
+
+    def raise_if_stopped(self) -> None:
         if self._task.done():
             # Raises the write error that stopped it; a clean stop before
             # close() is impossible, so that is a bug worth naming.
@@ -666,6 +683,11 @@ class _ProgressWriter:
                 f"progress writer for job {self._job_id} stopped before its "
                 "worker did"
             )
+
+    def offer(
+        self, progress: float, message: str | None, parsed: dict[str, Any]
+    ) -> None:
+        self.raise_if_stopped()
         self._pending.append((progress, message, parsed))
         self._wake.set()
 

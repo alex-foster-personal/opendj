@@ -25,14 +25,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
+import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from apps.engine_core.jobs.runner import _ProgressWriter
+from apps.engine_core.jobs.runner import JobRunner, _ProgressWriter
 from apps.engine_core.jobs.store import JobStore
 
 pytestmark = pytest.mark.requirement("SETUP-19")
@@ -138,3 +141,61 @@ def test_abort_with_nothing_in_flight_returns_promptly(
     waited = asyncio.run(scenario())
     assert waited < IDLE_ABORT_BOUND_S, f"idle abort took {waited:.3f}s"
     assert store.log == [], store.log
+
+
+# ---------------------------------------------------------------------------
+# A failed write fails the run at once, not at the worker's next line or EOF.
+#
+#   - [if] a progress write fails while the worker is quiet [then] the pump raises within
+#     FAIL_FAST_BOUND_S [broken if the pump only notices on the next line or at EOF]
+#   - [if] writes succeed and the worker goes quiet [then] the pump waits for EOF and
+#     returns cleanly [broken if the race treats a quiet worker as a failure]
+
+QUIET_WORKER_S = 30.0
+FAIL_FAST_BOUND_S = 5.0
+_ONE_LINE_THEN_QUIET = (
+    "import json, sys, time; "
+    "print(json.dumps({'progress': 0.1, 'message': 'file 1'}), flush=True); "
+    "time.sleep(float(sys.argv[1]))"
+)
+
+
+class _RefusingJobStore(JobStore):
+    """A real JobStore whose disk has started refusing progress writes."""
+
+    def set_progress(self, job_id: str, progress: float, message: str | None) -> dict[str, Any]:
+        raise sqlite3.OperationalError("disk I/O error")
+
+
+async def _pump_one_line_then_quiet(store: JobStore, job_id: str, quiet_s: float) -> str | None:
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        _ONE_LINE_THEN_QUIET,
+        str(quiet_s),
+        stdout=asyncio.subprocess.PIPE,
+    )
+    try:
+        return await asyncio.wait_for(
+            JobRunner(store)._pump(job_id, proc, deque(maxlen=8)), FAIL_FAST_BOUND_S
+        )
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+        await proc.wait()
+
+
+def test_a_failed_write_fails_the_pump_while_the_worker_is_quiet(tmp_path: Path) -> None:
+    store = _RefusingJobStore(tmp_path / "jobs.db", boot_id="boot-refuse", owner_pid=os.getpid())
+    job_id = _running_job(store)
+    started = time.monotonic()
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        asyncio.run(_pump_one_line_then_quiet(store, job_id, QUIET_WORKER_S))
+    assert time.monotonic() - started < FAIL_FAST_BOUND_S
+
+
+def test_a_quiet_worker_with_healthy_writes_still_runs_to_eof(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.db", boot_id="boot-quiet", owner_pid=os.getpid())
+    job_id = _running_job(store)
+    assert asyncio.run(_pump_one_line_then_quiet(store, job_id, 0.5)) is None
+    assert store.get(job_id)["message"] == "file 1"
