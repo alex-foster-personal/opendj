@@ -457,6 +457,8 @@ def run_block(block: str, base: str) -> Verdict:
             "UNMEASURED", f"cannot scope the change against {base}: {error.stderr.strip()}"
         )
     print(f"# pre-pr-gate {block}: {len(changed)} changed path(s) since {merge_base[:12]} ({base})")
+    for path in changed:
+        print(f"#   {path}")
     return BLOCKS[block](changed, merge_base)
 
 
