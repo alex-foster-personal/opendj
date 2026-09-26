@@ -23,8 +23,9 @@ What it does, in order, and what each step rules out:
    through ``bin/opendj-python -m apps.analysis.queue_cli``.
 5. VERDICT, BY PRESENCE: a lane passes only when its drain exits 0, EVERY
    track has an ``own_<lane>.backfill`` record, and at least one of those
-   records is ``ok`` carrying a real measurement (beats, a key, tri-band
-   peaks, a finite LUFS). A track that is not ``ok`` passes only with a named
+   records is ``ok`` carrying a real measurement (beats, a key with
+   bar-synchronous segments over beatgrid's own downbeats, tri-band peaks,
+   a finite LUFS). A track that is not ``ok`` passes only with a named
    PRODUCER outcome from ``PRODUCER_OUTCOMES`` (the analysis ran and judged
    the music, e.g. a key with no tonal center): those are what the same
    producer returns on the same track from a networked checkout, so they
@@ -205,7 +206,8 @@ def drain_lane(installed: Path, env: dict[str, str], db: Path, lane: str,
     verdict.drain_exit = drained.returncode
     verdict.seconds = round(time.monotonic() - started, 1)
     if drained.returncode != 0:
-        verdict.failures.append(f"drain exit {drained.returncode}: {drained.stderr[-2500:]}")
+        verdict.failures.append(f"drain exit {drained.returncode}: "
+                                f"{(drained.stderr or drained.stdout)[-2500:]}")
     return verdict
 
 
@@ -220,8 +222,14 @@ def _measurement(lane: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         ok = len(beats) >= 32 and isinstance(bpm, int | float) and 40 <= bpm <= 250
         return {"beats": len(beats), "bpm": bpm} if ok else None
     if lane == "key":
+        # The v1 key lane segments over beatgrid's OWN downbeats, so a key
+        # without bar-synchronous segments is the lane running half-installed.
         camelot = payload.get("camelot")
-        return {"camelot": camelot, "openkey": payload.get("openkey")} if camelot else None
+        segments = payload.get("segments") or {}
+        ok = bool(camelot) and segments.get("status") == "ok" and segments.get("segments")
+        measured = {"camelot": camelot, "openkey": payload.get("openkey"),
+                    "segments": len(segments.get("segments") or [])}
+        return measured if ok else None
     if lane == "waveform":
         detail = payload.get("detail") or {}
         length = detail.get("length") or 0
