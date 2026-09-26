@@ -27,6 +27,9 @@ _HEADPHONE_COMMAND_UNION = "export type HeadphoneCommand ="
 _QUICK_DRAW_UNION = "export type QuickDrawActionId ="
 _FIELD = re.compile(r"^\| \{ (?P<body>.*?) \}$")
 _TYPE_FIELD = re.compile(r"^type: '(?P<type>[a-z_]+)'$")
+_LINE_COMMENT = re.compile(r"(^|\s)//.*$")
+# TypeScript field names are camelCase as often as snake_case (refuseIfMaster, stable_id).
+_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\??$")
 
 
 def _union_lines(source: Path, marker: str) -> list[str]:
@@ -67,7 +70,11 @@ def _join_wrapped_member(first: str, rest: Iterator[str], source: Path) -> str:
         line = next(rest, None)
         if line is None:
             raise AssertionError(f"union member never closes in {source}: {first}")
-        stripped = line.strip()
+        # A line comment between fields is dropped before joining: once joined, a `;`
+        # inside it would split the comment and glue its tail onto the next field.
+        stripped = _LINE_COMMENT.sub("", line).strip()
+        if not stripped:
+            continue
         pieces.append(stripped)
         depth += stripped.count("{") - stripped.count("}")
     return re.sub(r";\s*(\};?)$", r" \1", " ".join(pieces))
@@ -116,6 +123,26 @@ def headphone_command_fields() -> frozenset[str]:
     )
 
 
+def _field_part_name(part: str) -> str | None:
+    """One ``;``-delimited fragment of a union member body, or None if it is noise.
+
+    Wrapped ``load`` members carry line comments between fields; treating those
+    fragments as field names invents required keys the CLI never emits and reds
+    ``test_every_verb_emits_only_fields_the_wire_validator_accepts``.
+    """
+    text = part.strip()
+    if not text or text.startswith("//"):
+        return None
+    if "//" in text:
+        text = text.split("//", 1)[0].strip()
+    if not text or ":" not in text:
+        return None
+    name = text.split(":", 1)[0].strip()
+    if not _FIELD_NAME.match(name):
+        return None
+    return name
+
+
 def command_fields() -> dict[str, dict[str, bool]]:
     """Every ``PerformanceCommand`` type -> its fields -> is the field optional.
 
@@ -131,7 +158,9 @@ def command_fields() -> dict[str, dict[str, bool]]:
         command_type = _command_member(line)
         declared: dict[str, bool] = {}
         for part in parts[1:]:
-            name = part.split(":")[0].strip()
+            name = _field_part_name(part)
+            if name is None:
+                continue
             declared[name.rstrip("?")] = name.endswith("?")
         fields[command_type] = declared
     return fields

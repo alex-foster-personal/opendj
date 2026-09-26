@@ -17,6 +17,7 @@ import {
 	RbApiError
 } from '$lib/rb/api-rb';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { anlzSourceMatchesSelection } from '$lib/rb/beatgrid-source-basis';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
@@ -254,7 +255,7 @@ function _hasActiveConsumer(stable_id: string): boolean {
 function _disagreesWithConfirmedSource(stable_id: string, data: AnlzData): boolean {
 	if (isUsbTrackId(stable_id)) return false;
 	const confirmed = analysisSourceState.features.beatgrid;
-	return confirmed !== undefined && confirmed !== data.beatgrid_source;
+	return confirmed !== undefined && !anlzSourceMatchesSelection(data, confirmed);
 }
 
 /** Positive form of `_disagreesWithConfirmedSource`, exported for
@@ -742,7 +743,11 @@ export function evictAnlzCacheEntriesServingOtherSource(
 ): boolean {
 	let evictedAny = false;
 	for (const [stable_id, entry] of Object.entries(_cache)) {
-		if (entry.status === 'ready' && !isUsbTrackId(stable_id) && entry.data.beatgrid_source !== wantedSource) {
+		if (
+			entry.status === 'ready' &&
+			!isUsbTrackId(stable_id) &&
+			!anlzSourceMatchesSelection(entry.data, wantedSource)
+		) {
 			delete _cache[stable_id];
 			evictedAny = true;
 		}

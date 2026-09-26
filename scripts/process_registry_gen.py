@@ -34,6 +34,11 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.process_registry_merge import (
+    _load_previous,
+    carry_forward_unqueried_host,
+    merge_with_previous,
+)
 from scripts.process_registry_sources import (
     GITHUB_ACTIONS_HOST,
     HOSTS,
@@ -347,52 +352,6 @@ def collect_all(hosts: list[Host]) -> list[HostResult]:
     return results
 
 
-def _load_previous() -> dict[str, dict]:
-    """Map host -> previous host block from the last committed snapshot."""
-    if not JSON_PATH.exists():
-        return {}
-    try:
-        doc = json.loads(JSON_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return {h["host"]: h for h in doc.get("hosts", [])}
-
-
-def merge_with_previous(results: list[HostResult], previous: dict[str, dict]) -> list[dict]:
-    """Fill in a stale-but-labeled block for any host unreachable THIS pass.
-
-    An unreachable host must never render as "zero owned units" -- that is
-    indistinguishable from a host that is genuinely clean, which is the
-    absence-of-a-bad-thing trap this whole design exists to avoid. Instead
-    it keeps the last known-good snapshot for that host, explicitly marked
-    stale with the timestamp it actually came from.
-    """
-    merged: list[dict] = []
-    for r in results:
-        if r.reachable:
-            merged.append(
-                {
-                    "host": r.host,
-                    "reachable": True,
-                    "error": None,
-                    "stale_as_of": None,
-                    "units": [u.to_json() for u in r.units],
-                }
-            )
-            continue
-        prev = previous.get(r.host)
-        merged.append(
-            {
-                "host": r.host,
-                "reachable": False,
-                "error": r.error,
-                "stale_as_of": prev.get("generated_at_utc_of_block") if prev else None,
-                "units": prev["units"] if prev else [],
-            }
-        )
-    return merged
-
-
 # -------------------------------------------------------------- render
 
 
@@ -426,7 +385,11 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         owned = [u for u in b["units"] if u["owned"]]
         violations = [u for u in owned if u["naming"] == "violation"]
         unknown = [u for u in owned if str(u["purpose"]).startswith("UNKNOWN")]
-        reach = "yes" if b["reachable"] else f"NO -- {b['error']}"
+        if b.get("last_known_error"):
+            display_error = f"{b['error']}; last known error: {b['last_known_error']}"
+        else:
+            display_error = b["error"]
+        reach = "yes" if b["reachable"] else f"NO -- {display_error}"
         total_row.append(
             f"| {b['host']} | {reach} | {len(owned)} | {len(violations)} | {len(unknown)} |"
         )
@@ -436,7 +399,11 @@ def render_markdown(blocks: list[dict], generated_at: str) -> str:
         lines.append(f"## {b['host']}")
         lines.append("")
         if not b["reachable"]:
-            lines.append(f"**UNREACHABLE this pass** -- {b['error']}")
+            if b.get("last_known_error"):
+                unreachable_line = f"{b['error']}; last known error: {b['last_known_error']}"
+            else:
+                unreachable_line = b["error"]
+            lines.append(f"**UNREACHABLE this pass** -- {unreachable_line}")
             lines.append("")
             if b["units"]:
                 lines.append(
@@ -510,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
 
     generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     results = collect_all(hosts)
-    previous = _load_previous()
+    previous = _load_previous(JSON_PATH)
     blocks = merge_with_previous(results, previous)
     queried_names = {b["host"] for b in blocks}
     for host_name, prev_block in previous.items():
@@ -518,9 +485,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         # A --hosts filter narrower than the full fleet: carry the untouched
         # host forward rather than silently dropping it from the snapshot.
-        blocks.append(
-            {**prev_block, "reachable": False, "error": "not queried this pass (--hosts filter)"}
-        )
+        blocks.append(carry_forward_unqueried_host(prev_block))
     for b in blocks:
         if b["reachable"]:
             b["generated_at_utc_of_block"] = generated_at

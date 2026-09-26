@@ -97,16 +97,25 @@
 		(headphoneState as HeadphoneState & { signals?: Record<'master' | 'cue' | 'input', SignalReading> }).signals
 	);
 	const mixBullets = [
-		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
-		'In MAIN, master always plays at full on the speakers and MIX sets how much cue is blended on top (full cue at left). In two outputs, MIX feeds headphones only.'
+		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
+		'Single-click the knob to step toward the other extreme.',
+		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
+		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
 	];
 	const levelBullets = [
 		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
 		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
 	];
+	const mainBullets = [
+		'1) Press MAIN for laptop or a single output (practice mode).',
+		'2) Turn CUE on for each channel you want in the headphone blend.',
+		'3) With no HEADPHONE CUE device picked, MIX left adds more cue into the speaker mix; master stays full.',
+		'4) Picking HEADPHONE CUE in I/O switches to two outputs: room on MASTER/MAIN, cue on the phones.'
+	];
 	const splitBullets = [
-		'Mono master on LEFT, mono cue on RIGHT of the same output.',
-		'Needs a DJ splitter cable. A Y cable will not separate the legs.'
+		'1) Press SPLIT for a DJ splitter cable: mono master on LEFT, mono cue on RIGHT.',
+		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
+		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
 	const ioBullets = ['Click for Speaker / Headphone CUE quick settings without interrupting audio.'];
 	const delayBullets = [
@@ -126,9 +135,9 @@
 		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
 	];
 	const modeBullets = [
-		'practice: cue and master share the speakers.',
-		'two outputs: MASTER/MAIN is the room, HEADPHONE CUE is headphones.',
-		'split cable: mono master on LEFT, mono cue on RIGHT of one device.'
+		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
+		'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
+		'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
 	];
 	const masterPickBullets = [
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
@@ -191,7 +200,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="hp" data-performance-control="headphones">
-	<ControlExplainer title="MIX" bullets={mixBullets} showDelayMs={60}>
+	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" showDelayMs={60}>
 		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
@@ -270,15 +279,15 @@
 		</header>
 		<div class="hp-panel-body">
 			<section class="hp-section" aria-label="Output routing">
-				<h3>Routing <span data-output-mode={headphoneState.output_mode}>{modeLabel}</span></h3>
+				<h3>Routing <ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}><span class="hp-mode" data-output-mode={headphoneState.output_mode}>{modeLabel}</span></ControlExplainer></h3>
 				<div class="hp-mode-choices">
-					<button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>MAIN / practice</button>
+					<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>MAIN / practice</button></ControlExplainer>
 					<button type="button" aria-label="Two outputs output mode" aria-pressed={headphoneState.output_mode === 'two_outputs'} onclick={() => onmode('two_outputs')}>Two outputs</button>
-					<button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button>
+					<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button></ControlExplainer>
 				</div>
 				<p class="hp-context">{modeBullets[headphoneState.output_mode === 'practice' ? 0 : headphoneState.output_mode === 'two_outputs' ? 1 : 2]}</p>
 				{#if headphoneState.output_mode === 'split_cable'}
-					<p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p>
+					<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}><p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Future routing options">

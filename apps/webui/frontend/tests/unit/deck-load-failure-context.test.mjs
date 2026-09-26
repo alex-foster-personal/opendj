@@ -176,7 +176,7 @@ const MODULE_SOURCE = readFileSync(
 ).replaceAll('\r\n', '\n');
 
 test('the deck-load catch block reports through the extracted module, after stamping failedAt', () => {
-	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string): Promise<void> {');
+	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
 
 	const stampAt = body.indexOf('stages.failedAt = perfMs();');
 	const reportAt = body.indexOf('reportDeckLoadFailure(deck, msg, exc, stages)');

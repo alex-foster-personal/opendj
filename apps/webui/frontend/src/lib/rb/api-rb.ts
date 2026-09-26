@@ -33,6 +33,7 @@ import {
 	withSessionHotCueSlots
 } from './stick-session-edits';
 import { isUsbTrackId, refuseStickRead, trackApiPath } from './track-source';
+import { stemWorkSignal } from './stem-decode-policy';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -110,6 +111,14 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+export async function fetchTrackifyLibraryRevision(): Promise<string> {
+	const payload = await _fetchJson<{ revision: unknown }>('/api/v1/tracks/revision', 'no-store');
+	if (typeof payload.revision !== 'string' || payload.revision === '') {
+		throw new Error('Trackify: library revision response is invalid');
+	}
+	return payload.revision;
 }
 
 /** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
@@ -1060,7 +1069,7 @@ export async function fetchStemAudioArrayBuffers(
 ): Promise<Partial<Record<StemPartName, ArrayBuffer>>> {
 	const entries = await Promise.all(
 		STEM_LAYOUT_PART_NAMES[layout].map(async (part) => {
-			const response = await fetch(stemAudioUrl(stableId, part));
+			const response = await fetch(stemAudioUrl(stableId, part), { signal: stemWorkSignal() });
 			if (!response.ok) await _throwRbApiError(response);
 			return [part, await response.arrayBuffer()] as const;
 		})

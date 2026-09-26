@@ -21,6 +21,11 @@ export type MasterReason =
 	| 'unlock-reelect'
 	| 'dispose'
 	| null;
+
+export interface DeckLoadOptions {
+	/** Whether the asynchronous stem probe and decode may run for this load. */
+	stems?: boolean;
+}
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
 import type { StemControl } from './stem-types';
@@ -41,7 +46,7 @@ export interface AudioEngine {
 	/** Fetch /tracks/{sid}/audio, decodeAudioData, build the deck chain and
 	 * populate DeckState. Rejects with the backend error code on 404
 	 * (AUDIO_FILE_MISSING / AUDIO_IS_STREAMING_URI / TRACK_NOT_FOUND). */
-	load(deck: DeckId, stable_id: string): Promise<void>;
+	load(deck: DeckId, stable_id: string, options?: DeckLoadOptions): Promise<void>;
 	/** Start/resume transport from the current position. Throws if no track
 	 * is loaded on the deck. */
 	play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void>;

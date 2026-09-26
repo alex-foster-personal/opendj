@@ -365,6 +365,9 @@ def run_smoke(
         "MDT_DMG_BUILD_WORKTREE": str(paths["build_root"]),
         "MDT_HEADLESS_DMG_BUILD": str(paths["headless"]),
         "MDT_DMG_SMOKE_SCRATCH": str(paths["scratch"]),
+        # Required by run.sh (no hidden "air" default); tests that need a
+        # different label, or none, override it via extra_env.
+        "MDT_DMG_SMOKE_HOST_LABEL": "test-host",
         "DMG_SMOKE_OPEN_CALLED": str(paths["open_called"]),
         "DMG_SMOKE_OPEN_LOG": str(paths["open_log"]),
         "DMG_SMOKE_SCRATCH_STATE": str(paths["scratch_state"]),

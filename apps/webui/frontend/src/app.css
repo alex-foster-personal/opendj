@@ -210,13 +210,20 @@ textarea {
   flex-direction: column;
   gap: 0.4rem;
   z-index: 500;
+  max-width: min(33vw, calc(100vw - 2rem));
+  width: max-content;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
 }
 .toast {
   background: var(--surface);
   border: 1px solid var(--border);
   padding: 0.35rem 0.55rem;
   border-radius: 6px;
-  min-width: 240px;
+  min-width: min(240px, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 .toast.warn {
   border-color: var(--warning);

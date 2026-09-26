@@ -98,7 +98,7 @@ import {
 	recordDeckLoad,
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import {
 	noteMasterSilence,
 	notePresentationClock,
@@ -136,7 +136,7 @@ import {
 	patchTrack,
 	RbApiError
 } from '$lib/rb/api-rb';
-import { awaitStemArtifact } from '$lib/rb/stem-hydrate-wait';
+import { awaitStemArtifact, stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-hydrate-wait';
 import { setSessionRating } from '$lib/rb/stick-session-edits';
 import { isUsbTrackId } from '$lib/rb/track-source';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
@@ -213,7 +213,7 @@ import {
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { AudioEngine, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -2802,10 +2802,12 @@ function _drainPendingStemUpgrade(deck: DeckId): void {
 	const rt = _rt[deck];
 	const pending = rt.pendingStemUpgrade;
 	if (pending === null) return;
-	if (pending.token !== rt.loadToken) {
+	const blockedState = stemsBlockedState(); // PERFMODE-15: nothing held from before a stem block may land either
+	if (pending.token !== rt.loadToken || blockedState !== null) {
 		// The deck moved on to another track while these stems were decoding.
 		rt.pendingStemUpgrade = null;
 		_retireProcessor(pending.processor);
+		if (blockedState !== null && pending.token === rt.loadToken) deckStates[deck].stems = blockedState;
 		return;
 	}
 	if (!_deckIsReplaceable(deck)) return;
@@ -2835,15 +2837,11 @@ async function _upgradeDeckStems(
 	const st = deckStates[deck];
 	const t0 = performance.now();
 	const stages: Record<string, number> = {};
-	const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
-		const started = performance.now();
-		try {
-			return await work;
-		} finally {
-			stages[name] = Math.round(performance.now() - started);
-		}
-	};
-	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx; // a graph rebuild restarts it
+	const time = stageTimer(stages);
+	// PERFMODE-15: a mode with stems off (Trackify) settles the deck `unavailable` and ends the upgrade, now or mid-probe.
+	const _stemDecodeBlocked = stemBlockCheck(st, () => token === rt.loadToken);
+	if (_stemDecodeBlocked()) return;
+	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
 		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
@@ -2933,6 +2931,8 @@ async function _upgradeDeckStems(
 	}
 }
 
+export const upgradeDeckStemsForTest = (deck: DeckId, stableId: string, mixBuffer: AudioBuffer): Promise<void> => _upgradeDeckStems(deck, stableId, _rt[deck].loadToken, _ctx as AudioContext, mixBuffer); // Test seam (PERFMODE-15): the lazy stem upgrade exactly as `load` and the graph rebuild run it (node has no context)
+
 /** CUEOUT-15: build and resume the graph for a non-deck source (the library
  * preview), which must work before any deck has loaded. Rejects, never silent. */
 export async function ensureAudioGraphForCue(): Promise<void> {
@@ -3018,8 +3018,12 @@ class RbAudioEngine implements AudioEngine {
 		await closing;
 	}
 
-	async load(deck: DeckId, stable_id: string): Promise<void> {
+	async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
+			throw new TypeError('load: options.stems must be boolean when provided');
+		}
+		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
 		const rt = _rt[deck];
 		_assertCurrentDeckReplacementAllowed(deck);
@@ -3103,9 +3107,9 @@ class RbAudioEngine implements AudioEngine {
 			buffer = decodedMix;
 			await time('stretchLoad', mixProcessor.load(buffer));
 			processor = mixProcessor;
-			// `loading`, not `unavailable`: the probe has not run yet, so claiming
-			// "no stems" here would be a guess. _upgradeDeckStems settles it.
-			candidateStemState = loadingStemDeckState();
+			// `loading`, not `unavailable`: the probe has not run yet and _upgradeDeckStems settles it. A stems-off load
+			// (Trackify, #3975) never runs that upgrade, so it publishes its settled answer now (PERFMODE-15).
+			candidateStemState = loadStems ? loadingStemDeckState() : (stemsBlockedState() ?? unavailableStemDeckState('stems disabled for this load'));
 			latencySec = await time('processorLatency', processor.latencySec());
 			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
@@ -3258,7 +3262,9 @@ class RbAudioEngine implements AudioEngine {
 		// `loading` on its own. Errors are handled inside, so no rejection can
 		// escape into an unhandled promise.
 		if (loadCtx === null) throw new Error('load: audio context was never resolved');
-		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		if (loadStems) {
+			void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		}
 			void upgradeDeckBeatgrid(deck, stable_id, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken)); // PARITY-10: same deferral for the grid as _upgradeDeckStems above; errors are handled inside, no unhandled rejection
 	}
 

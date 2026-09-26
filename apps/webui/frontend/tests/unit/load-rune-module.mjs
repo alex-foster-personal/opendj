@@ -4,28 +4,10 @@ import { build } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-
-/**
- * Vite's `?url` suffix, modelled for the test bundler. Same contract as the one
- * in load-typescript.mjs: the import resolves to the path as a string, and
- * nothing under test may depend on the value.
- */
-const urlSuffixImports = {
-	name: 'vite-url-suffix',
-	setup(build) {
-		build.onResolve({ filter: /\?url$/ }, (args) => ({
-			path: args.path,
-			namespace: 'vite-url-suffix'
-		}));
-		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
-			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
-			loader: 'js'
-		}));
-	}
-};
 
 /**
  * A data-URL test module cannot resolve a separately bundled lazy chunk.
@@ -61,7 +43,7 @@ function _bundle(entry, { stdin = false, deferSvelteRuntime = false } = {}) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'browser',
-		plugins: [urlSuffixImports, dynamicImportExternal],
+		plugins: [viteUrlSuffixPlugin, dynamicImportExternal],
 		target: 'es2022',
 		write: false
 	});

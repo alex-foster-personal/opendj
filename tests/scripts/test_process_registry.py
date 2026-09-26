@@ -44,7 +44,12 @@ import pytest
 
 from scripts.oss_tip_audit import findings_in_text
 from scripts.process_registry_check import EXIT_DRIFT, EXIT_OK, EXIT_UNKNOWN, run_check
-from scripts.process_registry_gen import build_doc, merge_with_previous
+from scripts.process_registry_gen import (
+    build_doc,
+    carry_forward_unqueried_host,
+    merge_with_previous,
+    render_markdown,
+)
 from scripts.process_registry_sources import (
     Host,
     HostResult,
@@ -144,6 +149,120 @@ def test_a_regeneration_cannot_reintroduce_a_scrubbed_identity() -> None:
     )
     assert again["hosts"][0]["units"] == first["hosts"][0]["units"]
     assert list(findings_in_text("process-registry.json", json.dumps(again))) == []
+
+
+def test_hosts_filter_carries_a_reachable_hosts_real_units_forward_as_stale(
+) -> None:
+    """A --hosts filter that skips a previously-reachable host (PR #3827
+    review, docs/ops/process-registry.json) must not report it as newly
+    unreachable with no known-good timestamp. That combination -- reachable
+    flipped to False, stale_as_of left null -- reads as "unreachable and we
+    don't even know when it last worked", worse than either true state.
+    """
+    prev_block = {
+        "host": "agentbox",
+        "reachable": True,
+        "error": None,
+        "stale_as_of": None,
+        "generated_at_utc_of_block": "2026-09-20T00:27:53Z",
+        "units": [_unit_carrying_identities().to_json()],
+    }
+    carried = carry_forward_unqueried_host(prev_block)
+    assert carried["reachable"] is False
+    assert carried["stale_as_of"] == "2026-09-20T00:27:53Z"
+    assert carried["units"] == prev_block["units"]
+    assert "not queried this pass" in carried["error"]
+    assert carried["last_known_error"] is None
+
+
+def test_hosts_filter_error_does_not_nest_for_a_reachable_host_carried_twice(
+) -> None:
+    """A previously-reachable host skipped by --hosts on two regens in a
+    row must keep last_known_error as None, not pick up the not-queried
+    note itself as if it were a real error (claude-review, PR #3827, round
+    6, P3): the round-4 test only covered a host that was unreachable with
+    a REAL error before the first carry, so it missed this case, where the
+    first carry's last_known_error is legitimately None and the second
+    carry's `None or prev_block["error"]` fallback grabs the constant note
+    instead of staying None."""
+    prev_block = {
+        "host": "agentbox",
+        "reachable": True,
+        "error": None,
+        "stale_as_of": None,
+        "generated_at_utc_of_block": "2026-09-20T00:27:53Z",
+        "units": [],
+    }
+    once = carry_forward_unqueried_host(prev_block)
+    twice = carry_forward_unqueried_host(once)
+    assert once["last_known_error"] is None
+    assert twice["last_known_error"] is None
+    assert twice["error"] == once["error"] == "not queried this pass (--hosts filter)"
+    assert twice["stale_as_of"] == once["stale_as_of"] == "2026-09-20T00:27:53Z"
+
+
+def test_hosts_filter_preserves_an_unreachable_hosts_real_error(
+) -> None:
+    """A host that was already unreachable before the --hosts filter skipped
+    it must keep saying WHY (a real ssh/DNS error), not just "not queried
+    this pass" with the original diagnosis discarded."""
+    prev_block = {
+        "host": "bifrost2",
+        "reachable": False,
+        "error": "ssh: Could not resolve hostname bifrost2: Name or service not known",
+        "stale_as_of": "2026-09-16T06:11:17Z",
+        "generated_at_utc_of_block": None,
+        "units": [],
+    }
+    carried = carry_forward_unqueried_host(prev_block)
+    assert carried["reachable"] is False
+    assert carried["stale_as_of"] == "2026-09-16T06:11:17Z"
+    assert "not queried this pass" in carried["error"]
+    assert "Could not resolve hostname bifrost2" in carried["last_known_error"]
+
+
+def test_hosts_filter_error_does_not_nest_across_repeated_regens() -> None:
+    """A second, later --hosts regen that skips the same host again must not
+    re-wrap an already-carried block's error: `error` stays the constant
+    note and `last_known_error` stays the ORIGINAL diagnosis, not a
+    "not queried -- last known: not queried -- last known: ..." pileup."""
+    prev_block = {
+        "host": "bifrost2",
+        "reachable": False,
+        "error": "ssh: Could not resolve hostname bifrost2: Name or service not known",
+        "stale_as_of": "2026-09-16T06:11:17Z",
+        "generated_at_utc_of_block": None,
+        "units": [],
+    }
+    once = carry_forward_unqueried_host(prev_block)
+    twice = carry_forward_unqueried_host(once)
+    assert twice["error"] == once["error"] == "not queried this pass (--hosts filter)"
+    assert twice["last_known_error"] == once["last_known_error"]
+    assert "Could not resolve hostname bifrost2" in twice["last_known_error"]
+
+
+def test_rendered_markdown_never_claims_a_carried_host_was_checked_this_pass(
+) -> None:
+    """A carried-forward host's real last-known error must render alongside
+    the not-queried note, not in place of it (claude-review, PR #3827,
+    round 5, P3): showing only last_known_error reports a measurement
+    ("UNREACHABLE this pass") that never happened this pass at all."""
+    prev_block = {
+        "host": "bifrost2",
+        "reachable": False,
+        "error": "ssh: Could not resolve hostname bifrost2: Name or service not known",
+        "stale_as_of": "2026-09-16T06:11:17Z",
+        "generated_at_utc_of_block": None,
+        "units": [],
+    }
+    carried = carry_forward_unqueried_host(prev_block)
+    md = render_markdown([carried], _STAMP)
+    assert "not queried this pass" in md
+    assert "Could not resolve hostname bifrost2" in md
+    # Both facts on the same line, not one silently replacing the other.
+    for line in md.splitlines():
+        if "not queried this pass" in line:
+            assert "Could not resolve hostname bifrost2" in line
 
 
 def test_a_scrubbed_row_still_matches_its_live_original() -> None:

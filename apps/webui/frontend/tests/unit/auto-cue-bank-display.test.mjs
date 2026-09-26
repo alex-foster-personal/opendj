@@ -27,6 +27,7 @@ const CACHE = 'lib/components/rb/deck/auto-cues-cache.svelte.ts';
 // canSave is hotCueEditsAllowed(stable_id, has_rb_mapping): see hot-cue-mapping-gate.test.mjs.
 const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!canSave\s*\)\s*return/;
 
+// REQ: DECKUX-15
 test('class:filled remains committed-cue only; class:proposal is empty-plus-visible', () => {
 	const text = source(HOT_CUE_BANK);
 	assert.match(

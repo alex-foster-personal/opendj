@@ -452,3 +452,42 @@ test('performance: at the short 1280x720 window, the shortfall costs library row
 	await expect(page.locator('[data-testid="context-menu"]')).toContainText('Load to deck 1');
 	await page.keyboard.press('Escape');
 });
+
+const MORE_MODE_CHORD = process.platform === 'darwin' ? 'Meta+1' : 'Control+1';
+
+test('performance: selected library row stays visible when toggling MORE and LESS (LIBUX-18, issue #3984)', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 1000 });
+	await page.goto('/performance');
+	const tableWrap = page.locator('.table-wrap');
+	await expect(tableWrap).toBeVisible();
+	const rows = page.locator('[data-testid="track-row"]');
+	const count = await rows.count();
+	if (count < 8) {
+		test.skip(true, 'needs at least 8 library rows');
+	}
+	const target = rows.nth(7);
+	await target.scrollIntoViewIfNeeded();
+	await target.click();
+	await expect(target).toHaveClass(/rb-row-selected/);
+
+	const intersects = async (): Promise<boolean> => {
+		return page.evaluate(() => {
+			const wrap = document.querySelector('.table-wrap');
+			const row = document.querySelector('[data-testid="track-row"].rb-row-selected');
+			if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
+			const w = wrap.getBoundingClientRect();
+			const r = row.getBoundingClientRect();
+			return r.bottom > w.top && r.top < w.bottom;
+		});
+	};
+
+	expect(await intersects()).toBe(true);
+	await page.keyboard.press(LESS_MODE_CHORD);
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	expect(await intersects()).toBe(true);
+	await page.keyboard.press(MORE_MODE_CHORD);
+	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
+	expect(await intersects()).toBe(true);
+});

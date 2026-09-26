@@ -125,7 +125,7 @@ export interface TrackRow {
 	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	bpm_reason?: string | null;
 	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	/** B column - BPM; null renders empty. */
 	bpm: number | null;
