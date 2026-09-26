@@ -63,6 +63,7 @@
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import DeckLyricLine from './deck/DeckLyricLine.svelte';
+	import { deckLyricRowBudget } from '$lib/rb/lyrics/deck-lyric-row-budget';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
@@ -171,6 +172,22 @@
 		if (deck.stable_id === null) return null;
 		return deck.position_ms / 1000;
 	}
+
+	let cueFlexEl: HTMLDivElement | null = $state(null);
+	let cueFlexHeightPx = $state(0);
+	const deckLyricRows = $derived(deckLyricRowBudget(cueFlexHeightPx));
+
+	$effect(() => {
+		const el = cueFlexEl;
+		if (el === null || typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				cueFlexHeightPx = entry.contentRect.height;
+			}
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -438,7 +455,7 @@
 
 		<!-- The cue host and 2x4 bank absorb spare width to preserve control
 		     alignment; the cue rows stay vertically bounded. -->
-		<div class="cue-flex">
+		<div class="cue-flex" bind:this={cueFlexEl}>
 			<HotCueBank
 				{deck}
 				{pending}
@@ -448,6 +465,17 @@
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
 			/>
+			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
+				<div class="deck-lyric-host">
+					<DeckLyricLine
+						track={deckLyrics.track}
+						entryState={deckLyricEntry.state}
+						error={deckLyrics.error}
+						positionSource={presentedPositionSec}
+						rows={deckLyricRows}
+					/>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
@@ -482,16 +510,6 @@
 			onRangeChange={setPitchRangeUi}
 		/>
 	</div>
-
-	{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
-		<DeckLyricLine
-			track={deckLyrics.track}
-			entryState={deckLyricEntry.state}
-			error={deckLyrics.error}
-			positionSource={presentedPositionSec}
-			rows={1}
-		/>
-	{/if}
 
 	<StemRow
 		{deck}
@@ -647,5 +665,14 @@
 		min-width: 0;
 		align-self: stretch;
 		display: flex;
+		flex-direction: row;
+		align-items: stretch;
+		gap: 6px;
+	}
+	.deck-lyric-host {
+		flex: 1 1 0;
+		min-width: 0;
+		display: flex;
+		align-items: center;
 	}
 </style>
