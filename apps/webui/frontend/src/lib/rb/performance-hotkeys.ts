@@ -167,8 +167,8 @@ export function installPerformanceHotkeys(): () => void {
 			{ settingsOpen: isSettingsOpen() }
 		);
 	};
-	window.addEventListener('keydown', onKey);
-	return () => window.removeEventListener('keydown', onKey);
+	window.addEventListener('keydown', onKey, { capture: true });
+	return () => window.removeEventListener('keydown', onKey, { capture: true });
 }
 
 /** Fallback: if no interaction yet, prefer any engaged loop (lowest deck id). */

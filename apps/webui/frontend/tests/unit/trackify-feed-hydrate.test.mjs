@@ -3,10 +3,9 @@
  *
  * `trackify-feed.test.mjs` covers the plain `trackify-feed.ts` core (scope
  * derivation, pagination). This file covers the `.svelte.ts` layer's own
- * `_hydrate()`, which reads `uiPrefs.last_playlist` twice around an `await`
- * -- once to build the fetch, once again (implicitly, via the module-level
- * preference) to publish the result. A playlist switch mid-fetch must not
- * let rows fetched for the OLD selection land under the NEW one.
+ * `_hydrate()` and its cheap revision probe. A playlist switch mid-fetch must
+ * not let rows fetched for the OLD selection land under the NEW one, and an
+ * unchanged probe must not repeat the whole-library walk.
  */
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -34,11 +33,13 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () => {
 	let originalFetch;
+	let originalSetInterval;
 	let mod;
 	let uninstall;
 
 	beforeEach(async () => {
 		originalFetch = globalThis.fetch;
+		originalSetInterval = globalThis.setInterval;
 		mod = await loadTypeScriptModule('tests/unit/fixtures/trackify-feed-entry.ts', {
 			viteApiBase: API_BASE
 		});
@@ -48,6 +49,7 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		if (uninstall !== null && uninstall !== undefined) uninstall();
 		uninstall = undefined;
 		globalThis.fetch = originalFetch;
+		globalThis.setInterval = originalSetInterval;
 	});
 
 	it('does not publish rows fetched for a playlist the operator has since switched away from', async () => {
@@ -404,5 +406,38 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		await settle();
 		await settle();
 		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['fresh-row']);
+	});
+
+	it('does not re-walk the library on the timer when the revision and scope are unchanged', async () => {
+		let timerCallback;
+		let trackFetchCount = 0;
+		globalThis.setInterval = (callback) => {
+			timerCallback = callback;
+			return 1;
+		};
+		globalThis.fetch = async (url) => {
+			const urlString = String(url);
+			if (urlString.includes('/api/v1/tracks/revision')) {
+				return jsonResponse({ revision: 'library-revision-1' });
+			}
+			if (urlString.includes('/api/v1/tracks')) {
+				trackFetchCount += 1;
+				return jsonResponse({ items: [], next_cursor: null });
+			}
+			throw new Error(`unexpected fetch outside this test's scope: ${urlString}`);
+		};
+
+		mod.uiPrefs.last_playlist = null;
+		uninstall = mod.installTrackifyFeed();
+		await settle();
+		assert.equal(trackFetchCount, 1, 'the initial hydrate must walk the library once');
+
+		await timerCallback();
+		await settle();
+		assert.equal(
+			trackFetchCount,
+			1,
+			'an unchanged revision must not trigger another whole-library walk'
+		);
 	});
 });
