@@ -3014,8 +3014,8 @@ class RbAudioEngine implements AudioEngine {
 
 	async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
-		for (const key of ['stems', 'suppressFailureToast'] as const) {
-			if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new TypeError(`load: options.${key} must be boolean when provided`);
+		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
+			throw new TypeError('load: options.stems must be boolean when provided');
 		}
 		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
@@ -3038,14 +3038,7 @@ class RbAudioEngine implements AudioEngine {
 		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
 		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
-		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
-			const t0 = performance.now();
-			try {
-				return await work;
-			} finally {
-				stages[name] = Math.round(performance.now() - t0);
-			}
-		};
+		const time = stageTimer(stages);
 		try {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
@@ -3120,11 +3113,10 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			const raw =
-				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
-			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
+			// RbApiError's message already reads `CODE: detail`; prefixing the code again doubled it.
+			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			deckLoadErrors[deck] = msg;
-			reportDeckLoadFailure(deck, msg, exc, stages, options.suppressFailureToast !== true);
+			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;
 		}
 		if (
@@ -3163,7 +3155,7 @@ class RbAudioEngine implements AudioEngine {
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
-					reportDeckLoadFailure(deck, message, error, stages, options.suppressFailureToast !== true);
+					reportDeckLoadFailure(deck, message, error, stages, options);
 				}
 				throw error;
 			}

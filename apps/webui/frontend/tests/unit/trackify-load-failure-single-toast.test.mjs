@@ -184,6 +184,10 @@ describe('a failed Trackify load shows one toast on the real engine path (#4036)
 			messages.some((message) => message.startsWith('Deck 1 load failed - ')),
 			`if the engine toast is muted for every caller then a Gig load fails silently: ${JSON.stringify(messages)}`
 		);
+		assert.ok(
+			messages.every((message) => !message.includes('TRACK_NOT_FOUND: TRACK_NOT_FOUND')),
+			`if the engine prefixes an RbApiError's code again then the toast repeats it: ${JSON.stringify(messages)}`
+		);
 		assert.equal(deckLoadReports().length, 1, 'the engine report must still reach the server once');
 	});
 });

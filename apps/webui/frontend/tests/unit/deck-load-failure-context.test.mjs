@@ -180,7 +180,7 @@ test('the deck-load catch block reports through the extracted module, after stam
 
 	const stampAt = body.indexOf('stages.failedAt = perfMs();');
 	const reportAt = body.indexOf(
-		'reportDeckLoadFailure(deck, msg, exc, stages, options.suppressFailureToast !== true)'
+		'reportDeckLoadFailure(deck, msg, exc, stages, options)'
 	);
 	assert.ok(
 		reportAt !== -1,

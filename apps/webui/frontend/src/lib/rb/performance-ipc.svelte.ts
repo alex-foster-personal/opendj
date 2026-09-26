@@ -1914,8 +1914,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
 			await engine.load(command.deck, command.stable_id, {
-				...(command.stems === undefined ? {} : { stems: command.stems }),
-				...(command.suppressCommandErrorToast === true ? { suppressFailureToast: true } : {})
+				stems: command.stems,
+				suppressFailureToast: command.suppressCommandErrorToast
 			});
 		} finally {
 			deckLoadSettled();
