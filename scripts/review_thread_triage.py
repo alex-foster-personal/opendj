@@ -99,7 +99,7 @@ import json
 import sys
 
 try:
-    from scripts import review_coverage
+    from scripts import pr_scope_check, review_coverage
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
@@ -591,8 +591,9 @@ def main(argv: list[str] | None = None) -> int:
     debt_report = render_debt_verdict(pr.number, pr.head_sha, debt_error, main_side_debt)
     if debt_report:
         print(f"\n{debt_report}")
-    print()
-    return 1 if (pr.failing or coverage or debt_error) else 0
+    # OPS-41: over a declared issue scope is a failure (1); unmeasurable is 3.
+    scope_rc = pr_scope_check.main([str(args.pr), "--owner", args.owner, "--repo", args.repo])
+    return max(scope_rc, 1 if (pr.failing or coverage or debt_error) else 0)
 
 
 if __name__ == "__main__":
