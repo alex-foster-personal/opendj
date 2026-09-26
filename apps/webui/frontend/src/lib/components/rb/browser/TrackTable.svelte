@@ -179,7 +179,6 @@
 
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
-	const masterKeyColor = $derived(camelotKeyColor(masterKey));
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
 	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
@@ -189,7 +188,7 @@
 	);
 
 	function keyCompat(key: string | null): boolean {
-		return camelotKeysAreCompatible(key, masterKey);
+		return camelotKeysAreCompatible(key, keyCompatRef);
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
@@ -337,6 +336,8 @@
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey = null as string | null,
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
 		onaddtoplaylist = undefined
@@ -437,7 +438,16 @@
 		suggestHoverId?: string | null;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey?: string | null;
 	} = $props();
+
+	const keyCompatRef = $derived(
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null
+			? compatibleReferenceKey
+			: masterKey
+	);
+	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
 	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
 	 * height is density-dependent (`--tt-row-h`), so a constant would drift
@@ -1904,8 +1914,7 @@
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
-				{emptyMessage}
-				{#if onemptyretry !== undefined}
+				{emptyMessage}{#if onemptyretry !== undefined}
 					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>
@@ -2472,9 +2481,14 @@
 		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
+	/* position without a z-index on purpose: `z-index: 0` here made every
+	 * cell its own stacking context (#4009), which trapped a cell's
+	 * `position: fixed` popovers (the analysis-dots hover tile, z-index 9600)
+	 * at that cell's level, so every LATER row's cells painted over them and
+	 * took their pointer events. The row separator (`tbody tr::after`,
+	 * z-index 1) still paints above z-index:auto cells. */
 	tbody td {
 		position: relative;
-		z-index: 0;
 	}
 	thead th {
 		border-bottom: 1px solid var(--rb-border);

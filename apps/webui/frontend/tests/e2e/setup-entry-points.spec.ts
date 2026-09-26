@@ -82,6 +82,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 /** The chord, spelled once. Playwright maps Meta to Command on macOS and to
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
@@ -567,17 +569,51 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
-	test('the build identity chip states this app address in its foldout', async ({ page }) => {
+	test('the build identity chip states this app address in its foldout', async ({
+		page,
+		context,
+		browserName
+	}) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
+		// Spend PERFMODE-11's cold-open redirect first: otherwise it can land
+		// AFTER the chip is expanded, swapping the shell tray's chip for the
+		// /performance one (collapsed) mid-test; support/boot-landing.ts.
+		await spendBootLanding(page);
 		await gotoShellReady(page, '/');
 		const chip = page.locator('.build-identity');
 		await expect(chip).toBeVisible();
 		await chip.getByRole('button').first().click();
-		const url = chip.locator('code.url');
-		await expect(url).toBeVisible();
-		await expect(url).toHaveText(/^https?:\/\/[^\s]+$/);
-		await expect(chip.getByRole('button', { name: 'copy' })).toBeVisible();
+		const urlLink = chip.locator('a.url');
+		await expect(urlLink).toBeVisible();
+		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
+		// WebKit rejects the grant outright ("Unknown permission:
+		// clipboard-write"), and this spec also runs under the webkit artifact
+		// config, so the grant and the read-back are Chromium-only. Both
+		// browsers still assert the copy itself: the chip reports 'copied all
+		// details' only after `navigator.clipboard.writeText` resolved.
+		const readsClipboard = browserName === 'chromium';
+		if (readsClipboard) await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		const copyAll = chip.getByRole('button', { name: 'copy all details' });
+		await copyAll.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			// Copy AGAIN on every poll: the engine identity arrives from
+			// GET /api/v1/build-info after the chip mounts, and a copy taken
+			// before it lands says "still reading" with no git_sha. Re-reading a
+			// clipboard nothing rewrites can never see it arrive.
+			await expect
+				.poll(async () => {
+					await copyAll.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
+				})
+				.toMatch(/git_sha:/);
+		}
 	});
 });
