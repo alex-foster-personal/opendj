@@ -791,7 +791,10 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
             f"NOT EXISTS (SELECT 1 FROM track_vendor_ids tv "
             f"WHERE tv.stable_id = {table}.stable_id AND tv.vendor = 'rekordbox')"
         )
-        return f"(CASE WHEN {unmapped} THEN COALESCE({projection}, {track_fields}) ELSE {projection} END)"
+        return (
+            f"(CASE WHEN {unmapped} THEN COALESCE({projection}, {track_fields}) "
+            f"ELSE {projection} END)"
+        )
     if field_name not in _RBX_FIELDS:
         return "NULL"
     return (

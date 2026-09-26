@@ -85,7 +85,8 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		PairingIndex
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -240,7 +241,6 @@
 	import TrackTable from './browser/TrackTable.svelte';
 	import BrowserConfirmDialog from './browser/BrowserConfirmDialog.svelte';
 	import CompatibleFilterPopover from './browser/CompatibleFilterPopover.svelte';
-	import { PairingIndex } from '$lib/rb/pairing-index.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,

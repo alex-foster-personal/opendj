@@ -6,9 +6,6 @@ import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
 import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
 
-/** Match apps.shared.harmonic.MAX_BPM_DIFF_PCT / candidates.bpm_window_pct. */
-export const NEXT_BPM_WINDOW_PCT = 6;
-
 /** Pin 007fed0da025 (the maintainer, Wed 2 Sep 2026): only a tiny exact search result
  * may be shown outside active filters. */
 export const SEARCH_FILTER_FALLBACK_MAX_ROWS = 2;
@@ -70,24 +67,6 @@ export function computeNextOnlyRef(states: readonly NextOnlyDeckSlice[]): NextOn
 		}
 	}
 	return null;
-}
-
-export function bpmInNextWindow(candidateBpm: number | null, refBpm: number | null): boolean {
-	if (
-		candidateBpm === null ||
-		refBpm === null ||
-		!(candidateBpm > 0) ||
-		!(refBpm > 0)
-	) {
-		return false;
-	}
-	const lo = Math.min(candidateBpm, refBpm);
-	const hi = Math.max(candidateBpm, refBpm);
-	if (hi / lo <= 1 + NEXT_BPM_WINDOW_PCT / 100) return true;
-	for (const fold of [0.5, 2] as const) {
-		if (Math.abs(candidateBpm - refBpm * fold) <= BPM_HALF_ABS) return true;
-	}
-	return false;
 }
 
 export function bpmMatchesCompatiblePrefs(

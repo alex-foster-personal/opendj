@@ -43,15 +43,15 @@ describe('next-only-filter', () => {
 		assert.equal(mod.selectSearchFilterFallback('flare', ['existing'], one, true), null);
 	});
 
-	it('uses 6% BPM window', () => {
-		const { bpmInNextWindow, NEXT_BPM_WINDOW_PCT } = mod;
-		assert.equal(NEXT_BPM_WINDOW_PCT, 6);
-		assert.equal(bpmInNextWindow(100, 100), true);
-		assert.equal(bpmInNextWindow(106, 100), true);
-		assert.equal(bpmInNextWindow(106.1, 100), false);
-		assert.equal(bpmInNextWindow(null, 100), false);
-		assert.equal(bpmInNextWindow(100, null), false);
-		assert.equal(bpmInNextWindow(0, 100), false);
+	it('honors an exact absolute BPM window', () => {
+		const { bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const prefs = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 6, allow_half_double: false };
+		assert.equal(bpmMatchesCompatiblePrefs(100, 100, prefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(106, 100, prefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(106.1, 100, prefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(null, 100, prefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(100, null, prefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(0, 100, prefs), false);
 	});
 
 	it('never recovers incomplete or stale search results', () => {
@@ -61,11 +61,12 @@ describe('next-only-filter', () => {
 	});
 
 	it('keeps half/double within 15 BPM as appropriate', () => {
-		const { bpmInNextWindow, isAppropriateNext } = mod;
-		assert.equal(bpmInNextWindow(90, 180), true);
-		assert.equal(bpmInNextWindow(100, 180), true);
-		assert.equal(bpmInNextWindow(106, 180), false);
-		assert.equal(bpmInNextWindow(256, 128), true);
+		const { bpmMatchesCompatiblePrefs, isAppropriateNext, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const halfDoublePrefs = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 6 };
+		assert.equal(bpmMatchesCompatiblePrefs(90, 180, halfDoublePrefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(100, 180, halfDoublePrefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(106, 180, halfDoublePrefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(256, 128, halfDoublePrefs), true);
 		assert.equal(isAppropriateNext({ key: '8A', bpm: 90 }, { key: '8A', bpm: 180 }), true);
 	});
 

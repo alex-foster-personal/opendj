@@ -73,9 +73,9 @@ from apps.shared.play_orders import schema as play_orders_schema
 from apps.shared.playlist_sets import schema as playlist_sets_schema
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
-from apps.webui.server import pairings_sqlite
 from apps.spotify import state_aux as spotify_aux
 from apps.sync_hub import engine_identity_map
+from apps.webui.server import pairings_sqlite
 
 #: Name of the production-shaped, migrated state DB inside :class:`Scan`.
 STATE_LADDER: str = "shared_state"

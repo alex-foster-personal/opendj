@@ -55,12 +55,6 @@ from apps.shared.state.writer import StateWriter
 
 from .analysis_overlay import lane_owned_fields as _lane_owned_fields
 from .analysis_overlay import selection_tag as _selection_tag
-from .pairings_sqlite import (
-    count_http_pairings,
-    create_http_pairing,
-    delete_http_pairing,
-    list_http_pairings,
-)
 from .backend import (
     MAX_LIMIT,
     BackendError,
@@ -87,6 +81,12 @@ from .backend import (
     resolve_tempo_pref_write,
 )
 from .etag import compute_etag, strip_quotes
+from .pairings_sqlite import (
+    count_http_pairings,
+    create_http_pairing,
+    delete_http_pairing,
+    list_http_pairings,
+)
 
 log = logging.getLogger(__name__)
 

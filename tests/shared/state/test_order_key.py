@@ -60,7 +60,10 @@ def test_fifty_inserts_at_same_point_stay_unique_and_sorted() -> None:
 
 @pytest.mark.requirement("LIBM-22")
 def test_allocate_keys_three_between_neighbors() -> None:
-    """[if] three keys are allocated between neighbors [then] they stay ordered inside, [else stop]."""
+    (
+        """[if] three keys are allocated between neighbors [then] they stay ordered """
+        """inside, [else stop]."""
+    )
     keys = allocate_keys("00000000", "00000010", 3)
     assert len(keys) == 3
     assert len(set(keys)) == 3

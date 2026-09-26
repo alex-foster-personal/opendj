@@ -54,3 +54,4 @@ export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+export { PairingIndex } from '$lib/rb/pairing-index.svelte';
