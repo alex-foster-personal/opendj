@@ -55,6 +55,9 @@ sqlalchemy>=2.0,<2.1
 # pyobjc gap pyproject records: undeclared, and broken ON macOS, the platform
 # the tool exists for.
 Pillow>=12.3.0
+# FastAPI/Starlette use AnyIO directly. Keep the CI-only requirements resolver
+# at the same security floor as pyproject.toml and uv.lock.
+anyio>=4.15.1
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,
