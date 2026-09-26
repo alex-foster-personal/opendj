@@ -64,8 +64,31 @@ def regenerate_agents_md_cached(
         conn, state_dir, owned_tables=owned_tables, cache_marker=marker
     )
     if wrote and schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
-        schema_markers.insert_marker_if_absent(conn, marker)
+        _record_marker_without_waiting(conn, marker)
     return wrote
+
+
+def _record_marker_without_waiting(conn: sqlite3.Connection, marker: str) -> None:
+    """Record ``marker`` only if the writer lock is free right now.
+
+    The row is a cache hint, and recording it is the only write this gate
+    adds to ``open_rw``. Waiting for the writer lock there would make every
+    open that follows a schema change queue behind whichever peer holds it,
+    up to the caller's busy timeout, and then fail the open outright: a
+    request's own write would land after a concurrent one it used to precede.
+    So the insert runs with a zero busy timeout, and SQLITE_BUSY skips it.
+    The sidecar is already current, and the next open that misses records the
+    row. Any other error still raises.
+    """
+    (busy_timeout_ms,) = conn.execute("PRAGMA busy_timeout").fetchone()
+    conn.execute("PRAGMA busy_timeout = 0")
+    try:
+        schema_markers.insert_marker_if_absent(conn, marker)
+    except sqlite3.OperationalError as exc:
+        if exc.sqlite_errorcode & 0xFF != sqlite3.SQLITE_BUSY:
+            raise
+    finally:
+        conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
 
 
 __all__ = ["regenerate_agents_md_cached"]

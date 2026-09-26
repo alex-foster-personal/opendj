@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -382,6 +383,56 @@ def test_insert_marker_if_absent_keeps_one_row_where_insert_marker_aborts(tmp_pa
         # insert is what kept this quiet, not a missing constraint.
         with pytest.raises(sqlite3.IntegrityError):
             schema_markers.insert_marker(conn, "cache-probe")
+    finally:
+        conn.close()
+
+
+def test_open_rw_never_waits_on_a_peer_writer_to_record_the_cache_marker(
+    tmp_path: Path,
+) -> None:
+    """if a peer holds the writer lock after a schema change then open_rw does not wait - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    agents_md = tmp_path / "AGENTS.md"
+
+    # A real schema change (sqlite's schema_version moves) with no table
+    # change, so the next open MISSES the cache exactly as a lazily created
+    # analysis table makes a request's open miss.
+    peer = sqlite3.connect(str(db_path), isolation_level=None)
+    peer.execute("CREATE INDEX cache_probe_idx ON tracks(title)")
+    peer.execute("DROP INDEX cache_probe_idx")
+    # WAL: BEGIN IMMEDIATE takes the writer lock and still lets readers in.
+    peer.execute("BEGIN IMMEDIATE")
+    try:
+        before = agents_md.stat().st_ino
+        started = time.monotonic()
+        conn = open_rw(db_path, busy_timeout_s=3.0)
+        waited_s = time.monotonic() - started
+        try:
+            marker = _marker_for(conn, state_schema.ALL_KNOWN_TABLES, GENERATOR_VERSION)
+            # The open neither blocked for the 3 s busy timeout nor raised.
+            assert waited_s < 1.5, waited_s
+            # The sidecar still regenerated for the new schema: the miss ran.
+            assert agents_md.stat().st_ino != before
+            assert agents_md.read_text(encoding="utf-8").endswith(
+                agents_md_cache_line(marker) + "\n"
+            )
+            # The row could not be written under the peer's lock.
+            assert not schema_markers.has_marker(conn, marker)
+            # The zero-wait attempt did not leak: the handle keeps the
+            # caller's busy timeout for its own later writes.
+            assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 3000
+        finally:
+            conn.close()
+    finally:
+        peer.rollback()
+        peer.close()
+
+    # Control against the overshoot "never record": once the lock is free,
+    # the next open records the marker, so the cache still converges.
+    conn = open_rw(db_path)
+    try:
+        assert schema_markers.has_marker(conn, marker)
     finally:
         conn.close()
 
