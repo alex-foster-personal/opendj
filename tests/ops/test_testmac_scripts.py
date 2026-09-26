@@ -296,6 +296,42 @@ def test_verify_reports_a_dead_engine_before_a_wall() -> None:
     assert '[ -n "$ENGINE_LIVE" ]' in text[passing:dead], "PASS must require a live engine"
 
 
+def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
+    """[if] setup.sh writes the new plist while the old loop still runs [then] an old-loop
+    attempt can start after verify's cutoff and count as new evidence, [else stop]."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    write = text.index('scp -q "$PLIST_PATH"')
+    assert "launchctl bootout gui/\\$(id -u)/${PLIST_LABEL}" in text[:write]
+
+
+@pytest.mark.skipif(not Path("/bin/zsh").exists(), reason="UNAVAILABLE: no /bin/zsh here")
+def test_plist_driver_survives_a_zshenv_that_exports_another(tmp_path: Path) -> None:
+    """[if] ~/.zshenv exports AGT_AGENT_CLI and the plist's zsh -c command does not
+    re-export the declared one [then] the loop drives the profile's CLI while setup and
+    verify report the plist's, [else stop]. Runs the plist's real command string."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    command = re.search(r"<string>-c</string>\s*<string>([^<]+)</string>", text).group(1)
+    probe = tmp_path / "loop.sh"
+    probe.write_text('printf %s "$AGT_AGENT_CLI"\n', encoding="utf-8")
+    command = command.replace("${AGENT_CLI}", "claude")
+    command = re.sub(r"/Users/\$\{REMOTE_USER\}/\S+", str(probe), command)
+    (tmp_path / ".zshenv").write_text("export AGT_AGENT_CLI=codex\n", encoding="utf-8")
+    env = {"PATH": "/usr/bin:/bin", "ZDOTDIR": str(tmp_path), "AGT_AGENT_CLI": "claude"}
+    done = subprocess.run(
+        ["/bin/zsh", "-c", command], capture_output=True, text=True, env=env, check=True
+    )
+    assert done.stdout == "claude"
+    # Control: the hostile profile really does override a bare inherited value.
+    bare = subprocess.run(
+        ["/bin/zsh", "-c", f"exec /bin/bash {probe}"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    assert bare.stdout == "codex"
+
+
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
     """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
     [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
