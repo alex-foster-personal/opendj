@@ -1,6 +1,6 @@
 // requirement: LIBUX-14
 // [if] the rekordbox playlist tree is loading, erroring, or genuinely empty [then] each state renders distinct copy, not the same blank space
-// [if] a playlist is mostly broken (dimmed) [then] hovering the row shows a tooltip that names the 30% playable threshold
+// [if] a playlist is mostly broken (dimmed) [then] hovering the row shows a tooltip that names the min playable-track threshold
 // [if] Hide broken links hides one or more playlists [then] the tree shows a count of how many are hidden
 // requirement: LIBUX-15
 // [if] a user has zero playlists and playlist creation is wired [then] the empty state renders a labeled, clickable call to action instead of inert text
@@ -124,11 +124,11 @@ test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows
 		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),
 		'utf8'
 	);
-	assert.match(policy, /Fewer than \$\{_mostlyBrokenPercent\(\)\}% of tracks in this playlist are playable/);
+	assert.match(policy, /Fewer than \$\{n\} tracks in this playlist are playable/);
 	assert.match(
 		policy,
-		/Math\.round\(runtimePolicy\.hide_broken_playlist_min_available_ratio \* 100\)/,
-		'tooltip percent must be min-available ratio (30 at shipped default 0.3), not broken fraction'
+		/runtimePolicy\.hide_broken_playlist_min_available_tracks/,
+		'tooltip must use the server-hydrated min playable-track count (shipped default 4)'
 	);
 });
 

@@ -23,10 +23,10 @@ def _flatten(body: dict) -> dict[str, dict]:
 
 @pytest.mark.requirement("POLICY-01")
 def test_runtime_policy_shipped_defaults():
-    """[if] runtime_policy imports [then] shipped defaults match 0.3/38400/30s, [else stop]."""
+    """[if] runtime_policy imports [then] shipped defaults match 4/38400/30s, [else stop]."""
     from apps.shared import runtime_policy
 
-    assert runtime_policy.HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO == 0.3
+    assert runtime_policy.HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS == 4
     assert runtime_policy.ANLZ_POINTS_DEFAULT == 38400
     assert runtime_policy.ANLZ_POINTS_MIN == 100
     assert runtime_policy.ANLZ_POINTS_MAX == 38400
@@ -36,21 +36,21 @@ def test_runtime_policy_shipped_defaults():
 
 @pytest.mark.requirement("POLICY-01")
 def test_mostly_broken_playlist_rules():
-    """[if] mostly_broken_playlist runs [then] fast-list and ratio rules hold, [else stop]."""
+    """[if] mostly_broken_playlist runs [then] fast-list and min-track rules hold, [else stop]."""
     from apps.shared.runtime_policy import mostly_broken_playlist
 
     assert mostly_broken_playlist(-1, 10) is False
     assert mostly_broken_playlist(0, 0) is True
-    assert mostly_broken_playlist(1, 0) is False
-    assert mostly_broken_playlist(29, 100) is True
-    assert mostly_broken_playlist(30, 100) is False
+    assert mostly_broken_playlist(3, 100) is True
+    assert mostly_broken_playlist(4, 100) is False
+    assert mostly_broken_playlist(50, 100) is False
 
 
 @pytest.mark.requirement("POLICY-01")
 def test_settings_exposes_runtime_policy_keys(client):
     """[if] GET /api/v1/settings [then] all five POLICY-01 keys publish defaults, [else stop]."""
     items = _flatten(client.get("/api/v1/settings").json())
-    assert items["hide_broken_playlist_min_available_ratio"]["value"] == 0.3
+    assert items["hide_broken_playlist_min_available_tracks"]["value"] == 4
     assert items["anlz_points_default"]["value"] == 38400
     assert items["anlz_points_min"]["value"] == 100
     assert items["anlz_points_max"]["value"] == 38400
@@ -93,15 +93,14 @@ def test_file_exists_ttl_env_override():
 @pytest.mark.parametrize(
     ("name", "raw"),
     [
-        ("MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO", "1.5"),
+        ("MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS", "0"),
         ("MDT_FILE_EXISTS_TTL_S", "0"),
-        ("MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO", "nan"),
         ("MDT_FILE_EXISTS_TTL_S", "nan"),
         ("MDT_FILE_EXISTS_TTL_S", "inf"),
     ],
 )
-def test_invalid_float_policy_raises_at_import(name: str, raw: str):
-    """[if] a float policy env is out of range or non-finite [then] import raises, [else stop]."""
+def test_invalid_policy_raises_at_import(name: str, raw: str):
+    """[if] a policy env is out of range or non-finite [then] import raises, [else stop]."""
     result = _import_policy_in_subprocess({name: raw}, "import apps.shared.runtime_policy")
     assert result.returncode != 0
     assert "ValueError" in result.stderr

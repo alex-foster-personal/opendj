@@ -518,8 +518,9 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			// With Broken unchecked, playlists below the existing 30% playable
-			// threshold, including zero-track empty entries, vanish from the tree.
+			// With Broken unchecked, playlists below the server min playable-track
+			// count (hide_broken_playlist_min_available_tracks), including empty
+			// entries, vanish from the tree.
 			// A playlist still inside its create grace stays: the '+' flow needs
 			// the brand-new blank reachable so PlaylistTree can focus its rename.
 			.filter(

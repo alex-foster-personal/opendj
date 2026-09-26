@@ -14,7 +14,10 @@ from typing import Any
 
 # ----- shipped defaults (single source of truth) ---------------------------
 
-_DEFAULT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3
+# Hide-broken playlist floor (issue #3534): was ratio 0.3
+# (available_count / track_count < 0.3); now absolute playable count >= 4
+# (keep every playlist with more than 3 playable tracks).
+_DEFAULT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS = 4
 _DEFAULT_ANLZ_POINTS_MIN = 100
 _DEFAULT_ANLZ_POINTS_MAX = 38400
 _DEFAULT_ANLZ_POINTS_DEFAULT = 38400
@@ -92,11 +95,10 @@ if ANLZ_POINTS_DEFAULT > ANLZ_POINTS_MAX:
         f"({ANLZ_POINTS_DEFAULT} > {ANLZ_POINTS_MAX})"
     )
 
-HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO: float = _env_float(
-    "MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO",
-    _DEFAULT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO,
-    gt=0.0,
-    le=1.0,
+HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS: int = _env_int(
+    "MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS",
+    _DEFAULT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS,
+    ge=1,
 )
 
 FILE_EXISTS_TTL_S: float = _env_float(
@@ -107,23 +109,22 @@ FILE_EXISTS_TTL_S: float = _env_float(
 
 
 def mostly_broken_playlist(available_count: int, track_count: int) -> bool:
-    """True when a playlist is below the min-available ratio (hide-broken policy)."""
+    """True when playable count is below the hide-broken floor (issue #3534).
+
+    ``track_count`` is retained for call-site stability; only ``available_count``
+    and ``HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS`` matter.
+    """
     if available_count < 0:
         return False
-    if track_count == 0:
-        return available_count == 0
-    return (
-        available_count / track_count
-        < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO
-    )
+    return available_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS
 
 
 def settings_items() -> list[RuntimePolicySetting]:
     return [
         RuntimePolicySetting(
-            key="hide_broken_playlist_min_available_ratio",
-            value=HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO,
-            note="MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO env var.",
+            key="hide_broken_playlist_min_available_tracks",
+            value=HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS,
+            note="MDT_HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS env var.",
         ),
         RuntimePolicySetting(
             key="anlz_points_default",
@@ -153,7 +154,7 @@ __all__ = [
     "ANLZ_POINTS_MAX",
     "ANLZ_POINTS_MIN",
     "FILE_EXISTS_TTL_S",
-    "HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO",
+    "HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS",
     "RuntimePolicySetting",
     "mostly_broken_playlist",
     "settings_items",
