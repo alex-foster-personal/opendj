@@ -31,6 +31,7 @@ before(async () => {
 	);
 });
 
+// REQ: LIBMX-06
 test('collectionSearchEmptyMessage distinguishes failure from zero hits', () => {
 	const { collectionSearchEmptyMessage } = contract;
 
@@ -99,6 +100,7 @@ test('BrowserPanel persists search_error on failed whole-collection search', () 
 	);
 });
 
+// REQ: LIBMX-06
 test('TrackTable renders a gated Retry search button in the empty state', () => {
 	const src = stripComments(readFileSync(trackTablePath, 'utf8'));
 

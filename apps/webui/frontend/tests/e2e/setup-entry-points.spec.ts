@@ -567,7 +567,7 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
-	test('the build identity chip states this app address in its foldout', async ({ page }) => {
+	test('the build identity chip states this app address in its foldout', async ({ page, context }) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
@@ -575,9 +575,14 @@ test.describe('setup entry points', () => {
 		const chip = page.locator('.build-identity');
 		await expect(chip).toBeVisible();
 		await chip.getByRole('button').first().click();
-		const url = chip.locator('code.url');
-		await expect(url).toBeVisible();
-		await expect(url).toHaveText(/^https?:\/\/[^\s]+$/);
-		await expect(chip.getByRole('button', { name: 'copy' })).toBeVisible();
+		const urlLink = chip.locator('a.url');
+		await expect(urlLink).toBeVisible();
+		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		await chip.getByRole('button', { name: 'copy all details' }).click();
+		await expect
+			.poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+			.toMatch(/git_sha:/);
 	});
 });
