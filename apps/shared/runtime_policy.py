@@ -108,11 +108,11 @@ FILE_EXISTS_TTL_S: float = _env_float(
 )
 
 
-def mostly_broken_playlist(available_count: int, track_count: int) -> bool:
+def mostly_broken_playlist(available_count: int) -> bool:
     """True when playable count is below the hide-broken floor (issue #3534).
 
-    ``track_count`` is retained for call-site stability; only ``available_count``
-    and ``HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS`` matter.
+    A negative ``available_count`` is the fast-list sentinel for "not counted
+    yet" and never hides a playlist.
     """
     if available_count < 0:
         return False

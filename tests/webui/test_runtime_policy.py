@@ -39,11 +39,11 @@ def test_mostly_broken_playlist_rules():
     """[if] mostly_broken_playlist runs [then] fast-list and min-track rules hold, [else stop]."""
     from apps.shared.runtime_policy import mostly_broken_playlist
 
-    assert mostly_broken_playlist(-1, 10) is False
-    assert mostly_broken_playlist(0, 0) is True
-    assert mostly_broken_playlist(3, 100) is True
-    assert mostly_broken_playlist(4, 100) is False
-    assert mostly_broken_playlist(50, 100) is False
+    assert mostly_broken_playlist(-1) is False
+    assert mostly_broken_playlist(0) is True
+    assert mostly_broken_playlist(3) is True
+    assert mostly_broken_playlist(4) is False
+    assert mostly_broken_playlist(50) is False
 
 
 @pytest.mark.requirement("POLICY-01")
