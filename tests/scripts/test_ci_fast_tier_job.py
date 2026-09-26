@@ -33,7 +33,10 @@ pytestmark = pytest.mark.requirement("INFRA-03")
 
 CI: Path = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 FAST_RUNS_ON = (
-    "${{ fromJSON(vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
+    "${{ fromJSON((github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
+    "&& vars.CI_RUNS_ON_TRUNK || "
+    "vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
     "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 )
 
