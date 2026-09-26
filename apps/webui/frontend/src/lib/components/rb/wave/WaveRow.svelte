@@ -164,8 +164,8 @@
 			isMaster: deck.is_master,
 			syncError: deck.sync_error,
 			syncMode: deck.sync_mode,
-			followerBeats,
-			masterBeats,
+			followerBeats: [...followerBeats],
+			masterBeats: [...masterBeats],
 			followerPosMs: deck.position_ms,
 			masterPosMs: masterState.position_ms
 		});
