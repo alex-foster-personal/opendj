@@ -82,6 +82,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 /** The chord, spelled once. Playwright maps Meta to Command on macOS and to
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
@@ -575,6 +577,10 @@ test.describe('setup entry points', () => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
+		// Spend PERFMODE-11's cold-open redirect first: otherwise it can land
+		// AFTER the chip is expanded, swapping the shell tray's chip for the
+		// /performance one (collapsed) mid-test; support/boot-landing.ts.
+		await spendBootLanding(page);
 		await gotoShellReady(page, '/');
 		const chip = page.locator('.build-identity');
 		await expect(chip).toBeVisible();
