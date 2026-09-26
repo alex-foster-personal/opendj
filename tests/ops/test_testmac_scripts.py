@@ -283,15 +283,22 @@ def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path)
     attempt("20260926T020000Z-hostile-s1", "Claude CLI is walled: weekly\n", "claude")
     # In flight across the reinstall: started 02:04:00Z, before the 02:05:00Z plist, and
     # its log and completion are written only now, long after it.
-    attempt("20260926T020400Z-hostile-s2", "Claude CLI is walled: weekly\n", "claude")
+    attempt("20260926T020400Z-hostile-s1b", "Claude CLI is walled: weekly\n", "claude")
+    # Boundary: one second before the plist is still the old configuration.
+    attempt("20260926T020459Z-hostile-s2", "Claude CLI is walled: weekly\n", "claude")
     assert stats("claude") == ["0", "0"], "an attempt started before the plist leaked in"
-    attempt("20260926T030000Z-hostile-s3", "ok\n", "codex")
-    assert stats("codex") == ["1", "1", "20260926T030000Z-hostile-s3.log"]
+    # Boundary: the new loop's first attempt can start in the very second the plist is
+    # written (setup boots every loop out BEFORE that write), and it must count, or a
+    # first attempt that walls hides behind "no attempt yet" for the whole backoff.
+    attempt("20260926T020500Z-hostile-s3", "Claude CLI is walled: weekly\n", None)
+    assert stats("claude") == ["1", "0", "20260926T020500Z-hostile-s3.log"]
+    attempt("20260926T030000Z-hostile-s4", "ok\n", "codex")
+    assert stats("codex") == ["2", "1", "20260926T030000Z-hostile-s4.log"]
     # A later attempt refused before its bundle existed is still the latest attempt.
-    attempt("20260926T031000Z-hostile-s4", "Claude CLI refused: ANTHROPIC_BASE_URL\n", None)
-    assert stats("codex") == ["2", "1", "20260926T031000Z-hostile-s4.log"]
+    attempt("20260926T031000Z-hostile-s5", "Claude CLI refused: ANTHROPIC_BASE_URL\n", None)
+    assert stats("codex") == ["3", "1", "20260926T031000Z-hostile-s5.log"]
     # Control: the post-switch completion does not count for a driver it was not run by.
-    assert stats("claude")[:2] == ["2", "0"]
+    assert stats("claude")[:2] == ["3", "0"]
 
 
 def test_verify_reports_a_dead_engine_before_a_wall() -> None:
