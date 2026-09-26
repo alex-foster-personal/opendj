@@ -44,7 +44,7 @@ test('signed-in account button precedes login cluster', () => {
 	const accountAt = cluster.indexOf('class="account-btn"');
 	const baubleSlotAt = cluster.indexOf('{@render children()}');
 	assert.ok(accountAt >= 0 && accountAt < baubleSlotAt);
-	const clusterAt = topbar.indexOf('<TopBarAccountCluster>');
+	const clusterAt = topbar.indexOf('<TopBarAccountCluster ');
 	const baubleAt = topbar.indexOf('<UserBauble');
 	const clusterEndAt = topbar.indexOf('</TopBarAccountCluster>');
 	assert.ok(clusterAt >= 0 && clusterAt < baubleAt && baubleAt < clusterEndAt);

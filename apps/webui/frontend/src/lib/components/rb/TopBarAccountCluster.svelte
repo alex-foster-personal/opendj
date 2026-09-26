@@ -7,7 +7,16 @@
 	import { auth } from '$lib/auth.svelte';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 
-	let { children }: { children: Snippet } = $props();
+	// `signedIn` is relayed to the parent as a bindable so TopBar can derive
+	// its own showClock (CHROME-06) without importing `auth` itself, which
+	// keeps TopBar's own import fan-out inside the quality ratchet (this
+	// file already exists for exactly that reason, see the note above).
+	let { children, signedIn = $bindable(false) }: { children: Snippet; signedIn?: boolean } =
+		$props();
+
+	$effect(() => {
+		signedIn = auth.user !== null;
+	});
 
 	const loginGatedBullets = [
 		'Google sign-in for account panel and CloudSync fleet adopt',

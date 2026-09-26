@@ -70,7 +70,6 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
-	import { auth } from '$lib/auth.svelte';
 	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
@@ -254,8 +253,13 @@
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
+	// Relayed up from TopBarAccountCluster's bindable rather than importing
+	// `auth` directly here, which is what keeps this file's own import
+	// fan-out inside the quality ratchet (CHROME-05/06).
+	let signedIn = $state(false);
+
 	const showClock = $derived(
-		auth.user !== null || cloudSyncChipState.value !== 'off'
+		signedIn || cloudSyncChipState.value !== 'off'
 	);
 
 	// Re-run the access request on load IFF the user opted in before (persisted
@@ -814,8 +818,8 @@
 	</button>
 
 	<CloudSyncStatusChip />
-	<TopBarAccountCluster>
-		<UserBauble size={20} showLabel={auth.user !== null} />
+	<TopBarAccountCluster bind:signedIn>
+		<UserBauble size={20} showLabel={signedIn} />
 	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
