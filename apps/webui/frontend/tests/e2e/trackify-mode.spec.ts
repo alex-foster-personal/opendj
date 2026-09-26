@@ -61,6 +61,19 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 					artist: 'E2E'
 				}
 			]);
+			// Record every toast the failed load adds, so a toast that expires
+			// before the assertion still counts (#4036).
+			const added: string[] = [];
+			(window as unknown as { __trackifyToastsAdded: string[] }).__trackifyToastsAdded = added;
+			new MutationObserver((records) => {
+				for (const record of records) {
+					for (const node of record.addedNodes) {
+						if (node instanceof HTMLElement && node.matches('[data-toast-id]')) {
+							added.push(node.textContent ?? '');
+						}
+					}
+				}
+			}).observe(document.body, { childList: true, subtree: true });
 			const started = performance.now();
 			await ipc.e2e_force_load(missingId);
 			return started;
@@ -72,9 +85,14 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	expect(elapsedMs).toBeLessThan(2_000);
 	await expect(page.locator('[data-toast-dismiss]').first()).toBeVisible();
 	// #4036: the engine's own "Deck 1 could not load the track" toast used to
-	// appear beside the skip toast. One failed load, one toast.
-	await expect(page.locator('[data-toast-id]')).toHaveCount(1);
-	await expect(page.getByText(/could not load the track/)).toHaveCount(0);
+	// appear beside the skip toast. One failed load, one toast. Read from the
+	// observer, not the live DOM: toHaveCount retries, and would pass once the
+	// engine toast expired.
+	const added = await page.evaluate(
+		() => (window as unknown as { __trackifyToastsAdded: string[] }).__trackifyToastsAdded
+	);
+	expect(added, `toasts added by one failed Trackify load: ${JSON.stringify(added)}`).toHaveLength(1);
+	expect(added[0]).toMatch(/^Trackify: skipped track/);
 	await page.waitForFunction(
 		(goodId) => window.musicDjToolsTrackify?.query().deck.stable_id === goodId,
 		goodId,
