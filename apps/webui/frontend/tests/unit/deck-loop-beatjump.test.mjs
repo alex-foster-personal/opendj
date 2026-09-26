@@ -544,6 +544,35 @@ test('beat jump reaches the engine only through the typed dispatcher', async () 
 	assert.match(jumpSource, /live loop cannot shift/);
 });
 
+test('e09c63131832 LOOP and JUMP column labels stay side by side', async () => {
+	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
+	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
+	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
+	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
+	const loopColOpen = deckSource.indexOf('<div class="loop-col">');
+	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
+	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);
+	const beatJumpPos = deckSource.indexOf('<BeatJump', loopColOpen);
+	assert.ok(
+		loopClusterPos > loopColOpen && beatJumpPos > loopClusterPos,
+		'LoopCluster (LOOP) precedes BeatJump (JUMP) in loop-col'
+	);
+	assert.match(loopSource, /<span class="column-label">LOOP<\/span>/);
+	assert.match(jumpSource, /<span class="column-label">JUMP<\/span>/);
+});
+
+test('e09c63131832 two rapid beat jumps compound on projected anchor', () => {
+	const first = math.beatJumpTargetMs(DRIFTING_GRID, 135, 4);
+	const second = math.beatJumpTargetMs(DRIFTING_GRID, first, 4);
+	assertMs(first, 2040);
+	assertMs(second, 4060);
+	assert.notEqual(
+		second,
+		math.beatJumpTargetMs(DRIFTING_GRID, 135, 4),
+		'a second jump must not reuse the original anchor'
+	);
+});
+
 test('LOOP and JUMP are visible headings in their requested left-to-right columns', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
@@ -663,6 +692,26 @@ test('a clipped engaged loop stays choosable so it can be exited from the grid',
 });
 
 // -------------------------------------- PIN f11c66 / 02978b regression math
+
+test('334a50710ef0 beat jump shifts engaged loop by PQTZ beat count', () => {
+	// 4-beat loop: beats[1]=608 .. beats[5]=2530.
+	const loop = { in_ms: 608, out_ms: 2530 };
+	const beatIndexOf = (ms) => DRIFTING_GRID.findIndex((beat) => Math.abs(beat.t * 1000 - ms) < 1e-6);
+	const originalBeatLength = beatIndexOf(loop.out_ms) - beatIndexOf(loop.in_ms);
+	assert.equal(originalBeatLength, 4);
+
+	const shifted = loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, loop, 1, 5000);
+	const shiftedBeatLength = beatIndexOf(shifted.out_ms) - beatIndexOf(shifted.in_ms);
+	assert.equal(shiftedBeatLength, originalBeatLength, 'beat jump must never change the loop length');
+
+	const rawTarget = math.beatJumpTargetMs(DRIFTING_GRID, 2040, 1);
+	const targetMs = math.beatJumpTargetWithinDurationMs(DRIFTING_GRID, rawTarget, 5000);
+	const landedMs = loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, targetMs, shifted);
+	assert.ok(
+		landedMs >= shifted.in_ms && landedMs < shifted.out_ms,
+		'the jump must land the playhead inside the shifted loop, never exit it'
+	);
+});
 
 test('if a live-loop beat jump clears or changes loop length then the pin is broken', () => {
 	// 4-beat loop: beats[1]=608 .. beats[5]=2530.

@@ -12,12 +12,14 @@
  * handoff, a new candidate feed, or AutoPlay being disarmed.
  */
 import {
+	autoPlayStallDiagnosticMessage,
 	describeAutoPlayStall,
 	type AutoPlayStall,
 	type AutoPlayStallDescription,
 	type AutoPlayStallReason
 } from '$lib/rb/autoplay-stall';
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 
 export const autoPlayStall = $state<{ current: AutoPlayStall | null }>({ current: null });
 
@@ -31,9 +33,20 @@ let _revision = 0;
  * information, and silently keeping the first would describe a state that is no
  * longer the one the operator is in.
  */
+function _reportAutoPlayStallFailure(stall: AutoPlayStallDescription): void {
+	// Exhaustion and handoff terminal branches already emit error toasts (and
+	// those rows reach webui-client-errors-*.log). Silent idle has no toast, so
+	// it needs its own grep-stable console line (PLAY-13 / pin b91c8ba9b84b).
+	if (stall.reason !== 'no-deck-playing') return;
+	const diagnostic = autoPlayStallDiagnosticMessage(stall.reason, stall.detail);
+	recordPerfEvent('autoplay-stall', diagnostic, null, 'error');
+	console.error(diagnostic);
+}
+
 export function raiseAutoPlayStall(stall: AutoPlayStallDescription): void {
 	_revision += 1;
 	autoPlayStall.current = { ...stall, revision: _revision };
+	_reportAutoPlayStallFailure(stall);
 }
 
 /**

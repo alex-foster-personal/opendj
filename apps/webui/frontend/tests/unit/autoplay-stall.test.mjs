@@ -39,6 +39,15 @@ function row(stable_id, title = null, artist = null) {
 	return { stable_id, key: '8A', bpm: 124, file_exists: false, title, artist };
 }
 
+// REQ: PLAY-13 / pin b91c8ba9b84b
+describe('autoPlayStallDiagnosticMessage', () => {
+	it('names silent idle arm failure for console and hunt collectors', () => {
+		const line = mod.autoPlayStallDiagnosticMessage('no-deck-playing', null);
+		assert.match(line, /^\[autoplay\] arm failed: no-deck-playing/);
+		assert.match(line, /autoplay-stall\)$/);
+	});
+});
+
 // REQ: PLAY-08
 describe('describeAutoPlayStall', () => {
 	it('names the cause and the count for a spent, unplayable playlist', () => {
