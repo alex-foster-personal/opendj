@@ -84,7 +84,7 @@ export interface EngineStamp {
 	git_branch: string;
 	git_dirty: boolean;
 	built_at_utc: string;
-	built_at_kind: 'payload-build' | 'head-commit';
+	built_at_kind: 'payload-build' | 'head-commit' | 'engine-start';
 	lane_label: string | null;
 	product_name: string | null;
 	bundle_identifier: string | null;

@@ -71,12 +71,10 @@ def _has_rb_mapping(stable_id: str) -> bool:
     return stable_id in rb_vendor.bulk_rb_meta([stable_id])
 
 
-def _rb_mapping_and_artwork(
-    stable_id: str, file_path: str | None
-) -> tuple[bool, bool | None]:
+def _rb_mapping_and_artwork(stable_id: str) -> tuple[bool, bool | None]:
     """One bulk_rb_meta for both has_rb_mapping and listing's artwork facts."""
     meta_map = rb_vendor.bulk_rb_meta([stable_id])
-    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), file_path)
+    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), stable_id)
     return stable_id in meta_map, artwork_available
 
 
@@ -524,9 +522,7 @@ def get_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
-    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
-        stable_id, track.file_path
-    )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
     return _track_to_out(
         track,
         has_rb_mapping=has_rb_mapping,
@@ -610,9 +606,7 @@ def patch_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
-    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
-        stable_id, updated.file_path
-    )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
     return _track_to_out(
         updated,
         has_rb_mapping=has_rb_mapping,
