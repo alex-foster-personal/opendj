@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import io
 import shutil
 import wave
 from collections.abc import Iterator
@@ -367,3 +369,113 @@ def test_stems_available_true_from_local_summary_without_hydration(
     response = flags_client.get(f"/api/v1/tracks/{stable_id}")
     assert response.status_code == 200
     assert response.json()["stems_available"] is True
+
+
+def _minimal_jpeg_bytes() -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), color="red").save(buf, format="JPEG")
+    data = buf.getvalue()
+    assert data[:2] == b"\xff\xd8"
+    return data
+
+
+def _listing_row_artwork(
+    client: TestClient, stable_id: str
+) -> bool | None:
+    list_resp = client.get("/api/v1/tracks")
+    assert list_resp.status_code == 200
+    for item in list_resp.json()["items"]:
+        if item["stable_id"] == stable_id:
+            return item["artwork_available"]
+    raise AssertionError(f"stable_id {stable_id} missing from listing")
+
+
+@pytest.mark.requires_mutagen
+@pytest.mark.requirement("PARITY-04")
+def test_track_detail_artwork_available_agrees_with_listing_unmapped(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] unmapped embedded art [then] list and detail agree on artwork_available, [else stop]."""
+    from mutagen.id3 import APIC
+    from mutagen.mp3 import MP3
+
+    fixture = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
+    )
+    jpeg_bytes = _minimal_jpeg_bytes()
+    audio_path = tmp_path / "embedded-art.mp3"
+    shutil.copy2(fixture, audio_path)
+    audio = MP3(audio_path)
+    audio.tags.add(
+        APIC(encoding=3, mime="image/jpeg", type=3, desc="cover", data=jpeg_bytes)
+    )
+    audio.save()
+
+    stable_id = "c" * 40
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            stable_id,
+            "inferred",
+            "Embedded Art",
+            str(audio_path),
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    listing_art = _listing_row_artwork(flags_client, stable_id)
+    detail_resp = flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert detail_resp.status_code == 200
+    detail_art = detail_resp.json()["artwork_available"]
+
+    assert listing_art is True
+    assert detail_art is True
+    assert listing_art == detail_art
+
+
+@pytest.mark.requirement("PARITY-04")
+def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_mutagen(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] no mutagen reader [then] list and detail agree artwork None, [else stop]."""
+    if importlib.util.find_spec("mutagen") is not None:
+        pytest.skip("mutagen installed; None tri-state runs only without the reader")
+
+    wav_path = tmp_path / "local.wav"
+    _write_wav(wav_path)
+    stable_id = "b" * 40
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            stable_id,
+            "inferred",
+            "Local",
+            str(wav_path),
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    listing_art = _listing_row_artwork(flags_client, stable_id)
+    detail_resp = flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert detail_resp.status_code == 200
+    detail_art = detail_resp.json()["artwork_available"]
+
+    assert listing_art is None
+    assert detail_art is None
+    assert listing_art == detail_art
