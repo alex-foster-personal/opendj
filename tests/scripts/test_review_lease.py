@@ -94,7 +94,7 @@ def test_check_exits_1_naming_reviewer_and_head(
 def test_handoff_removes_reviewer_label_and_adds_handoff_label(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """[if] handoff completes [then] no reviewer:* remains and handoff:finished-no-merge is present."""
+    """[if] handoff completes [then] no reviewer:* remains, handoff:finished-no-merge is set."""
     calls: list[list[str]] = []
 
     def _fake_gh(args: list[str], * _rest: object, **_kwargs: object) -> str:
@@ -130,7 +130,9 @@ def test_emergency_notify_lists_each_new_commit(
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.invalid"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.invalid"], check=True,
+    )
     subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
     (repo / "file.txt").write_text("one\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "file.txt"], check=True)
