@@ -186,7 +186,7 @@ export interface ToastReportInput {
 	createdAt: string;
 	env: ToastEnvironment;
 	/** Optional context lines appended after the closed env block (deck/sync, caller context). */
-	extras?: Record<string, string>;
+	extras?: Record<string, string> | undefined;
 }
 
 /**
