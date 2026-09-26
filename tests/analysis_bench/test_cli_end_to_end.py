@@ -30,7 +30,9 @@ def bundle(tmp_path: Path) -> Path:
 
 
 # REQ: NATIVE-11
+@pytest.mark.requirement("NATIVE-11")
 def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
+    """[if] a bundle is pushed, pulled and run with --post [then] a round is logged, [else stop]."""
     store_root = tmp_path / "asset-store"
     assert cli.main(["fixtures", "push", "--lane", "beatgrid", "--version", "v1",
                      "--bundle-dir", str(bundle), "--store", str(store_root)]) == 0

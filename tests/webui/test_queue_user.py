@@ -58,7 +58,9 @@ def _enqueue(conn, lane: str, ids: list[str], tmp: Path, placement: str = "next"
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None:
+    """[if] stems are queued do-next [then] they go to the head in order, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c", "backlog"])
     conn = _conn(db)
@@ -74,7 +76,9 @@ def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
+    """[if] a do-next names a running item [then] that item keeps running, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["run", "n1", "n2"])
     conn = _conn(db)
@@ -92,7 +96,9 @@ def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
+    """[if] a stems item is running [then] the lyrics lane still claims work, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["t1", "t2"])
     conn = _conn(db)
@@ -109,7 +115,9 @@ def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
+    """[if] a track has a fresh stem bundle [then] enqueue skips it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["fresh", "need"])
     bundle = tmp_path / "stems" / "fresh"
@@ -128,7 +136,9 @@ def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
+    """[if] a track has cached lyrics [then] enqueue skips it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["has", "need"])
     path = lyrics_cache.cache_path(tmp_path, "has")
@@ -145,7 +155,9 @@ def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
+    """[if] a pending item is reordered [then] claim order follows it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])
     conn = _conn(db)
@@ -159,7 +171,9 @@ def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
+    """[if] a pending item is cancelled [then] it leaves the active queue, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b"])
     conn = _conn(db)
@@ -172,7 +186,9 @@ def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
+    """[if] a running item is cancelled [then] the worker cannot finish it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a"])
     conn = _conn(db)
@@ -195,7 +211,9 @@ def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_release_running_keeps_pending_order(tmp_path: Path) -> None:
+    """[if] a running item is released [then] pending order is kept, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])
     conn = _conn(db)

@@ -49,8 +49,12 @@ def test_sealed_bundle_verifies(tmp_path: Path) -> None:
 
 
 # REQ: NATIVE-11
+@pytest.mark.requirement("NATIVE-11")
 def test_changed_payload_is_refused(tmp_path: Path) -> None:
-    """The 28-percent-zero-filled-copy failure: same name, same size, other bytes."""
+    """The 28-percent-zero-filled-copy failure: same name, same size, other bytes.
+
+    [if] a bundle file changes bytes at the same size [then] verify refuses it, [else stop].
+    """
     bundle = _sealed(tmp_path)
     target = bundle / "wav" / "track-a.wav"
     target.write_bytes(b"\x00" * len(target.read_bytes()))
@@ -88,8 +92,12 @@ def test_edited_manifest_is_refused(tmp_path: Path) -> None:
 
 
 # REQ: NATIVE-11
+@pytest.mark.requirement("NATIVE-11")
 def test_bundle_id_separates_two_bundles_sharing_a_version(tmp_path: Path) -> None:
-    """The waveform lane's P1: `v1` alone cannot tell two fixture sets apart."""
+    """The waveform lane's P1: `v1` alone cannot tell two fixture sets apart.
+
+    [if] two bundles share a version [then] their bundle ids differ, [else stop].
+    """
     first = _sealed(tmp_path / "one")
     second = _sealed(tmp_path / "two", payload=b"fixture-audio-X")
     id_one = bundles.verify_bundle(first)["bundle_id"]
@@ -118,8 +126,12 @@ def test_push_then_pull_round_trips_through_a_directory_store(tmp_path: Path) ->
 
 
 # REQ: NATIVE-11
+@pytest.mark.requirement("NATIVE-11")
 def test_pull_refuses_and_removes_a_corrupted_download(tmp_path: Path) -> None:
-    """A store whose bytes rotted must not leave a scorable directory behind."""
+    """A store whose bytes rotted must not leave a scorable directory behind.
+
+    [if] the store's bytes rotted [then] pull refuses and leaves no bundle, [else stop].
+    """
     bundle = _sealed(tmp_path)
     store_root = tmp_path / "store"
     store = stores.resolve_store(str(store_root))

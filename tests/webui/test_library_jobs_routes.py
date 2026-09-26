@@ -79,7 +79,9 @@ def _seed_library(db: Path, ids: list[str]) -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_every_control_exists_on_http_and_on_the_cli() -> None:
+    """[if] a library-jobs control exists [then] it has an HTTP route and CLI verb, [else stop]."""
     paths = _router_paths()
     subcommands = _cli_subcommands()
     assert "/library-jobs/enqueue" in paths
@@ -91,7 +93,9 @@ def test_every_control_exists_on_http_and_on_the_cli() -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_every_control_is_documented_in_openapi_json() -> None:
+    """[if] a library-jobs route exists [then] openapi.json documents it, [else stop]."""
     spec = json.loads(OPENAPI.read_text())
     documented = set(spec["paths"])
     assert "/api/v1/library-jobs/enqueue" in documented
@@ -101,7 +105,9 @@ def test_every_control_is_documented_in_openapi_json() -> None:
 
 
 # REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_every_control_is_reachable_from_the_ui_panel() -> None:
+    """[if] a library-jobs control exists [then] the UI panel reaches it, [else stop]."""
     assert PANEL.exists(), f"{PANEL} is missing; the UI half of parity is absent"
     assert API_CLIENT.exists(), f"{API_CLIENT} is missing"
     client_src = API_CLIENT.read_text()
