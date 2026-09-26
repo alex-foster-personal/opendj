@@ -421,6 +421,54 @@ def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) 
     assert "<!doctype html" in remeasure.stdout.lower()
 
 
+def _setup_line(prefix: str) -> str:
+    match = re.search(rf"^{re.escape(prefix)}.*$", SETUP_SH.read_text(encoding="utf-8"), re.M)
+    assert match, f"setup.sh must have a line starting {prefix!r}"
+    return match.group(0)
+
+
+def test_setup_auth_checks_are_bounded_on_the_host() -> None:
+    """[if] a hung `codex login status` or `claude auth status` (broken CLI, keychain,
+    network) blocks setup.sh forever, since ssh's ConnectTimeout bounds only the
+    connection [then] setup never fails fast, [else stop]. Runs setup's own BOUNDED
+    prefix on real hanging processes: locally, and live on demon-llama through setup's
+    real `run` in both remote forms (plain, and inside /bin/zsh -c) when reachable."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    assert 'run "$BOUNDED codex login status"' in text
+    assert "run \"/bin/zsh -c '$BOUNDED claude auth status --json'\"" in text
+    prefix = "\n".join(["set -euo pipefail", "AUTH_CHECK_TIMEOUT_S=1", _setup_line("BOUNDED=")])
+    started = time.monotonic()
+    hung = subprocess.run(
+        ["bash", "-c", prefix + '\neval "$BOUNDED /bin/sleep 30"'],
+        capture_output=True, text=True, check=False, timeout=60,
+    )  # fmt: skip
+    assert hung.returncode != 0 and time.monotonic() - started < 10, "the bound must fire"
+    answered = subprocess.run(
+        ["bash", "-c", prefix + '\neval "$BOUNDED /bin/echo answered"'],
+        capture_output=True, text=True, check=False, timeout=60,
+    )  # fmt: skip
+    assert answered.stdout == "answered\n", "control: a prompt command still answers"
+    if not _host_reachable(LIVE_ENGINE_HOST):
+        pytest.skip(f"UNAVAILABLE (live half): {LIVE_ENGINE_HOST} is not reachable")
+    remote = "\n".join(
+        [
+            prefix,
+            f"HOST={LIVE_ENGINE_HOST}",
+            _setup_function("run"),
+            'run "$BOUNDED /bin/sleep 30" && echo PLAIN=answered || echo PLAIN=bounded',
+            "run \"/bin/zsh -c '$BOUNDED /bin/sleep 30'\" && echo ZSH=answered || echo ZSH=bounded",
+            "run \"/bin/zsh -c '$BOUNDED /bin/echo ok'\" && echo CONTROL=answered || echo CONTROL=",
+        ]
+    )
+    started = time.monotonic()
+    done = subprocess.run(
+        ["bash", "-c", remote], capture_output=True, text=True, check=False, timeout=120
+    )
+    fields = dict(line.split("=", 1) for line in done.stdout.splitlines() if "=" in line)
+    assert fields == {"PLAIN": "bounded", "ZSH": "bounded", "CONTROL": "answered"}, done
+    assert time.monotonic() - started < 60
+
+
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
     """[if] setup.sh writes the new plist while the old loop or the legacy duplicate still
     runs [then] its attempt can start after verify's cutoff and count as new evidence
