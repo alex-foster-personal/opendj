@@ -34601,6 +34601,81 @@
         ]
       }
     },
+    "/api/v1/stems/live-capability": {
+      "get": {
+        "description": "Read install-time capability and, when requested, its deck plan.",
+        "operationId": "get_live_stems_capability_api_v1_stems_live_capability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deck_count",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deck Count"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bpm",
+            "required": false,
+            "schema": {
+              "default": 120.0,
+              "title": "Bpm",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Live Stems Capability Api V1 Stems Live Capability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "live-stems capability is not assessed because this engine is not running from an installed payload"
+          }
+        },
+        "summary": "Get Live Stems Capability",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/push-missing": {
       "post": {
         "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
