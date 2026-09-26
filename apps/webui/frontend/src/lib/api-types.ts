@@ -600,6 +600,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-interference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audio Interference */
+        get: operations["audio_interference_api_v1_audio_interference_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio/output-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Output Health */
+        get: operations["get_output_health_api_v1_audio_output_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio/switch-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Switch Output */
+        post: operations["post_switch_output_api_v1_audio_switch_output_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/callback": {
         parameters: {
             query?: never;
@@ -1995,6 +2046,27 @@ export interface paths {
         get: operations["host_info_api_v1_host_info_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/batch/{batch}/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Batch
+         * @description [if] batch is staged under the ingest inbox [then] folder-ingest writes
+         *     tracks and returns stable_ids [else stop].
+         */
+        post: operations["materialize_batch_api_v1_ingest_batch__batch__materialize_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5122,6 +5194,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Revision
+         * @description Return a cheap revision probe for clients holding library snapshots.
+         */
+        get: operations["get_library_revision_api_v1_tracks_revision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}": {
         parameters: {
             query?: never;
@@ -5282,11 +5374,10 @@ export interface paths {
          *     a beatgrid is never invented.
          *
          *     A caller naming ``backend=`` gets exactly what it named. The default
-         *     newest-row lookup instead defers to native-analysis v1 first: when v1
-         *     has already settled a beatgrid determination for this track (a
-         *     canonical own pointer exists, whatever it resolved to), this endpoint
-         *     preserves that gridless/failed state rather than silently substituting
-         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
+         *     newest-row lookup instead refuses a superseded pre-v1 legacy row only
+         *     when the canonical own beatgrid lane is ``failed``; a successful native
+         *     backfill does not disable the legacy row while own is not yet serving
+         *     (STANDALONE-04).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -5549,6 +5640,26 @@ export interface paths {
          *     retry rather than hang forever on this one request.
          */
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/{part}/waveform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Waveform
+         * @description Return a downsampled mono peak envelope for one validated stem part.
+         */
+        get: operations["get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6273,6 +6384,62 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** AudioInterferenceItemOut */
+        AudioInterferenceItemOut: {
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Matched */
+            matched: string;
+            /** Why */
+            why: string;
+        };
+        /** AudioInterferenceOut */
+        AudioInterferenceOut: {
+            /** Detected */
+            detected: components["schemas"]["AudioInterferenceItemOut"][];
+            /** Error */
+            error?: string | null;
+            /** Supported */
+            supported: boolean;
+        };
+        /** AudioOutputHealthOut */
+        AudioOutputHealthOut: {
+            /** Checked At */
+            checked_at: string;
+            /** Default Device Name */
+            default_device_name?: string | null;
+            /** Default Device Uid */
+            default_device_uid?: string | null;
+            /** Device Delivering */
+            device_delivering: boolean | null;
+            /** Hal Overload Recent */
+            hal_overload_recent?: boolean | null;
+            /** Io Cycles Advanced */
+            io_cycles_advanced?: boolean | null;
+            /** Probe Available */
+            probe_available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AudioSwitchOutputOut */
+        AudioSwitchOutputOut: {
+            /** Cycled */
+            cycled: boolean;
+            /** Error */
+            error?: string | null;
+            /** From */
+            from?: string | null;
+            /** Restored */
+            restored?: string | null;
+            /** Via */
+            via?: string | null;
+        };
         /**
          * AutoAnalyzeOut
          * @description State of the daemon's auto-drain reconcile loop.
@@ -6888,10 +7055,12 @@ export interface components {
          * BuildInfoOut
          * @description The identity contract the UI and any agent read.
          *
-         *     ``built_at_kind`` exists because the two sources measure different
-         *     moments: a payload knows when it was packaged, a checkout only knows when
-         *     HEAD was committed. Labelling which one is on screen costs one field and
-         *     removes a whole class of "why does this say yesterday" confusion.
+         *     ``built_at_kind`` exists because the sources measure different moments: a
+         *     payload knows when it was packaged; a repo checkout stamps the running
+         *     engine's start instant at identity resolution (``engine-start``). The
+         *     legacy ``head-commit`` literal remains on the wire for older readers only.
+         *     Labelling which moment is on screen removes "why does this say yesterday"
+         *     confusion.
          */
         BuildInfoOut: {
             /** App Version */
@@ -6900,7 +7069,7 @@ export interface components {
              * Built At Kind
              * @enum {string}
              */
-            built_at_kind: "payload-build" | "head-commit";
+            built_at_kind: "payload-build" | "head-commit" | "engine-start";
             /** Built At Utc */
             built_at_utc: string;
             /** Bundle Identifier */
@@ -7127,8 +7296,12 @@ export interface components {
         };
         /** ClientErrorOut */
         ClientErrorOut: {
+            /** Error Id */
+            error_id?: string | null;
             /** Event Id */
             event_id: string;
+            /** Sentry Event Id */
+            sentry_event_id?: string | null;
             /** Stored */
             stored: boolean;
         };
@@ -7510,6 +7683,8 @@ export interface components {
             agent_kind?: string | null;
             /** Agent Note */
             agent_note?: string | null;
+            /** Agent Snapshot At */
+            agent_snapshot_at?: string | null;
             /** Anchor */
             anchor: string | null;
             attachment?: components["schemas"]["AttachmentOut"] | null;
@@ -8697,6 +8872,42 @@ export interface components {
             sample?: string[];
         };
         /**
+         * FolderWatchOut
+         * @description LIBM-128: the continuous folder-rescan scheduler's own status.
+         *
+         *     ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+         *     run in this process (no lifespan, or not yet its first cycle) -- a
+         *     genuinely different fact from a scheduler that ran and found nothing,
+         *     which is ``warning=None`` with a real ``last_cycle_at``.
+         */
+        FolderWatchOut: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Interval S */
+            interval_s: number;
+            /** Last Cycle At */
+            last_cycle_at?: string | null;
+            /** Running */
+            running: boolean;
+            /**
+             * Tracks Added Last Cycle
+             * @default 0
+             */
+            tracks_added_last_cycle: number;
+            /**
+             * Tracks Removed Last Cycle
+             * @default 0
+             */
+            tracks_removed_last_cycle: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * GateErrorBody
          * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
          */
@@ -8795,8 +9006,32 @@ export interface components {
             master_latency_ms: number | null;
             /** Offset Ms */
             offset_ms: number | null;
+            probe: components["schemas"]["HeadphoneCalibrationProbeOut"] | null;
             /** Step */
             step: string;
+            /** Verify Residual Ms */
+            verify_residual_ms: number | null;
+        };
+        /**
+         * HeadphoneCalibrationProbeOut
+         * @description CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.
+         *
+         *     The ear-cup step is interactive, so this is the feedback an agent needs to
+         *     drive it the way the operator does, watching `best` climb toward `threshold`.
+         */
+        HeadphoneCalibrationProbeOut: {
+            /** Best */
+            best: number;
+            /** Bus */
+            bus: string;
+            /** Gain */
+            gain: number;
+            /** Lag Ms */
+            lag_ms: number | null;
+            /** Peak */
+            peak: number | null;
+            /** Threshold */
+            threshold: number;
         };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
@@ -9999,6 +10234,22 @@ export interface components {
              * @default false
              */
             use_fingerprint: boolean;
+        };
+        /** MaterializeOut */
+        MaterializeOut: {
+            /** Batch */
+            batch: string;
+            /** Tracks */
+            tracks: components["schemas"]["MaterializedTrack"][];
+        };
+        /** MaterializedTrack */
+        MaterializedTrack: {
+            /** Inserted */
+            inserted: boolean;
+            /** Relative Path */
+            relative_path: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /** MeOut */
         MeOut: {
@@ -11495,7 +11746,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "failed" | "missing";
+            status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Value */
             value: unknown;
         };
@@ -12170,6 +12421,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -12183,10 +12441,17 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -12218,14 +12483,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
@@ -12339,6 +12604,7 @@ export interface components {
             dismissed: boolean;
             /** Folder Stages */
             folder_stages: string[];
+            folder_watch?: components["schemas"]["FolderWatchOut"] | null;
             /** Last Import */
             last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
             /** Library Empty */
@@ -12797,6 +13063,27 @@ export interface components {
              * @constant
              */
             status: "unavailable";
+        };
+        /**
+         * StemWaveformOut
+         * @description Mono peak envelope for one stem part (issue #1036).
+         */
+        StemWaveformOut: {
+            /** Envelope */
+            envelope: number[];
+            /** Layout */
+            layout: string;
+            /** Part */
+            part: string;
+            /** Points */
+            points: number;
+            /**
+             * Schema
+             * @default 1
+             */
+            schema: number;
+            /** Stable Id */
+            stable_id: string;
         };
         /**
          * StemsPlanOut
@@ -13315,6 +13602,11 @@ export interface components {
             /** Title */
             title?: string;
         };
+        /** TrackLibraryRevisionOut */
+        TrackLibraryRevisionOut: {
+            /** Revision */
+            revision: string;
+        };
         /** TrackLifecycleOut */
         TrackLifecycleOut: {
             /** Deleted At */
@@ -13331,7 +13623,8 @@ export interface components {
          *     preview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per
          *     column (null = no ANLZ analysis). preview_max: per-track max band value
          *     for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
-         *     file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+         *     file_availability: typed disk-truth lane including AVAILABILITY_PENDING.
+         *     file_exists: present/absent only; null while availability is pending.
          *     quality: venue rung from apps.shared.audio_quality (same stat pass, so
          *     no extra cost per row); venue/rank are null when it cannot be measured.
          *     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
@@ -13368,10 +13661,19 @@ export interface components {
             energy_reason: string;
             /** Energy Source */
             energy_source: "mik" | null;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13568,6 +13870,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -13581,10 +13890,17 @@ export interface components {
             energy_source: "mik" | null;
             /** Etag */
             etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
-            file_exists: boolean;
+            file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13616,14 +13932,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
@@ -13703,6 +14019,11 @@ export interface components {
             auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /**
+             * Available Offline Filter
+             * @default false
+             */
+            available_offline_filter: boolean;
+            /**
              * Beat Sync Max
              * @default true
              */
@@ -13711,6 +14032,17 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             };
+            /**
+             * Deck Right Mirror
+             * @default false
+             */
+            deck_right_mirror: boolean;
+            /**
+             * Gig Helper
+             * @default unset
+             * @enum {string}
+             */
+            gig_helper: "unset" | "off" | "on";
             /**
              * Hide Broken Links
              * @default false
@@ -13786,6 +14118,12 @@ export interface components {
              */
             perf_tier: "auto" | "low" | "standard" | "high";
             /**
+             * Playlist Tree View
+             * @default tree
+             * @enum {string}
+             */
+            playlist_tree_view: "tree" | "column";
+            /**
              * Remixes Filter
              * @default false
              */
@@ -13795,6 +14133,11 @@ export interface components {
              * @default true
              */
             show_agent_pins: boolean;
+            /**
+             * Show Stems
+             * @default false
+             */
+            show_stems: boolean;
             /**
              * Technically Working Animate
              * @default true
@@ -13825,12 +14168,18 @@ export interface components {
             /** Auto Play Maximize Reach */
             auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Available Offline Filter */
+            available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Deck Right Mirror */
+            deck_right_mirror?: boolean | null;
+            /** Gig Helper */
+            gig_helper?: ("unset" | "off" | "on") | null;
             /** Hide Broken Links */
             hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
@@ -13860,10 +14209,14 @@ export interface components {
             next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Playlist Tree View */
+            playlist_tree_view?: ("tree" | "column") | null;
             /** Remixes Filter */
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
+            /** Show Stems */
+            show_stems?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
@@ -15559,6 +15912,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    audio_interference_api_v1_audio_interference_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioInterferenceOut"];
+                };
+            };
+        };
+    };
+    get_output_health_api_v1_audio_output_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioOutputHealthOut"];
+                };
+            };
+        };
+    };
+    post_switch_output_api_v1_audio_switch_output_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioSwitchOutputOut"];
                 };
             };
         };
@@ -18167,6 +18580,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    materialize_batch_api_v1_ingest_batch__batch__materialize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterializeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -23704,6 +24148,26 @@ export interface operations {
             };
         };
     };
+    get_library_revision_api_v1_tracks_revision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLibraryRevisionOut"];
+                };
+            };
+        };
+    };
     get_track_api_v1_tracks__stable_id__get: {
         parameters: {
             query?: never;
@@ -24458,6 +24922,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_waveform_api_v1_tracks__stable_id__stems__part__waveform_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                part: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemWaveformOut"];
+                };
             };
             /** @description Validation Error */
             422: {

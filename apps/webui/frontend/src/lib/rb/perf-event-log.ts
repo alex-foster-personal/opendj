@@ -84,6 +84,15 @@ export type { PerfEvent } from './perf-event-buckets';
 const ESCALATION_WINDOW_MS = 60_000;
 
 const _lastEscalationAtMs = new Map<string, number>();
+const _perfEventListeners = new Set<(event: PerfEvent) => void>();
+
+/** Subscribe to perf rows as they are recorded (issue #923 HAL overload trigger). */
+export function subscribePerfEvents(listener: (event: PerfEvent) => void): () => void {
+	_perfEventListeners.add(listener);
+	return () => {
+		_perfEventListeners.delete(listener);
+	};
+}
 
 /**
  * Where an escalated row goes, injected at client boot.
@@ -373,6 +382,9 @@ export function recordPerfEvent(
 		...(id === undefined ? {} : { id })
 	};
 	_push(entry);
+	for (const listener of _perfEventListeners) {
+		listener(entry);
+	}
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
 	const idBit = id === undefined ? '' : ` id=${id}`;
 	console[severity](`[perf-event] ${kind}${deckBit}${idBit}: ${message}`);
@@ -395,6 +407,19 @@ export function findPerfEventById(id: string): PerfEvent | null {
 		if (_events[i].id === id) return _events[i];
 	}
 	return null;
+}
+
+/** A stage timer over `stages`: `time(name, work)` awaits `work` and records
+ * its wall time in ms under `stages[name]`, whether it resolves or throws. */
+export function stageTimer(stages: Record<string, number>): <T>(name: string, work: Promise<T>) => Promise<T> {
+	return async <T>(name: string, work: Promise<T>): Promise<T> => {
+		const started = performance.now();
+		try {
+			return await work;
+		} finally {
+			stages[name] = Math.round(performance.now() - started);
+		}
+	};
 }
 
 /** Always-on stage timing (ms). One console.info + ring entry. */

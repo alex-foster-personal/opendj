@@ -50,6 +50,7 @@ from apps.engine_core.setup.schemas import (
     FolderImportIn,
     FolderLastImportOut,
     FolderScanOut,
+    FolderWatchOut,
     LastImportOut,
     PermissionsOut,
     RekordboxDetectionOut,
@@ -58,6 +59,7 @@ from apps.engine_core.setup.schemas import (
     SetupStatusOut,
     StemsSetupOut,
     StemTierOut,
+    normalize_setup_folder_path,
 )
 
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -181,7 +183,9 @@ def _last_import_out(
         ) from exc
 
 
-def _status_out(data_dir: Path, dev_mode: bool) -> SetupStatusOut:
+def _status_out(
+    data_dir: Path, dev_mode: bool, *, folder_watch: FolderWatchOut | None = None
+) -> SetupStatusOut:
     counts = detect.library_counts(data_dir)
     saved = record.read(data_dir)
     return SetupStatusOut(
@@ -200,7 +204,22 @@ def _status_out(data_dir: Path, dev_mode: bool) -> SetupStatusOut:
         last_import=_last_import_out(saved),
         rekordbox=_detection_out(data_dir),
         permissions=_permissions_out(),
+        folder_watch=folder_watch,
     )
+
+
+def _folder_watch_out(request: Request) -> FolderWatchOut | None:
+    """The running scheduler's own status, or ``None`` off the lifespan path.
+
+    ``None`` (not a zeroed placeholder) when the attribute is absent, e.g. a
+    test app built without ``create_app``'s lifespan -- a status that has
+    never run is not the same fact as a scheduler that ran and found
+    nothing.
+    """
+    scheduler = getattr(request.app.state, "folder_rescan_scheduler", None)
+    if scheduler is None:
+        return None
+    return FolderWatchOut(**scheduler.status())
 
 
 def _status(request: Request) -> SetupStatusOut:
@@ -226,7 +245,11 @@ def _status(request: Request) -> SetupStatusOut:
             str(exc),
             status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from exc
-    return _status_out(_data_dir(request), dev_mode=source == "repo")
+    return _status_out(
+        _data_dir(request),
+        dev_mode=source == "repo",
+        folder_watch=_folder_watch_out(request),
+    )
 
 
 def _live_import(store: JobStore) -> dict[str, Any] | None:
@@ -359,7 +382,8 @@ def detect_folder(
     """
     from apps.shared import fs_access
 
-    target = Path(path).expanduser()
+    canon = normalize_setup_folder_path(path)
+    target = Path(canon)
     probe = fs_access.probe_readable(target)
     audio = 0
     placeholders = 0
@@ -371,7 +395,7 @@ def detect_folder(
         audio = len(found)
         sample = [str(entry.path) for entry in found[:SCAN_SAMPLE_SIZE]]
     return FolderScanOut(
-        path=str(target),
+        path=canon,
         exists=probe.exists,
         readable=probe.readable,
         denied=probe.denied,

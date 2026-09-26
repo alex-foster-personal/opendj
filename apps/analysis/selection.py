@@ -214,14 +214,17 @@ def all_toggle_revisions() -> dict[str, int]:
 
 @dataclass(frozen=True)
 class ToggleWrite:
-    """One toggle mutation's result: the displaced value and the revision
-    the write landed at, both read under ONE lock acquisition so a caller
-    compensating this exact write later has the REVISION, not just the
-    value that can repeat after an own -> rbx -> own round trip
-    (discussion_r3974993963 P1 BLOCKING).
+    """One toggle mutation's result: the displaced value, the value it set
+    and the revision the write landed at, all read under ONE lock
+    acquisition so a caller compensating this exact write later has the
+    REVISION, not just the value that can repeat after an own -> rbx -> own
+    round trip (discussion_r3974993963 P1 BLOCKING), and a caller REPORTING
+    this write can describe it without a second, separately-locked read that
+    a concurrent write could land before (see `source_state`).
     """
 
     previous: ToggleState
+    current: ToggleState
     revision: int
 
 
@@ -257,7 +260,7 @@ def write_toggle(
             return None
         _TOGGLE[lane] = new  # type: ignore[assignment]
         _TOGGLE_REVISION[lane] += 1
-        return ToggleWrite(previous=current, revision=_TOGGLE_REVISION[lane])
+        return ToggleWrite(previous=current, current=_TOGGLE[lane], revision=_TOGGLE_REVISION[lane])
 
 
 def set_toggle(lane: str, state: str) -> ToggleState:
@@ -298,6 +301,13 @@ def all_toggles() -> dict[str, ToggleState]:
         return dict(_TOGGLE)
 
 
+def _toggle_snapshot() -> tuple[dict[str, ToggleState], dict[str, int]]:
+    """Every lane's toggle AND revision from one lock acquisition, so a value
+    is never paired with a revision some other write produced."""
+    with _TOGGLE_LOCK:
+        return dict(_TOGGLE), dict(_TOGGLE_REVISION)
+
+
 def reset_toggles() -> None:
     """Return every lane to its launch state. Used by tests and by nothing else."""
     with _TOGGLE_LOCK:
@@ -317,6 +327,98 @@ def effective_source(conn: sqlite3.Connection, lane: str) -> Source:
     if toggle == "unset":
         return get_default(conn, lane)
     return toggle
+
+
+def effective_source_for_track(
+    conn: sqlite3.Connection,
+    lane: str,
+    *,
+    has_rb_mapping: bool,
+) -> Source:
+    """Per-track effective source (STANDALONE-06).
+
+    PARITY-02 toggle ``rbx``/``own`` wins when set. With toggle ``unset``,
+    unmapped tracks default to ``own``; rekordbox-mapped tracks keep the
+    persisted per-lane default (NATIVE-14 promotion unchanged).
+    """
+    _check_lane(lane)
+    toggle = get_toggle(lane)
+    if toggle != "unset":
+        return toggle
+    if not has_rb_mapping:
+        return "own"
+    return get_default(conn, lane)
+
+
+def implicit_own_default(
+    conn: sqlite3.Connection | None,
+    lane: str,
+    *,
+    has_rb_mapping: bool | None,
+) -> bool:
+    """True when ``own`` is effective for this track ONLY via STANDALONE-06.
+
+    That is an unmapped track, the PARITY-02 toggle ``unset``, and a lane
+    default that is still ``rbx`` (no NATIVE-14 promotion). In that state and
+    with no own record yet, a reader keeps serving the value the track
+    already had (a ``track_fields`` tag or manual value, a locally decoded
+    waveform) rather than hiding it behind ``missing`` (STANDALONE-03). An
+    explicit ``own`` toggle or a promoted lane still answers ``missing``, so
+    no other source is ever substituted under a chosen own selection. With no
+    state DB there is no promotion table, which ``get_default`` answers
+    ``DEFAULT_SOURCE`` for.
+    """
+    _check_lane(lane)
+    if has_rb_mapping is not False or get_toggle(lane) != "unset":
+        return False
+    default = get_default(conn, lane) if conn is not None else DEFAULT_SOURCE
+    return default == "rbx"
+
+
+def effective_source_and_implicit_own_for_track(
+    conn: sqlite3.Connection,
+    lane: str,
+    *,
+    has_rb_mapping: bool,
+) -> tuple[Source, bool]:
+    """:func:`effective_source_for_track` and :func:`implicit_own_default` from ONE read.
+
+    Calling the two separately reads the in-process toggle twice, each under its
+    own lock acquisition, and the persisted default in separate autocommit
+    statements, so a toggle or default write landing between them can pair a
+    source with a verdict about a different selection. This reads the toggle
+    once and the default at most once, so the pair always describes one state.
+    """
+    _check_lane(lane)
+    toggle = get_toggle(lane)
+    if toggle != "unset":
+        return toggle, False
+    if has_rb_mapping:
+        return get_default(conn, lane), False
+    return "own", get_default(conn, lane) == "rbx"
+
+
+def bulk_has_rb_mapping(conn: sqlite3.Connection, stable_ids: list[str]) -> frozenset[str]:
+    """``stable_id`` values with a live rekordbox ``track_vendor_ids`` row.
+
+    Does not consult ``djmdContent``; callers on the webui hot path should
+    prefer :func:`apps.webui.server.rb_vendor_pkg.track_rows.bulk_rb_meta`
+    keys when the master DB is already loaded.
+    """
+    if not stable_ids or not _table_exists(conn, "track_vendor_ids"):
+        return frozenset()
+    out: set[str] = set()
+    for i in range(0, len(stable_ids), 500):
+        sub = stable_ids[i : i + 500]
+        placeholders = ",".join("?" * len(sub))
+        for row in conn.execute(
+            "SELECT stable_id FROM track_vendor_ids "
+            "WHERE vendor = 'rekordbox' AND deleted_at IS NULL "
+            f"AND stable_id IN ({placeholders})",
+            tuple(sub),
+        ):
+            out.add(str(row[0]))
+    return frozenset(out)
 
 
 @dataclass(frozen=True)
@@ -357,11 +459,28 @@ class Selection:
         return cls(by_lane={lane: "rbx" for lane in LANES})
 
 
-def source_state(conn: sqlite3.Connection) -> dict[str, Any]:
-    """The whole selection surface, as the HTTP endpoint and CLI report it."""
+def source_state(
+    conn: sqlite3.Connection, *, written: tuple[str, ToggleWrite] | None = None
+) -> dict[str, Any]:
+    """The whole selection surface, as the HTTP endpoint and CLI report it.
+
+    `written` pins one lane's row to a `ToggleWrite` the caller just made, so
+    a PUT response describes ITS OWN write. The snapshot below is a separate
+    lock acquisition from that write, and a concurrent write landing in
+    between would otherwise surface as this request's toggle and effective
+    source: a switch to own answered with an agent's later `unset`, which
+    the client adopts as "no deck disagrees" and resolves a switch it never
+    refreshed for (analysis-source.test.mjs "a failed switch never clobbers
+    a concurrent agent-driven HTTP change during rollback", about 1 in 25
+    runs under load). Patching the revision alone left `toggle` and
+    `effective` from the later read, a row no single moment ever held.
+    """
     defaults = all_defaults(conn)
-    toggles = all_toggles()
-    revisions = all_toggle_revisions()
+    toggles, revisions = _toggle_snapshot()
+    if written is not None:
+        lane, write = written
+        toggles[lane] = write.current
+        revisions[lane] = write.revision
     return {
         "lanes": {
             lane: {
@@ -393,7 +512,7 @@ class EffectiveField:
     source: str
     confidence: float | None
     modified_at: str
-    status: Literal["ok", "failed", "missing"]
+    status: Literal["ok", "failed", "missing", "available-not-selected"]
     reason: str | None = None
 
 
@@ -450,10 +569,86 @@ def _fetch_projection(
     return out
 
 
+def _missing_own_field(field_name: str) -> EffectiveField:
+    return EffectiveField(
+        value=None,
+        source=OWN_ANALYSIS_SOURCE,
+        confidence=None,
+        modified_at="",
+        status="missing",
+        reason="no own analysis record for this lane yet",
+    )
+
+
+def _implicit_default_track_values(
+    conn: sqlite3.Connection,
+    field_name: str,
+    lane: str,
+    own_ids: list[str],
+    projected: dict[str, dict[str, EffectiveField]],
+) -> dict[str, EffectiveField]:
+    """``track_fields`` values an own-resolved field still serves (STANDALONE-03).
+
+    Read only for ids with no projection row, so an own record, ``ok`` or
+    ``failed``, always wins; and only under :func:`implicit_own_default`.
+    """
+    # The lane-level half of the predicate is asked ONCE per lane, not per
+    # row: this runs on the library-listing hot path. Under it every id in
+    # ``own_ids`` is unmapped by construction, because a mapped track reads
+    # the lane default, which the predicate has just confirmed is ``rbx``.
+    if field_name not in _RBX_FIELDS or not implicit_own_default(
+        conn, lane, has_rb_mapping=False
+    ):
+        return {}
+    ids = [sid for sid in own_ids if projected[sid].get(field_name) is None]
+    fetched = _fetch_track_fields(conn, ids, (field_name,))
+    return {
+        sid: fetched[sid][field_name] for sid in ids if field_name in fetched[sid]
+    }
+
+
+def _annotate_available_not_selected(
+    conn: sqlite3.Connection,
+    sid: str,
+    fields: dict[str, EffectiveField],
+    *,
+    has_rb_mapping: bool,
+) -> None:
+    """When rbx is selected but a canonical own record exists, name it (STANDALONE-03)."""
+    from .canonical import canonical_pointer
+
+    if not _table_exists(conn, "analysis_canonical"):
+        return
+    for field_name, lane in PROJECTION_FIELDS.items():
+        if effective_source_for_track(conn, lane, has_rb_mapping=has_rb_mapping) != "rbx":
+            continue
+        pointer = canonical_pointer(conn, sid, lane)
+        if pointer is None:
+            continue
+        own_row = (
+            _fetch_projection(conn, [sid], (field_name,))[sid].get(field_name)
+            if _table_exists(conn, "analysis_projection")
+            else None
+        )
+        if own_row is None or own_row.status != "ok":
+            continue
+        served = fields.get(field_name)
+        fields[field_name] = EffectiveField(
+            value=served.value if served is not None else None,
+            source=served.source if served is not None else "rekordbox",
+            confidence=served.confidence if served is not None else None,
+            modified_at=served.modified_at if served is not None else "",
+            status="available-not-selected",
+            reason=f"{lane} analysis available (rekordbox source selected)",
+        )
+
+
 def effective_fields(
     conn: sqlite3.Connection,
     stable_ids: Iterable[str],
     selection: Selection,
+    *,
+    rb_mapped: Mapping[str, bool] | None = None,
 ) -> dict[str, dict[str, EffectiveField]]:
     """Per track, per lane-owned field: the value the app must read.
 
@@ -466,36 +661,80 @@ def effective_fields(
 
     Fields rekordbox cannot serve (``loudness_lufs``, ``loudness_dbtp``,
     ``key_change_count``, ``tempo_change_count``) are absent under rbx.
+
+    When ``rb_mapped`` is supplied, each track's lane sources are resolved
+    via :func:`effective_source_for_track` (STANDALONE-06). Otherwise every
+    track shares ``selection`` (legacy global read).
     """
     ids = list(stable_ids)
     if not ids:
         return {}
 
-    own_fields = tuple(
-        f for f, lane in PROJECTION_FIELDS.items() if selection.source(lane) == "own"
+    projection_available = (
+        selection.projection_available
+        if rb_mapped is None
+        else _table_exists(conn, "analysis_projection")
     )
-    rbx_fields = tuple(
-        f for f, lane in PROJECTION_FIELDS.items()
-        if selection.source(lane) == "rbx" and f in _RBX_FIELDS
-    )
+    out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in ids}
 
-    out = _fetch_track_fields(conn, ids, rbx_fields)
-    # No own store means no own records have ever been written. That is ZERO
-    # ROWS, so every own field below resolves to `missing`, which is true.
-    # It is NOT a reason to serve the rekordbox value.
-    projected = (
-        _fetch_projection(conn, ids, own_fields)
-        if selection.projection_available
-        else {sid: {} for sid in ids}
-    )
-    for sid in ids:
-        for field_name in own_fields:
-            found = projected[sid].get(field_name)
-            out[sid][field_name] = found if found is not None else EffectiveField(
-                value=None, source=OWN_ANALYSIS_SOURCE, confidence=None,
-                modified_at="", status="missing",
-                reason="no own analysis record for this lane yet",
+    if rb_mapped is None:
+        own_fields = tuple(
+            f for f, lane in PROJECTION_FIELDS.items() if selection.source(lane) == "own"
+        )
+        rbx_fields = tuple(
+            f for f, lane in PROJECTION_FIELDS.items()
+            if selection.source(lane) == "rbx" and f in _RBX_FIELDS
+        )
+        out = _fetch_track_fields(conn, ids, rbx_fields)
+        projected = (
+            _fetch_projection(conn, ids, own_fields)
+            if projection_available
+            else {sid: {} for sid in ids}
+        )
+        for sid in ids:
+            for field_name in own_fields:
+                found = projected[sid].get(field_name)
+                out[sid][field_name] = (
+                    found if found is not None else _missing_own_field(field_name)
+                )
+        return out
+
+    for field_name, lane in PROJECTION_FIELDS.items():
+        rbx_ids: list[str] = []
+        own_ids: list[str] = []
+        for sid in ids:
+            mapped = bool(rb_mapped.get(sid, False))
+            if effective_source_for_track(conn, lane, has_rb_mapping=mapped) == "own":
+                own_ids.append(sid)
+            elif field_name in _RBX_FIELDS:
+                rbx_ids.append(sid)
+        if rbx_ids:
+            fetched = _fetch_track_fields(conn, rbx_ids, (field_name,))
+            for sid in rbx_ids:
+                if field_name in fetched[sid]:
+                    out[sid][field_name] = fetched[sid][field_name]
+        if own_ids:
+            projected = (
+                _fetch_projection(conn, own_ids, (field_name,))
+                if projection_available
+                else {sid: {} for sid in own_ids}
             )
+            track_values = _implicit_default_track_values(
+                conn, field_name, lane, own_ids, projected,
+            )
+            for sid in own_ids:
+                found = projected[sid].get(field_name, track_values.get(sid))
+                out[sid][field_name] = (
+                    found if found is not None else _missing_own_field(field_name)
+                )
+
+    for sid in ids:
+        _annotate_available_not_selected(
+            conn,
+            sid,
+            out[sid],
+            has_rb_mapping=bool(rb_mapped.get(sid, False)),
+        )
     return out
 
 
@@ -576,8 +815,12 @@ __all__ = [
     "check_source",
     "check_toggle_state",
     "compare_and_set_toggle",
+    "bulk_has_rb_mapping",
     "effective_fields",
     "effective_source",
+    "effective_source_and_implicit_own_for_track",
+    "effective_source_for_track",
+    "implicit_own_default",
     "ensure_tables",
     "field_column_sql",
     "get_default",

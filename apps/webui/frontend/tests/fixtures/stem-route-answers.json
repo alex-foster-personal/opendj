@@ -1,0 +1,51 @@
+{
+	"_provenance": "Captured from the real GET /api/v1/tracks/{sid}/stems route (apps/webui/server/routes/stems.py) on Thu 24 Sep 2026. tests/webui/test_stem_route_answers_fixture.py re-captures every entry from the live route and fails if this file drifts. not_found.body.message is cut before its machine-specific stems roots.",
+	"hydrating": {
+		"status": 200,
+		"body": {
+			"status": "unavailable",
+			"code": "STEM_BUNDLE_HYDRATING",
+			"stable_id": "sid-1",
+			"message": "bundle not local yet; fetching from R2",
+			"hydrating": true
+		}
+	},
+	"ready": {
+		"status": 200,
+		"body": {
+			"schema": 1,
+			"stable_id": "sid-1",
+			"source": "demucs",
+			"model": "htdemucs",
+			"layout": "demucs4",
+			"sample_rate_hz": 44100,
+			"frame_count": 8,
+			"channel_count": 2,
+			"parts": {
+				"vocals": { "media_type": "audio/wav" },
+				"drums": { "media_type": "audio/wav" },
+				"bass": { "media_type": "audio/wav" },
+				"other": { "media_type": "audio/wav" }
+			}
+		}
+	},
+	"not_found": {
+		"status": 200,
+		"body": {
+			"status": "unavailable",
+			"code": "STEM_BUNDLE_NOT_FOUND",
+			"stable_id": "sid-1",
+			"message": "no stem bundle exists for 'sid-1'",
+			"hydrating": false
+		}
+	},
+	"hydration_failed": {
+		"status": 502,
+		"body": {
+			"detail": {
+				"code": "STEM_BUNDLE_HYDRATION_FAILED",
+				"message": "asset ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff is not in test-audio (key assets/ff/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)"
+			}
+		}
+	}
+}

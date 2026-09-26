@@ -9,7 +9,10 @@
 	import UsbSourceList from './UsbSourceList.svelte';
 	import AutolistBrowser from './AutolistBrowser.svelte';
 	import UsbPanel from '../UsbPanel.svelte';
+	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
 	import { startUsbWatch, stopUsbWatch } from '$lib/rb/usb-tracker.svelte';
+	import { uiPrefs, setPlaylistTreeView } from '$lib/rb/prefs.svelte';
+	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 
 	let {
 		onautolistchange,
@@ -21,6 +24,8 @@
 	let treeSmartlistSection = $state<TreeSmartlistSection | null>(null);
 	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 	let autolistsMounted = $state(false);
+
+	const playlistTreeView = $derived(uiPrefs.playlist_tree_view);
 
 	onMount(() => {
 		startUsbWatch();
@@ -40,17 +45,32 @@
 		await tick();
 		await treeSmartlistSection?.createAndRename();
 	}
+
+	function handlePlaylistTreeViewChange(mode: PlaylistTreeViewMode): void {
+		setPlaylistTreeView(mode);
+	}
 </script>
 
 <div class="library-nav-root">
-	<LibrarySourceTabs active={activeTab} onchange={(tab) => (activeTab = tab)} />
+	<PlaylistHistoryPanel />
+	<LibrarySourceTabs
+		active={activeTab}
+		onchange={(tab) => (activeTab = tab)}
+		{playlistTreeView}
+		showPlaylistTools={activeTab === 'playlists'}
+		onPlaylistTreeViewChange={handlePlaylistTreeViewChange}
+	/>
 	{#if autolistsMounted}
 		<div class="autolist-browser-wrap" class:hidden={activeTab !== 'autolists'}>
 			<AutolistBrowser onselectionchange={(sel, title) => onautolistchange?.(sel, title)} />
 		</div>
 	{/if}
 	{#if activeTab === 'playlists'}
-		<PlaylistTree {...playlistTreeProps} oncreatesmartlist={() => void handleNewSmartlist()} />
+		<PlaylistTree
+			{...playlistTreeProps}
+			mode={playlistTreeView}
+			oncreatesmartlist={() => void handleNewSmartlist()}
+		/>
 	{:else if activeTab === 'taglists'}
 		<TaglistTree selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
 	{:else if activeTab === 'autolists'}

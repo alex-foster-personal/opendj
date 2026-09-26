@@ -15,6 +15,7 @@
  * (performance-hotkeys.ts, settings/hotkeys.ts) and gated the same way:
  * ignored while the settings overlay is open or the target is a text input.
  */
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { createHoldOrPress } from '$lib/gestures/hold-or-press';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
@@ -42,9 +43,7 @@ const EDGE_REGION_SELECTOR: Record<EdgeRegion, string> = {
 };
 
 function _typingTarget(t: EventTarget | null): boolean {
-	if (!(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+	return isTextEntryTarget(t);
 }
 
 function _isModChord(e: KeyboardEvent, key: string): boolean {

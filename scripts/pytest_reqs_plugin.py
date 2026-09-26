@@ -195,7 +195,7 @@ def _load_reqs() -> dict[str, dict[str, Any]]:
         return {}
     data = json.loads(REQS_JSON.read_text(encoding="utf-8"))
     out: dict[str, dict[str, Any]] = {}
-    for bucket_name in ("v1", "v2"):
+    for bucket_name in ("v1", "v1.1", "v2"):
         bucket = data.get(bucket_name, {})
         for code, cat in bucket.items():
             for req in cat.get("requirements", []):

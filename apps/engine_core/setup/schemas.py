@@ -26,6 +26,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from apps.shared.platform_paths import normalise_path_prefix
+
+
+def normalize_setup_folder_path(raw: str) -> str:
+    """Canonical folder path for setup detect/import: expanduser + strip trailing slash."""
+    trimmed = raw.strip()
+    expanded = str(Path(trimmed).expanduser())
+    return normalise_path_prefix(expanded)
+
 
 class FileProbeOut(BaseModel):
     """One real path and whether it is actually there."""
@@ -136,6 +145,28 @@ class FolderLastImportOut(BaseModel):
     analysis_detail: str
 
 
+class FolderWatchOut(BaseModel):
+    """LIBM-128: the continuous folder-rescan scheduler's own status.
+
+    ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+    run in this process (no lifespan, or not yet its first cycle) -- a
+    genuinely different fact from a scheduler that ran and found nothing,
+    which is ``warning=None`` with a real ``last_cycle_at``.
+    """
+
+    running: bool
+    interval_s: float
+    last_cycle_at: str | None = None
+    consecutive_failures: int = 0
+    #: The one required "surfaced warning" channel for an unreadable
+    #: configured folder or a refused mass-missing scan (LIBM-41). Never
+    #: cleared silently: it re-populates every cycle the condition persists.
+    warning: str | None = None
+    unreadable_roots: list[str] = Field(default_factory=list)
+    tracks_added_last_cycle: int = 0
+    tracks_removed_last_cycle: int = 0
+
+
 class SetupStatusOut(BaseModel):
     """Everything the wizard needs to decide whether to show itself."""
 
@@ -169,6 +200,9 @@ class SetupStatusOut(BaseModel):
     #: Folder access, inlined so the wizard's first render already knows
     #: whether a count of zero means "empty" or "not allowed to look".
     permissions: PermissionsOut
+    #: The continuous folder-rescan scheduler's own status (LIBM-128).
+    #: ``None`` when this process has no such scheduler running yet.
+    folder_watch: FolderWatchOut | None = None
 
 
 class SetupImportIn(BaseModel):
@@ -214,10 +248,19 @@ class FolderImportIn(BaseModel):
         # builder (wrong layer: a 400 several calls deep). ``~`` is not
         # expanded on this path -- the import job walks the literal string --
         # so a leading ``~`` is refused too, not treated as a convenience.
+        normalized: list[str] = []
+        seen: set[str] = set()
         for entry in value:
             if not entry or not Path(entry).is_absolute():
                 raise ValueError(f"folder must be an absolute path, got {entry!r}")
-        return value
+            canon = normalize_setup_folder_path(entry)
+            if canon in seen:
+                raise ValueError(
+                    f"duplicate folder path after normalization: {canon!r}"
+                )
+            seen.add(canon)
+            normalized.append(canon)
+        return normalized
 
 
 class FolderScanOut(BaseModel):
@@ -283,6 +326,7 @@ __all__ = [
     "FolderImportIn",
     "FolderLastImportOut",
     "FolderScanOut",
+    "FolderWatchOut",
     "LastImportOut",
     "PermissionsOut",
     "RekordboxDetectionOut",
@@ -291,4 +335,5 @@ __all__ = [
     "SetupStatusOut",
     "StemTierOut",
     "StemsSetupOut",
+    "normalize_setup_folder_path",
 ]

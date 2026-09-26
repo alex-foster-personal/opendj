@@ -50,7 +50,12 @@ def table_present(conn: Any, name: str) -> bool:
     ).fetchone() is not None
 
 
-def effective_lane_source(conn: Any, lane: str) -> str:
+def effective_lane_source(
+    conn: Any,
+    lane: str,
+    *,
+    has_rb_mapping: bool | None = None,
+) -> str:
     """`rbx` or `own` for one lane, with or without a state DB.
 
     With a connection this is `apps.analysis.selection.effective_source`
@@ -58,13 +63,23 @@ def effective_lane_source(conn: Any, lane: str) -> str:
     which is the same state `get_default` answers `DEFAULT_SOURCE` for, so the
     in-memory toggle is the only input left. Spelled out rather than routed
     through a fabricated connection so the no-database case is visible.
+
+    When ``has_rb_mapping`` is set, uses :func:`selection.effective_source_for_track`.
     """
     from apps.analysis import selection
 
     if conn is not None:
+        if has_rb_mapping is not None:
+            return selection.effective_source_for_track(
+                conn, lane, has_rb_mapping=has_rb_mapping
+            )
         return selection.effective_source(conn, lane)
     toggle = selection.get_toggle(lane)
-    return selection.DEFAULT_SOURCE if toggle == "unset" else toggle
+    if toggle != "unset":
+        return toggle
+    if has_rb_mapping is False:
+        return "own"
+    return selection.DEFAULT_SOURCE
 
 
 def canonical_lane_result(conn: Any, stable_id: str, lane: str) -> Any:

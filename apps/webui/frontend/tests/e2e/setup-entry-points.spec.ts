@@ -82,6 +82,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 /** The chord, spelled once. Playwright maps Meta to Command on macOS and to
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
@@ -354,6 +356,7 @@ test.describe('setup entry points', () => {
 		const dialog = setupDialog(page);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog.getByRole('radio', { name: 'A rekordbox collection on this machine' }).check();
 
 		// The scanning state must resolve into a verdict, never stick.
 		await expect(dialog.locator('.probes li').first()).toBeVisible();
@@ -406,6 +409,84 @@ test.describe('setup entry points', () => {
 		await expect(setupDialog(page).locator('.steps .step.current')).toContainText(
 			'Find your music'
 		);
+	});
+
+	test('STANDALONE-08: rekordbox detection alone does not opt in or import', async ({
+		page
+	}) => {
+		// Mutation guard: reverting the initial source to rekordbox must fail here.
+		const importPosts: string[] = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && request.url().includes('/api/v1/setup/import')) {
+				importPosts.push(request.url());
+			}
+		});
+
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		const rekordboxRadio = dialog.getByRole('radio', {
+			name: 'A rekordbox collection on this machine'
+		});
+		const folderRadio = dialog.getByRole('radio', { name: /folder of audio files/ });
+		await expect(rekordboxRadio).not.toBeChecked();
+		await expect(folderRadio).not.toBeChecked();
+		await expect(importPosts).toEqual([]);
+
+		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
+		await expect(continueButton).toBeDisabled();
+		await expect(dialog.locator('.why')).toContainText('choose an import source');
+
+		await rekordboxRadio.check();
+		await expect(rekordboxRadio).toBeChecked();
+		await expect(dialog.locator('.probes li').first()).toBeVisible();
+		await expect(importPosts).toEqual([]);
+		await expect(dialog.locator('.steps .step.current')).toContainText('Find your music');
+
+		const fatal = await fatalBlockers(page);
+		if (fatal.length === 0) {
+			await expect(continueButton).toBeEnabled();
+			await continueButton.click();
+			await expect(dialog.locator('.steps .step.current')).toContainText('Confirm the import');
+		}
+	});
+
+	test('STANDALONE-08: declining import completes setup and is not re-offered', async ({
+		page
+	}) => {
+		// Mutation guard: making dismissed-empty libraries reopen must fail here.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Continue without importing', exact: true })
+			.click();
+
+		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		const statusAfterDismiss = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/setup/status');
+			return (await response.json()) as { dismissed: boolean; should_show_wizard: boolean };
+		});
+		expect(statusAfterDismiss.dismissed).toBe(true);
+		expect(statusAfterDismiss.should_show_wizard).toBe(false);
+
+		await page.reload();
+		await page.waitForFunction(
+			() => typeof (window as unknown as { __mdtPerfLog?: unknown }).__mdtPerfLog === 'function',
+			undefined,
+			{ timeout: 30_000 }
+		);
+		await expect(setupDialog(page)).toHaveCount(0);
+
+		// Re-arm for the next test.
+		await page.keyboard.press(SETTINGS_CHORD);
+		await runSetupButton(page).click();
+		await expectWizard(page);
 	});
 
 	test('continuing without importing closes into an honest empty state', async ({ page }) => {
@@ -488,17 +569,51 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
-	test('the build identity chip states this app address in its foldout', async ({ page }) => {
+	test('the build identity chip states this app address in its foldout', async ({
+		page,
+		context,
+		browserName
+	}) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
+		// Spend PERFMODE-11's cold-open redirect first: otherwise it can land
+		// AFTER the chip is expanded, swapping the shell tray's chip for the
+		// /performance one (collapsed) mid-test; support/boot-landing.ts.
+		await spendBootLanding(page);
 		await gotoShellReady(page, '/');
 		const chip = page.locator('.build-identity');
 		await expect(chip).toBeVisible();
 		await chip.getByRole('button').first().click();
-		const url = chip.locator('code.url');
-		await expect(url).toBeVisible();
-		await expect(url).toHaveText(/^https?:\/\/[^\s]+$/);
-		await expect(chip.getByRole('button', { name: 'copy' })).toBeVisible();
+		const urlLink = chip.locator('a.url');
+		await expect(urlLink).toBeVisible();
+		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
+		// WebKit rejects the grant outright ("Unknown permission:
+		// clipboard-write"), and this spec also runs under the webkit artifact
+		// config, so the grant and the read-back are Chromium-only. Both
+		// browsers still assert the copy itself: the chip reports 'copied all
+		// details' only after `navigator.clipboard.writeText` resolved.
+		const readsClipboard = browserName === 'chromium';
+		if (readsClipboard) await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		const copyAll = chip.getByRole('button', { name: 'copy all details' });
+		await copyAll.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			// Copy AGAIN on every poll: the engine identity arrives from
+			// GET /api/v1/build-info after the chip mounts, and a copy taken
+			// before it lands says "still reading" with no git_sha. Re-reading a
+			// clipboard nothing rewrites can never see it arrive.
+			await expect
+				.poll(async () => {
+					await copyAll.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
+				})
+				.toMatch(/git_sha:/);
+		}
 	});
 });

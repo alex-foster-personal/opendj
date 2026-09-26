@@ -86,3 +86,19 @@ test('overlaysByZIndex sorts highest first', () => {
 		'account'
 	]);
 });
+
+test('feedback pin placement sits above root modals and below brand launch', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.feedbackPinPlacement > z.hotkeys);
+	assert.ok(z.feedbackPinPlacement > z.settings);
+	assert.ok(z.feedbackPinPlacement < z.preflightBoot);
+	assert.ok(z.feedbackPinPlacement < z.brandLaunch);
+});
+
+test('feedback dock stays above boot preflight and quit confirm (#3981)', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.feedbackDock > z.quitConfirm);
+	assert.ok(z.quitConfirm > z.preflightBoot);
+	assert.ok(z.feedbackDock > z.preflightBoot);
+	assert.ok(z.feedbackDock > z.brandLaunch);
+});

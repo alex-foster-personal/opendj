@@ -136,7 +136,10 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		width: 240px;
+		width: min(240px, 100%);
+		max-width: 240px;
+		min-width: 0;
+		flex: 1 1 120px;
 		height: 18px;
 		padding: 0 4px 0 6px;
 		background: #0a0c0f;

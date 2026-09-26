@@ -276,6 +276,25 @@ def _error_sink_log_is_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("OPENDJ_ERROR_SINK_LOG", str(tmp_path / "opendj-error-sink.jsonl"))
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--standalone",
+        action="store_true",
+        default=False,
+        help=(
+            "Fail when MDT_DATA_DIR contains master.plain.db or state/anlz-cache "
+            "(STANDALONE-01 isolation instrument)"
+        ),
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    if config.getoption("--standalone"):
+        from tests.standalone.guard import assert_data_dir_clean
+
+        assert_data_dir_clean()
+
+
 @pytest.fixture(autouse=True)
 def _rekordbox_writeback_gate(request, monkeypatch):
     """Gate OFF by default; ON only for modules that opt in by marker."""

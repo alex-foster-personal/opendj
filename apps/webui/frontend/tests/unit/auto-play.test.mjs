@@ -948,6 +948,7 @@ describe('auto-play exclusion set (scenarios 13, 14)', () => {
 		assert.equal(out.has('hypnosis'), false);
 	});
 
+	// REQ: PLAY-10
 	it('excludes every id AutoPlay ever claimed, even after the deck is emptied', () => {
 		const { autoPlayExcludedIds } = mod;
 		// Scenario 14 / bug 1: the deck that held "contact" was unloaded, so the

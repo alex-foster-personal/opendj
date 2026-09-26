@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
@@ -161,8 +162,8 @@ function resetCacheDecks() {
 	return Object.fromEntries(DECK_KEYS.map((key, index) => [key, DECKS[index]]));
 }
 
-after(() => {
-	serverProcess?.kill();
+after(async () => {
+	if (serverProcess) await stopFixtureServer(serverProcess, apiBase);
 });
 
 beforeEach(() => {
@@ -181,7 +182,7 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 	const after_ = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(after_.length, 1, 'only the one loaded deck should fetch');
-	assert.match(after_[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
+	assert.match(after_[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?(?:points=\\d+&)?gen=`));
 	assert.equal(
 		audio.deckStates[1].anlz.beatgrid_source,
 		'own',
@@ -492,12 +493,16 @@ test('one track failing leaves EVERY deck on the old source, not a split fleet',
 /** Flip the DAEMON's selection through the real endpoint, without the module
  * under test. */
 async function daemonSelect(toggle) {
+	await daemonSelectLane('beatgrid', toggle);
+}
+
+async function daemonSelectLane(lane, toggle) {
 	const res = await fetch(`${apiBase}/api/v1/analysis/source`, {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ lane: 'beatgrid', toggle })
+		body: JSON.stringify({ lane, toggle })
 	});
-	assert.equal(res.status, 200, 'fixture server rejected the direct daemon switch');
+	assert.equal(res.status, 200, `fixture server rejected the direct daemon switch of ${lane}`);
 }
 
 /** Poll until a real fixture-server /anlz fetch has published `ready`, rather
@@ -529,6 +534,24 @@ test('a switch re-reads the lane-owned track row, so the displayed BPM cannot la
 	decks[1].bpm = 174;
 	decks[1].key = 'stale';
 
+	// Pin the KEY lane to rbx explicitly. STANDALONE-06 (#3926) made an
+	// UNTOGGLED lane default to own for a track with no rekordbox mapping, and
+	// every fixture track is unmapped with no own key record, so an unset key
+	// lane now serves an honest null. The key assertions below need a real key
+	// to replace the stale one with; an explicit toggle wins over that default,
+	// which restores the key-lane conditions this test was written against.
+	await daemonSelectLane('key', 'rbx');
+	try {
+		await assertSwitchReReadsTrackRow(decks);
+	} finally {
+		// A failed assertion must not leave the shared daemon retuned for every
+		// later test in this file.
+		await daemonSelectLane('key', 'unset');
+		await daemonSelect('own');
+	}
+});
+
+async function assertSwitchReReadsTrackRow(decks) {
 	// The daemon has been on OWN since before() (a real PUT through the real
 	// endpoint), and this track has no own projection row, so the read model
 	// answers with own's honest absence rather than silently serving the
@@ -567,9 +590,7 @@ test('a switch re-reads the lane-owned track row, so the displayed BPM cannot la
 	const rbxRow = await (await fetch(`${apiBase}/api/v1/tracks/${SID_TRACK_A}`)).json();
 	assert.equal(rbxRow.key, '8A', 'the fixture must serve a real key, or the next assertion is vacuous');
 	assert.equal(decks[1].key, rbxRow.key, 'a stale lane-owned key must be replaced from the fresh row');
-
-	await daemonSelect('own');
-});
+}
 
 test('a failed track-row read is as total as a failed grid read', async () => {
 	const decks = resetCacheDecks();
@@ -675,7 +696,7 @@ test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricat
 	const secondPass = (await requestLog()).slice(midpoint.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(secondPass.length, 1, 'ensureAnlz must treat an evicted entry as a real cache miss');
-	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
+	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?(?:points=\\d+&)?gen=`));
 	assert.equal(cache.getAnlzEntry(SID_TRACK_A).status, 'ready');
 });
 

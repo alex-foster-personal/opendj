@@ -13,6 +13,7 @@ import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
+import { GIG_HELPER_PREFS, type GigHelperPref } from './gig-helper-prefs';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
@@ -78,6 +79,7 @@ export type DiskPrefsPatch = {
 	auto_sync?: AutoSyncPrefs;
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
+	show_stems?: boolean;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -91,6 +93,7 @@ export type DiskPrefsPatch = {
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
 	app_posture?: AppPosturePref;
+	gig_helper?: GigHelperPref;
 	beat_sync_max?: boolean;
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
@@ -101,8 +104,11 @@ export type DiskPrefsPatch = {
 	next_only_filter?: boolean;
 	remixes_filter?: boolean;
 	vocals_filter?: boolean;
+	available_offline_filter?: boolean;
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
+	deck_right_mirror?: boolean;
+	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
 };
 
@@ -150,10 +156,13 @@ export interface PrefsHydrateTarget {
 	auto_sync: AutoSyncPrefs;
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
+	show_stems: boolean;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	deck_right_mirror: boolean;
+	playlist_tree_view: 'tree' | 'column';
 	level_calibration: LevelCalibrationPrefs;
 	last_playlist: LastPlaylistPref | null;
 	lyrics_global: boolean;
@@ -164,6 +173,7 @@ export interface PrefsHydrateTarget {
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
 	app_posture: AppPosturePref;
+	gig_helper: GigHelperPref;
 	app_mode: AppModePrefs['app_mode'];
 	beat_sync_max: boolean;
 	auto_play_enabled: boolean;
@@ -174,6 +184,7 @@ export interface PrefsHydrateTarget {
 	next_only_filter: boolean;
 	remixes_filter: boolean;
 	vocals_filter: boolean;
+	available_offline_filter: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -221,6 +232,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			if (typeof body.show_agent_pins === 'boolean') {
 				uiPrefs.show_agent_pins = body.show_agent_pins;
 			}
+			if (typeof body.show_stems === 'boolean') {
+				uiPrefs.show_stems = body.show_stems;
+			}
 			if (typeof body.jog_radial_waveform === 'boolean') {
 				uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
 			}
@@ -235,6 +249,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
 			) {
 				uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
+			}
+			if (typeof body.deck_right_mirror === 'boolean') {
+				uiPrefs.deck_right_mirror = body.deck_right_mirror;
+			}
+			if (body.playlist_tree_view === 'tree' || body.playlist_tree_view === 'column') {
+				uiPrefs.playlist_tree_view = body.playlist_tree_view;
 			}
 			if (body.level_calibration !== undefined && typeof body.level_calibration === 'object') {
 				uiPrefs.level_calibration = parseLevelCalibration(
@@ -257,6 +277,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
 				applyAllCaps();
+			}
+			if (
+				body.gig_helper !== undefined &&
+				(GIG_HELPER_PREFS as readonly string[]).includes(body.gig_helper)
+			) {
+				uiPrefs.gig_helper = body.gig_helper;
 			}
 			if (body.app_mode !== undefined) {
 				const diskAppMode = body.app_mode;
@@ -286,7 +312,8 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				'hide_broken_links',
 				'next_only_filter',
 				'remixes_filter',
-				'vocals_filter'
+				'vocals_filter',
+				'available_offline_filter'
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;

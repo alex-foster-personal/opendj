@@ -201,7 +201,7 @@ test('a fatal blocker refuses Continue and says so in words', () => {
 	const refusal = mod.advanceRefusal('detect', {
 		source: 'rekordbox',
 		detection: nothingFound(),
-		folderScan: null,
+		folderRows: [{ id: 'row-1', path: '', scan: null }],
 		job: null
 	});
 	assert.match(refusal, /rekordbox_not_found/);
@@ -210,17 +210,23 @@ test('a fatal blocker refuses Continue and says so in words', () => {
 		mod.advanceRefusal('detect', {
 			source: 'folder',
 			detection: nothingFound(),
-			folderScan: {
-				path: '/Users/dj/Music',
-				exists: true,
-				readable: true,
-				denied: false,
-				detail: 'readable',
-				audio_files: 12,
-				icloud_placeholders: 0,
-				how_to_grant: '',
-				sample: []
-			},
+			folderRows: [
+				{
+					id: 'row-1',
+					path: '/Users/dj/Music',
+					scan: {
+						path: '/Users/dj/Music',
+						exists: true,
+						readable: true,
+						denied: false,
+						detail: 'readable',
+						audio_files: 12,
+						icloud_placeholders: 0,
+						how_to_grant: '',
+						sample: []
+					}
+				}
+			],
 			job: null
 		}),
 		null
@@ -262,6 +268,49 @@ test('dismissing without importing closes into an honest incomplete state', () =
 	mod.openSetupOverlay();
 	mod.closeSetupOverlay();
 	assert.equal(mod.setupOverlay.incomplete, false);
+});
+
+test('the layout keeps the wizard mounted while the incomplete note is due', () => {
+	// The note is drawn by SetupOverlay itself, in the state AFTER a close
+	// (`open` false, `incomplete` true). The root layout mounts the lazily
+	// loaded component behind a guard, so a guard on `open` alone unmounts the
+	// note before it can render (Codex review of #3862, P2). Pinned by source
+	// shape, as the markup facts above are: the guard names both flags.
+	const layout = read('src/routes/+layout.svelte');
+	assert.match(layout, /const setupMounted = \$derived\(setupOverlay\.open \|\| setupOverlay\.incomplete\);/);
+	assert.match(layout, /\{#if setupMounted\}\s*\{#await loadSetupOverlay\(\)\}/);
+	assert.match(layout, /\{:then \{ default: SetupOverlay \}\}\s*<SetupOverlay \/>/);
+	assert.doesNotMatch(layout, /\{#if setupOpen\}/);
+});
+
+test('the layout covers the app while the wizard chunk is in flight', () => {
+	// `setupOpen` yields the boot gate the moment setup opens, so an {#await}
+	// with no pending branch left the app usable for the length of the chunk
+	// download on a cold cache (Codex review of #3862 at 079105b3, P2). The
+	// pending branch draws the same backdrop the failure branch does, with a
+	// status the e2e (lazy-chunk-failures.spec.ts) waits on.
+	const layout = read('src/routes/+layout.svelte');
+	const pending = layout.match(/\{#await loadSetupOverlay\(\)\}([^]*?)\{:then \{ default: SetupOverlay \}\}/);
+	assert.ok(pending, 'the await has a pending branch');
+	assert.match(pending[1], /class="setup-load-backdrop"/);
+	assert.match(pending[1], /role="status" aria-label="Setup is loading"/);
+});
+
+test('the layout requests the wizard chunk only once setup mounts', () => {
+	// The bundle budget's library surface is what first paint downloads, so
+	// the chunk's import() must not run at script level, where it would start
+	// the fetch on every boot before the mount guard was consulted (Codex
+	// review of #3862 at 1fb0cc41, P1). The one import() sits inside the
+	// memoizing loader the {#await} above calls, and nowhere else.
+	const layout = read('src/routes/+layout.svelte');
+	// The runtime import(), not the `typeof import(...)` type of its module.
+	const runtimeImport = /(?<!typeof )import\('\$lib\/components\/setup\/SetupOverlay\.svelte'\)/g;
+	assert.equal(layout.match(runtimeImport)?.length, 1, 'exactly one import() of the setup chunk');
+	const loader = layout.match(/function loadSetupOverlay\(\)[^]*?\n\t\}\n/);
+	assert.ok(loader, 'the memoizing loader exists');
+	assert.match(loader[0], runtimeImport, 'the import() is inside the loader');
+	assert.match(loader[0], /if \(setupOverlayModule === null\)/);
+	assert.doesNotMatch(layout, /const setupOverlayModule = import\(/);
 });
 
 // ------------------------------------------------ final vs unfinished probe
@@ -399,6 +448,26 @@ test('the three escape actions are rendered ungated', () => {
 	assert.doesNotMatch(overlay, /disabled=\{blockers/);
 });
 
+test('STANDALONE-08: neither source radio is selected until the operator chooses', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /checked=\{source === 'rekordbox'\}/);
+	assert.match(overlay, /checked=\{source === 'folder'\}/);
+	assert.doesNotMatch(overlay, /checked=\{true\}/);
+});
+
+test('STANDALONE-08: welcome copy does not assume rekordbox import', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /when you choose to start that import/);
+	assert.doesNotMatch(overlay, /Setting it up means\s+reading your existing rekordbox/);
+});
+
+test('STANDALONE-08: the neutral detect step offers dismissal and refuses Continue', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\{#if step === 'detect' && source === null\}/);
+	assert.match(overlay, /Choose an import source above/);
+	assert.match(overlay, /Continue is not available: \{nextRefusal\}/);
+});
+
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
@@ -406,12 +475,13 @@ test('the wizard gates on the FINAL refusal, never on an unfinished probe', () =
 	assert.doesNotMatch(overlay, /\$derived\(setupRefusal\(\)\)/);
 });
 
+// REQ: SETUP-10
 test('the folder step offers a native picker beside the path field', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /class="folder-path-row"/);
 	assert.match(overlay, /type="button"\s*\n\s*class="folder-pick"/);
 	assert.match(overlay, /aria-label="Choose a folder"/);
-	assert.match(overlay, /bind:value=\{folderInput\}/);
+	assert.match(overlay, /bind:value=\{row\.path\}/);
 	assert.match(overlay, /aria-label="Folder to import"/);
 });
 
@@ -421,9 +491,22 @@ test('the folder picker guards on the Tauri runtime and opens a directory dialog
 	assert.match(overlay, /canUseNativeFolderPicker/);
 	assert.match(overlay, /await import\('@tauri-apps\/plugin-dialog'\)/);
 	assert.match(overlay, /directory: true,\s*\n\s*multiple: false/);
-	assert.match(overlay, /if \(typeof selected === 'string'\) \{\s*\n\s*folderInput = selected;/);
+	assert.match(
+		overlay,
+		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.folderRows = setupWizard\.folderRows\.map/
+	);
 });
 
+test('the folder step can add and remove rows once a path is entered', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /setupWizard\.addFolderRow\(\)/);
+	assert.match(overlay, /aria-label="Add another folder"/);
+	assert.match(overlay, /setupWizard\.removeFolderRow\(row\.id\)/);
+	assert.match(overlay, /aria-label="Remove folder"/);
+	assert.match(overlay, /\{#if folderRows\.length > 1\}/);
+});
+
+// REQ: SETUP-09
 test('the folder path placeholder is dim and italic, not the input itself', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\.folder-form input::placeholder\s*\{/);
@@ -437,6 +520,7 @@ test('the folder path placeholder is dim and italic, not the input itself', () =
 	assert.doesNotMatch(baseInputRule, /color:\s*var\(--muted\)/);
 });
 
+// REQ: SETUP-13
 test('the folder picker is a real control, and says so when it cannot run', () => {
 	// A native picker shipped on main while this branch was open, replacing the
 	// honestly-disabled placeholder this test used to guard. The requirement is
@@ -444,13 +528,14 @@ test('the folder picker is a real control, and says so when it cannot run', () =
 	// pretends to work where it cannot.
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /class="folder-pick"/);
-	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(\)\}/);
+	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(row\.id\)\}/);
 	// outside the desktop shell there is no native picker, and the control says
 	// which app can do it rather than failing silently
 	assert.match(overlay, /!nativeFolderPicker/);
 	assert.match(overlay, /available in the Open DJ desktop app/);
 });
 
+// REQ: SETUP-11
 test('denied folder candidates render as refused chips, not hidden', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\{#if candidate\.readable\}/);
@@ -469,13 +554,14 @@ test('denied folder candidates render as refused chips, not hidden', () => {
 // setup-wizard-navigation.test.mjs; what is checked here is that the markup
 // actually wires the controls to those rules.
 
+// REQ: SETUP-12
 test('every step panel renders a Back control', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	// one shared snippet, rendered once per panel (detect has two branches),
 	// so Back cannot be present on some steps and missing on others.
 	assert.match(overlay, /\{#snippet backButton\(\)\}/);
 	const renders = overlay.match(/\{@render backButton\(\)\}/g) ?? [];
-	assert.equal(renders.length, 7, `expected a Back control on all 7 panels, found ${renders.length}`);
+	assert.equal(renders.length, 8, `expected a Back control on all 8 panels, found ${renders.length}`);
 });
 
 test('Back is gated by backRefusal, and says why in the same breath', () => {

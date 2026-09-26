@@ -7,7 +7,13 @@
  */
 export const OVERLAY_Z_INDEX = {
 	brandLaunch: 1200,
+	/** Shell quit confirm (QuitConfirmOverlay.svelte). */
+	quitConfirm: 10000,
+	/** Always-on comment dock + armed placement capture above boot/quit gates (#3981). */
+	feedbackDock: 10050,
 	preflightBoot: 1000,
+	/** Pin anchors and clusters; above root modals, below boot gate. */
+	feedbackPinPlacement: 450,
 	hotkeys: 410,
 	settings: 400,
 	signIn: 390,

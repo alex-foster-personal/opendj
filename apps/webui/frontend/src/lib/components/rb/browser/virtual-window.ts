@@ -85,6 +85,66 @@ export function scrollTopForRowIndex(params: {
 	return Math.max(0, rowPixels + (params.rowIndex > 0 ? header : 0));
 }
 
+/** Preserve a row's offset from the top of the visible band across a viewport
+ * resize (e.g. MORE/LESS deck layout). Clamps so the row stays intersecting. */
+export function scrollTopToKeepRowVisible(params: {
+	rowIndex: number;
+	rowHeight: number;
+	headerOffsetPx?: number;
+	viewportHeight: number;
+	priorScrollTop: number;
+	priorViewportHeight: number;
+}): number {
+	const header = params.headerOffsetPx ?? 0;
+	const { rowIndex, rowHeight, priorScrollTop, priorViewportHeight, viewportHeight } = params;
+	if (rowIndex < 0 || viewportHeight <= 0 || priorViewportHeight <= 0) {
+		return Math.max(0, priorScrollTop);
+	}
+	const rowTop = header + rowIndex * rowHeight;
+	const priorVisibleTop = priorScrollTop + header;
+	const offsetFromTop = Math.max(0, rowTop - priorVisibleTop);
+	let next = scrollTopForRowIndex({
+		rowIndex,
+		rowHeight,
+		headerOffsetPx: header,
+		offsetFromTopPx: offsetFromTop
+	});
+	const rowBottom = rowTop + rowHeight;
+	if (rowTop < next + header) next = Math.max(0, rowTop - header);
+	if (rowBottom > next + viewportHeight) next = Math.max(0, rowBottom - viewportHeight);
+	return next;
+}
+
+/** Apply deck-layout anchor scroll once the library viewport height is known. */
+export function scrollTopForDeckLayoutAnchor(params: {
+	rowIndex: number;
+	rowHeight: number;
+	headerOffsetPx?: number;
+	viewportHeight: number;
+	priorScrollTop: number;
+	priorViewportHeight: number;
+}): number {
+	const header = params.headerOffsetPx ?? 0;
+	const { rowIndex, rowHeight, viewportHeight, priorViewportHeight, priorScrollTop } = params;
+	if (rowIndex < 0 || viewportHeight <= 0) return Math.max(0, priorScrollTop);
+	if (priorViewportHeight > 0) {
+		return scrollTopToKeepRowVisible({
+			rowIndex,
+			rowHeight,
+			headerOffsetPx: header,
+			viewportHeight,
+			priorScrollTop,
+			priorViewportHeight
+		});
+	}
+	return scrollTopForRowIndex({
+		rowIndex,
+		rowHeight,
+		headerOffsetPx: header,
+		offsetFromTopPx: Math.max(0, Math.floor(viewportHeight / 3))
+	});
+}
+
 /** Whether a row is scrolled above or below the row-visible band. */
 export function masterFoldVisibility(params: {
 	rowIndex: number;

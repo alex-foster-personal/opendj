@@ -7,6 +7,7 @@
 	 */
 	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
+	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
@@ -98,6 +99,11 @@
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
+	const selected = $derived(isSelected(deckId));
+
+	function handleStripClick(event: MouseEvent): void {
+		clickSelect(deckId, event.shiftKey);
+	}
 
 	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
 	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
@@ -256,7 +262,9 @@
 	class:secondary
 	class:less
 	class:deck-focus={focused}
+	class:selected={selected}
 	data-mixer-channel={deckId}
+	onclick={handleStripClick}
 	data-stem-eq-mode={stemEqMode}
 	role="group"
 	aria-label={`channel ${deckId}`}
@@ -446,8 +454,14 @@
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+		background: var(--rb-deck-hover-bg);
+		box-shadow: var(--rb-deck-hover-inset);
+	}
+	.strip.selected {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
+	}
+	.strip.selected.deck-focus {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
 	}
 	.strip-head {
 		display: flex;

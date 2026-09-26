@@ -421,6 +421,44 @@
       "capture_method": "run_sync PhaseTimer (hello, push, pull, digest, total); first vs no-op classified on the result",
       "absent_verdict": "UNKNOWN"
     },
+    "LIB-MODE": {
+      "title": "Library mode savings vs Gig (four decks)",
+      "class": "P1",
+      "kpis": [
+        "library_mode_footprint_ratio",
+        "library_mode_cpu_ratio"
+      ],
+      "required": [
+        {
+          "kpi": "library_mode_footprint_ratio",
+          "unit": "ratio",
+          "lower_is_better": true,
+          "budget": 0.6,
+          "acceptable": 0.75,
+          "breaking": 0.9
+        },
+        {
+          "kpi": "library_mode_cpu_ratio",
+          "unit": "ratio",
+          "lower_is_better": true,
+          "budget": 0.4,
+          "acceptable": 0.55,
+          "breaking": 0.7
+        }
+      ],
+      "lower_is_better": true,
+      "budget": 0.6,
+      "acceptable": 0.75,
+      "breaking": 0.9,
+      "unit": "ratio",
+      "spec_cells": {
+        "target": "Library footprint <=60% of Gig and CPU (Chrome renderer+gpu-process only) <=40% of Gig after 60s steady state",
+        "acceptable": "footprint <=75% and CPU (renderer+gpu-process only) <=55%",
+        "breaking": "footprint >90% or CPU (renderer+gpu-process only) >70%"
+      },
+      "capture_method": "scripts/perf/capture_library_mode.py on the reference Mac with four loaded decks then Library mode, in Playwright Chrome as the stand-in for the packaged WKWebView (the shell and WKWebView are not measured); footprint sums every Chromium process plus the live engine family (probe_log members excluded); CPU covers the Chromium family only, not the python engine family (no endpoint exposes its per-process CPU)",
+      "absent_verdict": "UNKNOWN"
+    },
     "BOOT-LIB": {
       "title": "App open to library rows",
       "class": "P1",
