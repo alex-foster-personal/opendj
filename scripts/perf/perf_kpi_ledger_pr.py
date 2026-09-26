@@ -31,6 +31,7 @@ from scripts.perf.perf_kpi_ledger_local import (
     _new_entries_since,
     _remove_worktree_if_present,
     _restore_tracked_ledger,
+    outbox_dir_for,
 )
 
 REPOSITORY = "maintainer/music-dj-tools"
@@ -262,7 +263,7 @@ def _update_ledger_pr_inner(
     local_entries = json.loads(post_run_content)["entries"]
     pre_run_entries = json.loads(pre_run_content)["entries"] if pre_run_content else []
     tonight_entries = _new_entries_since(pre_run_entries, local_entries)
-    outbox_dir = worktree_dir.parent / "unpublished-ledger-outbox"
+    outbox_dir = outbox_dir_for(worktree_dir)
     outbox_entries = _load_outbox_entries(outbox_dir)
     candidate_entries = tonight_entries + _new_entries_since(tonight_entries, outbox_entries)
     # REPO_ROOT's tracked ledger is restored ONLY once tonight's rows are

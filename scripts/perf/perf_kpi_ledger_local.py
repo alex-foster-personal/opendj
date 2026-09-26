@@ -112,6 +112,30 @@ def _worktree_gitdir(worktree_dir: Path) -> Path:
     return (worktree_dir / marker.removeprefix("gitdir: ")).resolve()
 
 
+class LedgerEditedDuringRun(RuntimeError):
+    """The tracked ledger no longer holds exactly the pre-run text plus this
+    run's own appends, so it is neither published nor restored."""
+
+
+def _replay_appends(
+    pre_run_content: str | None, append_batches: Sequence[list[dict[str, Any]]]
+) -> str | None:
+    """The ledger text this run's own `append_entries` calls produce when
+    replayed onto ``pre_run_content`` in a scratch directory, or None when
+    that leaves no file."""
+    with tempfile.TemporaryDirectory(prefix="perf-kpi-ledger-replay-") as scratch:
+        replay = Path(scratch) / "kpi-ledger.json"
+        if pre_run_content is not None:
+            replay.write_text(pre_run_content, encoding="utf-8")
+        for batch in append_batches:
+            append_entries(replay, batch)
+        return replay.read_text(encoding="utf-8") if replay.exists() else None
+
+
+def _entries_of(content: str | None) -> list:
+    return json.loads(content)["entries"] if content else []
+
+
 def refuse_ledger_edits_made_during_run(
     ledger_path: Path,
     *,
@@ -137,16 +161,10 @@ def refuse_ledger_edits_made_during_run(
     nothing is published or restored: the file keeps the edit and tonight's
     rows, for the operator to reconcile.
     """
-    with tempfile.TemporaryDirectory(prefix="perf-kpi-ledger-replay-") as scratch:
-        replay = Path(scratch) / ledger_path.name
-        if pre_run_content is not None:
-            replay.write_text(pre_run_content, encoding="utf-8")
-        for batch in append_batches:
-            append_entries(replay, batch)
-        expected = replay.read_text(encoding="utf-8") if replay.exists() else None
+    expected = _replay_appends(pre_run_content, append_batches)
     actual = ledger_path.read_text(encoding="utf-8") if ledger_path.exists() else None
     if actual != expected:
-        raise RuntimeError(
+        raise LedgerEditedDuringRun(
             f"{ledger_path} changed while the nightly run was measuring; refusing to publish "
             "or restore it, so that edit and tonight's rows both stay in the file"
         )
@@ -155,6 +173,32 @@ def refuse_ledger_edits_made_during_run(
             f"{ledger_path} does not exist after the nightly run; nothing to publish"
         )
     return actual
+
+
+def park_run_rows_in_outbox(
+    outbox_dir: Path,
+    *,
+    pre_run_content: str | None,
+    append_batches: Sequence[list[dict[str, Any]]],
+) -> None:
+    """Add exactly this run's own appended rows to the pending outbox, for
+    the next successful publish to carry (Codex, PR #3827, P1/BLOCKING,
+    "Recover rows when the nightly measurement raises").
+
+    Used when the run cannot publish its rows itself: `run_nightly` raised
+    after appending, or the tracked file was edited during the run. Without
+    this, the next run's pre-run snapshot would take those rows as its
+    baseline and `_new_entries_since` would never offer them for
+    publication. The rows come from replaying ``append_batches``, so they are
+    byte-identical to what `append_entries` wrote, and never from the
+    possibly edited tracked file."""
+    tonight = _new_entries_since(
+        _entries_of(pre_run_content), _entries_of(_replay_appends(pre_run_content, append_batches))
+    )
+    pending = _load_outbox_entries(outbox_dir)
+    _archive_unpublished_ledger(
+        pending + _new_entries_since(pending, tonight), outbox_dir=outbox_dir
+    )
 
 
 def _restore_tracked_ledger(
@@ -246,6 +290,11 @@ def _restore_tracked_ledger(
 #: many nights that takes.
 #: Supersedes: nothing; a new state path beside the ledger worktree.
 _OUTBOX_FILENAME = "unpublished-ledger.json"
+
+
+def outbox_dir_for(worktree_dir: Path) -> Path:
+    """Where the unpublished-entry outbox lives: beside the ledger worktree."""
+    return worktree_dir.parent / "unpublished-ledger-outbox"
 
 
 def _load_outbox_entries(outbox_dir: Path) -> list:
