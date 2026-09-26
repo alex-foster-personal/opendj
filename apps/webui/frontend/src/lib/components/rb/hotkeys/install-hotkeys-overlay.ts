@@ -42,8 +42,12 @@ let hotkeysOverlayModule: Promise<HotkeysOverlayModule> | null = null;
 
 export function loadHotkeysOverlay(): Promise<HotkeysOverlayModule> {
 	if (hotkeysOverlayModule === null) {
-		hotkeysOverlayModule = import('./HotkeysOverlay.svelte');
-		hotkeysOverlayModule.catch((error: unknown) => {
+		const attempt = import('./HotkeysOverlay.svelte');
+		hotkeysOverlayModule = attempt;
+		attempt.catch((error: unknown) => {
+			// Forget the failed attempt so the next "/" or "?" fetches again
+			// instead of replaying this rejection until a reload.
+			if (hotkeysOverlayModule === attempt) hotkeysOverlayModule = null;
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(`Hotkeys overlay failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
 		});
