@@ -287,9 +287,9 @@ class Front:
         completed = _run(
             [
                 "node",
-                "--experimental-strip-types",
                 "--test",
                 "--test-reporter=tap",
+                "--experimental-strip-types",
                 "--test-concurrency=4",
                 "--test-timeout=120000",
                 *relative,
@@ -301,11 +301,12 @@ class Front:
 
     @staticmethod
     def read_node_tap(returncode: int, stdout: str, files: int) -> Verdict:
-        """A verdict from node --test's TAP tally; no tally, or 0 passed, is no verdict."""
+        """A verdict from the node test runner's TAP tally; no tally, or 0 passed, is none."""
         tally = {k: int(v) for k, v in re.findall(r"^# (pass|fail) (\d+)$", stdout, re.MULTILINE)}
         if "pass" not in tally or "fail" not in tally:
             return Verdict(
-                "UNMEASURED", f"node --test printed no pass/fail tally (exit {returncode})"
+                "UNMEASURED",
+                f"the node test runner printed no TAP pass/fail tally (exit {returncode})",
             )
         if tally["fail"] or returncode != 0:
             return Verdict("FAIL", f"frontend unit: {tally['fail']} failed of {files} file(s)")

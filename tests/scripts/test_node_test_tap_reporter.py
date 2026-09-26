@@ -48,6 +48,8 @@ from scripts.node_test_reporter_scan import (
 EXPECTED_SITES_PER_FILE = {
     "Makefile": 1,
     "apps/webui/frontend/package.json": 4,
+    # The IDD pre-PR gate runs only the frontend unit files a change touched (OPS-44).
+    "scripts/pre_pr_gate.py": 1,
     "scripts/savepoint_gate.py": 1,
 }
 
