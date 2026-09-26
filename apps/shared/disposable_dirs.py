@@ -28,11 +28,19 @@ def _account_home() -> Path:
 
 def protected_roots() -> tuple[Path, ...]:
     home = _account_home()
-    return (
+    roots = [
         PROJECT_ROOT / "data",
         home / "Library" / "Pioneer",
         home / "Library" / "Application Support" / "com.opendj.desktop",
-    )
+    ]
+    if os.name == "nt":
+        # Windows keeps the live rekordbox tree and the Tauri app data under
+        # %APPDATA% (apps.shared.platform_paths); fail fast rather than guess it.
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            raise SystemExit("[ERROR] APPDATA is unset; cannot locate the live library roots")
+        roots += [Path(appdata) / "Pioneer", Path(appdata) / "com.opendj.desktop"]
+    return tuple(roots)
 
 
 def refuse_protected_target(target: Path, *extra_protected: Path) -> None:
