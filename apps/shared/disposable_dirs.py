@@ -5,18 +5,29 @@ Fixture builders delete and rewrite their target directory. Call
 ``--data-dir`` or env var fails fast instead of wiping a real library. The
 protected roots are fixed paths that do not depend on ``MDT_DATA_DIR``: a fixture
 builder usually runs with ``MDT_DATA_DIR`` pointed at its own target, so a guard
-derived from it would compare the target with itself.
+derived from it would compare the target with itself. For the same reason the home
+directory is the account's own (``pwd``), not ``$HOME``: e2e servers run with ``HOME``
+pointed at a sandbox inside the fixture dir.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from apps.shared.paths import PROJECT_ROOT
 
 
+def _account_home() -> Path:
+    if os.name == "nt":
+        return Path.home()
+    import pwd
+
+    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
 def protected_roots() -> tuple[Path, ...]:
-    home = Path.home()
+    home = _account_home()
     return (
         PROJECT_ROOT / "data",
         home / "Library" / "Pioneer",

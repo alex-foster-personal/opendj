@@ -36,6 +36,7 @@ from pathlib import Path
 import numpy as np
 
 from apps.shared.disposable_dirs import refuse_protected_target
+from apps.shared.paths import PROJECT_ROOT
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from apps.vocals import cache as vcache
@@ -46,7 +47,9 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
     _track_rows,
 )
 
-FIXTURE_REVISION_VOCALS: str = f"{FIXTURE_REVISION}-vocals-demucs-overlay-v6"
+FIXTURE_REVISION_VOCALS: str = f"{FIXTURE_REVISION}-vocals-demucs-overlay-v7"
+REKORDBOX_SCHEMA_SQL: Path = PROJECT_ROOT / "scripts" / "redteam_fixture_rekordbox_schema.sql"
+ROW_TIMESTAMP = "2026-09-26 00:00:00.000 +00:00"
 PLAYLIST_ID = "vocals-demucs-overlay"
 TRACK_FILENAME = "vocals-demucs-overlay-track.wav"
 #: Clip length taken from --source-audio: long enough to hold a vocal phrase,
@@ -116,23 +119,29 @@ def _write_vendor_rows(
 ) -> None:
     refuse_protected_target(data_dir)
     master = sqlite3.connect(data_dir / "master.plain.db")
-    # Columns the hydrated listing reads (rb_vendor_pkg.track_rows.bulk_rb_meta).
-    master.execute(
-        "CREATE TABLE IF NOT EXISTS djmdContent ("
-        "ID TEXT, Title TEXT, Length INTEGER, FolderPath TEXT, ImagePath TEXT, "
-        "AnalysisDataPath TEXT, Commnt TEXT, GenreID TEXT, DJPlayCount INTEGER, "
-        "rb_local_deleted INTEGER)"
-    )
-    master.execute(
-        "CREATE TABLE IF NOT EXISTS djmdGenre "
-        "(ID TEXT, Name TEXT, rb_local_deleted INTEGER)"
-    )
+    # The real rekordbox master.db schema (pyrekordbox column names and types,
+    # constraints as rekordbox declares them), so the hydrated listing reads rows
+    # shaped exactly as a real library's are.
+    has_content = master.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'djmdContent'"
+    ).fetchone()
+    if has_content is None:
+        master.executescript(REKORDBOX_SCHEMA_SQL.read_text(encoding="utf-8"))
     vendor_id = "vocals-demucs-overlay-v1"
     master.execute("DELETE FROM djmdContent WHERE ID = ?", (vendor_id,))
     master.execute(
         "INSERT INTO djmdContent (ID, Title, Length, FolderPath, AnalysisDataPath, "
-        "DJPlayCount, rb_local_deleted) VALUES (?, ?, ?, ?, ?, 0, 0)",
-        (vendor_id, title, int(CLIP_SECONDS), str(audio_path), str(dat_path)),
+        "DJPlayCount, rb_local_deleted, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, '0', 0, ?, ?)",
+        (
+            vendor_id,
+            title,
+            int(CLIP_SECONDS),
+            str(audio_path),
+            str(dat_path),
+            ROW_TIMESTAMP,
+            ROW_TIMESTAMP,
+        ),
     )
     master.commit()
     master.close()
@@ -158,8 +167,14 @@ def _stamp_duration_ms(state_db_path: Path, stable_id: str, audio_path: Path) ->
     """
     probe = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path),
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(audio_path),
         ],
         capture_output=True,
         text=True,
@@ -215,10 +230,23 @@ def _clip_source_audio(source: Path, dest: Path, start_s: float) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
         [
-            "ffmpeg", "-nostdin", "-v", "error", "-y",
-            "-ss", f"{start_s}", "-t", f"{CLIP_SECONDS}",
-            "-i", str(source),
-            "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-y",
+            "-ss",
+            f"{start_s}",
+            "-t",
+            f"{CLIP_SECONDS}",
+            "-i",
+            str(source),
+            "-ac",
+            "2",
+            "-ar",
+            "44100",
+            "-c:a",
+            "pcm_s16le",
             str(dest),
         ],
         capture_output=True,
@@ -226,9 +254,7 @@ def _clip_source_audio(source: Path, dest: Path, start_s: float) -> Path:
         check=False,
     )
     if result.returncode != 0 or not dest.is_file():
-        raise SystemExit(
-            f"[ERROR] ffmpeg could not clip {source} at {start_s}s: {result.stderr}"
-        )
+        raise SystemExit(f"[ERROR] ffmpeg could not clip {source} at {start_s}s: {result.stderr}")
     return dest
 
 
@@ -260,9 +286,7 @@ def _run_one_live(data_dir: Path, stable_id: str) -> None:
     if result.returncode != 0:
         sys.stderr.write(result.stdout)
         sys.stderr.write(result.stderr)
-        raise SystemExit(
-            f"[ERROR] vocals one --force failed with exit code {result.returncode}"
-        )
+        raise SystemExit(f"[ERROR] vocals one --force failed with exit code {result.returncode}")
 
 
 def build(data_dir: Path, source_audio: Path, clip_start_s: float) -> VocalsDemucsFixture:

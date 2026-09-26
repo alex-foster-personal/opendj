@@ -4,7 +4,7 @@ Regression one-liners:
   - if a builder target equal to, inside, or containing a protected root is accepted then broken
   - if an extra protected root (a fixture's own source library) is not honored then broken
   - if an ordinary scratch directory is refused then broken
-  - if the guard derives its roots from MDT_DATA_DIR then broken
+  - if the guard derives its roots from MDT_DATA_DIR or $HOME then broken
 """
 
 from __future__ import annotations
@@ -55,7 +55,8 @@ def test_a_builder_running_under_its_own_mdt_data_dir_is_not_refused(tmp_path: P
     )
     result = subprocess.run(
         [sys.executable, "-c", probe, str(target)],
-        env={**os.environ, "MDT_DATA_DIR": str(target)},
+        # The overlay e2e also points HOME at a sandbox inside the target.
+        env={**os.environ, "MDT_DATA_DIR": str(target), "HOME": str(target / "sandbox-home")},
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
