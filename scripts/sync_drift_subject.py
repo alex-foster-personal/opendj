@@ -73,6 +73,7 @@ from apps.shared.play_orders import schema as play_orders_schema
 from apps.shared.playlist_sets import schema as playlist_sets_schema
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
+from apps.webui.server import pairings_sqlite
 from apps.spotify import state_aux as spotify_aux
 from apps.sync_hub import engine_identity_map
 
@@ -311,6 +312,10 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/shared/pairings/schema_sql.py::apply_pairing_capture_migrations",
         _apply_pairing_capture,
+    ),
+    Authority(
+        "apps/webui/server/pairings_sqlite.py",
+        lambda conn, _path: pairings_sqlite.ensure_http_pairings_table(conn),
     ),
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
     Authority("apps/shared/playlist_sets/schema.py", _apply_playlist_sets),

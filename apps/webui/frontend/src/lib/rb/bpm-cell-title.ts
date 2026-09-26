@@ -26,6 +26,9 @@ export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string 
 	}
 	if (row.bpm !== null) {
 		parts.push(`Exact BPM: ${row.bpm.toFixed(1)}`);
+		if (row.bpm_status === 'ok' && !row.bpm_method && row.bpm_confidence == null) {
+			parts.push('Dynamic tempo analysis: not analyzed');
+		}
 	}
 	if (parts.length === 0) {
 		return 'BPM not analyzed';

@@ -739,12 +739,27 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
             # take the whole smartlist down; emitting the rekordbox column
             # would answer a question nobody asked.
             return "NULL"
-        return (
+        projection = (
             "(SELECT ap.value FROM analysis_projection ap "
             f"WHERE ap.stable_id = {table}.stable_id "
             f"AND ap.field = {_sql_text(field_name)} "
             "AND ap.status = 'ok' LIMIT 1)"
         )
+        if field_name not in _RBX_FIELDS:
+            return projection
+        # STANDALONE-03/06: unmapped tracks with no own row still read tag
+        # BPM from track_fields under an own-resolved lane; the smartlist
+        # compiler must COALESCE the same way effective_fields does.
+        track_fields = (
+            "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
+            f"WHERE tf.stable_id = {table}.stable_id "
+            f"AND tf.field_name = {_sql_text(field_name)} LIMIT 1)"
+        )
+        unmapped = (
+            f"NOT EXISTS (SELECT 1 FROM track_vendor_ids tv "
+            f"WHERE tv.stable_id = {table}.stable_id AND tv.vendor = 'rekordbox')"
+        )
+        return f"(CASE WHEN {unmapped} THEN COALESCE({projection}, {track_fields}) ELSE {projection} END)"
     if field_name not in _RBX_FIELDS:
         return "NULL"
     return (

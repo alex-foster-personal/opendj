@@ -282,7 +282,7 @@ test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps only it
 	);
 	assert.match(
 		source,
-		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_healthWriteEpoch \+= 1;/,
+		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = allTracksNonBrokenCount \?\? healthRes\.health\.state_db\.tracks;\s*_healthWriteEpoch \+= 1;/,
 		'the fresh repair read must assign allTracksCount and bump the HEALTH epoch, not the playlists one, in the same block'
 	);
 	assert.match(

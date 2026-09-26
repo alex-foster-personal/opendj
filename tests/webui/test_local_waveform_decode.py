@@ -131,9 +131,11 @@ def client(
     monkeypatch.setattr(
         rb_config, "LOCAL_WAVEFORM_CACHE_DIR", tmp_path / "local-waveform-cache"
     )
+    monkeypatch.setenv("MDT_LIBRARY_MODE", "local")
 
     app = FastAPI()
-    app.state.backend = make_backend()
+    app.state.backend = make_backend(state_path)
+    app.state.state_db_path = str(state_path)
     app.include_router(router, prefix="/api/v1")
     with TestClient(app) as test_client:
         yield test_client

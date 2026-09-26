@@ -97,6 +97,8 @@ def selection_tag(fields: dict[str, EffectiveField]) -> str:
         f"{name}={view.source}@{view.modified_at}"
         for name, view in fields.items()
         if name in analysis_selection.PROJECTION_FIELDS
+        and view.status != "missing"
+        and view.modified_at
         and view.source != "rekordbox"
         and (
             view.source.startswith(analysis_lanes.OWN_BACKEND_PREFIX)
