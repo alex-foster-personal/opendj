@@ -53,9 +53,10 @@ _REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+#(\d+)")
 _PR_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
 pullRequest(number:$n){
 headRefOid body commits{totalCount} changedFiles additions deletions
-closingIssuesReferences(first:10){nodes{number body}}}}}"""
-_ISSUE_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
-issue(number:$n){number body}}}"""
+closingIssuesReferences(first:50){totalCount nodes{number body}}}}}"""
+# issueOrPullRequest, because `Refs #N` may name a pull request, which declares no scope.
+_REF_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
+issueOrPullRequest(number:$n){__typename ... on Issue{number body}}}}"""
 
 
 class MeasureError(RuntimeError):
@@ -128,11 +129,25 @@ def fetch(
     pr = graphql(_PR_QUERY, o=owner, r=repo, n=number)["pullRequest"]
     if pr is None:
         raise MeasureError(f"PR #{number} not found in {owner}/{repo}")
-    bodies = {i["number"]: i["body"] for i in pr["closingIssuesReferences"]["nodes"]}
+    closing = pr["closingIssuesReferences"]
+    if closing["totalCount"] > len(closing["nodes"]):
+        # A limit on an unread issue would read as UNDECLARED, so a partial read is no verdict.
+        raise MeasureError(
+            f"PR #{number} links {closing['totalCount']} closing issues, "
+            f"read {len(closing['nodes'])}"
+        )
+    bodies = {i["number"]: i["body"] for i in closing["nodes"]}
     for ref in sorted({int(n) for n in _REFS_RE.findall(pr["body"] or "")} - set(bodies)):
-        issue = graphql(_ISSUE_QUERY, o=owner, r=repo, n=ref)["issue"]
-        if issue is not None:
-            bodies[issue["number"]] = issue["body"]
+        node = graphql(_REF_QUERY, o=owner, r=repo, n=ref)["issueOrPullRequest"]
+        kind = node["__typename"] if node is not None else None
+        if kind == "Issue":
+            bodies[node["number"]] = node["body"]
+        elif kind == "PullRequest":
+            continue
+        elif kind is None:
+            raise MeasureError(f"PR #{number} body references #{ref}, which does not resolve")
+        else:
+            raise MeasureError(f"#{ref} resolved to unexpected type {kind}")
     scope = Scope(pr["commits"]["totalCount"], pr["changedFiles"], pr["additions"], pr["deletions"])
     return scope, bodies
 
