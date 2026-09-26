@@ -155,13 +155,36 @@ def test_every_driver_verdict_blocks_verify_and_holds_the_loop() -> None:
     blocked matcher or the loop's hold [then] historical completions PASS a host whose
     driver cannot run now, or the loop re-probes it every minute, [else stop]."""
     verify = VERIFY_SH.read_text(encoding="utf-8")
-    matcher = re.search(r'DRIVER_BLOCK_LINE=.*?grep -i "([^"]+)"', verify).group(1)
+    matcher = re.search(r"DRIVER_BLOCK_PATTERN='([^']+)'", verify).group(1)
     loop = LOOP_SH.read_text(encoding="utf-8")
     hold = re.search(r"DRIVER_BLOCK_PATTERN='([^']+)'", loop).group(1)
     for verdict in _driver_verdicts():
         line = f"Claude {verdict}: detail"
-        assert re.search(matcher.replace("\\|", "|"), line, re.I), f"verify misses {verdict}"
+        assert re.search(matcher, line), f"verify misses {verdict}"
         assert re.search(hold, line), f"the loop hold misses {verdict}"
+
+
+def test_verify_finds_a_verdict_that_opens_a_long_message(tmp_path: Path) -> None:
+    """[if] verify reads only the tail of the latest log [then] a verdict followed by more
+    diagnostic lines is missed and earlier completions PASS a blocked host, [else stop].
+    Runs verify.sh's real remote grep over a real file; a persona review line that only
+    MENTIONS a phrase is the negative control."""
+    verify = VERIFY_SH.read_text(encoding="utf-8")
+    pattern = re.search(r"DRIVER_BLOCK_PATTERN='([^']+)'", verify).group(1)
+    assert "tail -" not in verify[verify.index("DRIVER_BLOCK_PATTERN=") :].split("\n")[2]
+    log = tmp_path / "attempt.log"
+
+    def block_line(text: str) -> str:
+        log.write_text(text, encoding="utf-8")
+        done = subprocess.run(
+            ["grep", "-m1", "-E", pattern, str(log)], capture_output=True, text=True, check=False
+        )
+        return done.stdout.strip()
+
+    long_message = "agent CLI: claude\nClaude CLI is unavailable: crashed\n" + "trace\n" * 20
+    assert block_line(long_message) == "Claude CLI is unavailable: crashed"
+    review = "agent CLI: claude\n## Findings\n- the sync pane says Claude CLI is walled?\n"
+    assert block_line(review) == "", "a review that mentions a phrase is not a verdict"
 
 
 def _hold_helper() -> str:
