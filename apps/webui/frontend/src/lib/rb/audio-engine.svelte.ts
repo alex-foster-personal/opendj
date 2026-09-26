@@ -3155,6 +3155,7 @@ class RbAudioEngine implements AudioEngine {
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
+					stages.failedAt = perfMs();
 					reportDeckLoadFailure(deck, message, error, stages, options);
 				}
 				throw error;

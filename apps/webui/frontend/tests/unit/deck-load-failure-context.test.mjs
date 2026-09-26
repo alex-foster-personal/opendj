@@ -194,7 +194,16 @@ test('the deck-load catch block reports through the extracted module, after stam
 			'says when the load died is missing from every report'
 	);
 	// The connect() failure further down goes through the same reporter (#4036),
-	// so a caller that shows its own toast mutes it there too.
+	// so a caller that shows its own toast mutes it there too, and it must stamp
+	// failedAt first for the same reason the catch above does (#4061 review).
+	const connectReportAt = body.indexOf('reportDeckLoadFailure(deck, message, error, stages, options)');
+	assert.ok(connectReportAt !== -1, 'the connect() failure must report through the reporter');
+	const connectStampAt = body.lastIndexOf('stages.failedAt = perfMs();', connectReportAt);
+	assert.ok(
+		connectStampAt > reportAt && connectStampAt < connectReportAt,
+		'if the connect() failure reports without stamping failedAt then its server ' +
+			'report cannot say when the load died'
+	);
 	assert.ok(
 		!body.includes('pushToast(`Deck ${deck} load failed'),
 		'the deck-load toast belongs to the reporter module (convention D5: the fat ' +
