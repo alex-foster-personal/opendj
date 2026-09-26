@@ -468,11 +468,11 @@
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
 			/>
-			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
+			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null}
 				<div class="deck-lyric-host">
 					<DeckLyricLine
 						track={deckLyrics.track}
-						entryState={deckLyricEntry.state}
+						entryState={deckLyricEntry?.state ?? 'loading'}
 						error={deckLyrics.error}
 						positionSource={presentedPositionSec}
 						rows={deckLyricRows}

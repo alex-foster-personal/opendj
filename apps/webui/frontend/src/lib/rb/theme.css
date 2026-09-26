@@ -275,8 +275,12 @@ html[data-theme='light'] .perf-root {
 	color: #e8d78a;
 	font-weight: 700;
 }
-.perf-root .rb-row-selected {
+.perf-root tbody tr.rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */
+	box-shadow: none;
+}
+.perf-root tbody tr.rb-row-selected > td {
+	background: transparent;
 }
 
 /* -------- finished-track eject: overlaid on the waveform once the transport

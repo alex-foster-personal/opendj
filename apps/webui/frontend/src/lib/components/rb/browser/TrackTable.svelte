@@ -774,12 +774,15 @@
 	function applyDeckLayoutAnchorScroll(): void {
 		const el = wrapEl;
 		const anchor = deckLayoutAnchor;
-		if (el === null || anchor === null || viewportHeight <= 0) return;
+		if (el === null || anchor === null) return;
+		const effectiveViewportHeight =
+			viewportHeight > 0 ? viewportHeight : el.clientHeight;
+		if (effectiveViewportHeight <= 0) return;
 		const next = scrollTopForDeckLayoutAnchor({
 			rowIndex: anchor.rowIndex,
 			rowHeight,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
-			viewportHeight,
+			viewportHeight: effectiveViewportHeight,
 			priorScrollTop: anchor.priorScrollTop,
 			priorViewportHeight: anchor.priorViewportHeight
 		});
@@ -2796,6 +2799,14 @@
 	 * issue #1558): that trigger can fire on the first click of a
 	 * double-click aimed at the row, and an instantly-clickable box there
 	 * hijacked the gesture's second click. */
+	.c-title,
+	.c-artist {
+		display: flex;
+		align-items: center;
+		min-height: var(--tt-row-h);
+		vertical-align: middle;
+		box-sizing: border-box;
+	}
 	.c-title {
 		position: relative;
 		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the

@@ -464,10 +464,10 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	await expect(tableWrap).toBeVisible();
 	const rows = page.locator('[data-testid="track-row"]');
 	const count = await rows.count();
-	if (count < 8) {
-		test.skip(true, 'needs at least 8 library rows');
+	if (count < 2) {
+		test.skip(true, 'needs at least 2 library rows');
 	}
-	const target = rows.nth(7);
+	const target = rows.nth(Math.min(7, count - 1));
 	await target.scrollIntoViewIfNeeded();
 	await target.click();
 	await expect(target).toHaveClass(/rb-row-selected/);
@@ -483,6 +483,12 @@ test('performance: selected library row stays visible when toggling MORE and LES
 		});
 	};
 
+	expect(await intersects()).toBe(true);
+	await page.locator('.deck-layout-btn').filter({ hasText: 'LESS' }).click();
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	expect(await intersects()).toBe(true);
+	await page.locator('.deck-layout-btn').filter({ hasText: 'MORE' }).click();
+	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
 	expect(await intersects()).toBe(true);
 	await page.keyboard.press(LESS_MODE_CHORD);
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
