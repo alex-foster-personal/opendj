@@ -223,50 +223,55 @@ def add_memberships(
     position: int | None = None,
     record_edit: bool = True,
 ) -> PlaylistRow:  # type: ignore[name-defined]
-    """Insert membership rows without rewriting existing neighbors."""
+    """Insert membership rows without rewriting existing neighbors.
+
+    Every membership read (the duplicate check, the count, the neighbor
+    lookup, the response / undo read) and the edit record run inside ONE
+    writer transaction with the insert, as :meth:`StateWriter.playlist_transaction`
+    requires: the count and the neighbor lookup are separate statements, so a
+    concurrent remove landing between them would otherwise break the insert.
+    """
     writer: StateWriter = store._writer
     conn: sqlite3.Connection = store._conn
 
-    try:
-        header = store._load_header(playlist_id)
-    except NotFoundError:
-        if _is_smartlist(conn, playlist_id):
-            raise SmartlistImmutableError(
-                "cannot add tracks to a smartlist",
-            ) from None
-        raise
-
-    store._require_known_tracks(stable_ids)
-    _reject_over_cap(stable_ids)
-
-    if header.forbid_duplicates:
-        stable_ids = new_stable_ids(
-            _members_already_present(conn, playlist_id, stable_ids), stable_ids,
-        )
-        if not stable_ids:
-            return store._load(playlist_id)
-
-    member_count = _live_member_count(conn, playlist_id)
-    insert_index = _insert_index(member_count, position)
-    left_key, right_key = _neighbor_order_keys(conn, playlist_id, insert_index, member_count)
-    insert_rows = _membership_insert_rows(stable_ids, left_key, right_key)
-
     with writer.playlist_transaction():
+        try:
+            header = store._load_header(playlist_id)
+        except NotFoundError:
+            if _is_smartlist(conn, playlist_id):
+                raise SmartlistImmutableError(
+                    "cannot add tracks to a smartlist",
+                ) from None
+            raise
+
+        store._require_known_tracks(stable_ids)
+        _reject_over_cap(stable_ids)
+
+        if header.forbid_duplicates:
+            stable_ids = new_stable_ids(
+                _members_already_present(conn, playlist_id, stable_ids), stable_ids,
+            )
+            if not stable_ids:
+                return store._load(playlist_id)
+
+        member_count = _live_member_count(conn, playlist_id)
+        insert_index = _insert_index(member_count, position)
+        left_key, right_key = _neighbor_order_keys(conn, playlist_id, insert_index, member_count)
+        insert_rows = _membership_insert_rows(stable_ids, left_key, right_key)
         writer.insert_playlist_memberships(playlist_id, insert_rows)
 
-    after_items, before_items = _items_after_and_before(
-        conn, playlist_id, {item_id for item_id, _sid, _key in insert_rows},
-    )
-    new_row = store._load_header(playlist_id)
-    new_row.items = after_items
-    if record_edit:
-        store._record_edit(
-            "memberships", playlist_id,
-            store._snapshot(replace(header, items=before_items)),
-            store._snapshot(new_row),
+        after_items, before_items = _items_after_and_before(
+            conn, playlist_id, {item_id for item_id, _sid, _key in insert_rows},
         )
-    return new_row
-
+        new_row = store._load_header(playlist_id)
+        new_row.items = after_items
+        if record_edit:
+            store._record_edit(
+                "memberships", playlist_id,
+                store._snapshot(replace(header, items=before_items)),
+                store._snapshot(new_row),
+            )
+        return new_row
 
 __all__ = [
     "AlreadyExistsError",

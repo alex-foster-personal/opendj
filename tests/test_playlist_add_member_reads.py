@@ -132,3 +132,42 @@ def test_response_and_undo_snapshot_match_independent_reads(store: PlaylistStore
     assert payload["op"] == "memberships"
     assert payload["before"]["items"] == before
     assert payload["after"]["items"] == after
+
+
+def test_a_concurrent_write_cannot_land_between_the_member_reads(
+    store: PlaylistStore, tmp_path: Path,
+) -> None:
+    """[if] a peer writes during an add's member reads [then] it is locked out, [else stop]."""
+    playlist_id = _playlist(store, 12)
+    last_item = _load_live_members(store._conn, playlist_id)[-1].item_id
+    peer = sqlite3.connect(str(tmp_path / "state.db"), timeout=0.1, isolation_level=None)
+    peer_outcomes: list[str] = []
+
+    def _peer_deletes_the_last_member(statement: str) -> None:
+        # Fires as the bounded neighbor read starts, AFTER the add counted
+        # its members: the exact gap a concurrent remove would fall into.
+        if " OFFSET " not in statement or peer_outcomes:
+            return
+        try:
+            peer.execute(
+                "UPDATE playlist_memberships SET deleted_at = ? WHERE item_id = ?",
+                (NOW, last_item),
+            )
+            peer_outcomes.append("landed")
+        except sqlite3.OperationalError as exc:
+            peer_outcomes.append(f"refused: {exc}")
+
+    store._conn.set_trace_callback(_peer_deletes_the_last_member)
+    try:
+        # Insert between the last two members: the neighbor read needs both.
+        row = store.add_memberships(playlist_id, [_sid(LARGE + 3)], position=11)
+    finally:
+        store._conn.set_trace_callback(None)
+        peer.close()
+
+    # Positive control: the peer really attempted its write inside the gap.
+    assert len(peer_outcomes) == 1, "the neighbor read never ran: the probe is not attached"
+    assert peer_outcomes[0].startswith("refused: database is locked"), peer_outcomes
+    members = [m.stable_id for m in _load_live_members(store._conn, playlist_id)]
+    assert row.items == members
+    assert members[10:] == [_sid(10), _sid(LARGE + 3), _sid(11)]
