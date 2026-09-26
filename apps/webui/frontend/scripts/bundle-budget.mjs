@@ -185,19 +185,19 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  // RAISED Fri 25 Sep 2026 (+1 KiB, preview branch af--preview-mixtour-io only):
-  // merging main 4abab4929 plus PR #3896 (CHROME-07 MIDI entry in the headphone
-  // cluster) into the preview's IOPIN I/O panel measured 241,874, 210 bytes over.
-  // The weight is the MIDI entry's status plumbing plus SVG icons replacing the
-  // cluster's emoji glyphs (CHROME-01). Main without the IOPIN panel does not
-  // carry it, so this raise is not proposed for main.
-  // RAISED Sat 26 Sep 2026 (+1 KiB, preview branch af--preview-mixtour-io only):
-  // Play from USB (specs/usb-play-from-stick.md) measured 242,801, 113 bytes over.
-  // The weight is the stick-id routing in the deck load path (track-source.ts,
-  // which rides with api-rb.ts) and the USBs tab access-state rows; the stick
-  // tree itself is lazy-imported and charged to other-lazy. Not proposed for
-  // main until the feature lands there with its own measurement.
-  { name: 'performance', limit: 243712, measured: 242801, note: '/performance and children' },
+  // REVERTED Sat 26 Sep 2026 (landing PR #3837): this branch carried two +1 KiB
+  // raises (Fri 25 Sep for the IOPIN I/O panel's MIDI status plumbing, Sat 26
+  // Sep for Play from USB's stick-id routing), neither proposed for main.
+  // Landing does not get to keep an inflated ceiling, so this goes back to
+  // origin/main's own limit below. The two features' eager weight (the
+  // headphone cluster's MIDI status glyph plus the deck load path's stick-id
+  // routing) is real and still over this limit at merge time; several dynamic-
+  // import boundaries were tried (the MIDI engine behind requestMidiAccess(),
+  // the MIDI drawer itself, a lazy /admin tab) and each measurably made total
+  // gzip bytes WORSE, not better: this build's Rollup/Terser chunking adds
+  // real per-chunk overhead, and other-lazy already carries no slack of its
+  // own to absorb anything moved into it. See PR #3837 for the measurements.
+  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
