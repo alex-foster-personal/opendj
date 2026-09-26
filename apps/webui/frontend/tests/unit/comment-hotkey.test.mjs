@@ -18,6 +18,7 @@ const hotkeys = read('src/lib/rb/performance-hotkeys.ts');
 // from +layout.svelte, so it fires globally rather than only while the
 // performance-hotkeys handler is attached.
 const commentPinHotkeys = read('src/lib/rb/comment-pin-hotkeys.ts');
+const commentPinRouting = read('src/lib/rb/comment-pin-hotkey-routing.ts');
 const routing = read('src/lib/rb/performance-shortcut-routing.ts');
 // savePinDraft's textarea moved into its own component (Thu 3 Sep 2026,
 // pin review v2) to bring FeedbackWidget.svelte back under the 600-line
@@ -25,8 +26,9 @@ const routing = read('src/lib/rb/performance-shortcut-routing.ts');
 const draftBubble = read('src/lib/components/rb/FeedbackPinDraftBubble.svelte');
 
 test("'m' arms comment pin placement", () => {
-	assert.match(commentPinHotkeys, /e\.key !== 'm' && e\.key !== 'M'/);
+	assert.match(commentPinRouting, /e\.key !== 'm' && e\.key !== 'M'/);
 	assert.match(commentPinHotkeys, /armPinPlacement\(\)/);
+	assert.match(commentPinHotkeys, /resolveCommentPinHotkey/);
 	assert.match(hotkeys, /armPinPlacement/);
 	assert.match(routing, /kind: 'm'/);
 });
@@ -34,8 +36,9 @@ test("'m' arms comment pin placement", () => {
 test('no shortcut fires while a text field has focus, or with a modifier held', () => {
 	assert.match(routing, /if \(isTextEntryTarget\(e\.target\)\) return null;/);
 	assert.match(routing, /if \(isTextEntryTarget\(e\.target\) \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) return null;/);
-	assert.match(commentPinHotkeys, /isTextEntryTarget\(e\.target\)/);
+	assert.match(commentPinRouting, /isTextEntryTarget\(e\.target\)/);
 	assert.doesNotMatch(commentPinHotkeys, /isNativeInteractiveTarget/);
+	assert.doesNotMatch(commentPinRouting, /isNativeInteractiveTarget/);
 	assert.doesNotMatch(hotkeys, /isNativeInteractiveTarget/);
 });
 
