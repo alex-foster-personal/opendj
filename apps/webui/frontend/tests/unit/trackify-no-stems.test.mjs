@@ -278,7 +278,7 @@ describe('every stem decode entry point goes through the gated engine functions 
 	it('_upgradeDeckStems settles a blocked deck before it probes, and its stale check reads the policy', () => {
 		const probe = upgrade.text.indexOf('awaitStemArtifact(');
 		const gate = upgrade.text.indexOf('if (_stemDecodeBlocked()) return;');
-		assert.ok(upgrade.text.includes('stemDecodeBlockReason()'), '_upgradeDeckStems never reads the policy');
+		assert.match(upgrade.text, /const _stemDecodeBlocked = stemBlockCheck\(st, \(\) => token === rt\.loadToken\);/, '_upgradeDeckStems never reads the policy');
 		assert.ok(gate >= 0 && gate < probe, 'the blocked check must return before the probe');
 		assert.match(upgrade.text, /const stale = \(\): boolean =>[^\n]*_stemDecodeBlocked\(\)/);
 	});
@@ -291,7 +291,7 @@ describe('every stem decode entry point goes through the gated engine functions 
 			const inDrain = at > drain.start && at < drain.end;
 			assert.ok(inUpgrade || inDrain, '_adoptStemProcessor called outside the gated functions');
 		}
-		const policyRead = drain.text.indexOf('stemDecodeBlockReason()');
+		const policyRead = drain.text.indexOf('stemsBlockedState()');
 		const adopt = drain.text.indexOf('_adoptStemProcessor(');
 		assert.ok(policyRead >= 0 && policyRead < adopt, 'the drain must read the policy before adopting');
 	});

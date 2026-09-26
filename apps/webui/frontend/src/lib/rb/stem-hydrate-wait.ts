@@ -4,6 +4,9 @@
  * of the library's initial-load bundle (scripts/check-bundle-size.sh). */
 import { probeStemArtifact } from '$lib/rb/api-rb';
 import type { StemArtifactProbe } from '$lib/rb/api-rb';
+// Re-exported so the engine reaches the PERFMODE-15 stem block through its
+// existing stem-probe import: the block gates the probe this module runs.
+export { stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-decode-policy';
 
 /** How long a deck keeps re-asking for a bundle the server is still fetching
  * from R2. A four-part bundle is tens of MB; ten minutes covers a slow venue
