@@ -166,7 +166,9 @@ function _harness({ outputs = BF1_OUTPUTS, refuse = () => null } = {}) {
 		if (refusal !== null) throw new Error(refusal);
 		return {};
 	};
-	const idle = { playing: false, audible: false, beatgrid: [] };
+	// duration_ms: a restore that clamps the seek into the loaded track reads it,
+	// and without it every deck lands `missing`, hiding the "restore continued" check.
+	const idle = { playing: false, audible: false, beatgrid: [], duration_ms: 300_000 };
 	const query = () => ({
 		decks: { 1: idle, 2: idle, 3: idle, 4: idle },
 		mixer: { headphones: { outputs } }
