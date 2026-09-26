@@ -34,6 +34,7 @@ from apps.webui.server.backend import (
     TrackFilter,
     compute_mytag_catalog_revision,
 )
+from apps.webui.server.etag import compute_etag
 from apps.webui.server.sqlite_backend import (
     SqliteBackend,
     StaleStateSchemaError,
@@ -49,6 +50,17 @@ ISO = "2026-04-17T10:00:00.000000Z"
 
 def _iso_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _served_etag(track: Track) -> str:
+    """The etag the API serves for ``track``, selection variant included.
+
+    Every serving path (``routes/tracks.py``, ``track_rows.py``, the batch
+    write guard) passes ``track.selection_tag``. Since STANDALONE-06 an
+    unmapped track's lane-owned fields default to own, so its variant is not
+    empty and the two-argument form no longer names the served validator.
+    """
+    return compute_etag(track.stable_id, track.updated_at, track.selection_tag)
 
 
 @pytest.fixture(autouse=True)
@@ -498,10 +510,9 @@ class TestFallbackPaths:
     def test_update_track_writes_through_state_writer(
         self, fresh_state_db: Path,
     ) -> None:
-        from apps.webui.server.etag import compute_etag
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
-        etag = compute_etag(current.stable_id, current.updated_at)
+        etag = _served_etag(current)
         updated = backend.update_track(
             "sid-001", {"notes": "updated from webui"},
             expected_etag=etag, source="webui",
@@ -513,11 +524,10 @@ class TestFallbackPaths:
     def test_update_track_genre_persists_across_reopen(
         self, fresh_state_db: Path,
     ) -> None:
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
-        etag = compute_etag(current.stable_id, current.updated_at)
+        etag = _served_etag(current)
         backend.update_track(
             "sid-001", {"genre": "Breaks"},
             expected_etag=etag, source="webui",
@@ -530,11 +540,10 @@ class TestFallbackPaths:
     def test_update_track_comments_persists_across_reopen(
         self, fresh_state_db: Path,
     ) -> None:
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
-        etag = compute_etag(current.stable_id, current.updated_at)
+        etag = _served_etag(current)
         backend.update_track(
             "sid-001", {"comments": "late-night set"},
             expected_etag=etag, source="webui",
@@ -548,12 +557,11 @@ class TestFallbackPaths:
         self, fresh_state_db: Path,
     ) -> None:
         """PREF-01: unset is a real null, not a fabricated {regular: None, ...}."""
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         before = backend.get_track("sid-001")
         assert before.tempo_pref is None
-        etag = compute_etag(before.stable_id, before.updated_at)
+        etag = _served_etag(before)
         updated = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 140.0, "min": 138.0, "max": 142.0}},
@@ -569,11 +577,10 @@ class TestFallbackPaths:
         self, fresh_state_db: Path,
     ) -> None:
         from apps.webui.server.backend import BackendError
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         before = backend.get_track("sid-001")
-        etag = compute_etag(before.stable_id, before.updated_at)
+        etag = _served_etag(before)
         with pytest.raises(BackendError):
             backend.update_track(
                 "sid-001",
@@ -588,10 +595,9 @@ class TestFallbackPaths:
     ) -> None:
         """A regular tempo now outside a newly-set range is clamped into it,
         never left out of bounds (PREF-01 trap case)."""
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
-        etag = compute_etag("sid-001", backend.get_track("sid-001").updated_at)
+        etag = _served_etag(backend.get_track("sid-001"))
         below = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 130.0, "min": 138.0, "max": 142.0}},
@@ -599,7 +605,7 @@ class TestFallbackPaths:
         )
         assert below.tempo_pref == {"regular": 138.0, "min": 138.0, "max": 142.0}
 
-        etag2 = compute_etag("sid-001", below.updated_at)
+        etag2 = _served_etag(below)
         above = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 150.0, "min": 138.0, "max": 142.0}},
@@ -610,17 +616,16 @@ class TestFallbackPaths:
     def test_update_track_tempo_pref_clear_to_null(
         self, fresh_state_db: Path,
     ) -> None:
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
-        etag = compute_etag("sid-001", backend.get_track("sid-001").updated_at)
+        etag = _served_etag(backend.get_track("sid-001"))
         set_ = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 140.0, "min": None, "max": None}},
             expected_etag=etag, source="webui",
         )
         assert set_.tempo_pref == {"regular": 140.0, "min": None, "max": None}
-        etag2 = compute_etag("sid-001", set_.updated_at)
+        etag2 = _served_etag(set_)
         cleared = backend.update_track(
             "sid-001", {"tempo_pref": None},
             expected_etag=etag2, source="webui",
@@ -634,11 +639,10 @@ class TestFallbackPaths:
         so it must round-trip through ``StateWriter.upsert_track`` -- the
         other flat columns (title/artists/album/isrc/duration_ms) must
         survive unchanged."""
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         before = backend.get_track("sid-001")
-        etag = compute_etag(before.stable_id, before.updated_at)
+        etag = _served_etag(before)
         updated = backend.update_track(
             "sid-001", {"file_path": "/music/relocated/midnight.mp3"},
             expected_etag=etag, source="webui",
@@ -656,11 +660,10 @@ class TestFallbackPaths:
         self, fresh_state_db: Path,
     ) -> None:
         """A pathname mismatch after upsert must roll back before COMMIT."""
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         before = backend.get_track("sid-001")
-        etag = compute_etag(before.stable_id, before.updated_at)
+        etag = _served_etag(before)
         checks = 0
 
         def _fail_postcheck() -> None:
@@ -692,11 +695,10 @@ class TestFallbackPaths:
         import threading
 
         from apps.webui.server.backend import ConflictError
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
-        shared_etag = compute_etag(current.stable_id, current.updated_at)
+        shared_etag = _served_etag(current)
 
         # Barrier to maximise the interleaving window: both threads
         # hit ``update_track`` together, so whoever loses the race
@@ -742,7 +744,6 @@ class TestFallbackPaths:
     ) -> None:
         """If one StateWriter call fails, an earlier row must not persist."""
         from apps.webui.server.backend import TrackUpdate
-        from apps.webui.server.etag import compute_etag
 
         backend = SqliteBackend(fresh_state_db)
         first = backend.get_track("sid-001")
@@ -760,8 +761,8 @@ class TestFallbackPaths:
         monkeypatch.setattr(sb_mod.StateWriter, "set_field", fail_second_write)
         with pytest.raises(RuntimeError, match="injected second write failure"):
             backend.update_tracks([
-                TrackUpdate("sid-001", {"notes": "first changed"}, compute_etag(first.stable_id, first.updated_at)),
-                TrackUpdate("sid-002", {"notes": "second changed"}, compute_etag(second.stable_id, second.updated_at)),
+                TrackUpdate("sid-001", {"notes": "first changed"}, _served_etag(first)),
+                TrackUpdate("sid-002", {"notes": "second changed"}, _served_etag(second)),
             ])
 
         assert backend.get_track("sid-001").notes == first.notes
@@ -807,7 +808,6 @@ class TestFallbackPaths:
     def test_create_and_delete_pairing_persists_in_sqlite(
         self, fresh_state_db: Path,
     ) -> None:
-        from apps.webui.server.etag import compute_etag
         backend = SqliteBackend(fresh_state_db)
         now = _iso_now()
         p = backend.create_pairing(Pairing(

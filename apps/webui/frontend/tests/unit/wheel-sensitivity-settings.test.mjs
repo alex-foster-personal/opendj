@@ -164,6 +164,7 @@ describe('the settings panel control', () => {
 		}
 	});
 
+	// REQ: MIXUX-07
 	it('offers the shipped default as the reset value, derived for the trackpad', () => {
 		assert.equal(defOf('wheel_sensitivity.mouse').control.defaultValue, 1);
 		assert.equal(

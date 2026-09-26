@@ -45,9 +45,16 @@ import {
 	type AppModePrefs
 } from './app-mode-prefs';
 import {
+	GIG_HELPER_PREF_DEFAULTS,
+	bindGigHelperPrefSetters,
+	mergeGigHelperPrefsFromParsed,
+	type GigHelperPrefs
+} from './gig-helper-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
+	type AppPosturePref,
 	type AppPosturePrefs
 } from './app-posture-prefs';
 import {
@@ -66,9 +73,11 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
+import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AppModeId } from './app-mode';
+export type { GigHelperPref } from './gig-helper-prefs';
 export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
@@ -100,7 +109,7 @@ export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
 /** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
 export type HorizontalWheelKnob = 'filter' | 'color';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -248,6 +257,7 @@ const DEFAULTS: RbUiPrefs = {
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
 	...APP_POSTURE_PREF_DEFAULTS,
+	...GIG_HELPER_PREF_DEFAULTS,
 	...APP_MODE_PREF_DEFAULTS
 };
 
@@ -503,6 +513,8 @@ function _load(): RbUiPrefs {
 		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_POSTURE_PREF_DEFAULTS,
 		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
+		...GIG_HELPER_PREF_DEFAULTS,
+		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
 		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY),
 		compatible_filter: {
@@ -686,7 +698,17 @@ export const {
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
-export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+const { setAppPosture: _setAppPostureRaw } = bindAppPosturePrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
+export function setAppPosture(next: AppPosturePref): void {
+	const previous = uiPrefs.app_posture;
+	_setAppPostureRaw(next);
+	tryOfferGigHelperPromptOnPostureChange(previous, next, uiPrefs.gig_helper);
+}
+export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {

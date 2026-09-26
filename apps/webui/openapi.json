@@ -2701,7 +2701,7 @@
         "type": "object"
       },
       "BuildInfoOut": {
-        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the sources measure different moments: a\npayload knows when it was packaged; a repo checkout stamps the running\nengine's start instant at identity resolution (``engine-start``). The\nlegacy ``head-commit`` literal remains on the wire for older readers only.\nLabelling which moment is on screen removes \"why does this say yesterday\"\nconfusion.",
         "properties": {
           "app_version": {
             "anyOf": [
@@ -2717,7 +2717,8 @@
           "built_at_kind": {
             "enum": [
               "payload-build",
-              "head-commit"
+              "head-commit",
+              "engine-start"
             ],
             "title": "Built At Kind",
             "type": "string"
@@ -7618,6 +7619,69 @@
           "how_to_grant"
         ],
         "title": "FolderScanOut",
+        "type": "object"
+      },
+      "FolderWatchOut": {
+        "description": "LIBM-128: the continuous folder-rescan scheduler's own status.\n\n``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not\nrun in this process (no lifespan, or not yet its first cycle) -- a\ngenuinely different fact from a scheduler that ran and found nothing,\nwhich is ``warning=None`` with a real ``last_cycle_at``.",
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "number"
+          },
+          "last_cycle_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Cycle At"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "tracks_added_last_cycle": {
+            "default": 0,
+            "title": "Tracks Added Last Cycle",
+            "type": "integer"
+          },
+          "tracks_removed_last_cycle": {
+            "default": 0,
+            "title": "Tracks Removed Last Cycle",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "running",
+          "interval_s"
+        ],
+        "title": "FolderWatchOut",
         "type": "object"
       },
       "GateErrorBody": {
@@ -17227,6 +17291,16 @@
             "title": "Folder Stages",
             "type": "array"
           },
+          "folder_watch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderWatchOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_import": {
             "anyOf": [
               {
@@ -19757,6 +19831,19 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackLibraryRevisionOut": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "TrackLibraryRevisionOut",
+        "type": "object"
+      },
       "TrackLifecycleOut": {
         "properties": {
           "deleted_at": {
@@ -21072,6 +21159,16 @@
             "title": "Confirm",
             "type": "object"
           },
+          "gig_helper": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "off",
+              "on"
+            ],
+            "title": "Gig Helper",
+            "type": "string"
+          },
           "hide_broken_links": {
             "default": false,
             "title": "Hide Broken Links",
@@ -21304,6 +21401,22 @@
               }
             ],
             "title": "Confirm"
+          },
+          "gig_helper": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unset",
+                  "off",
+                  "on"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gig Helper"
           },
           "hide_broken_links": {
             "anyOf": [
@@ -36246,6 +36359,28 @@
         ]
       }
     },
+    "/api/v1/tracks/revision": {
+      "get": {
+        "description": "Return a cheap revision probe for clients holding library snapshots.",
+        "operationId": "get_library_revision_api_v1_tracks_revision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLibraryRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Revision",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}": {
       "get": {
         "operationId": "get_track_api_v1_tracks__stable_id__get",
@@ -37625,52 +37760,6 @@
           }
         },
         "summary": "Put Ui Prefs",
-        "tags": [
-          "ui-prefs"
-        ]
-      }
-    },
-    "/api/v1/ui-prefs/watcher-folders:validate": {
-      "post": {
-        "description": "LIBM-129 v1: existence check only; no watcher daemon.",
-        "operationId": "validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WatcherFoldersValidateIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "title": "Response Validate Watcher Folders Api V1 Ui Prefs Watcher Folders Validate Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Validate Watcher Folders",
         "tags": [
           "ui-prefs"
         ]

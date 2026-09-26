@@ -4,6 +4,7 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
+import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
@@ -165,6 +166,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	APP_POSTURE_SETTING,
+	GIG_HELPER_SETTING,
 	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',

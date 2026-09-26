@@ -28,6 +28,8 @@ _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
 AppPosturePref = Literal["prep", "gig"]
+GigHelperPref = Literal["unset", "off", "on"]
+_DEFAULT_GIG_HELPER: GigHelperPref = "unset"
 AppModePref = Literal["performance", "library-management", "library", "music-player"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
@@ -468,6 +470,21 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_gig_helper(raw: dict[str, Any]) -> str:
+    if "gig_helper" not in raw:
+        return _DEFAULT_GIG_HELPER
+    value = raw["gig_helper"]
+    if value not in ("unset", "off", "on"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "gig_helper must be unset|off|on",
+            },
+        )
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -482,6 +499,7 @@ def _load(path: Path) -> dict[str, Any]:
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
+            "gig_helper": _DEFAULT_GIG_HELPER,
             "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
             **_lyrics_defaults(),
@@ -564,6 +582,7 @@ def _load(path: Path) -> dict[str, Any]:
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
+        "gig_helper": _parse_gig_helper(raw),
         "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
         **_parse_lyrics(raw),
@@ -631,6 +650,7 @@ class UiPrefsOut(BaseModel):
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
     perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
     app_posture: AppPosturePref = _DEFAULT_APP_POSTURE
+    gig_helper: GigHelperPref = _DEFAULT_GIG_HELPER
     app_mode: AppModeOut = Field(default_factory=AppModeOut)
     beat_sync_max: bool = _DEFAULT_BEAT_SYNC_MAX
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
@@ -667,6 +687,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_deck_line: bool | None = None
     perf_tier: PerfTierPref | None = None
     app_posture: AppPosturePref | None = None
+    gig_helper: GigHelperPref | None = None
     app_mode: AppModeOut | None = None
     beat_sync_max: bool | None = None
     auto_play_enabled: bool | None = None
@@ -763,6 +784,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["perf_tier"] = body.perf_tier
     if body.app_posture is not None:
         current["app_posture"] = body.app_posture
+    if body.gig_helper is not None:
+        current["gig_helper"] = body.gig_helper
     if body.app_mode is not None:
         current["app_mode"] = _parse_app_mode(
             {**current["app_mode"], **body.app_mode.model_dump(exclude_unset=True)}

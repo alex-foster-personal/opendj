@@ -68,6 +68,7 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
+from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
@@ -426,11 +427,21 @@ def _wrap_lifespan(
             # existing file always wins; no default means nothing changes.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
             cloudsync_first_run.seed_default_config(cloudsync_dir, env=os.environ)
-            async with legacy_lifespan(instance), scheduler_lifespan(
-                cloudsync_dir,
-                ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
-            ) as sched:
+            async with (
+                legacy_lifespan(instance),
+                scheduler_lifespan(
+                    cloudsync_dir,
+                    ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
+                ) as sched,
+                # cfg.data_dir, not cloudsync_dir: same per-instance value
+                # ``LibraryAvailabilityWorker(cfg.data_dir)`` above already
+                # uses, rather than the module-level ``STATE_DB`` constant
+                # ``cloudsync_dir`` is derived from (out of scope for #3180
+                # to also re-key CloudSync onto it).
+                folder_rescan_lifespan(cfg.data_dir) as folder_rescan,
+            ):
                 instance.state.sync_hub_scheduler = sched
+                instance.state.folder_rescan_scheduler = folder_rescan
                 availability_worker.start()
                 try:
                     yield

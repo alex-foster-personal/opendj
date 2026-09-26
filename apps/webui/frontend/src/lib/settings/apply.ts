@@ -30,6 +30,7 @@ import {
 	setNextOnlyFilter,
 	setAvailableOfflineFilter,
 	setAppPosture,
+	setGigHelper,
 	setPerfTier,
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
@@ -42,6 +43,7 @@ import {
 	type LibraryDensity,
 	type LyricsLoadStrategy,
 	type AppPosturePref,
+	type GigHelperPref,
 	type PerfTierPref,
 	type PreviewBeatSync,
 	type UiTheme
@@ -89,7 +91,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'crossfade_curve',
 	'horizontal_wheel_knob',
 	'perf_tier',
-	'app_posture'
+	'app_posture',
+	'gig_helper'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -176,6 +179,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.perf_tier;
 		case 'app_posture':
 			return uiPrefs.app_posture;
+		case 'gig_helper':
+			return uiPrefs.gig_helper;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -352,6 +357,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				throw new Error(`app_posture must be prep|gig, got ${String(value)}`);
 			}
 			setAppPosture(value as AppPosturePref);
+			return;
+		}
+		case 'gig_helper': {
+			if (value !== 'unset' && value !== 'off' && value !== 'on') {
+				throw new Error(`gig_helper must be unset|off|on, got ${String(value)}`);
+			}
+			setGigHelper(value as GigHelperPref);
 			return;
 		}
 		default: {

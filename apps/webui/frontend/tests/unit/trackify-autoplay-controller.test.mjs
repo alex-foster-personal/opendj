@@ -7,24 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
 const ENTRY = fileURLToPath(new URL('./fixtures/trackify-autoplay-entry.ts', import.meta.url));
-
-const urlSuffixImports = {
-	name: 'vite-url-suffix',
-	setup(build) {
-		build.onResolve({ filter: /\?url$/ }, (args) => ({
-			path: args.path,
-			namespace: 'vite-url-suffix'
-		}));
-		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
-			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
-			loader: 'js'
-		}));
-	}
-};
 
 const svelteComponentStubs = {
 	name: 'svelte-component-stub',
@@ -59,7 +46,7 @@ async function bundleTrackifyControllerEntry() {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [urlSuffixImports, svelteComponentStubs],
+		plugins: [viteUrlSuffixPlugin, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});
@@ -110,9 +97,11 @@ const DURATION_MS = 200_000;
 function installFakeTransport() {
 	const deck = entry.deckStates[entry.TRACKIFY_DECK_ID];
 	const log = [];
+	const loadOptions = [];
 	const loadGates = new Map();
-	entry.engine.load = async (deckId, stableId) => {
+	entry.engine.load = async (deckId, stableId, options) => {
 		log.push(`load ${stableId}`);
+		loadOptions.push({ deckId, stableId, options });
 		const gate = loadGates.get(stableId);
 		if (gate === 'reject') throw new Error('decode failed');
 		if (gate !== undefined) await gate;
@@ -138,7 +127,7 @@ function installFakeTransport() {
 		log.push(`pause ${entry.deckStates[deckId].stable_id}`);
 		entry.deckStates[deckId].playing = false;
 	};
-	return { deck, log, loadGates };
+	return { deck, log, loadGates, loadOptions };
 }
 
 function resetDeck() {
@@ -228,11 +217,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			assert.equal(state.deck.stable_id, 'good');
 			assert.equal(state.deck.playing, true);
 			assert.match(state.last_skip_reason ?? '', /^skipped bad: decode failed$/);
-			const pushed = entry.toasts.slice(toastsBefore).map((toast) => toast.message);
-			assert.ok(
-				pushed.some((message) => message.includes('Trackify: skipped track (decode failed)')),
-				`expected a skip toast, got ${JSON.stringify(pushed)}`
-			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.deepEqual(pushed, [
+				['info', 'Trackify: skipped track (decode failed)']
+			]);
 		} finally {
 			mock.timers.reset();
 		}
@@ -272,10 +262,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 				/^skipped bad: .*did not settle within/,
 				`a hung load must be skipped within ${REQUIRED_SKIP_BOUND_MS}ms`
 			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.equal(pushed.length, 1, `expected exactly one skip toast, got ${JSON.stringify(pushed)}`);
 			assert.ok(
-				entry.toasts
-					.slice(toastsBefore)
-					.some((toast) => toast.message.startsWith('Trackify: skipped track (')),
+				pushed[0][1].startsWith('Trackify: skipped track ('),
 				'the skip must be toasted'
 			);
 
@@ -427,6 +419,30 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			mock.timers.tick(250);
 			await settle();
 			assert.deepEqual(log, ['unload current', 'load next', 'play next']);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('Trackify loads never request stems after a late upgrade at track end', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log, loadOptions } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('ended'), row('next')]);
+			loadedDeck(deck, 'ended', { playing: false, position_ms: DURATION_MS });
+
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+
+			assert.deepEqual(log, ['unload ended', 'load next', 'play next']);
+			assert.deepEqual(loadOptions, [{
+				deckId: 1,
+				stableId: 'next',
+				options: { stems: false }
+			}]);
 		} finally {
 			if (uninstall !== null) uninstall();
 			mock.timers.reset();

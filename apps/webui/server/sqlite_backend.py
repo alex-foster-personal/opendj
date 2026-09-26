@@ -82,6 +82,7 @@ from .backend import (
     TrackFilter,
     TrackPlaylistHit,
     TrackUpdate,
+    compute_library_revision_summary,
     compute_mytag_catalog_revision,
     resolve_tempo_pref_write,
 )
@@ -592,6 +593,30 @@ class SqliteBackend:
                 scan_cursor = rows[-1]["stable_id"]
             next_cursor = page[-1].stable_id if len(page) == limit else None
             return Page(items=page, next_cursor=next_cursor)
+
+    def library_revision(self) -> str:
+        with self._ro() as conn:
+            if not self._table_exists(conn, "tracks"):
+                _warn_fallback_once("library_revision", "no tracks table")
+                return self._fallback.library_revision()
+            track_summary = conn.execute(
+                "SELECT COUNT(*), COALESCE(MAX(updated_at), '') "
+                "FROM tracks WHERE deleted_at IS NULL"
+            ).fetchone()
+            field_summary = conn.execute(
+                "SELECT COALESCE(MAX(modified_at), '') FROM track_fields "
+                "WHERE deleted_at IS NULL"
+            ).fetchone()
+            changelog_summary = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) FROM local_changelog "
+                "WHERE table_name IN ('tracks', 'track_fields')"
+            ).fetchone()
+        return compute_library_revision_summary(
+            int(track_summary[0]),
+            str(track_summary[1]),
+            str(field_summary[0]),
+            int(changelog_summary[0]),
+        )
 
     def get_track(self, stable_id: str) -> Track:
         with self._ro() as conn:

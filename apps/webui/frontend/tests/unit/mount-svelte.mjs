@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import { compile } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
@@ -55,7 +56,7 @@ export async function bundleSvelteEntry(entrySource) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [svelteComponentPlugin],
+		plugins: [svelteComponentPlugin, viteUrlSuffixPlugin],
 		target: 'node20',
 		write: false
 	});

@@ -94,7 +94,10 @@ function install({ clipboard = 'ok', secure = true } = {}) {
 				: undefined;
 
 	defineGlobal('window', {
-		location: { href: 'http://127.0.0.1:8585/performance?deck=2' },
+		location: {
+			href: 'http://127.0.0.1:8585/performance?deck=2',
+			pathname: '/performance'
+		},
 		isSecureContext: secure,
 		localStorage: store,
 		addEventListener: () => {}
