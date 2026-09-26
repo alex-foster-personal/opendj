@@ -245,6 +245,13 @@ TABLE_DOCS: dict[str, str] = {
         "the same file to avoid a second sqlite connection "
         "(apps/shared/pairings/schema_sql.py)."
     ),
+    "http_pairings": (
+        "PAIR-04 HTTP pairing entities (UUID pairing_id, ->/<-> direction, "
+        "optional open-time snapshot JSON). Owned by "
+        "apps.webui.server.pairings_sqlite, created on first webui pairing "
+        "write on the shared state.db connection; mirrored into the CAT-03 "
+        "pairings graph for tooling."
+    ),
     "smartlists": (
         "Saved smart-playlist rules (SMART-01/02): a JSON rule AST plus "
         "the last materialisation result, so the evaluator and the "
