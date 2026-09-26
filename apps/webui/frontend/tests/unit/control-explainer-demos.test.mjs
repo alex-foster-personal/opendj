@@ -23,6 +23,10 @@ test('ControlExplainer declares headphone-mix demo keyframes', () => {
 	assert.match(EXPLAINER, /demo === 'headphone-mix'/);
 	assert.match(EXPLAINER, /@keyframes mix-knob-turn/);
 	assert.match(EXPLAINER, /@keyframes hp-route-dot/);
+	assert.match(EXPLAINER, /master-path/);
+	assert.match(EXPLAINER, /translate\(28px, -12px\)/, 'route dot must visit master path (y=18) after cue leg');
+	assert.match(EXPLAINER, /translate\(28px, 0\)/, 'route dot must travel along cue path before master');
+	assert.doesNotMatch(EXPLAINER, /\.master-path[\s\S]*--rb-red/);
 	assert.match(EXPLAINER, /demo === 'split-view'/);
 	assert.match(EXPLAINER, /demo === 'link'/);
 	assert.match(EXPLAINER, /demo === 'headphone-mode'/);

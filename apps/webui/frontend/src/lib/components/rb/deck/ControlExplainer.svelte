@@ -599,21 +599,26 @@
 	}
 	@keyframes hp-route-dot {
 		0%,
-		15% {
+		10% {
 			transform: translate(0, 0);
 			opacity: 1;
 		}
-		40% {
+		30% {
+			transform: translate(28px, 0);
+			opacity: 1;
+		}
+		48%,
+		58% {
 			transform: translate(28px, -12px);
 			opacity: 1;
 		}
-		55% {
-			transform: translate(28px, -12px);
-			opacity: 1;
+		75% {
+			transform: translate(28px, 0);
+			opacity: 0.9;
 		}
-		80% {
+		100% {
 			transform: translate(0, 0);
-			opacity: 0.85;
+			opacity: 1;
 		}
 	}
 	@keyframes mode-fade-practice {
