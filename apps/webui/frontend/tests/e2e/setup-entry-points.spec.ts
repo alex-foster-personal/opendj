@@ -603,6 +603,9 @@ test.describe('setup entry points', () => {
 				.poll(async () => {
 					await copyAll.click();
 					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
 				})
 				.toMatch(/git_sha:/);
 		}
