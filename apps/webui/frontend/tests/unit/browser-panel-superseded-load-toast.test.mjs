@@ -36,16 +36,23 @@ const PANEL = fileURLToPath(
 );
 
 let contract;
+let fillPlaylistPane;
+let PLAYLIST_FIRST_PAGE;
 before(async () => {
 	contract = await loadTypeScriptModule(
 		'src/lib/components/rb/browser/pane-contract.svelte.ts'
 	);
+	const fillMod = await loadTypeScriptModule(
+		'src/lib/components/rb/browser/fill-playlist-pane.ts'
+	);
+	fillPlaylistPane = fillMod.fillPlaylistPane;
+	PLAYLIST_FIRST_PAGE = fillMod.PLAYLIST_FIRST_PAGE;
 });
 
 /** Builds the real `_loadPane`, evaluated straight from BrowserPanel.svelte,
  * with its closure-captured helpers supplied as factory arguments so it can
  * run outside the component. */
-function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
+function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 	const source = readFileSync(PANEL, 'utf8');
 	const start = source.indexOf('\tasync function _loadPane(');
 	const end = source.indexOf('\n\t/** Reconstructs the minimal PlaylistNode', start);
@@ -64,10 +71,24 @@ function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
 		/: PaneStore|: PlaylistNode|Promise<void>|\bas [A-Z]\w+/,
 		'TypeScript annotation survived stripping'
 	);
+	const helperSource = `
+	function _pushPaneLoadError(p, node, label, error) {
+		pushToast(\`\${label}: \${error}\`, 'error');
+	}
+`;
 	const factory = Function(
 		'panes',
 		'setLastPlaylist',
+		'source',
+		'_writeCollectionQuery',
+		'fillAutolistPane',
+		'autolistSelection',
+		'PAGE_SIZE',
+		'queryAutolists',
 		'fillAllTracksPane',
+		'fetchBootTracksFirstPage',
+		'_rowFromListWire',
+		'listTracksHydrated',
 		'fillPlaylistPane',
 		'PLAYLIST_FIRST_PAGE',
 		'listPlaylistTracksPage',
@@ -80,21 +101,38 @@ function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
 		'allTracksNonBrokenCount',
 		'pushToast',
 		'_rowFromPlaylistWire',
-		`${functionSource}\nreturn _loadPane;`
+		`${helperSource}${functionSource}\nreturn _loadPane;`
 	);
 	return factory(
 		[], // panes[0] is never this test's pane, so setLastPlaylist must never fire
 		() => {
 			throw new Error('setLastPlaylist must not be called');
 		},
+		'rekordbox',
+		() => {},
+		async () => {
+			throw new Error('fillAutolistPane must not be called');
+		},
+		{},
+		30,
+		async () => {
+			throw new Error('queryAutolists must not be called');
+		},
 		() => {
 			throw new Error('fillAllTracksPane must not be called (node.kind is "playlist")');
 		},
-		fillPlaylistPaneImpl,
-		100,
 		async () => {
-			throw new Error('listPlaylistTracksPage must not be called when fillPlaylistPane is stubbed');
+			throw new Error('fetchBootTracksFirstPage must not be called');
 		},
+		() => {
+			throw new Error('_rowFromListWire must not be called');
+		},
+		async () => {
+			throw new Error('listTracksHydrated must not be called');
+		},
+		fillPlaylistPane,
+		PLAYLIST_FIRST_PAGE,
+		listPlaylistTracksPage,
 		() => {},
 		() => {},
 		() => {},
@@ -120,7 +158,7 @@ test('a load failure that lost the race to a newer load pushes no toast', async 
 	const toasts = [];
 	let rejectFirst;
 	const loadPane = makeLoadPane({
-		fillPlaylistPaneImpl: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
+		listPlaylistTracksPage: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 
@@ -142,7 +180,9 @@ test('control: a genuine, non-superseded load failure still toasts', async () =>
 	const p = contract.createPaneStore();
 	const toasts = [];
 	const loadPane = makeLoadPane({
-		fillPlaylistPaneImpl: () => Promise.reject(new Error('network exploded')),
+		listPlaylistTracksPage: async () => {
+			throw new Error('network exploded');
+		},
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 
