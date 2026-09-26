@@ -23,17 +23,21 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import subprocess
-import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+import uvicorn
 
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import InMemoryBackend
 from ops.agentic_testing.driver_claude import BILLING_REROUTE_ENV_VARS
+from tests.waits import start_uvicorn_in_thread
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTMAC_DIR = REPO_ROOT / "ops/testmac"
@@ -299,82 +303,122 @@ def test_verify_reports_a_dead_engine_before_a_wall() -> None:
     assert '[ -n "$ENGINE_LIVE" ]' in text[passing:dead], "PASS must require a live engine"
 
 
-def _serve(root: Path, health: str, performance: str) -> ThreadingHTTPServer:
-    (root / "api/v1").mkdir(parents=True)
-    (root / "api/v1/health").write_text(health, encoding="utf-8")
-    (root / "performance").write_text(performance, encoding="utf-8")
-    handler = partial(SimpleHTTPRequestHandler, directory=str(root))
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
-
-
 def _setup_function(name: str) -> str:
-    match = re.search(
-        rf"^{name}\(\) \{{\n.*?^\}}\n", SETUP_SH.read_text(encoding="utf-8"), re.M | re.S
-    )
+    """One function's real source from setup.sh: a one-liner, or a block up to its `}`."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    one_line = re.search(rf"^{name}\(\) \{{[^\n]*\}}\n", text, re.M)
+    block = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", text, re.M | re.S)
+    match = one_line or block
     assert match, f"setup.sh must define {name}()"
     return match.group(0)
 
 
-def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) -> None:
-    """[if] setup.sh picks the main checkout on health alone while it is API-only and the
-    agt-mini sibling serves the app [then] the loop parks on 'serves no app shell' forever
-    despite a usable engine, [else stop]. Runs setup.sh's real selection functions (with
-    `run` executing locally) against two real HTTP servers."""
-    api_only = _serve(tmp_path / "api_only", '{"status":"ok"}', '{"detail":"Not Found"}')
-    full = _serve(tmp_path / "full", '{"status":"ok"}', "<!doctype html><html></html>")
-    url = {
-        name: f"http://127.0.0.1:{srv.server_address[1]}"
-        for name, srv in (("api", api_only), ("full", full))
-    }
-    url["dead"] = "http://127.0.0.1:1"
-    url["none"] = ""
-    harness = "\n".join(
-        [
-            "set -euo pipefail",
-            "HOST=h; REMOTE_REPO=/r/main",
-            "log() { printf '[OK] %s\\n' \"$*\"; }",
-            'run() { bash -c "$1"; }',
-            'probe_engine_repo() { case "$1" in /r/main) echo "$MAIN_BASE";; '
-            '/r/main-wt-agt-mini) echo "$SIB_BASE";; esac; }',
-            _setup_function("engine_serves_app"),
-            _setup_function("choose_engine_repo"),
-            "choose_engine_repo",
-            'echo "ENGINE_REPO=$ENGINE_REPO"',
-        ]
+LIVE_ENGINE_HOST = "demon-llama"
+
+
+def _host_reachable(host: str) -> bool:
+    probe = ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "true"]
+    return subprocess.run(probe, capture_output=True, check=False, timeout=30).returncode == 0
+
+
+@contextmanager
+def _real_api_only_engine_on(host: str, tmp_path: Path) -> Iterator[int]:
+    """The REAL webui app with no frontend (the production no-build path: /api/v1/health
+    ok, /performance a JSON 404), exposed on `host` by a real `ssh -R` forward. Yields
+    the port on `host`."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    port = int(listener.getsockname()[1])
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path / "client-errors",
+        client_event_log_dir=tmp_path / "client-events",
     )
-
-    def choose(main: str, sibling: str) -> subprocess.CompletedProcess[str]:
-        env = {"PATH": os.environ["PATH"], "MAIN_BASE": url[main], "SIB_BASE": url[sibling]}
-        return subprocess.run(
-            ["bash", "-c", harness],
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
-
+    server, thread = start_uvicorn_in_thread(
+        uvicorn.Config(app, log_level="warning"), what="api-only engine", sockets=[listener]
+    )
+    forward = [
+        "ssh", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+        "-R", f"0:127.0.0.1:{port}", host,
+    ]  # fmt: skip
+    tunnel = subprocess.Popen(forward, stderr=subprocess.PIPE, text=True)
     try:
-        for main, sibling, chosen in (
-            ("api", "full", "/r/main-wt-agt-mini"),  # the reported split
-            ("dead", "full", "/r/main-wt-agt-mini"),
-            ("none", "full", "/r/main-wt-agt-mini"),
-            ("full", "full", "/r/main"),  # control: a live main checkout still wins
-            ("full", "api", "/r/main"),
-        ):
-            done = choose(main, sibling)
-            assert done.returncode == 0, done.stderr
-            assert f"ENGINE_REPO={chosen}\n" in done.stdout, (main, sibling, done.stdout)
-            assert "[WARN]" not in done.stderr, (main, sibling)
-        # Negative: neither serves the app, so setup warns and keeps the main default.
-        done = choose("api", "api")
-        assert "ENGINE_REPO=/r/main\n" in done.stdout
-        assert "serves the app shell" in done.stderr
+        remote_port = None
+        assert tunnel.stderr is not None
+        for _ in range(20):
+            match = re.search(r"Allocated port (\d+)", tunnel.stderr.readline())
+            if match:
+                remote_port = int(match.group(1))
+                break
+        assert remote_port, "ssh -R never reported its allocated port"
+        yield remote_port
     finally:
-        api_only.shutdown()
-        full.shutdown()
+        tunnel.terminate()
+        tunnel.wait(timeout=10)
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) -> None:
+    """[if] setup.sh counts an engine as live when it is down, or healthy but API-only
+    (no app shell at /performance), or picks such a checkout while the -wt-agt-mini
+    sibling serves the app [then] the loop parks forever despite a usable engine,
+    [else stop].
+
+    Live, no stand-ins: setup.sh's own run/probe_engine_repo/engine_serves_app/
+    choose_engine_repo over real ssh against demon-llama's real engines (its main
+    checkout's engine is down there, the agt-mini sibling serves the app), plus the
+    real webui app with no frontend forwarded onto that host as the API-only case. Its
+    health is re-measured through the same forward, so "not live" cannot come from a
+    broken tunnel. UNAVAILABLE off the tailnet."""
+    if not _host_reachable(LIVE_ENGINE_HOST):
+        pytest.skip(f"UNAVAILABLE: {LIVE_ENGINE_HOST} is not reachable over BatchMode ssh")
+    with _real_api_only_engine_on(LIVE_ENGINE_HOST, tmp_path) as api_only_port:
+        api_only = f"http://127.0.0.1:{api_only_port}"
+        harness = "\n".join(
+            [
+                "set -euo pipefail",
+                f"HOST={LIVE_ENGINE_HOST}",
+                "log() { printf '[OK] %s\\n' \"$*\"; }",
+                _setup_function("run"),
+                "REMOTE_REPO=$(run 'cd ~/code/music-dj-tools 2>/dev/null && pwd')",
+                _setup_function("probe_engine_repo"),
+                _setup_function("engine_serves_app"),
+                _setup_function("choose_engine_repo"),
+                "choose_engine_repo",
+                'echo "ENGINE_REPO=$ENGINE_REPO"',
+                'echo "ENGINE_BASE=$(probe_engine_repo "$ENGINE_REPO")"',
+                "engine_serves_app http://127.0.0.1:1 && echo CLOSED=live || echo CLOSED=no",
+                f"engine_serves_app {api_only} && echo API_ONLY=live || echo API_ONLY=not-live",
+                f'echo API_ONLY_HEALTH=$(run "curl -s -m 5 {api_only}/api/v1/health" | head -c 15)',
+            ]
+        )
+        done = subprocess.run(
+            ["bash", "-c", harness], capture_output=True, text=True, check=False, timeout=180
+        )
+    assert done.returncode == 0, done.stderr
+    fields = dict(line.split("=", 1) for line in done.stdout.splitlines() if "=" in line)
+    assert fields["API_ONLY_HEALTH"].startswith('{"status":"ok"'), "control: API-only engine is up"
+    assert fields["API_ONLY"] == "not-live", "a healthy engine with no app shell is not live"
+    assert fields["CLOSED"] == "no", "a closed port is not live"
+    assert fields["ENGINE_REPO"].endswith("-wt-agt-mini"), done.stdout + done.stderr
+    assert "[WARN]" not in done.stderr
+    # Independent instrument: the chosen base really is healthy AND serves the app shell.
+    base = fields["ENGINE_BASE"]
+    assert base.startswith("http://127.0.0.1:"), base
+    remeasure = subprocess.run(
+        [
+            "ssh", "-n", "-o", "BatchMode=yes", LIVE_ENGINE_HOST,
+            f"curl -s -m 5 {base}/api/v1/health; echo; "
+            f"curl -s -m 5 {base}/performance | head -c 200",
+        ],
+        capture_output=True, text=True, check=False, timeout=60,
+    )  # fmt: skip
+    assert '"status":"ok"' in remeasure.stdout
+    assert "<!doctype html" in remeasure.stdout.lower()
 
 
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
