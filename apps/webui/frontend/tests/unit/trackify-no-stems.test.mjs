@@ -123,6 +123,28 @@ describe('Trackify never decodes stems; Gig still upgrades lazily (PERFMODE-15)'
 		assert.equal(entry.stemDecodeBlockReason(), null, 'Gig must not inherit the Trackify block');
 	});
 
+	it('the per-upgrade block check settles only the load it belongs to', () => {
+		const deck = { stems: { status: 'loading' } };
+		let current = true;
+		const blocked = entry.stemBlockCheck(deck, () => current);
+		assert.equal(blocked(), false, 'no block: the upgrade may run');
+		assert.equal(deck.stems.status, 'loading', 'no block: the deck state is untouched');
+		const release = entry.blockStemDecode('Trackify mode has no stems (test)');
+		try {
+			current = false;
+			assert.equal(blocked(), true, 'a superseded upgrade must still stop');
+			// Control for the overshoot direction: the deck has moved on to another
+			// track, so this upgrade must not write its state over the new load's.
+			assert.equal(deck.stems.status, 'loading', 'a superseded upgrade must not settle the deck');
+			current = true;
+			assert.equal(blocked(), true);
+			assert.equal(deck.stems.status, 'unavailable');
+			assert.match(deck.stems.error ?? '', /stems disabled: Trackify/);
+		} finally {
+			release();
+		}
+	});
+
 	it('with Trackify mounted, the lazy stem upgrade makes no stem request and settles the deck unavailable', async () => {
 		const uninstall = entry.installTrackifySession();
 		try {
