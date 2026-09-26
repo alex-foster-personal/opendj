@@ -27,8 +27,9 @@ import pytest
 from apps.parity.vocal import _region_endpoints, vocal_iou
 from apps.shared.paths import DATA_DIR
 from apps.vocals import cache as vcache
-from apps.vocals.cli import WORKER_SCRIPT, main as vocals_main
 from apps.vocals import cli as vcli
+from apps.vocals.cli import WORKER_SCRIPT
+from apps.vocals.cli import main as vocals_main
 from scripts.vocal_gcloud_farm import cmd_import_outbox
 from tests.vocals import spike_b2_fixture as sb2
 from tests.vocals._process_tree import descendants_of, worker_like_pids
@@ -76,7 +77,6 @@ def _run_one_live(fixture: SpikeB2Fixture, track: SpikeB2Track) -> dict[str, Any
     code = vocals_main(
         [
             "one",
-            "--live",
             "--force",
             "--stable-id",
             track.stable_id,
@@ -84,7 +84,7 @@ def _run_one_live(fixture: SpikeB2Fixture, track: SpikeB2Track) -> dict[str, Any
             str(fixture.data_dir),
         ]
     )
-    assert code == 0, f"one --live failed for {track.stable_id}"
+    assert code == 0, f"one --force failed for {track.stable_id}"
     cache_file = vcache.cache_path(fixture.data_dir, track.stable_id)
     entry = vcache.load_valid_entry(cache_file, track.audio_path)
     assert entry is not None, f"missing cache entry for {track.stable_id}"
@@ -162,8 +162,8 @@ def test_cpu_cache_entry_device(spike_b2_fixture: SpikeB2Fixture) -> None:
 @live_demucs
 def test_cuda_cache_import_path(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path) -> None:
     """[if] CUDA farm-out available [then] outbox import yields valid cache."""
-    if not _cuda_available():
-        pytest.skip("UNAVAILABLE: no CUDA device")
+    if not _cuda_available(tmp_path):
+        pytest.skip("UNAVAILABLE: no CUDA device (probed in the worker's PEP 723 env)")
     track = next(t for t in spike_b2_fixture.tracks if t.role == "vocal")
     inbox = tmp_path / "inbox"
     outbox = tmp_path / "outbox"
@@ -212,17 +212,36 @@ def test_cuda_cache_import_path(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
     _duration_within_tolerance(entry, track.audio_path)
 
 
-def _cuda_available() -> bool:
-    probe = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)",
-        ],
+def _cuda_available(tmp_path: Path) -> bool:
+    """Probe CUDA inside the demucs worker's own PEP 723 env.
+
+    torch never enters the repo venv, so probing ``sys.executable`` could only
+    ever answer "no torch". Reuse the worker script's inline metadata so the
+    probe runs against the exact torch build the worker would use; a probe
+    that cannot import torch is UNKNOWN and fails loudly rather than skipping.
+    """
+    worker_text = WORKER_SCRIPT.read_text(encoding="utf-8")
+    metadata_end = worker_text.index("\n# ///\n") + len("\n# ///\n")
+    probe = tmp_path / "cuda_probe.py"
+    probe.write_text(
+        worker_text[:metadata_end]
+        + "import torch\n"
+        + "raise SystemExit(0 if torch.cuda.is_available() else 3)\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["uv", "run", "--script", str(probe)],
         capture_output=True,
+        text=True,
         check=False,
     )
-    return probe.returncode == 0
+    if result.returncode == 0:
+        return True
+    if result.returncode == 3:
+        return False
+    raise RuntimeError(
+        f"UNKNOWN: CUDA probe could not run (rc={result.returncode}): {result.stderr[-2000:]}"
+    )
 
 
 @live_demucs
@@ -278,7 +297,7 @@ def test_manual_recovery_claim_operable(
 ) -> None:
     """[if] manual_recovery_required set [then] lock delete allows reclaim [else stop]."""
     # Operator recovery: confirm manual_recovery_required, verify no live PIDs,
-    # delete .json.lock, then re-run `python -m apps.vocals one --live`.
+    # delete .json.lock, then re-run `python -m apps.vocals one --stable-id <id>`.
 
     class RunningProcess:
         pid = os.getpgid(0)
@@ -297,9 +316,8 @@ def test_manual_recovery_claim_operable(
     cache_file = vcache.cache_path(tmp_path, "manual-recovery")
     claim = vcli._claim_track(cache_file)
     assert claim is not None
-    with pytest.raises(vcli.WorkerCleanupError):
-        with vcli._managed_track_claim(claim):
-            vcli._terminate_worker_tree(RunningProcess())  # type: ignore[arg-type]
+    with pytest.raises(vcli.WorkerCleanupError), vcli._managed_track_claim(claim):
+        vcli._terminate_worker_tree(RunningProcess())  # type: ignore[arg-type]
     record = vcli._read_claim_record(claim.path)
     assert record is not None
     assert record["manual_recovery_required"] is True

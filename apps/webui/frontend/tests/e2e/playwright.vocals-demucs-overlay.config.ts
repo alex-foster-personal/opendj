@@ -3,7 +3,10 @@
  *
  * Opt-in only. Run::
  *
- *     MDT_LIVE_DEMUCS_ACCEPTANCE=1 pnpm test:e2e:vocals-demucs-overlay
+ *     MDT_LIVE_DEMUCS_ACCEPTANCE=1 \
+ *     VOCALS_DEMUCS_OVERLAY_SOURCE_AUDIO=/abs/track-with-vocals.mp3 \
+ *     VOCALS_DEMUCS_OVERLAY_CLIP_START_S=55 \
+ *     pnpm test:e2e:vocals-demucs-overlay
  */
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -22,6 +25,17 @@ if (process.env.MDT_LIVE_DEMUCS_ACCEPTANCE !== '1') {
 }
 
 const endpoints = resolveEndpoints();
+
+// Real vocal audio is required: htdemucs finds zero vocal regions in the
+// synthetic tone the other e2e fixtures share, so the overlay could not paint.
+const SOURCE_AUDIO = process.env.VOCALS_DEMUCS_OVERLAY_SOURCE_AUDIO;
+const CLIP_START_S = process.env.VOCALS_DEMUCS_OVERLAY_CLIP_START_S;
+if (!SOURCE_AUDIO || !CLIP_START_S) {
+	throw new Error(
+		'vocals demucs overlay e2e needs VOCALS_DEMUCS_OVERLAY_SOURCE_AUDIO (absolute path ' +
+			'to a track with vocals) and VOCALS_DEMUCS_OVERLAY_CLIP_START_S (seconds)'
+	);
+}
 
 export const FIXTURE_DATA_DIR = join(
 	FRONTEND_ROOT,
@@ -83,10 +97,12 @@ export default defineConfig({
 				`uv run --no-sync python ${FIXTURE_BUILDER}`,
 				`--data-dir ${FIXTURE_DATA_DIR}`,
 				`--manifest ${FIXTURE_MANIFEST}`,
+				`--source-audio ${JSON.stringify(SOURCE_AUDIO)}`,
+				`--clip-start-s ${CLIP_START_S}`,
 				'&&',
-				'uv run --no-sync python -m apps.webui.server',
-				`--host 127.0.0.1 --port ${endpoints.backendPort} --prod`,
-				`--data-dir ${FIXTURE_DATA_DIR}`
+				'uv run --no-sync python -m apps.engine_core serve',
+				`--data-dir ${FIXTURE_DATA_DIR}`,
+				`--host 127.0.0.1 --port ${endpoints.backendPort}`
 			].join(' '),
 			cwd: REPOSITORY_ROOT,
 			url: `${endpoints.backendOrigin}/api/v1/health`,

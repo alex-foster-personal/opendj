@@ -22,10 +22,13 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.paths import DATA_DIR
+from apps.shared.platform_paths import PathMap, load_path_map, resolve_asset_path
 from apps.vocals.cli import pvdi_present
 from apps.webui.server.rb_vendor_pkg.anlz import _vocal_regions, read_pvdi
 
-_MANIFEST_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "vocals" / "spike-b2-acceptance.json"
+_MANIFEST_PATH = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "vocals" / "spike-b2-acceptance.json"
+)
 _PVDI_FIXED_HEADER = bytes.fromhex("0000040056220001")
 _PLAYLIST_ID = "spike-b2-acceptance"
 _USE_SOURCE_PATHS_ENV = "VOCALS_ACCEPTANCE_USE_SOURCE_PATHS"
@@ -153,10 +156,14 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
         raise FileNotFoundError(
             f"SPIKE-B2 vendor_id {vendor_id} lacks FolderPath or AnalysisDataPath"
         )
-    audio_path = Path(str(folder_path))
+    # Real rekordbox rows store AnalysisDataPath share-relative
+    # ("/PIONEER/USBANLZ/..."), so resolve both paths the way production
+    # (apps.vocals.cli.load_tracks / _anlz_data_file) does.
+    path_map = load_path_map(source_data_dir)
+    audio_path = _resolved_or_raise(str(folder_path), path_map, vendor_id, "audio")
     if not audio_path.is_file():
         raise FileNotFoundError(f"SPIKE-B2 audio missing for {vendor_id}: {audio_path}")
-    dat_path = Path(str(adp))
+    dat_path = _resolved_or_raise(str(adp), path_map, vendor_id, "ANLZ .DAT")
     if not dat_path.is_file():
         raise FileNotFoundError(f"SPIKE-B2 ANLZ .DAT missing for {vendor_id}: {dat_path}")
     twoex_path = dat_path.with_suffix(".2EX")
@@ -170,6 +177,15 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
         "dat_path": dat_path,
         "twoex_path": twoex_path,
     }
+
+
+def _resolved_or_raise(raw: str, path_map: PathMap, vendor_id: str, what: str) -> Path:
+    mapped = resolve_asset_path(raw, path_map=path_map)
+    if mapped.resolved is None:
+        raise FileNotFoundError(
+            f"SPIKE-B2 {what} path unresolvable for {vendor_id}: {raw} ({mapped.reason})"
+        )
+    return mapped.resolved
 
 
 def pvdi_regions(twoex_path: Path) -> list[dict[str, float]]:

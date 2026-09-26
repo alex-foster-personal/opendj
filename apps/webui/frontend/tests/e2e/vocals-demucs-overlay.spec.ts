@@ -30,7 +30,7 @@ test('@vocals-demucs-overlay hydrated listing paints demucs vocal pixels', async
 	request
 }) => {
 	const manifest = _readManifest();
-	expect(manifest.demucs_ready, 'fixture must run demucs one --live').toBe(true);
+	expect(manifest.demucs_ready, 'fixture must run demucs one --force').toBe(true);
 	const stableId = manifest.stable_id;
 	const playlistId = manifest.playlist_id;
 	if (!stableId || !playlistId) {
@@ -42,9 +42,13 @@ test('@vocals-demucs-overlay hydrated listing paints demucs vocal pixels', async
 	);
 	expect(tracksResponse.ok()).toBe(true);
 	const tracksBody = (await tracksResponse.json()) as {
-		items?: { stable_id?: string; vocals?: { status?: string; regions?: unknown[] } }[];
+		tracks?: {
+			stable_id?: string;
+			duration_ms?: number | null;
+			vocals?: { status?: string; regions?: { start_s: number; end_s: number }[] };
+		}[];
 	};
-	const row = tracksBody.items?.find((item) => item.stable_id === stableId);
+	const row = tracksBody.tracks?.find((item) => item.stable_id === stableId);
 	expect(row, 'fixture track missing from hydrated playlist').toBeTruthy();
 	expect(row?.vocals?.status).toBe('demucs');
 	expect((row?.vocals?.regions?.length ?? 0) > 0).toBe(true);
@@ -58,52 +62,64 @@ test('@vocals-demucs-overlay hydrated listing paints demucs vocal pixels', async
 	const strip = targetRow.getByTestId('preview-strip');
 	await expect(strip).toBeVisible();
 
-	const vocalPixels = await strip.evaluate((canvas) => {
-		const el = canvas as HTMLCanvasElement;
-		const ctx = el.getContext('2d');
-		if (ctx === null) throw new Error('PreviewStrip canvas context unavailable');
-		const { width, height } = el;
-		const bandTop = Math.floor(height * 0.72);
-		const data = ctx.getImageData(0, bandTop, width, height - bandTop).data;
-		let hits = 0;
-		for (let i = 0; i < data.length; i += 4) {
-			const alpha = data[i + 3];
-			if (alpha <= 0) continue;
-			hits += 1;
-		}
-		return hits;
-	});
-
-	expect(vocalPixels, 'PreviewStrip must paint demucs vocal pixels').toBeGreaterThan(0);
-
-	const sampleMatchesBlue = await strip.evaluate(
-		([blueR, blueG, blueB]) => {
-			const el = document.querySelector(
-				'[data-testid="preview-strip"]'
-			) as HTMLCanvasElement | null;
-			if (el === null) return false;
-			const ctx = el.getContext('2d');
-			if (ctx === null) return false;
-			const { width, height } = el;
-			const bandTop = Math.floor(height * 0.72);
-			const data = ctx.getImageData(0, bandTop, width, height - bandTop).data;
-			for (let i = 0; i < data.length; i += 4) {
-				const alpha = data[i + 3];
-				if (alpha <= 0) continue;
-				const r = data[i];
-				const g = data[i + 1];
-				const b = data[i + 2];
-				if (
-					Math.abs(r - blueR) <= 8 &&
-					Math.abs(g - blueG) <= 8 &&
-					Math.abs(b - blueB) <= 8
-				) {
-					return true;
+	// PreviewStrip paints demucs regions as a VOCAL_BLUE bar along the TOP edge
+	// of its canvas (VOCAL_BAR_H = 0.7 css px, alpha 0.5..1), positioned by
+	// region / duration_ms, OVER the waveform. The bar blends with the waveform
+	// color, so exact-color matching cannot see it (measured: 1 of 165
+	// top-row pixels is pure blue). Measure it differentially instead: row 1
+	// holds the waveform alone, so a top-row pixel is vocal-tinted when it moved
+	// toward VOCAL_BLUE relative to the pixel below it (premultiplied RGB).
+	// Tinted pixels inside the API's region span prove the overlay painted;
+	// zero tinted pixels outside it proves the tint came from the regions.
+	const durationMs = row?.duration_ms ?? null;
+	expect(durationMs, 'hydrated row needs duration_ms to place vocal bars').not.toBeNull();
+	const spans = (row?.vocals?.regions ?? []).map((region) => [
+		(region.start_s * 1000) / (durationMs as number),
+		(region.end_s * 1000) / (durationMs as number)
+	]);
+	const canvas = strip.locator('canvas');
+	const countVocalTintedPixels = () =>
+		canvas.evaluate(
+			(el, { blue, regionSpans }) => {
+				const cv = el as HTMLCanvasElement;
+				const ctx = cv.getContext('2d');
+				if (ctx === null) throw new Error('PreviewStrip canvas context unavailable');
+				const top = ctx.getImageData(0, 0, cv.width, 1).data;
+				const below = ctx.getImageData(0, 1, cv.width, 1).data;
+				const premul = (d: Uint8ClampedArray, i: number) => {
+					const a = d[i + 3] / 255;
+					return [d[i] * a, d[i + 1] * a, d[i + 2] * a];
+				};
+				const distToBlue = (c: number[]) =>
+					Math.hypot(c[0] - blue[0], c[1] - blue[1], c[2] - blue[2]);
+				let inside = 0;
+				let outside = 0;
+				for (let x = 0; x < cv.width; x++) {
+					const i = x * 4;
+					const p0 = premul(top, i);
+					const p1 = premul(below, i);
+					const bluer = p0[2] - p0[0] - (p1[2] - p1[0]) >= 30;
+					const closer = distToBlue(p1) - distToBlue(p0) >= 30;
+					if (!(bluer && closer)) continue;
+					const x0 = x / cv.width;
+					const x1 = (x + 1) / cv.width;
+					if (regionSpans.some(([a, b]) => x1 > a && x0 < b)) inside += 1;
+					else outside += 1;
 				}
-			}
-			return false;
-		},
-		[VOCAL_BLUE.r, VOCAL_BLUE.g, VOCAL_BLUE.b] as const
+				return { inside, outside, width: cv.width };
+			},
+			{ blue: [VOCAL_BLUE.r, VOCAL_BLUE.g, VOCAL_BLUE.b], regionSpans: spans }
+		);
+	// PreviewStrip redraws when vocals or DPR change, so poll the paint rather
+	// than reading one early frame as "absent".
+	await expect
+		.poll(async () => (await countVocalTintedPixels()).inside, {
+			message: 'PreviewStrip must paint demucs vocal pixels'
+		})
+		.toBeGreaterThan(0);
+	const counts = await countVocalTintedPixels();
+	console.log(
+		`vocals-demucs-overlay tinted=${JSON.stringify(counts)} spans=${JSON.stringify(spans)}`
 	);
-	expect(sampleMatchesBlue).toBe(true);
+	expect(counts.outside, 'vocal tint must appear only inside demucs regions').toBe(0);
 });

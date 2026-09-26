@@ -35,8 +35,4 @@ def cmdline_of(pid: int) -> str:
 
 def worker_like_pids(pids: Iterable[int]) -> list[int]:
     """Pids whose cmdline matches uv/python/demucs/ffmpeg."""
-    matched: list[int] = []
-    for pid in pids:
-        if _WORKER_CMDLINE_RE.search(cmdline_of(pid)):
-            matched.append(pid)
-    return matched
+    return [pid for pid in pids if _WORKER_CMDLINE_RE.search(cmdline_of(pid))]
