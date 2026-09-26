@@ -19,6 +19,9 @@ Single-line intent:
   - if concurrent stale-db boots race on the same state.db then all reach the
     current schema without raw SQLite migration errors [broken if only one
     of N contenders survives, per issue #791]
+  - if a peer holds the state.db file lock past the request-time busy wait
+    then every boot-path open still waits it out and boots [broken if a boot
+    pre-check gives up at 5 s, per the Sat 26 Sep 2026 trunk red]
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,6 +42,8 @@ import pytest
 
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
+from apps.webui.server import sqlite_backend
+from tests.shared.state.peer_lock import current_wal_state_db, hold_exclusive_lock
 from tests.test_schema_time_travel import _verified_v5_sql
 from tests.webui.pre_v7_state import build_pre_v7_state_db
 
@@ -429,3 +436,58 @@ def test_current_db_boot_takes_no_write_lock_behind_a_long_writer(
         contender.close()
         holder.execute("ROLLBACK")
         holder.close()
+
+
+def _timed_under_peer_lock(
+    db_path: Path, hold_s: float, call: Callable[[Path], object],
+) -> float:
+    holder = hold_exclusive_lock(db_path, hold_s)
+    try:
+        started = time.monotonic()
+        call(db_path)
+        return time.monotonic() - started
+    finally:
+        holder.communicate(timeout=hold_s + 30)
+
+
+def test_every_boot_open_waits_out_a_peer_lock_past_the_request_wait(
+    tmp_path: Path,
+) -> None:
+    """[if] a peer holds the state.db file lock past the request-time busy
+    wait while a boot opens the db [then] each boot-path open waits it out
+    and the boot succeeds, [else stop].
+
+    Before the fix each of these opens inherited Python's implicit 5 s and
+    raised ``database is locked``. Every site runs against its own db and its
+    own holder, concurrently, so the whole test costs one hold.
+    """
+    hold_s = state_db.DEFAULT_BUSY_TIMEOUT_S + 1.5
+    assert hold_s < state_db.BOOT_BUSY_TIMEOUT_S, (
+        "the hold must sit between the two bounds to tell them apart"
+    )
+    sites: dict[str, Callable[[Path], object]] = {
+        "make_backend": sqlite_backend.make_backend,
+        "missing-schema-meta pre-check": (
+            sqlite_backend._tracks_table_missing_schema_meta
+        ),
+        "migrate-before-serving open_rw": sqlite_backend._migrate_before_serving,
+        "SqliteBackend stale-schema pre-check": sqlite_backend.SqliteBackend,
+    }
+    dbs = {
+        name: current_wal_state_db(tmp_path / f"site-{index}" / "state.db")
+        for index, name in enumerate(sites)
+    }
+    with ThreadPoolExecutor(max_workers=len(sites)) as pool:
+        futures = {
+            name: pool.submit(_timed_under_peer_lock, dbs[name], hold_s, call)
+            for name, call in sites.items()
+        }
+        waited = {name: future.result() for name, future in futures.items()}
+
+    for name, elapsed in waited.items():
+        # Presence, not absence: the open really was blocked past the old
+        # bound, so a pass here cannot come from a holder that never held.
+        assert elapsed >= state_db.DEFAULT_BUSY_TIMEOUT_S, (
+            f"{name} returned after {elapsed:.2f}s; the peer lock was not in "
+            "force, so this run measured nothing"
+        )
