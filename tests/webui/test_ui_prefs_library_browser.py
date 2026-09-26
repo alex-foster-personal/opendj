@@ -100,7 +100,7 @@ def test_ui_prefs_wheel_sensitivity_partial_put_merges_trackpad_default(
 
 @pytest.mark.requirement("LIBM-129")
 def test_watcher_folders_validate_rejects_missing_dir(prefs_client: TestClient) -> None:
-    """[if] a watcher path is not a directory [then] validate returns 400 [else stop]."""
+    """[if] a watcher path is not a directory [then] validate returns 400, [else stop]."""
     r = prefs_client.post(
         "/api/v1/ui-prefs/watcher-folders:validate",
         json={"paths": ["/definitely/not/a/real/music-dj-tools-watcher-dir"]},
@@ -114,7 +114,7 @@ def test_watcher_folders_validate_rejects_missing_dir(prefs_client: TestClient) 
 def test_watcher_folders_validate_accepts_existing_dir(
     prefs_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] a watcher path is an existing directory [then] validate returns ok [else stop]."""
+    """[if] a watcher path is an existing directory [then] validate returns ok, [else stop]."""
     watch = tmp_path / "watch-me"
     watch.mkdir()
     r = prefs_client.post(

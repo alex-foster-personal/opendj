@@ -32,6 +32,8 @@ Regression one-liners:
   - if a crash between the strip and entry writes leaves the entry but not the strip then broken
   - if a same-mtime, same-size rename to a new inode still reads as cache-current then broken
   - if an in-place rewrite with a restored mtime and same inode reads as cache-current then broken
+
+[if] an unmapped track is decoded locally [then] peaks cache on disk and failures stay explicit, [else stop].
 """
 from __future__ import annotations
 

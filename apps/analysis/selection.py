@@ -734,11 +734,20 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
     source = selection.source(lane)
     if source == "own":
         if not selection.projection_available:
-            # No own store, so no own rows: the predicate matches NOTHING.
-            # Emitting the subquery anyway would raise `no such table` and
-            # take the whole smartlist down; emitting the rekordbox column
-            # would answer a question nobody asked.
-            return "NULL"
+            if field_name not in _RBX_FIELDS:
+                return "NULL"
+            track_fields = (
+                "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
+                f"WHERE tf.stable_id = {table}.stable_id "
+                f"AND tf.field_name = {_sql_text(field_name)} LIMIT 1)"
+            )
+            unmapped = (
+                f"NOT EXISTS (SELECT 1 FROM track_vendor_ids tv "
+                f"WHERE tv.stable_id = {table}.stable_id AND tv.vendor = 'rekordbox')"
+            )
+            # STANDALONE-03/06: before analysis_projection exists, unmapped
+            # tracks still filter on tag/manual track_fields values.
+            return f"(CASE WHEN {unmapped} THEN {track_fields} ELSE NULL END)"
         projection = (
             "(SELECT ap.value FROM analysis_projection ap "
             f"WHERE ap.stable_id = {table}.stable_id "
