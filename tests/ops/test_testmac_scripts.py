@@ -133,6 +133,17 @@ def test_agt_loop_holds_after_a_walled_attempt() -> None:
     assert hold, "the walled hold must be gated on rc=3 plus the harness's walled line"
 
 
+def test_setup_never_overwrites_the_live_loop_script_in_place() -> None:
+    """[if] setup.sh copies straight onto the installed loop script [then] a live loop's
+    bash, which reads its script incrementally, can run a torn file, [else stop]."""
+    text = SETUP_SH.read_text(encoding="utf-8")
+    live = "~/.local/state/af-agt/opendj-agt-persona-loop.sh"
+    copies = [line for line in text.splitlines() if line.startswith("scp ") and live in line]
+    assert copies, "control: setup.sh must still install the loop script"
+    assert all(f"{live}.new" in line for line in copies), copies
+    assert f"mv -f {live}.new {live}" in text
+
+
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
     """[if] the loop starts with no AGT_AGENT_CLI and picks a driver itself [then] fail,
     [else stop] (AGT-28: the host declares its driver, the loop never guesses one)."""
