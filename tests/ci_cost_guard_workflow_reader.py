@@ -98,6 +98,18 @@ MAIN_FIX_RUNNER_GUARD_PREFIX = (
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
     "&& vars.CI_RUNS_ON_MAIN_FIX"
 )
+#: The guarded CI_RUNS_ON_TRUNK disjuncts (ADR-NEW-trunk-ci-runs-on-agentbox-hosts-only):
+#: ci.yml job `test` (main push or trunk-repair PR) and job `fast` (trunk-repair PR). Both
+#: select a self-hosted pool, so like the main-fix guard they price at the hosted fallback.
+TRUNK_RUNNER_GUARD_PREFIXES = (
+    "((github.event_name == 'push' && github.ref == 'refs/heads/main') || "
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))) "
+    "&& vars.CI_RUNS_ON_TRUNK",
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
+    "&& vars.CI_RUNS_ON_TRUNK",
+)
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
 _VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
 
@@ -170,12 +182,12 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
     )
     for disjunct in disjuncts[:-1]:
         trimmed = disjunct.strip()
-        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX:
+        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX or trimmed in TRUNK_RUNNER_GUARD_PREFIXES:
             continue
         assert _VARS_DISJUNCT.fullmatch(trimmed), (
             f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
             f"price: disjunct {disjunct!r} is neither vars.* nor the ADR-0041 "
-            "main-fix guard prefix"
+            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK guard prefix"
         )
     fallback = json.loads(literal_match.group(1))
     return [fallback] if isinstance(fallback, str) else list(fallback)
