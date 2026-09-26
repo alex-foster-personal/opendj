@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -108,3 +109,66 @@ def install_gh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, open_pr: bool
         branch=perf_kpi_ledger_pr.LEDGER_PR_BRANCH,
         scenario="pr_open" if open_pr else "no_pr_open",
     )
+
+
+_CONCURRENT_PUSH_HOOK = """#!{python}
+import json, os, subprocess, sys
+from pathlib import Path
+
+if {hook!r} == "reference-transaction":
+    sys.stdin.read()
+    if sys.argv[1] != "committed":
+        sys.exit(0)
+air = Path({air_clone!r})
+if air.exists():
+    sys.exit(0)
+env = {{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}}
+
+def git(*args, cwd=None):
+    subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
+git("clone", "-q", {upstream!r}, str(air))
+git("config", "user.email", "air@example.com", cwd=air)
+git("config", "user.name", "Air", cwd=air)
+git("checkout", "-q", "-B", {branch!r}, {start!r}, cwd=air)
+doc = {{"schema_version": 2, "entries": json.loads({entries!r})}}
+(air / "docs" / "perf" / "kpi-ledger.json").write_text(json.dumps(doc) + "\\n", encoding="utf-8")
+git("commit", "-aq", "-m", "air's concurrent push", cwd=air)
+git("push", "-q", "origin", {branch!r}, cwd=air)
+"""
+
+
+def install_concurrent_push_hook(
+    repo_root: Path,
+    hook: str,
+    *,
+    upstream: Path,
+    air_clone: Path,
+    start: str,
+    entries: list[dict[str, Any]],
+) -> None:
+    """A real git hook in ``repo_root`` (shared by its worktrees) that, the
+    first time git runs it, pushes ``entries`` to the ledger branch from a
+    separate clone at ``air_clone``, as another host would, and then lets
+    the triggering git operation carry on.
+
+    ``hook`` picks the window: ``post-checkout`` fires on the publish's
+    ``git worktree add``, after its lease was taken; ``reference-transaction``
+    fires on its first committed ref update, the ``git fetch origin main``
+    between ``gh pr list`` and the branch fetch. ``air_clone`` existing
+    afterwards is the proof the hook ran. Replaces a monkeypatch of
+    ``subprocess.run`` (AGENTS.md: no monkeypatching in tests)."""
+    path = repo_root / ".git" / "hooks" / hook
+    path.write_text(
+        _CONCURRENT_PUSH_HOOK.format(
+            python=sys.executable,
+            hook=hook,
+            air_clone=str(air_clone),
+            upstream=str(upstream),
+            branch=perf_kpi_ledger_pr.LEDGER_PR_BRANCH,
+            start=start,
+            entries=json.dumps(entries),
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
