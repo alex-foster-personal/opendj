@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const themePath = path.join(__dirname, '../../src/lib/rb/theme.css');
 const waveRowPath = path.join(__dirname, '../../src/lib/components/rb/wave/WaveRow.svelte');
@@ -73,6 +75,7 @@ function backgroundOf(css, selector) {
 	return match[1].trim();
 }
 
+// REQ: A11Y-03
 test('the dim token clears the 4.5:1 AA floor on every surface this title renders on', () => {
 	const themeCss = readFileSync(themePath, 'utf8');
 	const waveRowCss = readFileSync(waveRowPath, 'utf8');
@@ -122,4 +125,26 @@ test('the dim token clears the 4.5:1 AA floor on every surface this title render
 			`${name}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, under the 4.5:1 AA body floor`
 		);
 	}
+});
+
+// REQ: A11Y-03
+test('resolvePaintPalette paints decks 3 and 4 with the secondary row token', async () => {
+	const render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
+	const palette = {
+		bg: '#010203',
+		secondaryBg: '#fffdf8',
+		grid: '#000000',
+		cue: '#ffffff',
+		loop: '#ffffff',
+		playhead: '#ffffff'
+	};
+	assert.deepEqual(render.resolvePaintPalette(1, palette), palette);
+	assert.deepEqual(render.resolvePaintPalette(2, palette), palette);
+	const deck3 = render.resolvePaintPalette(3, palette);
+	assert.equal(deck3.bg, palette.secondaryBg);
+	assert.notEqual(deck3.bg, palette.bg);
+	const deck4 = render.resolvePaintPalette(4, palette);
+	assert.equal(deck4.bg, palette.secondaryBg);
+	const alreadySecondary = { ...palette, bg: palette.secondaryBg };
+	assert.deepEqual(render.resolvePaintPalette(3, alreadySecondary), alreadySecondary);
 });

@@ -334,6 +334,18 @@ class TrackLifecycleOut(BaseModel):
     memberships: list[TrackMembershipRefOut]
 
 
+class TrackLibraryRevisionOut(BaseModel):
+    revision: str
+
+
+@router.get("/revision", response_model=TrackLibraryRevisionOut)
+def get_library_revision(
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008
+) -> TrackLibraryRevisionOut:
+    """Return a cheap revision probe for clients holding library snapshots."""
+    return TrackLibraryRevisionOut(revision=backend.library_revision())
+
+
 @router.get("/lyrics-cached-ids", response_model=LyricsCachedIdsOut)
 def get_lyrics_cached_ids(request: Request) -> LyricsCachedIdsOut:
     """List cached lyric timelines so the UI can skip explicit cache-miss reads."""
