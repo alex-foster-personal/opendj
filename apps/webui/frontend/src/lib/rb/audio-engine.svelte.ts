@@ -209,6 +209,7 @@ import {
 	type StemBuffers
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
+import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
@@ -2781,6 +2782,11 @@ function _adoptStemProcessor(
 	if (retired !== null) _retireProcessor(retired);
 }
 
+/** PERFMODE-15: the settled stem state of a deck whose mode has stems off. */
+function _stemsDisabledState(reason: string): StemDeckState {
+	return unavailableStemDeckState(`stems disabled: ${reason}`);
+}
+
 /** LAZY-STEMS. Detach and silence a held stem upgrade that will never land
  * (deck unloaded, engine disposed, track swapped). Without this the prepared
  * worklet nodes stay connected to a context nobody owns any more: the exact
@@ -2799,6 +2805,13 @@ function _drainPendingStemUpgrade(deck: DeckId): void {
 	const rt = _rt[deck];
 	const pending = rt.pendingStemUpgrade;
 	if (pending === null) return;
+	const blocked = stemDecodeBlockReason();
+	if (blocked !== null) {
+		// PERFMODE-15: a bundle held from before the block must not land now.
+		_releasePendingStemUpgrade(rt);
+		if (pending.token === rt.loadToken) deckStates[deck].stems = _stemsDisabledState(blocked);
+		return;
+	}
 	if (pending.token !== rt.loadToken) {
 		// The deck moved on to another track while these stems were decoding.
 		rt.pendingStemUpgrade = null;
@@ -2840,7 +2853,17 @@ async function _upgradeDeckStems(
 			stages[name] = Math.round(performance.now() - started);
 		}
 	};
-	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx; // a graph rebuild restarts it
+	// PERFMODE-15: a mode that switched stems off (Trackify) settles the deck
+	// `unavailable` and stops the upgrade, whether it is starting now or was
+	// already probing when the block began. Read before the first await.
+	const _stemDecodeBlocked = (): boolean => {
+		const reason = stemDecodeBlockReason();
+		if (reason === null) return false;
+		if (token === rt.loadToken) st.stems = _stemsDisabledState(reason);
+		return true;
+	};
+	if (_stemDecodeBlocked()) return;
+	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
 		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
@@ -2928,6 +2951,13 @@ async function _upgradeDeckStems(
 		recordPerfTiming(`deck-stems-fail sid=${stableId.slice(0, 12)}`, stages, deck);
 		pushToast(`Deck ${deck} stems unavailable - ${message}`, 'error');
 	}
+}
+
+/** Test seam (PERFMODE-15): run the lazy stem upgrade for a deck exactly as
+ * `load` and the graph rebuild do, against the deck's current load token and
+ * context. Node tests have no AudioContext, so the context may be null. */
+export function upgradeDeckStemsForTest(deck: DeckId, stableId: string, mixBuffer: AudioBuffer): Promise<void> {
+	return _upgradeDeckStems(deck, stableId, _rt[deck].loadToken, _ctx as AudioContext, mixBuffer);
 }
 
 /** CUEOUT-15: build and resume the graph for a non-deck source (the library

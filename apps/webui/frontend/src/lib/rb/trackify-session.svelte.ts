@@ -6,6 +6,7 @@ import { currentGigRuntimeGeneration, noteGigRuntimeMounted } from '$lib/rb/libr
 import { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
 import { setAppMode, setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { installTrackifyAutoplay } from '$lib/rb/trackify-autoplay.svelte';
+import { blockStemDecode } from '$lib/rb/stem-decode-policy';
 import { installTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 import { installTrackifyBrowserIpc } from '$lib/rb/trackify-ipc.svelte';
 import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
@@ -24,6 +25,9 @@ export function installTrackifySession(): () => Promise<void> {
 	// an engine Trackify has since claimed (Codex review, PR #3676).
 	const ownEngineGeneration = noteGigRuntimeMounted();
 	const priorAutoPlayEnabled = uiPrefs.auto_play_enabled;
+	// PERFMODE-15: Trackify has no stems. Blocked for the whole session, at
+	// every stem entry point the engine has, not per load.
+	const releaseStemDecode = blockStemDecode('Trackify mode has no stems (PERFMODE-15)');
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
 	const uninstallFeed = installTrackifyFeed();
@@ -31,6 +35,10 @@ export function installTrackifySession(): () => Promise<void> {
 	const uninstallPerfIpc = installPerformanceBrowserIpc();
 	const uninstallTrackifyIpc = installTrackifyBrowserIpc();
 	return async () => {
+		// First and synchronous: Svelte does not await this cleanup, so the next
+		// route (Gig) can mount before the awaits below settle, and it must
+		// already have its stems back.
+		releaseStemDecode();
 		uninstallTrackifyIpc();
 		uninstallPerfIpc();
 		uninstallAutoplay();
