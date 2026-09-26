@@ -34,7 +34,7 @@ def _identity(source: str = "payload", app_version: str | None = RUNNING_VERSION
             git_branch="main",
             git_dirty=False,
             built_at_utc="2026-08-31T12:00:00Z",
-            built_at_kind="payload-build" if source == "payload" else "head-commit",
+            built_at_kind="payload-build" if source == "payload" else "engine-start",
             app_version=app_version,
         ),
         failure=None,
