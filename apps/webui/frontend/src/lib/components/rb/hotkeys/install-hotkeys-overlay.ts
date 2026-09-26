@@ -12,6 +12,8 @@
  * swallow the overlay gestures.
  */
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
+import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import {
 	beginHotkeysOverlayHold,
@@ -24,6 +26,34 @@ import {
 	toggleHotkeysOverlay
 } from './hotkeys-overlay.svelte';
 import { HOTKEYS_OVERLAY_HOLD_KEY, HOTKEYS_OVERLAY_TOGGLE_KEY } from './hotkeys-registry';
+
+// The root layout reads the open state from here too, so the overlay's wiring
+// stays one import on the layout (the quality ratchet's fan-out gate).
+export { isHotkeysOverlayOpen };
+
+// The hotkeys cheatsheet (LIBUX-04) is a separate chunk (#4046: the library
+// surface went over its gzip budget). It draws nothing while closed, so keeping
+// it off the first paint changes nothing observable then. The chunk is warmed
+// once the boot window closes (prefetchHotkeysOverlay, from the layout's
+// onMount), so the first "/" hold or "?" draws it without waiting on a fetch. A
+// chunk that cannot be fetched is reported as an error toast, the pin shell's way.
+type HotkeysOverlayModule = typeof import('./HotkeysOverlay.svelte');
+let hotkeysOverlayModule: Promise<HotkeysOverlayModule> | null = null;
+
+export function loadHotkeysOverlay(): Promise<HotkeysOverlayModule> {
+	if (hotkeysOverlayModule === null) {
+		hotkeysOverlayModule = import('./HotkeysOverlay.svelte');
+		hotkeysOverlayModule.catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`Hotkeys overlay failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+		});
+	}
+	return hotkeysOverlayModule;
+}
+
+export function prefetchHotkeysOverlay(): void {
+	bootScheduler.defer('hotkeys-overlay:prefetch', () => void loadHotkeysOverlay());
+}
 
 const OVERLAY_SEARCH_ATTR = 'data-hotkeys-overlay-search';
 
