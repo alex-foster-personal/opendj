@@ -26,6 +26,18 @@ test('clock is hidden when signed out and CloudSync is off', () => {
 	assert.match(topbar, /cloudSyncChipState\.value !== 'off'/);
 });
 
+test('signed-out bauble lists login-gated features via ControlExplainer hover', () => {
+	assert.match(cluster, /ControlExplainer/);
+	assert.match(cluster, /Sign in required/);
+	assert.match(cluster, /loginGatedBullets/);
+	assert.match(cluster, /Google sign-in for account panel/);
+});
+
+test('signed-in login cluster uses green styling for the gated-feature list', () => {
+	assert.match(cluster, /class:signed-in=\{auth\.user !== null\}/);
+	assert.match(cluster, /\.login-cluster\.signed-in[\s\S]*var\(--rb-green\)/);
+});
+
 test('signed-in account button precedes login cluster', () => {
 	// TopBar passes the bauble into TopBarAccountCluster, which renders the
 	// account button ahead of it.

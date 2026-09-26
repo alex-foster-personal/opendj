@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const panel = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
@@ -49,4 +50,11 @@ test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to sh
 	}
 	assert.match(cluster, /bullets=\{\[midiTitle, /, 'the MIDI explainer must say why the color is what it is');
 	assert.match(cluster, /midiGlyph === 'tick'/);
+});
+
+test('settings config exposes MIDI controller enablement', async () => {
+	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
+	const entry = catalog.SETTINGS_CATALOG.find((def) => def.id === 'rb.midi_enabled');
+	assert.ok(entry, 'rb.midi_enabled must exist in settings catalog');
+	assert.equal(entry.implemented, true);
 });

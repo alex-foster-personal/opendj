@@ -29,7 +29,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
-const START_TIMEOUT_MS = 20_000;
+// Cold import of apps.webui.server.app_wiring can exceed 20s on a loaded host;
+// this budget is startup tolerance only, not a product latency contract.
+const START_TIMEOUT_MS = 60_000;
 
 let vite;
 let webmidi;
