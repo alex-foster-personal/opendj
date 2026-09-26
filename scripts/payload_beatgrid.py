@@ -117,11 +117,17 @@ print(json.dumps({
 _SITE = f"{RUNNER_SITE_RELATIVE}/"
 _NO_GPU = ("the runner is always started with --device cpu (own_beatgrid.DEFAULT_DEVICE) "
            "on an arm64 Mac, which has no CUDA, ROCm or XPU stack to load")
+#: Library-NAME keys are global: one entry classifies that name in EVERY torch
+#: copy the payload carries (this site's 2.14.0 and pylib's vocals torch), so
+#: its reason must hold for both, not only for the runner's --device cpu.
+_NO_GPU_WHEEL = ("every torch copy in the payload is the arm64 macOS wheel, whose "
+                 "torch.version.cuda and torch.version.hip are None, so no CUDA, ROCm "
+                 "or XPU backend is ever selected")
 
 #: Runtime library loads inside the runner site's torch 2.14.0 / filelock, merged
 #: into build_engine_payload.RUNTIME_LOAD_ALLOWLIST. Dynamic sites are keyed by
 #: payload path and LINE, so a torch bump moves them and the build fails until
-#: each is re-read, the same contract the pylib torch 2.5.1 entries follow.
+#: each is re-read, the same contract the pylib vocals torch entries follow.
 RUNNER_RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
     f"{_SITE}filelock/_identity.py:162": (
         "CDLL(None) is dlopen(NULL): binds sysctl symbols from the already-loaded "
@@ -160,23 +166,23 @@ RUNNER_RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "Windows Intel icx libomp preload in the same _IS_WINDOWS branch; "
         "unreachable on darwin."
     ),
-    "ze_loader": f"Intel Level Zero probe for inductor XPU builds; {_NO_GPU}.",
+    "ze_loader": f"Intel Level Zero probe for inductor XPU builds; {_NO_GPU_WHEEL}.",
     f"{_SITE}torch/_ops.py:1587": (
         "torch.ops.load_library loads a caller-named extension; the runner and "
         "beat_this never call it."
     ),
-    "libamd_smi.so": f"ROCm SMI hook inside torch.cuda device discovery; {_NO_GPU}.",
+    "libamd_smi.so": f"ROCm SMI hook inside torch.cuda device discovery; {_NO_GPU_WHEEL}.",
     f"{_SITE}torch/cuda/__init__.py:122": f"the same ROCm SMI hook's definition; {_NO_GPU}.",
     f"{_SITE}torch/cuda/__init__.py:128": f"the same ROCm SMI hook; {_NO_GPU}.",
     f"{_SITE}torch/cuda/__init__.py:131": f"the same ROCm SMI hook; {_NO_GPU}.",
     f"{_SITE}torch/cuda/_utils.py:32": f"ROCm HIP runtime for the CUDA driver API; {_NO_GPU}.",
     f"{_SITE}torch/cuda/_utils.py:35": f"Windows HIP runtime; {_NO_GPU}.",
-    "libamdhip64.so": f"ROCm HIP runtime for the CUDA driver API; {_NO_GPU}.",
-    "nvcuda.dll": f"Windows CUDA driver for the CUDA driver API; {_NO_GPU}.",
-    "libcuda.so.1": f"Linux CUDA driver for the CUDA driver API; {_NO_GPU}.",
+    "libamdhip64.so": f"ROCm HIP runtime for the CUDA driver API; {_NO_GPU_WHEEL}.",
+    "nvcuda.dll": f"Windows CUDA driver for the CUDA driver API; {_NO_GPU_WHEEL}.",
+    "libcuda.so.1": f"Linux CUDA driver for the CUDA driver API; {_NO_GPU_WHEEL}.",
     f"{_SITE}torch/cuda/_utils.py:151": f"ROCm hiprtc for CUDA kernel JIT; {_NO_GPU}.",
     f"{_SITE}torch/cuda/_utils.py:157": f"Windows hiprtc for CUDA kernel JIT; {_NO_GPU}.",
-    "libhiprtc.so": f"ROCm hiprtc for CUDA kernel JIT; {_NO_GPU}.",
+    "libhiprtc.so": f"ROCm hiprtc for CUDA kernel JIT; {_NO_GPU_WHEEL}.",
     f"{_SITE}torch/cuda/_utils.py:188": f"NVRTC for CUDA kernel JIT; {_NO_GPU}.",
     f"{_SITE}torch/cuda/graphs.py:1031": f"CDLL(None).dladdr inside CUDA graph capture; {_NO_GPU}.",
     f"{_SITE}torch/cuda/memory.py:1335": (
