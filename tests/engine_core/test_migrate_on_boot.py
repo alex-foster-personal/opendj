@@ -22,14 +22,11 @@ Single-line intent:
   - if a peer holds the state.db file lock past the request-time busy wait
     then every boot-path open still waits it out and boots [broken if a boot
     pre-check gives up at 5 s, per the Sat 26 Sep 2026 trunk red]
-  - if a lock is held past a handle's busy wait then it raises within that
-    bound, and an unbounded wait is refused [broken if the fix waits forever]
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 import shutil
 import sqlite3
@@ -46,6 +43,7 @@ import pytest
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.webui.server import sqlite_backend
+from tests.shared.state.peer_lock import current_wal_state_db, hold_exclusive_lock
 from tests.test_schema_time_travel import _verified_v5_sql
 from tests.webui.pre_v7_state import build_pre_v7_state_db
 
@@ -440,52 +438,10 @@ def test_current_db_boot_takes_no_write_lock_behind_a_long_writer(
         holder.close()
 
 
-# A peer that holds the state.db FILE lock EXCLUSIVE, the lock a closing last
-# connection holds while it checkpoints and deletes -wal/-shm. In WAL mode that
-# (and wal-index recovery) is the only thing that blocks a reader, and it is
-# what a concurrent boot met on the Sat 26 Sep 2026 trunk red. A real SQLite
-# connection in EXCLUSIVE locking mode takes it; nothing is emulated.
-_EXCLUSIVE_LOCK_HOLDER = """
-import sqlite3
-import sys
-import time
-
-conn = sqlite3.connect(sys.argv[1], isolation_level=None)
-conn.execute("PRAGMA locking_mode = EXCLUSIVE")
-conn.execute("BEGIN IMMEDIATE")
-conn.execute("UPDATE schema_meta SET applied_at = applied_at WHERE version = 1")
-conn.execute("COMMIT")
-print("held", flush=True)
-time.sleep(float(sys.argv[2]))
-conn.close()
-"""
-
-
-def _hold_exclusive_lock(db_path: Path, hold_s: float) -> subprocess.Popen[str]:
-    holder = subprocess.Popen(
-        [sys.executable, "-c", _EXCLUSIVE_LOCK_HOLDER, str(db_path), str(hold_s)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    assert holder.stdout is not None
-    line = holder.stdout.readline().strip()
-    if line != "held":
-        holder.kill()
-        raise AssertionError(f"lock holder never took the lock: {holder.communicate()}")
-    return holder
-
-
-def _current_wal_state_db(db_path: Path) -> Path:
-    build_pre_v7_state_db(db_path)
-    state_db.open_rw(db_path).close()
-    return db_path
-
-
 def _timed_under_peer_lock(
     db_path: Path, hold_s: float, call: Callable[[Path], object],
 ) -> float:
-    holder = _hold_exclusive_lock(db_path, hold_s)
+    holder = hold_exclusive_lock(db_path, hold_s)
     try:
         started = time.monotonic()
         call(db_path)
@@ -518,7 +474,7 @@ def test_every_boot_open_waits_out_a_peer_lock_past_the_request_wait(
         "SqliteBackend stale-schema pre-check": sqlite_backend.SqliteBackend,
     }
     dbs = {
-        name: _current_wal_state_db(tmp_path / f"site-{index}" / "state.db")
+        name: current_wal_state_db(tmp_path / f"site-{index}" / "state.db")
         for index, name in enumerate(sites)
     }
     with ThreadPoolExecutor(max_workers=len(sites)) as pool:
@@ -535,78 +491,3 @@ def test_every_boot_open_waits_out_a_peer_lock_past_the_request_wait(
             f"{name} returned after {elapsed:.2f}s; the peer lock was not in "
             "force, so this run measured nothing"
         )
-
-
-@pytest.mark.parametrize(
-    "open_with_bound",
-    [
-        pytest.param(
-            lambda path, bound: sqlite_backend.read_tracks_schema_version(
-                path, busy_timeout_s=bound,
-            ),
-            id="read_tracks_schema_version",
-        ),
-        pytest.param(
-            lambda path, bound: state_db.open_rw(path, busy_timeout_s=bound).close(),
-            id="open_rw",
-        ),
-        pytest.param(
-            lambda path, bound: state_db.open_ro(path, busy_timeout_s=bound)
-            .execute("SELECT COUNT(*) FROM sqlite_master")
-            .fetchone(),
-            id="open_ro",
-        ),
-    ],
-)
-def test_a_peer_lock_held_past_the_bound_raises_within_it(
-    tmp_path: Path, open_with_bound: Callable[[Path, float], object],
-) -> None:
-    """[if] a peer holds the lock past a handle's busy wait [then] the open
-    raises ``database is locked`` no sooner than the bound and no later than
-    the bound plus slack, [else stop]. Locked is an error, never "not stale".
-    """
-    bound_s, slack_s = 0.5, 2.0
-    db_path = _current_wal_state_db(tmp_path / "state.db")
-    holder = _hold_exclusive_lock(db_path, bound_s + slack_s + 3)
-    try:
-        started = time.monotonic()
-        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
-            open_with_bound(db_path, bound_s)
-        elapsed = time.monotonic() - started
-    finally:
-        holder.kill()
-        holder.communicate(timeout=30)
-    assert bound_s <= elapsed < bound_s + slack_s, (
-        f"raised after {elapsed:.2f}s against a {bound_s}s bound"
-    )
-
-
-@pytest.mark.parametrize("bound", [math.inf, math.nan, 0.0, -1.0])
-def test_an_unbounded_or_zero_busy_wait_is_refused(tmp_path: Path, bound: float) -> None:
-    """[if] a handle is asked to wait forever, or not at all [then] it
-    refuses before opening, [else stop]."""
-    db_path = _current_wal_state_db(tmp_path / "state.db")
-    for opener in (state_db.open_rw, state_db.open_ro):
-        with pytest.raises(ValueError, match="busy_timeout_s"):
-            opener(db_path, busy_timeout_s=bound)
-    assert math.isfinite(state_db.BOOT_BUSY_TIMEOUT_S)
-    assert state_db.BOOT_BUSY_TIMEOUT_S > state_db.DEFAULT_BUSY_TIMEOUT_S
-
-
-@pytest.mark.parametrize(
-    "bound", [0.5, state_db.DEFAULT_BUSY_TIMEOUT_S, state_db.BOOT_BUSY_TIMEOUT_S],
-)
-def test_each_handle_carries_the_bound_it_was_asked_for(
-    tmp_path: Path, bound: float,
-) -> None:
-    """[if] a handle is opened with a busy wait [then] SQLite reports that
-    exact wait for every later statement, [else stop]. The first statement
-    alone cannot show this: a later PRAGMA could shorten the wait after it."""
-    db_path = _current_wal_state_db(tmp_path / "state.db")
-    for opener in (state_db.open_rw, state_db.open_ro):
-        conn = opener(db_path, busy_timeout_s=bound)
-        try:
-            effective_ms = conn.execute("PRAGMA busy_timeout").fetchone()[0]
-        finally:
-            conn.close()
-        assert effective_ms == round(bound * 1000), opener.__name__
