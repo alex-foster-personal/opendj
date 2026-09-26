@@ -4603,6 +4603,17 @@
             ],
             "title": "Agent Note"
           },
+          "agent_snapshot_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Snapshot At"
+          },
           "anchor": {
             "anyOf": [
               {
