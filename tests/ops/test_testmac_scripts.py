@@ -203,16 +203,20 @@ def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path)
     runs.mkdir(parents=True)
     plist = tmp_path / "Library/LaunchAgents/opendj-agt-persona-loop.plist"
     plist.parent.mkdir(parents=True)
-    old = runs / "20260926T020000Z-hostile-s1"
-    old.mkdir()
-    (old / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
-    (old / "agent.cli").write_text("claude\n", encoding="utf-8")
-    (runs / f"{old.name}.log").write_text("Claude CLI is walled: weekly limit\n", encoding="utf-8")
-    for path in (old / "run-state.json", runs / f"{old.name}.log"):
-        _age(path, 600)
-    plist.write_text("<plist/>", encoding="utf-8")
-    _age(plist, 300)
     env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
+
+    def attempt(name: str, cli: str, log: str, started_ago: int, ended_ago: int) -> Path:
+        run_dir = runs / name
+        run_dir.mkdir()
+        # run.provenance is written once as the attempt starts; the rest as it ends.
+        (run_dir / "run.provenance").write_text('{"origin": "live"}', encoding="utf-8")
+        (run_dir / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
+        (run_dir / "agent.cli").write_text(f"{cli}\n", encoding="utf-8")
+        (runs / f"{name}.log").write_text(log, encoding="utf-8")
+        _age(run_dir / "run.provenance", started_ago)
+        for path in (run_dir / "run-state.json", run_dir / "agent.cli", runs / f"{name}.log"):
+            _age(path, ended_ago)
+        return run_dir
 
     def stats(agent_cli: str) -> list[str]:
         done = subprocess.run(
@@ -224,15 +228,29 @@ def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path)
         )
         return done.stdout.split()
 
+    attempt("20260926T020000Z-hostile-s1", "claude", "Claude CLI is walled: weekly\n", 900, 600)
+    plist.write_text("<plist/>", encoding="utf-8")
+    _age(plist, 300)
     assert stats("codex") == ["0", "0"], "pre-switch attempts leaked into the new driver's view"
-    new = runs / "20260926T030000Z-hostile-s2"
-    new.mkdir()
-    (new / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
-    (new / "agent.cli").write_text("codex\n", encoding="utf-8")
-    (runs / f"{new.name}.log").write_text("ok\n", encoding="utf-8")
-    assert stats("codex") == ["1", "1", f"{new.name}.log"]
+    # An attempt in flight across a same-driver reinstall: started before the plist was
+    # rewritten, completed after it. It is not post-configuration evidence.
+    attempt("20260926T021000Z-hostile-s2", "claude", "ok\n", 400, 200)
+    assert stats("claude")[1] == "0", "an attempt started before the reinstall was counted"
+    new = attempt("20260926T030000Z-hostile-s3", "codex", "ok\n", 100, 50)
+    assert stats("codex") == ["2", "1", f"{new.name}.log"]
     # Control: the same post-switch run does not count for a driver it was not run by.
-    assert stats("claude") == ["1", "0", f"{new.name}.log"]
+    assert stats("claude")[1] == "0"
+
+
+def test_verify_reports_a_dead_engine_before_a_wall() -> None:
+    """[if] a walled latest attempt is reported (PARTIAL) while the engine is also down
+    [then] a current outage hides behind a subscription limit instead of FAILing,
+    [else stop]. PASS must also require a live engine."""
+    text = VERIFY_SH.read_text(encoding="utf-8")
+    dead = text.index('elif [ -z "$ENGINE_LIVE" ]; then')
+    assert dead < text.index('elif [ -n "$WALL_LINE" ]; then')
+    passing = text.rindex("elif", 0, dead)
+    assert '[ -n "$ENGINE_LIVE" ]' in text[passing:dead], "PASS must require a live engine"
 
 
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
