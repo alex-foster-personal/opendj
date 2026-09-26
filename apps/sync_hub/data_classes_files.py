@@ -475,6 +475,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "apps/webui/frontend/tests/e2e/fixtures/boot-burst-data/",
         "apps/webui/frontend/tests/e2e/fixtures/boot-burst*.json",
         "apps/webui/frontend/tests/e2e/fixtures/hotcue-mapping-gate-data/",
+        "apps/webui/frontend/tests/e2e/fixtures/vocals-demucs-data/",
         "apps/webui/frontend/tests/e2e/fixtures/preflight-gate-healthy-data/",
         "apps/webui/frontend/tests/e2e/fixtures/preflight-gate-broken-data/",
         "apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/",

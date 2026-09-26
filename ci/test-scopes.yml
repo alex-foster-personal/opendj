@@ -151,6 +151,7 @@ scopes:
   - name: parity
     sources: ["apps/parity/"]
     tests: ["tests/parity/"]
+    dependents: ["vocals"]
   - name: play_analytics
     sources: ["apps/play_analytics/"]
     tests: ["tests/play_analytics/"]

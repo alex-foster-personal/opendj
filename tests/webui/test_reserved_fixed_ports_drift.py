@@ -112,6 +112,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5277,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vocals-demucs-overlay-endpoints.ts",
+        "export const VOCALS_DEMUCS_OVERLAY_FRONTEND_PORT = 5278;",
+        5278,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/playwright.stretch-artifact.config.ts",
         "export const STRETCH_ARTIFACT_PORT = 5311;",
         5311,
@@ -232,6 +237,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
         "export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;",
         8704,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vocals-demucs-overlay-endpoints.ts",
+        "export const VOCALS_DEMUCS_OVERLAY_BACKEND_PORT = 8705;",
+        8705,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",

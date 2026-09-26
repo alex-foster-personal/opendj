@@ -168,7 +168,7 @@ def _stamp_duration_ms(state_db_path: Path, stable_id: str, audio_path: Path) ->
     try:
         row = conn.execute(
             "SELECT stable_id_tier, title, artists_json, album, isrc, file_path, "
-            "content_hash, audio_hash FROM tracks WHERE stable_id = ?",
+            "content_hash, audio_hash FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
         if row is None:
