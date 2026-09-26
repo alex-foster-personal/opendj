@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -148,3 +149,78 @@ def test_unmapped_anlz_beatgrid_source_is_own(anlz_client: TestClient) -> None:
     body = response.json()
     assert body["beatgrid_source"] == "own"
     assert body["beatgrid"]["source"] == "own"
+
+
+def test_unmapped_anlz_under_the_implicit_default_names_its_basis(
+    anlz_client: TestClient,
+) -> None:
+    """[if] unmapped, toggle unset, lane default rbx [then] basis unmapped-default, [else stop].
+
+    The client compares every /anlz payload against the LANE-WIDE selection
+    (rbx here) to reject stragglers from a source switch; without this basis
+    it read every unmapped track as one and refetched it forever.
+    """
+    body = anlz_client.get(f"/api/v1/tracks/{STABLE_ID}/anlz").json()
+    assert body["beatgrid_source"] == "own"
+    assert body["beatgrid_source_basis"] == "unmapped-default"
+
+
+def test_unmapped_anlz_under_an_explicit_own_toggle_follows_the_selection(
+    anlz_client: TestClient,
+) -> None:
+    """[if] the beatgrid toggle is set to own [then] basis selection, [else stop]."""
+    selection.set_toggle("beatgrid", "own")
+    body = anlz_client.get(f"/api/v1/tracks/{STABLE_ID}/anlz").json()
+    assert body["beatgrid_source"] == "own"
+    assert body["beatgrid_source_basis"] == "selection"
+
+
+def test_unmapped_anlz_under_an_explicit_rbx_toggle_follows_the_selection(
+    anlz_client: TestClient,
+) -> None:
+    """[if] the beatgrid toggle is set to rbx [then] rekordbox with basis selection, [else stop]."""
+    selection.set_toggle("beatgrid", "rbx")
+    body = anlz_client.get(f"/api/v1/tracks/{STABLE_ID}/anlz").json()
+    assert body["beatgrid_source"] == "rekordbox"
+    assert body["beatgrid_source_basis"] == "selection"
+
+
+@pytest.mark.parametrize("toggle", ["unset", "own", "rbx"])
+@pytest.mark.parametrize("default", ["rbx", "own"])
+@pytest.mark.parametrize("has_rb_mapping", [True, False])
+def test_single_read_pair_agrees_with_the_two_separate_reads(
+    toggle: str, default: str, has_rb_mapping: bool
+) -> None:
+    """[if] any toggle x default x mapping state [then] one-read pair equals the two reads.
+
+    The one-read form must be the same rule as effective_source_for_track plus
+    implicit_own_default, never a third interpretation of STANDALONE-06.
+    """
+    conn = sqlite3.connect(":memory:")
+    selection.set_default(conn, "beatgrid", default)
+    if toggle != "unset":
+        selection.set_toggle("beatgrid", toggle)
+    pair = selection.effective_source_and_implicit_own_for_track(
+        conn, "beatgrid", has_rb_mapping=has_rb_mapping
+    )
+    assert pair == (
+        selection.effective_source_for_track(conn, "beatgrid", has_rb_mapping=has_rb_mapping),
+        selection.implicit_own_default(conn, "beatgrid", has_rb_mapping=has_rb_mapping),
+    )
+
+
+def test_single_read_pair_cannot_straddle_a_toggle_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] the toggle flips unset -> own between reads [then] source and basis describe ONE state.
+
+    Two separate reads would pair source "own" (toggle unset, unmapped) with
+    implicit False (toggle own), stamping an implicit default as "selection".
+    """
+    conn = sqlite3.connect(":memory:")
+    reads = iter(["unset", "own"])
+    monkeypatch.setattr(selection, "get_toggle", lambda _lane: next(reads))
+    pair = selection.effective_source_and_implicit_own_for_track(
+        conn, "beatgrid", has_rb_mapping=False
+    )
+    assert pair == ("own", True)

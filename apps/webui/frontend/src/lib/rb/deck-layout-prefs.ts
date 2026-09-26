@@ -39,12 +39,14 @@ export function validateDeckLayoutFields(
 		deck_layout?: unknown;
 		deck_layout_animate?: unknown;
 		deck_layout_duration_ms?: unknown;
+		deck_right_mirror?: unknown;
 	},
 	storageKey: string
 ): {
 	deck_layout: DeckLayoutMode | undefined;
 	deck_layout_animate: boolean | undefined;
 	deck_layout_duration_ms: DeckLayoutDurationMs | undefined;
+	deck_right_mirror: boolean | undefined;
 } {
 	const deckLayout = parsed.deck_layout;
 	if (deckLayout !== undefined && deckLayout !== 'more' && deckLayout !== 'less') {
@@ -69,10 +71,17 @@ export function validateDeckLayoutFields(
 				`${DECK_LAYOUT_DURATIONS_MS.join(', ')}) - clear the localStorage key to recover`
 		);
 	}
+	if (parsed.deck_right_mirror !== undefined && typeof parsed.deck_right_mirror !== 'boolean') {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (deck_right_mirror is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	return {
 		deck_layout: deckLayout as DeckLayoutMode | undefined,
 		deck_layout_animate: parsed.deck_layout_animate as boolean | undefined,
-		deck_layout_duration_ms: deckLayoutDurationMs as DeckLayoutDurationMs | undefined
+		deck_layout_duration_ms: deckLayoutDurationMs as DeckLayoutDurationMs | undefined,
+		deck_right_mirror: parsed.deck_right_mirror as boolean | undefined
 	};
 }
 
@@ -81,6 +90,8 @@ export interface DeckLayoutPrefsState {
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	/** Mirror deck 2 main control row for right-column symmetry (issue #3983). */
+	deck_right_mirror: boolean;
 }
 
 export interface DeckLayoutSetters {
@@ -88,6 +99,7 @@ export interface DeckLayoutSetters {
 	toggleDeckLayoutMode(): void;
 	setDeckLayoutAnimate(next: boolean): void;
 	setDeckLayoutDurationMs(next: DeckLayoutDurationMs): void;
+	setDeckRightMirror(next: boolean): void;
 }
 
 /**
@@ -130,5 +142,17 @@ export function makeDeckLayoutSetters(
 		syncDiskPrefs({ deck_layout_duration_ms: next });
 	}
 
-	return { setDeckLayoutMode, toggleDeckLayoutMode, setDeckLayoutAnimate, setDeckLayoutDurationMs };
+	function setDeckRightMirror(next: boolean): void {
+		state.deck_right_mirror = next;
+		persist();
+		syncDiskPrefs({ deck_right_mirror: next });
+	}
+
+	return {
+		setDeckLayoutMode,
+		toggleDeckLayoutMode,
+		setDeckLayoutAnimate,
+		setDeckLayoutDurationMs,
+		setDeckRightMirror
+	};
 }
