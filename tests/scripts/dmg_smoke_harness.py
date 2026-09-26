@@ -26,7 +26,7 @@ def _write(path: Path, content: str, executable: bool = False) -> None:
 
 def _gh_shim(fixture_dir: Path, comment_file: Path) -> str:
     return textwrap.dedent(
-        f"""#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -euo pipefail
 comment_file="{comment_file}"
 fixture_dir="{fixture_dir}"
@@ -40,15 +40,20 @@ _apply_jq() {{
 }}
 if [[ "$1" == "api" ]]; then
   shift
-  paginate=0 slurp=0 jq_filter=""
+  paginate=0 slurp=0 jq_filter="" template=""
   while (($#)); do
     case "$1" in
       --paginate) paginate=1; shift ;;
       --slurp) slurp=1; shift ;;
       --jq) jq_filter="$2"; shift 2 ;;
+      --template) template="$2"; shift 2 ;;
       *) endpoint="$1"; shift ;;
     esac
   done
+  if [[ "$slurp" == "1" ]] && {{ [[ -n "$jq_filter" ]] || [[ -n "$template" ]]; }}; then
+    echo "gh: the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+    exit 1
+  fi
   if [[ "$endpoint" == *"/commits/main" ]]; then
     _apply_jq "$(cat "$fixture_dir/commits_main.json")"
     exit 0
