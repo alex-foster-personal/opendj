@@ -24,8 +24,11 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
 import time
 from datetime import UTC, datetime
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -294,6 +297,84 @@ def test_verify_reports_a_dead_engine_before_a_wall() -> None:
     assert dead < text.index('elif [ -n "$DRIVER_BLOCK_LINE" ]; then')
     passing = text.rindex("elif", 0, dead)
     assert '[ -n "$ENGINE_LIVE" ]' in text[passing:dead], "PASS must require a live engine"
+
+
+def _serve(root: Path, health: str, performance: str) -> ThreadingHTTPServer:
+    (root / "api/v1").mkdir(parents=True)
+    (root / "api/v1/health").write_text(health, encoding="utf-8")
+    (root / "performance").write_text(performance, encoding="utf-8")
+    handler = partial(SimpleHTTPRequestHandler, directory=str(root))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _setup_function(name: str) -> str:
+    match = re.search(
+        rf"^{name}\(\) \{{\n.*?^\}}\n", SETUP_SH.read_text(encoding="utf-8"), re.M | re.S
+    )
+    assert match, f"setup.sh must define {name}()"
+    return match.group(0)
+
+
+def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) -> None:
+    """[if] setup.sh picks the main checkout on health alone while it is API-only and the
+    agt-mini sibling serves the app [then] the loop parks on 'serves no app shell' forever
+    despite a usable engine, [else stop]. Runs setup.sh's real selection functions (with
+    `run` executing locally) against two real HTTP servers."""
+    api_only = _serve(tmp_path / "api_only", '{"status":"ok"}', '{"detail":"Not Found"}')
+    full = _serve(tmp_path / "full", '{"status":"ok"}', "<!doctype html><html></html>")
+    url = {
+        name: f"http://127.0.0.1:{srv.server_address[1]}"
+        for name, srv in (("api", api_only), ("full", full))
+    }
+    url["dead"] = "http://127.0.0.1:1"
+    url["none"] = ""
+    harness = "\n".join(
+        [
+            "set -euo pipefail",
+            "HOST=h; REMOTE_REPO=/r/main",
+            "log() { printf '[OK] %s\\n' \"$*\"; }",
+            'run() { bash -c "$1"; }',
+            'probe_engine_repo() { case "$1" in /r/main) echo "$MAIN_BASE";; '
+            '/r/main-wt-agt-mini) echo "$SIB_BASE";; esac; }',
+            _setup_function("engine_serves_app"),
+            _setup_function("choose_engine_repo"),
+            "choose_engine_repo",
+            'echo "ENGINE_REPO=$ENGINE_REPO"',
+        ]
+    )
+
+    def choose(main: str, sibling: str) -> subprocess.CompletedProcess[str]:
+        env = {"PATH": os.environ["PATH"], "MAIN_BASE": url[main], "SIB_BASE": url[sibling]}
+        return subprocess.run(
+            ["bash", "-c", harness],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+
+    try:
+        for main, sibling, chosen in (
+            ("api", "full", "/r/main-wt-agt-mini"),  # the reported split
+            ("dead", "full", "/r/main-wt-agt-mini"),
+            ("none", "full", "/r/main-wt-agt-mini"),
+            ("full", "full", "/r/main"),  # control: a live main checkout still wins
+            ("full", "api", "/r/main"),
+        ):
+            done = choose(main, sibling)
+            assert done.returncode == 0, done.stderr
+            assert f"ENGINE_REPO={chosen}\n" in done.stdout, (main, sibling, done.stdout)
+            assert "[WARN]" not in done.stderr, (main, sibling)
+        # Negative: neither serves the app, so setup warns and keeps the main default.
+        done = choose("api", "api")
+        assert "ENGINE_REPO=/r/main\n" in done.stdout
+        assert "serves the app shell" in done.stderr
+    finally:
+        api_only.shutdown()
+        full.shutdown()
 
 
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
