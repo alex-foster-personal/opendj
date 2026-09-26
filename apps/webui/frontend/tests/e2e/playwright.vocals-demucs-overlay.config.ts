@@ -9,7 +9,9 @@
  *     pnpm test:e2e:vocals-demucs-overlay
  */
 import { defineConfig, devices } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +52,15 @@ process.env.VOCALS_DEMUCS_OVERLAY_API_BASE = endpoints.backendOrigin;
 process.env.VOCALS_DEMUCS_OVERLAY_FRONTEND_PORT = String(endpoints.frontendPort);
 
 const SANDBOX_HOME = join(FIXTURE_DATA_DIR, 'sandbox-home');
+
+// The engine boots under SANDBOX_HOME, but the fixture builder's demucs run
+// must reuse the CALLER's uv and torch caches. Under the sandbox HOME, uv
+// re-resolved the worker env (843 MB of torch) and torch re-downloaded the
+// htdemucs checkpoint (80 MB), both inside the repo tree where the quality
+// gate scans them. Resolve the real locations once, from the caller's env.
+const CALLER_UV_CACHE_DIR = execFileSync('uv', ['cache', 'dir'], { encoding: 'utf8' }).trim();
+const CALLER_UV_PYTHON_DIR = execFileSync('uv', ['python', 'dir'], { encoding: 'utf8' }).trim();
+const CALLER_TORCH_HOME = process.env.TORCH_HOME ?? join(homedir(), '.cache', 'torch');
 mkdirSync(SANDBOX_HOME, { recursive: true });
 
 const BUILD_INDEX = join(FRONTEND_ROOT, 'build', 'index.html');
@@ -78,6 +89,9 @@ const engineEnv = {
 	MUSIC_DJ_BACKEND_PORT: String(endpoints.backendPort),
 	WEB_CONCURRENCY: '',
 	HOME: SANDBOX_HOME,
+	UV_CACHE_DIR: CALLER_UV_CACHE_DIR,
+	UV_PYTHON_INSTALL_DIR: CALLER_UV_PYTHON_DIR,
+	TORCH_HOME: CALLER_TORCH_HOME,
 	MDT_LIVE_DEMUCS_ACCEPTANCE: '1'
 };
 
