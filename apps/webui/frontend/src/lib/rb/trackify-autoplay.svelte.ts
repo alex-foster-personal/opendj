@@ -220,7 +220,13 @@ async function _dispatchLoadSequence(
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
-		await dispatchPerformanceCommand({ type: 'load', deck, stable_id: nextId, stems: false });
+		await dispatchPerformanceCommand({
+			type: 'load',
+			deck,
+			stable_id: nextId,
+			stems: false,
+			suppressCommandErrorToast: true
+		});
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });

@@ -8,6 +8,7 @@ import {
 	trackifyPlaylistScope,
 	type TrackifyFeedSnapshot
 } from '$lib/rb/trackify-feed';
+import { fetchTrackifyLibraryRevision } from '$lib/rb/api-rb';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/rb/performance-ipc.svelte';
 
@@ -29,6 +30,7 @@ let _lastSnapshot: TrackifyFeedSnapshot = {
 	rows: [],
 	snapshotted: false
 };
+let _lastLibraryRevision: string | null = null;
 
 export function getTrackifyFeedRows(): readonly AutoPlayTrackRow[] {
 	return _controller.rows;
@@ -106,12 +108,28 @@ function _hydrateOrToast(ownGeneration: number): void {
 	});
 }
 
+async function _probeAndHydrate(ownGeneration: number): Promise<void> {
+	const revision = await fetchTrackifyLibraryRevision();
+	if (_installGeneration !== ownGeneration) return;
+	const scope = trackifyPlaylistScope(uiPrefs.last_playlist);
+	const revisionChanged = _lastLibraryRevision !== null && _lastLibraryRevision !== revision;
+	const scopeChanged = scope !== _lastSnapshot.scope;
+	_lastLibraryRevision = revision;
+	if (revisionChanged || scopeChanged) {
+		_hydrateOrToast(ownGeneration);
+	}
+}
+
 export function installTrackifyFeed(): () => void {
 	_installGeneration += 1;
 	const ownGeneration = _installGeneration;
 	_hydrateOrToast(ownGeneration);
 	const interval = setInterval(() => {
-		_hydrateOrToast(ownGeneration);
+		_probeAndHydrate(ownGeneration).catch((error: unknown) => {
+			if (_installGeneration !== ownGeneration) return;
+			const reason = error instanceof Error ? error.message : String(error);
+			pushToast(`Trackify: could not check the library revision (${reason})`, 'error');
+		});
 	}, 60_000);
 	return () => {
 		clearInterval(interval);
@@ -121,6 +139,7 @@ export function installTrackifyFeed(): () => void {
 		_installGeneration += 1;
 		_controller = createTrackifyFeedController();
 		_lastSnapshot = { scope: '', epoch: 0, rows: [], snapshotted: false };
+		_lastLibraryRevision = null;
 		_skipNext = false;
 		_hydrating = false;
 	};
