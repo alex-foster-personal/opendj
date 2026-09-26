@@ -553,7 +553,8 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 		deckSource,
 		/<div class="loop-col">\s*<LoopCluster\b[\s\S]*?<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
 	);
-	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
+	// Anchored on the tag prefix: #4009 (issue #3984) added a bind:this to it.
+	const cueRegionStart = deckSource.indexOf('<div class="cue-flex"');
 	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
 	assert.ok(cueRegionStart >= 0 && cueRegionEnd > cueRegionStart, 'cue-flex region is present');
 	assert.doesNotMatch(deckSource.slice(cueRegionStart, cueRegionEnd), /<BeatJump\b/);
