@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import socket
 import subprocess
 import time
@@ -45,6 +46,7 @@ VERIFY_SH = TESTMAC_DIR / "verify.sh"
 SETUP_SH = TESTMAC_DIR / "setup.sh"
 LOOP_SH = TESTMAC_DIR / "agt-persona-loop.sh"
 
+CLAUDE_SEATS = ["True firstParty claude.ai", "True firstParty oauth_token"]
 LINE_RE = re.compile(r"^TESTMAC-\S+ (PASS|FAIL|SKIP|UNKNOWN|PARTIAL) .+$")
 
 
@@ -306,8 +308,8 @@ def test_verify_reports_a_dead_engine_before_a_wall() -> None:
 def _setup_function(name: str) -> str:
     """One function's real source from setup.sh: a one-liner, or a block up to its `}`."""
     text = SETUP_SH.read_text(encoding="utf-8")
-    one_line = re.search(rf"^{name}\(\) \{{[^\n]*\}}\n", text, re.M)
-    block = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", text, re.M | re.S)
+    one_line = re.search(rf"^{name}\(\)\s+\{{[^\n]*\}}\n", text, re.M)
+    block = re.search(rf"^{name}\(\)\s+\{{\n.*?^\}}\n", text, re.M | re.S)
     match = one_line or block
     assert match, f"setup.sh must define {name}()"
     return match.group(0)
@@ -467,6 +469,65 @@ def test_setup_auth_checks_are_bounded_on_the_host() -> None:
     fields = dict(line.split("=", 1) for line in done.stdout.splitlines() if "=" in line)
     assert fields == {"PLAIN": "bounded", "ZSH": "bounded", "CONTROL": "answered"}, done
     assert time.monotonic() - started < 60
+
+
+@pytest.mark.parametrize(
+    ("rc", "status", "patterns", "confirmed"),
+    [
+        (0, "Logged in using ChatGPT", ["*Logged in*"], True),
+        (255, "Logged in using ChatGPT", ["*Logged in*"], False),  # printed, then hung
+        (1, "Logged in using ChatGPT", ["*Logged in*"], False),
+        (0, "Not logged in", ["*Logged in*"], False),
+        (0, "True firstParty oauth_token", CLAUDE_SEATS, True),
+        (0, "True firstParty claude.ai", CLAUDE_SEATS, True),
+        (255, "True firstParty oauth_token", CLAUDE_SEATS, False),
+        (0, "True firstParty api_key", CLAUDE_SEATS, False),
+        (0, "", CLAUDE_SEATS, False),
+    ],
+)
+def test_setup_confirms_a_login_only_with_a_zero_exit(
+    rc: int, status: str, patterns: list[str], confirmed: bool
+) -> None:
+    """[if] setup accepts a login status whose command then hung (killed by the bound)
+    or failed [then] it installs a loop whose every preflight is refused, [else stop].
+    Runs setup.sh's own status_confirmed()."""
+    quoted = " ".join(shlex.quote(item) for item in [str(rc), status, *patterns])
+    probe = f"{_setup_function('status_confirmed')}status_confirmed {quoted}"
+    done = subprocess.run(["bash", "-c", probe], capture_output=True, check=False, timeout=30)
+    assert (done.returncode == 0) is confirmed
+
+
+def test_setup_auth_section_confirms_demon_llamas_real_logins() -> None:
+    """[if] requiring a zero exit rejects a genuinely signed-in host (a CLI that exits
+    nonzero on success) [then] setup can never install the loop, [else stop]. Runs
+    setup.sh's whole TESTMAC-04 / AGT-28 section live on demon-llama (codex and claude
+    both signed in there); UNAVAILABLE off the tailnet."""
+    if not _host_reachable(LIVE_ENGINE_HOST):
+        pytest.skip(f"UNAVAILABLE: {LIVE_ENGINE_HOST} is not reachable over BatchMode ssh")
+    text = SETUP_SH.read_text(encoding="utf-8")
+    start = text.index(
+        "# ---------------------------------------------------------------- TESTMAC-04"
+    )
+    end = text.index(
+        "# ---------------------------------------------------------------- TESTMAC-07"
+    )
+    harness = "\n".join(
+        [
+            "set -euo pipefail",
+            f"HOST={LIVE_ENGINE_HOST}",
+            "AGENT_CLI=claude",
+            _setup_function("log"),
+            _setup_function("fail"),
+            _setup_function("run"),
+            text[start:end],
+        ]
+    )
+    done = subprocess.run(
+        ["bash", "-c", harness], capture_output=True, text=True, check=False, timeout=240
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "codex login status reports logged in" in done.stdout
+    assert "claude auth status reports a first-party subscription login" in done.stdout
 
 
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
