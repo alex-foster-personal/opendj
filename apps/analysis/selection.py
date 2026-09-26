@@ -350,6 +350,54 @@ def effective_source_for_track(
     return get_default(conn, lane)
 
 
+def implicit_own_default(
+    conn: sqlite3.Connection | None,
+    lane: str,
+    *,
+    has_rb_mapping: bool | None,
+) -> bool:
+    """True when ``own`` is effective for this track ONLY via STANDALONE-06.
+
+    That is an unmapped track, the PARITY-02 toggle ``unset``, and a lane
+    default that is still ``rbx`` (no NATIVE-14 promotion). In that state and
+    with no own record yet, a reader keeps serving the value the track
+    already had (a ``track_fields`` tag or manual value, a locally decoded
+    waveform) rather than hiding it behind ``missing`` (STANDALONE-03). An
+    explicit ``own`` toggle or a promoted lane still answers ``missing``, so
+    no other source is ever substituted under a chosen own selection. With no
+    state DB there is no promotion table, which ``get_default`` answers
+    ``DEFAULT_SOURCE`` for.
+    """
+    _check_lane(lane)
+    if has_rb_mapping is not False or get_toggle(lane) != "unset":
+        return False
+    default = get_default(conn, lane) if conn is not None else DEFAULT_SOURCE
+    return default == "rbx"
+
+
+def effective_source_and_implicit_own_for_track(
+    conn: sqlite3.Connection,
+    lane: str,
+    *,
+    has_rb_mapping: bool,
+) -> tuple[Source, bool]:
+    """:func:`effective_source_for_track` and :func:`implicit_own_default` from ONE read.
+
+    Calling the two separately reads the in-process toggle twice, each under its
+    own lock acquisition, and the persisted default in separate autocommit
+    statements, so a toggle or default write landing between them can pair a
+    source with a verdict about a different selection. This reads the toggle
+    once and the default at most once, so the pair always describes one state.
+    """
+    _check_lane(lane)
+    toggle = get_toggle(lane)
+    if toggle != "unset":
+        return toggle, False
+    if has_rb_mapping:
+        return get_default(conn, lane), False
+    return "own", get_default(conn, lane) == "rbx"
+
+
 def bulk_has_rb_mapping(conn: sqlite3.Connection, stable_ids: list[str]) -> frozenset[str]:
     """``stable_id`` values with a live rekordbox ``track_vendor_ids`` row.
 
@@ -532,6 +580,33 @@ def _missing_own_field(field_name: str) -> EffectiveField:
     )
 
 
+def _implicit_default_track_values(
+    conn: sqlite3.Connection,
+    field_name: str,
+    lane: str,
+    own_ids: list[str],
+    projected: dict[str, dict[str, EffectiveField]],
+) -> dict[str, EffectiveField]:
+    """``track_fields`` values an own-resolved field still serves (STANDALONE-03).
+
+    Read only for ids with no projection row, so an own record, ``ok`` or
+    ``failed``, always wins; and only under :func:`implicit_own_default`.
+    """
+    # The lane-level half of the predicate is asked ONCE per lane, not per
+    # row: this runs on the library-listing hot path. Under it every id in
+    # ``own_ids`` is unmapped by construction, because a mapped track reads
+    # the lane default, which the predicate has just confirmed is ``rbx``.
+    if field_name not in _RBX_FIELDS or not implicit_own_default(
+        conn, lane, has_rb_mapping=False
+    ):
+        return {}
+    ids = [sid for sid in own_ids if projected[sid].get(field_name) is None]
+    fetched = _fetch_track_fields(conn, ids, (field_name,))
+    return {
+        sid: fetched[sid][field_name] for sid in ids if field_name in fetched[sid]
+    }
+
+
 def _annotate_available_not_selected(
     conn: sqlite3.Connection,
     sid: str,
@@ -644,8 +719,11 @@ def effective_fields(
                 if projection_available
                 else {sid: {} for sid in own_ids}
             )
+            track_values = _implicit_default_track_values(
+                conn, field_name, lane, own_ids, projected,
+            )
             for sid in own_ids:
-                found = projected[sid].get(field_name)
+                found = projected[sid].get(field_name, track_values.get(sid))
                 out[sid][field_name] = (
                     found if found is not None else _missing_own_field(field_name)
                 )
@@ -740,7 +818,9 @@ __all__ = [
     "bulk_has_rb_mapping",
     "effective_fields",
     "effective_source",
+    "effective_source_and_implicit_own_for_track",
     "effective_source_for_track",
+    "implicit_own_default",
     "ensure_tables",
     "field_column_sql",
     "get_default",

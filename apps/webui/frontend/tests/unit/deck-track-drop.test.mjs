@@ -8,6 +8,7 @@
  *   not implemented" message appears as when double-clicking it
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -67,6 +68,13 @@ describe('applyDeckTrackDrop', () => {
 		});
 		assert.match(toasts[0].message, /streaming/i);
 		assert.doesNotMatch(toasts[0].message, /broken link/);
+	});
+
+	it('notes the target deck before dispatching load', async () => {
+		assert.match(
+			await readFile('src/lib/rb/deck-track-drop.ts', 'utf8'),
+			/noteRecentDeck\(args\.deckId\)/
+		);
 	});
 
 	it('loads a loadable row onto an empty deck', async () => {

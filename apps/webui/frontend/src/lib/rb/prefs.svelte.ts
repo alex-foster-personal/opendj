@@ -18,6 +18,11 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import {
+	makePlaylistTreeViewSetters,
+	validatePlaylistTreeViewField,
+	type PlaylistTreeViewMode
+} from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import {
 	parseWaveformDesign,
@@ -45,9 +50,16 @@ import {
 	type AppModePrefs
 } from './app-mode-prefs';
 import {
+	GIG_HELPER_PREF_DEFAULTS,
+	bindGigHelperPrefSetters,
+	mergeGigHelperPrefsFromParsed,
+	type GigHelperPrefs
+} from './gig-helper-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
+	type AppPosturePref,
 	type AppPosturePrefs
 } from './app-posture-prefs';
 import {
@@ -66,9 +78,11 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
+import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AppModeId } from './app-mode';
+export type { GigHelperPref } from './gig-helper-prefs';
 export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
@@ -100,7 +114,7 @@ export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
 /** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
 export type HorizontalWheelKnob = 'filter' | 'color';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -203,6 +217,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	deck_layout_animate: boolean;
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	/** Mirror deck 2 control row horizontally for mixer-facing symmetry (issue #3983). */
+	deck_right_mirror: boolean;
+	/** Playlist sidebar: tree list vs column browser (issue #3983). */
+	playlist_tree_view: PlaylistTreeViewMode;
 	level_calibration: LevelCalibrationPrefs;
 	/** Crossfader curve name; unbuilt curves stay disabled in the UI. */
 	crossfade_curve: CrossfadeCurve;
@@ -238,6 +256,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
+	deck_right_mirror: false,
+	playlist_tree_view: 'tree',
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
 	horizontal_wheel_knob: 'filter',
@@ -245,6 +265,7 @@ const DEFAULTS: RbUiPrefs = {
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
 	...APP_POSTURE_PREF_DEFAULTS,
+	...GIG_HELPER_PREF_DEFAULTS,
 	...APP_MODE_PREF_DEFAULTS
 };
 
@@ -442,8 +463,10 @@ function _load(): RbUiPrefs {
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
-		deck_layout_duration_ms: deckLayoutDurationMs
+		deck_layout_duration_ms: deckLayoutDurationMs,
+		deck_right_mirror: deckRightMirror
 	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
@@ -492,6 +515,8 @@ function _load(): RbUiPrefs {
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
+		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
+		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
 		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
@@ -502,6 +527,8 @@ function _load(): RbUiPrefs {
 		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_POSTURE_PREF_DEFAULTS,
 		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
+		...GIG_HELPER_PREF_DEFAULTS,
+		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
 		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
 	};
@@ -670,8 +697,15 @@ export const {
 	setDeckLayoutMode,
 	toggleDeckLayoutMode,
 	setDeckLayoutAnimate,
-	setDeckLayoutDurationMs
+	setDeckLayoutDurationMs,
+	setDeckRightMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 
 export const {
 	setLyricsGlobal,
@@ -684,7 +718,17 @@ export const {
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
-export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+const { setAppPosture: _setAppPostureRaw } = bindAppPosturePrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
+export function setAppPosture(next: AppPosturePref): void {
+	const previous = uiPrefs.app_posture;
+	_setAppPostureRaw(next);
+	tryOfferGigHelperPromptOnPostureChange(previous, next, uiPrefs.gig_helper);
+}
+export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {

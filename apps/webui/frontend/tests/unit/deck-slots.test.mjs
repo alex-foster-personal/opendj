@@ -756,7 +756,8 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 	it('the PerformanceCommand wire type accepts refuseIfMaster as optional on load and unload', () => {
 		assert.match(
 			ipc,
-			/\{ type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster\?: boolean \}/
+			// #3975 appended `stems?`, #4038 `suppressCommandErrorToast?` (now multi-line); refuseIfMaster must stay optional.
+			/\{\s*type: 'load';\s*deck: DeckId;\s*stable_id: string;\s*refuseIfMaster\?: boolean;/
 		);
 		assert.match(ipc, /\{ type: 'unload'; deck: DeckId; refuseIfMaster\?: boolean \}/);
 	});

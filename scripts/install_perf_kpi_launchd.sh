@@ -5,11 +5,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
+HOST_LABEL="${MDT_PERF_KPI_MACHINE:-}"
 
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --state-dir) STATE_DIR="${2:?}"; shift 2 ;;
+    --host-label) HOST_LABEL="${2:?}"; shift 2 ;;
     *) echo "[ERROR] unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -27,6 +29,19 @@ require_env MDT_PERF_KPI_LARGE_STABLE_ID
 require_env MDT_PERF_KPI_STEMMED_STABLE_ID
 require_env MDT_PERF_KPI_DATA_DIR
 
+# Supersedes: the nightly template's hardcoded `air` MDT_PERF_KPI_MACHINE and
+# perf_kpi_config.py's `or "air"` fallback, both removed; the label now comes
+# only from this flag (or the variable) and the nightly path requires it.
+# --host-label/MDT_PERF_KPI_MACHINE has no hidden default (claude-review,
+# PR #3827, round 3, P1/BLOCKING): a silent "air" fallback would attribute
+# a second Mac's perf-kpi runs to Air in the ledger with no error -- the
+# same corruption already fixed for the sibling dmg-smoke installer in
+# round 2 (see .planning/debt/3827.md).
+if [ -z "$HOST_LABEL" ]; then
+  echo "[ERROR] --host-label (or MDT_PERF_KPI_MACHINE) is required (e.g. --host-label air, --host-label silver)" >&2
+  exit 2
+fi
+
 mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents"
 
 render() {
@@ -39,6 +54,7 @@ render() {
     -e "s|{{SMALL_STABLE_ID}}|$MDT_PERF_KPI_SMALL_STABLE_ID|g" \
     -e "s|{{LARGE_STABLE_ID}}|$MDT_PERF_KPI_LARGE_STABLE_ID|g" \
     -e "s|{{STEMMED_STABLE_ID}}|$MDT_PERF_KPI_STEMMED_STABLE_ID|g" \
+    -e "s|{{MACHINE}}|$HOST_LABEL|g" \
     "$template" >"$target"
   plutil -lint "$target" >/dev/null 2>&1 || python3 -c "import plistlib; plistlib.loads(open('$target','rb').read())"
 }

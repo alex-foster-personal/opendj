@@ -100,6 +100,7 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -164,7 +165,7 @@
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
-	import { pushToast } from '$lib/stores.svelte';
+	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -600,18 +601,17 @@
 
 	/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
-		const states = DECK_IDS.map((d) => decks[d]);
-		const ordered = [
-			...states.filter((s) => s.is_master && s.stable_id !== null),
-			...states.filter((s) => s.playing && s.stable_id !== null),
-			...states.filter((s) => s.stable_id !== null)
-		];
-		for (const s of ordered) {
-			if (s.key !== null && s.bpm !== null && s.bpm > 0) {
-				return { key: s.key, bpm: s.bpm };
-			}
-		}
-		return null;
+		const slices = DECK_IDS.map((d) => {
+			const s = decks[d];
+			return {
+				is_master: s.is_master,
+				playing: s.playing,
+				stable_id: s.stable_id,
+				key: s.key,
+				bpm: s.bpm
+			};
+		});
+		return computeNextOnlyRef(slices);
 	});
 
 	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
@@ -1876,6 +1876,30 @@
 		return { rows, truncated: page.total > rows.length, etag: '' };
 	}
 
+	function _pushPaneLoadError(
+		p: PaneStore,
+		node: PlaylistNode,
+		label: string,
+		error: string
+	): void {
+		const paneKey = p.playlist_id ?? node.playlist_id ?? 'pane';
+		pushToast(
+			`${label}: ${error}`,
+			'error',
+			TOAST_DEFAULT_MS,
+			new Error(error),
+			{
+				source: 'browser-pane-load',
+				playlist_id: node.playlist_id,
+				playlist_name: node.name,
+				pane_kind: node.kind
+			},
+			`browser-pane-load:${paneKey}`,
+			undefined,
+			{ feature: 'Library selection' }
+		);
+	}
+
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
 		// Every route into a pane funnels through here (tree click, new tab,
 		// back-stack, post-mutation refresh), so this is the one place that
@@ -1911,7 +1935,11 @@
 					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
 					mapRow: (wire, order) =>
 						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
-					onFillError: (error) => pushToast(`autolist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'autolist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1932,7 +1960,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1949,7 +1981,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'taglist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1975,7 +2011,11 @@
 						completeLibraryUsable({ source: 'playlist' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1990,7 +2030,7 @@
 			}
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
-				pushToast(`playlist load failed: ${String(exc)}`, 'error');
+				_pushPaneLoadError(p, node, 'playlist load failed', String(exc));
 			}
 		}
 	}
@@ -3432,6 +3472,7 @@
 			searchQuery={pane.search}
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
+			compatibleReferenceKey={nextOnlyRef?.key ?? null}
 		/>
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>

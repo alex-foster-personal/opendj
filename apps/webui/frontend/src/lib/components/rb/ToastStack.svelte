@@ -9,13 +9,28 @@
 	import {
 		copyToast,
 		dismissToast,
+		finalizeToastExit,
 		holdToast,
 		releaseToast,
 		toggleToastExpanded,
 		type Toast
 	} from '$lib/stores.svelte';
+	import { TOAST_EXIT_DURATION_MS, TOAST_EXIT_TRANSLATE_PX } from '$lib/toast-tray-policy';
 
 	let { items }: { items: readonly Toast[] } = $props();
+
+	$effect(() => {
+		const handles: ReturnType<typeof setTimeout>[] = [];
+		for (const toast of items) {
+			if (toast.exiting !== true) continue;
+			handles.push(
+				setTimeout(() => finalizeToastExit(toast.logId), TOAST_EXIT_DURATION_MS + 40)
+			);
+		}
+		return () => {
+			for (const handle of handles) clearTimeout(handle);
+		};
+	});
 
 	let copyState = $state<Record<string, 'copied' | string>>({});
 	let touchStartX = $state<number | null>(null);
@@ -60,6 +75,12 @@
 	function onTouchEnd(): void {
 		touchStartX = null;
 	}
+
+	function onExitTransitionEnd(event: TransitionEvent, toast: Toast): void {
+		if (toast.exiting !== true) return;
+		if (event.propertyName !== 'transform' && event.propertyName !== 'opacity') return;
+		finalizeToastExit(toast.logId);
+	}
 </script>
 
 <div class="toast-stack">
@@ -68,8 +89,12 @@
 			class="toast"
 			class:warn={toast.kind === 'warn'}
 			class:error={toast.kind === 'error'}
+			class:toast-exiting={toast.exiting === true}
 			role="status"
 			data-toast-id={toast.logId}
+			data-toast-exiting={toast.exiting === true ? toast.logId : undefined}
+			style={`--toast-exit-ms: ${TOAST_EXIT_DURATION_MS}ms; --toast-exit-px: ${TOAST_EXIT_TRANSLATE_PX}px`}
+			ontransitionend={(event) => onExitTransitionEnd(event, toast)}
 			onmouseenter={() => holdToast(toast.logId)}
 			onmouseleave={() => releaseToast(toast.logId)}
 			onwheel={(event) => onWheel(event, toast.logId)}
@@ -246,5 +271,13 @@
 	.toast-action:hover {
 		background: var(--accent);
 		color: #fff;
+	}
+	.toast-exiting {
+		transform: translateY(calc(-1 * var(--toast-exit-px, 100px)));
+		opacity: 0;
+		transition:
+			transform var(--toast-exit-ms, 100ms) ease,
+			opacity var(--toast-exit-ms, 100ms) ease;
+		pointer-events: none;
 	}
 </style>

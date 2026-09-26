@@ -135,6 +135,7 @@ def test_run_is_rejected_while_a_refresh_is_running(client, app, tmp_path):
     _wait(client)
 
 
+# REQ: LIBUX-11
 def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, app, tmp_path):
     """The hover action and an HTTP agent order share this narrow, real drain."""
     _seed(app, "order001", _audio(tmp_path, "order.mp3"))
@@ -163,6 +164,7 @@ def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, a
 
 
 @pytest.mark.parametrize("kind", ["unknown", "cues", "waveform", "phrase", "other"])
+# REQ: LIBUX-11
 def test_order_rejects_an_unknown_or_unproducible_analysis_kind(client, app, tmp_path, kind):
     """A 202 is reserved for a command that can materialize the requested dot."""
     _seed(app, "order002", _audio(tmp_path, "order.mp3"))

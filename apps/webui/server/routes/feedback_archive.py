@@ -1,7 +1,7 @@
-"""Bulk harvest archive logic (FB-06, issue #3782).
+"""Bulk harvest archive logic (FB-06, issue #3782, #3981).
 
-Split from ``feedback.py`` for the 600-line file budget. Marks pins ``harvested``
-instead of clearing ``comments.json``.
+Split from ``feedback.py`` for the 600-line file budget. Snapshots pins into
+archive files without changing operator-visible ``status`` on the live board.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ def _now() -> str:
 def mark_comments_harvested(
     comments: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Mark eligible pins harvested in the live store.
+    """Legacy helper: mark pins ``harvested`` on the live store.
 
-    Returns ``(updated_live_comments, archive_snapshots)``. Skips pins already
-    ``harvested`` or ``archived``. Idempotent on re-run.
+    Bulk harvest no longer calls this (issue #3981). Kept for tests and any
+    tooling that still needs the old mutation semantics.
     """
     to_harvest = [
         c for c in comments if c.get("status") not in {"harvested", "archived"}
@@ -38,6 +38,35 @@ def mark_comments_harvested(
     updated = [
         {**c, "status": "harvested", "harvested_at": now, "updated_at": now}
         if c.get("id") in harvested_ids
+        else c
+        for c in comments
+    ]
+    return updated, snapshots
+
+
+def snapshot_comments_for_archive(
+    comments: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Snapshot eligible pins for agent harvest without changing live ``status``.
+
+    Returns ``(updated_live_comments, archive_snapshots)``. Skips ``archived``
+    pins and pins already recorded in a prior bulk snapshot (``agent_snapshot_at``).
+    Live ``status`` stays ``open`` (or whatever the operator set) until UI archive.
+    """
+    to_snapshot = [
+        c
+        for c in comments
+        if c.get("status") != "archived" and not c.get("agent_snapshot_at")
+    ]
+    if not to_snapshot:
+        return comments, []
+
+    now = _now()
+    snapshot_ids = {c["id"] for c in to_snapshot}
+    snapshots = [{**c, "agent_snapshot_at": now} for c in to_snapshot]
+    updated = [
+        {**c, "agent_snapshot_at": now, "updated_at": now}
+        if c.get("id") in snapshot_ids
         else c
         for c in comments
     ]
@@ -91,7 +120,7 @@ def perform_bulk_archive(root: Path) -> Any:
                 kept_todos.append(todo)
 
         general_archived = bool(general["text"])
-        harvested_comments, comment_snapshots = mark_comments_harvested(comments)
+        live_comments, comment_snapshots = snapshot_comments_for_archive(comments)
         nothing_to_do = (
             not archived_todos
             and not archived_feedback
@@ -133,7 +162,7 @@ def perform_bulk_archive(root: Path) -> Any:
         )
 
         _save(todos_path, "todos", kept_todos)
-        _save(comments_path, "comments", harvested_comments)
+        _save(comments_path, "comments", live_comments)
         if general_archived:
             write_atomic(
                 general_path,

@@ -30,12 +30,42 @@ ALIAS_VENDOR = "vendor-alias"
 
 
 def _make_master_plain_db(path: Path) -> None:
+    """djmdContent/djmdGenre/djmdCue, matching the fuller schema in
+    test_hardening_round2.py's own _make_master_plain_db.
+
+    test_apply_still_rewrites_playlists_only (below) round-trips a real
+    /apply request through SqliteBackend, whose rb metadata enrichment
+    LEFT JOINs djmdContent to djmdGenre (apps/webui/server/rb_vendor_pkg/
+    track_rows.py::bulk_rb_meta) -- unlike the other tests in this file,
+    which read via InMemoryBackend or call bulk_cue_presence() directly and
+    so never reach that join. A LEFT JOIN still requires the joined table
+    to exist even with zero genre rows, so the fixture needs the full
+    djmdContent column set the query selects, plus the djmdGenre table
+    itself, not just the cue-only shape.
+
+    This gap was harmless until cad91e688d (issue #3536, Fri 25 Sep 2026):
+    before that commit, analysis_overlay.lane_owned_fields() skipped its
+    rb-mapped probe (and so bulk_rb_meta and this join) whenever every lane
+    was on the default "rbx" selection, which is what this fixture uses.
+    cad91e688d made that probe unconditional (STANDALONE-02/06 needs the
+    per-track rb-mapped flag even under an all-rbx selection), so every
+    request through SqliteBackend now reaches bulk_rb_meta regardless of
+    selection, and this test's incomplete fixture schema turned into a real
+    failure the same day. Verified green pre-cad91e688d (CI run 36188349037
+    at db12b7a1979) and red after.
+    """
     conn = sqlite3.connect(str(path))
     try:
         conn.execute(
             "CREATE TABLE djmdContent (ID VARCHAR(255) PRIMARY KEY, "
-            "Length INTEGER, AnalysisDataPath VARCHAR(255), "
+            "FolderPath VARCHAR(255), ImagePath VARCHAR(255), "
+            "AnalysisDataPath VARCHAR(255), Commnt VARCHAR(255), "
+            "GenreID VARCHAR(255), DJPlayCount INTEGER, Length INTEGER, "
             "rb_local_deleted TINYINT(1) DEFAULT 0)"
+        )
+        conn.execute(
+            "CREATE TABLE djmdGenre (ID VARCHAR(255) PRIMARY KEY, "
+            "Name VARCHAR(255), rb_local_deleted TINYINT(1) DEFAULT 0)"
         )
         conn.execute(
             "CREATE TABLE djmdCue ("
@@ -249,6 +279,7 @@ def _member_by_sid(cluster: dict, stable_id: str) -> dict:
     return next(member for member in cluster["members"] if member["stable_id"] == stable_id)
 
 
+# REQ: LIBM-76
 def test_clusters_show_asymmetric_cue_presence(app_client, dedup_db: Path) -> None:
     response = app_client.get("/api/v1/dedup/clusters")
     assert response.status_code == 200

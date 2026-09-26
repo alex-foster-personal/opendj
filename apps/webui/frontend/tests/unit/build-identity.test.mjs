@@ -279,6 +279,16 @@ test('the component carries no build-time literal of its own', async () => {
 	assert.match(source, /evidenceStamp/);
 });
 
+test('compact .when age uses engine built_at, not shell evidence mtime', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /class="when"[\s\S]*engineAge/);
+	assert.doesNotMatch(source, /class="when"[\s\S]*evidenceAge/);
+});
+
 // ----- where this app is --------------------------------------------------
 test('an engine-served page reports its own origin as the engine', () => {
 	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:56146' }, '');
@@ -375,7 +385,7 @@ test('the chip is a tray citizen, not a floating overlay', async () => {
 	assert.match(source, /bottom:\s*100%/);
 });
 
-test('the foldout states the address, selectable, with a copy control', async () => {
+test('the foldout states the address as a link with copy-all controls', async () => {
 	const { readFileSync } = await import('node:fs');
 	const source = readFileSync(
 		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
@@ -384,10 +394,25 @@ test('the foldout states the address, selectable, with a copy control', async ()
 	assert.match(source, /engineBaseUrl\(\)/);
 	assert.match(source, /explainEngineUrl/);
 	assert.match(source, /user-select:\s*all/);
-	assert.match(source, /class="copy"/);
+	assert.match(source, /<a[\s\S]*class="url"/);
+	assert.match(source, /copy all details/);
+	assert.match(source, /Copy build identity to clipboard/);
+	assert.match(source, /formatBuildIdentityReport/);
 	assert.match(source, /clipboard\.writeText/);
-	// A copy that silently did nothing is worse than no copy button.
 	assert.match(source, /copy refused/);
+});
+
+test('formatBuildIdentityReport includes url drift and engine git_sha', () => {
+	const report = mod.formatBuildIdentityReport({
+		shell: { kind: 'absent', reason: 'browser' },
+		engine: { kind: 'ok', value: ENGINE_OK },
+		engineUrl: { kind: 'ok', url: 'http://127.0.0.1:56146', source: 'served' },
+		drift: 'unknown',
+		updateSummary: null
+	});
+	assert.match(report, /^url: http:\/\/127\.0\.0\.1:56146/m);
+	assert.match(report, /drift: unknown/);
+	assert.match(report, /git_sha: 81eebe75c0ffee0000000000000000000000abcd/);
 });
 
 test('the version block names itself and distinguishes Chrome from the packaged app', async () => {

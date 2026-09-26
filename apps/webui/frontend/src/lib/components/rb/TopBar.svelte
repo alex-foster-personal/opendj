@@ -45,6 +45,11 @@
 	import { switchDeviceOutput } from '$lib/rb/device-output-probe-control';
 
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
+	const splitViewBullets = plannedExplainerBullets('split-view');
+	const linkBullets = [
+		...plannedExplainerBullets('link'),
+		'When built, tempo and phase align across laptops on the same network; this button joins or leaves that session.'
+	];
 	let switchOutputBusy = $state(false);
 
 	async function handleSwitchOutput(): Promise<void> {
@@ -65,13 +70,16 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
+	import GigHelperMonitor from './GigHelperMonitor.svelte';
+	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
+	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import TransitioningChip from './TransitioningChip.svelte';
@@ -408,6 +416,8 @@
 		</div>
 	</details>
 	<AppPostureChip />
+	<GigHelperMonitor />
+	<GigHelperPrompt />
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
@@ -422,12 +432,14 @@
 		<!-- FX panel toggle -->
 		<button class="tb-icon fx rb-inert" disabled title={plannedTitle('fx')}>FX</button>
 		<!-- split-view icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('split-view')} aria-label="split view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
-				<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="Split view" bullets={splitViewBullets} demo="split-view" showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="split view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
+					<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 2up icon -->
 		<button class="tb-icon rb-inert" disabled title={plannedTitle('2-deck-view')} aria-label="2 deck view">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -481,7 +493,9 @@
 	     (SCREENSHOT-SPEC 1). -->
 	<div class="spacer-left"></div>
 
-	<button class="link-btn rb-inert" disabled title={plannedTitle('link')}>LINK</button>
+	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" showDelayMs={60}>
+		<button class="link-btn rb-inert" disabled aria-label="LINK">LINK</button>
+	</ControlExplainer>
 
 	<div class="spacer"></div>
 

@@ -46,10 +46,12 @@ from scripts.build_engine_payload import (
     parse_locked_export,
     parse_otool,
     prune_excluded,
+    scan_runtime_loaded_libraries,
     sha256_tree,
     skip_output_tree,
     sole_stretch_asset,
     sole_waveform_wheel,
+    stale_line_classifications,
 )
 from scripts.desktop_lane_config import LaneLabelError, validate_label
 
@@ -319,14 +321,62 @@ def test_allowlist_matches_site_key_for_dynamic_path_line_entries() -> None:
     """[if] dynamic site key is path:line [then] allowlist lookup classifies it."""
     site = RuntimeLoadSite(
         path="pylib/torch/_ops.py",
-        line=1350,
+        line=1516,
         call="CDLL",
         library=None,
         source="ctypes.CDLL(path)",
     )
     classified, unclassified = classify_runtime_load_sites([site])
     assert unclassified == []
-    assert "package-relative" in classified[site.describe()]
+    assert "payload-relative" in classified[site.describe()]
+
+
+def _ops_site(line: int) -> RuntimeLoadSite:
+    return RuntimeLoadSite(
+        path="pylib/torch/_ops.py",
+        line=line,
+        call="CDLL",
+        library=None,
+        source="ctypes.CDLL(path)",
+    )
+
+
+def _ship_ops_file(payload_dir: Path) -> None:
+    target = payload_dir / "pylib" / "torch" / "_ops.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("# no load site on any keyed line\n", encoding="utf-8")
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_whose_shipped_file_moved_on_is_stale(tmp_path: Path) -> None:
+    """[if] torch ships but its keyed line holds no site [then] the entry is stale."""
+    _ship_ops_file(tmp_path)
+    assert "pylib/torch/_ops.py:1516" in stale_line_classifications([], tmp_path)
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_whose_site_is_present_is_not_stale(tmp_path: Path) -> None:
+    """[if] the keyed line still holds its site [then] the entry is live, else every build fails."""
+    _ship_ops_file(tmp_path)
+    assert "pylib/torch/_ops.py:1516" not in stale_line_classifications(
+        [_ops_site(1516)], tmp_path
+    )
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_for_a_file_the_payload_lacks_is_not_stale(tmp_path: Path) -> None:
+    """[if] the dependency is absent from this build [then] its entries are not stale."""
+    assert stale_line_classifications([], tmp_path) == []
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_the_scan_fails_on_a_stale_line_entry(tmp_path: Path) -> None:
+    """[if] a shipped file's keyed line moved [then] the payload build fails naming the entry."""
+    _ship_ops_file(tmp_path)
+    with pytest.raises(PayloadBuildError) as excinfo:
+        scan_runtime_loaded_libraries(tmp_path)
+    assert "stale RUNTIME_LOAD_ALLOWLIST entries" in str(excinfo.value)
+    assert "pylib/torch/_ops.py:1516" in str(excinfo.value)
 
 
 @pytest.mark.requirement("INSTALL-11")

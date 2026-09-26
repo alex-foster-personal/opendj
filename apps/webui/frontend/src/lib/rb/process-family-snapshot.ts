@@ -28,13 +28,31 @@ function _finiteOrNull(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Probe role slugs from JSONL fallback; never shown raw in PerfMeters (DEVLOOP-11). */
+const PROBE_ROLE_TO_OPENDJ_LABEL: Record<string, string> = {
+	'python-engine': 'opendj-engine',
+	'desktop-shell': 'opendj-desktop',
+	'webkit-webcontent': 'opendj-webcontent',
+	'webkit-gpu': 'opendj-gpu',
+	'webkit-networking': 'opendj-networking',
+	'webkit-other': 'opendj-webkit'
+};
+
+function _labelFromProbeRole(role: string): string {
+	if (role.startsWith('opendj-')) return role;
+	return PROBE_ROLE_TO_OPENDJ_LABEL[role] ?? 'unnamed';
+}
+
 function _membersFromRoles(byRole: unknown): ProcessFamilyMember[] {
 	if (typeof byRole !== 'object' || byRole === null) return [];
 	const members: ProcessFamilyMember[] = [];
 	for (const [rawName, rawMb] of Object.entries(byRole as Record<string, unknown>)) {
 		const mb = _finiteOrNull(rawMb);
 		if (mb === null) continue;
-		const label = typeof rawName === 'string' && rawName.length > 0 ? rawName : 'unnamed';
+		const label =
+			typeof rawName === 'string' && rawName.length > 0
+				? _labelFromProbeRole(rawName)
+				: 'unnamed';
 		members.push({ label, mb: Math.round(mb) });
 	}
 	return members;

@@ -15,6 +15,8 @@ import {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
 	setDeckLayoutMode,
+	setDeckRightMirror,
+	setPlaylistTreeView,
 	setCrossfadeCurve,
 	setHideBrokenLinks,
 	setHideTodoSettings,
@@ -32,6 +34,7 @@ import {
 	setNextOnlyFilter,
 	setAvailableOfflineFilter,
 	setAppPosture,
+	setGigHelper,
 	setPerfTier,
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
@@ -44,6 +47,7 @@ import {
 	type LibraryDensity,
 	type LyricsLoadStrategy,
 	type AppPosturePref,
+	type GigHelperPref,
 	type PerfTierPref,
 	type PreviewBeatSync,
 	type UiTheme
@@ -81,6 +85,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
+	'deck_right_mirror',
+	'playlist_tree_view',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
@@ -91,7 +97,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'crossfade_curve',
 	'horizontal_wheel_knob',
 	'perf_tier',
-	'app_posture'
+	'app_posture',
+	'gig_helper'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -154,6 +161,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.deck_layout_animate;
 		case 'deck_layout_duration_ms':
 			return String(uiPrefs.deck_layout_duration_ms);
+		case 'deck_right_mirror':
+			return uiPrefs.deck_right_mirror;
+		case 'playlist_tree_view':
+			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -178,6 +189,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.perf_tier;
 		case 'app_posture':
 			return uiPrefs.app_posture;
+		case 'gig_helper':
+			return uiPrefs.gig_helper;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -293,6 +306,16 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setDeckLayoutDurationMs(n as DeckLayoutDurationMs);
 			return;
 		}
+		case 'deck_right_mirror':
+			setDeckRightMirror(_asBool(value, key));
+			return;
+		case 'playlist_tree_view': {
+			if (value !== 'tree' && value !== 'column') {
+				throw new Error(`playlist_tree_view must be tree|column, got ${String(value)}`);
+			}
+			setPlaylistTreeView(value);
+			return;
+		}
 		case 'auto_sync.rekordbox':
 		case 'auto_sync.djay':
 		case 'auto_sync.open_dj': {
@@ -353,6 +376,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				throw new Error(`app_posture must be prep|gig, got ${String(value)}`);
 			}
 			setAppPosture(value as AppPosturePref);
+			return;
+		}
+		case 'gig_helper': {
+			if (value !== 'unset' && value !== 'off' && value !== 'on') {
+				throw new Error(`gig_helper must be unset|off|on, got ${String(value)}`);
+			}
+			setGigHelper(value as GigHelperPref);
 			return;
 		}
 		default: {

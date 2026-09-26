@@ -7,24 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
 const ENTRY = fileURLToPath(new URL('./fixtures/trackify-autoplay-entry.ts', import.meta.url));
-
-const urlSuffixImports = {
-	name: 'vite-url-suffix',
-	setup(build) {
-		build.onResolve({ filter: /\?url$/ }, (args) => ({
-			path: args.path,
-			namespace: 'vite-url-suffix'
-		}));
-		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
-			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
-			loader: 'js'
-		}));
-	}
-};
 
 const svelteComponentStubs = {
 	name: 'svelte-component-stub',
@@ -59,7 +46,7 @@ async function bundleTrackifyControllerEntry() {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [urlSuffixImports, svelteComponentStubs],
+		plugins: [viteUrlSuffixPlugin, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});
@@ -110,9 +97,11 @@ const DURATION_MS = 200_000;
 function installFakeTransport() {
 	const deck = entry.deckStates[entry.TRACKIFY_DECK_ID];
 	const log = [];
+	const loadOptions = [];
 	const loadGates = new Map();
-	entry.engine.load = async (deckId, stableId) => {
+	entry.engine.load = async (deckId, stableId, options) => {
 		log.push(`load ${stableId}`);
+		loadOptions.push({ deckId, stableId, options });
 		const gate = loadGates.get(stableId);
 		if (gate === 'reject') throw new Error('decode failed');
 		if (gate !== undefined) await gate;
@@ -138,7 +127,7 @@ function installFakeTransport() {
 		log.push(`pause ${entry.deckStates[deckId].stable_id}`);
 		entry.deckStates[deckId].playing = false;
 	};
-	return { deck, log, loadGates };
+	return { deck, log, loadGates, loadOptions };
 }
 
 function resetDeck() {
@@ -228,11 +217,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			assert.equal(state.deck.stable_id, 'good');
 			assert.equal(state.deck.playing, true);
 			assert.match(state.last_skip_reason ?? '', /^skipped bad: decode failed$/);
-			const pushed = entry.toasts.slice(toastsBefore).map((toast) => toast.message);
-			assert.ok(
-				pushed.some((message) => message.includes('Trackify: skipped track (decode failed)')),
-				`expected a skip toast, got ${JSON.stringify(pushed)}`
-			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.deepEqual(pushed, [
+				['info', 'Trackify: skipped track (decode failed)']
+			]);
 		} finally {
 			mock.timers.reset();
 		}
@@ -272,10 +262,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 				/^skipped bad: .*did not settle within/,
 				`a hung load must be skipped within ${REQUIRED_SKIP_BOUND_MS}ms`
 			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.equal(pushed.length, 1, `expected exactly one skip toast, got ${JSON.stringify(pushed)}`);
 			assert.ok(
-				entry.toasts
-					.slice(toastsBefore)
-					.some((toast) => toast.message.startsWith('Trackify: skipped track (')),
+				pushed[0][1].startsWith('Trackify: skipped track ('),
 				'the skip must be toasted'
 			);
 
@@ -427,6 +419,120 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			mock.timers.tick(250);
 			await settle();
 			assert.deepEqual(log, ['unload current', 'load next', 'play next']);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('Trackify loads never request stems after a late upgrade at track end', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log, loadOptions } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('ended'), row('next')]);
+			loadedDeck(deck, 'ended', { playing: false, position_ms: DURATION_MS });
+
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+
+			assert.deepEqual(log, ['unload ended', 'load next', 'play next']);
+			assert.deepEqual(loadOptions, [{
+				deckId: 1,
+				stableId: 'next',
+				options: { stems: false }
+			}]);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	/** The plan the master silence watchdog hands its handler when a deck has
+	 * been silent for SILENT_WHILE_PLAYING_MS while claimed live (issue #2069). */
+	const dropoutPlan = (deck) => ({
+		stop_decks: [deck],
+		toast: `AUDIO CUT decks=${deck} bpm=124 sync=bar cause=unknown last=none`,
+		perf_kind: 'silent-while-playing',
+		cause: 'unknown',
+		cause_message: 'silent while claimed live cause=unknown last=none',
+		autoplay_recover: false
+	});
+
+	// Silver, Fri 25 Sep 2026 21:15Z: f58d2482 ends in ~2.2 s under RMS 0.001,
+	// so the watchdog stopped the deck ~0.4 s short of its decoded end and
+	// Trackify, which only advances from a deck parked AT its end, waited 49 min.
+	it('a silence dropout that stops the deck short of its end advances to the next track (silent outro)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, [], 'still playing short of its end: nothing may unload it');
+
+			await entry.executeSilenceDropoutPlan(dropoutPlan(entry.TRACKIFY_DECK_ID));
+			assert.equal(deck.playing, false, 'the watchdog stop must reach the deck');
+			mock.timers.tick(250);
+			await settle();
+
+			assert.deepEqual(log, ['pause current', 'unload current', 'load next', 'play next']);
+			const state = entry.readTrackifyAutoplayState();
+			assert.equal(state.queue_head, 'next');
+			assert.match(state.last_skip_reason ?? '', /silence dropout stopped current/);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('control: an operator pause at the same point never advances; only the watchdog stop does', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			await entry.dispatchPerformanceCommand({ type: 'play', deck: entry.TRACKIFY_DECK_ID, playing: false });
+			for (let i = 0; i < 8; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			// Control for the overshoot direction: "advance on any stop short of
+			// the end" passes the test above and takes Pause away from the operator.
+			assert.deepEqual(log, ['pause current'], 'Pause must keep playback stopped');
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('a silence dropout while autoplay is disabled is discarded, not acted on once re-enabled', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			entry.uiPrefs.auto_play_enabled = false;
+			await entry.executeSilenceDropoutPlan(dropoutPlan(entry.TRACKIFY_DECK_ID));
+			mock.timers.tick(250);
+			await settle();
+			entry.uiPrefs.auto_play_enabled = true;
+			for (let i = 0; i < 4; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			assert.deepEqual(log, ['pause current'], 'a dropout seen while autoplay was off must not fire later');
 		} finally {
 			if (uninstall !== null) uninstall();
 			mock.timers.reset();

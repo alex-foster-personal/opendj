@@ -13,6 +13,23 @@ import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SilenceDropoutPlan } from '$lib/rb/silence-dropout';
 
+type SilenceDropoutStopListener = (decks: readonly DeckId[]) => void;
+
+const _stopListeners = new Set<SilenceDropoutStopListener>();
+
+/**
+ * Hear about decks a dropout plan has just stopped (PERFMODE-15). Trackify's
+ * autoplay subscribes: a watchdog stop short of the track's end is not a user
+ * Pause, and an unsupervised player must move on rather than wait for input.
+ * Returns the unsubscribe.
+ */
+export function onSilenceDropoutStopped(listener: SilenceDropoutStopListener): () => void {
+	_stopListeners.add(listener);
+	return () => {
+		_stopListeners.delete(listener);
+	};
+}
+
 async function _stopDeck(deck: DeckId): Promise<void> {
 	try {
 		await withPauseOrigin('dropout', () =>
@@ -31,6 +48,7 @@ export async function executeSilenceDropoutPlan(plan: SilenceDropoutPlan): Promi
 	for (const deck of plan.stop_decks) {
 		await _stopDeck(deck);
 	}
+	for (const listener of [..._stopListeners]) listener(plan.stop_decks);
 	if (plan.autoplay_recover) {
 		noteAutoPlaySilenceDropout({ has_playable_next: true });
 	}

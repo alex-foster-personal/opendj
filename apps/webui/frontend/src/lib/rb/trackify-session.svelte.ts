@@ -1,15 +1,31 @@
 /**
  * Trackify route session installer: engine lifecycle + feed + autoplay + IPC.
  */
-import { engine } from '$lib/rb/audio-engine.svelte';
+import { deckStates, engine } from '$lib/rb/audio-engine.svelte';
+import type { DeckId } from '$lib/rb/deck-slots';
 import { currentGigRuntimeGeneration, noteGigRuntimeMounted } from '$lib/rb/library-mode-runtime';
 import { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
 import { setAppMode, setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { installTrackifyAutoplay } from '$lib/rb/trackify-autoplay.svelte';
+import { blockStemDecode } from '$lib/rb/stem-decode-policy';
 import { installTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 import { installTrackifyBrowserIpc } from '$lib/rb/trackify-ipc.svelte';
 import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
 import { TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
+
+/** Decks Gig left loaded that Trackify must not inherit (PERFMODE-15, Codex
+ * review PR #4039): decks 2 to 4 (Trackify is one deck, so their PCM is pure
+ * waste), and deck 1 when its stems are anything but settled `unavailable`,
+ * that is adopted, held for the next stop, or still upgrading. A deck 1 with
+ * no stems is the listening deck and keeps playing. */
+function _inheritedDecksToUnload(): DeckId[] {
+	return ([1, 2, 3, 4] as const).filter((deck) => {
+		const state = deckStates[deck];
+		if (state.stable_id === null) return false;
+		if (deck !== TRACKIFY_DECK_ID) return true;
+		return state.stems.status !== 'unavailable';
+	});
+}
 
 export function installTrackifySession(): () => Promise<void> {
 	// Navigating straight from /performance (Gig) to /music-player fires
@@ -24,13 +40,29 @@ export function installTrackifySession(): () => Promise<void> {
 	// an engine Trackify has since claimed (Codex review, PR #3676).
 	const ownEngineGeneration = noteGigRuntimeMounted();
 	const priorAutoPlayEnabled = uiPrefs.auto_play_enabled;
+	// PERFMODE-15: Trackify has no stems. Blocked for the whole session, at
+	// every stem entry point the engine has, not per load.
+	const releaseStemDecode = blockStemDecode('Trackify mode has no stems (PERFMODE-15)');
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
 	const uninstallFeed = installTrackifyFeed();
 	const uninstallAutoplay = installTrackifyAutoplay();
 	const uninstallPerfIpc = installPerformanceBrowserIpc();
+	// A direct Gig-to-Trackify navigation aborts Gig's engine teardown (above),
+	// so what Gig left loaded is unloaded here, through the dispatcher so it is
+	// ordered before autoplay's first load.
+	for (const deck of _inheritedDecksToUnload()) {
+		dispatchPerformanceCommand({ type: 'unload', deck }).catch((error: unknown) => {
+			const reason = error instanceof Error ? error.message : String(error);
+			pushToast(`Trackify: could not unload deck ${deck} left by Gig (${reason})`, 'error');
+		});
+	}
 	const uninstallTrackifyIpc = installTrackifyBrowserIpc();
 	return async () => {
+		// First and synchronous: Svelte does not await this cleanup, so the next
+		// route (Gig) can mount before the awaits below settle, and it must
+		// already have its stems back.
+		releaseStemDecode();
 		uninstallTrackifyIpc();
 		uninstallPerfIpc();
 		uninstallAutoplay();
