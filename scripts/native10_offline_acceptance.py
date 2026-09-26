@@ -54,6 +54,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -215,32 +216,53 @@ def drain_lane(installed: Path, env: dict[str, str], db: Path, lane: str,
 # verdict by presence
 #-----------------------------------------------------------------------------
 
-def _measurement(lane: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+Measurement = dict[str, Any] | None
+
+
+def _beatgrid_measurement(payload: dict[str, Any]) -> Measurement:
+    beats, bpm = payload.get("beats") or [], payload.get("bpm")
+    ok = len(beats) >= 32 and isinstance(bpm, int | float) and 40 <= bpm <= 250
+    return {"beats": len(beats), "bpm": bpm} if ok else None
+
+
+def _key_measurement(payload: dict[str, Any]) -> Measurement:
+    # The v1 key lane segments over beatgrid's OWN downbeats, so a key
+    # without bar-synchronous segments is the lane running half-installed.
+    camelot = payload.get("camelot")
+    block = payload.get("segments") or {}
+    segments = block.get("segments") or []
+    if not camelot or block.get("status") != "ok" or not segments:
+        return None
+    return {"camelot": camelot, "openkey": payload.get("openkey"), "segments": len(segments)}
+
+
+def _waveform_measurement(payload: dict[str, Any]) -> Measurement:
+    detail = payload.get("detail") or {}
+    length = detail.get("length") or 0
+    peak = max(max(detail.get(b) or [0]) for b in ("low", "mid", "high")) if length else 0
+    return {"detail_length": length, "max_band": peak} if length > 0 and peak > 0 else None
+
+
+def _loudness_measurement(payload: dict[str, Any]) -> Measurement:
+    lufs = payload.get("integrated_lufs")
+    ok = isinstance(lufs, int | float) and math.isfinite(lufs) and -60 < lufs < 0
+    measured = {"integrated_lufs": lufs, "true_peak_dbtp": payload.get("true_peak_dbtp")}
+    return measured if ok else None
+
+
+MEASUREMENTS: dict[str, Callable[[dict[str, Any]], Measurement]] = {
+    "beatgrid": _beatgrid_measurement,
+    "key": _key_measurement,
+    "waveform": _waveform_measurement,
+    "loudness": _loudness_measurement,
+}
+
+
+def _measurement(lane: str, payload: dict[str, Any]) -> Measurement:
     """The lane's real measurement, or None when the block carries no value."""
-    if lane == "beatgrid":
-        beats, bpm = payload.get("beats") or [], payload.get("bpm")
-        ok = len(beats) >= 32 and isinstance(bpm, int | float) and 40 <= bpm <= 250
-        return {"beats": len(beats), "bpm": bpm} if ok else None
-    if lane == "key":
-        # The v1 key lane segments over beatgrid's OWN downbeats, so a key
-        # without bar-synchronous segments is the lane running half-installed.
-        camelot = payload.get("camelot")
-        segments = payload.get("segments") or {}
-        ok = bool(camelot) and segments.get("status") == "ok" and segments.get("segments")
-        measured = {"camelot": camelot, "openkey": payload.get("openkey"),
-                    "segments": len(segments.get("segments") or [])}
-        return measured if ok else None
-    if lane == "waveform":
-        detail = payload.get("detail") or {}
-        length = detail.get("length") or 0
-        peak = max(max(detail.get(b) or [0]) for b in ("low", "mid", "high")) if length else 0
-        return {"detail_length": length, "max_band": peak} if length > 0 and peak > 0 else None
-    if lane == "loudness":
-        lufs = payload.get("integrated_lufs")
-        ok = isinstance(lufs, int | float) and math.isfinite(lufs) and -60 < lufs < 0
-        measured = {"integrated_lufs": lufs, "true_peak_dbtp": payload.get("true_peak_dbtp")}
-        return measured if ok else None
-    raise ValueError(f"unknown lane {lane!r}")
+    if lane not in MEASUREMENTS:
+        raise ValueError(f"unknown lane {lane!r}")
+    return MEASUREMENTS[lane](payload)
 
 
 def judge_lane(db: Path, verdict: LaneVerdict, stable_ids: list[str]) -> LaneVerdict:
