@@ -81,9 +81,6 @@
 	/** Re-read once a minute so the age ticks over while the app stays open. */
 	let now = $state(new Date());
 	const engineAge = $derived(engine.kind === 'ok' ? formatAge(engine.value.built_at_utc, now) : null);
-	const evidenceAge = $derived(
-		shell.kind === 'ok' ? formatAge(shell.value.evidence_written_at_utc, now) : null
-	);
 
 	/** Where this app lives. Read once at mount, for the same reason the build
 	 * identity is: it does not change while the page is open. */
@@ -251,17 +248,10 @@
 		{#if updateSummary !== null && updateSummary.prominent}
 			<span class="update-badge" title={updateSummary.title}>{updateSummary.label}</span>
 		{/if}
-		{#if evidenceStamp !== null}
+		{#if engineStamp !== null}
 			<span
 				class="when"
-				title={`Stable evidence written ${evidenceStamp.local} local time, ${evidenceStamp.utc} UTC.`}
-			>
-				{evidenceAge !== null ? `${evidenceAge} ago` : evidenceStamp.local}
-			</span>
-		{:else if engineStamp !== null}
-			<span
-				class="when"
-				title={`Built ${engineStamp.local} local time, ${engineStamp.utc} UTC. Source: ${engine.kind === 'ok' && engine.value.built_at_kind === 'payload-build' ? 'when the payload was packaged' : "the HEAD commit's timestamp, because this engine runs from a source checkout"}.`}
+				title={`Engine built ${engineStamp.local} local time, ${engineStamp.utc} UTC (${engine.kind === 'ok' && engine.value.built_at_kind === 'payload-build' ? 'payload package time' : engine.kind === 'ok' && engine.value.built_at_kind === 'engine-start' ? 'this engine process start' : 'build stamp'}).${evidenceStamp !== null ? ` Release evidence: ${evidenceStamp.local} local, ${evidenceStamp.utc} UTC.` : ''}`}
 			>
 				{engineAge !== null ? `${engineAge} ago` : engineStamp.local}
 			</span>

@@ -279,6 +279,16 @@ test('the component carries no build-time literal of its own', async () => {
 	assert.match(source, /evidenceStamp/);
 });
 
+test('compact .when age uses engine built_at, not shell evidence mtime', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /class="when"[\s\S]*engineAge/);
+	assert.doesNotMatch(source, /class="when"[\s\S]*evidenceAge/);
+});
+
 // ----- where this app is --------------------------------------------------
 test('an engine-served page reports its own origin as the engine', () => {
 	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:56146' }, '');

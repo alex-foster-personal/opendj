@@ -72,6 +72,15 @@ describe('planned explainers', () => {
 		assert.throws(() => plannedTitle('no-such-control'), /planned-explainers/);
 	});
 
+	it('plannedExplainerBullets returns description and not-built line', () => {
+		const { plannedExplainerBullets, NOT_BUILT_MARK } = mod;
+		const bullets = plannedExplainerBullets('split-view');
+		assert.equal(bullets.length, 2);
+		assert.match(bullets[0], /browser and the decks/i);
+		assert.ok(bullets[1].includes(NOT_BUILT_MARK));
+		assert.throws(() => plannedExplainerBullets('missing-id'), /planned-explainers/);
+	});
+
 	// The audit half of pin 552a810ba13b: the point was that FOURTEEN controls
 	// shared one string, so a test that only checks the catalogue would pass
 	// while the topbar still rendered the old constant.
