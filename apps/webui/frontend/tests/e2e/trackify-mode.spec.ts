@@ -17,19 +17,56 @@ import { expect, test } from '@playwright/test';
 const MISSING_STABLE_ID = 'trackify-e2e-missing-stable-id';
 
 type DeckLoadReport = { message: string; context: Record<string, unknown>; stored: boolean };
+type ReportTracker = { deckLoad: DeckLoadReport[]; sent: number; answered: number };
+
+const CLIENT_ERROR_QUEUE_KEY = 'music-dj-tools:client-errors:v1';
+
+function _isClientErrorPost(request: import('@playwright/test').Request): boolean {
+	return request.method() === 'POST' && request.url().includes('/api/v1/client-errors');
+}
 
 /** Every deck-load client-error report the page sends, with the real backend's answer. */
-function _recordDeckLoadReports(page: import('@playwright/test').Page): DeckLoadReport[] {
-	const reports: DeckLoadReport[] = [];
+function _recordDeckLoadReports(page: import('@playwright/test').Page): ReportTracker {
+	const tracker: ReportTracker = { deckLoad: [], sent: 0, answered: 0 };
+	page.on('request', (request) => {
+		if (_isClientErrorPost(request)) tracker.sent += 1;
+	});
 	page.on('response', async (response) => {
 		const request = response.request();
-		if (request.method() !== 'POST' || !request.url().includes('/api/v1/client-errors')) return;
-		const body = request.postDataJSON() as { message: string; context?: Record<string, unknown> };
-		if (body.context?.source !== 'deck-load') return;
-		const answer = (await response.json()) as { stored?: boolean };
-		reports.push({ message: body.message, context: body.context, stored: response.ok() && answer.stored === true });
+		if (!_isClientErrorPost(request)) return;
+		try {
+			const body = request.postDataJSON() as { message: string; context?: Record<string, unknown> };
+			if (body.context?.source !== 'deck-load') return;
+			const answer = (await response.json()) as { stored?: boolean };
+			tracker.deckLoad.push({ message: body.message, context: body.context, stored: response.ok() && answer.stored === true });
+		} finally {
+			tracker.answered += 1;
+		}
 	});
-	return reports;
+	return tracker;
+}
+
+/**
+ * Wait until reporting is QUIESCENT, so an exact count cannot pass on the first
+ * report while a second is still on its way: the app's durable client-error
+ * queue is empty (each row leaves it only after the server answered) and every
+ * client-errors POST the page sent has been answered and recorded here. A
+ * report is queued synchronously before the load promise rejects, so it cannot
+ * slip in behind this check. A request that never answers fails the poll.
+ */
+async function _waitForReportQuiescence(page: import('@playwright/test').Page, tracker: ReportTracker): Promise<void> {
+	await expect
+		.poll(
+			async () => {
+				const queued = await page.evaluate(
+					(key) => (JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[]).length,
+					CLIENT_ERROR_QUEUE_KEY
+				);
+				return queued === 0 && tracker.sent === tracker.answered;
+			},
+			{ message: 'client-error reporting never went quiet' }
+		)
+		.toBe(true);
 }
 
 /** Record every toast added from now on, so one that expires before the assertion still counts. */
@@ -127,15 +164,19 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	expect(added[0]).toMatch(/^Trackify: skipped track/);
 	// The muted toast still owes the server its report: the only record of which
 	// stage the load died in.
-	await expect.poll(() => reports.length, { message: 'the real backend never received the deck-load report' }).toBe(1);
-	expect(reports[0].stored, 'the real backend must have stored the report').toBe(true);
-	expect(reports[0].context.deck).toBe(1);
-	expect(Number.isFinite(reports[0].context.stage_failedAt), JSON.stringify(reports[0].context)).toBe(true);
+	await _waitForReportQuiescence(page, reports);
+	expect(reports.deckLoad, 'one failed load, one deck-load report on the real backend').toHaveLength(1);
+	expect(reports.deckLoad[0].stored, 'the real backend must have stored the report').toBe(true);
+	expect(reports.deckLoad[0].context.deck).toBe(1);
+	expect(Number.isFinite(reports.deckLoad[0].context.stage_failedAt), JSON.stringify(reports.deckLoad[0].context)).toBe(true);
 	await page.waitForFunction(
 		(goodId) => window.musicDjToolsTrackify?.query().deck.stable_id === goodId,
 		goodId,
 		{ timeout: 10_000 }
 	);
+	// Still one after the advance: nothing reports the same failure late.
+	await _waitForReportQuiescence(page, reports);
+	expect(reports.deckLoad, 'no second deck-load report arrived after the advance').toHaveLength(1);
 });
 
 test('control: an ordinary failed load keeps the engine toast and reports once', async ({ page }) => {
@@ -156,8 +197,9 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 		}
 	}, MISSING_STABLE_ID);
 	expect(rejected, 'a load of an unknown stable_id must reject').toBe(true);
-	await expect.poll(() => reports.length, { message: 'the real backend never received the deck-load report' }).toBe(1);
-	expect(reports[0].stored).toBe(true);
+	await _waitForReportQuiescence(page, reports);
+	expect(reports.deckLoad, 'one failed load, one deck-load report on the real backend').toHaveLength(1);
+	expect(reports.deckLoad[0].stored).toBe(true);
 	const added = await _readAddedToasts(page);
 	expect(
 		added.some((text) => text.includes('Deck 1 could not load the track')),
