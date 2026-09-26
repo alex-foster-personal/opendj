@@ -29,6 +29,7 @@ import { build, transform } from 'esbuild';
 import { compile, compileModule } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
@@ -76,7 +77,7 @@ export async function loadSvelteSsrModule(entrySource) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [sveltePlugin],
+		plugins: [sveltePlugin, viteUrlSuffixPlugin],
 		resolveExtensions: ['.svelte', '.ts', '.js', '.mjs', '.json'],
 		target: 'es2022',
 		write: false

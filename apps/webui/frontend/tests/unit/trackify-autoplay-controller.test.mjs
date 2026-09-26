@@ -7,24 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
 const ENTRY = fileURLToPath(new URL('./fixtures/trackify-autoplay-entry.ts', import.meta.url));
-
-const urlSuffixImports = {
-	name: 'vite-url-suffix',
-	setup(build) {
-		build.onResolve({ filter: /\?url$/ }, (args) => ({
-			path: args.path,
-			namespace: 'vite-url-suffix'
-		}));
-		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
-			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
-			loader: 'js'
-		}));
-	}
-};
 
 const svelteComponentStubs = {
 	name: 'svelte-component-stub',
@@ -59,7 +46,7 @@ async function bundleTrackifyControllerEntry() {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [urlSuffixImports, svelteComponentStubs],
+		plugins: [viteUrlSuffixPlugin, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});
