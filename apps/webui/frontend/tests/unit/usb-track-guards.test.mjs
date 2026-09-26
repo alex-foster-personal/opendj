@@ -237,6 +237,7 @@ test('[if] the analysis source switches with a stick deck and a library deck loa
 		viteApiBase: API_BASE
 	});
 	const fetchedAnlz = [];
+	const fetchedTracks = [];
 	const ports = {
 		invalidateAllAnlzCacheEntries: () => {},
 		refreshAnlzCacheEntry: () => {},
@@ -244,6 +245,10 @@ test('[if] the analysis source switches with a stick deck and a library deck loa
 		getReadyAnlz: () => null,
 		fetchAnlzBypassingHttpCache: async (stable_id) => {
 			fetchedAnlz.push(stable_id);
+			throw new Error('this test stops at the staging fetch');
+		},
+		fetchTrackBypassingHttpCache: async (stable_id) => {
+			fetchedTracks.push(stable_id);
 			throw new Error('this test stops at the staging fetch');
 		}
 	};
@@ -259,6 +264,7 @@ test('[if] the analysis source switches with a stick deck and a library deck loa
 		refresh.refreshAnalysisSourceDecks([1, 2], { 1: deck(STICK_ID), 2: deck(LIBRARY_ID) }, ports)
 	);
 	assert.deepEqual(fetchedAnlz, [LIBRARY_ID], 'control: the library deck is still re-fetched');
+	assert.deepEqual(fetchedTracks, [LIBRARY_ID], 'the track row is re-read for the library deck only');
 	assert.ok(requests.every((url) => !url.includes(STICK_ID)), `no request names the stick id: ${requests}`);
 });
 

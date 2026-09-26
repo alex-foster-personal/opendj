@@ -116,7 +116,7 @@ test('HeadphoneCluster exposes split-cable mode label, warning, and SPLIT contro
 	assert.match(clusterSrc, /data-output-mode=\{headphoneState\.output_mode\}/);
 	assert.match(clusterSrc, /split cable/);
 	assert.match(clusterSrc, /aria-pressed=\{headphoneState\.output_mode === 'split_cable'\}/);
-	assert.match(clusterSrc, /Mono master on LEFT/);
-	assert.match(clusterSrc, /DJ splitter cable\. A Y cable/);
+	assert.match(clusterSrc, /mono master on LEFT, mono cue on RIGHT/);
+	assert.match(clusterSrc, /a Y cable will not separate the legs/);
 	assert.match(clusterSrc, />SPLIT cable</);
 });

@@ -782,7 +782,7 @@ function _checkedAnlz(stable_id: string, data: AnlzWithVocals): AnlzWithVocals {
  * client's ordinary `getTrack` can otherwise replay a pre-switch row while
  * `/anlz` already reflects the new lane. */
 export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
-	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
+	return _fetchJson<Track>(trackApiPath(stable_id), 'reload');
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
