@@ -1,4 +1,4 @@
-"""The rekordbox meta read for a page seeks its ids, not the library (LIBM-128).
+"""The rekordbox meta read for a page seeks its ids, not the library (LIBM-130).
 
 [if] a page's djmdContent read walks every live row [then] fail, [else stop].
 
@@ -38,7 +38,7 @@ from apps.shared.state.schema import apply_migrations
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
 from tests.webui.sql_trace import trace_sqlite
 
-pytestmark = [pytest.mark.requirement("LIBM-128")]
+pytestmark = [pytest.mark.requirement("LIBM-130")]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROWS = 300

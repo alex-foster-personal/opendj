@@ -1,4 +1,4 @@
-"""Library listing and playlist detail cost O(1) sqlite work per call (LIBM-128, #3962).
+"""Library listing and playlist detail cost O(1) sqlite work per call (LIBM-130, #3962).
 
 [if] a listing page issues sqlite work per row [then] fail, [else stop].
 
@@ -37,7 +37,7 @@ from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.webui.sql_trace import SqlTrace, statement_shapes, trace_sqlite
 
-pytestmark = [pytest.mark.requirement("LIBM-128")]
+pytestmark = [pytest.mark.requirement("LIBM-130")]
 
 #: LARGE is sized so every local path the page probes fits ONE request's
 #: availability budget (PROBE_BUDGET_ROW_HYDRATION = 16: four probes per five

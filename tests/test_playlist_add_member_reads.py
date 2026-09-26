@@ -1,4 +1,4 @@
-"""Adding to a playlist reads each existing member once (LIBM-129, #3963).
+"""Adding to a playlist reads each existing member once (LIBM-131, #3963).
 
 [if] adding one track reads a member more than once [then] fail, [else stop].
 
@@ -35,7 +35,7 @@ from apps.webui.server.playlist_add import _load_live_members, _neighbor_order_k
 from apps.webui.server.playlist_store import PlaylistStore
 from tests.webui.sql_trace import RowCounter
 
-pytestmark = pytest.mark.requirement("LIBM-129")
+pytestmark = pytest.mark.requirement("LIBM-131")
 
 SMALL, LARGE = 40, 400
 NOW = "2026-09-25T00:00:00Z"

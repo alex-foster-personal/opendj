@@ -229,7 +229,7 @@ def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
     assert locations.normalize_stored_text(None) is None
 
 
-@pytest.mark.requirement("LIBM-128")
+@pytest.mark.requirement("LIBM-130")
 def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     state_conn, tmp_path: Path,
 ) -> None:
