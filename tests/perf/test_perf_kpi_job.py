@@ -14,9 +14,12 @@ from pathlib import Path
 import pytest
 
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import build
+from scripts.perf import perf_kpi_job, perf_kpi_nightly
+from scripts.perf.kpi_ledger_append import append_entries
 from scripts.perf.perf_kpi_config import REPO_ROOT, load_config, require_machine_label
 from scripts.perf.perf_kpi_job import cmd_nightly
 from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE_LOG_NAME
+from tests.perf.ledger_pr_fixtures import ledger_entry
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
 
@@ -390,3 +393,61 @@ def test_require_machine_label_raises_when_unset(
     config = load_config()
     with pytest.raises(ValueError, match="MDT_PERF_KPI_MACHINE"):
         require_machine_label(config)
+
+
+# ----- measurement-window guard wiring (Codex, PR #3827, P1/BLOCKING) ---------
+
+
+def _publish_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, edit_mid_run: bool
+) -> tuple[list[Path], Path]:
+    """A nightly with publishing ON against a closed engine port, so it measures
+    nothing but still writes its error rows, with the publish itself replaced
+    by a recorder so no test ever reaches the real repo or GitHub."""
+    data_dir = tmp_path / "library"
+    (data_dir / "state").mkdir(parents=True)
+    (data_dir / "state" / "state.db").touch()
+    _nightly_env(monkeypatch, tmp_path, MDT_PERF_KPI_DATA_DIR=str(data_dir))
+    ledger = tmp_path / "kpi-ledger.json"
+    published: list[Path] = []
+    monkeypatch.setattr(
+        perf_kpi_job, "update_ledger_pr", lambda _root, path, *_a, **_k: published.append(path)
+    )
+
+    def _no_issue(*_a: object, **_k: object) -> None:
+        raise AssertionError("a closed-port run must not file a ceiling issue")
+
+    monkeypatch.setattr(perf_kpi_nightly, "file_ceiling_issue", _no_issue)
+    real_probe = perf_kpi_job.default_probe
+    edited: list[bool] = []
+
+    def _probe_with_concurrent_edit(base_url: str, path: str):  # type: ignore[no-untyped-def]
+        if edit_mid_run and not edited:
+            append_entries(ledger, [ledger_entry("operator-edit")])
+            edited.append(True)
+        return real_probe(base_url, path)
+
+    monkeypatch.setattr(perf_kpi_job, "default_probe", _probe_with_concurrent_edit)
+    return published, ledger
+
+
+def test_nightly_publishes_when_nobody_touches_the_ledger(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Control: an undisturbed run still reaches the publish step."""
+    published, ledger = _publish_run(monkeypatch, tmp_path, edit_mid_run=False)
+    cmd_nightly(load_config(), base_url=f"http://127.0.0.1:{_free_port()}", skip_pr=False)
+    assert published == [ledger]
+
+
+def test_nightly_refuses_to_publish_a_ledger_edited_mid_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] the ledger is edited while the nightly is measuring [then] nothing
+    is published or restored and the edit stays in the file, [else stop]."""
+    published, _ledger = _publish_run(monkeypatch, tmp_path, edit_mid_run=True)
+    with pytest.raises(RuntimeError, match="changed while the nightly run was measuring"):
+        cmd_nightly(load_config(), base_url=f"http://127.0.0.1:{_free_port()}", skip_pr=False)
+    assert published == []
+    notes = [row.get("note") for row in _ledger_entries(tmp_path)]
+    assert "operator-edit" in notes

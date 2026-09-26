@@ -19,9 +19,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tempfile
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
-from scripts.perf.kpi_ledger_append import load_ledger
+from scripts.perf.kpi_ledger_append import append_entries, load_ledger
 
 
 def _remove_worktree_if_present(repo_root: Path, worktree_dir: Path) -> None:
@@ -107,6 +110,44 @@ def _worktree_gitdir(worktree_dir: Path) -> Path:
     if not marker.startswith("gitdir: "):
         raise RuntimeError(f"{worktree_dir / '.git'} is not a worktree gitdir file: {marker!r}")
     return (worktree_dir / marker.removeprefix("gitdir: ")).resolve()
+
+
+def refuse_ledger_edits_made_during_run(
+    ledger_path: Path,
+    *,
+    pre_run_content: str | None,
+    append_batches: Sequence[list[dict[str, Any]]],
+) -> None:
+    """Raise unless ``ledger_path`` holds exactly ``pre_run_content`` plus this
+    run's own ``append_batches``, byte for byte.
+
+    Codex, PR #3827, P1/BLOCKING, "Guard edits during the measurement
+    window": the publish treats everything new since ``pre_run_content`` as
+    tonight's rows and then restores ``pre_run_content``. An operator's or
+    agent's edit made while `run_nightly` was measuring would therefore be
+    published as a nightly row and then erased locally. The check in
+    `_restore_tracked_ledger` cannot see it, because its snapshot is taken
+    after the measurement ends.
+
+    The expected file is rebuilt by replaying the same `append_entries` calls
+    onto ``pre_run_content`` in a scratch directory, so any foreign change is
+    caught, including a reformat or a top-level field edit. On a mismatch
+    nothing is published or restored: the file keeps the edit and tonight's
+    rows, for the operator to reconcile.
+    """
+    with tempfile.TemporaryDirectory(prefix="perf-kpi-ledger-replay-") as scratch:
+        replay = Path(scratch) / ledger_path.name
+        if pre_run_content is not None:
+            replay.write_text(pre_run_content, encoding="utf-8")
+        for batch in append_batches:
+            append_entries(replay, batch)
+        expected = replay.read_text(encoding="utf-8") if replay.exists() else None
+    actual = ledger_path.read_text(encoding="utf-8") if ledger_path.exists() else None
+    if actual != expected:
+        raise RuntimeError(
+            f"{ledger_path} changed while the nightly run was measuring; refusing to publish "
+            "or restore it, so that edit and tonight's rows both stay in the file"
+        )
 
 
 def _restore_tracked_ledger(

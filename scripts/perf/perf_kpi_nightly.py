@@ -50,6 +50,10 @@ class NightlyOutcome:
     breaches: list[dict[str, Any]]
     unknowns: list[dict[str, Any]]
     exit_code: int
+    #: Every ``append_entries`` batch this run wrote to the ledger, in order,
+    #: so the caller can prove the file holds nothing else (Codex, PR #3827,
+    #: P1/BLOCKING, "Guard edits during the measurement window").
+    append_batches: tuple[list[dict[str, Any]], ...]
 
 
 def warm_median_ms(samples: list[ProbeResult]) -> tuple[float | None, str | None]:
@@ -534,4 +538,5 @@ def run_nightly(
         breaches=breaches,
         unknowns=unknowns,
         exit_code=exit_code,
+        append_batches=(rows, s5_rows),
     )

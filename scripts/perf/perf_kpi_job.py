@@ -22,6 +22,7 @@ from scripts.perf.perf_kpi_config import (
     require_machine_label,
 )
 from scripts.perf.perf_kpi_health import HealthConfig, build_restart_command, run_health_tick
+from scripts.perf.perf_kpi_ledger_local import refuse_ledger_edits_made_during_run
 from scripts.perf.perf_kpi_ledger_pr import update_ledger_pr
 from scripts.perf.perf_kpi_nightly import (
     acquire_nightly_engine,
@@ -85,6 +86,11 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
             file_issue=not skip_pr,
         )
         if not skip_pr:
+            refuse_ledger_edits_made_during_run(
+                config.ledger_path,
+                pre_run_content=pre_run_content,
+                append_batches=outcome.append_batches,
+            )
             update_ledger_pr(
                 REPO_ROOT,
                 config.ledger_path,
