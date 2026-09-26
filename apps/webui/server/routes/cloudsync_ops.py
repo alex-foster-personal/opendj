@@ -39,7 +39,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from apps.shared.machine_pressure import read_machine_pressure
 from apps.shared.state.machine_identity import MachineIdentityError, is_hub_from_env
-from apps.shared.sync_runtime_gates import refuse_sync_round
+from apps.shared.sync_runtime_gates import (
+    DEFER_REASON_SYNC_IN_PROGRESS,
+    SyncDeferredError,
+    refuse_sync_round,
+)
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enroll
 from apps.sync_hub.scheduler_owed import mark_scheduler_owed
@@ -371,6 +375,26 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
             raise _refuse(502, "CLOUDSYNC_HUB_UNREACHABLE", str(exc)) from exc
         except DECLARED_SYNC_REFUSALS as exc:
             raise _refuse(409, "CLOUDSYNC_SYNC_REFUSED", f"{type(exc).__name__}: {exc}") from exc
+        except SyncDeferredError as exc:
+            # ``maintenance.sync`` re-checks the Gig/deck gate itself and now
+            # also wraps ``client.run_sync`` in a cross-process flock
+            # (Codex review, PR #3831, P2/NON-BLOCKING): a standalone CLI
+            # holding that flock at the exact moment this route calls in
+            # raises this uncaught before, turning an expected busy-skip
+            # into a 500. Both reasons were already refused before any hub
+            # I/O, so both get a documented 409 here, same as the pre-check
+            # above: sync_in_progress reuses _one_sync_at_a_time's own code
+            # so a caller sees ONE code for "already running" regardless of
+            # whether the other holder is in this process or a standalone
+            # CLI in another one; anything else (a Gig/deck reason lost to
+            # the same race the pre-check above already covers on every
+            # OTHER timing) falls back to the pre-check's own code.
+            code = (
+                "CLOUDSYNC_SYNC_IN_PROGRESS"
+                if exc.reason == DEFER_REASON_SYNC_IN_PROGRESS
+                else "CLOUDSYNC_SYNC_DEFERRED"
+            )
+            raise _refuse(409, code, f"CloudSync sync deferred: {exc.reason}") from exc
     return _sync_out(result)
 
 

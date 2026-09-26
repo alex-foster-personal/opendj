@@ -23,10 +23,11 @@ APPS_SRC = REPO_ROOT / "apps"
 
 #: The ``apps`` packages the CLI reaches while starting up. A real payload
 #: carries the whole tree (``build_engine_payload.APP_SOURCE_ROOTS``), so this
-#: is the reachable slice of it, not a different contract: the CLI package
-#: plus the engine package that owns the lock-file reader
-#: ``apps.opendj_cli.origin`` re-exports (issue #2942).
-CLI_PAYLOAD_PACKAGES: tuple[str, ...] = ("opendj_cli", "engine_core")
+#: is the reachable slice of it, not a different contract: the CLI package,
+#: the engine package ``apps.opendj_cli.origin`` re-exports through (issue
+#: #2942), and ``shared``, which has owned the lock-file reader itself
+#: (``apps.shared.engine_origin``) since PR #3831.
+CLI_PAYLOAD_PACKAGES: tuple[str, ...] = ("opendj_cli", "engine_core", "shared")
 
 #: Denies the payload run the repo checkout, the way a real runtime does.
 #:
