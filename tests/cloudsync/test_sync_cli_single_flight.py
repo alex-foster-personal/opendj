@@ -21,10 +21,19 @@ the scheduler, the HTTP route, and the CLI all funnel through to reach
     sync_in_progress before any hub I/O, [else stop].
 [if] the caller passed force=True [then] the flock still refuses a
     concurrent round -- force only skips the Gig/deck-playing gate, [else stop].
+[if] the Windows (``msvcrt.locking``) lock is in force [then] a second handle
+    is refused and a release lets the next acquire in, [else stop].
+[if] a Windows handle sits at a nonzero file position [then] it still locks
+    and unlocks byte 0, so two handles cannot lock different bytes, [else stop].
+[if] ``msvcrt.locking`` fails with anything but EACCES [then] the error
+    propagates instead of reading as "another holder", [else stop].
 """
 
 from __future__ import annotations
 
+import errno
+import functools
+import os
 from pathlib import Path
 
 import pytest
@@ -153,3 +162,87 @@ def test_maintenance_sync_journals_success_while_still_holding_the_flock(
     # And the flock is genuinely free again once sync() has returned.
     with single_flight.sync_flock_for(spoke_a):
         pass
+
+
+# ----- Windows branch (Sol, PR #3831, P1/BLOCKING) -----------------------------
+# No Windows interpreter runs in CI, so these drive the msvcrt primitives with
+# a stand-in that keeps the real semantics this code depends on: a lock is on
+# the byte at the handle's CURRENT position, a byte another handle holds
+# refuses with EACCES, and only the holding handle can unlock it.
+
+
+class _FakeMsvcrt:
+    LK_UNLCK, LK_NBLCK = 0, 2
+
+    def __init__(self) -> None:
+        self.held: dict[tuple[int, int], int] = {}
+
+    def locking(self, fd: int, mode: int, nbytes: int) -> None:
+        assert nbytes == 1
+        key = (os.fstat(fd).st_ino, os.lseek(fd, 0, os.SEEK_CUR))
+        if mode == self.LK_NBLCK:
+            if key in self.held:
+                raise OSError(errno.EACCES, "byte already locked")
+            self.held[key] = fd
+        elif mode == self.LK_UNLCK:
+            if self.held.get(key) != fd:
+                raise OSError(errno.EACCES, "byte not locked by this handle")
+            del self.held[key]
+        else:
+            raise AssertionError(f"unexpected msvcrt mode {mode}")
+
+
+def _api(fake: _FakeMsvcrt) -> single_flight._MsvcrtLocking:
+    return single_flight._MsvcrtLocking(fake.locking, fake.LK_NBLCK, fake.LK_UNLCK)
+
+
+def test_windows_lock_refuses_a_second_handle_and_releases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeMsvcrt()
+    try_lock = functools.partial(single_flight._try_lock_nt, api=_api(fake))
+    unlock = functools.partial(single_flight._unlock_nt, api=_api(fake))
+    monkeypatch.setattr(single_flight, "_try_lock", try_lock)
+    monkeypatch.setattr(single_flight, "_unlock", unlock)
+
+    with single_flight.sync_flock_for(tmp_path):
+        assert len(fake.held) == 1
+        busy = pytest.raises(single_flight.SyncInProgressError)
+        with busy, single_flight.sync_flock_for(tmp_path):
+            pass
+    assert fake.held == {}
+    with single_flight.sync_flock_for(tmp_path):
+        assert len(fake.held) == 1
+
+
+def test_windows_lock_locks_byte_zero_whatever_the_handle_position(tmp_path: Path) -> None:
+    fake = _FakeMsvcrt()
+    lock_path = tmp_path / single_flight.SYNC_LOCK_FILENAME
+    first = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    second = os.open(lock_path, os.O_RDWR)
+    try:
+        os.write(first, b"xyz")
+        assert single_flight._try_lock_nt(first, _api(fake))
+        os.lseek(second, 2, os.SEEK_SET)
+        assert not single_flight._try_lock_nt(second, _api(fake)), (
+            "two handles at different positions both got a lock: byte 0 is not the lock byte"
+        )
+        os.lseek(first, 3, os.SEEK_SET)
+        single_flight._unlock_nt(first, _api(fake))
+        assert fake.held == {}
+    finally:
+        os.close(first)
+        os.close(second)
+
+
+def test_windows_lock_raises_an_unexpected_os_error(tmp_path: Path) -> None:
+    def _bad_handle(fd: int, mode: int, nbytes: int) -> None:
+        raise OSError(errno.EBADF, "bad file descriptor")
+
+    fd = os.open(tmp_path / single_flight.SYNC_LOCK_FILENAME, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        with pytest.raises(OSError) as raised:
+            single_flight._try_lock_nt(fd, single_flight._MsvcrtLocking(_bad_handle, 2, 0))
+        assert raised.value.errno == errno.EBADF
+    finally:
+        os.close(fd)

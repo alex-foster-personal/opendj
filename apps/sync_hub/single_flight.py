@@ -13,9 +13,10 @@ engine's scheduler or "Sync now" was mid-round, silently contradicting
 CLOUDSYNC-14's own acceptance line that the CLI shares single-flight
 protection (claude-review / Codex, PR #3831, P1/BLOCKING).
 
-``sync_flock_for`` closes that gap with an ``fcntl.flock`` on a lock file in
-``data_dir`` -- the same non-blocking-exclusive-flock-on-a-data-dir-file
-pattern :class:`apps.engine_core.lock.EngineLock` already uses for the engine
+``sync_flock_for`` closes that gap with an OS file lock (``fcntl.flock`` on
+POSIX, ``msvcrt.locking`` on Windows) on a lock file in ``data_dir`` -- the
+same non-blocking-exclusive-lock-on-a-data-dir-file pattern
+:class:`apps.engine_core.lock.EngineLock` already uses for the engine
 singleton itself, which works across processes because the kernel, not this
 module's memory, is the registry. :func:`apps.sync_hub.maintenance.sync` is
 the ONE function all three callers funnel through to reach ``client.run_sync``
@@ -35,13 +36,13 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import functools
 import os
+import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
-
-if os.name == "posix":
-    import fcntl
 
 _GUARD = threading.Lock()
 _LOCKS: dict[Path, threading.Lock] = {}
@@ -70,39 +71,96 @@ def sync_lock_for(data_dir: Path) -> threading.Lock:
         return lock
 
 
+# ----- platform lock primitives: one non-blocking exclusive lock per fd -----
+
+
+def _try_lock_posix(fd: int) -> bool:
+    """``fcntl.flock`` exclusive, non-blocking. False means another holder."""
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno not in (errno.EACCES, errno.EAGAIN):
+            raise
+        return False
+    return True
+
+
+def _unlock_posix(fd: int) -> None:
+    fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@dataclass(frozen=True)
+class _MsvcrtLocking:
+    """The three ``msvcrt`` names the Windows lock uses, passed in rather than
+    imported here so the logic type-checks and tests on any host."""
+
+    locking: Callable[[int, int, int], None]
+    lk_nblck: int
+    lk_unlck: int
+
+
+def _try_lock_nt(fd: int, api: _MsvcrtLocking) -> bool:
+    """``msvcrt.locking`` on byte 0, non-blocking (``LK_NBLCK``), the Windows
+    counterpart of :func:`_try_lock_posix` (the same primitive
+    :func:`apps.webui.server.dedup_decisions.decision_file_lock` uses). The
+    CRT reports a byte another handle holds as EACCES. ``msvcrt.locking``
+    starts at the CURRENT file position, so it seeks to 0 first; Windows
+    allows locking past end of file, so the empty lock file needs no byte."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    try:
+        api.locking(fd, api.lk_nblck, 1)
+    except OSError as exc:
+        if exc.errno != errno.EACCES:
+            raise
+        return False
+    return True
+
+
+def _unlock_nt(fd: int, api: _MsvcrtLocking) -> None:
+    os.lseek(fd, 0, os.SEEK_SET)
+    api.locking(fd, api.lk_unlck, 1)
+
+
+_try_lock: Callable[[int], bool]
+_unlock: Callable[[int], None]
+if sys.platform == "win32":
+    import msvcrt
+
+    _MSVCRT = _MsvcrtLocking(msvcrt.locking, msvcrt.LK_NBLCK, msvcrt.LK_UNLCK)
+    _try_lock = functools.partial(_try_lock_nt, api=_MSVCRT)
+    _unlock = functools.partial(_unlock_nt, api=_MSVCRT)
+elif os.name == "posix":
+    import fcntl
+
+    _try_lock, _unlock = _try_lock_posix, _unlock_posix
+else:
+    raise ImportError(f"single_flight has no cross-process lock for {sys.platform=}")
+
+
 @contextlib.contextmanager
 def sync_flock_for(data_dir: Path) -> Iterator[None]:
-    """Hold ``data_dir``'s cross-process sync flock for one round, or raise
+    """Hold ``data_dir``'s cross-process sync lock for one round, or raise
     :class:`SyncInProgressError` immediately (never blocks) when another
     process already holds it.
 
-    POSIX-only (``fcntl.flock``, same as ``EngineLock``); this repo's CI and
-    shipped desktop targets are both POSIX, and a platform without ``fcntl``
-    fails loudly here rather than silently skipping the lock.
+    ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows: the ``python -m
+    apps.sync_hub sync`` CLI imports and runs on Windows, so this lock must
+    not be the thing that stops it there (Sol, PR #3831, P1/BLOCKING).
     """
-    if os.name != "posix":
-        raise NotImplementedError(
-            "sync_flock_for requires fcntl.flock, which is POSIX-only; "
-            f"unsupported on os.name={os.name!r}"
-        )
     resolved = Path(data_dir).resolve()
     resolved.mkdir(parents=True, exist_ok=True)
     lock_path = resolved / SYNC_LOCK_FILENAME
     fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            if exc.errno not in (errno.EACCES, errno.EAGAIN):
-                raise
+        if not _try_lock(fd):
             raise SyncInProgressError(
                 f"a CloudSync sync round is already running against "
                 f"{resolved} (held by another process via {lock_path})"
-            ) from exc
+            )
         try:
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock(fd)
     finally:
         os.close(fd)
 
