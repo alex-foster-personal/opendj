@@ -541,6 +541,7 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         created_at=_now(),
         build=_build_stamp(request),
         environment=_pin_environment(body, request),
+        status="open",
         author=body.author,
         agent_kind=body.agent_kind,
     )
