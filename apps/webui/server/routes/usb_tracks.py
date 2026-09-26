@@ -18,7 +18,6 @@ the volume list answers. Read only: no write route exists under
 
 from __future__ import annotations
 
-import errno
 import hashlib
 import json
 import time
@@ -29,11 +28,9 @@ from pathlib import Path
 from typing import Any, Literal, assert_never, get_args
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 
-from apps.shared import audio_quality, runtime_policy
-from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S, probe_readable_byte
+from apps.shared import runtime_policy
 from apps.sync.usb.pioneer.anlz_track import (
     StickAnlzError,
     StickAnlzFileMissing,
@@ -43,7 +40,6 @@ from apps.sync.usb.pioneer.anlz_track import (
     read_stick_track_analysis,
 )
 from apps.sync.usb.stick_library import (
-    ArtworkSize,
     MountedVolume,
     ResolvedStickTrack,
     StickError,
@@ -56,8 +52,6 @@ from apps.sync.usb.stick_library import (
     resolve_stick_track,
     stick_anlz_file,
     stick_artwork_available,
-    stick_artwork_file,
-    stick_audio_file,
     stick_audio_path,
 )
 
@@ -65,7 +59,6 @@ from .. import rb_vendor
 from ..etag import compute_etag
 from ..models import TrackOut
 from .rb_assets import _CACHE_ANLZ, _etag_matches
-from .rb_assets_audio import _BLOCKED_ACCESS_ERRNOS
 from .rb_hot_cues import AnlzCueOut, HotCueSlot, HotCueSlotOut
 from .usb_gate import usb_export_gate
 from .usb_volumes import (
@@ -552,90 +545,7 @@ def _hot_cue_revision(track_id: str, slot: str, cue: dict[str, Any] | None) -> s
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-# ----- files --------------------------------------------------------------
-
-
-@router.get(
-    "/tracks/{track_id}/audio",
-    response_class=FileResponse,
-    responses=_STICK_RESPONSES,
-    operation_id="get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get",
-)
-@router.head(
-    "/tracks/{track_id}/audio",
-    response_class=FileResponse,
-    responses=_STICK_RESPONSES,
-    operation_id="head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head",
-)
-def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
-    """Stream the stick's file. FileResponse handles Range/206 and HEAD, as
-    the library's ``/tracks/{id}/audio`` does.
-
-    A subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,
-    so a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)
-    answers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.
-    """
-    with _stick_errors():
-        resolved = _resolve_track(request, track_id)
-        audio = stick_audio_file(resolved)
-    probe = probe_readable_byte(audio.path, timeout_s=AUDIO_ACCESS_TIMEOUT_S)
-    if probe.outcome == "timeout" or (
-        probe.outcome == "error" and probe.errno in _BLOCKED_ACCESS_ERRNOS
-    ):
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "AUDIO_ACCESS_BLOCKED",
-                "message": (
-                    f"opening {audio.path} was refused or did not return within "
-                    f"{AUDIO_ACCESS_TIMEOUT_S:.0f}s ({probe.outcome})"
-                ),
-                "volume_uuid": resolved.stick.volume_uuid,
-            },
-        )
-    if probe.outcome == "error" and probe.errno in (errno.ENOENT, errno.ENOTDIR):
-        raise HTTPException(
-            status_code=404,
-            detail=StickError(
-                "USB_FILE_MISSING",
-                f"audio file {resolved.track.file_path} went away before it could be opened",
-                volume_uuid=resolved.stick.volume_uuid,
-            ).to_detail(),
-        )
-    if probe.outcome == "error":
-        raise OSError(probe.errno or 0, f"probing {audio.path} failed: {probe.message}")
-    quality = audio_quality.classify(str(audio.path), _duration_ms(resolved.track.duration_s))
-    return FileResponse(
-        audio.path,
-        media_type=audio.media_type,
-        headers={
-            "Cache-Control": _CACHE_AUDIO,
-            "X-Audio-Kind": "local",
-            "X-Audio-Venue": quality.venue.key if quality.venue else "",
-            "X-Audio-Source": "usb-stick",
-        },
-    )
-
-
-@router.get(
-    "/tracks/{track_id}/artwork",
-    response_class=FileResponse,
-    response_model=None,
-    responses=_STICK_RESPONSES,
-)
-def get_usb_track_artwork(
-    track_id: str,
-    request: Request,
-    size: ArtworkSize = Query(  # noqa: B008  # FastAPI DI
-        "s", description="s=80x80 browser rows; m and orig = the 240x240 _m jpg"
-    ),
-) -> FileResponse:
-    """The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``
-    sibling (the largest rendering rekordbox writes to a stick)."""
-    with _stick_errors():
-        path = stick_artwork_file(_resolve_track(request, track_id), size)
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": _CACHE_ARTWORK})
-
+from . import usb_tracks_files  # noqa: E402, F401  # registers audio/artwork routes on router
 
 __all__ = [
     "UsbStickErrorOut",
@@ -643,8 +553,6 @@ __all__ = [
     "get_usb_stick_library",
     "get_usb_track",
     "get_usb_track_anlz",
-    "get_usb_track_artwork",
-    "get_usb_track_audio",
     "list_usb_track_hot_cue_slots",
     "router",
 ]
