@@ -26,19 +26,17 @@ import re
 import shlex
 import socket
 import subprocess
+import sys
 import time
+import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-import uvicorn
 
-from apps.webui.server.app import create_app
-from apps.webui.server.backend import InMemoryBackend
 from ops.agentic_testing.driver_claude import BILLING_REROUTE_ENV_VARS
-from tests.waits import start_uvicorn_in_thread
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTMAC_DIR = REPO_ROOT / "ops/testmac"
@@ -330,33 +328,51 @@ def _host_reachable(host: str) -> bool:
     return subprocess.run(probe, capture_output=True, check=False, timeout=30).returncode == 0
 
 
+def _free_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
 @contextmanager
 def _real_api_only_engine_on(host: str, tmp_path: Path) -> Iterator[int]:
-    """The REAL webui app with no frontend (the production no-build path: /api/v1/health
-    ok, /performance a JSON 404), exposed on `host` by a real `ssh -R` forward. Yields
-    the port on `host`."""
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(5)
-    port = int(listener.getsockname()[1])
-    app = create_app(
-        backend=InMemoryBackend(),
-        mount_frontend=False,
-        enable_cors=False,
-        client_error_log_dir=tmp_path / "client-errors",
-        client_event_log_dir=tmp_path / "client-events",
-    )
-    server, thread = start_uvicorn_in_thread(
-        uvicorn.Config(app, log_level="warning"), what="api-only engine", sockets=[listener]
-    )
-    forward = [
-        "ssh", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
-        "-R", f"0:127.0.0.1:{port}", host,
+    """The REAL production daemon app (`apps.webui.server.app:app`, the same app
+    `python -m apps.webui.server` serves) as a subprocess over an empty data dir, its frontend
+    build dir pointed at nothing: a genuine API-only engine (/api/v1/health ok,
+    /performance a JSON 404) on any checkout. Exposed on `host` by a real `ssh -R`
+    forward; yields the port on `host`."""
+    port = _free_local_port()
+    daemon_env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "MDT_DATA_DIR": str(tmp_path / "data"),
+        "MDT_FRONTEND_BUILD_DIR": str(tmp_path / "no-frontend-build"),
+        "AF_SERVICE_ID": "com.af.opendj.test-api-only-engine",
+    }
+    daemon_argv = [
+        sys.executable, "-m", "uvicorn", "apps.webui.server.app:app",
+        "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning",
     ]  # fmt: skip
-    tunnel = subprocess.Popen(forward, stderr=subprocess.PIPE, text=True)
+    log = (tmp_path / "daemon.log").open("wb")
+    daemon = subprocess.Popen(daemon_argv, cwd=REPO_ROOT, env=daemon_env, stdout=log, stderr=log)
+    tunnel = None
     try:
-        remote_port = None
+        deadline = time.monotonic() + 60
+        while True:
+            assert daemon.poll() is None, (tmp_path / "daemon.log").read_text()
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2):
+                    break
+            except OSError:
+                assert time.monotonic() < deadline, "the real daemon never answered health"
+                time.sleep(0.5)
+        forward = [
+            "ssh", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+            "-R", f"0:127.0.0.1:{port}", host,
+        ]  # fmt: skip
+        tunnel = subprocess.Popen(forward, stderr=subprocess.PIPE, text=True)
         assert tunnel.stderr is not None
+        remote_port = None
         for _ in range(20):
             match = re.search(r"Allocated port (\d+)", tunnel.stderr.readline())
             if match:
@@ -365,10 +381,12 @@ def _real_api_only_engine_on(host: str, tmp_path: Path) -> Iterator[int]:
         assert remote_port, "ssh -R never reported its allocated port"
         yield remote_port
     finally:
-        tunnel.terminate()
-        tunnel.wait(timeout=10)
-        server.should_exit = True
-        thread.join(timeout=5)
+        if tunnel is not None:
+            tunnel.terminate()
+            tunnel.wait(timeout=10)
+        daemon.terminate()
+        daemon.wait(timeout=30)
+        log.close()
 
 
 def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) -> None:
@@ -380,7 +398,8 @@ def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) 
     Live, no stand-ins: setup.sh's own run/probe_engine_repo/engine_serves_app/
     choose_engine_repo over real ssh against demon-llama's real engines (its main
     checkout's engine is down there, the agt-mini sibling serves the app), plus the
-    real webui app with no frontend forwarded onto that host as the API-only case. Its
+    real production daemon with no frontend forwarded onto that host as the API-only
+    case. Its
     health is re-measured through the same forward, so "not live" cannot come from a
     broken tunnel. UNAVAILABLE off the tailnet."""
     if not _host_reachable(LIVE_ENGINE_HOST):
