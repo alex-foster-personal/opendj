@@ -77,7 +77,7 @@
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex,
-		scrollTopToKeepRowVisible
+		scrollTopForDeckLayoutAnchor
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -775,22 +775,14 @@
 		const el = wrapEl;
 		const anchor = deckLayoutAnchor;
 		if (el === null || anchor === null || viewportHeight <= 0) return;
-		const next =
-			anchor.priorViewportHeight > 0
-				? scrollTopToKeepRowVisible({
-						rowIndex: anchor.rowIndex,
-						rowHeight,
-						headerOffsetPx: TRACK_TABLE_THEAD_PX,
-						viewportHeight,
-						priorScrollTop: anchor.priorScrollTop,
-						priorViewportHeight: anchor.priorViewportHeight
-					})
-				: scrollTopForRowIndex({
-						rowIndex: anchor.rowIndex,
-						rowHeight,
-						headerOffsetPx: TRACK_TABLE_THEAD_PX,
-						offsetFromTopPx: Math.max(0, Math.floor(viewportHeight / 3))
-					});
+		const next = scrollTopForDeckLayoutAnchor({
+			rowIndex: anchor.rowIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			viewportHeight,
+			priorScrollTop: anchor.priorScrollTop,
+			priorViewportHeight: anchor.priorViewportHeight
+		});
 		el.scrollTop = next;
 		liveScrollTop = next;
 		onscrollcursor?.(next);
@@ -2489,9 +2481,14 @@
 		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
+	/* position without a z-index on purpose: `z-index: 0` here made every
+	 * cell its own stacking context (#4009), which trapped a cell's
+	 * `position: fixed` popovers (the analysis-dots hover tile, z-index 9600)
+	 * at that cell's level, so every LATER row's cells painted over them and
+	 * took their pointer events. The row separator (`tbody tr::after`,
+	 * z-index 1) still paints above z-index:auto cells. */
 	tbody td {
 		position: relative;
-		z-index: 0;
 	}
 	thead th {
 		border-bottom: 1px solid var(--rb-border);

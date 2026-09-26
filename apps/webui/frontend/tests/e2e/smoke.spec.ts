@@ -1,7 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 for (const path of ['/', '/pairings', '/queues']) {
 	test(`smoke: ${path} renders without console errors`, async ({ page }) => {
+		// A cold `/` otherwise races PERFMODE-11's one-shot redirect into Gig,
+		// which aborts the page's in-flight requests (seen as
+		// net::ERR_ABORTED on /api/v1/state/ui-mirror); support/boot-landing.ts
+		// has the full account.
+		await spendBootLanding(page);
 		const errors: string[] = [];
 		const failedResponses: string[] = [];
 		const failedRequests: string[] = [];

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from apps.analysis import canonical, selection
+from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
 from apps.shared import platform_paths, runtime_policy
 
@@ -34,7 +34,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
 )
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
-from . import analysis_source as analysis_source_routes
+from .rb_assets_beatgrid_source import beatgrid_source_for_track
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -152,30 +152,6 @@ def get_track_artwork(
         media_type="image/jpeg",
         headers={"Cache-Control": _CACHE_ARTWORK},
     )
-
-
-# The `/anlz` wire contract's `beatgrid_source` predates PARITY-02's lane
-# selection module and uses "rekordbox"/"own"; `apps.analysis.selection`
-# uses "rbx"/"own". Translate at the boundary rather than widen the wire
-# vocabulary to match an internal module.
-_BEATGRID_SOURCE_LABELS: dict[str, str] = {"rbx": "rekordbox", "own": "own"}
-
-
-def _beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> str:
-    """Per-track beatgrid source label for ``/anlz`` (STANDALONE-06).
-
-    Reads through :mod:`apps.analysis.selection` once per request; callers
-    thread the returned string through rescue branches and
-    :func:`_resolve_beatgrid_source` without re-reading (ADR-0099).
-    """
-    conn = analysis_source_routes._open_ro(request)
-    try:
-        source = selection.effective_source_for_track(
-            conn, "beatgrid", has_rb_mapping=has_rb_mapping
-        )
-    finally:
-        conn.close()
-    return _BEATGRID_SOURCE_LABELS[source]
 
 
 def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:
@@ -378,7 +354,9 @@ def get_track_anlz(
     # function then stamps with the OTHER, newer source
     # (discussion_r3974235458 P2 BLOCKING).
     has_rb_mapping = stable_id in rb_vendor.bulk_rb_meta([stable_id])
-    beatgrid_source = _beatgrid_source_for_track(request, has_rb_mapping=has_rb_mapping)
+    beatgrid_source, beatgrid_source_basis = beatgrid_source_for_track(
+        request, has_rb_mapping=has_rb_mapping
+    )
     state_db_path = _state_db_override(request)
     rescued_missing_analysis_path = False
     try:
@@ -460,6 +438,7 @@ def get_track_anlz(
     _resolve_beatgrid_source(
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
+    payload["beatgrid_source_basis"] = beatgrid_source_basis
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things
