@@ -104,6 +104,14 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	return (await r.json()) as T;
 }
 
+export async function fetchTrackifyLibraryRevision(): Promise<string> {
+	const payload = await _fetchJson<{ revision: unknown }>('/api/v1/tracks/revision', 'no-store');
+	if (typeof payload.revision !== 'string' || payload.revision === '') {
+		throw new Error('Trackify: library revision response is invalid');
+	}
+	return payload.revision;
+}
+
 /** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
  * that keep their endpoint helpers out of this first-paint module. */
 export { _fetchJson as fetchRbJson };

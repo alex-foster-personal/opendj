@@ -5194,6 +5194,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Revision
+         * @description Return a cheap revision probe for clients holding library snapshots.
+         */
+        get: operations["get_library_revision_api_v1_tracks_revision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}": {
         parameters: {
             query?: never;
@@ -13582,6 +13602,11 @@ export interface components {
             /** Title */
             title?: string;
         };
+        /** TrackLibraryRevisionOut */
+        TrackLibraryRevisionOut: {
+            /** Revision */
+            revision: string;
+        };
         /** TrackLifecycleOut */
         TrackLifecycleOut: {
             /** Deleted At */
@@ -14008,6 +14033,12 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Gig Helper
+             * @default unset
+             * @enum {string}
+             */
+            gig_helper: "unset" | "off" | "on";
+            /**
              * Hide Broken Links
              * @default false
              */
@@ -14134,6 +14165,8 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Gig Helper */
+            gig_helper?: ("unset" | "off" | "on") | null;
             /** Hide Broken Links */
             hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
@@ -24096,6 +24129,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QualityRungOut"][];
+                };
+            };
+        };
+    };
+    get_library_revision_api_v1_tracks_revision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLibraryRevisionOut"];
                 };
             };
         };

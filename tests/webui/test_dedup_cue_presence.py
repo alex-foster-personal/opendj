@@ -279,6 +279,7 @@ def _member_by_sid(cluster: dict, stable_id: str) -> dict:
     return next(member for member in cluster["members"] if member["stable_id"] == stable_id)
 
 
+# REQ: LIBM-76
 def test_clusters_show_asymmetric_cue_presence(app_client, dedup_db: Path) -> None:
     response = app_client.get("/api/v1/dedup/clusters")
     assert response.status_code == 200
