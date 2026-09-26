@@ -28,7 +28,8 @@ import {
 	drawGhostSeekPlayhead,
 	drawMasterDownbeatOverlay,
 	drawPlayhead,
-	type MasterDownbeatOverlay
+	type MasterDownbeatOverlay,
+	type PlayheadTone
 } from './wave-playhead-render';
 
 export { drawPlayhead, type PlayheadTone } from './wave-playhead-render';

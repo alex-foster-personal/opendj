@@ -32,8 +32,8 @@ export function syncPlayheadToneForDeck(input: {
 		isMaster: input.isMaster,
 		syncError: input.sync_error,
 		syncMode: input.sync_mode,
-		followerBeats,
-		masterBeats: input.masterBeats,
+		followerBeats: [...followerBeats],
+		masterBeats: [...input.masterBeats],
 		followerPosMs: input.position_ms,
 		masterPosMs: input.masterState.position_ms
 	});

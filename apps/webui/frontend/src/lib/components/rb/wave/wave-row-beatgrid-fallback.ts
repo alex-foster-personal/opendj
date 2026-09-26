@@ -3,19 +3,14 @@
  */
 import type { AnlzData } from '$lib/rb/anlz-types';
 import type { BeatgridFallbackOut } from '$lib/rb/beatgrid-fallback-api';
-import { resolvePaintAnlz, shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
+import { resolvePaintAnlz, shouldUseBeatgridFallback, type BeatgridFallbackGate } from '$lib/rb/beatgrid-fallback';
 import type { BeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 
 export function beatgridFallbackGate(input: {
 	anlzErrorCode: string | null;
 	anlz: AnlzData | null;
-	effectiveSource: string | undefined;
-}): {
-	anlzErrorCode: string | null;
-	anlz: AnlzData | null;
-	vendor: null;
-	effectiveSource: string | undefined;
-} {
+	effectiveSource: BeatgridFallbackGate['effectiveSource'];
+}): BeatgridFallbackGate {
 	return {
 		anlzErrorCode: input.anlzErrorCode,
 		anlz: input.anlz,
