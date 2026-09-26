@@ -7620,6 +7620,69 @@
         "title": "FolderScanOut",
         "type": "object"
       },
+      "FolderWatchOut": {
+        "description": "LIBM-128: the continuous folder-rescan scheduler's own status.\n\n``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not\nrun in this process (no lifespan, or not yet its first cycle) -- a\ngenuinely different fact from a scheduler that ran and found nothing,\nwhich is ``warning=None`` with a real ``last_cycle_at``.",
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "number"
+          },
+          "last_cycle_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Cycle At"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "tracks_added_last_cycle": {
+            "default": 0,
+            "title": "Tracks Added Last Cycle",
+            "type": "integer"
+          },
+          "tracks_removed_last_cycle": {
+            "default": 0,
+            "title": "Tracks Removed Last Cycle",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "running",
+          "interval_s"
+        ],
+        "title": "FolderWatchOut",
+        "type": "object"
+      },
       "GateErrorBody": {
         "description": "The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).",
         "properties": {
@@ -17193,6 +17256,16 @@
             },
             "title": "Folder Stages",
             "type": "array"
+          },
+          "folder_watch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderWatchOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_import": {
             "anyOf": [

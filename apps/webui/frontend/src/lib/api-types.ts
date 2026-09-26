@@ -8848,6 +8848,42 @@ export interface components {
             sample?: string[];
         };
         /**
+         * FolderWatchOut
+         * @description LIBM-128: the continuous folder-rescan scheduler's own status.
+         *
+         *     ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+         *     run in this process (no lifespan, or not yet its first cycle) -- a
+         *     genuinely different fact from a scheduler that ran and found nothing,
+         *     which is ``warning=None`` with a real ``last_cycle_at``.
+         */
+        FolderWatchOut: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Interval S */
+            interval_s: number;
+            /** Last Cycle At */
+            last_cycle_at?: string | null;
+            /** Running */
+            running: boolean;
+            /**
+             * Tracks Added Last Cycle
+             * @default 0
+             */
+            tracks_added_last_cycle: number;
+            /**
+             * Tracks Removed Last Cycle
+             * @default 0
+             */
+            tracks_removed_last_cycle: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * GateErrorBody
          * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
          */
@@ -12544,6 +12580,7 @@ export interface components {
             dismissed: boolean;
             /** Folder Stages */
             folder_stages: string[];
+            folder_watch?: components["schemas"]["FolderWatchOut"] | null;
             /** Last Import */
             last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
             /** Library Empty */

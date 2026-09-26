@@ -47,6 +47,7 @@ function key(overrides = {}) {
 		metaKey: overrides.metaKey ?? false,
 		ctrlKey: overrides.ctrlKey ?? false,
 		altKey: overrides.altKey ?? false,
+		shiftKey: overrides.shiftKey ?? false,
 		timeStamp: overrides.timeStamp ?? 42,
 		preventDefault: () => {
 			prevented = true;
@@ -84,6 +85,15 @@ test('M does not route in text input, textarea, or contenteditable', () => {
 	]) {
 		assert.equal(routing.resolvePerformanceShortcutAction(key({ target: focus })), null);
 	}
+});
+
+test('Cmd+Shift+M routes in textarea as backup chord', () => {
+	assert.deepEqual(
+		routing.resolvePerformanceShortcutAction(
+			key({ target: target('TEXTAREA'), metaKey: true, shiftKey: true })
+		),
+		{ kind: 'm' }
+	);
 });
 
 test('M invokes armPinPlacement on non-text targets and not in text entry', () => {
