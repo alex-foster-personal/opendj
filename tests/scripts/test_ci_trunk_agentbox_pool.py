@@ -103,7 +103,7 @@ def _tokens(expr: str) -> list[str]:
     out, pos = [], 0
     while pos < len(expr.rstrip()):
         match = _TOKEN.match(expr, pos)
-        assert match, f"evaluator cannot tokenize at {expr[pos : pos + 30]!r}"
+        assert match and match.lastgroup, f"evaluator cannot tokenize at {expr[pos : pos + 30]!r}"
         out.append(match.group(match.lastgroup))
         pos = match.end()
     return out
