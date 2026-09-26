@@ -135,6 +135,7 @@ def test_status_keeps_only_the_newest_five_results(tmp_path: Path, monkeypatch):
     assert body["last_pull_at"] == "2026-09-05T11:00:05+00:00"
 
 
+# REQ: CLOUDSYNC-16
 def test_identity_backlog_counts_held_inferred_tracks(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "state.db"
     conn = state_db.open_rw(db_path, apply_schema=True)

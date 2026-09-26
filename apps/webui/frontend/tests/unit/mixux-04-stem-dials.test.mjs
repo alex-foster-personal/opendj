@@ -1,4 +1,4 @@
-// requirement: MIXUX-04
+// REQ: MIXUX-04
 // [if] the per-channel STEM button below the channel fader is engaged [then] that channel's EQ dials switch to controlling STEM sub-channels, with labels auto-populated from the stems available for the loaded track.
 // [if] only vocal and non-vocal stems are available [then] HI -> vocal, MED -> non-vocal, and LO stays LO (any dial with no stem available keeps its EQ function).
 // [if] a dial is in STEM mode [then] it is color coded per the repo's stem color rules (eg vocals blue) [⛔️ if STEM dials render indistinguishable from EQ dials].
