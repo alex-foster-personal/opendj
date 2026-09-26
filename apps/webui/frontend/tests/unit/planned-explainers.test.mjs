@@ -108,6 +108,7 @@ describe('planned explainers', () => {
 		assert.match(mod.PLANNED_CONTROLS['autoplay-two-track'], /second automatic track/i);
 	});
 
+	// REQ: LIBUX-17
 	test('the browser MASTER dropdown wires the master-dropdown explainer', () => {
 		const panel = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),

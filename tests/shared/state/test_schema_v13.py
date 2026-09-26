@@ -119,6 +119,7 @@ def test_v12_db_migrates_memberships_backfill(tmp_path: Path) -> None:
     fresh.close()
 
 
+# REQ: LIBM-02
 def test_v13_order_key_is_text_and_order_preserved(tmp_path: Path) -> None:
     """[if] v13 backfills order_key [then] TEXT keys preserve position order, [else stop]."""
     path = tmp_path / "state.db"
