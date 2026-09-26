@@ -1,12 +1,8 @@
 """State-db handles carry an explicit, bounded busy wait.
 
-Single-line intent:
-  - if a lock is held past a handle's busy wait then it raises within that
-    bound [broken if the wait is unbounded or silently inherited]
-  - if a handle is asked to wait forever, or not at all, then it refuses
-    [broken if an unbounded wait can be configured]
-  - if a handle is opened with a bound then SQLite reports exactly that bound
-    [broken if a later PRAGMA quietly overrides it]
+- [if] a lock outlives a handle's busy wait [then] the open raises within it, [else stop].
+- [if] a handle is asked to wait forever or not at all [then] it refuses, [else stop].
+- [if] a handle is opened with a bound [then] SQLite reports exactly that bound, [else stop].
 """
 
 from __future__ import annotations
