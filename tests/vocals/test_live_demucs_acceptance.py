@@ -104,6 +104,8 @@ def spike_b2_fixture(tmp_path_factory: pytest.TempPathFactory) -> SpikeB2Fixture
     source = sb2.resolve_source_data_dir()
     if source is None:
         pytest.skip("UNAVAILABLE: no source library for SPIKE-B2 acceptance tracks")
+    # pytest.skip raises; the gate's isolated mypy has no pytest stubs to see that.
+    assert source is not None
     dest = tmp_path_factory.mktemp("spike-b2-disposable")
     env_dest = os.environ.get("VOCALS_ACCEPTANCE_DATA_DIR")
     if env_dest:
