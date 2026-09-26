@@ -199,3 +199,42 @@ def test_a_quiet_worker_with_healthy_writes_still_runs_to_eof(tmp_path: Path) ->
     job_id = _running_job(store)
     assert asyncio.run(_pump_one_line_then_quiet(store, job_id, 0.5)) is None
     assert store.get(job_id)["message"] == "file 1"
+
+
+# ---------------------------------------------------------------------------
+# Cancelled during the final flush, the in-flight write still lands first.
+#
+#   - [if] the pump is cancelled while close() waits on an in-flight write [then] the
+#     caller's terminal write is the row's last write [broken if close() lets the
+#     cancellation cancel the drain task while its thread still commits]
+
+_ONE_LINE_THEN_EXIT = (
+    "import json; print(json.dumps({'progress': 0.1, 'message': 'file 1'}), flush=True)"
+)
+
+
+async def _cancel_during_final_flush(store: _GatedJobStore, job_id: str) -> None:
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", _ONE_LINE_THEN_EXIT, stdout=asyncio.subprocess.PIPE
+    )
+    pump = asyncio.create_task(JobRunner(store)._pump(job_id, proc, deque(maxlen=8)))
+    await asyncio.to_thread(store.write_started.wait, 5)
+    assert store.write_started.is_set(), "the first write never started"
+    await proc.wait()
+    # The reader has hit EOF and the pump is parked in close() on the held write.
+    await asyncio.sleep(WRITE_HELD_S)
+    asyncio.get_running_loop().call_later(WRITE_HELD_S, store.gate.set)
+    pump.cancel()
+    await asyncio.wait([pump])
+    assert pump.cancelled(), "the pump swallowed its cancellation"
+    store.finish(job_id, "cancelled")
+    # Room for a stray write to land if the flush left one behind.
+    await asyncio.sleep(WRITE_HELD_S * 2)
+
+
+def test_a_cancelled_final_flush_still_lands_before_the_terminal_write(
+    store: _GatedJobStore,
+) -> None:
+    job_id = _running_job(store)
+    asyncio.run(_cancel_during_final_flush(store, job_id))
+    assert store.log == [("progress", "file 1"), ("finish", "cancelled")], store.log

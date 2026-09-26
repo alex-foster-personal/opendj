@@ -616,8 +616,14 @@ class JobRunner:
             await writer.abort()
             raise
         # Every line read is on disk before the caller writes a terminal
-        # status, so no late progress write can land after it.
-        await writer.close()
+        # status, so no late progress write can land after it. Cancelled
+        # mid-flush (shutdown or a job cancel), the in-flight write still has
+        # to land before cancellation reaches the caller's terminal write.
+        try:
+            await writer.close()
+        except asyncio.CancelledError:
+            await writer.abort()
+            raise
         return broken
 
     @staticmethod
@@ -692,10 +698,14 @@ class _ProgressWriter:
         self._wake.set()
 
     async def close(self) -> None:
-        """Flush what is still queued, then stop. Raises a failed write."""
+        """Flush what is still queued, then stop. Raises a failed write.
+
+        Shielded: cancelling the caller must not cancel the drain task, whose
+        write thread would then commit behind the caller's back (see abort).
+        """
         self._closed.set()
         self._wake.set()
-        await self._task
+        await asyncio.shield(self._task)
 
     async def abort(self) -> None:
         """The run is already failing: drop what is queued, keep its own error.
