@@ -1,0 +1,177 @@
+"""Surface a pull request's measured scope against its issue's declared limits.
+
+OPS-41 acceptance line 3 (issue #3352): when a branch's measured commits or files
+exceed the limits its issue declares, the scope check fails before review and
+prints both measurements. #3352 was a one-commit fix whose PR carried 118
+commits and 131 files, inherited from an unpublished shared checkout.
+
+An issue declares limits with one body line, for example:
+
+    Scope limit: commits=5 files=20
+
+Linked issues are the PR's closing references plus any `Refs #N` in its body.
+With several declarations the tightest limit on each axis wins.
+
+    python -m scripts.pr_scope_check 1234            # print the verdict
+    python -m scripts.pr_scope_check 1234 --comment  # also post it on the PR
+
+Exit codes: 0 within the declared limits, or no limit declared (printed as
+UNDECLARED, never as OK); 1 over a declared limit; 3 could not measure. Counts
+come from GitHub's own PR fields (commits in head not in base, changed files),
+the same set a reviewer is shown.
+
+What could satisfy this check without satisfying its intent: a PR whose issue
+declares nothing. That case prints UNDECLARED with the measurements, and
+OVERSIZED when it is past the fleet review bound below, so it is visible on the
+PR rather than read as a pass. The bound does not fail the check, because no
+issue asked for it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import re
+import subprocess
+import sys
+from collections.abc import Callable
+
+from scripts.review_ledger import OWNER, REPO
+from scripts.worker_worktree_guard import Scope, ScopeError, assert_scope
+
+# Fleet review bound for a PR whose issue declares no limit. It only labels the
+# PR OVERSIZED; it never fails the check (see module docstring).
+FLEET_REVIEW_MAX_COMMITS: int = 40
+FLEET_REVIEW_MAX_FILES: int = 80
+
+_LIMIT_RE = re.compile(
+    r"(?im)^\s*scope[ -]limits?\s*:\s*commits\s*=\s*(\d+)\s*[,;]?\s*files\s*=\s*(\d+)"
+)
+_REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+#(\d+)")
+
+_PR_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
+pullRequest(number:$n){
+headRefOid body commits{totalCount} changedFiles additions deletions
+closingIssuesReferences(first:10){nodes{number body}}}}}"""
+_ISSUE_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
+issue(number:$n){number body}}}"""
+
+
+class MeasureError(RuntimeError):
+    """The PR or its issues could not be read."""
+
+
+@dataclasses.dataclass(frozen=True)
+class Limit:
+    commits: int
+    files: int
+    issues: tuple[int, ...]
+
+
+def declared_limit(issue_bodies: dict[int, str]) -> Limit | None:
+    """The tightest `Scope limit:` across linked issues, or None if none declares one."""
+    found: list[tuple[int, int, int]] = []
+    for number, body in sorted(issue_bodies.items()):
+        match = _LIMIT_RE.search(body or "")
+        if match:
+            found.append((number, int(match.group(1)), int(match.group(2))))
+    if not found:
+        return None
+    return Limit(
+        commits=min(c for _, c, _ in found),
+        files=min(f for _, _, f in found),
+        issues=tuple(n for n, _, _ in found),
+    )
+
+
+def verdict(scope: Scope, limit: Limit | None) -> tuple[int, str]:
+    measured = (
+        f"commits={scope.commits}, files={scope.files}, "
+        f"additions={scope.additions}, deletions={scope.deletions}"
+    )
+    if limit is None:
+        oversized = scope.commits > FLEET_REVIEW_MAX_COMMITS or scope.files > FLEET_REVIEW_MAX_FILES
+        tag = (
+            (
+                f" OVERSIZED (fleet review bound commits={FLEET_REVIEW_MAX_COMMITS}, "
+                f"files={FLEET_REVIEW_MAX_FILES})"
+            )
+            if oversized
+            else ""
+        )
+        return 0, f"[pr-scope] UNDECLARED: no linked issue declares 'Scope limit:'; {measured}{tag}"
+    source = ", ".join(f"#{n}" for n in limit.issues)
+    try:
+        assert_scope(scope, max_commits=limit.commits, max_files=limit.files)
+    except ScopeError as exc:
+        return 1, f"[pr-scope] FAIL: {exc} (declared by {source})"
+    return 0, (
+        f"[pr-scope] OK: commits={scope.commits} (max {limit.commits}), "
+        f"files={scope.files} (max {limit.files}) declared by {source}"
+    )
+
+
+def _gh_graphql(query: str, **variables: object) -> dict:
+    args = ["gh", "api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        args += ["-F" if isinstance(value, int) else "-f", f"{key}={value}"]
+    process = subprocess.run(args, capture_output=True, text=True, check=False)
+    if process.returncode != 0:
+        raise MeasureError(f"gh api graphql failed: {process.stderr.strip()[:300]}")
+    return json.loads(process.stdout)["data"]["repository"]
+
+
+def fetch(
+    number: int, owner: str, repo: str, graphql: Callable[..., dict] = _gh_graphql
+) -> tuple[Scope, dict[int, str]]:
+    pr = graphql(_PR_QUERY, o=owner, r=repo, n=number)["pullRequest"]
+    if pr is None:
+        raise MeasureError(f"PR #{number} not found in {owner}/{repo}")
+    bodies = {i["number"]: i["body"] for i in pr["closingIssuesReferences"]["nodes"]}
+    for ref in sorted({int(n) for n in _REFS_RE.findall(pr["body"] or "")} - set(bodies)):
+        issue = graphql(_ISSUE_QUERY, o=owner, r=repo, n=ref)["issue"]
+        if issue is not None:
+            bodies[issue["number"]] = issue["body"]
+    scope = Scope(pr["commits"]["totalCount"], pr["changedFiles"], pr["additions"], pr["deletions"])
+    return scope, bodies
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser.add_argument("pr", type=int)
+    parser.add_argument("--owner", default=OWNER)
+    parser.add_argument("--repo", default=REPO)
+    parser.add_argument("--comment", action="store_true", help="also post the verdict on the PR")
+    args = parser.parse_args(argv)
+    try:
+        scope, bodies = fetch(args.pr, args.owner, args.repo)
+    except (MeasureError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        print(f"[pr-scope] COULD NOT MEASURE: {exc}", file=sys.stderr)
+        return 3
+    rc, line = verdict(scope, declared_limit(bodies))
+    print(line)
+    if args.comment:
+        posted = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "comment",
+                str(args.pr),
+                "--repo",
+                f"{args.owner}/{args.repo}",
+                "--body",
+                f"{line}\n\n<!-- pr-scope-check v1 -->",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if posted.returncode != 0:
+            print(f"[pr-scope] COULD NOT POST: {posted.stderr.strip()[:300]}", file=sys.stderr)
+            return 3
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
