@@ -53,18 +53,14 @@ class _GatedJobStore(JobStore):
         self.write_started = threading.Event()
         self.log: list[tuple[str, Any]] = []
 
-    def set_progress(
-        self, job_id: str, progress: float, message: str | None
-    ) -> dict[str, Any]:
+    def set_progress(self, job_id: str, progress: float, message: str | None) -> dict[str, Any]:
         self.write_started.set()
         self.gate.wait()
         row = super().set_progress(job_id, progress, message)
         self.log.append(("progress", message))
         return row
 
-    def finish(
-        self, job_id: str, status: str, *, error: str | None = None
-    ) -> dict[str, Any]:
+    def finish(self, job_id: str, status: str, *, error: str | None = None) -> dict[str, Any]:
         row = super().finish(job_id, status, error=error)
         self.log.append(("finish", status))
         return row
@@ -72,8 +68,10 @@ class _GatedJobStore(JobStore):
 
 def _running_job(store: JobStore) -> str:
     job_id = store.enqueue("test.progress-abort", {})["id"]
-    (claimed,) = store.claim_queued()
-    assert claimed["id"] == job_id
+    store.claim_queued()
+    # Read back through get(): JobStore defines a method named `list`, so mypy
+    # resolves claim_queued's `list[...]` return type to that method.
+    assert store.get(job_id)["status"] == "running"
     return job_id
 
 
