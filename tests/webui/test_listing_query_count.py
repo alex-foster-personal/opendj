@@ -115,7 +115,7 @@ def traced_client(
     state_path = _seed_library(tmp_path, LARGE)
     monkeypatch.setattr(rb_config, "STATE_DB", state_path)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent-master.db")
-    with trace_sqlite(monkeypatch) as trace:
+    with trace_sqlite() as trace:
         app = create_app(
             backend=SqliteBackend(state_path),
             bind_host="127.0.0.1",
@@ -138,6 +138,10 @@ def _measure(client: TestClient, trace: SqlTrace, url: str) -> tuple[int, list[s
     trace.reset()
     response = client.get(url)
     assert response.status_code == 200, response.text
+    assert not trace.untraced_outside(REFRESH_THREAD), (
+        f"{url}: a connection closed before its trace attached, so its statements "
+        "went uncounted"
+    )
     return (
         trace.connections_outside(REFRESH_THREAD),
         trace.statements_outside(REFRESH_THREAD),
@@ -189,7 +193,7 @@ def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> Non
     listing = client.get(f"/api/v1/tracks?limit={LARGE}").json()["items"]
     detail = client.get(f"/api/v1/playlists/{LARGE_PLAYLIST}").json()["tracks"]
     assert len(listing) == LARGE and len(detail) == LARGE
-    verdicts = Counter()
+    verdicts: Counter[tuple[bool | None, str]] = Counter()
     for row in detail:
         expected = _oracle(row["stable_id"])
         assert (row["artwork_available"], row["artwork_status"]) == expected, row["stable_id"]
