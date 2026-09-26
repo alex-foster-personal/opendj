@@ -130,12 +130,38 @@ def test_agt_loop_holds_after_a_walled_attempt() -> None:
     text = LOOP_SH.read_text(encoding="utf-8")
     assert 'AGT_WALLED_BACKOFF_S="${AGT_WALLED_BACKOFF_S:-' in text
     hold = re.search(
-        r'if \[ "\$rc" = 3 \] && grep -qE "CLI is walled\|CLI refused" "\$out\.log".*?\n'
+        r'if \[ "\$rc" = 3 \] && grep -qE "\$DRIVER_BLOCK_PATTERN" "\$out\.log".*?\n'
         r'\s*hold_while_running "\$AGT_WALLED_BACKOFF_S"',
         text,
         re.S,
     )
-    assert hold, "the walled hold must be gated on rc=3 plus the harness's walled line"
+    assert hold, "the walled hold must be gated on rc=3 plus a driver-step verdict"
+
+
+def _driver_verdicts() -> set[str]:
+    """Every agent-CLI-step verdict phrase the drivers emit, read from their source."""
+    sources = (REPO_ROOT / "ops/agentic_testing").glob("driver_*.py")
+    found = {
+        match.group(1)
+        for source in sources
+        for match in re.finditer(r'"(?:Codex|Claude) (CLI (?:is \w+|refused))', source.read_text())
+    }
+    assert {"CLI is walled", "CLI is unavailable", "CLI refused"} <= found, found
+    return found
+
+
+def test_every_driver_verdict_blocks_verify_and_holds_the_loop() -> None:
+    """[if] a driver verdict (walled, refused, unavailable) is missing from verify.sh's
+    blocked matcher or the loop's hold [then] historical completions PASS a host whose
+    driver cannot run now, or the loop re-probes it every minute, [else stop]."""
+    verify = VERIFY_SH.read_text(encoding="utf-8")
+    matcher = re.search(r'DRIVER_BLOCK_LINE=.*?grep -i "([^"]+)"', verify).group(1)
+    loop = LOOP_SH.read_text(encoding="utf-8")
+    hold = re.search(r"DRIVER_BLOCK_PATTERN='([^']+)'", loop).group(1)
+    for verdict in _driver_verdicts():
+        line = f"Claude {verdict}: detail"
+        assert re.search(matcher.replace("\\|", "|"), line, re.I), f"verify misses {verdict}"
+        assert re.search(hold, line), f"the loop hold misses {verdict}"
 
 
 def _hold_helper() -> str:
@@ -242,7 +268,7 @@ def test_verify_reports_a_dead_engine_before_a_wall() -> None:
     [else stop]. PASS must also require a live engine."""
     text = VERIFY_SH.read_text(encoding="utf-8")
     dead = text.index('elif [ -z "$ENGINE_LIVE" ]; then')
-    assert dead < text.index('elif [ -n "$WALL_LINE" ]; then')
+    assert dead < text.index('elif [ -n "$DRIVER_BLOCK_LINE" ]; then')
     passing = text.rindex("elif", 0, dead)
     assert '[ -n "$ENGINE_LIVE" ]' in text[passing:dead], "PASS must require a live engine"
 
