@@ -9,33 +9,32 @@ paid ~2,500 statements and 500 connections, a 10,000-member playlist 50,000.
 
 The instrument is the real connection's trace callback (``sql_trace``), not a
 mock: a page of 20 unmapped rows must issue exactly the statements a page of
-4 does. The overshoot control is the artwork verdict itself: batching the
-path lookup must not change what any row says, so every row is checked
-against the per-row public function the rb-meta route still uses.
+4 does. The engine runs in a child process that finds the fixture through the
+production ``MDT_DATA_DIR`` contract (``listing_probe``), so nothing in the
+application path is rebound or replaced. The overshoot control is the artwork
+verdict itself: batching the path lookup must not change what any row says,
+so every row is checked against the per-row public function the rb-meta
+route still uses.
 
 Regression one-liners:
   - if listing N unmapped tracks issues more sqlite statements than listing 4 then broken
   - if listing N unmapped tracks opens more sqlite connections than listing 4 then broken
   - if a listed row's artwork verdict differs from local_artwork_available(stable_id) then broken
+  - if the probe runs without MDT_DATA_DIR resolving to the fixture then broken
 """
 from __future__ import annotations
 
 import sqlite3
 from collections import Counter
-from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-from apps.adapters.rekordbox import config as rb_config
-from apps.adapters.rekordbox.paths import local_artwork_available
-from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
-from apps.webui.server.app import create_app
-from apps.webui.server.sqlite_backend import SqliteBackend
-from tests.webui.sql_trace import SqlTrace, statement_shapes, trace_sqlite
+from tests.webui.listing_probe import run_probe
+from tests.webui.sql_trace import statement_shapes
 
 pytestmark = [pytest.mark.requirement("LIBM-130")]
 
@@ -46,8 +45,9 @@ pytestmark = [pytest.mark.requirement("LIBM-130")]
 SMALL, LARGE = 4, 20
 NOW = "2026-09-25T00:00:00Z"
 SMALL_PLAYLIST, LARGE_PLAYLIST = "pl-small", "pl-large"
-#: ``apps.webui.server.path_availability_refresh``'s worker thread name.
-REFRESH_THREAD = "path-availability-refresh"
+TRACKS_SMALL, TRACKS_LARGE = f"/api/v1/tracks?limit={SMALL}", f"/api/v1/tracks?limit={LARGE}"
+DETAIL_SMALL = f"/api/v1/playlists/{SMALL_PLAYLIST}"
+DETAIL_LARGE = f"/api/v1/playlists/{LARGE_PLAYLIST}"
 
 #: One row per residency shape the path resolver distinguishes, cycled so
 #: every page contains all five: file on tracks.file_path; file only via a
@@ -60,10 +60,12 @@ def _sid(i: int) -> str:
     return f"{i:040x}"
 
 
-def _seed_library(tmp_path: Path, count: int) -> Path:
-    audio_dir = tmp_path / "audio"
+def _seed_library(root: Path, count: int) -> Path:
+    """Seed ``<root>/data/state/state.db``, the layout MDT_DATA_DIR names."""
+    audio_dir = root / "audio"
     audio_dir.mkdir()
-    state_path = tmp_path / "state.db"
+    state_path = root / "data" / "state" / "state.db"
+    state_path.parent.mkdir(parents=True)
     conn = state_db.open_rw(state_path)
     try:
         writer = StateWriter(conn, actor="unit-test")
@@ -108,78 +110,48 @@ def _seed_library(tmp_path: Path, count: int) -> Path:
     return state_path
 
 
-@pytest.fixture
-def traced_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[tuple[TestClient, SqlTrace]]:
-    state_path = _seed_library(tmp_path, LARGE)
-    monkeypatch.setattr(rb_config, "STATE_DB", state_path)
-    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent-master.db")
-    with trace_sqlite() as trace:
-        app = create_app(
-            backend=SqliteBackend(state_path),
-            bind_host="127.0.0.1",
-            hostname="test-host",
-            state_db_path=str(state_path),
-            mount_frontend=False,
-        )
-        with TestClient(app) as client:
-            yield client, trace
+@pytest.fixture(scope="module")
+def probe(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """One engine run over the seeded library, measured in a child process."""
+    root = tmp_path_factory.mktemp("listing")
+    state_path = _seed_library(root, LARGE)
+    result = run_probe(state_path.parent.parent, {
+        "mode": "listing",
+        "measure": [TRACKS_SMALL, TRACKS_LARGE, DETAIL_SMALL, DETAIL_LARGE],
+        "fetch": {"listing": TRACKS_LARGE, "detail": DETAIL_LARGE},
+        "oracle_ids": [_sid(i) for i in range(LARGE)],
+    }, root)
+    result["state_path"] = str(state_path)
+    return result
 
 
-def _measure(client: TestClient, trace: SqlTrace, url: str) -> tuple[int, list[str]]:
-    """Connections and statements of one warm request, request threads only.
-
-    The first call warms per-process caches (machine id, the availability
-    L1) that are not the defect. The background availability refresher is
-    excluded: it runs on its own schedule, not per listed row.
-    """
-    assert client.get(url).status_code == 200
-    trace.reset()
-    response = client.get(url)
-    assert response.status_code == 200, response.text
-    assert not trace.untraced_outside(REFRESH_THREAD), (
-        f"{url}: a connection closed before its trace attached, so its statements "
-        "went uncounted"
-    )
-    return (
-        trace.connections_outside(REFRESH_THREAD),
-        trace.statements_outside(REFRESH_THREAD),
+def _assert_constant(probe: dict[str, Any], small_url: str, large_url: str) -> None:
+    small, large = probe["measured"][small_url], probe["measured"][large_url]
+    assert small["statements"], "trace saw no statements: the instrument is not attached"
+    grew = (
+        statement_shapes(large["statements"]) - statement_shapes(small["statements"])
+    ).most_common(6)
+    assert (large["connections"], len(large["statements"])) == (
+        small["connections"], len(small["statements"]),
+    ), (
+        f"{small_url}: {small['connections']} connections / {len(small['statements'])} "
+        f"statements; {large_url}: {large['connections']} / {len(large['statements'])}. "
+        f"Statement shapes that grew with the row count: {grew}"
     )
 
 
-def _assert_constant(client: TestClient, trace: SqlTrace, small_url: str, large_url: str) -> None:
-    small_conns, small_stmts = _measure(client, trace, small_url)
-    large_conns, large_stmts = _measure(client, trace, large_url)
-    assert small_stmts, "trace saw no statements: the instrument is not attached"
-    grew = (statement_shapes(large_stmts) - statement_shapes(small_stmts)).most_common(6)
-    assert (large_conns, len(large_stmts)) == (small_conns, len(small_stmts)), (
-        f"{small_url}: {small_conns} connections / {len(small_stmts)} statements; "
-        f"{large_url}: {large_conns} / {len(large_stmts)}. Statement shapes that "
-        f"grew with the row count: {grew}"
-    )
-
-
-def test_track_listing_statement_count_is_constant_in_page_size(traced_client) -> None:
+def test_track_listing_statement_count_is_constant_in_page_size(probe) -> None:
     """[if] /tracks lists 20 unmapped rows [then] it issues what 4 rows do, [else stop]."""
-    client, trace = traced_client
-    _assert_constant(
-        client, trace, f"/api/v1/tracks?limit={SMALL}", f"/api/v1/tracks?limit={LARGE}",
-    )
+    _assert_constant(probe, TRACKS_SMALL, TRACKS_LARGE)
 
 
-def test_playlist_detail_statement_count_is_constant_in_member_count(traced_client) -> None:
+def test_playlist_detail_statement_count_is_constant_in_member_count(probe) -> None:
     """[if] a 20-member playlist opens [then] it issues what a 4-member one does, [else stop]."""
-    client, trace = traced_client
-    _assert_constant(
-        client, trace,
-        f"/api/v1/playlists/{SMALL_PLAYLIST}", f"/api/v1/playlists/{LARGE_PLAYLIST}",
-    )
+    _assert_constant(probe, DETAIL_SMALL, DETAIL_LARGE)
 
 
-def _oracle(stable_id: str) -> tuple[bool | None, str]:
-    """The pre-batching per-row verdict, via the function rb-meta still calls."""
-    available = local_artwork_available(stable_id)
+def _as_facts(available: bool | None) -> tuple[bool | None, str]:
+    """The (artwork_available, artwork_status) pair for one per-row verdict."""
     if available is True:
         return True, "ok"
     if available is False:
@@ -187,34 +159,34 @@ def _oracle(stable_id: str) -> tuple[bool | None, str]:
     return None, "unresolved"
 
 
-def test_batched_artwork_verdicts_match_the_per_row_oracle(traced_client) -> None:
+def test_batched_artwork_verdicts_match_the_per_row_oracle(probe) -> None:
     """[if] artwork is batched [then] each row matches the per-row verdict, [else stop]."""
-    client, _trace = traced_client
-    listing = client.get(f"/api/v1/tracks?limit={LARGE}").json()["items"]
-    detail = client.get(f"/api/v1/playlists/{LARGE_PLAYLIST}").json()["tracks"]
+    listing = probe["fetched"]["listing"]["items"]
+    detail = probe["fetched"]["detail"]["tracks"]
+    oracle = {sid: _as_facts(available) for sid, available in probe["oracle"].items()}
     assert len(listing) == LARGE and len(detail) == LARGE
     verdicts: Counter[tuple[bool | None, str]] = Counter()
     for row in detail:
-        expected = _oracle(row["stable_id"])
+        expected = oracle[row["stable_id"]]
         assert (row["artwork_available"], row["artwork_status"]) == expected, row["stable_id"]
         verdicts[expected] += 1
     for row in listing:
-        assert row["artwork_available"] == _oracle(row["stable_id"])[0], row["stable_id"]
+        assert row["artwork_available"] == oracle[row["stable_id"]][0], row["stable_id"]
     # Control: the resolvable shapes (file, location) must reach a different
     # verdict than the unresolvable three, or agreement proves nothing about
     # the batching. With a tag reader the fixture's picture-less files read
     # False, so only the no-reader build can tell them apart by verdict.
     resolvable = 2 * LARGE // len(SHAPES)
-    if HAS_MUTAGEN:
+    if probe["has_mutagen"]:
         assert verdicts == Counter({(False, "no_image_path"): LARGE}), verdicts
-    elif not HAS_MUTAGEN:
+    elif not probe["has_mutagen"]:
         assert verdicts[(None, "unresolved")] == resolvable, verdicts
         assert verdicts[(False, "no_image_path")] == LARGE - resolvable, verdicts
 
 
-def test_fixture_rows_are_really_unmapped(traced_client, tmp_path: Path) -> None:
+def test_fixture_rows_are_really_unmapped(probe) -> None:
     """[if] the fixture gains a rekordbox mapping [then] fail loudly, [else stop]."""
-    conn = sqlite3.connect(str(tmp_path / "state.db"))
+    conn = sqlite3.connect(probe["state_path"])
     try:
         mapped = conn.execute("SELECT COUNT(*) FROM track_vendor_ids").fetchone()[0]
     finally:

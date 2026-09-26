@@ -30,7 +30,6 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.shared.state.events import FakeEventBus
 from apps.webui.server.playlist_add import _load_live_members, _neighbor_order_keys
 from apps.webui.server.playlist_store import PlaylistStore
 from tests.webui.sql_trace import RowCounter
@@ -56,7 +55,7 @@ def store(tmp_path: Path) -> Iterator[PlaylistStore]:
     )
     conn.commit()
     conn.close()
-    playlist_store = PlaylistStore(path, bus=FakeEventBus())
+    playlist_store = PlaylistStore(path)  # as routes/playlist_write.py builds it
     yield playlist_store
     playlist_store.close()
 

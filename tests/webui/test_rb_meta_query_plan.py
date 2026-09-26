@@ -15,6 +15,9 @@ DDL captured verbatim from a real master.plain.db (pyrekordbox's models omit
 it, and without it the defect does not reproduce - the control proves the
 fixture still can). The plan is read from the SQL the REAL function ran,
 captured by the audit-hook tracer, so a query rewritten elsewhere is seen.
+``bulk_rb_meta`` runs in a child process that finds the fixture through the
+production ``MDT_DATA_DIR`` contract (``listing_probe``), so no adapter
+setting is rebound.
 
 Regression one-liners:
   - if bulk_rb_meta's djmdContent read plans onto the rb_local_deleted index then broken
@@ -25,17 +28,15 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from pyrekordbox.db6 import tables
 from sqlalchemy import create_engine
 
-from apps.adapters.rekordbox import config as rb_config
 from apps.library_wheel.query import _load_genre_and_play_count
 from apps.shared.state.schema import apply_migrations
-from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
+from tests.webui.listing_probe import run_probe
 from tests.webui.sql_trace import trace_sqlite
 
 pytestmark = [pytest.mark.requirement("LIBM-130")]
@@ -109,13 +110,12 @@ def _make_state(path: Path) -> list[str]:
 
 
 @pytest.fixture
-def master_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Path, list[str]]]:
-    master, state = tmp_path / "master.plain.db", tmp_path / "state.db"
-    _make_master(master)
-    stable_ids = _make_state(state)
-    monkeypatch.setattr(rb_config, "STATE_DB", state)
-    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", master)
-    yield master, stable_ids
+def master_db(tmp_path: Path) -> tuple[Path, list[str]]:
+    """``<tmp>/data`` in the MDT_DATA_DIR layout: master.plain.db and state/state.db."""
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    _make_master(data_dir / "master.plain.db")
+    return data_dir, _make_state(data_dir / "state" / "state.db")
 
 
 def _content_plan(master: Path, sql: str) -> str:
@@ -132,14 +132,15 @@ def _djmd_content_statement(statements: list[tuple[str, str]]) -> str:
     return matches[0]
 
 
-def test_bulk_rb_meta_seeks_the_page_ids(master_db: tuple[Path, list[str]]) -> None:
+def test_bulk_rb_meta_seeks_the_page_ids(master_db: tuple[Path, list[str]], tmp_path: Path) -> None:
     """[if] bulk_rb_meta plans onto the rb_local_deleted index [then] fail, [else stop]."""
-    master, stable_ids = master_db
+    data_dir, stable_ids = master_db
+    master = data_dir / "master.plain.db"
     page = stable_ids[:50]
-    with trace_sqlite() as trace:
-        meta = bulk_rb_meta(page)
-    assert sorted(meta) == page, "every mapped id must still come back"
-    sql = _djmd_content_statement(trace.statements)
+    probe = run_probe(data_dir, {"mode": "rb_meta", "ids": page}, tmp_path)
+    assert probe["meta_ids"] == page, "every mapped id must still come back"
+    statements = [("probe", sql) for sql in probe["statements"]]
+    sql = _djmd_content_statement(statements)
     plan = _content_plan(master, sql)
     assert PK_SEEK in plan and DELETED_INDEX not in plan, plan
     # Control: the same statement without the unary + still plans onto the
@@ -151,7 +152,8 @@ def test_bulk_rb_meta_seeks_the_page_ids(master_db: tuple[Path, list[str]]) -> N
 
 def test_library_wheel_genre_read_seeks_the_page_ids(master_db: tuple[Path, list[str]]) -> None:
     """[if] the wheel's genre read plans onto rb_local_deleted [then] fail, [else stop]."""
-    master, _stable_ids = master_db
+    data_dir, _stable_ids = master_db
+    master = data_dir / "master.plain.db"
     vendor_ids = [_vendor_id(i) for i in range(50)]
     with trace_sqlite() as trace:
         conn = sqlite3.connect(master)
