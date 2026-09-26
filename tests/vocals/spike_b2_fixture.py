@@ -12,6 +12,7 @@ Regression one-liners:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -97,9 +98,7 @@ def assert_disposable(cache_dir: Path, canonical_data_dir: Path) -> None:
     cache_resolved = cache_dir.resolve()
     canonical_cache = (canonical_data_dir / "state" / "vocal-cache").resolve()
     if cache_resolved == canonical_cache or canonical_cache in cache_resolved.parents:
-        raise ValueError(
-            f"refusing disposable vocal-cache inside canonical tree: {cache_resolved}"
-        )
+        raise ValueError(f"refusing disposable vocal-cache inside canonical tree: {cache_resolved}")
 
 
 def _empty_2ex() -> bytes:
@@ -131,9 +130,7 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
             (vendor_id,),
         ).fetchone()
         if row is None:
-            raise FileNotFoundError(
-                f"SPIKE-B2 vendor_id {vendor_id} not found in {state_path}"
-            )
+            raise FileNotFoundError(f"SPIKE-B2 vendor_id {vendor_id} not found in {state_path}")
         stable_id, title = row
     finally:
         state.close()
@@ -146,9 +143,7 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
             (vendor_id,),
         ).fetchone()
         if content is None:
-            raise FileNotFoundError(
-                f"SPIKE-B2 vendor_id {vendor_id} missing from {master_path}"
-            )
+            raise FileNotFoundError(f"SPIKE-B2 vendor_id {vendor_id} missing from {master_path}")
         _, rb_title, length_s, folder_path, adp = content
     finally:
         master.close()
@@ -200,6 +195,30 @@ def pvdi_regions(twoex_path: Path) -> list[dict[str, float]]:
     ]
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_pinned_inputs(slug: str, spec: dict[str, Any], source: dict[str, Any]) -> None:
+    """Refuse any audio/.DAT/.2EX whose bytes differ from the manifest's pinned sha256."""
+    pinned = {
+        "audio_path": spec["audio_sha256"],
+        "dat_path": spec["dat_sha256"],
+        "twoex_path": spec["twoex_sha256"],
+    }
+    mismatched = sorted(key for key, expected in pinned.items() if _sha256(source[key]) != expected)
+    if mismatched:
+        raise RuntimeError(
+            f"SPIKE-B2 {slug} inputs differ from the pinned sha256 in spike-b2-acceptance.json: "
+            f"{mismatched}. Another library copy or a replaced file must not stand in as the "
+            "canonical SPIKE-B2 run."
+        )
+
+
 def build_disposable_data_dir(dest: Path, source_data_dir: Path) -> SpikeB2Fixture:
     """Build a writable disposable root with the two SPIKE-B2 tracks."""
     manifest = load_manifest()
@@ -239,6 +258,7 @@ def build_disposable_data_dir(dest: Path, source_data_dir: Path) -> SpikeB2Fixtu
         vendor_id = str(spec["vendor_id"])
         source = _lookup_vendor_track(source_data_dir, vendor_id)
         slug = str(spec["slug"])
+        _verify_pinned_inputs(slug, spec, source)
         if spec["role"] == "vocal" and not pvdi_present(source["twoex_path"]):
             raise RuntimeError(
                 f"SPIKE-B2 track {slug} requires PVDI in .2EX: {source['twoex_path']}"
@@ -277,8 +297,7 @@ def build_disposable_data_dir(dest: Path, source_data_dir: Path) -> SpikeB2Fixtu
             (vendor_id, source["title"], source["length_s"], folder_path, adp),
         )
         state.execute(
-            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES (?, ?, ?)",
             (_PLAYLIST_ID, stable_id, pos),
         )
         built_tracks.append(

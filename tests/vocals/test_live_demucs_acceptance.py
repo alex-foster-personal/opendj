@@ -17,11 +17,12 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
+import psutil
 import pytest
 
 from apps.parity.vocal import _region_endpoints, vocal_iou
@@ -32,7 +33,7 @@ from apps.vocals.cli import WORKER_SCRIPT
 from apps.vocals.cli import main as vocals_main
 from scripts.vocal_gcloud_farm import cmd_import_outbox
 from tests.vocals import spike_b2_fixture as sb2
-from tests.vocals._process_tree import descendants_of, worker_like_pids
+from tests.vocals._process_tree import cmdline_of, descendants_of, worker_like_pids
 from tests.vocals.spike_b2_fixture import SpikeB2Fixture, SpikeB2Track
 
 MDT_LIVE_DEMUCS_ACCEPTANCE = os.environ.get("MDT_LIVE_DEMUCS_ACCEPTANCE") == "1"
@@ -246,46 +247,76 @@ def _cuda_available(tmp_path: Path) -> bool:
     )
 
 
+# Short enough to fire while the real uv -> python -> demucs worker is still running.
+TIMEOUT_LEG_S = 8.0
+
+
 @live_demucs
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descendant-leak regression")
 def test_worker_timeout_leaves_no_worker_descendants(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
 ) -> None:
-    """[if] worker times out [then] no uv/python/demucs/ffmpeg descendant remains."""
-    worker_pid_file = tmp_path / "worker.pid"
-    child_pid_file = tmp_path / "child.pid"
-    worker = tmp_path / "worker.py"
-    worker.write_text(
-        "import os, signal, subprocess, sys, time\n"
-        "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
-        "child = subprocess.Popen([sys.executable, '-c', "
-        "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-        "time.sleep(60)'])\n"
-        "open(sys.argv[2], 'w').write(str(child.pid))\n"
-        "time.sleep(60)\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        vcli,
-        "_worker_command",
-        lambda _audio: [
-            sys.executable,
-            str(worker),
-            str(worker_pid_file),
-            str(child_pid_file),
-        ],
-    )
-    cache_file = vcache.cache_path(tmp_path, "timeout-leak")
+    """[if] the production worker times out [then] no uv/python/demucs/ffmpeg descendant remains.
+
+    Runs the shipped command (``vcli._worker_command``: uv + the PEP 723 worker) on real
+    SPIKE-B2 audio. A sampler records the worker tree while it runs, which is the positive
+    control that a real worker was alive to be killed.
+    """
+    track = next(t for t in spike_b2_fixture.tracks if t.role == "vocal")
+    baseline = set(descendants_of(os.getpid()))
+    seen: dict[int, str] = {}
+    born: dict[int, float] = {}
+    last_alive_s = [0.0]
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def _still_alive(pid: int) -> bool:
+        # A killed parent's child is reparented away from this process, so liveness
+        # is tracked per observed pid (guarded against pid reuse by create_time),
+        # never by re-walking this process's descendants.
+        try:
+            return psutil.Process(pid).create_time() == born[pid]
+        except psutil.NoSuchProcess:
+            return False
+
+    def _sample() -> None:
+        while not stop.is_set():
+            for pid in worker_like_pids(descendants_of(os.getpid()) - baseline):
+                if pid not in seen:
+                    try:
+                        born[pid] = psutil.Process(pid).create_time()
+                    except psutil.NoSuchProcess:
+                        continue
+                    seen[pid] = cmdline_of(pid)
+            if any(_still_alive(pid) for pid in list(born)):
+                last_alive_s[0] = time.monotonic() - started
+            time.sleep(0.1)
+
+    sampler = threading.Thread(target=_sample, daemon=True)
+    cache_file = vcache.cache_path(tmp_path, track.stable_id)
     claim = vcli._claim_track(cache_file)
     assert claim is not None
     with vcli._managed_track_claim(claim):
-        with pytest.raises(RuntimeError, match="timed out"):
-            vcli.run_worker(child_pid_file, timeout_s=0.5)
-        worker_pid = int(worker_pid_file.read_text(encoding="utf-8"))
-        child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-        with pytest.raises(ProcessLookupError):
-            os.kill(child_pid, 0)
-        leaked = worker_like_pids(descendants_of(worker_pid))
+        sampler.start()
+        try:
+            with pytest.raises(RuntimeError, match="timed out"):
+                vcli.run_worker(track.audio_path, timeout_s=TIMEOUT_LEG_S)
+        finally:
+            stop.set()
+            sampler.join(timeout=5)
+        assert any(WORKER_SCRIPT.name in cmdline for cmdline in seen.values()), (
+            f"no production worker process was observed before the timeout: {seen}"
+        )
+        # The whole tree must be gone within the terminate grace, not merely by the time
+        # run_worker returns: a surviving child holds stdout open, so run_worker waits it
+        # out, and a check made only afterwards would pass on a leak.
+        deadline_s = TIMEOUT_LEG_S + vcli.WORKER_TERMINATE_GRACE_S + 2.0
+        assert last_alive_s[0] <= deadline_s, (
+            f"worker descendants outlived the timeout: last seen at {last_alive_s[0]:.1f}s, "
+            f"deadline {deadline_s:.1f}s"
+        )
+        alive = [pid for pid in list(born) if _still_alive(pid)]
+        leaked = worker_like_pids(set(alive) | (descendants_of(os.getpid()) - baseline))
         assert leaked == [], f"worker descendants still alive: {leaked}"
     record = vcli._read_claim_record(claim.path)
     assert record is not None

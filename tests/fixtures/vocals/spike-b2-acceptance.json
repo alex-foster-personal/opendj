@@ -4,15 +4,22 @@
       "vendor_id": "257466392",
       "slug": "dub-congas",
       "role": "instr",
-      "max_coverage_pct": 5.0
+      "max_coverage_pct": 5.0,
+      "audio_sha256": "ad8165d1c99ec65e301ea155b2cba51b29dd2a452b02f22456d6ca42910bbe46",
+      "dat_sha256": "b542a3d37e17cd70c1fc602ece090c2b9a6253a2cb4c1cd709fec5d5611d11e7",
+      "twoex_sha256": "1c95af9ca1d463cad2cebbb26db48840915d3df9722dcfcf1ac71bbddca9f786"
     },
     {
       "vendor_id": "28327038",
       "slug": "mozarts-house",
       "role": "vocal",
-      "min_pvdi_iou": 0.6
+      "min_pvdi_iou": 0.6,
+      "audio_sha256": "19de194b24a963e884392614dc301ada3233229852f0c5a0c15da978da57ec3e",
+      "dat_sha256": "6f22e8f0ec3756fa6e2ad535b6419d50f2912ec70d4e31eb2f9b69ea2a2ae3fe",
+      "twoex_sha256": "07169254c39878e762f3e525c60dc953ee10e41f9d668432a6046a107a595127"
     }
   ],
   "source_data_dir_env": "VOCALS_ACCEPTANCE_SOURCE_DATA_DIR",
-  "disposable_data_dir_env": "VOCALS_ACCEPTANCE_DATA_DIR"
+  "disposable_data_dir_env": "VOCALS_ACCEPTANCE_DATA_DIR",
+  "pinned": "Sat 26 Sep 2026: sha256 of each track's audio, ANLZ .DAT and .2EX as resolved from the source library; build_disposable_data_dir refuses any other bytes"
 }
