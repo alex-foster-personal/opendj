@@ -23,6 +23,15 @@ function _smartlistRow(page: Page, name: string) {
 	return page.locator(ROW).filter({ has: page.getByText(name, { exact: true }) });
 }
 
+// A 1000px viewport, not the root config's 720: at 1280x720 the /performance
+// library pane is 88px tall, the Autolists browser (Genre/Rating/BPM) keeps
+// its 64px, and the smartlist scroller below it is left 4px, so its rows sit
+// under the bottom app nav and a right-click lands on the nav. That passed by
+// 1px until #4004's 3px-taller source toolbar (measured Sat 26 Sep 2026:
+// scroller y=698..702 before, y=701..705 after, nav at 702). These specs test
+// the smartlist context menu, not that layout; the cramped pane is issue #4051.
+test.use({ viewport: { width: 1280, height: 1000 } });
+
 test('smartlist tree: context-menu delete removes row from tree and API', async ({ page }) => {
 	const name = `Smartlist delete ${Date.now()}`;
 	let createdId: string | null = null;

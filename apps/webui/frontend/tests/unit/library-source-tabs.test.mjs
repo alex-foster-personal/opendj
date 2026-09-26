@@ -19,11 +19,12 @@ test('library source tabs list Playlists, Taglists, Autolists, USBs in order', (
 	assert.ok(playlists >= 0 && taglists > playlists && autolists > taglists && usbs > autolists);
 });
 
-test('PlaylistTree no longer exposes Tree View / Column View top-level tabs', () => {
+test('PlaylistTree column mode uses data-testid playlist-column-view without a full-width toggle row', () => {
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
-	assert.doesNotMatch(tree, /Tree View/);
-	assert.doesNotMatch(tree, />\s*Column View\s*</);
-	assert.match(tree, /playlist-column-view/);
+	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
+	assert.doesNotMatch(tree, /class="view-toggle"/);
+	assert.match(tree, /data-testid="playlist-column-view"/);
+	assert.match(tabs, /playlist-tree-view-toggle/);
 });
 
 test('LibraryNav mounts taglists, autolists, usbs, and playlists bodies', () => {
