@@ -1918,7 +1918,11 @@
 					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
 					mapRow: (wire, order) =>
 						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
-					onFillError: (error) => _pushPaneLoadError(p, node, 'autolist load failed', error)
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'autolist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1939,7 +1943,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => _pushPaneLoadError(p, node, 'playlist load failed', error)
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1956,7 +1964,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => _pushPaneLoadError(p, node, 'taglist load failed', error)
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'taglist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1982,7 +1994,11 @@
 						completeLibraryUsable({ source: 'playlist' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
-					onFillError: (error) => _pushPaneLoadError(p, node, 'playlist load failed', error)
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}

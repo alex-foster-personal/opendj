@@ -65,7 +65,7 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 		)
 		// 1896d37e1 feat(webui): Autolists tab UI (SMART-06) added an autolist
 		// branch with a TS `as` cast, which new Function cannot parse.
-		.replace('wire as PlaylistTrackRowWire', 'wire');
+		.replaceAll('wire as PlaylistTrackRowWire', 'wire');
 	assert.doesNotMatch(
 		functionSource,
 		/: PaneStore|: PlaylistNode|Promise<void>|\bas [A-Z]\w+/,
