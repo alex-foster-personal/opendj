@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unicodedata
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -284,3 +285,66 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     # Control: the fixture reaches both answers, so equality is not vacuous.
     assert per_id["a" * 40] == present and per_id["b" * 40] == via_location
     assert per_id["c" * 40] is None
+
+
+@pytest.mark.requirement("LIBM-130")
+def test_bulk_local_audio_paths_issues_one_select_per_bind_batch(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] a bulk path read crosses the 500-id bind batch
+    [then] it issues one SELECT per batch per table and every id still
+    resolves as local_audio_path does, [else stop].
+
+    The listing's statement count is fixed only WITHIN one batch: 4 and 20
+    rows both fit in one, so the endpoint-level count cannot see the batch
+    loop. 501 and 1001 ids cross one and two boundaries, so a per-row query
+    (count = ids), an unbatched one (count = 1, and "too many SQL variables"
+    on a 999-cap sqlite) or a dropped tail batch all go red here.
+    """
+    total = 2 * locations.ID_BIND_BATCH + 1
+    ids = [f"{i:040x}" for i in range(total)]
+    # One real file per batch edge, the rest missing, so the equality check
+    # below compares non-trivial answers on both sides of every boundary.
+    edges = {0, 499, 500, 999, 1000}
+    paths = {
+        sid: _flac(tmp_path / f"{i}.flac") if i in edges else tmp_path / f"gone-{i}.flac"
+        for i, sid in enumerate(ids)
+    }
+    state_conn.executemany(
+        "INSERT INTO tracks (stable_id, stable_id_tier, duration_ms, file_path, "
+        "created_at, updated_at) VALUES (?, 'inferred', 1000, ?, '2026-09-26', '2026-09-26')",
+        [(sid, str(path)) for sid, path in paths.items()],
+    )
+    state_conn.commit()
+    via_location = _flac(tmp_path / "via-location.flac")
+    writer = StateWriter(state_conn, actor="unit-test")
+    try:
+        writer.upsert_track_location(stable_id=ids[1000], kind="local", file_path=str(via_location))
+    finally:
+        writer.close()
+
+    def batched_selects(n: int) -> tuple[Counter[str], int]:
+        statements: list[str] = []
+        state_conn.set_trace_callback(statements.append)
+        try:
+            locations.bulk_local_audio_paths(state_conn, ids[:n])
+        finally:
+            state_conn.set_trace_callback(None)
+        per_table = Counter(
+            table for sql in statements for table in ("track_locations", "tracks")
+            if f"FROM {table} WHERE stable_id IN (" in sql
+        )
+        return per_table, len(statements) - sum(per_table.values())
+
+    locations.bulk_local_audio_paths(state_conn, ids[:1])  # warm any per-connection memo
+    _, fixed_overhead = batched_selects(1)
+    for n, batches in ((1, 1), (500, 1), (501, 2), (1000, 2), (1001, 3)):
+        per_table, overhead = batched_selects(n)
+        assert per_table == {"track_locations": batches, "tracks": batches}, n
+        assert overhead == fixed_overhead, n
+
+    per_id = {sid: locations.local_audio_path(state_conn, sid) for sid in ids}
+    assert locations.bulk_local_audio_paths(state_conn, ids) == per_id
+    # Control: answers on both sides of each boundary are real, not all None.
+    assert per_id[ids[499]] == paths[ids[499]] and per_id[ids[500]] == paths[ids[500]]
+    assert per_id[ids[1000]] == via_location and per_id[ids[1]] is None
