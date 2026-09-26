@@ -85,7 +85,9 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		usbPaneSource,
+		isRemovedStickRow
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -1401,13 +1403,20 @@
 		if (isAutolistId(snap.playlist_id)) {
 			return autolistNode(autolistTitle, 0);
 		}
-		if (snap.playlist_id.startsWith('taglist:')) {
+		// Prefix-addressed panes (taglists, Play from USB sticks) are not in
+		// the library tree; their names come from their own sources on load.
+		const prefixKind = snap.playlist_id.startsWith('taglist:')
+			? 'taglist'
+			: snap.playlist_id.startsWith('usbpl:')
+				? 'usb'
+				: null;
+		if (prefixKind !== null) {
 			return {
 				playlist_id: snap.playlist_id,
 				name: snap.playlist_name,
 				track_count: 0,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: prefixKind,
 				children: []
 			};
 		}
@@ -1611,6 +1620,10 @@
 			// pane showing another playlist's tracks is still wrong on screen.
 			const requestedPlaylistId = p.playlist_id;
 			try {
+				if (p.kind === 'usb') {
+					await (await usbPaneSource()).refreshUsbPane(p);
+					continue;
+				}
 				const result =
 					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
@@ -1951,7 +1964,8 @@
 			node.kind !== 'missing_tracks' &&
 			node.kind !== 'taglist' &&
 			node.kind !== 'smartlist' &&
-			node.kind !== 'autolist'
+			node.kind !== 'autolist' &&
+			node.kind !== 'usb'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -1966,6 +1980,13 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
 		try {
+			if (node.kind === 'usb') {
+				// Play from USB (USBPLAY-05): rows come from the stick's export,
+				// read only; the store also grays and restores them on unplug.
+				const failure = await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
+				if (failure !== null) pushToast(`playlist load failed: ${failure}`, 'error');
+				return;
+			}
 			if (node.kind === 'autolist') {
 				await fillAutolistPane({
 					pane: p,
@@ -2076,13 +2097,13 @@
 				children: []
 			};
 		}
-		if (p.playlist_id.startsWith('taglist:')) {
+		if (p.playlist_id.startsWith('taglist:') || p.kind === 'usb') {
 			return {
 				playlist_id: p.playlist_id,
 				name: p.title,
 				track_count: p.rows.length,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: p.kind === 'usb' ? 'usb' : 'taglist',
 				children: []
 			};
 		}
@@ -2189,7 +2210,8 @@
 		// stayed empty even when /artwork could serve real bytes. Unmapped
 		// rows now pay the same one-fetch-per-visible-row cost mapped rows
 		// already pay via this same IntersectionObserver-gated path.
-		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
+		// Stick rows (usb- ids) have no library row: rb-meta would only 404.
+		if (row.rb_meta !== null || row.stable_id.startsWith('usb-') || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
@@ -2221,6 +2243,10 @@
 	// ------------------------------------------------------- rating edits
 
 	function rateRow(row: BrowserRow, next: number): void {
+		if (row.stable_id.startsWith('usb-')) {
+			pushToast('stick tracks are read only: the rating was not saved', 'error');
+			return;
+		}
 		void _patchRating(row, next);
 	}
 
@@ -2506,6 +2532,10 @@
 			pushToast('preview: availability still checking (wait for disk probe)', 'error');
 			return;
 		}
+		if (isRemovedStickRow(row)) {
+			pushToast('preview: Stick removed', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2546,6 +2576,10 @@
 			}
 			if (_availabilityPending(row)) {
 				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
+				return;
+			}
+			if (isRemovedStickRow(row)) {
+				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
 			if (!row.file_exists) {

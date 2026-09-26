@@ -22,6 +22,14 @@ import { test } from 'node:test';
  * tooltip text are pinned as source text, same as every other structural
  * guard in this file's neighbors.
  *
+ * Play from USB (specs/usb-play-from-stick.md 4b, decision 2): a stick track
+ * has no rekordbox mapping and needs none, because its cue edits stay in the
+ * session. The gate is therefore `canSave`, derived from the shared
+ * `hotCueEditsAllowed(stable_id, has_rb_mapping)` in lib/rb/track-source.ts,
+ * whose behavior (library unmapped refused, stick allowed, empty deck
+ * refused) is unit-tested in usb-stick-session-edits.test.mjs. This file pins
+ * that HotCueBank actually uses it.
+ *
  * Regression lines:
  * - if onSlotClick fires onSave for an empty slot while deck.has_rb_mapping is
  *   false then a SAVE request reaches the server and 404s
@@ -52,7 +60,8 @@ const DECK_STATE_TYPES = 'lib/rb/deck-state-types.ts';
 const STATE = 'lib/player/state.svelte.ts';
 const AUDIO_ENGINE = 'lib/rb/audio-engine.svelte.ts';
 
-const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!deck\.has_rb_mapping\s*\)\s*return/;
+const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!canSave\s*\)\s*return/;
+const CAN_SAVE = /const canSave = \$derived\(hotCueEditsAllowed\(deck\.stable_id, deck\.has_rb_mapping\)\);/;
 
 test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before it can save', () => {
 	const text = source(HOT_CUE_BANK);
@@ -62,6 +71,7 @@ test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before i
 	assert.ok(fnEnd > fnStart, 'onSlotClick body end not found');
 	const fnText = text.slice(fnStart, fnEnd);
 
+	assert.match(text, CAN_SAVE, 'canSave no longer derives from the shared hotCueEditsAllowed gate on has_rb_mapping');
 	assert.ok(
 		EMPTY_SAVE_GUARD.test(fnText),
 		'onSlotClick no longer refuses an empty slot on an unmapped-or-unloaded deck - a click can ' +
@@ -115,8 +125,8 @@ test('an empty slot on an unmapped or unloaded deck carries an explanatory toolt
 	const titleText = text.slice(titleStart, titleEnd);
 
 	assert.ok(
-		titleText.includes('deck.has_rb_mapping') && titleText.includes('MAPPING_TIP'),
-		'the empty-slot title no longer branches on deck.has_rb_mapping to show MAPPING_TIP - ' +
+		titleText.includes('canSave') && titleText.includes('MAPPING_TIP'),
+		'the empty-slot title no longer branches on canSave (has_rb_mapping) to show MAPPING_TIP - ' +
 			'an inert slot with no explanation is exactly what the no-mocked-data rule forbids'
 	);
 	assert.ok(
@@ -126,8 +136,7 @@ test('an empty slot on an unmapped or unloaded deck carries an explanatory toolt
 	);
 
 	assert.ok(
-		text.includes('class:inert-mapping={entry.cue === null &&') &&
-			text.includes('(deck.stable_id === null || !deck.has_rb_mapping)'),
+		text.includes('class:inert-mapping={entry.cue === null && !canSave}') && CAN_SAVE.test(text),
 		'the inert-mapping CSS class no longer covers the empty-deck case - the pad would render ' +
 			'as a normal, live-looking control while still being unable to save (#804)'
 	);

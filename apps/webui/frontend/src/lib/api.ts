@@ -20,10 +20,12 @@
  * shape stops matching, the compiler says so instead of a cast hiding it.
  */
 import type { components, paths } from './api-types';
-import { ApiError, api, API_BASE, requireBody, unwrap } from './api/client';
+import { ApiError, api, API_BASE, apiErrorFrom, requireBody, unwrap } from './api/client';
 import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import { rememberOptionalResources } from './rb/optional-resource-availability';
+import { withSessionRating } from './rb/stick-session-edits';
+import { isUsbTrackId, refuseStickWrite, trackApiPath } from './rb/track-source';
 
 export { API_BASE } from './api/client';
 export {
@@ -144,11 +146,25 @@ function _rememberTrackOptionalResources(track: Track): void {
 }
 
 export async function getTrack(stable_id: string): Promise<{ track: Track; etag: string }> {
-	const { data, response } = requireBody(
-		await api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } })
-	);
+	const { data, response } = isUsbTrackId(stable_id)
+		? await _getUsbTrack(stable_id)
+		: requireBody(await api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } }));
 	_rememberTrackOptionalResources(data);
 	return { track: data, etag: response.headers.get('etag') ?? '' };
+}
+
+/** Spec 4b: a stick track's TrackOut comes from GET /api/v1/usb/tracks/{id}
+ * (the same response model). A raw fetch only because that route is not in
+ * the generated schema yet; failures still throw ApiError with the route's
+ * detail.code (USB_STICK_NOT_MOUNTED and friends), same as a typed call.
+ * Carries this session's rating for the track (decision 2). */
+async function _getUsbTrack(stable_id: string): Promise<{ data: Track; response: Response }> {
+	const response = await globalThis.fetch(`${API_BASE}${trackApiPath(stable_id)}`, {
+		headers: { Accept: 'application/json' }
+	});
+	if (!response.ok) throw await apiErrorFrom(response);
+	const { data } = requireBody({ data: (await response.json()) as Track | null, response });
+	return { data: withSessionRating(stable_id, data), response };
 }
 
 export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];
@@ -164,6 +180,8 @@ export async function patchTrack(
 		tempo_pref?: TempoPrefPatch | null;
 	}
 ): Promise<{ track: Track; etag: string }> {
+	// Spec decision 2: nothing is ever written for a stick track.
+	refuseStickWrite(stable_id, 'track edit');
 	let call: { data?: Track; response: Response };
 	try {
 		call = await api.PATCH('/api/v1/tracks/{stable_id}', {
@@ -544,6 +562,8 @@ export async function getTrackLyricsWords(
 	stable_id: string,
 	opts: { includeLines?: boolean } = {}
 ): Promise<LyricTrack | null> {
+	// Spec 4b: a stick track has no lyrics route, so it is the no-lyrics state.
+	if (isUsbTrackId(stable_id)) return null;
 	try {
 		return await unwrap(
 			api.GET('/api/v1/tracks/{stable_id}/lyrics/words', {
@@ -570,6 +590,8 @@ export async function putLyricOverride(
 	override: LyricVerdictValue | null,
 	note?: string
 ): Promise<LyricVerdict> {
+	// Spec decision 2: nothing is ever written for a stick track.
+	refuseStickWrite(stable_id, 'lyric override');
 	return unwrap(
 		api.PUT('/api/v1/tracks/{stable_id}/lyrics/override', {
 			params: { path: { stable_id } },

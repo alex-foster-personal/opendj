@@ -111,7 +111,8 @@
 			node.kind === 'missing_tracks' ||
 			node.kind === 'smartlist' ||
 			node.kind === 'taglist' ||
-			node.kind === 'autolist'
+			node.kind === 'autolist' ||
+			node.kind === 'usb'
 		)
 			return;
 		event.dataTransfer?.setData(

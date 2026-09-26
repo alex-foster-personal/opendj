@@ -33,6 +33,7 @@ import {
 } from '$lib/components/rb/wave/anlz-cache-retry';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
+import { isUsbTrackId } from '$lib/rb/track-source';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
 	type AnalysisSourceRefreshDeck,
@@ -242,8 +243,16 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * (discussion_r3975650988's class). Shared by `_publishAnlzResult`'s
  * cache-write guard below and `fetchAnlzUntilSourceConfirmed`'s retry, so a
  * direct-publication caller and the cache agree on one definition of "wrong
- * source" (discussion_r3978049099 P1 BLOCKING). */
-function _disagreesWithConfirmedSource(data: AnlzData): boolean {
+ * source" (discussion_r3978049099 P1 BLOCKING).
+ *
+ * A stick payload never disagrees (spec 4b): its grid is always the stick's
+ * own rekordbox PQTZ and no source switch can change it, so while the lane is
+ * 'own' `fetchAnlzUntilSourceConfirmed` would otherwise re-fetch it forever
+ * and the cache would evict every answer. Keyed on the id the caller wrote
+ * or fetched: the cache key where there is one, else `data.stable_id`, which
+ * api-rb.ts's `_checkedAnlz` pins to the requested stick id. */
+function _disagreesWithConfirmedSource(stable_id: string, data: AnlzData): boolean {
+	if (isUsbTrackId(stable_id)) return false;
 	const confirmed = analysisSourceState.features.beatgrid;
 	return confirmed !== undefined && confirmed !== data.beatgrid_source;
 }
@@ -251,7 +260,7 @@ function _disagreesWithConfirmedSource(data: AnlzData): boolean {
 /** Positive form of `_disagreesWithConfirmedSource`, exported for
  * `refreshHotCues` (audio-engine.svelte.ts)'s own fast-path check. */
 export function anlzMatchesConfirmedSource(data: AnlzData): boolean {
-	return !_disagreesWithConfirmedSource(data);
+	return !_disagreesWithConfirmedSource(data.stable_id, data);
 }
 
 /** True when `data` is a grid answer the engine must adopt, INCLUDING an
@@ -310,7 +319,7 @@ function _isAuthoritativeGridAnswer(data: AnlzData, previous: AnlzData | null = 
  * `_disagreesWithConfirmedSource` above.
  */
 function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = false): void | Promise<void> {
-	if (!alreadyScoped && _disagreesWithConfirmedSource(data)) {
+	if (!alreadyScoped && _disagreesWithConfirmedSource(stable_id, data)) {
 		// Discard, do not restart: `analysisSourceState.features.beatgrid` stays
 		// at the OLD value for the whole switch (advanced only once
 		// `refreshAnalysisSourceDecks` itself returns), so restarting here the
@@ -724,13 +733,16 @@ export function invalidateAllAnlzCacheEntries(): void {
  * by library browsing is invisible to `refreshAnalysisSourceDecks`'s own
  * loaded-deck check, so a switch with no loaded deck to disagree left such an
  * entry cached under the OLD source indefinitely (discussion_r3973991969 P1
- * BLOCKING). */
+ * BLOCKING). A stick entry is never evicted (spec 4b, the same exemption as
+ * `_disagreesWithConfirmedSource`): it serves the stick's own grid under
+ * either lane, so evicting it would discard it and bump the fetch generation
+ * on every poll while the lane is 'own'. */
 export function evictAnlzCacheEntriesServingOtherSource(
 	wantedSource: 'rekordbox' | 'own'
 ): boolean {
 	let evictedAny = false;
 	for (const [stable_id, entry] of Object.entries(_cache)) {
-		if (entry.status === 'ready' && entry.data.beatgrid_source !== wantedSource) {
+		if (entry.status === 'ready' && !isUsbTrackId(stable_id) && entry.data.beatgrid_source !== wantedSource) {
 			delete _cache[stable_id];
 			evictedAny = true;
 		}

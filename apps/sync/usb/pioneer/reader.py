@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -49,18 +50,16 @@ _PT = RekordboxPdb.PageType
 
 
 def _open_pdb(path: Path) -> RekordboxPdb:
-    """Load an ``export.pdb`` (non-ext) into a parsed tree.
+    """Load an ``export.pdb`` (non-ext) into a parsed tree, from memory.
 
-    The caller is responsible for keeping the underlying file handle
-    alive for as long as the parser is used — the Kaitai parser uses
-    *lazy* properties that re-read from ``_io``. We stash the handle
-    onto the parser instance as ``_src`` to tie its lifetime to the GC.
+    The Kaitai parser uses *lazy* properties that re-read from ``_io``, so
+    it needs its stream for as long as it is used. The file is read once
+    into bytes rather than handing Kaitai an open file: a pinned handle on a
+    USB stick stays open until cyclic GC runs (the ``_root`` self-reference
+    is a cycle), which can block an eject (USBPLAY-09). 0.7 MB for a
+    600-track stick.
     """
-    f = path.open("rb")
-    ks = KaitaiStream(f)
-    pdb = RekordboxPdb(False, ks)
-    pdb._src = f  # pin file handle to parser lifetime
-    return pdb
+    return RekordboxPdb(False, KaitaiStream(BytesIO(path.read_bytes())))
 
 
 def _iter_pages(table: Any) -> Iterator[Any]:
@@ -111,6 +110,12 @@ def _find_table(pdb: RekordboxPdb, page_type: Any) -> Any | None:
     return None
 
 
+def _table_rows(pdb: RekordboxPdb, page_type: Any) -> Iterator[Any]:
+    """Every present row of the table of ``page_type``; none when absent."""
+    table = _find_table(pdb, page_type)
+    return iter(()) if table is None else _iter_rows(table)
+
+
 def _dsql_str(field: Any) -> str | None:
     """Decode a DeviceSQL string field into a plain ``str`` (or ``None``)."""
     if field is None:
@@ -143,11 +148,8 @@ def _read_lookup(
 
     Used for artists, albums, genres, keys, colors, labels.
     """
-    table = _find_table(pdb, page_type)
-    if table is None:
-        return {}
     out: dict[int, str] = {}
-    for row in _iter_rows(table):
+    for row in _table_rows(pdb, page_type):
         rid = getattr(row, "id", None)
         if rid is None:
             continue
@@ -158,11 +160,8 @@ def _read_lookup(
 
 def _read_tracks(pdb: RekordboxPdb) -> list[dict[str, Any]]:
     """Extract the ``tracks`` table into a list of flat dicts."""
-    table = _find_table(pdb, _PT.tracks)
-    if table is None:
-        return []
     tracks: list[dict[str, Any]] = []
-    for row in _iter_rows(table):
+    for row in _table_rows(pdb, _PT.tracks):
         tracks.append(
             {
                 "id": int(row.id),
@@ -203,11 +202,8 @@ def _read_tracks(pdb: RekordboxPdb) -> list[dict[str, Any]]:
 
 def _read_playlist_tree(pdb: RekordboxPdb) -> list[dict[str, Any]]:
     """Extract playlists, excluding entries (see :func:`_read_playlist_entries`)."""
-    table = _find_table(pdb, _PT.playlist_tree)
-    if table is None:
-        return []
     playlists: list[dict[str, Any]] = []
-    for row in _iter_rows(table):
+    for row in _table_rows(pdb, _PT.playlist_tree):
         playlists.append(
             {
                 "id": int(row.id),
@@ -223,11 +219,8 @@ def _read_playlist_tree(pdb: RekordboxPdb) -> list[dict[str, Any]]:
 
 def _read_playlist_entries(pdb: RekordboxPdb) -> list[dict[str, Any]]:
     """Extract every (playlist_id, track_id, entry_index) tuple."""
-    table = _find_table(pdb, _PT.playlist_entries)
-    if table is None:
-        return []
     entries: list[dict[str, Any]] = []
-    for row in _iter_rows(table):
+    for row in _table_rows(pdb, _PT.playlist_entries):
         entries.append(
             {
                 "playlist_id": int(row.playlist_id),
@@ -236,6 +229,39 @@ def _read_playlist_entries(pdb: RekordboxPdb) -> list[dict[str, Any]]:
             }
         )
     return entries
+
+
+def _read_history(pdb: RekordboxPdb) -> list[dict[str, Any]]:
+    """Extract history playlists (the player's own set logs), each with its
+    ``track_ids`` in ``entry_index`` order, sorted by id."""
+    history = [
+        {"id": int(row.id), "name": _dsql_str(row.name) or "", "track_ids": []}
+        for row in _table_rows(pdb, _PT.history_playlists)
+    ]
+    entries = [
+        (int(row.playlist_id), int(row.entry_index), int(row.track_id))
+        for row in _table_rows(pdb, _PT.history_entries)
+    ]
+    _attach_ordered_track_ids(history, entries)
+    return sorted(history, key=lambda h: h["id"])
+
+
+def _read_artwork(pdb: RekordboxPdb) -> dict[int, str]:
+    """Extract the artwork table: ``{artwork_id: stick-relative jpg path}``."""
+    return _read_lookup(pdb, _PT.artwork, name_attr="path")
+
+
+def _attach_ordered_track_ids(
+    lists: list[dict[str, Any]], entries: list[tuple[int, int, int]]
+) -> None:
+    """Fill each list's ``track_ids`` from ``(list_id, entry_index, track_id)``
+    rows, ordered by ``entry_index`` (row order is not play order)."""
+    by_list: dict[int, list[tuple[int, int]]] = {}
+    for list_id, entry_index, track_id in entries:
+        by_list.setdefault(list_id, []).append((entry_index, track_id))
+    for item in lists:
+        ordered = sorted(by_list.get(item["id"], []), key=lambda x: x[0])
+        item["track_ids"] = [track_id for _, track_id in ordered]
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +410,62 @@ def _resolve_pioneer_root(pioneer_path: Path) -> Path:
     return pioneer_path
 
 
+def read_export_pdb(volume_root: Path) -> dict[str, Any]:
+    """Read ``export.pdb`` alone: the fast list path (USBPLAY-03).
+
+    ``volume_root`` is the USB root or its ``PIONEER`` directory. It never
+    touches ``USBANLZ/`` (the ANLZ coverage walk is what made
+    :func:`read_usb_export` take 6 s on a 563-track stick; this takes about
+    50 ms). Returns ``tracks`` (denormalized names plus ``anlz_path``),
+    ``playlists`` (raw row order, ``track_ids`` in entry order),
+    ``playlist_entries``, ``history`` (history playlists sorted by id, each
+    with ordered ``track_ids``), ``artwork`` (``{id: path}``), the six
+    ``{int id: name}`` lookups, and ``pioneer_path`` / ``pdb_path``. Paths
+    are stick-relative strings exactly as the pdb stores them.
+    """
+    pioneer = _resolve_pioneer_root(volume_root)
+    pdb_path = pioneer / "rekordbox" / "export.pdb"
+    if not pdb_path.exists():
+        raise FileNotFoundError(f"export.pdb not found at {pdb_path}")
+    pdb = _open_pdb(pdb_path)
+    lookups = {
+        "artists": _read_lookup(pdb, _PT.artists),
+        "albums": _read_lookup(pdb, _PT.albums),
+        "genres": _read_lookup(pdb, _PT.genres),
+        "keys": _read_lookup(pdb, _PT.keys),
+        "colors": _read_lookup(pdb, _PT.colors),
+        "labels": _read_lookup(pdb, _PT.labels),
+    }
+    tracks = _read_tracks(pdb)
+    playlists = _read_playlist_tree(pdb)
+    entries = _read_playlist_entries(pdb)
+    # Denormalize: attach artist/album/genre/key names and anlz path onto
+    # each track; attach ordered track_ids onto each playlist.
+    for t in tracks:
+        t["artist"] = lookups["artists"].get(t["artist_id"])
+        t["album"] = lookups["albums"].get(t["album_id"])
+        t["genre"] = lookups["genres"].get(t["genre_id"])
+        t["key"] = lookups["keys"].get(t["key_id"])
+        # ``analyze_path`` points to ``.../P0xx/<hex>/ANLZ0000.DAT`` —
+        # expose the directory portion so consumers can locate ANLZ files.
+        ap = t.get("analyze_path")
+        t["anlz_path"] = str(Path(ap).parent) if ap else None
+    _attach_ordered_track_ids(
+        playlists,
+        [(e["playlist_id"], e["entry_index"], e["track_id"]) for e in entries],
+    )
+    return {
+        "tracks": tracks,
+        "playlists": playlists,
+        "playlist_entries": entries,
+        "history": _read_history(pdb),
+        "artwork": _read_artwork(pdb),
+        **lookups,
+        "pioneer_path": pioneer,
+        "pdb_path": pdb_path,
+    }
+
+
 def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
     """Read a Pioneer export tree into a JSON-friendly dict.
 
@@ -393,86 +475,43 @@ def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
         Path to either a USB root that contains ``PIONEER/`` or the
         ``PIONEER`` directory itself.
 
-    Returns
-    -------
-    dict
-        See module docstring for shape. Key top-level fields:
-
-        * ``tracks`` — list of track dicts (``id``, ``title``, ``artist``,
-          ``album``, ``bpm``, ``key``, ``rating``, ``path``, ``anlz_path``, ...).
-        * ``playlists`` — list of playlist dicts with nested ``track_ids``.
-        * ``artists`` / ``albums`` / ``genres`` / ``keys`` / ``colors`` /
-          ``labels`` — ``{id: name}`` lookup tables.
-        * ``metadata`` — counts + coverage flags.
+    Returns ``tracks``, ``playlists`` (with ``track_ids``),
+    ``playlist_entries``, the ``{str id: name}`` lookups (``artists``,
+    ``albums``, ``genres``, ``keys``, ``colors``, ``labels``) and
+    ``metadata`` (counts and coverage flags). The pdb part is
+    :func:`read_export_pdb`; this adds the ``USBANLZ/`` coverage walk (slow,
+    CPU-bound) that the CLI and value verify rely on.
     """
-    pioneer = _resolve_pioneer_root(pioneer_path)
+    pdb_data = read_export_pdb(pioneer_path)
+    pioneer: Path = pdb_data["pioneer_path"]
     rekordbox_dir = pioneer / "rekordbox"
-    anlz_dir = pioneer / "USBANLZ"
-
-    pdb_path = rekordbox_dir / "export.pdb"
     ext_pdb_path = rekordbox_dir / "exportExt.pdb"
     one_lib_path = rekordbox_dir / "exportLibrary.db"
-
-    if not pdb_path.exists():
-        raise FileNotFoundError(f"export.pdb not found at {pdb_path}")
-
-    pdb = _open_pdb(pdb_path)
-
-    artists = _read_lookup(pdb, _PT.artists)
-    albums = _read_lookup(pdb, _PT.albums)
-    genres = _read_lookup(pdb, _PT.genres)
-    keys = _read_lookup(pdb, _PT.keys)
-    colors = _read_lookup(pdb, _PT.colors)
-    labels = _read_lookup(pdb, _PT.labels)
-
-    tracks = _read_tracks(pdb)
-    playlists = _read_playlist_tree(pdb)
-    entries = _read_playlist_entries(pdb)
-
-    # Denormalize: attach artist/album/genre/key names and anlz path onto
-    # each track; attach sorted track_ids onto each playlist.
-    for t in tracks:
-        t["artist"] = artists.get(t["artist_id"])
-        t["album"] = albums.get(t["album_id"])
-        t["genre"] = genres.get(t["genre_id"])
-        t["key"] = keys.get(t["key_id"])
-        # ``analyze_path`` points to ``.../P0xx/<hex>/ANLZ0000.DAT`` —
-        # expose the directory portion so consumers can locate ANLZ files.
-        ap = t.get("analyze_path")
-        t["anlz_path"] = str(Path(ap).parent) if ap else None
-
-    by_playlist: dict[int, list[tuple[int, int]]] = {}
-    for e in entries:
-        by_playlist.setdefault(e["playlist_id"], []).append(
-            (e["entry_index"], e["track_id"])
-        )
-    for pl in playlists:
-        ordered = by_playlist.get(pl["id"], [])
-        ordered.sort(key=lambda x: x[0])
-        pl["track_ids"] = [tid for _, tid in ordered]
+    tracks = pdb_data["tracks"]
+    playlists = pdb_data["playlists"]
+    entries = pdb_data["playlist_entries"]
+    lookup_names = ("artists", "albums", "genres", "keys", "colors", "labels")
 
     # ANLZ coverage summary.
-    anlz_meta = _anlz_summary(anlz_dir)
+    anlz_meta = _anlz_summary(pioneer / "USBANLZ")
 
     return {
         "tracks": tracks,
         "playlists": playlists,
         "playlist_entries": entries,
-        "artists": {str(k): v for k, v in artists.items()},
-        "albums": {str(k): v for k, v in albums.items()},
-        "genres": {str(k): v for k, v in genres.items()},
-        "keys": {str(k): v for k, v in keys.items()},
-        "colors": {str(k): v for k, v in colors.items()},
-        "labels": {str(k): v for k, v in labels.items()},
+        **{
+            name: {str(k): v for k, v in pdb_data[name].items()}
+            for name in lookup_names
+        },
         "metadata": {
             "pioneer_path": str(pioneer),
             "total_tracks": len(tracks),
             "total_playlists": len(playlists),
             "total_playlist_entries": len(entries),
-            "total_artists": len(artists),
-            "total_albums": len(albums),
-            "total_genres": len(genres),
-            "has_pdb": pdb_path.exists(),
+            "total_artists": len(pdb_data["artists"]),
+            "total_albums": len(pdb_data["albums"]),
+            "total_genres": len(pdb_data["genres"]),
+            "has_pdb": pdb_data["pdb_path"].exists(),
             "has_extended_pdb": ext_pdb_path.exists(),
             "has_onelibrary": one_lib_path.exists(),
             "onelibrary_decrypted": False,  # see module docstring

@@ -210,7 +210,9 @@ test('the reporter rides the failure context on the toast that already reaches t
 		'the reported context must be built from the caller stages, not re-measured'
 	);
 	assert.ok(
-		/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*failureContext\s*\)/.test(
+		// `[,)]`: trailing arguments after the context are allowed (the stick
+		// load headline override, usb-track-guards.test.mjs).
+		/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*failureContext\s*[,)]/.test(
 			MODULE_SOURCE
 		),
 		'the failure context must ride the toast report that already reaches the ' +

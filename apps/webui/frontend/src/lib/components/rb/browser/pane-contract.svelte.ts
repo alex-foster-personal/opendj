@@ -31,7 +31,7 @@ import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$
 import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
-import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
+import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
@@ -200,9 +200,8 @@ export function makeClientRowProvider(
 export class PaneStore {
 	/** Selected playlist id ('all' for All Tracks); null = blank pane. */
 	playlist_id = $state<string | null>(null);
-	kind = $state<
-		'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist' | null
-	>(null);
+	/** The loaded node's kind (PlaylistNode's union); null = blank pane. */
+	kind = $state<PlaylistNode['kind'] | null>(null);
 	/** Pane tab title (playlist name; 'blank list' when empty). */
 	title = $state('blank list');
 	/** Loaded rows in membership order (pre filter/sort). */
@@ -265,14 +264,7 @@ export class PaneStore {
 	beginLoad(
 		playlist_id: string,
 		title: string,
-		kind:
-			| 'all_tracks'
-			| 'playlist'
-			| 'smartlist'
-			| 'folder'
-			| 'missing_tracks'
-			| 'taglist'
-			| 'autolist' = playlist_id === 'all' ? 'all_tracks' : 'playlist'
+		kind: PlaylistNode['kind'] = playlist_id === 'all' ? 'all_tracks' : 'playlist'
 	): number {
 		this.#load_seq += 1;
 		this.playlist_id = playlist_id;

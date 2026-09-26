@@ -21,6 +21,7 @@ import {
 	currentAnlzFetchGeneration
 } from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
+import { isUsbTrackId } from '$lib/rb/track-source';
 
 // rbx-lane BPM/key provenance is one of several concrete sources (rekordbox,
 // manual, inferred, webui), not a binary rbx/own one, so "not literally
@@ -162,7 +163,11 @@ export async function refreshAnalysisSourceDecks(
 	const wanted = new Map<string, DeckId[]>();
 	for (const deck of deckIds) {
 		const stableId = decks[deck].stable_id;
-		if (stableId === null) continue;
+		// A stick deck is skipped (spec 4b): its grid is the stick's own
+		// rekordbox PQTZ whichever lane is selected, so re-fetching it would
+		// serve 'rekordbox' beside own-sourced library decks and trip the
+		// split guard below on every switch.
+		if (stableId === null || isUsbTrackId(stableId)) continue;
 		// One fetch per TRACK, not per deck: two decks loaded with the same
 		// track would otherwise pull the same multi-MB payload twice.
 		const holders = wanted.get(stableId);
