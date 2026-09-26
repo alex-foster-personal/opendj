@@ -210,7 +210,7 @@ import {
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { AudioEngine, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -3012,8 +3012,12 @@ class RbAudioEngine implements AudioEngine {
 		await closing;
 	}
 
-	async load(deck: DeckId, stable_id: string): Promise<void> {
+	async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
+			throw new TypeError('load: options.stems must be boolean when provided');
+		}
+		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
 		const rt = _rt[deck];
 		_assertCurrentDeckReplacementAllowed(deck);
@@ -3252,7 +3256,9 @@ class RbAudioEngine implements AudioEngine {
 		// `loading` on its own. Errors are handled inside, so no rejection can
 		// escape into an unhandled promise.
 		if (loadCtx === null) throw new Error('load: audio context was never resolved');
-		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		if (loadStems) {
+			void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		}
 			void upgradeDeckBeatgrid(deck, stable_id, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken)); // PARITY-10: same deferral for the grid as _upgradeDeckStems above; errors are handled inside, no unhandled rejection
 	}
 

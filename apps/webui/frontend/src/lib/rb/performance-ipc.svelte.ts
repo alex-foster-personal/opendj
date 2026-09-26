@@ -192,7 +192,7 @@ export type PerformanceCommand =
 	// button, Quick Draw's unload action) must still be able to unload the
 	// live master with no other deck to reassign to (r3920297846) - only a
 	// destructive REPLACE (BrowserPanel's _loadOntoDeck) opts in.
-	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
+	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean; stems?: boolean }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
 	| {
@@ -1218,12 +1218,21 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
-		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
+		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster', 'stems']);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
 		}
-		if (record.refuseIfMaster === undefined) return { type, deck, stable_id: record.stable_id };
-		return { type, deck, stable_id: record.stable_id, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
+		const refuseIfMaster = record.refuseIfMaster === undefined
+			? undefined
+			: _boolean('refuseIfMaster', record.refuseIfMaster);
+		const stems = record.stems === undefined ? undefined : _boolean('stems', record.stems);
+		return {
+			type,
+			deck,
+			stable_id: record.stable_id,
+			...(refuseIfMaster === undefined ? {} : { refuseIfMaster }),
+			...(stems === undefined ? {} : { stems })
+		};
 	} else if (type === 'load_play_intent') {
 		_exactKeys(record, ['type', 'deck', 'generation', 'desired_play']);
 		return { type, deck, generation: _generation(record.generation), desired_play: _boolean('desired_play', record.desired_play) };
@@ -1884,7 +1893,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// releases on its own ceiling if a load never settles.
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
-			await engine.load(command.deck, command.stable_id);
+			const loadOptions = command.stems === undefined ? undefined : { stems: command.stems };
+			await engine.load(command.deck, command.stable_id, loadOptions);
 		} finally {
 			deckLoadSettled();
 		}

@@ -17,7 +17,10 @@ import {
 import { oldestNonExitingIndex, TOAST_MAX_VISIBLE } from './toast-tray-policy';
 import { readShellBuild } from './rb/build-identity';
 import { mintErrorId } from './rb/error-id';
-import { recordPerfEvent } from './rb/perf-event-log';
+import { gatherToastCopyExtras, type ToastCopyDeckSnapshot } from './toast-copy-context';
+import { isPerformanceRoutePath } from './rb/performance-preset';
+import { lastPerfError } from './rb/silence-dropout';
+import { readPerfEvents, recordPerfEvent } from './rb/perf-event-log';
 import {
 	buildToastReport,
 	describeToastClient,
@@ -74,6 +77,8 @@ export type Toast = {
 	causeStack?: string;
 	/** Tray eviction animation in progress (UX-TOAST-03). */
 	exiting?: boolean;
+	/** Latest `pushToast` context keys for clipboard copy (issue #3980). */
+	reportContext?: ClientErrorContext;
 };
 
 // The numeric counter now lives in `rb/error-id.ts` and is shared with the deck
@@ -296,6 +301,9 @@ export function pushToast(
 		causeStack: causeStack ?? toast.causeStack,
 		exiting: false
 	});
+	if (Object.keys(context).length > 0) {
+		toast.reportContext = { ...context };
+	}
 	if (existing === undefined) toasts.push(toast);
 	_enforceToastTrayCap();
 	// Warm the host lookup now so the eventual click can write the clipboard
@@ -459,8 +467,37 @@ export async function copyToast(logId: string): Promise<string> {
 	// Query stripped: it can carry ids a report has no business republishing,
 	// and the path is what identifies the surface.
 	const page = href === '' ? UNKNOWN : href.split('?')[0].split('#')[0];
+	const pathname =
+		typeof window === 'undefined' ? '' : (window.location?.pathname ?? '');
 	const occurrenceSuffix =
 		toast.count > 1 ? `\nOccurrences: ${toast.count}` : '';
+	let deckSnapshots: readonly ToastCopyDeckSnapshot[] | undefined;
+	if (isPerformanceRoutePath(pathname)) {
+		try {
+			const engine = await import('./rb/audio-engine.svelte');
+			deckSnapshots = engine.DECK_IDS.map((id) => {
+				const deck = engine.getDeckState(id);
+				return {
+					id,
+					stable_id: deck.stable_id,
+					bpm: deck.bpm,
+					beat_sync_enabled: deck.beat_sync_enabled,
+					sync_mode: deck.sync_mode,
+					is_master: deck.is_master
+				};
+			});
+		} catch {
+			deckSnapshots = undefined;
+		}
+	}
+	const extras = gatherToastCopyExtras({
+		pathname,
+		reportContext: toast.reportContext,
+		readDecks: deckSnapshots === undefined ? undefined : () => deckSnapshots,
+		readLastError: isPerformanceRoutePath(pathname)
+			? () => lastPerfError(readPerfEvents())
+			: undefined
+	});
 	const text = buildToastReport({
 		id: toast.logId,
 		kind: toast.kind,
@@ -476,7 +513,8 @@ export async function copyToast(logId: string): Promise<string> {
 		errorId: toast.errorId,
 		sentryEventId: toast.sentryEventId,
 		createdAt: toast.createdAt,
-		env: await _toastEnvironment(page)
+		env: await _toastEnvironment(page),
+		extras: Object.keys(extras).length > 0 ? extras : undefined
 	});
 	await writeToastReport(
 		text,
