@@ -42,7 +42,7 @@ def build_identity(source: Literal["payload", "repo"]) -> BuildIdentity:
             git_dirty=False,
             built_at_utc="2026-08-19T12:00:00Z",
             built_at_kind=(
-                "payload-build" if source == "payload" else "head-commit"
+                "payload-build" if source == "payload" else "engine-start"
             ),
         ),
         failure=None,

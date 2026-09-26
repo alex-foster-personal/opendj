@@ -207,6 +207,18 @@ test('scrollTopForRowIndex: compact row 10 with thead and one-third viewport off
 	assert.equal(withoutHeader, withHeader - 20);
 });
 
+test('scrollTopForDeckLayoutAnchor: zero prior viewport centers the anchored row', () => {
+	const next = mod.scrollTopForDeckLayoutAnchor({
+		rowIndex: 10,
+		rowHeight: 22,
+		headerOffsetPx: mod.TRACK_TABLE_THEAD_PX,
+		viewportHeight: 150,
+		priorScrollTop: 0,
+		priorViewportHeight: 0
+	});
+	assert.ok(next > 0);
+});
+
 test('scrollTopToKeepRowVisible: shrinking viewport keeps the anchored row visible', () => {
 	const priorViewportHeight = 206;
 	const priorScrollTop = 88;

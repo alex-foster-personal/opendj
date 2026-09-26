@@ -1,12 +1,11 @@
-import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { armPinPlacement } from '$lib/rb/feedback-store.svelte';
+import { resolveCommentPinHotkey } from '$lib/rb/comment-pin-hotkey-routing';
+import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
-/** Global `m` hotkey: arm comment-pin placement outside text fields. */
+/** Global `m` / `Cmd+Shift+M` hotkey: arm comment-pin placement. */
 export function installCommentPinHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
-		if (e.key !== 'm' && e.key !== 'M') return;
-		if (e.metaKey || e.ctrlKey || e.altKey) return;
-		if (isTextEntryTarget(e.target)) return;
+		if (resolveCommentPinHotkey(e, { settingsOpen: isSettingsOpen() }) !== 'arm') return;
 		e.preventDefault();
 		armPinPlacement();
 	};

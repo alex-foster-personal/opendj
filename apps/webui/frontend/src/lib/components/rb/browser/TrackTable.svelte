@@ -77,7 +77,7 @@
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex,
-		scrollTopToKeepRowVisible
+		scrollTopForDeckLayoutAnchor
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -767,6 +767,24 @@
 		priorViewportHeight: number;
 	} | null = $state(null);
 	let lastDeckLayout = uiPrefs.deck_layout;
+
+	function applyDeckLayoutAnchorScroll(): void {
+		const el = wrapEl;
+		const anchor = deckLayoutAnchor;
+		if (el === null || anchor === null || viewportHeight <= 0) return;
+		const next = scrollTopForDeckLayoutAnchor({
+			rowIndex: anchor.rowIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			viewportHeight,
+			priorScrollTop: anchor.priorScrollTop,
+			priorViewportHeight: anchor.priorViewportHeight
+		});
+		el.scrollTop = next;
+		liveScrollTop = next;
+		onscrollcursor?.(next);
+		deckLayoutAnchor = null;
+	}
 	/** Wrap's own rendered width, for the master-fold badge's right-edge
 	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
 	 * extra (pin b44c957f082f follow-up). */
@@ -809,6 +827,13 @@
 	});
 
 	$effect(() => {
+		if (deckLayoutAnchor === null) return;
+		const duration = uiPrefs.deck_layout_animate ? uiPrefs.deck_layout_duration_ms : 0;
+		const timer = setTimeout(() => applyDeckLayoutAnchorScroll(), duration + 32);
+		return () => clearTimeout(timer);
+	});
+
+	$effect(() => {
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
@@ -819,19 +844,12 @@
 				viewportHeight = entry.contentRect.height;
 				wrapWidth = entry.contentRect.width;
 				const anchor = deckLayoutAnchor;
-				if (anchor !== null && entry.contentRect.height > 0 && entry.contentRect.height !== anchor.priorViewportHeight) {
-					const next = scrollTopToKeepRowVisible({
-						rowIndex: anchor.rowIndex,
-						rowHeight,
-						headerOffsetPx: TRACK_TABLE_THEAD_PX,
-						viewportHeight: entry.contentRect.height,
-						priorScrollTop: anchor.priorScrollTop,
-						priorViewportHeight: anchor.priorViewportHeight
-					});
-					el.scrollTop = next;
-					liveScrollTop = next;
-					onscrollcursor?.(next);
-					deckLayoutAnchor = null;
+				if (
+					anchor !== null &&
+					entry.contentRect.height > 0 &&
+					entry.contentRect.height !== anchor.priorViewportHeight
+				) {
+					applyDeckLayoutAnchorScroll();
 				}
 			}
 		});
@@ -2232,6 +2250,17 @@
 		cursor: default;
 		position: relative;
 	}
+	tbody tr::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 1px;
+		background: #131519;
+		pointer-events: none;
+		z-index: 1;
+	}
 	/* Prefetch markers - top-left of row (same corner as job wash). */
 	.audio-cache-chevron {
 		position: absolute;
@@ -2444,11 +2473,18 @@
 	}
 	td {
 		padding: 0 var(--tt-td-pad-x);
-		border-bottom: 1px solid #131519;
+		border-bottom: none;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		vertical-align: middle;
+	}
+	tbody td {
+		position: relative;
+		z-index: 0;
+	}
+	thead th {
+		border-bottom: 1px solid var(--rb-border);
 	}
 	.c-order {
 		text-align: center;
@@ -2944,8 +2980,11 @@
 		padding: 0;
 		width: var(--tt-art);
 		border-bottom: none;
-		overflow: hidden;
+		overflow: visible;
 		vertical-align: middle;
+	}
+	.c-artist {
+		overflow: visible;
 	}
 	.art-slate {
 		display: block;
