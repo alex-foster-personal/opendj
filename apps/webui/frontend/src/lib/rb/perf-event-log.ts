@@ -409,6 +409,19 @@ export function findPerfEventById(id: string): PerfEvent | null {
 	return null;
 }
 
+/** A stage timer over `stages`: `time(name, work)` awaits `work` and records
+ * its wall time in ms under `stages[name]`, whether it resolves or throws. */
+export function stageTimer(stages: Record<string, number>): <T>(name: string, work: Promise<T>) => Promise<T> {
+	return async <T>(name: string, work: Promise<T>): Promise<T> => {
+		const started = performance.now();
+		try {
+			return await work;
+		} finally {
+			stages[name] = Math.round(performance.now() - started);
+		}
+	};
+}
+
 /** Always-on stage timing (ms). One console.info + ring entry. */
 export function recordPerfTiming(
 	kind: string,
