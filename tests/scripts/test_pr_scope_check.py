@@ -76,7 +76,18 @@ def test_undeclared_incident_is_surfaced_as_oversized() -> None:
 
 def test_refs_parser_reads_the_issue_link_forms_prs_use() -> None:
     body = "Refs #3352. Fixes #10 and closes #11; resolves #12. Not a ref: PR#99"
-    assert sorted(int(n) for n in psc._REFS_RE.findall(body)) == [10, 11, 12, 3352]
+    assert psc.referenced_issues(body) == {10, 11, 12, 3352}
+
+
+def test_refs_parser_reads_every_issue_in_a_list_clause() -> None:
+    """Sol P1 on 32b1221b1f: only the first number after the keyword was read."""
+    assert psc.referenced_issues("Refs #1, #2 and #3") == {1, 2, 3}
+    assert psc.referenced_issues("Fixes #7 & #8 / #9.") == {7, 8, 9}
+
+
+def test_refs_parser_does_not_widen_to_unkeyworded_mentions() -> None:
+    """Control for the overshoot: a mention that no keyword introduces is not a link."""
+    assert psc.referenced_issues("Refs #1. See #2, and #3 was related.") == {1}
 
 
 # -- fetch: a partial or unresolvable read is no verdict ----------------------------
@@ -183,3 +194,13 @@ def test_triage_reports_unmeasured_when_the_scope_cannot_be_measured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert _triage_with_scope_rc(monkeypatch, 3)[0] == 3
+
+
+def test_a_limit_on_a_later_listed_issue_is_read_not_undeclared() -> None:
+    pr = _pr_payload("Refs #1, #2", [])
+    refs: dict[int, dict | None] = {
+        1: {"__typename": "Issue", "number": 1, "body": "no limit"},
+        2: {"__typename": "Issue", "number": 2, "body": "Scope limit: commits=1 files=1"},
+    }
+    scope, bodies = psc.fetch(9, "o", "r", graphql=_fake_graphql(pr, refs))
+    assert psc.verdict(scope, psc.declared_limit(bodies))[0] == 1

@@ -48,7 +48,10 @@ FLEET_REVIEW_MAX_FILES: int = 80
 _LIMIT_RE = re.compile(
     r"(?im)^\s*scope[ -]limits?\s*:\s*commits\s*=\s*(\d+)\s*[,;]?\s*files\s*=\s*(\d+)"
 )
-_REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+#(\d+)")
+# A keyword then a LIST of issues: "Refs #1, #2 and #3" links all three. Reading only the
+# first would turn a limit declared on #2 into UNDECLARED, a partial read as no verdict.
+_REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+(#\d+(?:\s*(?:,|&|and|/)\s*#\d+)*)")
+_ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
 
 _PR_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
 pullRequest(number:$n){
@@ -84,6 +87,15 @@ def declared_limit(issue_bodies: dict[int, str]) -> Limit | None:
         files=min(f for _, _, f in found),
         issues=tuple(n for n, _, _ in found),
     )
+
+
+def referenced_issues(body: str) -> set[int]:
+    """Every issue number named by a Refs/Fixes/Closes/Resolves clause, lists included."""
+    return {
+        int(number)
+        for clause in _REFS_RE.findall(body)
+        for number in _ISSUE_NUMBER_RE.findall(clause)
+    }
 
 
 def verdict(scope: Scope, limit: Limit | None) -> tuple[int, str]:
@@ -137,7 +149,7 @@ def fetch(
             f"read {len(closing['nodes'])}"
         )
     bodies = {i["number"]: i["body"] for i in closing["nodes"]}
-    for ref in sorted({int(n) for n in _REFS_RE.findall(pr["body"] or "")} - set(bodies)):
+    for ref in sorted(referenced_issues(pr["body"] or "") - set(bodies)):
         node = graphql(_REF_QUERY, o=owner, r=repo, n=ref)["issueOrPullRequest"]
         kind = node["__typename"] if node is not None else None
         if kind == "Issue":
