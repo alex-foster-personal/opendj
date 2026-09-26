@@ -57,3 +57,32 @@ def test_unclosed_member_fails_loud(tmp_path: Path) -> None:
 def test_live_command_union_parses() -> None:
     assert "play" in ts_contract.command_fields()
     assert ts_contract.command_fields()["play"]["start_at_context_sec"] is True
+
+
+def test_live_load_union_ignores_inline_comments_between_fields() -> None:
+    load = ts_contract.command_fields()["load"]
+    assert load["stable_id"] is False
+    assert load["refuseIfMaster"] is True
+    assert load["stems"] is True
+    assert load["suppressCommandErrorToast"] is True
+
+
+def test_a_comment_with_a_semicolon_is_dropped_but_a_url_literal_survives(tmp_path: Path) -> None:
+    """Both directions of comment stripping in a wrapped member.
+
+    A `;` inside a line comment must not split off a fragment that swallows the next
+    field, and the stripper must not overshoot: `//` inside a string literal type is
+    part of the field, not a comment."""
+    source = tmp_path / "ipc.ts"
+    source.write_text(
+        "export type PerformanceCommand =\n"
+        "\t| {\n"
+        "\t\t\ttype: 'open';\n"
+        "\t\t\thref: 'https://example.com/a';\n"
+        "\t\t\t// shown by the caller (skip); errors still update.\n"
+        "\t\t\tsuppressToast?: boolean;\n"
+        "\t  };\n",
+        encoding="utf-8",
+    )
+    [member] = ts_contract._union_lines(source, ts_contract._COMMAND_UNION)
+    assert member == "| { type: 'open'; href: 'https://example.com/a'; suppressToast?: boolean };"

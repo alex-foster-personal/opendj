@@ -40,8 +40,11 @@ class PerfKpiConfig:
     preview_engine_label: str
     scratch_port: int
     samples: int
-    machine: str
+    machine: str  #: may be "" -- required only on the nightly path, see require_machine_label()
     tracks: tuple[TrackProfile, ...]
+    #: Supersedes: REPO_ROOT's own checkout, which update_ledger_pr used to
+    #: `git checkout -B` into on main; publishing now happens only here.
+    ledger_worktree: Path
     data_dir: Path | None = None
 
 
@@ -57,6 +60,34 @@ def _require_stable_id(env_name: str, fallback: str | None) -> str:
     if not value or value.startswith("REPLACE_"):
         raise ValueError(f"{env_name} must name a real library stable_id")
     return value
+
+
+def require_machine_label(config: PerfKpiConfig) -> str:
+    """No hidden "air" default (claude-review, PR #3827, rounds 3-4,
+    P1/BLOCKING): a plist that omits MDT_PERF_KPI_MACHINE -- because the
+    installer wasn't re-run after this fix, or because someone invokes
+    perf_kpi_job.py directly outside either installed launchd agent -- must
+    fail loudly rather than silently attribute a second Mac's KPI entries
+    to Air in the shared ledger.
+
+    Called only from the NIGHTLY path (round 4, P1/BLOCKING): the health
+    tick never attributes a ledger entry to a machine, but Air's
+    already-installed `com.af.perf-kpi-health` plist predates
+    `MDT_PERF_KPI_MACHINE` entirely (it was never in that template's
+    ``EnvironmentVariables``). Requiring it in `load_config()` itself --
+    which BOTH `cmd_health` and `cmd_nightly` call -- would have broken
+    Air's every-10-minutes wedged-engine detection immediately on merge,
+    with no reinstall step shipped alongside this change to fix it.
+    """
+    if not config.machine:
+        raise ValueError(
+            "MDT_PERF_KPI_MACHINE must be set for the nightly path (the "
+            "installed nightly plist always sets it once --host-label is "
+            "passed to install_perf_kpi_launchd.sh; a manual invocation "
+            "must export it explicitly). The health path does not require "
+            "it, since a health tick never attributes a ledger entry."
+        )
+    return config.machine
 
 
 def load_config() -> PerfKpiConfig:
@@ -96,16 +127,15 @@ def load_config() -> PerfKpiConfig:
         health_log=state_dir / "health.jsonl",
         history_log=state_dir / "history.jsonl",
         health_state=state_dir / "health-state.json",
-        preview_health_url=(
-            _env("MDT_PERF_KPI_PREVIEW_HEALTH_URL") or DEFAULT_PREVIEW_HEALTH_URL
-        ),
+        preview_health_url=(_env("MDT_PERF_KPI_PREVIEW_HEALTH_URL") or DEFAULT_PREVIEW_HEALTH_URL),
         preview_engine_label=(
             _env("MDT_PERF_KPI_PREVIEW_ENGINE_LABEL") or DEFAULT_PREVIEW_ENGINE_LABEL
         ),
         scratch_port=int(_env("MDT_PERF_KPI_SCRATCH_PORT") or DEFAULT_SCRATCH_PORT),
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
-        machine=_env("MDT_PERF_KPI_MACHINE") or "air",
+        machine=_env("MDT_PERF_KPI_MACHINE") or "",
         tracks=tracks,
+        ledger_worktree=state_dir / "ledger-worktree",
         data_dir=data_dir,
     )
 

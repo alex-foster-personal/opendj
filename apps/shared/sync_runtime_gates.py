@@ -12,6 +12,14 @@ DEFER_REASON_GIG = "gig_posture"
 DEFER_REASON_DECK_PLAYING = "deck_playing"
 DEFER_REASON_PRESSURE_SHED = "pressure_shed"
 
+#: Another process already holds this data dir's cross-process sync flock
+#: (``apps.sync_hub.single_flight.sync_flock_for``) -- a scheduler round, a
+#: Sync now, or another CLI invocation is already mid-round against the same
+#: ``state.db``. Distinct from the three reasons above: those refuse because
+#: it is UNSAFE to sync right now (a deck may be live); this one refuses
+#: because a round is already IN FLIGHT, force or not.
+DEFER_REASON_SYNC_IN_PROGRESS = "sync_in_progress"
+
 
 class SyncDeferredError(Exception):
     """A sync round was refused before any hub I/O."""
@@ -83,6 +91,7 @@ __all__ = [
     "DEFER_REASON_DECK_PLAYING",
     "DEFER_REASON_GIG",
     "DEFER_REASON_PRESSURE_SHED",
+    "DEFER_REASON_SYNC_IN_PROGRESS",
     "SyncDeferredError",
     "any_deck_playing",
     "read_pressure_elevated",

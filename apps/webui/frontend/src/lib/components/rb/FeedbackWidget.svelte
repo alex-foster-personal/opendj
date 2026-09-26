@@ -48,6 +48,7 @@
 		}
 		return [
 			describePinStatusSummary(feedbackState.pins),
+			'Press M to arm comment placement (or Cmd+Shift+M from a text field).',
 			'Delegated / in-progress / queued are not tracked by the comment API yet.'
 		];
 	});

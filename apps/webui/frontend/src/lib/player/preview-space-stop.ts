@@ -20,8 +20,10 @@
  *     keeps playing
  *
  * Top priority comes from a CAPTURE-phase listener on window plus
- * stopImmediatePropagation, so it runs before `performance-hotkeys.ts`'s
- * bubble-phase listener and before any focused element's own handler. The
+ * stopImmediatePropagation, so it runs before any focused element's own
+ * handler. `performance-hotkeys.ts` is ALSO a window capture listener (since
+ * #4009), so the two are ordered only by registration: the performance page
+ * must install this one first (routes/performance/+page.svelte). The
  * decision logic takes its dependencies as arguments, so it is testable
  * without the preview engine, an AudioContext or a DOM.
  */
