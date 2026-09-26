@@ -21,8 +21,10 @@ real script text through real `bash`, per AGENTS.md.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -142,6 +144,61 @@ def test_setup_never_overwrites_the_live_loop_script_in_place() -> None:
     assert copies, "control: setup.sh must still install the loop script"
     assert all(f"{live}.new" in line for line in copies), copies
     assert f"mv -f {live}.new {live}" in text
+
+
+def _run_stats_snippet(agent_cli: str) -> str:
+    """verify.sh's REAL remote RUN_STATS command, unescaped as the remote shell sees it."""
+    text = VERIFY_SH.read_text(encoding="utf-8")
+    start = text.index('RUN_STATS=$(run "') + len('RUN_STATS=$(run "')
+    end = text.index('echo \\"\\$total \\$completed \\$latest\\"")', start)
+    body = text[start:end] + 'echo \\"\\$total \\$completed \\$latest\\"'
+    body = body.replace("$AGENT_CLI", agent_cli)
+    return body.replace('\\"', '"').replace("\\$", "$")
+
+
+def _age(path: Path, seconds_ago: int) -> None:
+    stamp = time.time() - seconds_ago
+    os.utime(path, (stamp, stamp))
+
+
+def test_verify_counts_only_attempts_after_the_plist_was_written(tmp_path: Path) -> None:
+    """[if] after a driver switch verify.sh still counts, or blames, attempts made before
+    the plist was last written [then] a new driver passes on old completions or reads as
+    walled on the old driver's wall, [else stop]. Runs verify.sh's real remote snippet."""
+    runs = tmp_path / ".local/state/af-agt/runs"
+    runs.mkdir(parents=True)
+    plist = tmp_path / "Library/LaunchAgents/opendj-agt-persona-loop.plist"
+    plist.parent.mkdir(parents=True)
+    old = runs / "20260926T020000Z-hostile-s1"
+    old.mkdir()
+    (old / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
+    (old / "agent.cli").write_text("claude\n", encoding="utf-8")
+    (runs / f"{old.name}.log").write_text("Claude CLI is walled: weekly limit\n", encoding="utf-8")
+    for path in (old / "run-state.json", runs / f"{old.name}.log"):
+        _age(path, 600)
+    plist.write_text("<plist/>", encoding="utf-8")
+    _age(plist, 300)
+    env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
+
+    def stats(agent_cli: str) -> list[str]:
+        done = subprocess.run(
+            ["bash", "-c", _run_stats_snippet(agent_cli)],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        return done.stdout.split()
+
+    assert stats("codex") == ["0", "0"], "pre-switch attempts leaked into the new driver's view"
+    new = runs / "20260926T030000Z-hostile-s2"
+    new.mkdir()
+    (new / "run-state.json").write_text('{"state": "completed"}', encoding="utf-8")
+    (new / "agent.cli").write_text("codex\n", encoding="utf-8")
+    (runs / f"{new.name}.log").write_text("ok\n", encoding="utf-8")
+    assert stats("codex") == ["1", "1", f"{new.name}.log"]
+    # Control: the same post-switch run does not count for a driver it was not run by.
+    assert stats("claude") == ["1", "0", f"{new.name}.log"]
 
 
 def test_agt_loop_refuses_to_start_without_a_declared_agent_cli(tmp_path: Path) -> None:
