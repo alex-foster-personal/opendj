@@ -16,7 +16,8 @@ With several declarations the tightest limit on each axis wins.
     python -m scripts.pr_scope_check 1234 --comment  # also post it on the PR
 
 Exit codes: 0 within the declared limits, or no limit declared (printed as
-UNDECLARED, never as OK); 1 over a declared limit; 3 could not measure. Counts
+UNDECLARED, never as OK); 1 over a declared limit; 3 could not measure, which
+includes a `Scope limit:` line that does not parse. Counts
 come from GitHub's own PR fields (commits in head not in base, changed files),
 the same set a reviewer is shown.
 
@@ -52,6 +53,9 @@ _LIMIT_RE = re.compile(
 # first would turn a limit declared on #2 into UNDECLARED, a partial read as no verdict.
 _REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+(#\d+(?:\s*(?:,|&|and|/)\s*#\d+)*)")
 _ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
+# Any line that starts like a declaration. One that _LIMIT_RE cannot parse is an error,
+# because reading it as no declaration would print UNDECLARED for a PR that declared one.
+_LIMIT_LINE_RE = re.compile(r"(?im)^\s*scope[ -]limits?\s*:.*$")
 
 _PR_QUERY = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
 pullRequest(number:$n){
@@ -79,6 +83,13 @@ def declared_limit(issue_bodies: dict[int, str]) -> Limit | None:
     Every line counts, not the first per body: an issue that states a limit twice is held
     to the tighter one, the same rule as across issues.
     """
+    for number, body in sorted(issue_bodies.items()):
+        for line in _LIMIT_LINE_RE.findall(body or ""):
+            if not _LIMIT_RE.match(line):
+                raise MeasureError(
+                    f"#{number} has a Scope limit line that does not parse: {line.strip()!r}; "
+                    "write it as `Scope limit: commits=N files=M`"
+                )
     found: list[tuple[int, int, int]] = [
         (number, int(match.group(1)), int(match.group(2)))
         for number, body in sorted(issue_bodies.items())
@@ -177,10 +188,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         scope, bodies = fetch(args.pr, args.owner, args.repo)
+        limit = declared_limit(bodies)
     except (MeasureError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"[pr-scope] COULD NOT MEASURE: {exc}", file=sys.stderr)
         return 3
-    rc, line = verdict(scope, declared_limit(bodies))
+    rc, line = verdict(scope, limit)
     print(line)
     if args.comment:
         posted = subprocess.run(

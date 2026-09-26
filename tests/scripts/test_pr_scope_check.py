@@ -71,6 +71,16 @@ def test_every_limit_line_in_one_issue_counts_not_only_the_first() -> None:
     assert psc.verdict(Scope(4, 3, 0, 0), limit)[0] == 1
 
 
+def test_a_malformed_limit_line_is_a_measure_error_not_undeclared() -> None:
+    with pytest.raises(psc.MeasureError, match="does not parse"):
+        psc.declared_limit({8: "Scope limit: files=20 commits=5"})
+
+
+def test_prose_mentioning_scope_limits_is_not_a_declaration() -> None:
+    """Control for the overshoot: only a line that STARTS as a declaration is checked."""
+    assert psc.declared_limit({8: "We may add a scope limit: later.\n"}) is None
+
+
 def test_undeclared_is_never_printed_as_ok() -> None:
     rc, line = psc.verdict(SMALL, psc.declared_limit({1: "no declaration here", 2: ""}))
     assert rc == 0
