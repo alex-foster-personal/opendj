@@ -59,12 +59,15 @@ def regenerate_agents_md_if_writable(
     sqlite introspection plus YAML rendering on the request thread, 80 of
     513 py-spy samples in a 10k-row listing walk. A present marker means
     AGENTS.md for this exact (sqlite schema version, owned tables, generator
-    version) triple was already written by *some* prior open and returns
-    False after one ``PRAGMA schema_version`` read, without touching the
-    filesystem; a marker miss still runs the real generator (and still
+    version) triple was already written by *some* prior open; the hit also
+    requires the sidecar beside this DB to END with that marker's cache line
+    (a tail read), because the row travels with a restored or copied DB and
+    the file does not. A hit returns False after one ``PRAGMA
+    schema_version`` read and that tail read; a miss still runs the real generator (and still
     raises ``MissingColumnDocsError`` before any write, unchanged) and then
-    records the marker so the next open on an unchanged schema is a cache
-    hit. ``PRAGMA schema_version`` -- not this app's own
+    records the marker idempotently (``INSERT OR IGNORE``: two opens that
+    both miss must not abort on the primary key) so the next open on an
+    unchanged schema is a cache hit. ``PRAGMA schema_version`` -- not this app's own
     ``schema.SCHEMA_VERSION`` -- is the key precisely because it is sqlite's
     own DDL counter: it also catches ad-hoc/foreign DDL that never went
     through this app's migration ladder, which an app-level version would
@@ -82,19 +85,24 @@ def regenerate_agents_md_if_writable(
     # behaviour"). Deferring the import here, off the CLI's hot path,
     # avoids it.
     from apps.database.generate_agents_md import (
+        GENERATOR_VERSION,
         agents_md_cache_marker,
+        sidecar_carries_cache_line,
         write_agents_md,
     )
     from apps.shared.state import schema_markers as _markers
 
+    sidecar = state_dir / "AGENTS.md"
     sqlite_schema_version = conn.execute("PRAGMA schema_version").fetchone()[0]
     marker = agents_md_cache_marker(
-        sqlite_schema_version=sqlite_schema_version, owned_tables=owned_tables
+        sqlite_schema_version=sqlite_schema_version,
+        owned_tables=owned_tables,
+        generator_version=GENERATOR_VERSION,
     )
-    if _markers.has_marker(conn, marker):
+    if _markers.has_marker(conn, marker) and sidecar_carries_cache_line(sidecar, marker):
         return False
 
-    write_agents_md(conn, state_dir / "AGENTS.md", owned_tables=owned_tables)
+    write_agents_md(conn, sidecar, owned_tables=owned_tables, cache_marker=marker)
     if _markers.table_exists(conn, _markers.MARKER_TABLE):
-        _markers.insert_marker(conn, marker)
+        _markers.insert_marker_if_absent(conn, marker)
     return True

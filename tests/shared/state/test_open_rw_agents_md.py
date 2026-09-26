@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -12,7 +13,9 @@ from apps.database.generate_agents_md import (
     GENERATOR_VERSION,
     ForeignAgentsMdError,
     MissingColumnDocsError,
+    agents_md_cache_line,
     agents_md_cache_marker,
+    write_agents_md,
 )
 from apps.shared.state import schema as state_schema
 from apps.shared.state import schema_markers, sync_stamp
@@ -228,58 +231,50 @@ def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:
     assert not (tmp_path / "AGENTS.md").exists()
 
 
+def _marker_for(conn: sqlite3.Connection, owned_tables: frozenset[str], version: int) -> str:
+    return agents_md_cache_marker(
+        sqlite_schema_version=conn.execute("PRAGMA schema_version").fetchone()[0],
+        owned_tables=owned_tables,
+        generator_version=version,
+    )
+
+
 def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> None:
     """if schema version, owned tables, or generator version differ, the marker differs - broken"""
     tracks_only = frozenset({"tracks"})
     tracks_and_playlists = frozenset({"tracks", "playlists"})
-    base = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=tracks_only)
-    other_schema = agents_md_cache_marker(sqlite_schema_version=20, owned_tables=tracks_only)
-    other_tables = agents_md_cache_marker(
-        sqlite_schema_version=19, owned_tables=tracks_and_playlists
-    )
-    same_again = agents_md_cache_marker(sqlite_schema_version=19, owned_tables=tracks_only)
 
-    assert base == same_again
-    assert base != other_schema
-    assert base != other_tables
-    # A live bump of GENERATOR_VERSION must also move the marker -- this
-    # assertion is the mutation check for that path: revert the constant to
-    # 1 and this line goes red, because a marker gate that ignores the
-    # generator's own version would keep serving a stale AGENTS.md forever
-    # after the render logic or curated docs change underneath it.
-    assert f"v{GENERATOR_VERSION}" in base
+    def marker(schema: int, tables: frozenset[str], version: int) -> str:
+        return agents_md_cache_marker(
+            sqlite_schema_version=schema, owned_tables=tables, generator_version=version
+        )
+
+    base = marker(19, tracks_only, GENERATOR_VERSION)
+    assert base == marker(19, tracks_only, GENERATOR_VERSION)
+    assert base != marker(20, tracks_only, GENERATOR_VERSION)
+    assert base != marker(19, tracks_and_playlists, GENERATOR_VERSION)
+    assert base != marker(19, tracks_only, GENERATOR_VERSION + 1)
 
 
 def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -> None:
     """if schema and owned tables are unchanged then a reopen does not rewrite AGENTS.md - broken"""
     db_path = tmp_path / "state.db"
-    conn = open_rw(db_path)
-    conn.close()
-
+    open_rw(db_path).close()
     agents_md = tmp_path / "AGENTS.md"
-    assert agents_md.is_file()
-    verify_conn = open_rw(db_path)
+    conn = open_rw(db_path)
     try:
-        sqlite_schema_version = verify_conn.execute("PRAGMA schema_version").fetchone()[0]
-        marker = agents_md_cache_marker(
-            sqlite_schema_version=sqlite_schema_version,
-            owned_tables=state_schema.ALL_KNOWN_TABLES,
-        )
-        assert schema_markers.has_marker(verify_conn, marker)
+        marker = _marker_for(conn, state_schema.ALL_KNOWN_TABLES, GENERATOR_VERSION)
+        assert schema_markers.has_marker(conn, marker)
     finally:
-        verify_conn.close()
+        conn.close()
+    assert agents_md.read_text(encoding="utf-8").endswith(agents_md_cache_line(marker) + "\n")
 
-    # Delete the file so a real regeneration is the ONLY way it comes back --
-    # this is the positive-presence proof the fleet verification rule asks
-    # for: absence after reopen is not "nothing happened to look the same",
-    # it is "regeneration provably did not run", because if it had run the
-    # file would exist again.
-    agents_md.unlink()
-
-    reopened = open_rw(db_path)
-    reopened.close()
-
-    assert not agents_md.exists()
+    # write_agents_md always lands via os.replace of a fresh temp file, so a
+    # regeneration ALWAYS changes the inode: an unchanged inode after reopen
+    # is positive proof the write did not run.
+    before = agents_md.stat().st_ino
+    open_rw(db_path).close()
+    assert agents_md.stat().st_ino == before
 
 
 def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> None:
@@ -288,50 +283,104 @@ def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> No
     conn = open_rw(db_path)
     try:
         agents_md = tmp_path / "AGENTS.md"
-        agents_md.unlink()
-
-        # Same call shape open_rw already made (schema_version unchanged,
-        # same owned_tables) -- this is the cache HIT this fix exists for.
+        before = agents_md.stat().st_ino
+        # Same call shape open_rw already made: the cache HIT this fix exists for.
         assert regenerate_agents_md_if_writable(
             conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
         ) is False
-        assert not agents_md.exists()
+        assert agents_md.stat().st_ino == before
 
         # A genuinely different owned_tables set is a different real input,
-        # so it must be a cache MISS: this is the direct counterpart to the
-        # skip test above, proving the gate does not just always skip.
+        # so it must MISS: the gate does not just always skip.
         narrowed = frozenset({"tracks"})
         assert narrowed != state_schema.ALL_KNOWN_TABLES
-        assert regenerate_agents_md_if_writable(
-            conn, tmp_path, owned_tables=narrowed
-        ) is True
-        assert agents_md.is_file()
+        assert regenerate_agents_md_if_writable(conn, tmp_path, owned_tables=narrowed) is True
+        assert agents_md.stat().st_ino != before
     finally:
         conn.close()
 
 
-def test_regenerate_reruns_when_generator_version_bumps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """if GENERATOR_VERSION bumps then a previously-cached marker misses - broken"""
+def test_regenerate_reruns_for_a_marker_an_older_generator_wrote(tmp_path: Path) -> None:
+    """if the DB only holds an older generator's marker then regenerate writes again - broken"""
     db_path = tmp_path / "state.db"
     conn = open_rw(db_path)
     try:
-        agents_md = tmp_path / "AGENTS.md"
-        agents_md.unlink()
+        tables = state_schema.ALL_KNOWN_TABLES
+        current = _marker_for(conn, tables, GENERATOR_VERSION)
+        older = _marker_for(conn, tables, GENERATOR_VERSION - 1)
+        # Real on-disk state of a DB last opened by the previous generator:
+        # its marker row, and no row for the current one.
+        conn.execute(f"DELETE FROM {schema_markers.MARKER_TABLE} WHERE marker = ?", (current,))
+        schema_markers.insert_marker(conn, older)
+        conn.commit()
+        assert not schema_markers.has_marker(conn, current)
 
-        assert regenerate_agents_md_if_writable(
-            conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
-        ) is False
-        assert not agents_md.exists()
+        assert regenerate_agents_md_if_writable(conn, tmp_path, owned_tables=tables) is True
+        assert schema_markers.has_marker(conn, current)
+    finally:
+        conn.close()
 
-        monkeypatch.setattr(
-            "apps.database.generate_agents_md.GENERATOR_VERSION", GENERATOR_VERSION + 1
+
+def test_open_rw_regenerates_a_missing_sidecar_despite_the_db_marker(tmp_path: Path) -> None:
+    """if state.db carries the marker but AGENTS.md is gone then open_rw rewrites it - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.unlink()
+
+    # The marker row is still in the DB (it travels with a restored copy).
+    # This reopen also re-records an ALREADY-present marker, the exact path
+    # two concurrent missing opens take: it must not abort on the key.
+    open_rw(db_path).close()
+
+    assert agents_md.is_file()
+    assert _AGENTS_HEADER in agents_md.read_text(encoding="utf-8")
+
+
+def test_open_rw_regenerates_a_sidecar_written_for_another_schema(tmp_path: Path) -> None:
+    """if a copied state.db lands beside another DB's AGENTS.md then open_rw rewrites it - broken"""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    open_rw(source_dir / "state.db").close()
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+    shutil.copy2(source_dir / "state.db", dest_dir / "state.db")
+    # A real generated sidecar for a different input (one owned table),
+    # carrying ITS OWN cache line, sits where the copy is restored.
+    conn = sqlite3.connect(dest_dir / "state.db")
+    try:
+        narrowed = frozenset({"tracks"})
+        foreign_marker = _marker_for(conn, narrowed, GENERATOR_VERSION)
+        write_agents_md(
+            conn, dest_dir / "AGENTS.md", owned_tables=narrowed, cache_marker=foreign_marker
         )
-        assert regenerate_agents_md_if_writable(
-            conn, tmp_path, owned_tables=state_schema.ALL_KNOWN_TABLES
-        ) is True
-        assert agents_md.is_file()
+    finally:
+        conn.close()
+    assert "## `playlists`" not in (dest_dir / "AGENTS.md").read_text(encoding="utf-8")
+
+    open_rw(dest_dir / "state.db").close()
+
+    text = (dest_dir / "AGENTS.md").read_text(encoding="utf-8")
+    assert "## `playlists`" in text
+    assert agents_md_cache_line(foreign_marker) not in text
+
+
+def test_insert_marker_if_absent_keeps_one_row_where_insert_marker_aborts(tmp_path: Path) -> None:
+    """if two opens record the same cache marker then neither aborts - broken"""
+    conn = open_rw(tmp_path / "state.db")
+    try:
+        schema_markers.insert_marker_if_absent(conn, "cache-probe")
+        schema_markers.insert_marker_if_absent(conn, "cache-probe")
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM {schema_markers.MARKER_TABLE} WHERE marker = ?",
+            ("cache-probe",),
+        ).fetchone()[0]
+        assert count == 1
+        # Control: the table really enforces the key, so the idempotent
+        # insert is what kept this quiet, not a missing constraint.
+        with pytest.raises(sqlite3.IntegrityError):
+            schema_markers.insert_marker(conn, "cache-probe")
     finally:
         conn.close()
 

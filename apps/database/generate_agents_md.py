@@ -63,7 +63,10 @@ YAML rendering on every request that opens a connection.
 
 
 def agents_md_cache_marker(
-    *, sqlite_schema_version: int, owned_tables: frozenset[str] | None
+    *,
+    sqlite_schema_version: int,
+    owned_tables: frozenset[str] | None,
+    generator_version: int,
 ) -> str:
     """The ``schema_meta_markers`` key that gates AGENTS.md regeneration.
 
@@ -82,14 +85,16 @@ def agents_md_cache_marker(
     pays for itself against the introspect-and-render cost this exists to
     skip.
 
-    The other input, this module's own :data:`GENERATOR_VERSION`, changes
+    ``generator_version`` is passed explicitly (callers pass
+    :data:`GENERATOR_VERSION`) so a test can build the marker an OLDER
+    generator wrote without rebinding the module constant. It changes
     whenever the code that turns a schema into text changes, and a cache hit
     means none of the three moved since the marker was inserted, so the
     DB's AGENTS.md is still correct.
     """
     tables_part = ",".join(sorted(owned_tables)) if owned_tables else ""
     return (
-        f"agents_md_generated:v{GENERATOR_VERSION}:"
+        f"agents_md_generated:v{generator_version}:"
         f"sqliteschema{sqlite_schema_version}:{tables_part}"
     )
 
@@ -346,11 +351,43 @@ def render(tables: list[TableInfo]) -> str:
     return "\n".join(sections).rstrip() + "\n"
 
 
+def agents_md_cache_line(marker: str) -> str:
+    """The trailing line that ties a written AGENTS.md to its cache marker.
+
+    The marker row lives INSIDE state.db, so it travels with a restored or
+    copied database while the sidecar does not. A cache hit therefore needs
+    both halves: the row in the DB and this line in the file beside it
+    (issue #4015 review). A missing sidecar, or one written for another
+    schema, lacks the line and is regenerated.
+    """
+    return f"<!-- agents-md-cache: {marker} -->"
+
+
+def sidecar_carries_cache_line(path: Path, marker: str) -> bool:
+    """True when ``path`` exists and ends with :func:`agents_md_cache_line`.
+
+    Reads only the file's tail, never the whole sidecar, so the per-open
+    cost stays one small read.
+    """
+    expected = (agents_md_cache_line(marker) + "\n").encode("utf-8")
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size < len(expected):
+                return False
+            handle.seek(size - len(expected))
+            return handle.read() == expected
+    except FileNotFoundError:
+        return False
+
+
 def write_agents_md(
     conn: sqlite3.Connection,
     out_path: Path,
     *,
     owned_tables: frozenset[str] | None = None,
+    cache_marker: str | None = None,
 ) -> str:
     """Introspect ``conn``, render, and write to ``out_path``.
 
@@ -359,6 +396,10 @@ def write_agents_md(
     left behind. Raises :class:`ForeignAgentsMdError` before writing if
     ``out_path`` already exists and does not start with the generated
     header. ``owned_tables`` is forwarded to :func:`introspect`.
+    ``cache_marker``, when given (``open_rw``'s path), appends
+    :func:`agents_md_cache_line` so a later open can tell this file belongs
+    to that marker; the CLI omits it, and its output then regenerates on the
+    next ``open_rw``.
     """
     if not _existing_is_generated_sidecar(out_path):
         raise ForeignAgentsMdError(
@@ -367,6 +408,8 @@ def write_agents_md(
         )
     tables = introspect(conn, owned_tables=owned_tables)
     text = render(tables)
+    if cache_marker is not None:
+        text += "\n" + agents_md_cache_line(cache_marker) + "\n"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out_path.with_name(
         f".{out_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
@@ -434,9 +477,11 @@ __all__ = [
     "ForeignKeyInfo",
     "MissingColumnDocsError",
     "TableInfo",
+    "agents_md_cache_line",
     "agents_md_cache_marker",
     "introspect",
     "main",
     "render",
+    "sidecar_carries_cache_line",
     "write_agents_md",
 ]
