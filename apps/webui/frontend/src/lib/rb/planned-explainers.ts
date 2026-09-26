@@ -79,3 +79,14 @@ export function plannedTitle(id: string): string {
 	}
 	return `${entry} (${NOT_BUILT_MARK}.)`;
 }
+
+/** Rich ControlExplainer bullets for a planned topbar control (what + not built). */
+export function plannedExplainerBullets(id: string): readonly string[] {
+	const entry = PLANNED_CONTROLS[id];
+	if (entry === undefined) {
+		throw new Error(`planned-explainers: no entry for control '${id}'`);
+	}
+	const dash = entry.indexOf(' - ');
+	const description = dash === -1 ? entry : entry.slice(dash + 3);
+	return [description, `${NOT_BUILT_MARK}. See PARITY-TODO for build order.`];
+}
