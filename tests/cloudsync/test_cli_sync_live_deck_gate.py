@@ -491,3 +491,71 @@ def test_stale_real_mirror_defers_even_though_status_is_200(
     with pytest.raises(SyncDeferredError) as excinfo:
         maintenance._cli_live_ui_mirror(data_dir)
     assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+
+
+# ----- CLOUDSYNC-14 round 3 (Sol review 5323846238): proxies, incomplete docs -
+
+
+def test_environment_proxy_does_not_carry_the_engine_probe_elsewhere(
+    real_engine: tuple[str, Path, FastAPI], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the shell exports an HTTP proxy that refuses every connection
+    [then] the probe still reaches the engine its lock names and sees the
+    playing deck (Sol review, PR #3831, P1/BLOCKING). httpx honors proxy
+    variables by default, and a refused hop through a LOOPBACK proxy is
+    indistinguishable from a stopped engine, which reads as "nothing can be
+    playing"."""
+    base_url, data_dir, _app = real_engine
+    put_response = httpx.put(
+        f"{base_url}/api/v1/state/ui-mirror",
+        json={"decks": {"1": {"playing": True}}},
+        timeout=5.0,
+    )
+    assert put_response.status_code == 202
+    refusing_proxy = f"http://127.0.0.1:{free_port()}"
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"):
+        monkeypatch.setenv(name, refusing_proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    mirror = maintenance._cli_live_ui_mirror(data_dir)
+    assert mirror is not None and any_deck_playing(mirror)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {},
+        {"decks": {}},
+        {"decks": [{"playing": True}]},
+        {"decks": {"1": {}}},
+        {"decks": {"1": {"playing": "true"}}},
+        {"decks": {"1": {"playing": False}, "2": "playing"}},
+    ],
+    ids=["no-decks", "empty-decks", "decks-list", "deck-no-playing", "playing-str", "deck-str"],
+)
+def test_fresh_mirror_without_readable_decks_defers(
+    real_engine: tuple[str, Path, FastAPI], document: dict[str, Any]
+) -> None:
+    """[if] a verified engine serves a FRESH 200 mirror whose decks the gate
+    cannot read [then] the probe defers (Sol review, PR #3831, P1/BLOCKING):
+    ``any_deck_playing`` reads a missing or malformed deck as not playing."""
+    base_url, data_dir, _app = real_engine
+    put_response = httpx.put(f"{base_url}/api/v1/state/ui-mirror", json=document, timeout=5.0)
+    assert put_response.status_code == 202
+    with pytest.raises(SyncDeferredError) as excinfo:
+        maintenance._cli_live_ui_mirror(data_dir)
+    assert excinfo.value.reason == maintenance.DEFER_REASON_ENGINE_MIRROR_UNREACHABLE
+
+
+def test_fresh_complete_idle_mirror_still_reads_as_not_playing(
+    real_engine: tuple[str, Path, FastAPI],
+) -> None:
+    """Control for the test above, the other direction: a complete idle
+    four-deck document is trusted and reads as nothing playing, so the
+    structure check refuses only what it cannot read."""
+    base_url, data_dir, _app = real_engine
+    idle = {"decks": {str(n): {"playing": False, "effective_bpm": 124.0} for n in range(1, 5)}}
+    put_response = httpx.put(f"{base_url}/api/v1/state/ui-mirror", json=idle, timeout=5.0)
+    assert put_response.status_code == 202
+    mirror = maintenance._cli_live_ui_mirror(data_dir)
+    assert mirror is not None and not any_deck_playing(mirror)

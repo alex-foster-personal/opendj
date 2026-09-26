@@ -784,6 +784,34 @@ def _ui_mirror_is_fresh(body: Mapping[str, Any], *, now: datetime | None = None)
     return 0 <= age_s <= _UI_MIRROR_FRESHNESS_TOLERANCE_S
 
 
+def _ui_mirror_decks_are_readable(body: Mapping[str, Any]) -> bool:
+    """True when a 200 ui-mirror body carries the deck state the gate reads
+    (Sol review, PR #3831, P1/BLOCKING): a non-empty ``decks`` object whose
+    every entry is an object with a boolean ``playing``, the shape
+    ``lib/rb/ui-mirror.ts`` publishes. The route stores whatever JSON object
+    it is PUT, and ``any_deck_playing`` reads a missing or malformed deck as
+    "not playing", so without this a fresh but incomplete document would let
+    the CLI sync over a playing deck."""
+    decks = body.get("decks")
+    return (
+        isinstance(decks, dict)
+        and bool(decks)
+        and all(
+            isinstance(deck, dict) and isinstance(deck.get("playing"), bool)
+            for deck in decks.values()
+        )
+    )
+
+
+def _ui_mirror_is_trustworthy(body: Any) -> bool:
+    """A 200 body the gate may act on: a JSON object that is fresh
+    (`_ui_mirror_is_fresh`) and structurally complete
+    (`_ui_mirror_decks_are_readable`). Anything else defers."""
+    return (
+        isinstance(body, dict) and _ui_mirror_is_fresh(body) and _ui_mirror_decks_are_readable(body)
+    )
+
+
 def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
     """The ``ui_mirror`` a single lock file's engine reports, or None if safe.
 
@@ -837,7 +865,9 @@ def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
             return None
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
     try:
-        with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S) as http_client:
+        # trust_env=False for the same reason as engine_origin's identity
+        # probe: this GET must reach the engine just verified, not a proxy.
+        with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S, trust_env=False) as http_client:
             response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")
     except httpx.TransportError as exc:
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
@@ -849,11 +879,7 @@ def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
         if body == {"client_open": False}:
             return None
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
-    if response.status_code != 200:
-        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
-    if not isinstance(body, dict):
-        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
-    if not _ui_mirror_is_fresh(body):
+    if response.status_code != 200 or not _ui_mirror_is_trustworthy(body):
         raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
     return body
 

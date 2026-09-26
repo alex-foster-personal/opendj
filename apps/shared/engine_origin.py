@@ -171,7 +171,10 @@ def verify_engine_identity(origin: EngineOrigin) -> None:
 
     url = f"{origin.base_url}{HEALTH_PATH}"
     try:
-        with httpx.Client(timeout=IDENTITY_PROBE_TIMEOUT_S) as client:
+        # trust_env=False: the lock names this engine's own address, so an
+        # HTTP(S)_PROXY / ALL_PROXY in the environment must never carry the
+        # probe elsewhere (a refusing proxy would read as a stopped engine).
+        with httpx.Client(timeout=IDENTITY_PROBE_TIMEOUT_S, trust_env=False) as client:
             response = client.get(url)
     except httpx.TransportError as error:
         raise unreachable(origin, error) from error
