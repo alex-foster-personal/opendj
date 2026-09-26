@@ -102,11 +102,20 @@ def test_refs_parser_reads_every_issue_in_a_list_clause() -> None:
     """Sol P1 on 32b1221b1f: only the first number after the keyword was read."""
     assert psc.referenced_issues("Refs #1, #2 and #3") == {1, 2, 3}
     assert psc.referenced_issues("Fixes #7 & #8 / #9.") == {7, 8, 9}
+    # Sol P1 on 07e08f2002: the Oxford comma dropped the last issue.
+    assert psc.referenced_issues("Refs #1, #2, and #3") == {1, 2, 3}
+    assert psc.referenced_issues("Closes #4,#5 ,and #6") == {4, 5, 6}
+
+
+def test_refs_parser_reads_every_github_keyword_form() -> None:
+    body = "Ref #1. Close #2, closed #3. Fix #4, fixed #5. Resolve #6, resolved #7."
+    assert psc.referenced_issues(body) == {1, 2, 3, 4, 5, 6, 7}
 
 
 def test_refs_parser_does_not_widen_to_unkeyworded_mentions() -> None:
     """Control for the overshoot: a mention that no keyword introduces is not a link."""
     assert psc.referenced_issues("Refs #1. See #2, and #3 was related.") == {1}
+    assert psc.referenced_issues("a prefix #8 and suffixes #9") == set()
 
 
 # -- fetch: a partial or unresolvable read is no verdict ----------------------------

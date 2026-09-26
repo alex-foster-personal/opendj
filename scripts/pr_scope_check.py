@@ -49,9 +49,12 @@ FLEET_REVIEW_MAX_FILES: int = 80
 _LIMIT_RE = re.compile(
     r"(?im)^\s*scope[ -]limits?\s*:\s*commits\s*=\s*(\d+)\s*[,;]?\s*files\s*=\s*(\d+)"
 )
-# A keyword then a LIST of issues: "Refs #1, #2 and #3" links all three. Reading only the
+# A keyword then a LIST of issues: "Refs #1, #2, and #3" links all three, whatever mix of
+# whitespace, commas, "&", "/" and "and" separates them. Reading only the
 # first would turn a limit declared on #2 into UNDECLARED, a partial read as no verdict.
-_REFS_RE = re.compile(r"(?i)\b(?:refs|fixes|closes|resolves)\s+(#\d+(?:\s*(?:,|&|and|/)\s*#\d+)*)")
+_REFS_RE = re.compile(
+    r"(?i)\b(?:refs?|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(#\d+(?:(?:[\s,&/]|\band\b)+#\d+)*)"
+)
 _ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
 # Any line that starts like a declaration. One that _LIMIT_RE cannot parse is an error,
 # because reading it as no declaration would print UNDECLARED for a PR that declared one.
