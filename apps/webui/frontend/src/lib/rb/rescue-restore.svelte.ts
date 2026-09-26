@@ -10,6 +10,11 @@ import {
 	type PerformanceState
 } from '$lib/rb/performance-ipc.svelte';
 import { planRescueSimultaneousPlay } from '$lib/rb/performance-rescue-play';
+import {
+	resolveSavedOutputDevice,
+	type EnumeratedOutputDevice,
+	type SavedOutputDevice
+} from '$lib/player/output-device-resolve';
 import { decodeBeatStamp } from '$lib/rb/rescue-beat-stamp';
 import {
 	RESCUE_LAYOUT_WINDOW_MS,
@@ -32,12 +37,42 @@ export interface RescueRestorePlan {
 	mode: 'layout' | 'play';
 }
 
+export type RescueSinkRole = 'cue' | 'master';
+
+/** RESCUE-05, per saved sink: `none` (nothing was saved), `restored` (same id),
+ * `restored_by_label` (id salted away, one output carries the saved label),
+ * `not_found`, `ambiguous` (several outputs carry the label), `refused` (the
+ * list or the select itself failed). Only the first three select anything. */
+export type RescueSinkOutcome =
+	| 'none'
+	| 'restored'
+	| 'restored_by_label'
+	| 'not_found'
+	| 'ambiguous'
+	| 'refused';
+
+export interface RescueSinkResult {
+	outcome: RescueSinkOutcome;
+	/** The id selected on THIS launch; null when nothing was selected. */
+	device_id: string | null;
+	/** The warning shown to the operator; null unless the sink was not restored. */
+	notice: string | null;
+}
+
 export interface RescueRestoreResult {
 	snapshot_id: string;
 	captured_at_ms: number;
 	mode: 'layout' | 'play';
 	decks: Record<string, { outcome: RescueDeckOutcome; stable_id: string | null }>;
 }
+
+/** The page's restore result: the wire shape plus the one thing only the page
+ * can do, re-select the audio sinks against devices enumerated THIS launch. */
+export interface RescueUiRestoreResult extends RescueRestoreResult {
+	sinks: Record<RescueSinkRole, RescueSinkResult>;
+}
+
+export type RescueNotify = (message: string, kind: 'warn') => void;
 
 export interface PerformanceRescueOptions {
 	now?: () => number;
@@ -107,27 +142,127 @@ async function _restoreRescueDeckConfig(
 	}
 }
 
+//----------------------------------------------------------------- sinks (RESCUE-05)
+
+/** Cue first, then master: the order the snapshot has always been replayed in. */
+const SINK_ROLES: readonly RescueSinkRole[] = ['cue', 'master'];
+const SINK_NOUN: Readonly<Record<RescueSinkRole, string>> = {
+	cue: 'cue output',
+	master: 'master output'
+};
+/** What the operator is left with. Master falls back to the default output; the
+ * cue has no default device, and switching to practice would leak PFL into the
+ * room, so the cue is left unselected rather than guessed. */
+const SINK_FALLBACK: Readonly<Record<RescueSinkRole, string>> = {
+	cue: 'no cue output selected (pick one in I/O)',
+	master: 'using the default output'
+};
+const SINK_SELECT: Readonly<
+	Record<RescueSinkRole, 'headphone_output_select' | 'headphone_master_select'>
+> = { cue: 'headphone_output_select', master: 'headphone_master_select' };
+const NO_SINK: RescueSinkResult = { outcome: 'none', device_id: null, notice: null };
+
+function _savedSink(snapshot: RescueSnapshot, role: RescueSinkRole): SavedOutputDevice | null {
+	const headphones = snapshot.mixer.headphones;
+	const device_id =
+		role === 'cue'
+			? headphones.selected_output_device_id
+			: headphones.selected_master_output_device_id;
+	if (device_id === null) return null;
+	// `?? null`: the label field is absent on snapshots written before RESCUE-05.
+	const label =
+		(role === 'cue'
+			? headphones.selected_output_device_label
+			: headphones.selected_master_output_device_label) ?? null;
+	return { device_id, label };
+}
+
+function _unrestoredSink(
+	role: RescueSinkRole,
+	saved: SavedOutputDevice,
+	outcome: 'not_found' | 'ambiguous' | 'refused',
+	why: string,
+	notify: RescueNotify
+): RescueSinkResult {
+	// typeof, not `!== null`: this also names a malformed (non-string) saved label.
+	const name =
+		typeof saved.label === 'string' && saved.label.trim() !== ''
+			? `'${saved.label}'`
+			: `(unnamed, id ${String(saved.device_id).slice(0, 8)})`;
+	const notice = `Saved ${SINK_NOUN[role]} ${name} ${why}; ${SINK_FALLBACK[role]}`;
+	notify(notice, 'warn');
+	return { outcome, device_id: null, notice };
+}
+
+function _errorText(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+async function _restoreOneSink(
+	dispatch: typeof dispatchPerformanceCommand,
+	role: RescueSinkRole,
+	saved: SavedOutputDevice,
+	outputs: readonly EnumeratedOutputDevice[],
+	notify: RescueNotify
+): Promise<RescueSinkResult> {
+	try {
+		const resolution = resolveSavedOutputDevice(saved, outputs);
+		if (resolution.status === 'not_found') {
+			return _unrestoredSink(role, saved, 'not_found', 'not found', notify);
+		} else if (resolution.status === 'ambiguous_label') {
+			const why = `matches ${resolution.match_count} devices`;
+			return _unrestoredSink(role, saved, 'ambiguous', why, notify);
+		}
+		await dispatch({ type: SINK_SELECT[role], device_id: resolution.device_id });
+		return {
+			outcome: resolution.status === 'matched_id' ? 'restored' : 'restored_by_label',
+			device_id: resolution.device_id,
+			notice: null
+		};
+	} catch (error) {
+		// A malformed saved sink or a refused select: this sink only, never the restore.
+		const why = `could not be restored: ${_errorText(error)}`;
+		return _unrestoredSink(role, saved, 'refused', why, notify);
+	}
+}
+
+/**
+ * Replay the output mode, then each saved sink. A saved id is resolved against a
+ * FRESH enumeration rather than handed to the selector as-is: the id was salted
+ * for the crashed launch's origin, and the selector (rightly) refuses an id it
+ * cannot see. A sink that cannot be restored is reported on its own and never
+ * aborts the other sink or the decks (bifrost1 gate, integration-41623ef6a).
+ */
 async function _restoreSinks(
 	dispatch: typeof dispatchPerformanceCommand,
-	snapshot: RescueSnapshot
-): Promise<void> {
-	const headphones = snapshot.mixer.headphones;
+	query: typeof queryPerformanceState,
+	snapshot: RescueSnapshot,
+	notify: RescueNotify
+): Promise<Record<RescueSinkRole, RescueSinkResult>> {
 	await dispatch({
 		type: 'output_mode',
-		mode: headphones.output_mode
+		mode: snapshot.mixer.headphones.output_mode
 	});
-	if (headphones.selected_output_device_id !== null) {
-		await dispatch({
-			type: 'headphone_output_select',
-			device_id: headphones.selected_output_device_id
-		});
+	const results: Record<RescueSinkRole, RescueSinkResult> = { cue: NO_SINK, master: NO_SINK };
+	const saved = { cue: _savedSink(snapshot, 'cue'), master: _savedSink(snapshot, 'master') };
+	if (saved.cue === null && saved.master === null) return results;
+	let outputs: readonly EnumeratedOutputDevice[];
+	try {
+		await dispatch({ type: 'headphone_outputs_refresh' });
+		outputs = query().mixer.headphones.outputs;
+	} catch (error) {
+		const why = `could not be restored: ${_errorText(error)}`;
+		for (const role of SINK_ROLES) {
+			const sink = saved[role];
+			if (sink !== null) results[role] = _unrestoredSink(role, sink, 'refused', why, notify);
+		}
+		return results;
 	}
-	if (headphones.selected_master_output_device_id !== null) {
-		await dispatch({
-			type: 'headphone_master_select',
-			device_id: headphones.selected_master_output_device_id
-		});
+	for (const role of SINK_ROLES) {
+		const sink = saved[role];
+		if (sink !== null) results[role] = await _restoreOneSink(dispatch, role, sink, outputs, notify);
 	}
+	return results;
 }
 
 async function _restoreLayoutOnlyDeck(
@@ -158,10 +293,12 @@ export async function executeRescueRestore(
 		dispatch?: typeof dispatchPerformanceCommand;
 		query?: typeof queryPerformanceState;
 		audioContextTime?: () => number;
+		notify?: RescueNotify;
 	} = {}
-): Promise<RescueRestoreResult> {
+): Promise<RescueUiRestoreResult> {
 	const dispatch = opts.dispatch ?? dispatchPerformanceCommand;
 	const query = opts.query ?? queryPerformanceState;
+	const notify = opts.notify ?? pushToast;
 	const snapshot = plan.snapshot;
 	const outcomes: RescueRestoreResult['decks'] = {};
 
@@ -178,7 +315,7 @@ export async function executeRescueRestore(
 			stable_id: snapshot.decks[deckId].stable_id
 		};
 	}
-	await _restoreSinks(dispatch, snapshot);
+	const sinks = await _restoreSinks(dispatch, query, snapshot, notify);
 
 	if (plan.mode === 'layout') {
 		for (const deckId of DECK_IDS) {
@@ -193,7 +330,8 @@ export async function executeRescueRestore(
 			snapshot_id: 'ui',
 			captured_at_ms: snapshot.captured_at_ms,
 			mode: plan.mode,
-			decks: outcomes
+			decks: outcomes,
+			sinks
 		};
 	}
 
@@ -240,7 +378,8 @@ export async function executeRescueRestore(
 		snapshot_id: 'ui',
 		captured_at_ms: snapshot.captured_at_ms,
 		mode: plan.mode,
-		decks: outcomes
+		decks: outcomes,
+		sinks
 	};
 }
 
