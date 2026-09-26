@@ -68,7 +68,8 @@
 	const bodyStyle = $derived.by(() => {
 		if (pinDraft === null) return '';
 		const pos = measuredPos;
-		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
 	function _reposition(): void {
@@ -271,7 +272,7 @@
 {#if pinDraft !== null}
 	<div
 		class="fb-bubble"
-		style="{bodyStyle}; z-index: {OVERLAY_Z_INDEX.feedbackPinBubble}"
+		style={bodyStyle}
 		role="dialog"
 		aria-label="New comment pin"
 		bind:this={bubbleElement}

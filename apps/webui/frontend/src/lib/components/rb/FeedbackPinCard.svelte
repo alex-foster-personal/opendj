@@ -47,7 +47,8 @@
 	 * prop change, not just at mount. */
 	const bodyStyle = $derived.by(() => {
 		const pos = measuredPos;
-		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
 	const thread = $derived(pinThread(pin));
@@ -125,7 +126,7 @@
 
 <div
 	class="fb-pin-body"
-	style="{bodyStyle}; z-index: {OVERLAY_Z_INDEX.feedbackPinBubble}"
+	style={bodyStyle}
 	role="dialog"
 	aria-label="Comment pin"
 	bind:this={pinBodyElement}
