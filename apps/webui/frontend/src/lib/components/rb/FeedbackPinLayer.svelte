@@ -59,7 +59,8 @@
 	let foreignDraftParked = $state(false);
 	let pathname = $state('/');
 	afterNavigate(({ to }) => {
-		pathname = to.url.pathname;
+		// `to` is null only when navigating out of the app; keep the last route.
+		if (to !== null) pathname = to.url.pathname;
 	});
 	let openPinId: string | null = $state(null);
 	let pinSeen: PinSeen = $state({});
