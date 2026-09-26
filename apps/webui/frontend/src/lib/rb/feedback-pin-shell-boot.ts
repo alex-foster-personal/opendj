@@ -20,6 +20,7 @@ import { bootScheduler, type BootScheduler } from '$lib/rb/boot-scheduler';
 export interface FeedbackPinShell {
 	layer: Component;
 	shellButton: Component;
+	dock: Component;
 	installCommentPinHotkeys: () => () => void;
 }
 
@@ -28,12 +29,13 @@ async function loadFeedbackPinShell(): Promise<FeedbackPinShell> {
 	// Each import names what it takes (`({ default: x })`, not a namespace
 	// read later), so the dead-export scan can see installCommentPinHotkeys
 	// is used; a namespace object passed through Promise.all hides that.
-	const [layer, shellButton, installCommentPinHotkeys] = await Promise.all([
+	const [layer, shellButton, dock, installCommentPinHotkeys] = await Promise.all([
 		import('$lib/components/rb/FeedbackPinLayer.svelte').then(({ default: c }) => c),
 		import('$lib/components/rb/FeedbackPinShellButton.svelte').then(({ default: c }) => c),
+		import('$lib/components/rb/FeedbackDock.svelte').then(({ default: c }) => c),
 		import('$lib/rb/comment-pin-hotkeys').then(({ installCommentPinHotkeys }) => installCommentPinHotkeys)
 	]);
-	return { layer, shellButton, installCommentPinHotkeys };
+	return { layer, shellButton, dock, installCommentPinHotkeys };
 }
 
 /** Queue the load behind the boot window; `onReady` gets the loaded pieces,

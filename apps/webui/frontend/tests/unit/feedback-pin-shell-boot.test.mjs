@@ -47,6 +47,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const SHELL = {
 	layer: function Layer() {},
 	shellButton: function Button() {},
+	dock: function Dock() {},
 	installCommentPinHotkeys: () => () => {}
 };
 

@@ -4,6 +4,7 @@
  */
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
+import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
@@ -151,6 +152,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	APP_POSTURE_SETTING,
+	GIG_HELPER_SETTING,
 	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',
@@ -244,6 +246,33 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'When on (default), switching MORE/LESS cross-fades and shrinks the collapsing panels. Off swaps instantly. prefers-reduced-motion always forces instant regardless.',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_right_mirror',
+		label: 'Mirror deck 2 controls',
+		group: 'performance',
+		keywords: ['deck', 'mirror', 'symmetry', 'deck 2', 'layout', 'right column'],
+		title: 'Mirror deck 2 main control row for mixer-facing symmetry',
+		detail:
+			'When on, deck 2 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'playlist_tree_view',
+		label: 'Playlist sidebar layout',
+		group: 'library',
+		keywords: ['playlist', 'tree', 'column', 'browser', 'library', 'sidebar'],
+		title: 'Playlist sidebar tree vs column browser',
+		detail: 'Tree shows the playlist list; column browser shows genre/artist/album columns. Persisted across sessions.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'tree', label: 'Tree list' },
+				{ value: 'column', label: 'Column browser' }
+			]
+		}
 	},
 	{
 		id: 'deck_layout_duration_ms',

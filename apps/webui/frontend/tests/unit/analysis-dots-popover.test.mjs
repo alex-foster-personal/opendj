@@ -67,6 +67,7 @@ test('AnalysisDotsPopover.svelte order() guards against double-fire and re-entra
 	);
 });
 
+// REQ: LIBUX-11
 test('AnalysisDotsPopover.svelte orders through the track-scoped HTTP client', () => {
 	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
 	assert.ok(src.includes('orderTrackAnalysis'), 'must use the shared track order client');
