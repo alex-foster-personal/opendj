@@ -591,3 +591,22 @@ def test_an_unbounded_or_zero_busy_wait_is_refused(tmp_path: Path, bound: float)
             opener(db_path, busy_timeout_s=bound)
     assert math.isfinite(state_db.BOOT_BUSY_TIMEOUT_S)
     assert state_db.BOOT_BUSY_TIMEOUT_S > state_db.DEFAULT_BUSY_TIMEOUT_S
+
+
+@pytest.mark.parametrize(
+    "bound", [0.5, state_db.DEFAULT_BUSY_TIMEOUT_S, state_db.BOOT_BUSY_TIMEOUT_S],
+)
+def test_each_handle_carries_the_bound_it_was_asked_for(
+    tmp_path: Path, bound: float,
+) -> None:
+    """[if] a handle is opened with a busy wait [then] SQLite reports that
+    exact wait for every later statement, [else stop]. The first statement
+    alone cannot show this: a later PRAGMA could shorten the wait after it."""
+    db_path = _current_wal_state_db(tmp_path / "state.db")
+    for opener in (state_db.open_rw, state_db.open_ro):
+        conn = opener(db_path, busy_timeout_s=bound)
+        try:
+            effective_ms = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        finally:
+            conn.close()
+        assert effective_ms == round(bound * 1000), opener.__name__
