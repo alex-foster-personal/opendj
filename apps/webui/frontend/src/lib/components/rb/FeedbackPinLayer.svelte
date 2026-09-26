@@ -4,6 +4,7 @@
 	 * open card, Option-gated badges, and anchor highlight. Mounted once from
 	 * +layout.svelte so pins work on every route and over root overlays.
 	 */
+	import { afterNavigate } from '$app/navigation';
 	import { onMount, untrack } from 'svelte';
 	import {
 		describeAnchor,
@@ -59,6 +60,10 @@
 	let draftHydrated = $state(false);
 	let foreignDraftParked = $state(false);
 	let pathname = $state('/');
+	afterNavigate(({ to }) => {
+		// `to` is null only when navigating out of the app; keep the last route.
+		if (to !== null) pathname = to.url.pathname;
+	});
 	let openPinId: string | null = $state(null);
 	let pinSeen: PinSeen = $state({});
 	let pinsVisible: boolean = $state(false);

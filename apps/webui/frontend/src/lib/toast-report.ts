@@ -185,6 +185,8 @@ export interface ToastReportInput {
 	/** ISO 8601 UTC, and the SAME instant the log row carries. */
 	createdAt: string;
 	env: ToastEnvironment;
+	/** Optional context lines appended after the closed env block (deck/sync, caller context). */
+	extras?: Record<string, string> | undefined;
 }
 
 /**
@@ -216,6 +218,9 @@ export function buildToastReport(input: ToastReportInput): string {
 		`user: ${env.user}`,
 		`client: ${env.client.name} ${env.client.version}`,
 		`page: ${env.url}`,
+		...(input.extras === undefined
+			? []
+			: Object.entries(input.extras).map(([key, value]) => `${key}: ${value}`)),
 		`find in logs: search ${input.id}`
 	];
 	return lines.join('\n');
