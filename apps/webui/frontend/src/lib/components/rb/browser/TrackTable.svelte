@@ -77,7 +77,7 @@
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex,
-		scrollTopForDeckLayoutAnchor
+		scrollTopToKeepRowVisible
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -775,14 +775,22 @@
 		const el = wrapEl;
 		const anchor = deckLayoutAnchor;
 		if (el === null || anchor === null || viewportHeight <= 0) return;
-		const next = scrollTopForDeckLayoutAnchor({
-			rowIndex: anchor.rowIndex,
-			rowHeight,
-			headerOffsetPx: TRACK_TABLE_THEAD_PX,
-			viewportHeight,
-			priorScrollTop: anchor.priorScrollTop,
-			priorViewportHeight: anchor.priorViewportHeight
-		});
+		const next =
+			anchor.priorViewportHeight > 0
+				? scrollTopToKeepRowVisible({
+						rowIndex: anchor.rowIndex,
+						rowHeight,
+						headerOffsetPx: TRACK_TABLE_THEAD_PX,
+						viewportHeight,
+						priorScrollTop: anchor.priorScrollTop,
+						priorViewportHeight: anchor.priorViewportHeight
+					})
+				: scrollTopForRowIndex({
+						rowIndex: anchor.rowIndex,
+						rowHeight,
+						headerOffsetPx: TRACK_TABLE_THEAD_PX,
+						offsetFromTopPx: Math.max(0, Math.floor(viewportHeight / 3))
+					});
 		el.scrollTop = next;
 		liveScrollTop = next;
 		onscrollcursor?.(next);
@@ -1914,8 +1922,7 @@
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
-				{emptyMessage}
-				{#if onemptyretry !== undefined}
+				{emptyMessage}{#if onemptyretry !== undefined}
 					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>

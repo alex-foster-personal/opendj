@@ -17,6 +17,8 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from apps.analysis import selection
+
 from .own_lane_store import (
     SOURCE_OWN,
     canonical_lane_result,
@@ -83,9 +85,16 @@ def apply_own_waveform(
         ):
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_WAVEFORM_LANE)
+        keep_served_waveform = result is None and selection.implicit_own_default(
+            conn, OWN_WAVEFORM_LANE, has_rb_mapping=has_rb_mapping
+        )
     finally:
         if conn is not None:
             conn.close()
+    if keep_served_waveform:
+        # No own waveform yet, and own is only the STANDALONE-06 default:
+        # keep the locally decoded peaks rather than blanking the deck.
+        return payload
     payload["waveform"] = _waveform_block(result)
     return payload
 

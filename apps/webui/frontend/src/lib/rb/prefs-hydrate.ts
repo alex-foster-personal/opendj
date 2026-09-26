@@ -13,6 +13,7 @@ import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
+import { GIG_HELPER_PREFS, type GigHelperPref } from './gig-helper-prefs';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
@@ -92,6 +93,7 @@ export type DiskPrefsPatch = {
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
 	app_posture?: AppPosturePref;
+	gig_helper?: GigHelperPref;
 	beat_sync_max?: boolean;
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
@@ -171,6 +173,7 @@ export interface PrefsHydrateTarget {
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
 	app_posture: AppPosturePref;
+	gig_helper: GigHelperPref;
 	app_mode: AppModePrefs['app_mode'];
 	beat_sync_max: boolean;
 	auto_play_enabled: boolean;
@@ -274,6 +277,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				uiPrefs.app_posture = body.app_posture;
 				setResolvedPosture(body.app_posture);
 				applyAllCaps();
+			}
+			if (
+				body.gig_helper !== undefined &&
+				(GIG_HELPER_PREFS as readonly string[]).includes(body.gig_helper)
+			) {
+				uiPrefs.gig_helper = body.gig_helper;
 			}
 			if (body.app_mode !== undefined) {
 				const diskAppMode = body.app_mode;
