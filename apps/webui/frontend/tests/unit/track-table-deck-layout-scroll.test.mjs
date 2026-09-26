@@ -18,7 +18,7 @@ test('MORE/LESS deck layout preserves the selected row across viewport height ch
 	);
 	assert.match(
 		src,
-		/scrollTopToKeepRowVisible\(\{/,
+		/scrollTopForDeckLayoutAnchor\(\{/,
 		'must recompute scrollTop when the library viewport height changes'
 	);
 	assert.match(

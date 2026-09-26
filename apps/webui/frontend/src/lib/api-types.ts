@@ -14031,6 +14031,12 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Gig Helper
+             * @default unset
+             * @enum {string}
+             */
+            gig_helper: "unset" | "off" | "on";
+            /**
              * Hide Broken Links
              * @default false
              */
@@ -14157,6 +14163,8 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Gig Helper */
+            gig_helper?: ("unset" | "off" | "on") | null;
             /** Hide Broken Links */
             hide_broken_links?: boolean | null;
             /** Hide Todo Settings */

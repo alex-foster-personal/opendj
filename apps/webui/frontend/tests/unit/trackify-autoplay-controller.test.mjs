@@ -217,11 +217,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			assert.equal(state.deck.stable_id, 'good');
 			assert.equal(state.deck.playing, true);
 			assert.match(state.last_skip_reason ?? '', /^skipped bad: decode failed$/);
-			const pushed = entry.toasts.slice(toastsBefore).map((toast) => toast.message);
-			assert.ok(
-				pushed.some((message) => message.includes('Trackify: skipped track (decode failed)')),
-				`expected a skip toast, got ${JSON.stringify(pushed)}`
-			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.deepEqual(pushed, [
+				['info', 'Trackify: skipped track (decode failed)']
+			]);
 		} finally {
 			mock.timers.reset();
 		}
@@ -261,10 +262,12 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 				/^skipped bad: .*did not settle within/,
 				`a hung load must be skipped within ${REQUIRED_SKIP_BOUND_MS}ms`
 			);
+			const pushed = entry.toasts
+				.slice(toastsBefore)
+				.map((toast) => [toast.kind, toast.message]);
+			assert.equal(pushed.length, 1, `expected exactly one skip toast, got ${JSON.stringify(pushed)}`);
 			assert.ok(
-				entry.toasts
-					.slice(toastsBefore)
-					.some((toast) => toast.message.startsWith('Trackify: skipped track (')),
+				pushed[0][1].startsWith('Trackify: skipped track ('),
 				'the skip must be toasted'
 			);
 
