@@ -16,8 +16,8 @@ export type ToastErrorClass =
 export interface ToastDiagnostic {
 	classification: ToastErrorClass;
 	feature: string;
-	settingsSummary?: string;
-	hint?: string;
+	settingsSummary?: string | undefined;
+	hint?: string | undefined;
 }
 
 function contextString(context: Record<string, unknown>, keys: string[]): string | undefined {
@@ -44,7 +44,7 @@ export function classifyToastError(input: {
 	message: string;
 	cause?: unknown;
 	context?: Record<string, unknown>;
-	feature?: string;
+	feature?: string | undefined;
 }): ToastDiagnostic {
 	const message = input.message;
 	const context = input.context ?? {};

@@ -640,8 +640,8 @@ export interface ToastIpcRow {
 	message: string;
 	headline: string;
 	detail?: string | undefined;
-	classification?: string;
-	settings_summary?: string;
+	classification?: string | undefined;
+	settings_summary?: string | undefined;
 	exiting?: boolean;
 	expanded: boolean;
 	count: number;

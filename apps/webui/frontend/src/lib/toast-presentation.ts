@@ -87,7 +87,7 @@ function splitDeckLoadMessage(message: string): ToastPresentation | null {
  */
 function applyDiagnostic(
 	presentation: ToastPresentation,
-	diagnostic?: ToastDiagnostic
+	diagnostic?: ToastDiagnostic | undefined
 ): ToastPresentation {
 	if (diagnostic === undefined) return presentation;
 	const feature = diagnostic.feature !== '' ? diagnostic.feature : presentation.feature;
@@ -119,7 +119,7 @@ export function formatToastPresentation(input: {
 	message: string;
 	cause?: unknown;
 	feature?: string | undefined;
-	diagnostic?: ToastDiagnostic;
+	diagnostic?: ToastDiagnostic | undefined;
 }): ToastPresentation {
 	const rawMessage = input.message;
 	const feature = inferFeature(rawMessage, input.feature ?? input.diagnostic?.feature);

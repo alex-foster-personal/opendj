@@ -71,10 +71,10 @@ export type Toast = {
 	createdAt: string;
 	count: number;
 	groupKey: string | undefined;
-	classification?: ToastErrorClass;
-	settingsSummary?: string;
-	hint?: string;
-	causeStack?: string;
+	classification?: ToastErrorClass | undefined;
+	settingsSummary?: string | undefined;
+	hint?: string | undefined;
+	causeStack?: string | undefined;
 	/** Tray eviction animation in progress (UX-TOAST-03). */
 	exiting?: boolean;
 	/** Latest `pushToast` context keys for clipboard copy (issue #3980). */
