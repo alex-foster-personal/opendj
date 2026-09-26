@@ -8,6 +8,7 @@ POST with missing marks classifying as missing-telemetry.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,16 +26,34 @@ def _config() -> str:
     return CONFIG.read_text(encoding="utf-8")
 
 
+def _top_level_use_properties(text: str) -> dict[str, str]:
+    """Property name -> value expression of `defineConfig({ use: { ... } })`,
+    the one-tab-indented `use` block (project-level `use` blocks nest deeper)."""
+    body = text[text.index("export default defineConfig({") :]
+    block = re.search(r"^\tuse: \{\n(.*?)^\t\}", body, re.MULTILINE | re.DOTALL)
+    assert block is not None, "no top-level `use: {` block in defineConfig"
+    props: dict[str, str] = {}
+    for line in block.group(1).splitlines():
+        entry = line.strip().rstrip(",")
+        if not entry or entry.startswith("//"):
+            continue
+        name, _, value = entry.partition(":")
+        props[name.strip()] = value.strip() or name.strip()
+    return props
+
+
 # REQ: PERF-CAPTURE-03
 @pytest.mark.requirement("PERF-CAPTURE-03")
 def test_capture_replays_a_preconsented_storage_state() -> None:
     """[if] KPI_CAPTURE_GOOGLE_STORAGE_STATE is set [then] Playwright replays it, [else stop]."""
     text = _config()
-    assert "KPI_CAPTURE_GOOGLE_STORAGE_STATE" in text
-    assert "storageState" in text
-    assign_at = text.index("const storageStatePath = process.env.KPI_CAPTURE_GOOGLE_STORAGE_STATE")
-    use_at = text.index("storageState")
-    assert assign_at < use_at
+    assert "const storageStatePath = process.env.KPI_CAPTURE_GOOGLE_STORAGE_STATE;" in text
+    derived = re.search(r"^const storageState\s*=\s*([^;]+);", text, re.MULTILINE)
+    assert derived is not None, "no top-level `const storageState = ...;`"
+    assert "storageStatePath" in derived.group(1), derived.group(1)
+    use_props = _top_level_use_properties(text)
+    assert "storageState" in use_props, use_props
+    assert use_props["storageState"] == "storageState", use_props
 
 
 # REQ: PERF-CAPTURE-03
