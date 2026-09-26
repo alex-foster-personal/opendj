@@ -45,6 +45,12 @@
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api } from "../api/client";
 import { writePinsVisible } from "./feedback-pin-visibility";
+import {
+  describePinLifecycleSummaryFromPins,
+  describePinOperatorExplainerLine,
+  describePinOperatorSummary,
+  type PinOperatorBreakdown,
+} from "./feedback-pin-operator-summary";
 import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
@@ -64,6 +70,10 @@ interface FeedbackState {
   availability: FeedbackAvailability;
   todos: FeedbackTodo[];
   pins: FeedbackPin[];
+  /** Operator bucket counts from GET /comments/summary when the daemon serves it. */
+  pinOperatorSummary: PinOperatorBreakdown | null;
+  /** False when /comments/summary is missing so the widget keeps the legacy stub. */
+  pinSummaryFromServer: boolean;
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
   placementArmed: boolean;
@@ -77,12 +87,38 @@ export const feedbackState: FeedbackState = $state({
   availability: "unknown",
   todos: [],
   pins: [],
+  pinOperatorSummary: null,
+  pinSummaryFromServer: false,
   general: null,
   panelOpen: false,
   placementArmed: false,
   pendingDraft: null,
   error: null,
 });
+
+/** Title line for the comment-pin control (FB-20 / pin 6af63c5e9b7c). */
+export function commentPinSummaryTitle(pins: FeedbackPin[]): string {
+  if (feedbackState.pinSummaryFromServer && feedbackState.pinOperatorSummary) {
+    return describePinOperatorSummary(feedbackState.pinOperatorSummary);
+  }
+  return describePinLifecycleSummaryFromPins(pins);
+}
+
+/** First ControlExplainer bullet for comment pins. */
+export function commentPinSummaryBullets(pins: FeedbackPin[]): string[] {
+  const first =
+    feedbackState.pinSummaryFromServer && feedbackState.pinOperatorSummary
+      ? describePinOperatorExplainerLine(feedbackState.pinOperatorSummary)
+      : describePinLifecycleSummaryFromPins(pins);
+  const bullets = [
+    first,
+    "Press M to arm comment placement (or Cmd+Shift+M from a text field).",
+  ];
+  if (!feedbackState.pinSummaryFromServer) {
+    bullets.push("Delegated / in-progress / queued are not tracked by the comment API yet.");
+  }
+  return bullets;
+}
 
 // ----- hydrate ------------------------------------------------------------
 let hydrating: Promise<void> | null = null;
@@ -107,6 +143,7 @@ async function _hydrate(): Promise<void> {
     feedbackState.general = general.data ?? null;
     feedbackState.availability = "ok";
     feedbackState.error = null;
+    await _refreshPinSummary();
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       // The daemon answered and does not serve feedback: settled fact.
@@ -471,6 +508,25 @@ export async function submitFollowOnWithAttachment(
 // ----- pin polling (same-tab live refresh, issue #914 review) -------------
 let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 
+async function _refreshPinSummary(): Promise<void> {
+  try {
+    const { data } = await api.GET("/api/v1/feedback/comments/summary");
+    if (data?.operator) {
+      feedbackState.pinOperatorSummary = data.operator;
+      feedbackState.pinSummaryFromServer = true;
+      return;
+    }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      feedbackState.pinSummaryFromServer = false;
+      feedbackState.pinOperatorSummary = null;
+      return;
+    }
+  }
+  feedbackState.pinSummaryFromServer = false;
+  feedbackState.pinOperatorSummary = null;
+}
+
 /** Re-GET pins and re-render. A transient miss leaves the board as it was;
  * the next tick retries, so one bad poll is silent rather than an error. A
  * 404 means the daemon no longer serves feedback at all (an older backend
@@ -485,6 +541,7 @@ export async function refreshPins(): Promise<void> {
     // than what this GET started from, so applying this snapshot now would
     // roll the board back.
     if (data && generation === _pinGeneration) feedbackState.pins = data.comments;
+    if (generation === _pinGeneration) await _refreshPinSummary();
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       feedbackState.availability = "missing";

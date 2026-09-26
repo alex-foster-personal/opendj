@@ -8,11 +8,12 @@
 	 * FeedbackPinLayer.svelte at the app root (FB-16).
 	 */
 	import { onMount } from 'svelte';
-	import { describePinStatusSummary } from '$lib/rb/feedback';
 	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		armPinPlacement,
+		commentPinSummaryBullets,
+		commentPinSummaryTitle,
 		feedbackState,
 		toggleFeedbackPanel
 	} from '$lib/rb/feedback-store.svelte';
@@ -35,7 +36,7 @@
 		if (unavailable) return COMMENT_UNAVAILABLE;
 		if (feedbackState.availability === 'unknown')
 			return 'Comment pins - probing the daemon for /api/v1/feedback';
-		const summary = describePinStatusSummary(feedbackState.pins);
+		const summary = commentPinSummaryTitle(feedbackState.pins);
 		return feedbackState.placementArmed
 			? `${summary}. Click anywhere to drop a comment pin (Esc cancels)`
 			: `${summary}. Click to drop a comment pin anywhere on the UI`;
@@ -46,11 +47,7 @@
 		if (feedbackState.availability === 'unknown') {
 			return ['Probing the daemon for /api/v1/feedback'];
 		}
-		return [
-			describePinStatusSummary(feedbackState.pins),
-			'Press M to arm comment placement (or Cmd+Shift+M from a text field).',
-			'Delegated / in-progress / queued are not tracked by the comment API yet.'
-		];
+		return commentPinSummaryBullets(feedbackState.pins);
 	});
 	const chevronTitle = $derived.by(() => {
 		if (unavailable) return FEEDBACK_UNAVAILABLE;

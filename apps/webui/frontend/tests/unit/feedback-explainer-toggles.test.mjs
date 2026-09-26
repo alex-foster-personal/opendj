@@ -6,9 +6,8 @@
  * viewer, persisted per-viewer) and a stubbed "show other users' pins"
  * (rb-inert, and a performance-bus command that answers not_implemented).
  *
- * Pin 6af63c5e9b7c: the hover-count breakdown work is ALREADY on main
- * (describePinStatusSummary, wired into commentPinTitle) - this packet only
- * adds the honest labelling of the buckets the comment API does not track.
+ * Pin 6af63c5e9b7c: operator hover breakdown (FB-20) via commentPinSummary*
+ * helpers when GET /comments/summary succeeds; legacy stub only when it does not.
  *
  * This is source-text wiring: the pieces of behaviour a Svelte compile step
  * would be needed to actually run are asserted here the same way
@@ -36,6 +35,10 @@ const EXPLAINER = readFileSync(
 );
 const VISIBILITY_ACTIONS = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackPinVisibilityActions.svelte', import.meta.url),
+	'utf8'
+);
+const STORE = readFileSync(
+	new URL('../../src/lib/rb/feedback-store.svelte.ts', import.meta.url),
 	'utf8'
 );
 const VISIBILITY_PREFERENCE = readFileSync(
@@ -66,12 +69,18 @@ test('the main comment button is wrapped in ControlExplainer with an end-user-wo
 	);
 });
 
-test('the explainer bullets name the honest breakdown, including what is NOT tracked yet', () => {
-	assert.match(WIDGET, /describePinStatusSummary\(feedbackState\.pins\)/);
+test('pin 6af63c5e9b7c explainer uses operator summary helpers and drops the untracked stub when the server summary is available', () => {
+	assert.match(WIDGET, /commentPinSummaryTitle\(feedbackState\.pins\)/);
+	assert.match(WIDGET, /commentPinSummaryBullets\(feedbackState\.pins\)/);
 	assert.match(
-		WIDGET,
-		/[Dd]elegated.*in-progress.*queued.*not tracked by the comment API/,
-		'the unavailable buckets must be stated plainly, never silently omitted'
+		STORE,
+		/pinSummaryFromServer/,
+		'must gate the legacy "not tracked" stub on whether /comments/summary succeeded'
+	);
+	assert.match(
+		STORE,
+		/Delegated \/ in-progress \/ queued are not tracked by the comment API yet/,
+		'fallback stub remains for daemons without /comments/summary'
 	);
 });
 

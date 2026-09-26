@@ -1,7 +1,6 @@
 <script lang="ts">
 	/** Compact comment-pin affordance for the app-shell topbar (FB-16). */
-	import { describePinStatusSummary } from '$lib/rb/feedback';
-	import { armPinPlacement, feedbackState } from '$lib/rb/feedback-store.svelte';
+	import { commentPinSummaryTitle, feedbackState, armPinPlacement } from '$lib/rb/feedback-store.svelte';
 
 	const COMMENT_UNAVAILABLE =
 		'Comment pins - this daemon does not serve /api/v1/feedback, so dropping a pin is unavailable';
@@ -11,7 +10,7 @@
 		if (unavailable) return COMMENT_UNAVAILABLE;
 		if (feedbackState.availability === 'unknown')
 			return 'Comment pins - probing the daemon for /api/v1/feedback';
-		const summary = describePinStatusSummary(feedbackState.pins);
+		const summary = commentPinSummaryTitle(feedbackState.pins);
 		return feedbackState.placementArmed
 			? `${summary}. Click anywhere to drop a comment pin (Esc cancels)`
 			: `${summary}. Click to drop a comment pin anywhere on the UI`;
