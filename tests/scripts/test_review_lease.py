@@ -46,8 +46,9 @@ def test_active_reviewer_errors_on_ambiguous_fixture() -> None:
         active_reviewer([label["name"] for label in data["labels"]])
 
 
-# REQ: REVIEW-10
+@pytest.mark.requirement("REVIEW-10")
 def test_assert_update_allowed_blocks_non_owner() -> None:
+    """[if] reviewer:codex holds and the actor is not codex [then] refuse, [else stop]."""
     lease = ReviewerLease(pr="1234", fleet="codex", label="reviewer:codex", head_sha=_HEAD)
     with pytest.raises(LeaseBlocked):
         assert_update_allowed(lease, None)
@@ -58,8 +59,9 @@ def test_assert_update_allowed_allows_owner() -> None:
     assert_update_allowed(lease, "codex")
 
 
-# REQ: REVIEW-10
+@pytest.mark.requirement("REVIEW-10")
 def test_format_blocked_names_reviewer_and_head() -> None:
+    """[if] an update is refused [then] name the label and exact head, [else stop]."""
     lease = ReviewerLease(pr="1234", fleet="codex", label="reviewer:codex", head_sha=_HEAD)
     msg = format_blocked(lease)
     assert "reviewer:codex" in msg
@@ -75,7 +77,6 @@ def test_lease_from_pr_view_builds_lease_from_fixture() -> None:
     assert lease.head_sha == data["headRefOid"]
 
 
-# REQ: REVIEW-10
 def test_check_exits_1_naming_reviewer_and_head(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -90,7 +91,6 @@ def test_check_exits_1_naming_reviewer_and_head(
     assert _HEAD in err
 
 
-# REQ: REVIEW-10
 def test_handoff_removes_reviewer_label_and_adds_handoff_label(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -122,7 +122,6 @@ def test_handoff_removes_reviewer_label_and_adds_handoff_label(
     assert edit[edit.index("--add-label") + 1] == HANDOFF_LABEL
 
 
-# REQ: REVIEW-10
 def test_emergency_notify_lists_each_new_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

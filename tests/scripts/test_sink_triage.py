@@ -390,7 +390,7 @@ def _boom_local(path: Path, offset: int, tail_bytes: int) -> tuple[bytes, int]:
     raise OSError(f"cannot read local sink {path}")
 
 
-# REQ: OPS-40
+@pytest.mark.requirement("OPS-40")
 def test_unreachable_ssh_source_is_skipped_and_offsets_unchanged(tmp_path: Path) -> None:
     source = HostSource(
         name="air", mode="ssh", sink_path=_SSH_SINK, truncations_path=_SSH_TRUNCATIONS
@@ -434,7 +434,7 @@ def test_reachable_source_still_yields_records_beside_an_unreachable_one(tmp_pat
     assert not [key for key in state.offsets if key.startswith("air:")]
 
 
-# REQ: OPS-40
+@pytest.mark.requirement("OPS-40")
 def test_run_triage_triages_reachable_sources_and_records_the_skip_in_kpi(
     tmp_path: Path,
 ) -> None:
@@ -467,7 +467,7 @@ def test_run_triage_triages_reachable_sources_and_records_the_skip_in_kpi(
     assert "255" in kpi["skipped_sources"][0]["error"]
 
 
-# REQ: OPS-40
+@pytest.mark.requirement("OPS-40")
 def test_run_triage_raises_and_writes_no_kpi_when_every_source_is_unreachable(
     tmp_path: Path,
 ) -> None:
@@ -567,7 +567,7 @@ def test_main_logs_skipped_hosts_and_exits_zero_on_a_partial_run(tmp_path: Path)
     assert "skipped=2/3" in log
 
 
-# REQ: OPS-40
+@pytest.mark.requirement("OPS-40")
 def test_main_exits_nonzero_and_names_every_host_when_all_sources_fail(tmp_path: Path) -> None:
     rc = main(["--jobs-dir", str(tmp_path)], fetch_local=_boom_local, fetch_ssh=_unreachable_ssh)
 

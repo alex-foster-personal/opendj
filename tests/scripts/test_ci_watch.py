@@ -446,7 +446,6 @@ def test_advanced_past_reports_false_when_the_pull_request_does_not_contain_it(m
     assert ci_watch._advanced_past("c" * 40, "d" * 40) is False
 
 
-# REQ: OPS-39
 def test_advanced_past_fails_closed_on_an_undeterminable_ancestry(monkeypatch):
     """Issue #3344's own seam contract: an ancestry check that could not be answered must
     read as advanced-past, never as fresh, or a git failure would silently reopen the excuse
