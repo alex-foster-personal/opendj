@@ -4,9 +4,32 @@
  * of the library's initial-load bundle (scripts/check-bundle-size.sh). */
 import { probeStemArtifact } from '$lib/rb/api-rb';
 import type { StemArtifactProbe } from '$lib/rb/api-rb';
-// Re-exported so the engine reaches the PERFMODE-15 stem block through its
-// existing stem-probe import: the block gates the probe this module runs.
-export { stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-decode-policy';
+import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
+import { unavailableStemDeckState } from '$lib/rb/stem-graph';
+import type { StemDeckState } from '$lib/rb/stem-types';
+
+/** PERFMODE-15: the settled `unavailable` stem state a deck shows while stems
+ * are blocked (Trackify), naming the reason, or null when stems are allowed.
+ * Here, beside the probe the block gates, because the engine already imports
+ * this module; the policy itself stays dependency-free. */
+export function stemsBlockedState(): StemDeckState | null {
+	const reason = stemDecodeBlockReason();
+	return reason === null ? null : unavailableStemDeckState(`stems disabled: ${reason}`);
+}
+
+/** The block check for ONE stem upgrade. Once stems are blocked it returns
+ * true and, while `isCurrent()` still holds for that upgrade's load, settles
+ * `deck.stems` to the blocked state. Read it before the upgrade's first await
+ * and in every stale check after it, so an upgrade already under way when the
+ * block begins stops at its next check. */
+export function stemBlockCheck(deck: { stems: StemDeckState }, isCurrent: () => boolean): () => boolean {
+	return () => {
+		const blockedState = stemsBlockedState();
+		if (blockedState === null) return false;
+		if (isCurrent()) deck.stems = blockedState;
+		return true;
+	};
+}
 
 /** How long a deck keeps re-asking for a bundle the server is still fetching
  * from R2. A four-part bundle is tens of MB; ten minutes covers a slow venue

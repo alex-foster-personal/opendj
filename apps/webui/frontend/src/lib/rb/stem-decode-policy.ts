@@ -10,14 +10,15 @@
  * One holder at a time. A second block while one is held is a lifecycle bug
  * (two Trackify sessions at once), so it throws rather than stacking.
  */
-import { unavailableStemDeckState } from '$lib/rb/stem-graph';
-import type { StemDeckState } from '$lib/rb/stem-types';
 
 interface StemDecodeBlock {
 	readonly reason: string;
 }
 
 let _block: StemDecodeBlock | null = null;
+// Aborted the moment a block begins, so stem work already in flight stops
+// instead of finishing (Codex review, PR #4039). A new one per unblocked span.
+let _abort = new AbortController();
 
 /** Block stem decode until the returned release is called. The release only
  * clears its OWN block, so a stale release cannot unblock a newer holder. */
@@ -28,8 +29,11 @@ export function blockStemDecode(reason: string): () => void {
 	}
 	const block: StemDecodeBlock = { reason };
 	_block = block;
+	_abort.abort(new DOMException(`stem work cancelled: ${reason}`, 'AbortError'));
 	return () => {
-		if (_block === block) _block = null;
+		if (_block !== block) return;
+		_block = null;
+		_abort = new AbortController();
 	};
 }
 
@@ -38,22 +42,8 @@ export function stemDecodeBlockReason(): string | null {
 	return _block === null ? null : _block.reason;
 }
 
-/** The settled `unavailable` stem state a blocked deck shows, naming the
- * reason, or null when decks may use stems. */
-export function stemsBlockedState(): StemDeckState | null {
-	return _block === null ? null : unavailableStemDeckState(`stems disabled: ${_block.reason}`);
-}
-
-/** The block check for ONE stem upgrade. Once stems are blocked it returns
- * true and, while `isCurrent()` still holds for that upgrade's load, settles
- * `deck.stems` to the blocked state. Read it before the upgrade's first await
- * and in every stale check after it, so an upgrade already probing when the
- * block begins stops at its next check. */
-export function stemBlockCheck(deck: { stems: StemDeckState }, isCurrent: () => boolean): () => boolean {
-	return () => {
-		const blockedState = stemsBlockedState();
-		if (blockedState === null) return false;
-		if (isCurrent()) deck.stems = blockedState;
-		return true;
-	};
+/** The signal every stem download passes to `fetch`: already aborted while
+ * stems are blocked, and aborted when a block begins mid-download. */
+export function stemWorkSignal(): AbortSignal {
+	return _abort.signal;
 }

@@ -53,6 +53,8 @@ let entry;
 let fetched = [];
 /** Per-test override for the stem manifest probe response. */
 let stemProbe = null;
+/** Per-test override for a stem PART request (url, init). */
+let partFetch = null;
 
 const json = (body) =>
 	new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -87,13 +89,17 @@ describe('Trackify never decodes stems; Gig still upgrades lazily (PERFMODE-15)'
 		entry = await importBundledSource(bundleText, 'trackify-no-stems-entry');
 		fetched = [];
 		stemProbe = null;
+		partFetch = null;
 		globalThis.window = {};
-		globalThis.fetch = async (input) => {
+		globalThis.fetch = async (input, init) => {
 			const url = typeof input === 'string' ? input : input.url;
 			fetched.push(url);
 			// A stem PART request answers 500 so a leaked fetch fails fast and
 			// visibly instead of hanging in decode with no AudioContext.
-			if (url.includes(`/tracks/${SID}/stems/`)) return new Response('stem part', { status: 500 });
+			if (url.includes(`/tracks/${SID}/stems/`)) {
+				if (partFetch !== null) return partFetch(url, init);
+				return new Response('stem part', { status: 500 });
+			}
 			if (url.includes(`/tracks/${SID}/stems`)) {
 				if (stemProbe !== null) return stemProbe();
 				return json({ status: 'unavailable', code: 'STEM_BUNDLE_NOT_FOUND', message: 'no stem bundle' });
@@ -184,6 +190,89 @@ describe('Trackify never decodes stems; Gig still upgrades lazily (PERFMODE-15)'
 			assert.deepEqual(parts, [], 'no stem part may be fetched once Trackify has mounted');
 			assert.equal(entry.deckStates[1].stems.status, 'unavailable');
 			assert.match(entry.deckStates[1].stems.error ?? '', /Trackify/);
+		} finally {
+			await uninstall();
+		}
+	});
+
+	/** A part download that only ends when its signal aborts. */
+	function holdPartsUntilAborted(signals) {
+		partFetch = (_url, init) => {
+			signals.push(init?.signal);
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(init.signal.reason));
+			});
+		};
+	}
+
+	async function waitFor(predicate, what) {
+		for (let i = 0; i < 200 && !predicate(); i += 1) await new Promise((resolve) => setImmediate(resolve));
+		assert.ok(predicate(), `timed out waiting for ${what}`);
+	}
+
+	// Codex review, PR #4039: a stage already in flight when the block begins
+	// used to run to completion, so Trackify could still download the bundle.
+	it('a stem part download in flight when Trackify mounts is aborted, not finished', async () => {
+		stemProbe = () => json(READY_MANIFEST);
+		const signals = [];
+		holdPartsUntilAborted(signals);
+		const upgrade = entry.upgradeDeckStemsForTest(1, SID, MIX_BUFFER);
+		await waitFor(() => signals.length > 0, 'the Gig part download to start');
+		assert.ok(
+			signals.every((signal) => signal instanceof AbortSignal && !signal.aborted),
+			'every stem part download must carry a live abort signal'
+		);
+		const uninstall = entry.installTrackifySession();
+		try {
+			assert.ok(signals.every((signal) => signal.aborted), 'mounting Trackify must abort the download');
+			await upgrade;
+			assert.equal(entry.deckStates[1].stems.status, 'unavailable');
+			assert.match(entry.deckStates[1].stems.error ?? '', /Trackify/);
+		} finally {
+			await uninstall();
+		}
+		// Control for the overshoot direction: once Trackify is gone, Gig's next
+		// download must not start out cancelled.
+		const after = [];
+		holdPartsUntilAborted(after);
+		void entry.upgradeDeckStemsForTest(1, SID, MIX_BUFFER);
+		await waitFor(() => after.length > 0, 'the next Gig part download to start');
+		assert.ok(after.every((signal) => !signal.aborted), 'Gig must get a live signal back after Trackify');
+	});
+
+	// Codex review, PR #4039: a direct Gig to Trackify navigation aborts Gig's
+	// engine teardown, so without this Trackify inherits Gig's decks and stems.
+	it('mounting Trackify unloads what Gig left: decks 2 to 4, and deck 1 when it holds or awaits stems', async () => {
+		const unloaded = [];
+		entry.engine.unload = async (deck) => {
+			unloaded.push(deck);
+			entry.deckStates[deck].stable_id = null;
+		};
+		entry.deckStates[1].stems = { ...entry.deckStates[1].stems, status: 'ready' };
+		entry.deckStates[3].stable_id = 'gig-deck-three';
+		const uninstall = entry.installTrackifySession();
+		try {
+			await waitFor(() => unloaded.length >= 2, 'the inherited decks to unload');
+			assert.deepEqual([...unloaded].sort(), [1, 3]);
+		} finally {
+			await uninstall();
+		}
+	});
+
+	it('control: a deck 1 with no stems keeps playing into Trackify', async () => {
+		const unloaded = [];
+		entry.engine.unload = async (deck) => {
+			unloaded.push(deck);
+			entry.deckStates[deck].stable_id = null;
+		};
+		entry.deckStates[1].stems = { ...entry.deckStates[1].stems, status: 'unavailable' };
+		entry.deckStates[2].stable_id = 'gig-deck-two';
+		const uninstall = entry.installTrackifySession();
+		try {
+			await waitFor(() => unloaded.length >= 1, 'deck 2 to unload');
+			for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+			assert.deepEqual(unloaded, [2], 'deck 1 without stems is the listening deck: keep it');
+			assert.equal(entry.deckStates[1].stable_id, SID);
 		} finally {
 			await uninstall();
 		}

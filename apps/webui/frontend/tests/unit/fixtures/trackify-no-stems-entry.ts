@@ -7,7 +7,8 @@
  * policy and every "blocked" assertion would read an unblocked engine.
  */
 export { deckStates, engine, upgradeDeckStemsForTest } from '$lib/rb/audio-engine.svelte';
-export { blockStemDecode, stemBlockCheck, stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
+export { blockStemDecode, stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
+export { stemBlockCheck } from '$lib/rb/stem-hydrate-wait';
 export { e2ePrimeTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 export { resetLibraryModeRuntimeForTest } from '$lib/rb/library-mode-runtime';
 export { installTrackifySession } from '$lib/rb/trackify-session.svelte';
