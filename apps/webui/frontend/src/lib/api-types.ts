@@ -7035,10 +7035,12 @@ export interface components {
          * BuildInfoOut
          * @description The identity contract the UI and any agent read.
          *
-         *     ``built_at_kind`` exists because the two sources measure different
-         *     moments: a payload knows when it was packaged, a checkout only knows when
-         *     HEAD was committed. Labelling which one is on screen costs one field and
-         *     removes a whole class of "why does this say yesterday" confusion.
+         *     ``built_at_kind`` exists because the sources measure different moments: a
+         *     payload knows when it was packaged; a repo checkout stamps the running
+         *     engine's start instant at identity resolution (``engine-start``). The
+         *     legacy ``head-commit`` literal remains on the wire for older readers only.
+         *     Labelling which moment is on screen removes "why does this say yesterday"
+         *     confusion.
          */
         BuildInfoOut: {
             /** App Version */
@@ -7047,7 +7049,7 @@ export interface components {
              * Built At Kind
              * @enum {string}
              */
-            built_at_kind: "payload-build" | "head-commit";
+            built_at_kind: "payload-build" | "head-commit" | "engine-start";
             /** Built At Utc */
             built_at_utc: string;
             /** Bundle Identifier */
