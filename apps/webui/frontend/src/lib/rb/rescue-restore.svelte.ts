@@ -12,9 +12,9 @@ import {
 import { planRescueSimultaneousPlay } from '$lib/rb/performance-rescue-play';
 import {
 	resolveSavedOutputDevice,
-	type EnumeratedOutputDevice,
 	type SavedOutputDevice
 } from '$lib/player/output-device-resolve';
+import type { HeadphoneState } from '$lib/rb/mixer-types';
 import { decodeBeatStamp } from '$lib/rb/rescue-beat-stamp';
 import {
 	RESCUE_LAYOUT_WINDOW_MS,
@@ -42,7 +42,8 @@ export type RescueSinkRole = 'cue' | 'master';
 /** RESCUE-05, per saved sink: `none` (nothing was saved), `restored` (same id),
  * `restored_by_label` (id salted away, one output carries the saved label),
  * `not_found`, `ambiguous` (several outputs carry the label), `refused` (the
- * list or the select itself failed). Only the first three select anything. */
+ * list or the select itself failed). Only `restored` and `restored_by_label`
+ * select anything. */
 export type RescueSinkOutcome =
 	| 'none'
 	| 'restored'
@@ -53,7 +54,10 @@ export type RescueSinkOutcome =
 
 export interface RescueSinkResult {
 	outcome: RescueSinkOutcome;
-	/** The id selected on THIS launch; null when nothing was selected. */
+	/** The output this sink is routed to after the step, read back from the
+	 * mixer: the restored output, or whatever the app fell back to (the
+	 * enumeration policy can auto-pin a speaker as master). Null means the
+	 * master follows the OS default, or no cue output is selected. */
 	device_id: string | null;
 	/** The warning shown to the operator; null unless the sink was not restored. */
 	notice: string | null;
@@ -150,17 +154,22 @@ const SINK_NOUN: Readonly<Record<RescueSinkRole, string>> = {
 	cue: 'cue output',
 	master: 'master output'
 };
-/** What the operator is left with. Master falls back to the default output; the
- * cue has no default device, and switching to practice would leak PFL into the
- * room, so the cue is left unselected rather than guessed. */
-const SINK_FALLBACK: Readonly<Record<RescueSinkRole, string>> = {
+/** What an unrestored sink is left with when nothing is selected for it. The
+ * cue has no default device, and falling back to practice would leak PFL into
+ * the room, so the cue is left unselected rather than guessed. */
+const SINK_NOTHING_SELECTED: Readonly<Record<RescueSinkRole, string>> = {
 	cue: 'no cue output selected (pick one in I/O)',
-	master: 'using the default output'
+	master: 'using the system default output'
 };
 const SINK_SELECT: Readonly<
 	Record<RescueSinkRole, 'headphone_output_select' | 'headphone_master_select'>
 > = { cue: 'headphone_output_select', master: 'headphone_master_select' };
 const NO_SINK: RescueSinkResult = { outcome: 'none', device_id: null, notice: null };
+
+type SinkMirror = Pick<
+	HeadphoneState,
+	'outputs' | 'selected_output_device_id' | 'selected_master_output_device_id'
+>;
 
 function _savedSink(snapshot: RescueSnapshot, role: RescueSinkRole): SavedOutputDevice | null {
 	const headphones = snapshot.mixer.headphones;
@@ -177,21 +186,42 @@ function _savedSink(snapshot: RescueSnapshot, role: RescueSinkRole): SavedOutput
 	return { device_id, label };
 }
 
+function _selectedSinkId(headphones: SinkMirror, role: RescueSinkRole): string | null {
+	return role === 'cue'
+		? headphones.selected_output_device_id
+		: headphones.selected_master_output_device_id;
+}
+
+/** typeof, not `!== null`: this also names a malformed (non-string) saved label. */
+function _describeOutput(label: unknown, deviceId: unknown): string {
+	return typeof label === 'string' && label.trim() !== ''
+		? `'${label}'`
+		: `(unnamed, id ${String(deviceId).slice(0, 8)})`;
+}
+
+/**
+ * Report a sink the restore could not select, naming what it is ACTUALLY routed
+ * to now, read back from the mixer rather than assumed: the enumeration refresh
+ * can auto-pin a speaker as master (`dualSinkAssignment`), and a cue select can
+ * auto-pin one too, so "the default" is only claimed when nothing is selected.
+ */
 function _unrestoredSink(
 	role: RescueSinkRole,
 	saved: SavedOutputDevice,
 	outcome: 'not_found' | 'ambiguous' | 'refused',
 	why: string,
+	query: typeof queryPerformanceState,
 	notify: RescueNotify
 ): RescueSinkResult {
-	// typeof, not `!== null`: this also names a malformed (non-string) saved label.
-	const name =
-		typeof saved.label === 'string' && saved.label.trim() !== ''
-			? `'${saved.label}'`
-			: `(unnamed, id ${String(saved.device_id).slice(0, 8)})`;
-	const notice = `Saved ${SINK_NOUN[role]} ${name} ${why}; ${SINK_FALLBACK[role]}`;
+	const headphones = query().mixer.headphones;
+	const inEffect = _selectedSinkId(headphones, role);
+	const fallback =
+		inEffect === null
+			? SINK_NOTHING_SELECTED[role]
+			: `using ${_describeOutput(headphones.outputs.find((output) => output.id === inEffect)?.label, inEffect)}`;
+	const notice = `Saved ${SINK_NOUN[role]} ${_describeOutput(saved.label, saved.device_id)} ${why}; ${fallback}`;
 	notify(notice, 'warn');
-	return { outcome, device_id: null, notice };
+	return { outcome, device_id: inEffect, notice };
 }
 
 function _errorText(error: unknown): string {
@@ -200,18 +230,18 @@ function _errorText(error: unknown): string {
 
 async function _restoreOneSink(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	role: RescueSinkRole,
 	saved: SavedOutputDevice,
-	outputs: readonly EnumeratedOutputDevice[],
 	notify: RescueNotify
 ): Promise<RescueSinkResult> {
 	try {
-		const resolution = resolveSavedOutputDevice(saved, outputs);
+		const resolution = resolveSavedOutputDevice(saved, query().mixer.headphones.outputs);
 		if (resolution.status === 'not_found') {
-			return _unrestoredSink(role, saved, 'not_found', 'not found', notify);
+			return _unrestoredSink(role, saved, 'not_found', 'not found', query, notify);
 		} else if (resolution.status === 'ambiguous_label') {
 			const why = `matches ${resolution.match_count} devices`;
-			return _unrestoredSink(role, saved, 'ambiguous', why, notify);
+			return _unrestoredSink(role, saved, 'ambiguous', why, query, notify);
 		}
 		await dispatch({ type: SINK_SELECT[role], device_id: resolution.device_id });
 		return {
@@ -222,7 +252,7 @@ async function _restoreOneSink(
 	} catch (error) {
 		// A malformed saved sink or a refused select: this sink only, never the restore.
 		const why = `could not be restored: ${_errorText(error)}`;
-		return _unrestoredSink(role, saved, 'refused', why, notify);
+		return _unrestoredSink(role, saved, 'refused', why, query, notify);
 	}
 }
 
@@ -246,21 +276,19 @@ async function _restoreSinks(
 	const results: Record<RescueSinkRole, RescueSinkResult> = { cue: NO_SINK, master: NO_SINK };
 	const saved = { cue: _savedSink(snapshot, 'cue'), master: _savedSink(snapshot, 'master') };
 	if (saved.cue === null && saved.master === null) return results;
-	let outputs: readonly EnumeratedOutputDevice[];
 	try {
 		await dispatch({ type: 'headphone_outputs_refresh' });
-		outputs = query().mixer.headphones.outputs;
 	} catch (error) {
 		const why = `could not be restored: ${_errorText(error)}`;
 		for (const role of SINK_ROLES) {
 			const sink = saved[role];
-			if (sink !== null) results[role] = _unrestoredSink(role, sink, 'refused', why, notify);
+			if (sink !== null) results[role] = _unrestoredSink(role, sink, 'refused', why, query, notify);
 		}
 		return results;
 	}
 	for (const role of SINK_ROLES) {
 		const sink = saved[role];
-		if (sink !== null) results[role] = await _restoreOneSink(dispatch, role, sink, outputs, notify);
+		if (sink !== null) results[role] = await _restoreOneSink(dispatch, query, role, sink, notify);
 	}
 	return results;
 }

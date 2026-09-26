@@ -1,8 +1,8 @@
 // requirement: RESCUE-05
 // [if] the saved sink id is enumerated [then] it is selected by id, even when another output carries the saved label
 // [if] the saved id is gone but exactly one output carries the saved label [then] that output is selected by label
-// [if] neither id nor label resolves [then] no select is dispatched, a specific toast names the output, restore continues
-// [if] two outputs carry the saved label [then] nothing is guessed: default kept, toast names the ambiguity
+// [if] neither id nor label resolves [then] no select is dispatched, the toast names the saved output AND the one actually in effect, restore continues
+// [if] two outputs carry the saved label [then] nothing is guessed: the toast names the ambiguity
 // [if] a sink select is refused [then] only that sink is reported refused; the other sink and every deck still restore
 // [if] the bifrost1 ring (legacy snapshot, id only, new origin) is restored [then] nothing throws; master reported not_found
 // [if] a snapshot is captured with a selected sink [then] the enumerated label is saved beside the id
@@ -15,9 +15,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const resolveMod = await loadTypeScriptModule('src/lib/player/output-device-resolve.ts');
 const snapshotMod = await loadTypeScriptModule('src/lib/rb/rescue-snapshot.ts');
 const restoreMod = await loadTypeScriptModule('src/lib/rb/rescue-restore.svelte.ts');
+const headphonesMod = await loadTypeScriptModule('src/lib/player/headphones.ts');
 
-// The five audiooutput labels the installed app enumerated on bifrost1 (WebView2 153,
-// gate-bifrost1-41623ef6a-run1 webview2-probe); ids are this launch's salted values.
+// The five audiooutput LABELS the installed app enumerated on bifrost1 (WebView2 153,
+// gate-bifrost1-41623ef6a-run1 webview2-probe). The probe records labels only, so the
+// ids are placeholders, except the literal Chromium pseudo-device ids.
 const BF1_OUTPUTS = [
 	{ id: 'default', label: 'Default - Headphones (Realtek(R) Audio)' },
 	{ id: 'communications', label: 'Communications - LS32D70xE (NVIDIA High Definition Audio)' },
@@ -157,13 +159,47 @@ function _snapshot(headphones) {
 	});
 }
 
+/**
+ * Command log plus a headphone mirror whose transitions are the PRODUCTION
+ * functions headphones.ts runs, over the captured labels: a refresh applies
+ * reconcileHeadphoneOutputRefresh + dualSinkAssignment (so a speaker-like output
+ * IS auto-pinned as master, exactly as on bifrost1), a select is refused by the
+ * real assertHeadphoneOutputSelection, and a cue select auto-pins master through
+ * the same dualSinkAssignment selectHeadphoneOutput uses. What only a browser
+ * can do (enumerateDevices across origins, setSinkId) is covered by
+ * tests/live/rescue-output-device-origin.mjs on real hardware.
+ */
 function _harness({ outputs = BF1_OUTPUTS, refuse = () => null } = {}) {
 	const log = [];
 	const toasts = [];
+	const headphones = { outputs: [], selected_output_device_id: null, selected_master_output_device_id: null };
 	const dispatch = async (command) => {
 		log.push(command);
 		const refusal = refuse(command);
 		if (refusal !== null) throw new Error(refusal);
+		if (command.type === 'headphone_outputs_refresh') {
+			headphones.outputs = outputs;
+			const cue = headphonesMod.reconcileHeadphoneOutputRefresh(false, headphones.selected_output_device_id, outputs);
+			const assignment = headphonesMod.dualSinkAssignment({
+				outputs,
+				selectedCueId: cue.selected_output_device_id,
+				selectedMasterId: headphones.selected_master_output_device_id
+			});
+			headphones.selected_output_device_id = assignment.cueId;
+			headphones.selected_master_output_device_id = assignment.masterId;
+		} else if (command.type === 'headphone_output_select') {
+			headphonesMod.assertHeadphoneOutputSelection(command.device_id, headphones.outputs);
+			const assignment = headphonesMod.dualSinkAssignment({
+				outputs: headphones.outputs,
+				selectedCueId: command.device_id,
+				selectedMasterId: headphones.selected_master_output_device_id
+			});
+			headphones.selected_output_device_id = command.device_id;
+			if (assignment.autoPinnedMaster) headphones.selected_master_output_device_id = assignment.masterId;
+		} else if (command.type === 'headphone_master_select') {
+			headphonesMod.assertHeadphoneOutputSelection(command.device_id, headphones.outputs);
+			headphones.selected_master_output_device_id = command.device_id;
+		}
 		return {};
 	};
 	// duration_ms: a restore that clamps the seek into the loaded track reads it,
@@ -171,7 +207,7 @@ function _harness({ outputs = BF1_OUTPUTS, refuse = () => null } = {}) {
 	const idle = { playing: false, audible: false, beatgrid: [], duration_ms: 300_000 };
 	const query = () => ({
 		decks: { 1: idle, 2: idle, 3: idle, 4: idle },
-		mixer: { headphones: { outputs } }
+		mixer: { headphones: { ...headphones } }
 	});
 	const notify = (message, kind) => toasts.push({ message, kind });
 	return { log, toasts, opts: { dispatch, query, notify } };
@@ -249,7 +285,7 @@ test('restore: salted-away ids are re-found by label and the NEW ids are selecte
 	assert.deepEqual(h.toasts, []);
 });
 
-test('restore: an unresolvable sink keeps the default, toasts specifically, and the restore continues', async () => {
+test('restore: an unresolvable master names the speaker the refresh auto-pinned, not "the default", and the restore continues', async () => {
 	const h = _harness();
 	const result = await restoreMod.executeRescueRestore(
 		{
@@ -264,12 +300,36 @@ test('restore: an unresolvable sink keeps the default, toasts specifically, and 
 	);
 	assert.deepEqual(_selects(h.log), []);
 	assert.equal(result.sinks.master.outcome, 'not_found');
-	assert.equal(result.sinks.master.device_id, null);
+	assert.equal(result.sinks.master.device_id, 'a11ce0000speakers', 'the output actually in effect');
 	assert.deepEqual(h.toasts, [
-		{ message: "Saved master output 'USB Audio CODEC' not found; using the default output", kind: 'warn' }
+		{
+			message: "Saved master output 'USB Audio CODEC' not found; using 'Speakers (Realtek(R) Audio)'",
+			kind: 'warn'
+		}
 	]);
 	assert.equal(_pauses(h.log).length, 4, 'every loaded deck is still paused after the sink step');
 	assert.equal(result.decks['4'].outcome, 'paused');
+});
+
+test('restore: with nothing auto-pinned, an unresolvable master says it follows the system default', async () => {
+	const outputs = [{ id: 'monitor-1', label: 'LS32D70xE (NVIDIA High Definition Audio)' }];
+	const h = _harness({ outputs });
+	const result = await restoreMod.executeRescueRestore(
+		{
+			snapshot: _snapshot({
+				selected_output_device_id: null,
+				selected_master_output_device_id: 'gone',
+				selected_master_output_device_label: 'USB Audio CODEC'
+			}),
+			mode: 'layout'
+		},
+		h.opts
+	);
+	assert.equal(result.sinks.master.outcome, 'not_found');
+	assert.equal(result.sinks.master.device_id, null);
+	assert.deepEqual(h.toasts, [
+		{ message: "Saved master output 'USB Audio CODEC' not found; using the system default output", kind: 'warn' }
+	]);
 });
 
 test('restore: an ambiguous label is not guessed; the toast names the ambiguity', async () => {
@@ -370,13 +430,9 @@ test('restore: a malformed saved sink is refused on its own; the other sink and 
 });
 
 test('restore: the bifrost1 ring (legacy snapshot, id only) no longer aborts the boot', async () => {
-	const h = _harness({
-		// What the real headphones.ts does with an unenumerated id: refuse loudly.
-		refuse: (c) =>
-			c.type === 'headphone_master_select' && !BF1_OUTPUTS.some((o) => o.id === c.device_id)
-				? `master output selection failed: headphone output ${c.device_id} is not an enumerated headphone output`
-				: null
-	});
+	// The harness's master select runs the real assertHeadphoneOutputSelection, the
+	// guard whose uncaught refusal aborted the bifrost1 boot.
+	const h = _harness();
 	const legacy = _snapshot({
 		output_mode: 'practice',
 		selected_output_device_id: null,
@@ -388,7 +444,7 @@ test('restore: the bifrost1 ring (legacy snapshot, id only) no longer aborts the
 	assert.equal(result.sinks.master.outcome, 'not_found');
 	assert.deepEqual(h.toasts, [
 		{
-			message: 'Saved master output (unnamed, id c30eed5e) not found; using the default output',
+			message: "Saved master output (unnamed, id c30eed5e) not found; using 'Speakers (Realtek(R) Audio)'",
 			kind: 'warn'
 		}
 	]);
