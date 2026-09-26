@@ -76,6 +76,7 @@ def update_ledger_pr(
     worktree_dir: Path,
     *,
     pre_run_content: str | None,
+    post_run_content: str,
 ) -> None:
     """Open or update the standing docs PR for nightly ledger appends.
 
@@ -131,8 +132,23 @@ def update_ledger_pr(
     ``pre_run_content``, folded together with anything an earlier run
     failed to publish, and archives that same set to an outbox on failure
     (Sol, PR #3827, P1/BLOCKING x2): see ``_update_ledger_pr_inner``.
+
+    ``post_run_content`` is the ledger exactly as the caller VALIDATED it
+    (`perf_kpi_ledger_local.refuse_ledger_edits_made_during_run` returns
+    it). Candidates are computed from that string, never from a second read
+    of the file, and the restore only replaces a file that still holds it
+    (Codex, PR #3827, P1/BLOCKING, "Make validation and publication snapshot
+    atomic"): a second read would let an edit landing between validation and
+    publication be published as a nightly row and then erased by the
+    restore.
     """
-    _update_ledger_pr_inner(repo_root, ledger_path, worktree_dir, pre_run_content=pre_run_content)
+    _update_ledger_pr_inner(
+        repo_root,
+        ledger_path,
+        worktree_dir,
+        pre_run_content=pre_run_content,
+        post_run_content=post_run_content,
+    )
 
 
 def _pr_list_argv(repository: str, branch: str) -> list[str]:
@@ -210,7 +226,12 @@ def _create_pr(repository: str, branch: str, *, cwd: Path) -> None:
 
 
 def _update_ledger_pr_inner(
-    repo_root: Path, ledger_path: Path, worktree_dir: Path, *, pre_run_content: str | None
+    repo_root: Path,
+    ledger_path: Path,
+    worktree_dir: Path,
+    *,
+    pre_run_content: str | None,
+    post_run_content: str,
 ) -> None:
     """Compute this run's true publish candidates and archive them on failure.
 
@@ -235,10 +256,10 @@ def _update_ledger_pr_inner(
     the FULL still-pending set, so nothing from the first failure is ever
     silently dropped by the second.
     """
-    # Snapshot of the file exactly as this run left it; the restore only
-    # replaces a file that still matches it (review comment 4108252023).
-    post_run_content = ledger_path.read_text(encoding="utf-8")
-    local_entries = load_ledger(ledger_path)["entries"]
+    # The caller's validated snapshot, not a fresh read: the restore only
+    # replaces a file that still matches it (review comment 4108252023), and
+    # candidates come from it alone (review comment 4109856184).
+    local_entries = json.loads(post_run_content)["entries"]
     pre_run_entries = json.loads(pre_run_content)["entries"] if pre_run_content else []
     tonight_entries = _new_entries_since(pre_run_entries, local_entries)
     outbox_dir = worktree_dir.parent / "unpublished-ledger-outbox"

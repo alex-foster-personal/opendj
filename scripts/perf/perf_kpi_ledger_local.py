@@ -117,9 +117,11 @@ def refuse_ledger_edits_made_during_run(
     *,
     pre_run_content: str | None,
     append_batches: Sequence[list[dict[str, Any]]],
-) -> None:
-    """Raise unless ``ledger_path`` holds exactly ``pre_run_content`` plus this
-    run's own ``append_batches``, byte for byte.
+) -> str:
+    """Return the ledger text if it holds exactly ``pre_run_content`` plus this
+    run's own ``append_batches``, byte for byte; raise otherwise. The caller
+    passes the returned text to `update_ledger_pr` as ``post_run_content``,
+    so publication uses the same snapshot this validated.
 
     Codex, PR #3827, P1/BLOCKING, "Guard edits during the measurement
     window": the publish treats everything new since ``pre_run_content`` as
@@ -148,6 +150,11 @@ def refuse_ledger_edits_made_during_run(
             f"{ledger_path} changed while the nightly run was measuring; refusing to publish "
             "or restore it, so that edit and tonight's rows both stay in the file"
         )
+    if actual is None:
+        raise RuntimeError(
+            f"{ledger_path} does not exist after the nightly run; nothing to publish"
+        )
+    return actual
 
 
 def _restore_tracked_ledger(

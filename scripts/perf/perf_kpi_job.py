@@ -86,7 +86,7 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
             file_issue=not skip_pr,
         )
         if not skip_pr:
-            refuse_ledger_edits_made_during_run(
+            validated_content = refuse_ledger_edits_made_during_run(
                 config.ledger_path,
                 pre_run_content=pre_run_content,
                 append_batches=outcome.append_batches,
@@ -96,6 +96,7 @@ def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
                 config.ledger_path,
                 config.ledger_worktree,
                 pre_run_content=pre_run_content,
+                post_run_content=validated_content,
             )
         return outcome.exit_code
     finally:

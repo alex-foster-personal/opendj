@@ -2,24 +2,34 @@
 
 from __future__ import annotations
 
+import contextlib
+import http.server
 import json
 import plistlib
 import socket
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import build
-from scripts.perf import perf_kpi_job, perf_kpi_nightly
+from scripts.perf import perf_kpi_job, perf_kpi_ledger_pr
 from scripts.perf.kpi_ledger_append import append_entries
 from scripts.perf.perf_kpi_config import REPO_ROOT, load_config, require_machine_label
 from scripts.perf.perf_kpi_job import cmd_nightly
 from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE_LOG_NAME
-from tests.perf.ledger_pr_fixtures import ledger_entry
+from tests.perf.ledger_pr_fixtures import (
+    init_upstream_and_clone,
+    install_gh,
+    ledger_entry,
+    run_git,
+)
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
 
@@ -395,49 +405,79 @@ def test_require_machine_label_raises_when_unset(
         require_machine_label(config)
 
 
-# ----- measurement-window guard wiring (Codex, PR #3827, P1/BLOCKING) ---------
+# ----- measurement-window guard, real publish path (Codex, PR #3827, P1/BLOCKING) --
+# A disposable upstream + clone stands in for origin/REPO_ROOT, and a real `gh`
+# on PATH answers from captured exchanges (tests/perf/ledger_pr_fixtures.py), so
+# `update_ledger_pr` runs for real: worktree, push, restore. The "engine" is a
+# real local HTTP server that answers 503, so the nightly records error rows
+# without a library. Concurrent writers are simulated by that server (an edit
+# while the run is measuring) or by WRAPPING the real guard (an edit just after
+# it validated); nothing in scripts/ is replaced.
 
 
-def _publish_run(
+class _EditingEngine(http.server.BaseHTTPRequestHandler):
+    ledger: Path
+    edit_on_first_request = False
+    edited = False
+
+    def do_GET(self) -> None:
+        cls = type(self)
+        if cls.edit_on_first_request and not cls.edited:
+            append_entries(cls.ledger, [ledger_entry("operator-edit")])
+            cls.edited = True
+        self.send_response(503)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *_args: object) -> None:
+        return None
+
+
+@contextlib.contextmanager
+def _real_publish_setup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, edit_mid_run: bool
-) -> tuple[list[Path], Path]:
-    """A nightly with publishing ON against a closed engine port, so it measures
-    nothing but still writes its error rows, with the publish itself replaced
-    by a recorder so no test ever reaches the real repo or GitHub."""
+) -> Iterator[tuple[Path, Path, Path, str]]:
+    upstream, repo_root = init_upstream_and_clone(tmp_path)
+    install_gh(monkeypatch, tmp_path, open_pr=False)
+    ledger = repo_root / "docs" / "perf" / "kpi-ledger.json"
     data_dir = tmp_path / "library"
     (data_dir / "state").mkdir(parents=True)
     (data_dir / "state" / "state.db").touch()
-    _nightly_env(monkeypatch, tmp_path, MDT_PERF_KPI_DATA_DIR=str(data_dir))
-    ledger = tmp_path / "kpi-ledger.json"
-    published: list[Path] = []
-    monkeypatch.setattr(
-        perf_kpi_job, "update_ledger_pr", lambda _root, path, *_a, **_k: published.append(path)
+    _nightly_env(
+        monkeypatch, tmp_path, MDT_PERF_KPI_DATA_DIR=str(data_dir), MDT_PERF_KPI_LEDGER=str(ledger)
     )
-
-    def _no_issue(*_a: object, **_k: object) -> None:
-        raise AssertionError("a closed-port run must not file a ceiling issue")
-
-    monkeypatch.setattr(perf_kpi_nightly, "file_ceiling_issue", _no_issue)
-    real_probe = perf_kpi_job.default_probe
-    edited: list[bool] = []
-
-    def _probe_with_concurrent_edit(base_url: str, path: str):  # type: ignore[no-untyped-def]
-        if edit_mid_run and not edited:
-            append_entries(ledger, [ledger_entry("operator-edit")])
-            edited.append(True)
-        return real_probe(base_url, path)
-
-    monkeypatch.setattr(perf_kpi_job, "default_probe", _probe_with_concurrent_edit)
-    return published, ledger
+    monkeypatch.setattr(perf_kpi_job, "REPO_ROOT", repo_root)
+    handler: type[_EditingEngine] = type(
+        "_Engine", (_EditingEngine,), {"ledger": ledger, "edit_on_first_request": edit_mid_run}
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield upstream, repo_root, ledger, f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
-def test_nightly_publishes_when_nobody_touches_the_ledger(
+def _branch_notes(upstream: Path) -> list[str] | None:
+    branch = perf_kpi_ledger_pr.LEDGER_PR_BRANCH
+    if branch not in run_git("branch", "--list", branch, cwd=upstream):
+        return None
+    shown = run_git("show", f"{branch}:docs/perf/kpi-ledger.json", cwd=upstream)
+    return [row.get("note") for row in json.loads(shown)["entries"]]
+
+
+def test_nightly_publishes_and_restores_when_nobody_touches_the_ledger(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Control: an undisturbed run still reaches the publish step."""
-    published, ledger = _publish_run(monkeypatch, tmp_path, edit_mid_run=False)
-    cmd_nightly(load_config(), base_url=f"http://127.0.0.1:{_free_port()}", skip_pr=False)
-    assert published == [ledger]
+    """Control: an undisturbed run publishes its rows and leaves REPO_ROOT clean."""
+    setup = _real_publish_setup(monkeypatch, tmp_path, edit_mid_run=False)
+    with setup as (upstream, repo_root, _ledger, base_url):
+        cmd_nightly(load_config(), base_url=base_url, skip_pr=False)
+    published = _branch_notes(upstream)
+    assert published is not None and published, "the nightly rows never reached the branch"
+    assert "operator-edit" not in published
+    assert run_git("status", "--porcelain", cwd=repo_root) == ""
 
 
 def test_nightly_refuses_to_publish_a_ledger_edited_mid_run(
@@ -445,9 +485,37 @@ def test_nightly_refuses_to_publish_a_ledger_edited_mid_run(
 ) -> None:
     """[if] the ledger is edited while the nightly is measuring [then] nothing
     is published or restored and the edit stays in the file, [else stop]."""
-    published, _ledger = _publish_run(monkeypatch, tmp_path, edit_mid_run=True)
-    with pytest.raises(RuntimeError, match="changed while the nightly run was measuring"):
-        cmd_nightly(load_config(), base_url=f"http://127.0.0.1:{_free_port()}", skip_pr=False)
-    assert published == []
-    notes = [row.get("note") for row in _ledger_entries(tmp_path)]
+    setup = _real_publish_setup(monkeypatch, tmp_path, edit_mid_run=True)
+    busy = pytest.raises(RuntimeError, match="changed while the nightly run was measuring")
+    with setup as (upstream, _repo_root, ledger, base_url), busy:
+        cmd_nightly(load_config(), base_url=base_url, skip_pr=False)
+    assert _branch_notes(upstream) is None
+    notes = [row.get("note") for row in json.loads(ledger.read_text(encoding="utf-8"))["entries"]]
+    assert "operator-edit" in notes
+
+
+def test_an_edit_after_validation_is_neither_published_nor_erased(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] the ledger is edited after the guard validated it but before the
+    publish reads it [then] only the validated rows are published and the
+    restore refuses, keeping the edit (review comment 4109856184), [else stop]."""
+    setup = _real_publish_setup(monkeypatch, tmp_path, edit_mid_run=False)
+    real_guard = perf_kpi_job.refuse_ledger_edits_made_during_run
+
+    def _guard_then_concurrent_edit(*args: Any, **kwargs: Any) -> str:
+        validated = real_guard(*args, **kwargs)
+        append_entries(ledger, [ledger_entry("operator-edit")])
+        return validated
+
+    monkeypatch.setattr(
+        perf_kpi_job, "refuse_ledger_edits_made_during_run", _guard_then_concurrent_edit
+    )
+    refused = pytest.raises(RuntimeError, match="changed while the ledger publish was running")
+    with setup as (upstream, _repo_root, ledger, base_url), refused:
+        cmd_nightly(load_config(), base_url=base_url, skip_pr=False)
+    published = _branch_notes(upstream)
+    assert published is not None and published
+    assert "operator-edit" not in published
+    notes = [row.get("note") for row in json.loads(ledger.read_text(encoding="utf-8"))["entries"]]
     assert "operator-edit" in notes
