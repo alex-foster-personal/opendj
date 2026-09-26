@@ -600,7 +600,7 @@ class JobRunner:
         try:
             broken = await self._read_progress(stream, tail, writer)
         except BaseException:
-            writer.abort()
+            await writer.abort()
             raise
         # Every line read is on disk before the caller writes a terminal
         # status, so no late progress write can land after it.
@@ -675,11 +675,21 @@ class _ProgressWriter:
         self._wake.set()
         await self._task
 
-    def abort(self) -> None:
-        """The run is already failing: stop writing, keep its own error."""
-        if not self._task.done():
-            self._task.cancel()
-        elif not self._task.cancelled() and self._task.exception() is not None:
+    async def abort(self) -> None:
+        """The run is already failing: drop what is queued, keep its own error.
+
+        A write already handed to its thread cannot be called back, and
+        cancelling the task that awaits it only stops the WAITING: the thread
+        still commits, possibly after the caller's terminal write, leaving a
+        progress update and its event on a finished row. So abort drains the
+        in-flight write to completion instead of cancelling, and the caller's
+        terminal write is always the last word on the row.
+        """
+        self._pending.clear()
+        self._closed.set()
+        self._wake.set()
+        await asyncio.wait([self._task])
+        if not self._task.cancelled() and self._task.exception() is not None:
             log.error(
                 "progress writer for job %s had also failed: %r",
                 self._job_id,
