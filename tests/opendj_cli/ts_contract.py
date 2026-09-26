@@ -116,6 +116,26 @@ def headphone_command_fields() -> frozenset[str]:
     )
 
 
+def _field_part_name(part: str) -> str | None:
+    """One ``;``-delimited fragment of a union member body, or None if it is noise.
+
+    Wrapped ``load`` members carry line comments between fields; treating those
+    fragments as field names invents required keys the CLI never emits and reds
+    ``test_every_verb_emits_only_fields_the_wire_validator_accepts``.
+    """
+    text = part.strip()
+    if not text or text.startswith("//"):
+        return None
+    if "//" in text:
+        text = text.split("//", 1)[0].strip()
+    if not text or ":" not in text:
+        return None
+    name = text.split(":", 1)[0].strip()
+    if not re.match(r"^[a-z_][a-z0-9_]*\??$", name):
+        return None
+    return name
+
+
 def command_fields() -> dict[str, dict[str, bool]]:
     """Every ``PerformanceCommand`` type -> its fields -> is the field optional.
 
@@ -131,7 +151,9 @@ def command_fields() -> dict[str, dict[str, bool]]:
         command_type = _command_member(line)
         declared: dict[str, bool] = {}
         for part in parts[1:]:
-            name = part.split(":")[0].strip()
+            name = _field_part_name(part)
+            if name is None:
+                continue
             declared[name.rstrip("?")] = name.endswith("?")
         fields[command_type] = declared
     return fields
