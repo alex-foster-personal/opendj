@@ -23,11 +23,13 @@ export type MasterReason =
 	| null;
 
 export interface DeckLoadOptions {
-	/** Whether the asynchronous stem probe and decode may run for this load. */
-	stems?: boolean;
+	/** Whether the asynchronous stem probe and decode may run for this load.
+	 * `undefined` means absent (true), so a dispatcher can pass its own
+	 * optional field straight through. */
+	stems?: boolean | undefined;
 	/** The caller shows its own toast for a failed load (Trackify, #4036). The
 	 * engine still reports the failure and its stage context to the server. */
-	suppressFailureToast?: boolean;
+	suppressFailureToast?: boolean | undefined;
 }
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
