@@ -165,25 +165,49 @@ test('a warn toast paints its own colour, between info and error', async ({ page
 	expect(warnBorder).toBe(declared);
 });
 
+// REQ: UX-TOAST-03
+// [if] five toasts pushed [then] DOM never shows more than three [else stop].
 test('at most three toasts are visible when more are pushed', async ({ page }) => {
-	const ids: string[] = [];
-	for (let i = 0; i < 5; i++) {
-		ids.push(await raise(page, `stack toast ${i}`, 'error', 120_000));
+	await page.evaluate(
+		async ([store]) => {
+			const mod = await import(/* @vite-ignore */ store as string);
+			for (let i = 0; i < 5; i += 1) {
+				mod.pushToast(`stack toast ${i}`, 'error', 120_000);
+			}
+		},
+		[STORE] as const
+	);
+	for (let frame = 0; frame < 8; frame += 1) {
+		const count = await page.locator('[data-toast-id]').count();
+		expect(count).toBeLessThanOrEqual(3);
+		await page.waitForTimeout(16);
 	}
-	await page.waitForTimeout(50);
-	const visible = page.locator('[data-toast-id]');
-	await expect(visible).toHaveCount(3, { timeout: 3000 });
+	await expect(page.locator('[data-toast-id]')).toHaveCount(3, { timeout: 3000 });
 });
 
+// REQ: UX-TOAST-03
+// [if] fourth toast evicts oldest [then] exiting class uses ~100ms transition [else stop].
 test('the fourth toast evicts the oldest with an exiting marker', async ({ page }) => {
 	const first = await raise(page, 'oldest toast', 'error', 120_000);
 	await raise(page, 'toast two', 'error', 120_000);
 	await raise(page, 'toast three', 'error', 120_000);
 	await raise(page, 'toast four', 'error', 120_000);
 	await page.waitForTimeout(30);
-	await expect(page.locator(`[data-toast-exiting="${first}"]`)).toHaveCount(1);
+	const exiting = page.locator(`[data-toast-exiting="${first}"]`);
+	await expect(exiting).toHaveCount(1);
+	const transitionMs = await exiting.evaluate((node) => {
+		const style = getComputedStyle(node);
+		const transform = style.transitionDuration.split(',')[0]?.trim() ?? '';
+		const parsed = parseFloat(transform);
+		return Number.isFinite(parsed) ? parsed * (transform.endsWith('ms') ? 1 : 1000) : NaN;
+	});
+	expect(transitionMs).toBeGreaterThanOrEqual(90);
+	expect(transitionMs).toBeLessThanOrEqual(120);
+	await expect(page.locator('[data-toast-id]')).toHaveCount(3);
 });
 
+// REQ: UX-TOAST-03
+// [if] long selection-load error [then] toast width stays within viewport third [else stop].
 test('a long error toast width stays within one third of the viewport', async ({ page }) => {
 	const longMessage =
 		'selection load failed: ' + 'x'.repeat(400);
