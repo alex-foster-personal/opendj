@@ -9,6 +9,7 @@
  */
 export { deckStates, engine } from '$lib/rb/audio-engine.svelte';
 export {
+	dispatchPerformanceCommand,
 	installPerformanceBrowserIpc,
 	performanceCommandStatus
 } from '$lib/rb/performance-ipc.svelte';
@@ -23,3 +24,4 @@ export {
 	requestTrackifySkipNext
 } from '$lib/rb/trackify-autoplay.svelte';
 export { e2ePrimeTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
+export { executeSilenceDropoutPlan } from '$lib/rb/silence-dropout-act';

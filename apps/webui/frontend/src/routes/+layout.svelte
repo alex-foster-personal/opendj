@@ -10,13 +10,21 @@
 	const visibleToasts = $derived(selectVisibleToasts(toasts));
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
-	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
+	import {
+		isStageOverlayOpen,
+		loadStageOverlay,
+		prefetchStageOverlay
+	} from '$lib/components/lyrics/stage-overlay-loader';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
 	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
-	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
-	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
+	import {
+		installHotkeysOverlayHotkeys,
+		isHotkeysOverlayOpen,
+		loadHotkeysOverlay,
+		prefetchHotkeysOverlay
+	} from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
 	import { installQuitGate } from '$lib/shell/quit-gate';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
@@ -123,6 +131,23 @@
 	function retrySetupOverlay(): void {
 		window.location.assign(SETUP_ROUTE);
 	}
+	// The hotkeys cheatsheet and the stage view are lazy chunks with one
+	// failure shape: an error toast naming the overlay, raised again on every
+	// open that fails (each loader forgets a failed attempt).
+	function overlayLoadFailureReporter(overlay: string): (error: unknown) => void {
+		return (error: unknown): void => {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(
+				`${overlay} failed to load: ${message}. Reload the page to retry.`,
+				'error',
+				TOAST_DEFAULT_MS,
+				error
+			);
+		};
+	}
+	const reportHotkeysOverlayLoadFailure = overlayLoadFailureReporter('Hotkeys overlay');
+	const reportStageOverlayLoadFailure = overlayLoadFailureReporter('Stage view');
+
 	const yieldBootGate = $derived(
 		bootGateYielded({
 			setup: setupOpen,
@@ -222,6 +247,8 @@
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
+		prefetchHotkeysOverlay(reportHotkeysOverlayLoadFailure);
+		prefetchStageOverlay(reportStageOverlayLoadFailure);
 		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
@@ -374,7 +401,15 @@
 {/if}
 
 <SettingsOverlay />
-<StageOverlay />
+<!-- STAGE lyric view: mounted at the root so it survives navigation, but only
+     while open, from a lazy chunk (see stage-overlay-loader.ts). -->
+{#if isStageOverlayOpen()}
+	{#await loadStageOverlay(reportStageOverlayLoadFailure) then { default: StageOverlay }}
+		<StageOverlay />
+	{:catch}
+		<!-- Already reported as an error toast by reportStageOverlayLoadFailure. -->
+	{/await}
+{/if}
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
      root for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the one surface a brand new user meets cannot be missing there
@@ -416,7 +451,13 @@
 <!-- Hotkeys overlay (LIBUX-04): "/" hold and "?" toggle. Mounted at the root
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
-<HotkeysOverlay />
+{#if isHotkeysOverlayOpen()}
+	{#await loadHotkeysOverlay(reportHotkeysOverlayLoadFailure) then { default: HotkeysOverlay }}
+		<HotkeysOverlay />
+	{:catch}
+		<!-- Already reported as an error toast by reportHotkeysOverlayLoadFailure. -->
+	{/await}
+{/if}
 <QuitConfirmOverlay />
 <!-- The diagnostics consent dialog (OBS-05) is mounted by $lib/telemetry-consent
      from a deferred boot task, so neither it nor its module is on the

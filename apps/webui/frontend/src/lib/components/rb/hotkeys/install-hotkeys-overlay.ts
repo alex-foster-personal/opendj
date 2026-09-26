@@ -12,6 +12,7 @@
  * swallow the overlay gestures.
  */
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import {
 	beginHotkeysOverlayHold,
@@ -24,6 +25,44 @@ import {
 	toggleHotkeysOverlay
 } from './hotkeys-overlay.svelte';
 import { HOTKEYS_OVERLAY_HOLD_KEY, HOTKEYS_OVERLAY_TOGGLE_KEY } from './hotkeys-registry';
+
+// The root layout reads the open state from here too, so the overlay's wiring
+// stays one import on the layout (the quality ratchet's fan-out gate).
+export { isHotkeysOverlayOpen };
+
+// The hotkeys cheatsheet (LIBUX-04) is a separate chunk (#4046: the library
+// surface went over its gzip budget). It draws nothing while closed, so keeping
+// it off the first paint changes nothing observable then. The chunk is warmed
+// once the boot window closes (prefetchHotkeysOverlay, from the layout's
+// onMount), so the first "/" hold or "?" draws it without waiting on a fetch. A
+// chunk that cannot be fetched is handed to the caller's reporter (the layout
+// raises an error toast, the pin shell's way), so this module stays off the
+// toast store.
+type HotkeysOverlayModule = typeof import('./HotkeysOverlay.svelte');
+let hotkeysOverlayModule: Promise<HotkeysOverlayModule> | null = null;
+
+export function loadHotkeysOverlay(
+	reportLoadFailure: (error: unknown) => void
+): Promise<HotkeysOverlayModule> {
+	if (hotkeysOverlayModule === null) {
+		const attempt = import('./HotkeysOverlay.svelte');
+		hotkeysOverlayModule = attempt;
+		attempt.catch((error: unknown) => {
+			// Forget the failed attempt so the next "/" or "?" imports again and
+			// reports again, rather than awaiting this rejection in silence.
+			// Chromium keeps a failed module fetch in its module map (see the
+			// setup overlay note in +layout.svelte), so there the re-import
+			// rejects without a request and only a reload recovers.
+			if (hotkeysOverlayModule === attempt) hotkeysOverlayModule = null;
+			reportLoadFailure(error);
+		});
+	}
+	return hotkeysOverlayModule;
+}
+
+export function prefetchHotkeysOverlay(reportLoadFailure: (error: unknown) => void): void {
+	bootScheduler.defer('hotkeys-overlay:prefetch', () => void loadHotkeysOverlay(reportLoadFailure));
+}
 
 const OVERLAY_SEARCH_ATTR = 'data-hotkeys-overlay-search';
 

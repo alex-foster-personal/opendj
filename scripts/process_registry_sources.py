@@ -164,6 +164,30 @@ OWNERSHIP_RULES: list[OwnershipRule] = [
         "repo-sync",
         "cross-machine music-dj-tools git repo sync daemon",
     ),
+    # Supersedes: the fallback classification these three launchd labels got
+    # before PR #3827 (owned=false, area n/a, "not matched to any
+    # music-dj-tools ownership rule; presumed personal/third-party
+    # automation"), which hid the repo's own dmg-smoke and perf-kpi agents
+    # from this registry. They are now owned rows with a named area.
+    OwnershipRule(
+        "*",
+        r"^com\.af\.dmg-smoke$",
+        "build",
+        "builds, launches and library-attach-smokes the signed desktop dmg on a cadence "
+        "(DEVOPS-04, ops/dmg-smoke/)",
+    ),
+    OwnershipRule(
+        "*",
+        r"^com\.af\.perf-kpi-nightly$",
+        "perf",
+        "nightly deck-load perf KPI capture + ledger PR (DEVOPS-08, issue #1506)",
+    ),
+    OwnershipRule(
+        "*",
+        r"^com\.af\.perf-kpi-health$",
+        "perf",
+        "10-minute live preview-engine health probe + bounded restart (DEVOPS-08, issue #1506)",
+    ),
     OwnershipRule(
         "*",
         r"^application\.com\.opendj\.desktop\.",
