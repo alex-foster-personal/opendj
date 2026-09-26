@@ -12,7 +12,8 @@ import { pinVisualState } from './feedback-pin-partial';
  * - delegated: status issued (agent filed / triaged)
  * - fixed / merged / blocked / harvested: same lifecycle statuses as the board
  *
- * A pin may increment more than one bucket (e.g. issued + fleet building).
+ * A pin may increment more than one bucket (e.g. issued + fleet building in
+ * delegated and in-progress), but each bucket counts a pin at most once.
  */
 export interface PinOperatorBreakdown {
 	total: number;
@@ -96,14 +97,12 @@ export function summarizePinOperatorBuckets(
 		if (pin.status === null || pin.status === undefined) {
 			breakdown.sent_to_queue += 1;
 		}
-		if (status === 'open' || pinVisualState(pin) === 'partial') {
-			breakdown.in_progress += 1;
-		}
 		if (status === 'issued') {
 			breakdown.delegated += 1;
 		}
 		const issueNum = parsePinIssueUrl(pin.issue_url);
-		if (issueNum != null && fleetIssues.has(issueNum)) {
+		const fleetMatch = issueNum != null && fleetIssues.has(issueNum);
+		if (status === 'open' || pinVisualState(pin) === 'partial' || fleetMatch) {
 			breakdown.in_progress += 1;
 		}
 		if (status === 'fixed') breakdown.fixed += 1;

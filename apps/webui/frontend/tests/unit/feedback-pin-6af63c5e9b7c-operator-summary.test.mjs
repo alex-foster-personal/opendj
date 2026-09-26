@@ -35,7 +35,22 @@ test('pin 6af63c5e9b7c summarizePinOperatorBuckets maps the maintainer labels an
 	assert.equal(buckets.delegated, 2);
 	assert.equal(buckets.fixed, 1);
 	assert.equal(buckets.merged, 1);
-	assert.ok(buckets.in_progress >= 3, 'open, partial overlay, and fleet building all count in-progress');
+	assert.equal(buckets.in_progress, 4, 'untriaged open, open, fleet building, and partial overlay each count once');
+});
+
+test('pin 6af63c5e9b7c open pin with fleet building counts in_progress once', () => {
+	const pins = [
+		{
+			id: 'overlap',
+			status: 'open',
+			issue_url: 'https://github.com/o/r/issues/4085',
+			agent_note: null
+		}
+	];
+	const progressNodes = [{ status: 'building', links: { issues: ['4085'] } }];
+	const buckets = summaryMod.summarizePinOperatorBuckets(pins, progressNodes);
+	assert.equal(buckets.total, 1);
+	assert.equal(buckets.in_progress, 1);
 });
 
 test('pin 6af63c5e9b7c describePinOperatorSummary names sent to queue, in-progress, delegated, fixed, merged', () => {

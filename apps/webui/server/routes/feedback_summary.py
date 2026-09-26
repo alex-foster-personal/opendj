@@ -167,12 +167,11 @@ def _summarize_operator(
         counts["total"] += 1
         if item.get("status") is None:
             counts["sent_to_queue"] += 1
-        if status == "open" or _pin_visual_partial(item):
-            counts["in_progress"] += 1
         if status == "issued":
             counts["delegated"] += 1
         issue_num = _parse_issue_url(item.get("issue_url"))
-        if issue_num is not None and issue_num in fleet_issues:
+        fleet_match = issue_num is not None and issue_num in fleet_issues
+        if status == "open" or _pin_visual_partial(item) or fleet_match:
             counts["in_progress"] += 1
         if status in ("fixed", "merged", "blocked", "harvested"):
             counts[status] += 1
