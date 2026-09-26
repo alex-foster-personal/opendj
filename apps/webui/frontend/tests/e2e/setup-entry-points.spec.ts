@@ -567,7 +567,11 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
-	test('the build identity chip states this app address in its foldout', async ({ page, context }) => {
+	test('the build identity chip states this app address in its foldout', async ({
+		page,
+		context,
+		browserName
+	}) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
@@ -579,10 +583,28 @@ test.describe('setup entry points', () => {
 		await expect(urlLink).toBeVisible();
 		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
 		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
-		await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-		await chip.getByRole('button', { name: 'copy all details' }).click();
-		await expect
-			.poll(async () => page.evaluate(() => navigator.clipboard.readText()))
-			.toMatch(/git_sha:/);
+		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
+		// WebKit rejects the grant outright ("Unknown permission:
+		// clipboard-write"), and this spec also runs under the webkit artifact
+		// config, so the grant and the read-back are Chromium-only. Both
+		// browsers still assert the copy itself: the chip reports 'copied all
+		// details' only after `navigator.clipboard.writeText` resolved.
+		const readsClipboard = browserName === 'chromium';
+		if (readsClipboard) await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		const copyAll = chip.getByRole('button', { name: 'copy all details' });
+		await copyAll.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			// Copy AGAIN on every poll: the engine identity arrives from
+			// GET /api/v1/build-info after the chip mounts, and a copy taken
+			// before it lands says "still reading" with no git_sha. Re-reading a
+			// clipboard nothing rewrites can never see it arrive.
+			await expect
+				.poll(async () => {
+					await copyAll.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				})
+				.toMatch(/git_sha:/);
+		}
 	});
 });
