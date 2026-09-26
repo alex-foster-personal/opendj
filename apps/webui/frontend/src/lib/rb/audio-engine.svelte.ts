@@ -85,7 +85,6 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
-import { cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/audio-output-topology';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import {
 	registerAudioContext,
@@ -122,7 +121,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
-import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile } from '$lib/rb/deck-channel-graph';
 import { applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -215,7 +214,7 @@ import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls'
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
-import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
+import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
@@ -666,19 +665,14 @@ export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	};
 }
 
-/** Estimated decoded PCM retained for memory tracking.
- * Mix buffer always; when stems are ready, add 4 aligned part buffers
- * (AlignedStemDeckProcessor keeps vocals/drums/bass/other at the same geometry). */
+/** See {@link estimateDeckPcmBytes} in deck-audio-snapshot.ts for the accounting. */
 export function deckPcmEstimatedBytes(): number {
-	let total = 0;
-	for (const deck of DECK_IDS) {
-		const buffer = _rt[deck].audioBuffer;
-		if (buffer === null) continue;
-		const mixBytes = buffer.length * buffer.numberOfChannels * 4;
-		total += mixBytes;
-		if (deckStates[deck].stems.status === 'ready') total += mixBytes * 4;
-	}
-	return total;
+	return estimateDeckPcmBytes(
+		DECK_IDS.map((deck) => ({
+			audioBuffer: _rt[deck].audioBuffer,
+			stemsReady: deckStates[deck].stems.status === 'ready'
+		}))
+	);
 }
 
 // ---------------------------------------------------------------- _helpers

@@ -392,3 +392,13 @@ export async function recreateEngineGraph(bindings: EngineGraphRecreateBindings)
 			})
 	});
 }
+
+// Re-exported so audio-engine.svelte.ts, already coupled to this module for
+// its channel graph, does not take a separate direct fan-out edge for DJ
+// output-topology wiring (same engine-graph concern, different file).
+export {
+	cueOnlyMonitoringActive,
+	parseDjOutputProfile,
+	wireAudioOutputTopology,
+	type DjOutputProfile
+} from '$lib/rb/audio-output-topology';
