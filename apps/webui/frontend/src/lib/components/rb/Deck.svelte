@@ -442,7 +442,10 @@
 
 	<StripWaveform {deck} {pending} onSeek={seekTo} onPlay={playPause} />
 
-	<div class="main-row">
+	<div
+		class="main-row"
+		class:mirror-main-row={deckId === 2 && uiPrefs.deck_right_mirror}
+	>
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
 			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
@@ -631,6 +634,9 @@
 		min-height: 0;
 		min-width: 0;
 		overflow: hidden;
+	}
+	.main-row.mirror-main-row {
+		flex-direction: row-reverse;
 	}
 	.grid-adjust {
 		display: flex;

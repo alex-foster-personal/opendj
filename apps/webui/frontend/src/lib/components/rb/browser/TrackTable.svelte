@@ -179,7 +179,6 @@
 
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
-	const masterKeyColor = $derived(camelotKeyColor(masterKey));
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
 	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
@@ -189,7 +188,7 @@
 	);
 
 	function keyCompat(key: string | null): boolean {
-		return camelotKeysAreCompatible(key, masterKey);
+		return camelotKeysAreCompatible(key, keyCompatRef);
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
@@ -337,6 +336,8 @@
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey = null as string | null,
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
 		onaddtoplaylist = undefined
@@ -437,7 +438,16 @@
 		suggestHoverId?: string | null;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey?: string | null;
 	} = $props();
+
+	const keyCompatRef = $derived(
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null
+			? compatibleReferenceKey
+			: masterKey
+	);
+	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
 	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
 	 * height is density-dependent (`--tt-row-h`), so a constant would drift

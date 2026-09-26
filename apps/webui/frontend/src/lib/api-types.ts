@@ -14033,6 +14033,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Deck Right Mirror
+             * @default false
+             */
+            deck_right_mirror: boolean;
+            /**
              * Gig Helper
              * @default unset
              * @enum {string}
@@ -14113,6 +14118,12 @@ export interface components {
              */
             perf_tier: "auto" | "low" | "standard" | "high";
             /**
+             * Playlist Tree View
+             * @default tree
+             * @enum {string}
+             */
+            playlist_tree_view: "tree" | "column";
+            /**
              * Remixes Filter
              * @default false
              */
@@ -14165,6 +14176,8 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Deck Right Mirror */
+            deck_right_mirror?: boolean | null;
             /** Gig Helper */
             gig_helper?: ("unset" | "off" | "on") | null;
             /** Hide Broken Links */
@@ -14196,6 +14209,8 @@ export interface components {
             next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Playlist Tree View */
+            playlist_tree_view?: ("tree" | "column") | null;
             /** Remixes Filter */
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
