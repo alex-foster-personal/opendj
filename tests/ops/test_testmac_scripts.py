@@ -378,11 +378,21 @@ def test_setup_chooses_only_an_engine_that_serves_the_app_shell(tmp_path: Path) 
 
 
 def test_setup_stops_the_old_loop_before_writing_the_cutoff_plist() -> None:
-    """[if] setup.sh writes the new plist while the old loop still runs [then] an old-loop
-    attempt can start after verify's cutoff and count as new evidence, [else stop]."""
+    """[if] setup.sh writes the new plist while the old loop or the legacy duplicate still
+    runs [then] its attempt can start after verify's cutoff and count as new evidence
+    for the newly declared driver, [else stop]."""
     text = SETUP_SH.read_text(encoding="utf-8")
     write = text.index('scp -q "$PLIST_PATH"')
-    assert "launchctl bootout gui/\\$(id -u)/${PLIST_LABEL}" in text[:write]
+    labels = re.search(r'^PERSONA_LOOP_LABELS="([^"]+)"', text, re.M).group(1).split()
+    assert {"opendj-agt-persona-loop", "com.af.agt-loop"} <= set(labels)
+    stop_all = text.index("for label in $PERSONA_LOOP_LABELS; do\n    launchctl bootout gui/")
+    assert stop_all < write, "every persona-loop label must be booted out before the cutoff"
+    retire = text.index("mv ~/Library/LaunchAgents/\\$legacy.plist")
+    assert retire < write, "the legacy plist must be retired before the cutoff"
+    # Negative control: no bootout of any loop label remains between the cutoff write and
+    # the final bootstrap (bootstrap's own bootout-by-path is the reload, not a stop).
+    after = text[write : text.index("launchctl bootstrap gui/", write)]
+    assert "$legacy" not in after and "$label" not in after
 
 
 @pytest.mark.skipif(not Path("/bin/zsh").exists(), reason="UNAVAILABLE: no /bin/zsh here")
