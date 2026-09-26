@@ -624,7 +624,7 @@ export function unregisterActionHandler(): void {
 function _hasNativeMidiBridge(): boolean {
 	return (
 		typeof window !== 'undefined' &&
-		typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object'
+		typeof (globalThis as Record<string, unknown>)['__TAURI_INTERNALS__'] === 'object'
 	);
 }
 
