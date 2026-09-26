@@ -15,7 +15,7 @@
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
 	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
-	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
+	import { isHotkeysOverlayOpen } from '$lib/components/rb/hotkeys/hotkeys-overlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
 	import { installQuitGate } from '$lib/shell/quit-gate';
@@ -50,6 +50,7 @@
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
 
 	let { children } = $props();
@@ -122,6 +123,25 @@
 	// case the new document also carries the new chunk URLs.
 	function retrySetupOverlay(): void {
 		window.location.assign(SETUP_ROUTE);
+	}
+
+	// The hotkeys cheatsheet (LIBUX-04) is a separate chunk as well (#4046: the
+	// library surface went over its gzip budget). It draws nothing while closed,
+	// so keeping it off the first paint changes nothing observable then. The
+	// chunk is warmed once the boot window closes (onMount below), so the first
+	// "/" hold or "?" draws it without waiting on a fetch. A chunk that cannot be
+	// fetched is reported as an error toast, the pin shell's way.
+	type HotkeysOverlayModule = typeof import('$lib/components/rb/hotkeys/HotkeysOverlay.svelte');
+	let hotkeysOverlayModule: Promise<HotkeysOverlayModule> | null = null;
+	function loadHotkeysOverlay(): Promise<HotkeysOverlayModule> {
+		if (hotkeysOverlayModule === null) {
+			hotkeysOverlayModule = import('$lib/components/rb/hotkeys/HotkeysOverlay.svelte');
+			hotkeysOverlayModule.catch((error: unknown) => {
+				const message = error instanceof Error ? error.message : String(error);
+				pushToast(`Hotkeys overlay failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+			});
+		}
+		return hotkeysOverlayModule;
 	}
 	const yieldBootGate = $derived(
 		bootGateYielded({
@@ -222,6 +242,7 @@
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
+		bootScheduler.defer('hotkeys-overlay:prefetch', () => void loadHotkeysOverlay());
 		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
@@ -416,7 +437,13 @@
 <!-- Hotkeys overlay (LIBUX-04): "/" hold and "?" toggle. Mounted at the root
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
-<HotkeysOverlay />
+{#if isHotkeysOverlayOpen()}
+	{#await loadHotkeysOverlay() then { default: HotkeysOverlay }}
+		<HotkeysOverlay />
+	{:catch}
+		<!-- Already reported as an error toast by loadHotkeysOverlay. -->
+	{/await}
+{/if}
 <QuitConfirmOverlay />
 <!-- The diagnostics consent dialog (OBS-05) is mounted by $lib/telemetry-consent
      from a deferred boot task, so neither it nor its module is on the
