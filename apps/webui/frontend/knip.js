@@ -101,6 +101,8 @@ export default {
 		// --url ...) against real audio hardware, so each one is an entry point,
 		// not a module something is expected to import.
 		'tests/live/cue-{align,bridge}-*.mjs',
+		// Same shape: the RESCUE-05 cross-origin sink probe (real outputs, real origins).
+		'tests/live/rescue-output-device-origin.mjs',
 		'tests/unit/fixtures/**/*.ts',
 		'tests/e2e/fixtures/**/*.ts',
 		'tests/manual/wkwebview-spike/inject.mjs',
