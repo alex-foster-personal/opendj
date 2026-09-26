@@ -21093,6 +21093,16 @@
             "title": "Confirm",
             "type": "object"
           },
+          "gig_helper": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "off",
+              "on"
+            ],
+            "title": "Gig Helper",
+            "type": "string"
+          },
           "hide_broken_links": {
             "default": false,
             "title": "Hide Broken Links",
@@ -21325,6 +21335,22 @@
               }
             ],
             "title": "Confirm"
+          },
+          "gig_helper": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unset",
+                  "off",
+                  "on"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gig Helper"
           },
           "hide_broken_links": {
             "anyOf": [
