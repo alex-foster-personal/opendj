@@ -54,7 +54,7 @@
 		background: color-mix(in srgb, var(--rb-accent) 100%, #08131a 0%);
 	}
 	.current-fold.above {
-		top: 22px;
+		top: 2px;
 	}
 	.current-fold.below {
 		bottom: 4px;

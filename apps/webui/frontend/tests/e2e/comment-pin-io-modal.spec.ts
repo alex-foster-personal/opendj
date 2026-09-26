@@ -45,7 +45,8 @@ test.describe('comment pin on Audio I/O modal', () => {
 		const menu = page.locator('.hp-menu');
 		await expect(menu).toBeVisible();
 
-		await page.getByRole('button', { name: 'Drop a comment pin' }).click();
+		// Topbar pin, not FB-18c's dock pin of the same name (#3981).
+		await page.getByRole('banner').getByRole('button', { name: 'Drop a comment pin' }).click();
 		await expect
 			.poll(async () => (await readFeedbackState(page)).placementArmed)
 			.toBe(true);
@@ -141,7 +142,9 @@ test.describe('comment pin on Audio I/O modal', () => {
 		const menu = page.locator('.hp-menu');
 		await expect(menu).toBeVisible();
 
-		const commentBtn = page.getByRole('button', { name: 'Drop a comment pin' });
+		// Topbar pin: the explainer under test (.fb-cluster .pop) is the
+		// topbar's, not FB-18c's dock pin of the same name (#3981).
+		const commentBtn = page.getByRole('banner').getByRole('button', { name: 'Drop a comment pin' });
 		await commentBtn.hover();
 		const explainerPop = page.locator('.fb-cluster .pop');
 		await expect(explainerPop).toBeVisible({ timeout: 5_000 });
