@@ -57,3 +57,11 @@ def test_unclosed_member_fails_loud(tmp_path: Path) -> None:
 def test_live_command_union_parses() -> None:
     assert "play" in ts_contract.command_fields()
     assert ts_contract.command_fields()["play"]["start_at_context_sec"] is True
+
+
+def test_live_load_union_ignores_inline_comments_between_fields() -> None:
+    load = ts_contract.command_fields()["load"]
+    assert load["stable_id"] is False
+    assert load["refuseIfMaster"] is True
+    assert load["stems"] is True
+    assert load["suppressCommandErrorToast"] is True

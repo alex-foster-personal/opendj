@@ -52,9 +52,9 @@ function _deckLines(decks: readonly ToastCopyDeckSnapshot[]): Record<string, str
 
 export function gatherToastCopyExtras(input: {
 	pathname: string;
-	reportContext?: ClientErrorContext;
-	readDecks?: () => readonly ToastCopyDeckSnapshot[];
-	readLastError?: () => { kind: string; message: string } | null;
+	reportContext?: ClientErrorContext | undefined;
+	readDecks?: (() => readonly ToastCopyDeckSnapshot[]) | undefined;
+	readLastError?: (() => { kind: string; message: string } | null) | undefined;
 }): Record<string, string> {
 	const extras = _flattenContext(input.reportContext);
 	if (isPerformanceRoutePath(input.pathname) && input.readDecks !== undefined) {

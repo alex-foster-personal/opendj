@@ -115,6 +115,36 @@ export function scrollTopToKeepRowVisible(params: {
 	return next;
 }
 
+/** Apply deck-layout anchor scroll once the library viewport height is known. */
+export function scrollTopForDeckLayoutAnchor(params: {
+	rowIndex: number;
+	rowHeight: number;
+	headerOffsetPx?: number;
+	viewportHeight: number;
+	priorScrollTop: number;
+	priorViewportHeight: number;
+}): number {
+	const header = params.headerOffsetPx ?? 0;
+	const { rowIndex, rowHeight, viewportHeight, priorViewportHeight, priorScrollTop } = params;
+	if (rowIndex < 0 || viewportHeight <= 0) return Math.max(0, priorScrollTop);
+	if (priorViewportHeight > 0) {
+		return scrollTopToKeepRowVisible({
+			rowIndex,
+			rowHeight,
+			headerOffsetPx: header,
+			viewportHeight,
+			priorScrollTop,
+			priorViewportHeight
+		});
+	}
+	return scrollTopForRowIndex({
+		rowIndex,
+		rowHeight,
+		headerOffsetPx: header,
+		offsetFromTopPx: Math.max(0, Math.floor(viewportHeight / 3))
+	});
+}
+
 /** Whether a row is scrolled above or below the row-visible band. */
 export function masterFoldVisibility(params: {
 	rowIndex: number;

@@ -600,6 +600,7 @@ def test_music_folder_candidates_keeps_denied_paths_visible(
     assert denied_probe.detail
 
 
+# REQ: SETUP-11
 def test_music_folders_endpoint_never_fabricates_a_missing_path(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
