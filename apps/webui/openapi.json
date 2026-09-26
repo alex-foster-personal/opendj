@@ -4603,6 +4603,17 @@
             ],
             "title": "Agent Note"
           },
+          "agent_snapshot_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Snapshot At"
+          },
           "anchor": {
             "anyOf": [
               {
@@ -21159,6 +21170,11 @@
             "title": "Confirm",
             "type": "object"
           },
+          "deck_right_mirror": {
+            "default": false,
+            "title": "Deck Right Mirror",
+            "type": "boolean"
+          },
           "gig_helper": {
             "default": "unset",
             "enum": [
@@ -21255,6 +21271,15 @@
               "high"
             ],
             "title": "Perf Tier",
+            "type": "string"
+          },
+          "playlist_tree_view": {
+            "default": "tree",
+            "enum": [
+              "tree",
+              "column"
+            ],
+            "title": "Playlist Tree View",
             "type": "string"
           },
           "remixes_filter": {
@@ -21401,6 +21426,17 @@
               }
             ],
             "title": "Confirm"
+          },
+          "deck_right_mirror": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Right Mirror"
           },
           "gig_helper": {
             "anyOf": [
@@ -21596,6 +21632,21 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "playlist_tree_view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tree",
+                  "column"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Tree View"
           },
           "remixes_filter": {
             "anyOf": [

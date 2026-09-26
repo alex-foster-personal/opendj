@@ -66,6 +66,7 @@
 	// listener could only have swallowed the key and done nothing with it.
 	let FeedbackPinLayer: Component | null = $state(null);
 	let FeedbackPinShellButton: Component | null = $state(null);
+	let FeedbackDock: Component | null = $state(null);
 	/** Why the pin shell never arrived, or null while it is loading or loaded. */
 	let pinShellError: string | null = $state(null);
 
@@ -234,6 +235,7 @@
 				if (unmounted) return;
 				FeedbackPinLayer = shell.layer;
 				FeedbackPinShellButton = shell.shellButton;
+				FeedbackDock = shell.dock;
 				uninstallCommentPinHotkeys = shell.installCommentPinHotkeys();
 			},
 			(error) => {
@@ -423,6 +425,9 @@
 <ToastStack items={visibleToasts} />
 {#if FeedbackPinLayer}
 	<FeedbackPinLayer />
+{/if}
+{#if FeedbackDock}
+	<FeedbackDock />
 {/if}
 <BrandLaunch />
 

@@ -18,6 +18,11 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import {
+	makePlaylistTreeViewSetters,
+	validatePlaylistTreeViewField,
+	type PlaylistTreeViewMode
+} from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
@@ -214,6 +219,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPref
 	deck_layout_animate: boolean;
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	/** Mirror deck 2 control row horizontally for mixer-facing symmetry (issue #3983). */
+	deck_right_mirror: boolean;
+	/** Playlist sidebar: tree list vs column browser (issue #3983). */
+	playlist_tree_view: PlaylistTreeViewMode;
 	level_calibration: LevelCalibrationPrefs;
 	/** Crossfader curve name; unbuilt curves stay disabled in the UI. */
 	crossfade_curve: CrossfadeCurve;
@@ -250,6 +259,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
+	deck_right_mirror: false,
+	playlist_tree_view: 'tree',
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
 	horizontal_wheel_knob: 'filter',
@@ -454,8 +465,10 @@ function _load(): RbUiPrefs {
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
-		deck_layout_duration_ms: deckLayoutDurationMs
+		deck_layout_duration_ms: deckLayoutDurationMs,
+		deck_right_mirror: deckRightMirror
 	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
@@ -503,6 +516,8 @@ function _load(): RbUiPrefs {
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
+		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
+		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
 		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
@@ -684,8 +699,15 @@ export const {
 	setDeckLayoutMode,
 	toggleDeckLayoutMode,
 	setDeckLayoutAnimate,
-	setDeckLayoutDurationMs
+	setDeckLayoutDurationMs,
+	setDeckRightMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 
 export const {
 	setLyricsGlobal,

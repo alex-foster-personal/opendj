@@ -98,6 +98,7 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -630,18 +631,17 @@
 	}
 
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
-		const states = DECK_IDS.map((d) => decks[d]);
-		const ordered = [
-			...states.filter((s) => s.is_master && s.stable_id !== null),
-			...states.filter((s) => s.playing && s.stable_id !== null),
-			...states.filter((s) => s.stable_id !== null)
-		];
-		for (const s of ordered) {
-			if (s.key !== null && s.bpm !== null && s.bpm > 0) {
-				return { key: s.key, bpm: s.bpm };
-			}
-		}
-		return null;
+		const slices = DECK_IDS.map((d) => {
+			const s = decks[d];
+			return {
+				is_master: s.is_master,
+				playing: s.playing,
+				stable_id: s.stable_id,
+				key: s.key,
+				bpm: s.bpm
+			};
+		});
+		return computeNextOnlyRef(slices);
 	});
 
 	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
@@ -3517,6 +3517,7 @@
 			searchQuery={pane.search}
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
+			compatibleReferenceKey={nextOnlyRef?.key ?? null}
 		/>
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>

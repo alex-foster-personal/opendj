@@ -49,6 +49,29 @@ export interface NextOnlyRef {
 	bpm: number | null;
 }
 
+export interface NextOnlyDeckSlice {
+	is_master: boolean;
+	playing: boolean;
+	stable_id: string | null;
+	key: string | null;
+	bpm: number | null;
+}
+
+/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
+export function computeNextOnlyRef(states: readonly NextOnlyDeckSlice[]): NextOnlyRef | null {
+	const ordered = [
+		...states.filter((s) => s.is_master && s.stable_id !== null),
+		...states.filter((s) => s.playing && s.stable_id !== null),
+		...states.filter((s) => s.stable_id !== null)
+	];
+	for (const s of ordered) {
+		if (s.key !== null && s.bpm !== null && s.bpm > 0) {
+			return { key: s.key, bpm: s.bpm };
+		}
+	}
+	return null;
+}
+
 export function bpmInNextWindow(candidateBpm: number | null, refBpm: number | null): boolean {
 	if (
 		candidateBpm === null ||
