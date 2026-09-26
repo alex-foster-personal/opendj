@@ -121,6 +121,7 @@ def test_gain_unclamped_when_headroom_allows() -> None:
 def test_require_ffmpeg_honors_mdt_ffmpeg_with_no_ffmpeg_on_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] only MDT_FFMPEG names ffmpeg [then] loudness still finds it, [else stop]."""
     from apps.loudness.scan import require_ffmpeg
 
     real = shutil.which("ffmpeg")
@@ -135,6 +136,7 @@ def test_require_ffmpeg_honors_mdt_ffmpeg_with_no_ffmpeg_on_path(
 def test_require_ffmpeg_still_fails_loudly_with_neither(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] neither MDT_FFMPEG nor PATH has ffmpeg [then] a named error, [else stop]."""
     from apps.loudness.scan import require_ffmpeg
 
     monkeypatch.setenv("PATH", str(tmp_path))

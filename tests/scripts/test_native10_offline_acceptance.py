@@ -1,5 +1,7 @@
 """The NATIVE-10 harness judges by presence, and its real run is one env var away.
 
+- [if] a lane shows no ok measurement [then] the harness fails it, [else stop].
+
 Fast half: ``judge_lane`` against a real sqlite file holding the record shapes
 the producers write. Each case is a way a broken install could look fine.
 

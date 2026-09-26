@@ -1,5 +1,7 @@
 """An installed app's folder-imported tracks are admitted with a MEASURED duration.
 
+- [if] a track has no stored duration [then] admission measures it with ffmpeg, [else stop].
+
 NATIVE-10 (issue #2315). A payload omits mutagen (GPL, the ``tags`` extra), so
 folder ingest writes ``tracks.duration_ms = NULL`` and the memory-admission
 rule refused EVERY folder-imported track as ``duration_unknown``: on the one

@@ -1,5 +1,7 @@
 """The key lane warms the numba cache it compiles into, before its workers race.
 
+- [if] key workers meet a cold numba cache [then] the parent already warmed it, [else stop].
+
 NATIVE-10 (issue #2315), found by the offline acceptance run. ``own_key``
 declared no JIT cache and warmed nothing, on the stated grounds that
 ``chroma_cqt`` "compiles into the process-wide numba cache the runner owns".

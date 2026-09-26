@@ -1,5 +1,7 @@
 """The payload carries everything the beatgrid backfill producer needs offline.
 
+- [if] a payload is built [then] it ships the beatgrid runner, launcher and checkpoint, [else stop].
+
 NATIVE-10 (issue #2315): a v1 backfill runs on the user's machine with no
 network after install, for every lane except stems and lyrics. Waveform,
 loudness and key already ran from the payload's own closure; beatgrid did
