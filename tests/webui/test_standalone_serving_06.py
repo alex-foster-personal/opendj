@@ -150,8 +150,10 @@ def test_unmapped_anlz_beatgrid_source_is_own(anlz_client: TestClient) -> None:
     assert body["beatgrid"]["source"] == "own"
 
 
-def test_unmapped_anlz_under_the_implicit_default_names_its_basis(anlz_client: TestClient) -> None:
-    """[if] unmapped, toggle unset, lane default rbx [then] beatgrid_source_basis unmapped-default, [else stop].
+def test_unmapped_anlz_under_the_implicit_default_names_its_basis(
+    anlz_client: TestClient,
+) -> None:
+    """[if] unmapped, toggle unset, lane default rbx [then] basis unmapped-default, [else stop].
 
     The client compares every /anlz payload against the LANE-WIDE selection
     (rbx here) to reject stragglers from a source switch; without this basis
@@ -165,7 +167,7 @@ def test_unmapped_anlz_under_the_implicit_default_names_its_basis(anlz_client: T
 def test_unmapped_anlz_under_an_explicit_own_toggle_follows_the_selection(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the beatgrid toggle is set to own [then] beatgrid_source_basis selection, [else stop]."""
+    """[if] the beatgrid toggle is set to own [then] basis selection, [else stop]."""
     selection.set_toggle("beatgrid", "own")
     body = anlz_client.get(f"/api/v1/tracks/{STABLE_ID}/anlz").json()
     assert body["beatgrid_source"] == "own"
