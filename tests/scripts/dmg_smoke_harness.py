@@ -33,7 +33,14 @@ fixture_dir="{fixture_dir}"
 _apply_jq() {{
   local payload="$1"
   if [[ -n "$jq_filter" ]]; then
-    printf '%s' "$payload" | jq -r "$jq_filter"
+    if [[ "$paginate" == "1" ]]; then
+      # Real gh applies --jq per page (not to a slurped array of pages), so
+      # the fixture's outer page-array is unwrapped one level here before
+      # the caller's filter runs against each page's own array of records.
+      printf '%s' "$payload" | jq -r ".[] as \$__page | (\$__page | ${{jq_filter}})"
+    else
+      printf '%s' "$payload" | jq -r "$jq_filter"
+    fi
   else
     printf '%s' "$payload"
   fi
