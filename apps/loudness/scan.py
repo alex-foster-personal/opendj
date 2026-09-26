@@ -13,7 +13,7 @@ R4 to-do Persist scans into state.db so the UI can read per-track gain.
 
 Acceptance
 ----------
-[if] ffmpeg is absent from PATH                 [then] LoudnessError names it
+[if] ffmpeg is absent from PATH and MDT_FFMPEG  [then] LoudnessError names it
 [if] the file does not exist                    [then] LoudnessError, no ffmpeg call
 [if] ffmpeg exits non-zero                      [then] LoudnessError carries stderr
 [if] the summary block is missing a field       [then] LoudnessError names the field
@@ -28,16 +28,16 @@ ffmpeg was built. See docs/research/adrian-level-meters-clipping-lights.md.
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
 
 # --------------------------------------------------------------------------
 # config
 # --------------------------------------------------------------------------
 
-FFMPEG_BINARY = "ffmpeg"
 # EBU R128 broadcast target. Callers that want the streaming convention pass
 # -14.0 explicitly; nothing here guesses on their behalf.
 DEFAULT_TARGET_LUFS = -23.0
@@ -125,14 +125,19 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
 def require_ffmpeg() -> str:
     """Resolve the ffmpeg binary, or raise. The one resolution path every
     caller in this lane shares, so executable selection cannot drift between
-    the measurements that need it (specs/native-analysis-v1.md:601)."""
-    resolved = shutil.which(FFMPEG_BINARY)
-    if resolved is None:
+    the measurements that need it (specs/native-analysis-v1.md:601).
+
+    Delegates to :func:`apps.shared.ffmpeg.resolve_ffmpeg` so this lane honors
+    ``MDT_FFMPEG`` like every other decoder caller: an installed app has no
+    Homebrew PATH, and a bare PATH lookup here stopped every packaged loudness
+    backfill while the other lanes decoded the same files (NATIVE-10)."""
+    try:
+        return resolve_ffmpeg()
+    except FfmpegUnavailable as exc:
         raise LoudnessError(
-            f"'{FFMPEG_BINARY}' is not on PATH. apps.loudness measures with the "
-            f"ffmpeg ebur128 filter and has no fallback measurement path."
-        )
-    return resolved
+            f"{exc}. apps.loudness measures with the ffmpeg ebur128 filter and "
+            "has no fallback measurement path."
+        ) from exc
 
 
 def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:

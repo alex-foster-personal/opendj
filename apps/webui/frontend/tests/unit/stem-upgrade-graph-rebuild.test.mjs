@@ -68,5 +68,5 @@ test('an upgrade started on a replaced context is stale', () => {
 	const start = engine.indexOf('async function _upgradeDeckStems(');
 	assert.ok(start > 0, '_upgradeDeckStems not found in the engine');
 	const body = engine.slice(start, engine.indexOf('let built', start));
-	assert.match(body, /const stale = \(\): boolean => token !== rt\.loadToken \|\| ctx !== _ctx;/);
+	assert.match(body, /const stale = \(\): boolean => token !== rt\.loadToken \|\| ctx !== _ctx \|\| _stemDecodeBlocked\(\);/);
 });

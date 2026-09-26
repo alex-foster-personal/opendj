@@ -5,6 +5,7 @@ import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 /** Global `m` / `Cmd+Shift+M` hotkey: arm comment-pin placement. */
 export function installCommentPinHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
+		if (e.key !== 'm' && e.key !== 'M') return;
 		if (resolveCommentPinHotkey(e, { settingsOpen: isSettingsOpen() }) !== 'arm') return;
 		e.preventDefault();
 		armPinPlacement();

@@ -69,9 +69,11 @@ startup -- :mod:`apps.sync_hub.hosted_config`):
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.
 """
+
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import sqlite3
@@ -80,12 +82,21 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+from apps.shared import engine_origin
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
-from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
+from apps.shared.sync_runtime_gates import (
+    DEFER_REASON_SYNC_IN_PROGRESS,
+    SyncDeferredError,
+    any_deck_playing,
+    refuse_sync_round,
+)
 from apps.sync_hub import (
     capabilities,
     client,
@@ -97,6 +108,7 @@ from apps.sync_hub import (
     hosted_config,
     maintenance_enroll,
     maintenance_policy,
+    single_flight,
     sync_set,
 )
 from apps.sync_hub import status as sync_status
@@ -151,31 +163,55 @@ def sync(
     the CLI never passes it, so an operator always talks real HTTP. Any of
     ``run_sync``'s declared failures (see its docstring) propagate out
     unchanged -- fail fast, no repair.
+
+    ``client.run_sync`` itself is wrapped in ``single_flight.sync_flock_for``,
+    a cross-process ``fcntl.flock`` on a file in ``data_dir`` (claude-review /
+    Codex, PR #3831, P1/BLOCKING): this function is the ONE place the
+    scheduler, the ``POST /api/v1/cloudsync/sync`` route, and this CLI all
+    funnel through to reach ``run_sync``, and the first two already hold an
+    in-process lock (``single_flight.sync_lock_for``) before calling here, but
+    that lock is invisible to the CLI's own separate process. ``force`` skips
+    only the Gig-posture / playing-deck safety gate above; it never skips
+    this -- two concurrent rounds corrupting the same ``state.db`` is a data
+    integrity failure, not a safety judgement call an operator can override.
+    A contended flock defers BEFORE any hub I/O, same as the gate above.
     """
     reason = refuse_sync_round(data_dir, ui_mirror, force=force)
     if reason is not None:
         raise SyncDeferredError(reason)
-    started_at = sync_stamp.canonical_now()
     try:
-        result = client.run_sync(
-            Path(data_dir), hub_url, transport=transport, name=name
-        )
-    except Exception as exc:
-        message = _sync_error_message(exc)
-        sync_status.write_result(
-            Path(data_dir),
-            sync_status.SyncResult(
-                finished_at=sync_stamp.canonical_now(),
-                status="error",
-                message=message,
-                pushed=0,
-                pulled=0,
-            ),
-        )
-        raise
-    sync_status.write_result(
-        Path(data_dir), _journal_entry(result, started_at, data_dir)
-    )
+        with single_flight.sync_flock_for(data_dir):
+            started_at = sync_stamp.canonical_now()
+            try:
+                result = client.run_sync(
+                    Path(data_dir), hub_url, transport=transport, name=name
+                )
+            except Exception as exc:
+                message = _sync_error_message(exc)
+                sync_status.write_result(
+                    Path(data_dir),
+                    sync_status.SyncResult(
+                        finished_at=sync_stamp.canonical_now(),
+                        status="error",
+                        message=message,
+                        pushed=0,
+                        pulled=0,
+                    ),
+                )
+                raise
+            # Journaled while STILL holding the flock (Sol review, PR #3831,
+            # P1/BLOCKING): writing this after the ``with`` block exited let a
+            # second process's error write land in the gap between release
+            # and this write, and then get silently overwritten by this
+            # round's now-stale success -- the exact "failed measurement
+            # rendered as a clean result" .claude/rules/verification.md
+            # exists to stop. A complete journaled round -- success or the
+            # error path just above -- now stays atomic under one lock.
+            sync_status.write_result(
+                Path(data_dir), _journal_entry(result, started_at, data_dir)
+            )
+    except single_flight.SyncInProgressError as exc:
+        raise SyncDeferredError(DEFER_REASON_SYNC_IN_PROGRESS) from exc
     return result
 
 
@@ -209,11 +245,7 @@ def _journal_entry(
             pulled=result.pulled,
         )
     if result.digest_inconclusive:
-        hub_held = (
-            "unreported"
-            if result.hub_quarantined is None
-            else result.hub_quarantined
-        )
+        hub_held = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
         try:
             exclusion_summary = sync_set.format_inconclusive_exclusion_summary(
@@ -321,9 +353,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
-    subcommands.add_parser(
-        "generation", parents=[common], help="print this hub's generation token"
-    )
+    subcommands.add_parser("generation", parents=[common], help="print this hub's generation token")
     subcommands.add_parser(
         "rotate",
         parents=[common],
@@ -337,9 +367,7 @@ def _parser() -> argparse.ArgumentParser:
         default=engine.HUB_CHANGELOG_TABLE,
         choices=sorted(engine.CHANGELOG_TABLES),
     )
-    prune_command.add_argument(
-        "--keep-days", type=float, default=engine.DEFAULT_KEEP_DAYS
-    )
+    prune_command.add_argument("--keep-days", type=float, default=engine.DEFAULT_KEEP_DAYS)
     prune_command.add_argument("--keep-rows", type=int, default=engine.DEFAULT_KEEP_ROWS)
 
     grant_command = subcommands.add_parser(
@@ -448,9 +476,7 @@ def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
         f"{result.hub_seq}{restored}"
     )
     if result.quarantined_rows or result.hub_quarantined:
-        on_hub = (
-            "unreported" if result.hub_quarantined is None else result.hub_quarantined
-        )
+        on_hub = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
         try:
             remedy = sync_set.inconclusive_remedy(
@@ -514,9 +540,7 @@ def _print_prune(args: argparse.Namespace) -> None:
 
 
 def _print_grant(args: argparse.Namespace) -> None:
-    minted = maintenance_enroll.grant(
-        args.data_dir, owner_email=args.owner, ttl_s=args.ttl_seconds
-    )
+    minted = maintenance_enroll.grant(args.data_dir, owner_email=args.owner, ttl_s=args.ttl_seconds)
     for line in maintenance_enroll.grant_lines(minted):
         print(line)
 
@@ -558,16 +582,10 @@ def _feedback_pins(args: argparse.Namespace) -> int:
     """
     base = args.engine.rstrip("/")
     if args.action == "sync":
-        request = urllib.request.Request(
-            f"{base}/api/v1/feedback/sync", data=b"", method="POST"
-        )
+        request = urllib.request.Request(f"{base}/api/v1/feedback/sync", data=b"", method="POST")
     else:
-        query = (
-            f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
-        )
-        request = urllib.request.Request(
-            f"{base}/api/v1/feedback/sync/status{query}", method="GET"
-        )
+        query = f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
+        request = urllib.request.Request(f"{base}/api/v1/feedback/sync/status{query}", method="GET")
     try:
         with urllib.request.urlopen(request, timeout=FEEDBACK_PINS_CLI_TIMEOUT_S) as response:
             payload = json.loads(response.read())
@@ -599,9 +617,7 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
-    {"sync", "status", "feedback-pins", "policy"}
-)
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "feedback-pins", "policy"})
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -615,6 +631,283 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     **fleet_admin.PRINTING_COMMANDS,
     "hosted": _print_hosted,
 }
+
+
+#: Timeout for the CLI's best-effort UI-mirror GET against a verified live
+#: engine (the identity health check that precedes it has its OWN timeout,
+#: ``apps.shared.engine_origin.IDENTITY_PROBE_TIMEOUT_S``, not this one).
+#: Short on purpose: this runs on the ``sync`` critical path. The two probes
+#: are sequential, not shared, so a wedged engine can hold the command for
+#: roughly the SUM of both timeouts per lock checked, not just this value
+#: once (claude-review, PR #3831, P3).
+_LIVE_MIRROR_PROBE_TIMEOUT_S = 3.0
+
+
+#: Reason code for `SyncDeferredError` when a verified live engine cannot be
+#: read conclusively -- see `_cli_live_ui_mirror`.
+DEFER_REASON_ENGINE_MIRROR_UNREACHABLE = "engine_mirror_unreachable"
+
+#: Loopback spellings a lock file's ``host`` must be for a refused connection
+#: on it to mean anything (see `_refused_by_loopback_engine`). The lock JSON
+#: is not restricted to loopback by `engine_origin.resolve_origin`, so this
+#: is checked explicitly rather than assumed.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+#: How stale a VERIFIED engine's ui-mirror document may be before the CLI
+#: refuses to trust it (Codex review, PR #3831, P1/BLOCKING). The performance
+#: page republishes every 1 s and the page's OWN stall detector
+#: (``apps/webui/frontend/src/lib/rb/mirror-publish-stall.ts``,
+#: ``MIRROR_STALL_MS``) still calls a gap this size healthy, so reusing that
+#: exact threshold -- rather than inventing a second number -- means a
+#: document this old is a page that has genuinely stopped publishing, not
+#: ordinary jitter. A stale document cannot be trusted either way: if it
+#: shows idle, the deck may have started playing since; if it shows playing,
+#: `any_deck_playing` already reads that as playing regardless of age, which
+#: is the safe direction anyway.
+_UI_MIRROR_FRESHNESS_TOLERANCE_S = 5.0
+
+
+def _candidate_lock_files(data_dir: Path) -> list[Path]:
+    """The lock file(s) that might describe the engine playing a deck.
+
+    Normally just ``<data_dir>/.engine.lock`` -- the lock naming the engine
+    actually serving THIS data dir. Other CLIs in this repo instead resolve
+    through ``apps.shared.engine_origin.lock_path``, which falls back to
+    ``DEFAULT_LOCK_PATH`` (not a data-dir join) when
+    ``OPENDJ_LIVE_LOCK_PATH`` is unset; this function honors that SAME
+    override, layered on top of the data-dir lock rather than replacing it.
+    When the override is set AND names a different file than the data-dir
+    lock, BOTH are checked (claude-review, PR #3831, P2): the override lets
+    an agent drive a sandboxed engine, but a DJ's own real engine at
+    ``data_dir`` can be live at the same time, and its playing deck is
+    exactly what this gate must not miss.
+    """
+    data_dir_lock = data_dir / ".engine.lock"
+    override = os.environ.get(engine_origin.LOCK_PATH_ENV, "").strip()
+    if not override:
+        return [data_dir_lock]
+    override_lock = Path(override).expanduser()
+    # Resolved, not compared as-typed (claude-review, PR #3831, P3): a
+    # relative --data-dir and an absolute override that name the SAME file
+    # would otherwise be seen as different, probing (and blocking on) one
+    # engine twice.
+    if override_lock.resolve() == data_dir_lock.resolve():
+        return [data_dir_lock]
+    return [data_dir_lock, override_lock]
+
+
+def _refused_by_loopback_engine(host: str, exc: BaseException | None) -> bool:
+    """True only for a VERIFIED loopback ``ECONNREFUSED`` -- see the P1 note
+    in `_probe_engine_lock`.
+
+    ``httpx.ConnectError`` alone is not enough (Sol review, PR #3831,
+    P1/BLOCKING): it also covers a DNS failure and an unreachable network,
+    and the lock file's ``host`` is not restricted to loopback, so neither
+    the exception type nor a non-loopback host refusing to connect proves
+    "genuinely absent" -- it proves only that THIS attempt could not reach
+    THAT host, which says nothing about whether an engine is alive
+    elsewhere. Only a loopback host that itself actively refused the
+    connection -- an OS-level ``ConnectionRefusedError`` (errno
+    ``ECONNREFUSED``) -- means no process is listening on that port at all.
+
+    The OS error is buried under one or two wrapper layers depending on
+    whether it reached us via ``__cause__`` (this module's own ``except ...
+    from exc`` chaining) or ``args[0]`` (how ``httpx``/``httpcore`` nest their
+    own wrapped exceptions), so this walks both.
+    """
+    if host not in _LOOPBACK_HOSTS:
+        return False
+    current: BaseException | None = exc
+    for _ in range(5):
+        if current is None:
+            return False
+        if isinstance(current, ConnectionRefusedError):
+            return True
+        if isinstance(current, OSError) and current.errno == errno.ECONNREFUSED:
+            return True
+        if current.__cause__ is not None:
+            current = current.__cause__
+            continue
+        args = current.args
+        current = args[0] if args and isinstance(args[0], BaseException) else None
+    return False
+
+
+def _ui_mirror_received_at(body: Mapping[str, Any]) -> datetime | None:
+    """Parse the server-stamped ``received_at`` (``apps/webui/server/routes/
+    state.py``), or None when it is missing, not a valid ISO-8601 stamp, or
+    not explicitly timezone-aware (Sol review, PR #3831, P1/BLOCKING).
+
+    The real route always stamps this with an explicit UTC offset (a
+    trailing ``Z`` or ``+00:00``), so a NAIVE timestamp is never something a
+    genuine server response can produce. Silently assuming UTC for one
+    invented a description that was never verified -- exactly the
+    "malformed response reads as safe" failure mode this whole probe exists
+    to close -- so a naive stamp fails closed here instead, same as an
+    unparseable one.
+    """
+    raw = body.get("received_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    text = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _ui_mirror_is_fresh(body: Mapping[str, Any], *, now: datetime | None = None) -> bool:
+    """True when a VERIFIED engine's 200 ui-mirror body is recent enough to
+    trust (Codex review, PR #3831, P1/BLOCKING).
+
+    ``GET /api/v1/state/ui-mirror`` serves the last document it received
+    indefinitely; it is not re-stamped on read. A 200 is therefore only
+    evidence the ROUTE answered, not that the document describes NOW -- if
+    the page's main thread stalls after starting playback but before its
+    next 1 s publish, the route keeps serving the last (idle) snapshot while
+    the deck plays on. See `_UI_MIRROR_FRESHNESS_TOLERANCE_S`.
+
+    Age must fall in ``[0, tolerance]``, not merely ``<= tolerance`` (Sol
+    review, PR #3831, P1/BLOCKING): ``current - received_at`` goes NEGATIVE
+    for any FUTURE timestamp, and a negative number is always ``<=`` a
+    positive tolerance, so that comparison alone waved through a malformed
+    response or a backward clock jump as if it were freshly stamped. A
+    stamp from the future is exactly as untrustworthy as a stale one -- it
+    proves the server clock or the wire is not describing NOW either.
+    """
+    received_at = _ui_mirror_received_at(body)
+    if received_at is None:
+        return False
+    current = now if now is not None else datetime.now(UTC)
+    age_s = (current - received_at).total_seconds()
+    return 0 <= age_s <= _UI_MIRROR_FRESHNESS_TOLERANCE_S
+
+
+def _ui_mirror_decks_are_readable(body: Mapping[str, Any]) -> bool:
+    """True when a 200 ui-mirror body carries the deck state the gate reads
+    (Sol review, PR #3831, P1/BLOCKING): a non-empty ``decks`` object whose
+    every entry is an object with a boolean ``playing``, the shape
+    ``lib/rb/ui-mirror.ts`` publishes. The route stores whatever JSON object
+    it is PUT, and ``any_deck_playing`` reads a missing or malformed deck as
+    "not playing", so without this a fresh but incomplete document would let
+    the CLI sync over a playing deck."""
+    decks = body.get("decks")
+    return (
+        isinstance(decks, dict)
+        and bool(decks)
+        and all(
+            isinstance(deck, dict) and isinstance(deck.get("playing"), bool)
+            for deck in decks.values()
+        )
+    )
+
+
+def _ui_mirror_is_trustworthy(body: Any) -> bool:
+    """A 200 body the gate may act on: a JSON object that is fresh
+    (`_ui_mirror_is_fresh`) and structurally complete
+    (`_ui_mirror_decks_are_readable`). Anything else defers."""
+    return (
+        isinstance(body, dict) and _ui_mirror_is_fresh(body) and _ui_mirror_decks_are_readable(body)
+    )
+
+
+def _probe_engine_lock(lock_file: Path) -> Mapping[str, Any] | None:
+    """The ``ui_mirror`` a single lock file's engine reports, or None if safe.
+
+    A deck can only be playing while the engine that owns it is alive, so
+    this verifies the process the lock names really is the identity-matched
+    engine, then asks it for its current mirror over loopback HTTP.
+
+    Only TWO outcomes read as "nothing is playing" here, both because no
+    engine is reachable to own a playing deck: no lock file at this path at
+    all, or a verified-origin lookup whose failure is a VERIFIED loopback
+    ``ECONNREFUSED`` -- see `_refused_by_loopback_engine`. ``httpx.
+    ConnectError`` alone is not enough: it also covers a DNS failure or an
+    unreachable network, and the lock's ``host`` is not restricted to
+    loopback, so those must defer, not pass (Sol review, PR #3831,
+    P1/BLOCKING). Every OTHER ``EngineNotRunning`` -- an unusable or
+    unreadable lock, a role/boot_id mismatch, a non-200 health status, or
+    (critically) a ``httpx.TimeoutException`` from a port that accepted the
+    connection and then hung on ``/api/v1/health`` -- is inconclusive, not
+    permissive (claude-review, PR #3831, P1/BLOCKING): the lock names a
+    specific engine, so its failure to check out is a reason to defer, not a
+    reason to assume safety, and a wedged-but-locked engine is exactly the
+    "wedged during a live set" case this gate exists to catch.
+
+    A verified engine's own 409 with EXACTLY the documented
+    ``{"client_open": False}`` body also reads as safe: no open performance
+    page means no deck is rendering audio either. Everything else from a
+    VERIFIED engine is inconclusive, not permissive: a non-200 status other
+    than that exact 409 is a genuine server error, not a "not playing"
+    signal; a transport failure on the mirror GET itself (unlike the identity
+    check above) means an engine we just confirmed is alive stopped
+    answering mid-probe; a response body that fails to parse as JSON at all
+    must defer rather than raise an uncaught decode error out of a sync
+    command; and a 200 body whose ``received_at`` is missing, invalid, or
+    older than `_UI_MIRROR_FRESHNESS_TOLERANCE_S` is a stale snapshot that
+    cannot be trusted to describe whether a deck is playing NOW (Codex
+    review, PR #3831, P1/BLOCKING) -- see `_ui_mirror_is_fresh`. All of these
+    raise `SyncDeferredError` so the CLI fails closed (refuses the sync)
+    rather than silently assuming it is safe to proceed, or crashing instead
+    of exiting with the documented deferred code.
+    """
+    try:
+        origin = engine_origin.resolve_origin(lock_file)
+    except engine_origin.EngineNotRunning as exc:
+        if not lock_file.exists():
+            return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    try:
+        engine_origin.verify_engine_identity(origin)
+    except engine_origin.EngineNotRunning as exc:
+        if _refused_by_loopback_engine(origin.host, exc.__cause__):
+            return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    try:
+        # trust_env=False for the same reason as engine_origin's identity
+        # probe: this GET must reach the engine just verified, not a proxy.
+        with httpx.Client(timeout=_LIVE_MIRROR_PROBE_TIMEOUT_S, trust_env=False) as http_client:
+            response = http_client.get(f"{origin.base_url}/api/v1/state/ui-mirror")
+    except httpx.TransportError as exc:
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE) from exc
+    if response.status_code == 409:
+        if body == {"client_open": False}:
+            return None
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
+    if response.status_code != 200 or not _ui_mirror_is_trustworthy(body):
+        raise SyncDeferredError(DEFER_REASON_ENGINE_MIRROR_UNREACHABLE)
+    return body
+
+
+def _cli_live_ui_mirror(data_dir: Path) -> Mapping[str, Any] | None:
+    """Best-effort ``ui_mirror`` for a standalone CLI invocation (CLOUDSYNC-14).
+
+    The CLI is its own process, so it never has the in-process ``ui_mirror``
+    the running webui app keeps on ``Request.app.state`` -- that is only
+    populated by an open performance page pushing to ``PUT
+    /api/v1/state/ui-mirror`` inside THAT process. Every candidate lock file
+    from ``_candidate_lock_files`` is probed via ``_probe_engine_lock``,
+    which itself raises ``SyncDeferredError`` immediately for an inconclusive
+    engine, so an inconclusive answer on ANY candidate defers the whole
+    round. Among candidates that answer conclusively, a body showing a
+    playing deck always wins over one that doesn't (claude-review, PR #3831,
+    P2): otherwise a sandboxed engine named by ``OPENDJ_LIVE_LOCK_PATH`` that
+    happens to report first, with nothing playing, would hide a REAL playing
+    deck on the engine actually running against ``data_dir``.
+    """
+    first_body: Mapping[str, Any] | None = None
+    for lock_file in _candidate_lock_files(data_dir):
+        body = _probe_engine_lock(lock_file)
+        if body is not None and any_deck_playing(body):
+            return body
+        if first_body is None:
+            first_body = body
+    return first_body
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -638,7 +931,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.data_dir,
                     args.hub,
                     name=args.name,
-                    ui_mirror=None,
+                    ui_mirror=(None if args.force else _cli_live_ui_mirror(args.data_dir)),
                     force=args.force,
                 ),
                 args.data_dir,

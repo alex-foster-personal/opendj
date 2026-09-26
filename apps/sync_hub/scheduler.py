@@ -51,6 +51,7 @@ from apps.shared.state import machine_identity
 from apps.shared.sync_runtime_gates import (
     DEFER_REASON_GIG,
     DEFER_REASON_PRESSURE_SHED,
+    SyncDeferredError,
     refuse_sync_round,
 )
 from apps.sync_hub import client as sync_client
@@ -189,6 +190,19 @@ class CloudSyncScheduler:
             self.halted_reason = f"digests diverged after settling: {exc}"
             log.error("cloudsync scheduler HALTED, no repair attempted (ADR 04 c6): %s", exc)
             return "halted"
+        except SyncDeferredError as exc:
+            # maintenance.sync's cross-process flock (single_flight.
+            # sync_flock_for) is invisible to run_round's own in-process
+            # self._round_lock check above, so a standalone CLI holding that
+            # flock at just the wrong moment reaches here (Codex review, PR
+            # #3831, P2/NON-BLOCKING). SyncDeferredError's own contract is "a
+            # sync round was refused before any hub I/O" -- exactly what
+            # "busy" already means elsewhere in this class -- so this must
+            # not fall into the generic `except Exception` below and grow
+            # the failure backoff over an expected skip, not a failure.
+            self.busy_refusals += 1
+            log.info("cloudsync round skipped (deferred: %s)", exc.reason)
+            return "busy"
         except Exception:
             # Not swallowed: maintenance.sync journaled the error row that
             # status shows, and the backoff below is the declared response.

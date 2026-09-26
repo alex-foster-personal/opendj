@@ -449,6 +449,96 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 		}
 	});
 
+	/** The plan the master silence watchdog hands its handler when a deck has
+	 * been silent for SILENT_WHILE_PLAYING_MS while claimed live (issue #2069). */
+	const dropoutPlan = (deck) => ({
+		stop_decks: [deck],
+		toast: `AUDIO CUT decks=${deck} bpm=124 sync=bar cause=unknown last=none`,
+		perf_kind: 'silent-while-playing',
+		cause: 'unknown',
+		cause_message: 'silent while claimed live cause=unknown last=none',
+		autoplay_recover: false
+	});
+
+	// Silver, Fri 25 Sep 2026 21:15Z: f58d2482 ends in ~2.2 s under RMS 0.001,
+	// so the watchdog stopped the deck ~0.4 s short of its decoded end and
+	// Trackify, which only advances from a deck parked AT its end, waited 49 min.
+	it('a silence dropout that stops the deck short of its end advances to the next track (silent outro)', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, [], 'still playing short of its end: nothing may unload it');
+
+			await entry.executeSilenceDropoutPlan(dropoutPlan(entry.TRACKIFY_DECK_ID));
+			assert.equal(deck.playing, false, 'the watchdog stop must reach the deck');
+			mock.timers.tick(250);
+			await settle();
+
+			assert.deepEqual(log, ['pause current', 'unload current', 'load next', 'play next']);
+			const state = entry.readTrackifyAutoplayState();
+			assert.equal(state.queue_head, 'next');
+			assert.match(state.last_skip_reason ?? '', /silence dropout stopped current/);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('control: an operator pause at the same point never advances; only the watchdog stop does', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			await entry.dispatchPerformanceCommand({ type: 'play', deck: entry.TRACKIFY_DECK_ID, playing: false });
+			for (let i = 0; i < 8; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			// Control for the overshoot direction: "advance on any stop short of
+			// the end" passes the test above and takes Pause away from the operator.
+			assert.deepEqual(log, ['pause current'], 'Pause must keep playback stopped');
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('a silence dropout while autoplay is disabled is discarded, not acted on once re-enabled', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('current'), row('next')]);
+			loadedDeck(deck, 'current', { playing: true, position_ms: DURATION_MS - 400 });
+
+			uninstall = entry.installTrackifyAutoplay();
+			entry.uiPrefs.auto_play_enabled = false;
+			await entry.executeSilenceDropoutPlan(dropoutPlan(entry.TRACKIFY_DECK_ID));
+			mock.timers.tick(250);
+			await settle();
+			entry.uiPrefs.auto_play_enabled = true;
+			for (let i = 0; i < 4; i += 1) {
+				mock.timers.tick(250);
+				await settle();
+			}
+			assert.deepEqual(log, ['pause current'], 'a dropout seen while autoplay was off must not fire later');
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
 	it('a skip requested while autoplay is disabled is discarded, not fired once re-enabled (Sol review, PR #3676)', async () => {
 		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
 		let uninstall = null;

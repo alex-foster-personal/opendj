@@ -106,3 +106,40 @@ def test_gain_unclamped_when_headroom_allows() -> None:
     gain, clamped = scan.gain_db(target_lufs=-14.0, ceiling_dbtp=-1.0)
     assert clamped is False
     assert gain == pytest.approx(6.0)
+
+
+# --- ffmpeg resolution (NATIVE-10) -----------------------------------------
+# An installed app is launched without Homebrew's PATH, so the packaged
+# engine names ffmpeg through MDT_FFMPEG. The loudness lane used to resolve
+# ffmpeg with its own bare PATH lookup, the one resolver in the analysis
+# lanes that ignored MDT_FFMPEG: the offline acceptance run found every
+# own_loudness.backfill drain stopping with "'ffmpeg' is not on PATH" while
+# waveform, key and beatgrid (on apps.shared.ffmpeg) decoded the same files.
+
+
+@pytest.mark.requirement("NATIVE-10")
+def test_require_ffmpeg_honors_mdt_ffmpeg_with_no_ffmpeg_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] only MDT_FFMPEG names ffmpeg [then] loudness still finds it, [else stop]."""
+    from apps.loudness.scan import require_ffmpeg
+
+    real = shutil.which("ffmpeg")
+    if real is None:
+        pytest.skip("needs a real ffmpeg to name through MDT_FFMPEG")
+    monkeypatch.setenv("PATH", str(tmp_path))  # an empty directory: no ffmpeg
+    monkeypatch.setenv("MDT_FFMPEG", real)
+    assert require_ffmpeg() == real
+
+
+@pytest.mark.requirement("NATIVE-10")
+def test_require_ffmpeg_still_fails_loudly_with_neither(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] neither MDT_FFMPEG nor PATH has ffmpeg [then] a named error, [else stop]."""
+    from apps.loudness.scan import require_ffmpeg
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("MDT_FFMPEG", raising=False)
+    with pytest.raises(LoudnessError, match="MDT_FFMPEG"):
+        require_ffmpeg()
