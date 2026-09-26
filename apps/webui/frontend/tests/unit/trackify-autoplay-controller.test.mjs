@@ -97,9 +97,11 @@ const DURATION_MS = 200_000;
 function installFakeTransport() {
 	const deck = entry.deckStates[entry.TRACKIFY_DECK_ID];
 	const log = [];
+	const loadOptions = [];
 	const loadGates = new Map();
-	entry.engine.load = async (deckId, stableId) => {
+	entry.engine.load = async (deckId, stableId, options) => {
 		log.push(`load ${stableId}`);
+		loadOptions.push({ deckId, stableId, options });
 		const gate = loadGates.get(stableId);
 		if (gate === 'reject') throw new Error('decode failed');
 		if (gate !== undefined) await gate;
@@ -125,7 +127,7 @@ function installFakeTransport() {
 		log.push(`pause ${entry.deckStates[deckId].stable_id}`);
 		entry.deckStates[deckId].playing = false;
 	};
-	return { deck, log, loadGates };
+	return { deck, log, loadGates, loadOptions };
 }
 
 function resetDeck() {
@@ -414,6 +416,30 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			mock.timers.tick(250);
 			await settle();
 			assert.deepEqual(log, ['unload current', 'load next', 'play next']);
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
+
+	it('Trackify loads never request stems after a late upgrade at track end', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { deck, log, loadOptions } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('ended'), row('next')]);
+			loadedDeck(deck, 'ended', { playing: false, position_ms: DURATION_MS });
+
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+
+			assert.deepEqual(log, ['unload ended', 'load next', 'play next']);
+			assert.deepEqual(loadOptions, [{
+				deckId: 1,
+				stableId: 'next',
+				options: { stems: false }
+			}]);
 		} finally {
 			if (uninstall !== null) uninstall();
 			mock.timers.reset();

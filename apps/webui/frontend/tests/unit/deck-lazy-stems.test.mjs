@@ -41,7 +41,7 @@ before(async () => {
 /** The body of `async load(...)` up to the point the deck is published, which
  * is everything a DJ waits through before the deck can play. */
 function criticalPath() {
-	const start = source.indexOf('async load(deck: DeckId, stable_id: string)');
+	const start = source.indexOf('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {})');
 	assert.ok(start > 0, 'load() not found - this test is reading the wrong file');
 	const end = source.indexOf('stages.totalBeforeSwap', start);
 	assert.ok(end > start, 'totalBeforeSwap marker not found inside load()');
