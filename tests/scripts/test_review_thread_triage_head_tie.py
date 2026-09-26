@@ -44,6 +44,9 @@ def _run(monkeypatch: pytest.MonkeyPatch, sampled: str, fetched: str) -> int:
         "check_pr_head_debt_file",
         lambda number, head_sha, owner="", repo="": (None, []),
     )
+    # The OPS-41 scope step has its own tests (test_pr_scope_check.py); here it
+    # must not reach the live API, and must not decide the head-tie verdict.
+    monkeypatch.setattr(review_thread_triage.pr_scope_check, "main", lambda argv: 0)
     monkeypatch.setattr("sys.argv", ["review_thread_triage", "1053"])
     return review_thread_triage.main()
 

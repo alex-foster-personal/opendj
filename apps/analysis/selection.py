@@ -375,6 +375,29 @@ def implicit_own_default(
     return default == "rbx"
 
 
+def effective_source_and_implicit_own_for_track(
+    conn: sqlite3.Connection,
+    lane: str,
+    *,
+    has_rb_mapping: bool,
+) -> tuple[Source, bool]:
+    """:func:`effective_source_for_track` and :func:`implicit_own_default` from ONE read.
+
+    Calling the two separately reads the in-process toggle twice, each under its
+    own lock acquisition, and the persisted default in separate autocommit
+    statements, so a toggle or default write landing between them can pair a
+    source with a verdict about a different selection. This reads the toggle
+    once and the default at most once, so the pair always describes one state.
+    """
+    _check_lane(lane)
+    toggle = get_toggle(lane)
+    if toggle != "unset":
+        return toggle, False
+    if has_rb_mapping:
+        return get_default(conn, lane), False
+    return "own", get_default(conn, lane) == "rbx"
+
+
 def bulk_has_rb_mapping(conn: sqlite3.Connection, stable_ids: list[str]) -> frozenset[str]:
     """``stable_id`` values with a live rekordbox ``track_vendor_ids`` row.
 
@@ -819,6 +842,7 @@ __all__ = [
     "bulk_has_rb_mapping",
     "effective_fields",
     "effective_source",
+    "effective_source_and_implicit_own_for_track",
     "effective_source_for_track",
     "implicit_own_default",
     "ensure_tables",
