@@ -24,6 +24,10 @@
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import {
+		rememberOptionalResources,
+		shouldFetchArtwork
+	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
@@ -997,8 +1001,23 @@
 		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
-	function _hideBrokenImg(event: Event): void {
-		(event.currentTarget as HTMLImageElement).style.display = 'none';
+	let artworkLoadFailed = $state<ReadonlySet<string>>(new Set());
+
+	function _onArtworkLoad(event: Event): void {
+		(event.currentTarget as HTMLImageElement).classList.add('art-loaded');
+	}
+
+	function _onArtworkError(stableId: string): void {
+		rememberOptionalResources(stableId, { artwork: false });
+		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
+	}
+
+	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
+		return (
+			artworkAvailable === true &&
+			shouldFetchArtwork(stableId) &&
+			!artworkLoadFailed.has(stableId)
+		);
 	}
 
 	// ----------------------------------------- drag-to-reorder (native DnD)
@@ -1740,12 +1759,13 @@
 							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
 						>
 							<span class="art-slate" aria-hidden="true"></span>
-							{#if row.artwork_available === true}
+							{#if _showArtworkImg(row.stable_id, row.artwork_available)}
 								<img
 									src={artworkUrl(row.stable_id, 's')}
 									alt=""
 									loading="lazy"
-									onerror={_hideBrokenImg}
+									onload={_onArtworkLoad}
+									onerror={() => _onArtworkError(row.stable_id)}
 								/>
 							{/if}
 						</td>
@@ -3003,10 +3023,14 @@
 	.c-art img {
 		position: absolute;
 		inset: 0;
-		width: var(--tt-art);
-		height: var(--tt-art);
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
+		object-position: center 66.67%;
 		display: block;
+	}
+	.c-art:has(img.art-loaded) .art-slate {
+		display: none;
 	}
 
 	.empty {

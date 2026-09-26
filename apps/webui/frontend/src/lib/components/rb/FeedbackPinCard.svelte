@@ -135,6 +135,26 @@
 	{#if pin.anchor}
 		<p class="fb-hint" title="Original anchor captured at drop time">Anchor: {pin.anchor}</p>
 	{/if}
+	<dl class="fb-provenance" data-testid="fb-pin-provenance">
+		<dt title="UTC timestamp when the pin was saved">Created (UTC)</dt>
+		<dd>{pin.created_at}</dd>
+		<dt title="Route path when the pin was dropped">Page</dt>
+		<dd>{pin.page}</dd>
+		{#if pin.build?.git_sha}
+			<dt title="Git commit stamped at save time">Build git sha</dt>
+			<dd>{pin.build.git_sha}</dd>
+		{/if}
+		{#if pin.environment}
+			<dt title="UI surface kind at drop time">UI</dt>
+			<dd>{pin.environment.ui}</dd>
+			<dt title="Viewport width in CSS pixels at drop time">Viewport</dt>
+			<dd>{pin.environment.viewport_width}×{pin.environment.viewport_height}</dd>
+			<dt title="Daemon machine name published in settings/health">Machine</dt>
+			<dd>{pin.environment.machine}</dd>
+			<dt title="Release version separate from git sha">Release</dt>
+			<dd>{pin.environment.release_version}</dd>
+		{/if}
+	</dl>
 	{#if pin.fixed_in_sha}
 		<p class="fb-hint" title="Build where this pin was marked fixed or merged">
 			Fixed in: {pin.fixed_in_sha}
@@ -355,6 +375,23 @@
 		display: block;
 		margin-top: 4px;
 		color: var(--rb-accent);
+		word-break: break-all;
+	}
+	.fb-provenance {
+		margin: 4px 0 0;
+		padding: 4px 0 0;
+		border-top: 1px solid var(--rb-border);
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 6px;
+		user-select: text;
+	}
+	.fb-provenance dt {
+		color: var(--rb-text-dim);
+		font-weight: 600;
+	}
+	.fb-provenance dd {
+		margin: 0;
 		word-break: break-all;
 	}
 	.fb-lightbox {
