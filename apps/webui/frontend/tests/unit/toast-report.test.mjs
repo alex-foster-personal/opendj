@@ -203,6 +203,20 @@ test('the payload carries nothing beyond the closed list', () => {
 	]);
 });
 
+test('extras append after page and before find-in-logs', () => {
+	const text = report.buildToastReport({
+		...INPUT,
+		extras: { ctx_source: 'toast', deck_1: 'stable=none bpm=? sync=off' }
+	});
+	const lines = text.split('\n');
+	const pageIdx = lines.findIndex((line) => line.startsWith('page:'));
+	const findIdx = lines.findIndex((line) => line.startsWith('find in logs:'));
+	assert.ok(pageIdx >= 0 && findIdx > pageIdx);
+	assert.equal(lines[pageIdx + 1], 'ctx_source: toast');
+	assert.equal(lines[pageIdx + 2], 'deck_1: stable=none bpm=? sync=off');
+	assert.equal(lines[findIdx], `find in logs: search ${INPUT.id}`);
+});
+
 //-----------------------------------------------------------------------------
 // the clipboard
 //-----------------------------------------------------------------------------
