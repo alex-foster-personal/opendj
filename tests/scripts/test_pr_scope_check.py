@@ -62,6 +62,15 @@ def test_tightest_declaration_wins_across_linked_issues() -> None:
     assert (limit.commits, limit.files, limit.issues) == (3, 5, (1, 2))
 
 
+def test_every_limit_line_in_one_issue_counts_not_only_the_first() -> None:
+    """Sol P1 on 002f8b86da: a second, tighter line in the same body was ignored."""
+    body = "Scope limit: commits=50 files=50\n\nUpdate:\nScope limit: commits=2 files=3\n"
+    limit = psc.declared_limit({7: body})
+    assert limit is not None
+    assert (limit.commits, limit.files, limit.issues) == (2, 3, (7,))
+    assert psc.verdict(Scope(4, 3, 0, 0), limit)[0] == 1
+
+
 def test_undeclared_is_never_printed_as_ok() -> None:
     rc, line = psc.verdict(SMALL, psc.declared_limit({1: "no declaration here", 2: ""}))
     assert rc == 0

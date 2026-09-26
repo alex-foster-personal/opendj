@@ -74,18 +74,22 @@ class Limit:
 
 
 def declared_limit(issue_bodies: dict[int, str]) -> Limit | None:
-    """The tightest `Scope limit:` across linked issues, or None if none declares one."""
-    found: list[tuple[int, int, int]] = []
-    for number, body in sorted(issue_bodies.items()):
-        match = _LIMIT_RE.search(body or "")
-        if match:
-            found.append((number, int(match.group(1)), int(match.group(2))))
+    """The tightest `Scope limit:` line across every linked issue body, or None if none has one.
+
+    Every line counts, not the first per body: an issue that states a limit twice is held
+    to the tighter one, the same rule as across issues.
+    """
+    found: list[tuple[int, int, int]] = [
+        (number, int(match.group(1)), int(match.group(2)))
+        for number, body in sorted(issue_bodies.items())
+        for match in _LIMIT_RE.finditer(body or "")
+    ]
     if not found:
         return None
     return Limit(
         commits=min(c for _, c, _ in found),
         files=min(f for _, _, f in found),
-        issues=tuple(n for n, _, _ in found),
+        issues=tuple(sorted({n for n, _, _ in found})),
     )
 
 
