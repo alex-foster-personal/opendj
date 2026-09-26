@@ -36,12 +36,13 @@ import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
-import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { DECK_IDS, deckStates, pitchRanges, readSilenceSourceDeckSnaps } from '$lib/rb/audio-engine.svelte';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	setSilenceDropoutContextReader,
-	setSilenceDropoutHandler
+	setSilenceDropoutHandler,
+	setSilenceSourceReader
 } from '$lib/rb/master-silence-report';
 import { readAutoPlayHandoffInFlight } from '$lib/rb/auto-play.svelte';
 import { setUnexpectedPauseAutoPlayReader } from '$lib/rb/unexpected-pause-report';
@@ -185,6 +186,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		_xrunsAtPrevious = xruns;
 		return ctx;
 	});
+	setSilenceSourceReader(readSilenceSourceDeckSnaps);
 
 	return () => {
 		stopTelemetryConsent?.();
@@ -192,6 +194,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);
+		setSilenceSourceReader(null);
 		setAudioPrefetchShedRequest(null);
 		setEagerStemDecodeShed(null);
 		setAnlzPrefetchShedRequest(null);

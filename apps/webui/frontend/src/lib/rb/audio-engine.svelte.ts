@@ -340,6 +340,7 @@ import type {
 // is re-exported below, so every existing importer of
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
+import type { SilenceSourceDeckSnap } from '$lib/rb/silence-source-pcm';
 export { DECK_IDS, PITCH_RANGES };
 export { detachProcessorForDisposal };
 export {
@@ -672,6 +673,18 @@ export function deckPcmEstimatedBytes(): number {
 		if (deckStates[deck].stems.status === 'ready') total += mixBytes * 4;
 	}
 	return total;
+}
+
+/** Snapshots for the master silence watchdog source PCM gate (issue #4030). */
+export function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
+	return DECK_IDS.map((deck) => {
+		const st = deckStates[deck];
+		return {
+			claims_live: st.playing || st.audible,
+			buffer: _rt[deck].audioBuffer,
+			position_sec: deckAudioClockPositionMs(deck) / 1000
+		};
+	});
 }
 
 // ---------------------------------------------------------------- _helpers
