@@ -91,7 +91,10 @@ describe('Trackify never decodes stems; Gig still upgrades lazily (PERFMODE-15)'
 		globalThis.fetch = async (input) => {
 			const url = typeof input === 'string' ? input : input.url;
 			fetched.push(url);
-			if (url.includes(`/tracks/${SID}/stems`) && !url.includes(`/stems/`)) {
+			// A stem PART request answers 500 so a leaked fetch fails fast and
+			// visibly instead of hanging in decode with no AudioContext.
+			if (url.includes(`/tracks/${SID}/stems/`)) return new Response('stem part', { status: 500 });
+			if (url.includes(`/tracks/${SID}/stems`)) {
 				if (stemProbe !== null) return stemProbe();
 				return json({ status: 'unavailable', code: 'STEM_BUNDLE_NOT_FOUND', message: 'no stem bundle' });
 			}
@@ -110,8 +113,11 @@ describe('Trackify never decodes stems; Gig still upgrades lazily (PERFMODE-15)'
 	it('a mounted Trackify session blocks stem decode, and its teardown releases the block', async () => {
 		assert.equal(entry.stemDecodeBlockReason(), null, 'nothing may block stems before Trackify mounts');
 		const uninstall = entry.installTrackifySession();
-		assert.match(entry.stemDecodeBlockReason() ?? '', /Trackify/);
-		await uninstall();
+		try {
+			assert.match(entry.stemDecodeBlockReason() ?? '', /Trackify/);
+		} finally {
+			await uninstall();
+		}
 		// Control for the overshoot direction: a block that outlives Trackify
 		// would take stems away from the Gig session that mounts next.
 		assert.equal(entry.stemDecodeBlockReason(), null, 'Gig must not inherit the Trackify block');
