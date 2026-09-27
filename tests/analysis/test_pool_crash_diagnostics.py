@@ -342,3 +342,22 @@ def test_unreaped_workers_report_that_the_signal_was_unreadable() -> None:
     assert pool_death_message([]) == (
         "analysis worker died before its exit signal could be read"
     )
+
+
+@pytest.mark.requirement("META-08")
+def test_traced_signals_match_the_platform_signal_set() -> None:
+    """[if] a traced signal is missing (SIGBUS on Windows) [then] trace the rest, [else stop].
+
+    The module import above is the regression check on Windows, where the old
+    `signal.SIGBUS` read raised at collection. This asserts the set is exactly the
+    fatal signals this platform defines, nothing invented and nothing dropped.
+    """
+    from apps.analysis.worker_diagnostics import TRACED_SIGNALS
+
+    expected = {
+        int(getattr(signal, name))
+        for name in ("SIGSEGV", "SIGFPE", "SIGABRT", "SIGBUS", "SIGILL")
+        if hasattr(signal, name)
+    }
+    assert int(signal.SIGSEGV) in TRACED_SIGNALS
+    assert set(TRACED_SIGNALS) == expected
