@@ -19,8 +19,16 @@ export const DESTINATION_RMS_FLOOR = 1e-3;
  * bounded patience - never an unbounded wait, never a `resume()` call of its
  * own - lets a transient host hiccup clear before the sample runs, while a
  * context that never reaches `running` still fails, loudly, on the deadline.
+ *
+ * The deadline covers the watchdog's WHOLE recovery window: every delay in
+ * `CONTEXT_RESUME_BACKOFF_MS` plus one `AUDIO_CONTEXT_IO_TIMEOUT_MS` per
+ * attempt (9,050 + 6 x 2,500 = 24,050 ms today). A shorter deadline fails a
+ * context the product is still legitimately recovering (#4117 review). It is
+ * a literal because Playwright cannot resolve the watchdog's `$lib` imports;
+ * tests/unit/destination-tap-deadline.test.mjs derives the window from the
+ * live product constants and fails if this ever falls below it.
  */
-export const DESTINATION_CONTEXT_RUNNING_TIMEOUT_MS = 5_000;
+export const DESTINATION_CONTEXT_RUNNING_TIMEOUT_MS = 25_000;
 const DESTINATION_CONTEXT_RUNNING_POLL_MS = 25;
 
 type DestTapWindow = Window & { __destTaps?: AnalyserNode[] };
