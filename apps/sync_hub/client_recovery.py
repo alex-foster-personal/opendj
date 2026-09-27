@@ -3,7 +3,8 @@
 Neither is a repair pass in the ADR 04 c6 sense. Each acts only on one
 defect class whose cause is established BEFORE anything changes, and every
 other divergence still raises ``SyncDigestMismatch`` exactly as before
-(docs/decisions ADR slug ``cloudsync-identified-brick-recovery``). Both reproduced on the Air, Sun 27 Sep 2026:
+(docs/decisions ADR slug ``cloudsync-identified-brick-recovery``). Both
+reproduced on the Air, Sun 27 Sep 2026:
 
 * **NFC location twins** (round 2 finding N2, round 3 finding R3). A legacy
   NFD ``track_locations`` row and its NFC twin are one file under two
