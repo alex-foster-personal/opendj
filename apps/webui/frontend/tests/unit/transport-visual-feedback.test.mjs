@@ -212,6 +212,7 @@ test('the processor latency snapshot is re-read live and drift is loud', () => {
 	);
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 TransportCluster keeps pending off disabled and shows armed countdown', () => {
 	const source = componentSource('lib/components/rb/deck/TransportCluster.svelte');
 	assert.doesNotMatch(source, /disabled=\{pending\}/);
