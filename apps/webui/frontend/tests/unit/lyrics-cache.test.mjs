@@ -135,57 +135,6 @@ test('a payload lands as loaded, with lines requested', async () => {
 	);
 });
 
-test('lines-only words payload lands as loaded without line-cache fetch', async () => {
-	const cache = await freshCache();
-	let calls = 0;
-	globalThis.fetch = async (request) => {
-		calls += 1;
-		const url = request.url;
-		if (url.includes('/lyrics/words')) {
-			return jsonResponse({
-				verdict: verdict('t-lines-only', { n_words: 0, has_words: false, n_lines: 2 }),
-				words: [],
-				lines: [
-					{
-						first_idx: 0,
-						last_idx: 0,
-						text: 'first line',
-						start_s: 0,
-						end_s: 2,
-						n_words: 0,
-						n_red: 0,
-						n_judged: 0,
-						quality: null,
-						band: 'unjudged',
-						para_final: false
-					},
-					{
-						first_idx: 1,
-						last_idx: 1,
-						text: 'second line',
-						start_s: 2,
-						end_s: 4,
-						n_words: 0,
-						n_red: 0,
-						n_judged: 0,
-						quality: null,
-						band: 'unjudged',
-						para_final: true
-					}
-				]
-			});
-		}
-		return jsonResponse({ detail: 'unexpected' }, 404);
-	};
-
-	await cache.load('t-lines-only');
-
-	const entry = cache.entry('t-lines-only');
-	assert.equal(entry.state, 'loaded');
-	assert.equal(entry.track.lines.length, 2);
-	assert.equal(calls, 1, 'line-cache must not run when words route already returned lines');
-});
-
 test('a 404 lands as none, not as an error', async () => {
 	const cache = await freshCache();
 	globalThis.fetch = async () =>

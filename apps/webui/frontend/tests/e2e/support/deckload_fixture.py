@@ -127,7 +127,7 @@ REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 5
+FIXTURE_REVISION: int = 6
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -206,8 +206,20 @@ RESCUE_PLAYBACK_TRACKS: tuple[FixtureTrack, ...] = (
     AUTOPLAY_CHAIN_TRACK,
     PERFORMANCE_FOLD_TRACK,
 )
-#: Extra browsable rows for LIBUX-18 scroll/anchor e2e only (not in any playlist).
-RESCUE_PLAYBACK_SCROLL_FILLER_COUNT: int = 10
+#: Four extra real ingested files for LIBUX-18 scroll/anchor e2e. No librosa
+#: analysis and not added to the autoplay-chain playlist; each row maps to
+#: its own wav through folder ingest.
+RESCUE_PLAYBACK_BROWSE_TRACKS: tuple[FixtureTrack, ...] = (
+    FixtureTrack(filename="webkit-fixture-e-120bpm-scroll.wav", bpm=120.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-f-122bpm-scroll.wav", bpm=122.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-g-126bpm-scroll.wav", bpm=126.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-h-118bpm-scroll.wav", bpm=118.0, seconds=60.0),
+)
+#: Eight real rows: four analysis-backed transport tracks plus four browse-only.
+RESCUE_PLAYBACK_LIBRARY_TRACKS: tuple[FixtureTrack, ...] = (
+    *RESCUE_PLAYBACK_TRACKS,
+    *RESCUE_PLAYBACK_BROWSE_TRACKS,
+)
 
 #: --seed-autoplay-hunt only. Six tracks, own filenames, kept out of
 #: FIXTURE_TRACKS so the 5 other e2e gates sharing this builder never see a
@@ -698,43 +710,58 @@ def _run_librosa_analysis(
     pairs_path.unlink(missing_ok=True)
 
     state_db_path = data_dir / "state" / "state.db"
-    stable_ids = [stable_id for stable_id, _title, file_path in rows if file_path]
+    analysis_filenames = {track.filename for track in tracks}
+    stable_ids = [
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path and Path(file_path).name in analysis_filenames
+    ]
     stored = fetch_records(stable_ids=stable_ids, backend="librosa", db_path=state_db_path)
     _assert_measured_downbeats(stored, tracks, label)
     _assert_fixture_bpms(rows, stored, tracks, label)
 
 
 def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
-    """Build an analysis-backed performance rescue library for Beat Sync e2e."""
+    """Build the performance rescue library: eight ingested rows, four with librosa."""
     _discard_stale_revision(data_dir)
     _reset_feedback_dir(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
-    files = ensure_audio(audio_dir, RESCUE_PLAYBACK_TRACKS)
+    files = ensure_audio(audio_dir, RESCUE_PLAYBACK_LIBRARY_TRACKS)
     state_db_path = data_dir / "state" / "state.db"
     rows = _ingest_and_verify(data_dir, audio_dir, files, "rescue-playback")
     _seed_playlists(state_db_path, rows)
 
-    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
-    by_filename = {track.filename: track for track in RESCUE_PLAYBACK_TRACKS}
-    generated = [
-        by_filename[Path(file_path).name]
-        for _stable_id, _title, file_path in rows
-        if file_path is not None and Path(file_path).name in by_filename
+    transport_filenames = {track.filename for track in RESCUE_PLAYBACK_TRACKS}
+    autoplay_stable_ids = [
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path and Path(file_path).name in transport_filenames
     ]
+    if len(autoplay_stable_ids) != len(RESCUE_PLAYBACK_TRACKS):
+        raise SystemExit(
+            f"[ERROR] rescue-playback expected {len(RESCUE_PLAYBACK_TRACKS)} autoplay-chain "
+            f"members, got {len(autoplay_stable_ids)}"
+        )
+    by_filename = {track.filename: track for track in RESCUE_PLAYBACK_LIBRARY_TRACKS}
     now = datetime.now(UTC).isoformat()
     conn = state_db.open_rw(state_db_path)
     writer = StateWriter(conn, actor="e2e-deckload-fixture")
-    bpm_by_stable_id = {
-        stable_id: track.bpm
-        for (stable_id, _title, file_path), track in zip(rows, generated, strict=True)
-        if file_path is not None and Path(file_path).name == track.filename
-    }
+    bpm_by_stable_id: dict[str, float] = {}
+    for stable_id, _title, file_path in rows:
+        if file_path is None:
+            raise SystemExit(f"[ERROR] rescue-playback row {stable_id!r} has no file_path")
+        track = by_filename.get(Path(file_path).name)
+        if track is None:
+            raise SystemExit(
+                f"[ERROR] rescue-playback ingested unknown file {Path(file_path).name!r}"
+            )
+        bpm_by_stable_id[stable_id] = track.bpm
     if len(bpm_by_stable_id) != len(rows):
         raise SystemExit(
             "[ERROR] rescue-playback could not match every ingested row to its generated file"
         )
     try:
-        for stable_id in stable_ids:
+        for stable_id in bpm_by_stable_id:
             writer.set_field(
                 stable_id, "bpm", bpm_by_stable_id[stable_id],
                 source="manual", modified_at=now, confidence=1.0,
@@ -749,43 +776,13 @@ def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | N
             vendor="fixture",
             vendor_pl_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
         )
-        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, stable_ids)
+        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, autoplay_stable_ids)
     finally:
         writer.close()
         conn.close()
 
     _run_librosa_analysis(data_dir, rows, RESCUE_PLAYBACK_TRACKS, "rescue-playback")
-    _seed_rescue_playback_scroll_filler(state_db_path, rows)
     return rows
-
-
-def _seed_rescue_playback_scroll_filler(
-    state_db_path: Path,
-    rows: list[tuple[str, str | None, str | None]],
-) -> None:
-    """Cheap library-only rows so performance anchor e2e can scroll past row 7."""
-    if not rows:
-        raise SystemExit("[ERROR] rescue-playback scroll filler needs at least one ingested row")
-    file_path = next((path for _sid, _title, path in rows if path), None)
-    if file_path is None:
-        raise SystemExit("[ERROR] rescue-playback scroll filler needs a reusable file_path")
-    conn = state_db.open_rw(state_db_path)
-    writer = StateWriter(conn, actor="e2e-deckload-fixture")
-    try:
-        for index in range(RESCUE_PLAYBACK_SCROLL_FILLER_COUNT):
-            writer.upsert_track(
-                stable_id=f"e2e-rescue-scroll-filler-{index:03d}",
-                stable_id_tier="inferred",
-                title=f"E2E Scroll Filler {index + 1}",
-                artists=["Fixture"],
-                album=None,
-                isrc=None,
-                duration_ms=60_000,
-                file_path=file_path,
-            )
-    finally:
-        writer.close()
-        conn.close()
 
 
 def build_autoplay_hunt(
