@@ -334,16 +334,27 @@ def drop_identity_remaps(
 
 
 def restore_identity_remaps(conn: sqlite3.Connection, pairs: list[tuple[str, str]]) -> None:
-    """Re-persist remaps this sync dropped, because their moved rows cannot ship.
+    """Re-persist remaps this sync dropped but did not verifiably retire.
 
-    Without them the next sync's guard no longer knows the survivor is
-    carrying the loser's rows and would push them unchecked. The seq-0 pull
-    watermark written with the drop stays: a full re-pull is harmless.
+    Called when a moved row cannot ship, and when recovery ends without
+    digest agreement. Without them the next sync's guard no longer knows the
+    survivor is carrying the loser's rows and would push them unchecked. The
+    seq-0 pull watermark written with the drop stays: a full re-pull is
+    harmless. Idempotent: a pair already persisted is rewritten as itself.
     """
+    if not pairs:
+        return
     remap = load_identity_remap(conn)
     with _transaction(conn):
         for loser, survivor in pairs:
             record_identity_remap(conn, remap, loser, survivor)
+    log.warning(
+        "re-persisted %d identity remap(s) this sync had dropped, so the push "
+        "guard keeps protecting their moved rows until a sync verifies "
+        "agreement: %s",
+        len(pairs),
+        pairs,
+    )
 
 
 __all__ = [
