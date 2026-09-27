@@ -15,3 +15,13 @@ test('admin page shows feedback dock and arms placement', async ({ page }) => {
 	await page.getByLabel('Drop a comment pin').last().click();
 	await expect.poll(async () => readPlacementArmed(page)).toBe(true);
 });
+
+test('admin feedback dock opens support panel from bottom-right', async ({ page }) => {
+	await page.goto('/admin');
+	const support = page.getByRole('button', { name: 'Open support and feedback' });
+	await expect(support).toBeVisible({ timeout: 15_000 });
+	await support.click();
+	await expect(page.getByRole('dialog', { name: 'Support and feedback' })).toBeVisible({
+		timeout: 5_000
+	});
+});
