@@ -12,6 +12,7 @@
 	import { pinThread } from '$lib/rb/feedback-pin-thread';
 	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 
 	let {
 		pin,
@@ -46,7 +47,8 @@
 	 * prop change, not just at mount. */
 	const bodyStyle = $derived.by(() => {
 		const pos = measuredPos;
-		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
 	const thread = $derived(pinThread(pin));
@@ -260,6 +262,7 @@
 {#if lightboxOpen && pin.attachment}
 	<div
 		class="fb-lightbox"
+		style="z-index: {OVERLAY_Z_INDEX.feedbackPinBubble + 5}"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Screenshot"
@@ -283,7 +286,6 @@
 <style>
 	.fb-pin-body {
 		position: fixed;
-		z-index: 310;
 		width: 240px;
 		max-height: 320px;
 		overflow-y: auto;
@@ -360,7 +362,6 @@
 	.fb-lightbox {
 		position: fixed;
 		inset: 0;
-		z-index: 320;
 		display: flex;
 		align-items: center;
 		justify-content: center;
