@@ -776,7 +776,7 @@ test('resizedLoopRangeMs throws rather than clipping when a resize does not fit 
 
 // -------------------------------------------------- SAFE loop-out wiring
 
-test('SAFE engages at loop out via playbackReachedSafetyLoopOut, not at natural end', async () => {
+test('pin 0d0803d33f02 SAFE engages at saved out not file end', async () => {
 	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
 	const naturalEndBlock = engineSource.match(
 		/if \(naturalEndNeedsRevisionedStop[\s\S]*?\n\t\}/
