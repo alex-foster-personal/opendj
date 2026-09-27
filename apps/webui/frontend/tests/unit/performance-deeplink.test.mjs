@@ -115,7 +115,7 @@ test('formatReplaceStateUrl emits a single ? for lv2 deck ids', async () => {
 	assert.equal(deeplink.formatReplaceStateUrl(url), '/performance?playlist=pl-abc&d1=sid-a&d3=sid-c');
 });
 
-test('lv1 collection playlist round-trips without a source key', async () => {
+test('6a812c8ac2e5: lv1 collection playlist round-trips without a source key', async () => {
 	const deeplink = await _loadDeeplink();
 	const lv1 = { source: 'collection', playlist_id: 'pl-abc' };
 	const params = deeplink.writeLv1(new URLSearchParams('d1=keep-me'), lv1);
@@ -152,7 +152,7 @@ test('lv1 empty playlist query parses as null', async () => {
 	assert.deepEqual(deeplink.parseLv1(''), { source: 'collection', playlist_id: null });
 });
 
-test('lv2 deck ids round-trip and omit empty decks', async () => {
+test('6a812c8ac2e5: lv2 deck ids round-trip and omit empty decks', async () => {
 	const deeplink = await _loadDeeplink();
 	const ids = { 1: 'sid-a', 3: 'sid-c' };
 	const params = deeplink.writeLv2Ids(new URLSearchParams(), ids);
@@ -162,16 +162,20 @@ test('lv2 deck ids round-trip and omit empty decks', async () => {
 	assert.deepEqual(deeplink.parseLv2Ids(params), ids);
 });
 
-test('performance session snapshot round-trips fixture state', async () => {
+test('6a812c8ac2e5: performance session snapshot round-trips lv3 fixture state', async () => {
 	const snapshot = await _loadSnapshot();
 	const fixture = _snapshotFixture();
+	fixture.mixer.channels[1].stem_eq_mode = true;
 	const raw = snapshot.serializePerformanceSession(fixture);
 	const parsed = snapshot.parsePerformanceSession(raw);
 	assert.notEqual(parsed, null);
 	assert.equal(parsed.decks[1].position_ms, 12_345);
 	assert.equal(parsed.decks[1].stable_id, 'sid-a');
+	assert.equal(parsed.mixer.crossfader, 0.5);
+	assert.equal(parsed.mixer.master, 0.8);
 	assert.equal(parsed.mixer.channels[1].eq_high, 0.2);
 	assert.equal(parsed.mixer.channels[1].fader, 0.7);
+	assert.equal(parsed.mixer.channels[1].stem_eq_mode, true);
 	assert.equal(parsed.stems[1].vocal.muted, true);
 });
 
@@ -255,7 +259,7 @@ test('installPerformanceSessionRestore with explicit undefined location does not
 	assert.equal(replaceCalls.length, 0);
 });
 
-test('session snapshot writer throttles interval writes and flushes on pagehide', async () => {
+test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushes on pagehide', async () => {
 	const session = await _loadSession();
 	const snapshot = await _loadSnapshot();
 	const store = new Map();
