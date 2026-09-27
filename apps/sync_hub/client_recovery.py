@@ -37,7 +37,13 @@ from apps.shared.state import normalize_locations
 from apps.sync_hub import capabilities, digest_diff, engine
 from apps.sync_hub.client_transport_ops import _machines_from, _rows_from, _transaction
 from apps.sync_hub.engine_identity_map import _remove_remap_loser, load_identity_remap
-from apps.sync_hub.protocol import MEMBERSHIP_TABLE, RowChange, pk_columns
+from apps.sync_hub.protocol import (
+    MEMBERSHIP_TABLE,
+    RowChange,
+    SyncDigest,
+    pk_columns,
+    sync_digest,
+)
 from apps.sync_hub.transport import API_PREFIX, HubTransport
 
 #: ``table -> {pk: GET /rows sample}``, fetched once per recovery decision.
@@ -161,31 +167,31 @@ def retire_stale_remaps(
     conn: sqlite3.Connection,
     machine_id: str,
     hub_machine_id: str,
-    divergent: Sequence[str],
+    digests: tuple[SyncDigest, SyncDigest] | None,
 ) -> list[tuple[str, str]]:
     """Retire the stale remaps, ONLY if they explain every divergent row.
 
-    Every hub read happens first: the sync-eligible rows of ``tracks`` and
-    of each ``divergent`` table (``GET /rows``), and the losers' identity-
-    repair bundle (``GET /pull`` with ``bundle_stable_ids``, which moves no
-    cursor). Then ONE ``BEGIN IMMEDIATE`` transaction attributes and
-    repairs together, so no local write can land between the proof and the
-    change: every differing local row must be one of the losers' own hub
-    rows (:func:`_hub_rows_owned_by`), or a local row that IS one of them
-    with only ``stable_id`` rewritten in place (:func:`_moved_from_a_loser`).
-    If so, the remaps are deleted and the bundles applied with the pull's
-    own LWW, which restores each in-place row on its exact-stamp tie and
-    lands the rest; nothing newer is ever overwritten. A crash rolls it all
-    back, so no moment exists with the remap gone and a moved row left.
+    ``digests`` is the settle's (local, hub) pair that disagreed; ``None``
+    (a halt that compared nothing) and no divergent table both return
+    ``[]``. Every hub read happens first: the sync-eligible rows of
+    ``tracks`` and of each divergent table (``GET /rows``), and the losers'
+    identity-repair bundle (``GET /pull`` with ``bundle_stable_ids``, which
+    moves no cursor). Then ONE ``BEGIN IMMEDIATE`` transaction proves and
+    repairs together (:func:`_retire_if_every_row_is_theirs`), so no local
+    write can land between the proof and the change, and a crash rolls it
+    all back: no moment exists with the remap gone and a moved row left.
 
-    Anything unexplained changes nothing and returns ``[]``: the caller's
-    original outcome stands, because an ordinary pull would overwrite that
-    other cause on a tie. That includes a copy the old remap made under a
-    new key, which the bundle cannot take back. No ``divergent`` table is
-    nothing to attribute, so it returns ``[]`` too.
+    Anything unproven changes nothing and returns ``[]``, so the caller's
+    original outcome stands: an ordinary pull would overwrite that other
+    cause on a tie. That includes a copy the old remap made under a new key,
+    which the bundle cannot take back.
     """
     persisted = load_identity_remap(conn)
-    if not divergent or not persisted:
+    if digests is None or not persisted:
+        return []
+    measured, hub_digest = digests
+    divergent = measured.divergent_tables(hub_digest)
+    if not divergent:
         return []
     hub_rows: HubRows = {"tracks": digest_diff.fetch_hub_rows(channel, machine_id, "tracks")}
     stale = _both_halves_live(persisted, hub_rows["tracks"])
@@ -193,19 +199,16 @@ def retire_stale_remaps(
         return []
     hub_rows.update(_hub_rows_of(channel, machine_id, divergent, skip=hub_rows.keys()))
     bundle = _loser_bundles(channel, machine_id, [loser for loser, _ in stale])
-    unexplained = _retire_if_every_row_is_theirs(
-        conn, hub_machine_id, divergent, stale, hub_rows, bundle
+    refusal = _retire_if_every_row_is_theirs(
+        conn, hub_machine_id, (measured, divergent), stale, hub_rows, bundle
     )
-    if unexplained:
+    if refusal is not None:
         log.error(
-            "kept %d stale identity remap(s) %s: %d divergent row(s) in %s are "
-            "not the remaps' doing, and retiring them would overwrite that "
-            "other cause. Examples: %s",
+            "kept %d stale identity remap(s) %s: %s. Retiring them would "
+            "overwrite that other cause, so the original outcome stands.",
             len(stale),
             stale,
-            len(unexplained),
-            sorted({table for table, _pk in unexplained}),
-            [digest_diff.format_pk(table, pk) for table, pk in unexplained[:5]],
+            refusal,
         )
         return []
     log.warning(
@@ -235,29 +238,53 @@ def _hub_rows_of(
 def _retire_if_every_row_is_theirs(
     conn: sqlite3.Connection,
     hub_machine_id: str,
-    divergent: Sequence[str],
+    settle: tuple[SyncDigest, Sequence[str]],
     stale: list[tuple[str, str]],
     hub_rows: HubRows,
     bundle: Mapping[str, Any],
-) -> list[RowKey]:
-    """Under ONE write lock: attribute every divergent row, then retire and repair.
+) -> str | None:
+    """Under ONE write lock: prove the state is the one measured, then retire.
 
-    Returns the rows the stale remaps do not explain; when there are any,
-    nothing was written. Otherwise the remaps are deleted and the bundle
-    applied with the pull's own merge in the same transaction.
+    Returns why it refused, having written nothing, or ``None`` once the
+    remaps are deleted and the bundle applied with the pull's own merge in
+    the same transaction. The proof, in order: every stale pair is still
+    persisted exactly as proven; the local digest still equals the one the
+    settle measured, so no local write in ANY table landed since the settle
+    compared it (the row walk covers only its divergent tables, while the
+    bundle can also carry rows of matching ones, such as a playlist holding
+    a loser); and every divergent row is the remaps' doing
+    (:func:`_claimed_loser_rows`). ``settle`` is that local digest and its
+    divergent tables.
     """
+    measured, divergent = settle
     owned = _hub_rows_owned_by(bundle, {loser for loser, _ in stale})
     with _transaction(conn, immediate=True):
+        remap = load_identity_remap(conn)
+        changed = [pair for pair in stale if remap.get(pair[0]) != pair[1]]
+        if changed:
+            return f"remap(s) {changed} changed after they were proven stale"
+        now = sync_digest(conn)
+        if now.overall != measured.overall:
+            moved = now.divergent_tables(measured)
+            return f"the local state moved in {list(moved)} after the settle measured it"
         claims = _claimed_loser_rows(conn, divergent, stale, hub_rows)
         unexplained = [row for row, claim in claims if claim not in owned]
         if unexplained:
-            return unexplained
-        remap = load_identity_remap(conn)
+            return _describe_unexplained(unexplained)
         for loser, _survivor in stale:
             _remove_remap_loser(conn, remap, loser)
         engine.merge_machines(conn, _machines_from(bundle, "pull"), caller_id=hub_machine_id)
         engine.spoke_apply(conn, _rows_from(bundle, "pull"))
-    return []
+    return None
+
+
+def _describe_unexplained(unexplained: list[RowKey]) -> str:
+    tables = sorted({table for table, _pk in unexplained})
+    examples = [digest_diff.format_pk(table, pk) for table, pk in unexplained[:5]]
+    return (
+        f"{len(unexplained)} divergent row(s) in {tables} are not the remaps' "
+        f"doing. Examples: {examples}"
+    )
 
 
 def _loser_bundles(
