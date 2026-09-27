@@ -34,6 +34,9 @@
 // [if] the shell's MIDI boot runs twice before the redirect lands [then] it
 //   replaces once and subscribes nothing on the leaving page [⛔️ if a Tauri
 //   listener survives into the reload and doubles every press]
+// [if] a page that already subscribed redirects (Mixtour hot-plugged, or an
+//   in-app link dropped djio) [then] its poll stops and the unlisten IPC lands
+//   before its one replace() [⛔️ if replace() races a live listener]
 // [if] a fallback is live [then] the rendered I/O panel and the agent ui-mirror
 //   both carry it [⛔️ if either surface omits it]
 import assert from 'node:assert/strict';
@@ -550,33 +553,51 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 		shell = { map: RELOOP_MIXTOUR_PRO_MAP };
 	});
 
+	const realClearInterval = globalThis.clearInterval;
+	const MIXTOUR = { id: 'mixtour-pro', name: 'Reloop Mixtour Pro', manufacturer: 'Reloop', hasOutput: true };
+
 	/**
 	 * The installed shell as the page sees it: Tauri's IPC entry point and a
 	 * location whose replace() is recorded. href does not change on replace(),
 	 * exactly as in a browser: the old document keeps its URL until it is gone.
-	 * The snapshot is the Air's Mixtour Pro as CoreMIDI names it.
+	 * The snapshot is the Air's Mixtour Pro as CoreMIDI names it; `devices`
+	 * lets a case plug it in after boot. `timeline` orders IPC calls against
+	 * replace(); `holdUnlisten` parks the unlisten IPC until `releaseUnlisten()`.
 	 */
-	function installShell(search) {
+	function installShell(search, { devices = [MIXTOUR], holdUnlisten = false } = {}) {
 		installWindow(search);
-		const record = { replaced: [], invoked: [] };
-		window.location.replace = (url) => record.replaced.push(String(url));
+		const record = { replaced: [], invoked: [], timeline: [], devices, polls: [], cleared: new Set(), releaseUnlisten: null };
+		window.location.replace = (url) => {
+			record.replaced.push(String(url));
+			record.timeline.push('replace');
+		};
 		window.__TAURI_INTERNALS__ = {
 			invoke: async (cmd) => {
 				record.invoked.push(cmd);
-				if (cmd === 'native_midi_snapshot') {
-					return [{ id: 'mixtour-pro', name: 'Reloop Mixtour Pro', manufacturer: 'Reloop', hasOutput: true }];
-				}
+				record.timeline.push(cmd);
+				if (cmd === 'native_midi_snapshot') return record.devices;
 				if (cmd === 'plugin:event|listen') return 1;
+				if (cmd === 'plugin:event|unlisten' && holdUnlisten) {
+					await new Promise((resolve) => { record.releaseUnlisten = resolve; });
+					record.timeline.push('unlisten-landed');
+					return null;
+				}
 				if (cmd === 'plugin:event|unlisten' || cmd === 'native_midi_send') return null;
 				throw new Error(`unexpected shell command ${cmd}`);
 			},
 			transformCallback: () => 1
 		};
 		window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-		globalThis.setInterval = (...args) => {
-			const handle = realSetInterval(...args);
+		globalThis.setInterval = (fn, ms, ...rest) => {
+			const handle = realSetInterval(fn, ms, ...rest);
 			shellIntervals.push(handle);
+			// The 1 s hot-plug poll, captured so a case can run one tick without waiting a second.
+			if (ms === 1000) record.polls.push({ tick: fn, handle });
 			return handle;
+		};
+		globalThis.clearInterval = (handle) => {
+			record.cleared.add(handle);
+			realClearInterval(handle);
 		};
 		webmidi._resetMidiForTests();
 		webmidi.registerDeviceMap(shell.map);
@@ -584,11 +605,17 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 	}
 
 	const listens = (record) => record.invoked.filter((cmd) => cmd === 'plugin:event|listen').length;
+	const unlistens = (record) => record.invoked.filter((cmd) => cmd === 'plugin:event|unlisten').length;
+	/** Let every promise chain a poll tick started run to completion. */
+	const settle = async () => {
+		for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+	};
 
 	afterEach(() => {
 		webmidi._resetMidiForTests();
-		for (const handle of shellIntervals.splice(0)) clearInterval(handle);
+		for (const handle of shellIntervals.splice(0)) realClearInterval(handle);
 		globalThis.setInterval = realSetInterval;
+		globalThis.clearInterval = realClearInterval;
 		installWindow('');
 	});
 
@@ -614,6 +641,60 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 		await webmidi.initMidi();
 		assert.deepEqual(record.replaced, [], 'if a djio page replaces itself then the reload loops forever - broken');
 		assert.equal(listens(record), 1, 'if the fix stops subscribing altogether then the Mixtour is dead on its own page - broken');
+		// The overshoot of the teardown below: a poll tick on the page the redirect
+		// lands on must keep its listener and its poll.
+		assert.equal(record.polls.length, 1, 'precondition: the subscribed page runs the hot-plug poll');
+		record.polls[0].tick();
+		await settle();
+		assert.equal(unlistens(record), 0, 'if a djio page drops its listener on a poll tick then the Mixtour goes dead on its own page - broken');
+		assert.equal(record.cleared.has(record.polls[0].handle), false, 'if a djio page stops its poll then an unplug is never noticed - broken');
+	});
+
+	test('IOPIN-12: a subscribed page whose snapshot gains the Mixtour unsubscribes and stops polling before its one replace()', async () => {
+		// Hot-plug: the page booted with no Mixtour, so it subscribed and started
+		// the poll. The Mixtour is then plugged in and the next tick redirects.
+		const record = installShell('', { devices: [], holdUnlisten: true });
+		await webmidi.initMidi();
+		assert.equal(listens(record), 1, 'precondition: the page booted without a Mixtour subscribes');
+		assert.equal(record.polls.length, 1, 'precondition: and runs the hot-plug poll');
+		record.devices = [MIXTOUR];
+		record.polls[0].tick();
+		await settle();
+		assert.equal(unlistens(record), 1, 'if the leaving page keeps its Tauri listener then every Mixtour press arrives twice after the reload - broken');
+		assert.deepEqual(
+			record.replaced,
+			[],
+			'if replace() fires while the unlisten IPC is still in flight then the navigation can cancel it and the listener survives the reload - broken'
+		);
+		assert.ok(record.cleared.has(record.polls[0].handle), 'if the poll keeps running then it rescans a page that is already leaving - broken');
+		record.releaseUnlisten();
+		await settle();
+		assert.deepEqual(record.replaced, [`http://127.0.0.1:9427/performance?djio=${DJIO}`]);
+		assert.deepEqual(
+			record.timeline.slice(record.timeline.indexOf('plugin:event|unlisten')),
+			['plugin:event|unlisten', 'unlisten-landed', 'replace'],
+			'replace() comes after the unlisten IPC has landed, never before'
+		);
+		record.polls[0].tick();
+		await settle();
+		assert.equal(record.replaced.length, 1, 'a straggling tick after the redirect does not replace() again');
+	});
+
+	test('IOPIN-12: an in-app navigation that drops djio re-enters it with one replace(), after releasing native MIDI', async () => {
+		// SvelteKit client-side links are plain paths (routes/+layout.svelte), so
+		// leaving /performance?djio=... for / drops the param while this module,
+		// its listener and its poll live on. The poll then sees the map again.
+		const record = installShell(`?djio=${DJIO}`);
+		await webmidi.initMidi();
+		assert.equal(listens(record), 1, 'precondition: the djio page subscribes');
+		window.location.href = 'http://127.0.0.1:9427/';
+		window.location.search = '';
+		record.polls[0].tick();
+		await settle();
+		assert.deepEqual(record.replaced, [`http://127.0.0.1:9427/?djio=${DJIO}`]);
+		assert.equal(unlistens(record), 1, 'if the in-app re-entry reloads with the listener live then presses double after it - broken');
+		assert.ok(record.cleared.has(record.polls[0].handle), 'the poll stops before the re-entry reload');
+		assert.ok(record.timeline.indexOf('plugin:event|unlisten') < record.timeline.indexOf('replace'));
 	});
 });
 

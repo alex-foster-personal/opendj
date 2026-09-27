@@ -131,7 +131,8 @@ interface _ResolvedDevice {
 
 let _access: MIDIAccess | null = null;
 let _transport: 'none' | 'webmidi' | 'native' = 'none';
-let _nativeUnlisten: (() => void) | null = null;
+/** Tauri 2's unlisten resolves once the `plugin:event|unlisten` IPC has landed. */
+let _nativeUnlisten: (() => void | Promise<void>) | null = null;
 let _nativePollTimer: ReturnType<typeof setInterval> | null = null;
 let _djioRedirectIssued = false;
 
@@ -287,7 +288,8 @@ function _nativeOutput(deviceId: string): _MidiOutputPort {
 	};
 }
 
-function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
+/** Resolve a native snapshot; returns the djio URL this page must leave for, or null to stay. */
+function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 	const seen = new Set(snapshot.map((device) => device.id));
 	for (const found of snapshot) {
 		const existing = _resolved.get(found.id);
@@ -334,25 +336,43 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 		]);
 	} else if (profiles.size === 1) {
 		// IOPIN-12: a page already on djio (a stereo-fallback page keeps its
-		// param) or on extroute returns null, so a rescan can never loop the
-		// reload. A non-null target means this page is leaving, so every snapshot
-		// until navigation lands answers "navigating": a later initMidi() must not
-		// subscribe here, and the flag keeps replace() to one call.
-		const target = djioRedirectTarget(window.location.href, [...profiles][0]);
-		if (target !== null) {
-			if (!_djioRedirectIssued) {
-				window.location.replace(target);
-				_djioRedirectIssued = true;
-			}
-			return true;
-		}
+		// param) or on extroute returns null, so a rescan can never loop the reload.
+		return djioRedirectTarget(window.location.href, [...profiles][0]);
 	}
-	return false;
+	return null;
 }
 
+/** True when this page is leaving for djio. Every snapshot until navigation lands
+ * answers that, so a later initMidi() never subscribes here, and the flag keeps
+ * replace() to one call per page. */
 async function _rescanNativePorts(): Promise<boolean> {
 	const snapshot = await invoke<_NativeMidiDevice[]>('native_midi_snapshot');
-	return _applyNativeSnapshot(snapshot);
+	const target = _applyNativeSnapshot(snapshot);
+	if (target === null) return false;
+	if (!_djioRedirectIssued) {
+		_djioRedirectIssued = true;
+		await _releaseNativeMidiThenNavigate(target);
+	}
+	return true;
+}
+
+/** IOPIN-12: a page that subscribed before the Mixtour appeared (a hot-plug, or an
+ * in-app navigation that dropped djio) must not reload with its listener live: Tauri
+ * keeps it registered across the reload, so every press would arrive twice. The
+ * unlisten IPC is awaited because a navigation can cancel one still in flight. */
+async function _releaseNativeMidiThenNavigate(target: string): Promise<void> {
+	if (_nativePollTimer !== null) {
+		clearInterval(_nativePollTimer);
+		_nativePollTimer = null;
+	}
+	const unlisten = _nativeUnlisten;
+	_nativeUnlisten = null;
+	_transport = 'none';
+	try {
+		await unlisten?.();
+	} finally {
+		window.location.replace(target);
+	}
 }
 
 function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: number): MidiInputValue {
