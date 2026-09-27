@@ -26,6 +26,8 @@
 // [if] that throw happens inside a headphone or master output selection [then]
 //   the selection rejects with the build's own error and the I/O panel error is
 //   set [⛔️ if it reports "stale headphone operation" instead]
+// [if] the fallback graph is rebuilt while its toast is on screen [then] there
+//   is still one toast, counted [⛔️ if each rebuild stacks another]
 // [if] the page is already on ?djio= (including a stereo-fallback page) or on
 //   ?extroute= [then] the controller redirect does not fire again [⛔️ if
 //   location.replace can loop or produce a URL whose graph cannot build]
@@ -312,6 +314,24 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 		await audio.engine.dispose();
 		assert.deepEqual(status.outputTopologyMirror(), { requested_profile: null, active_profile: null, fallback: null },
 			'if teardown leaves the fallback status behind then the I/O panel warns about a graph that no longer exists - broken');
+	});
+
+	test('IOPIN-12: repeated fallback builds keep ONE warn toast on screen, counted, and re-raise it once it has expired', async () => {
+		installWindow(`?djio=${DJIO}`);
+		const fallbackToasts = () => stores.toasts.filter((toast) => toast.kind === 'warn' && /Mixtour 4-channel output unavailable/.test(toast.message));
+		for (let build = 1; build <= 2; build += 1) {
+			await audio.engine.dispose();
+			await audio.ensureAudioGraphForCue();
+		}
+		assert.equal(fallbackToasts().length, 1, 'if every graph rebuild stacks its own toast then a watchdog rebuild loop buries the tray - broken');
+		assert.equal(fallbackToasts()[0].count, 2, 'the repeat is counted on the one toast, not dropped');
+		// Expiry dismisses the toast, and the next build names the fix again: the
+		// inline I/O notice is the persistent surface, the toast is on-screen only.
+		stores.dismissToast(fallbackToasts()[0].logId);
+		await audio.engine.dispose();
+		await audio.ensureAudioGraphForCue();
+		assert.equal(fallbackToasts().length, 1);
+		assert.equal(fallbackToasts()[0].count, 1);
 	});
 });
 

@@ -23,7 +23,9 @@ export interface AudioOutputStatus {
 
 /** Long enough to read the fix; the inline notice in I/O stays for the session. */
 const DJIO_FALLBACK_TOAST_MS = 15000;
-/** One toast per page, counted on repeat, however many times the graph rebuilds. */
+/** Groups repeats: while the toast is on screen, a rebuild counts on it rather than
+ * stacking another. Once it expires the next fallback build raises it again; the
+ * inline I/O notice is the surface that persists. */
 const DJIO_FALLBACK_TOAST_GROUP = 'djio-stereo-fallback';
 
 export const audioOutputStatus: AudioOutputStatus = $state({
