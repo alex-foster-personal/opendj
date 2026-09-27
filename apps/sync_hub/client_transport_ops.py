@@ -111,11 +111,13 @@ def _batched(
 
 
 @contextmanager
-def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
+def _transaction(conn: sqlite3.Connection, *, immediate: bool = False) -> Iterator[None]:
     """One explicit transaction. A multi-table READ needs one too, so the
     digest describes a single snapshot rather than several (ADR 08 point 6b).
+    ``immediate`` takes the write lock up front, for a decision that must not
+    see a local write land between reading the state and changing it.
     """
-    conn.execute("BEGIN")
+    conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
     try:
         yield
     except Exception:
