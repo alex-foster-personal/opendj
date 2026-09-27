@@ -1759,16 +1759,14 @@
 							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
 						>
 							<span class="art-slate" aria-hidden="true"></span>
-							{#if row.artwork_available === true}
-								{#if _showArtworkImg(row.stable_id, row.artwork_available)}
-									<img
-										src={artworkUrl(row.stable_id, 's')}
-										alt=""
-										loading="lazy"
-										onload={_onArtworkLoad}
-										onerror={() => _onArtworkError(row.stable_id)}
-									/>
-								{/if}
+							{#if row.artwork_available === true && _showArtworkImg(row.stable_id, row.artwork_available)}
+								<img
+									src={artworkUrl(row.stable_id, 's')}
+									alt=""
+									loading="lazy"
+									onload={_onArtworkLoad}
+									onerror={() => _onArtworkError(row.stable_id)}
+								/>
 							{/if}
 						</td>
 						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
