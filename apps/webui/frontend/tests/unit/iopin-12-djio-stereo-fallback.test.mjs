@@ -19,8 +19,10 @@
 //   status names the Mixtour + reload fix [⛔️ if it throws or any deck is unwired]
 // [if] the output exposes 4 channels [then] djio still wires master 1/2 + cue
 //   3/4 (control: a fix that always falls back to stereo fails here)
-// [if] graph construction throws once [then] the next build starts from a fresh
-//   context and every deck is wired [⛔️ if the half-built context is reused]
+// [if] graph construction throws once, before or after a deck is published
+//   [then] no deck keeps nodes of the discarded context, the context is closed,
+//   unregistered and disarmed, and the next build wires every deck on a fresh
+//   context [⛔️ if the half-built context or any of its deck nodes is reused]
 // [if] that throw happens inside a headphone or master output selection [then]
 //   the selection rejects with the build's own error and the I/O panel error is
 //   set [⛔️ if it reports "stale headphone operation" instead]
@@ -101,6 +103,8 @@ class FakeAudioContext {
 		this.disconnected = new Set();
 		this.closed = false;
 		this.calls = new Map();
+		/** Every node made through `_create`, in creation order. */
+		this.created = [];
 		this.destination = fakeNode(this, 'destination', [], {
 			maxChannelCount: FakeAudioContext.maxChannelCount
 		});
@@ -118,7 +122,9 @@ class FakeAudioContext {
 		if (FakeAudioContext.failWhen?.(this, kind, nth) === true) {
 			throw new Error(`injected ${kind} construction failure`);
 		}
-		return fakeNode(this, kind, params, extra);
+		const node = fakeNode(this, kind, params, extra);
+		this.created.push(node);
+		return node;
 	}
 
 	createGain() { return this._create('gain', ['gain']); }
@@ -191,6 +197,7 @@ let audio;
 let stores;
 let status;
 let player;
+let registry;
 
 before(async () => {
 	installWindow('');
@@ -203,6 +210,7 @@ before(async () => {
 	stores = entry.stores;
 	status = entry.status;
 	player = entry.player;
+	registry = entry.registry;
 });
 
 beforeEach(async () => {
@@ -310,16 +318,40 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 //-----------------------------------------------------------------------------
 
 describe('IOPIN-12: a failed graph build never leaves a deck dead', () => {
-	test('IOPIN-12: a throw mid-build is discarded and the next build wires every deck on a fresh context', async () => {
+	test('IOPIN-12: a throw after deck 1 is published is discarded and the next build wires every deck on a fresh context', async () => {
 		installWindow('');
-		// Fail on the 3rd biquad of the FIRST context: deck 1's channel nodes are
-		// already published by then, which is the half-built state the live bug hit.
+		// buildDeckChannelGraph makes 5 biquads per deck (low, mid, high, filterLp,
+		// filterHp) BEFORE it publishes that deck, so biquad 6 is deck 2's first:
+		// deck 1 already holds nodes of this context when the build throws. That
+		// is the partial-construction case; a throw before ANY deck is published
+		// is the live-sequence test below.
 		FakeAudioContext.failWhen = (ctx, kind, nth) =>
-			ctx === FakeAudioContext.instances[0] && kind === 'biquad' && nth === 3;
+			ctx === FakeAudioContext.instances[0] && kind === 'biquad' && nth === 6;
 		await assert.rejects(audio.ensureAudioGraphForCue(), /injected biquad construction failure/);
 		const failed = FakeAudioContext.instances[0];
+		assert.equal(failed.calls.get('biquad'), 6, 'precondition: the build got past deck 1 and failed inside deck 2');
 		assert.equal(audio.gigDeckGraphIsPresent(), false, 'if the half-built context stays installed then _ensureGraph() keeps returning it - broken');
-		assert.deepEqual(wiredDecks(), [], 'no deck may keep nodes that belong to the discarded context');
+		assert.deepEqual(wiredDecks(), [], 'if deck 1 keeps nodes of the discarded context then its trim/fader writes hit a dead graph - broken');
+		assert.doesNotThrow(
+			() => audio.engine.setFader(1, 0.5),
+			'if deck 1 keeps stale nodes while no graph exists then every fader move throws "audio graph not initialised" - broken'
+		);
+		const deckOneEq = failed.created.filter((node) => node.kind === 'biquad').slice(0, 5);
+		assert.equal(deckOneEq.length, 5);
+		assert.ok(
+			deckOneEq.every((node) => failed.disconnected.has(node)),
+			'if the published deck-1 nodes are left out of the teardown list then they stay wired on the discarded context - broken'
+		);
+		assert.equal(
+			registry.countRegisteredAudioContexts(),
+			0,
+			'if the discarded context stays registered then library mode reports a leaked context (PERFMODE-14) - broken'
+		);
+		assert.equal(
+			window.__mdtAudioOutput,
+			undefined,
+			'if the watchdog armed on the discarded context is not disarmed then agents read the health of a dead context - broken'
+		);
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(failed.closed, true, 'the discarded context is closed, not leaked');
 

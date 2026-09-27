@@ -10,3 +10,4 @@ export * as audio from '$lib/rb/audio-engine.svelte';
 export * as stores from '$lib/stores.svelte';
 export * as status from '$lib/rb/audio-output-status.svelte';
 export * as player from '$lib/player/state.svelte';
+export * as registry from '$lib/rb/audio-context-registry';
