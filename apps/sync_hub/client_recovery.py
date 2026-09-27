@@ -29,9 +29,13 @@ import logging
 import sqlite3
 
 from apps.shared.state import normalize_locations
-from apps.sync_hub import digest_diff, engine
+from apps.sync_hub import digest_diff
 from apps.sync_hub.client_transport_ops import _transaction
-from apps.sync_hub.engine_identity_map import _remove_remap_loser, load_identity_remap
+from apps.sync_hub.engine_identity_map import (
+    _remove_remap_loser,
+    load_identity_remap,
+    record_identity_remap,
+)
 from apps.sync_hub.engine_watermark import Watermark, write_watermark
 from apps.sync_hub.protocol import RowChange
 from apps.sync_hub.transport import HubTransport
@@ -108,31 +112,35 @@ def stale_identity_remaps(
 
 
 def stale_remaps_the_offer_would_spread(
-    channel: HubTransport, conn: sqlite3.Connection, machine_id: str, watermark: Watermark
+    channel: HubTransport,
+    conn: sqlite3.Connection,
+    machine_id: str,
+    rows: list[RowChange],
+    known_stale: tuple[tuple[str, str], ...],
 ) -> list[tuple[str, str]]:
-    """Stale remaps whose survivor the NEXT push names, checked before it leaves.
+    """Stale remaps whose survivor THIS offer names, checked before it is pushed.
 
     A persisted remap moves the loser's children onto the survivor, and a
-    moved row keeps any pending changelog entry, so the next push offers it
-    keyed to the survivor. When the hub contradicts that remap those rows
-    belong to the loser: pushing them re-keys the loser's data on the hub,
-    and the seq-0 replay would then adopt it and converge over the damage.
-    The offer is the one :func:`apps.sync_hub.engine.spoke_push` selects, and
-    the hub is asked only when it names a persisted survivor outside
-    ``tracks``, so an ordinary sync pays one local selection and no request.
+    moved row keeps any pending changelog entry, so a push offers it keyed to
+    the survivor. When the hub contradicts that remap those rows belong to
+    the loser: pushing them re-keys the loser's data on the hub, and the
+    seq-0 replay would then adopt it and converge over the damage. ``rows``
+    is the exact offer about to be pushed, so nothing logged later escapes
+    the check. ``known_stale`` are pairs already proven stale and dropped by
+    this sync's recovery: no longer persisted, still not safe to spread.
+    The hub is asked only when the offer names a persisted survivor outside
+    ``tracks``, so an ordinary round sends no request.
     """
-    remap = load_identity_remap(conn)
-    if not remap:
-        return []
-    offer = engine.spoke_push(conn, watermark=watermark, ceiling=engine.local_seq(conn))
-    at_risk = _survivors_named_by(offer.rows, set(remap.values()))
+    persisted = set(load_identity_remap(conn).values())
+    at_risk = _survivors_named_by(rows, persisted | {survivor for _, survivor in known_stale})
     if not at_risk:
         return []
-    return [
-        (loser, survivor)
-        for loser, survivor in stale_identity_remaps(channel, conn, machine_id)
-        if survivor in at_risk
-    ]
+    spread = {pair for pair in known_stale if pair[1] in at_risk}
+    if at_risk & persisted:
+        spread.update(
+            pair for pair in stale_identity_remaps(channel, conn, machine_id) if pair[1] in at_risk
+        )
+    return sorted(spread)
 
 
 def _survivors_named_by(rows: list[RowChange], survivors: set[str]) -> set[str]:
@@ -172,9 +180,23 @@ def drop_identity_remaps(
     )
 
 
+def restore_identity_remaps(conn: sqlite3.Connection, pairs: list[tuple[str, str]]) -> None:
+    """Re-persist remaps this sync dropped, because their moved rows cannot ship.
+
+    Without them the next sync's guard no longer knows the survivor is
+    carrying the loser's rows and would push them unchecked. The seq-0 pull
+    watermark written with the drop stays: a full re-pull is harmless.
+    """
+    remap = load_identity_remap(conn)
+    with _transaction(conn):
+        for loser, survivor in pairs:
+            record_identity_remap(conn, remap, loser, survivor)
+
+
 __all__ = [
     "collapse_location_twins",
     "drop_identity_remaps",
+    "restore_identity_remaps",
     "stale_identity_remaps",
     "stale_remaps_the_offer_would_spread",
 ]
