@@ -22,14 +22,14 @@ import { expect, test } from '@playwright/test';
 // unclipped, always-visible half of LESS mode.
 const STANDARD_VIEWPORT = { width: 1280, height: 800 };
 // Short enough that `.perf-root.deck-layout-less`'s
-// `minmax(276px, min(404px, calc(100vh - ...)))` resolves its CALC BELOW the
+// `minmax(278px, min(404px, calc(100vh - ...)))` resolves its CALC BELOW the
 // floor, so the floor is what sizes the row. At STANDARD_VIEWPORT the cap
 // governs instead, which is why every existing assertion here has only ever
 // measured a mixer with slack. Blinded review, Thu 10 Sep 2026.
 const SHORT_VIEWPORT = { width: 1280, height: 560 };
 /** `.perf-root.deck-layout-less`'s deck-area floor, derived in
  *  channel-strip-less-floor.test.mjs and written into +page.svelte. */
-const LESS_DECK_AREA_FLOOR_PX = 276;
+const LESS_DECK_AREA_FLOOR_PX = 278;
 
 async function enterLessMode(
 	page: import('@playwright/test').Page,
@@ -218,7 +218,7 @@ test('performance LESS mode: FILTER is visible, with the fader left of the EQs a
 });
 
 // The floor is an EXACT-FIT number (strip 171 == the four LESS grid rows' sum,
-// deck area 276 == toggle 17 + strip 171 + lower 76 + chrome 12), so it has
+// deck area 278 == toggle 17 + strip 173 + lower 76 + chrome 12), so it has
 // zero slack by construction and a 1px Chromium rounding or font-metric
 // difference breaks it - which is precisely how #1578 bit. Every other test in
 // this file runs at STANDARD_VIEWPORT, where `min(404px, calc(...))` governs

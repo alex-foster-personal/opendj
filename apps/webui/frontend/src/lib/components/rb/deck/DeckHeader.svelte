@@ -9,6 +9,7 @@
 		shouldFetchArtwork
 	} from '$lib/rb/optional-resource-availability';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
+	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
 	import {
 		DECK_IDS,
 		deckEffectiveBpm,
@@ -134,14 +135,31 @@
 		}
 		return keySyncPreview(deckId);
 	});
+	/** Show audible Camelot after KEY SYNC / nudge; playhead segments override metadata. */
+	const keyPlayhead = $derived(
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
+	);
+	const keyText: string = $derived(keyPlayhead.display ?? '--');
+	const masterEffectiveKey: string | null = $derived.by(() => {
+		if (keySyncPlan === null) return null;
+		const master = deckStates[keySyncPlan.masterDeck];
+		const playhead = keyAtPlayheadNow(
+			master.anlz,
+			master.position_ms,
+			master.key_shift_semitones,
+			master.key
+		);
+		const display = playhead.display;
+		return display === null || display === '--' ? master.key : display;
+	});
+	const followerEffectiveKey: string | null = $derived(keyText === '--' ? null : keyText);
 	const keySyncDeltaText: string | null = $derived.by(() => {
 		if (keySyncPlan === null) return null;
-		if (keySyncPlan.deltaSemitones === 0) return 'already harmonically aligned';
-		const magnitude = Math.abs(keySyncPlan.deltaSemitones);
-		const direction = keySyncPlan.deltaSemitones > 0 ? 'up' : 'down';
-		const vocalEffect = magnitude === 1 ? 'vocals slightly higher' : 'vocals much higher';
-		const lowerVocalEffect = magnitude === 1 ? 'vocals slightly lower' : 'vocals much lower';
-		return `${magnitude} semitone${magnitude === 1 ? '' : 's'} ${direction} - ${direction === 'up' ? vocalEffect : lowerVocalEffect}`;
+		return formatKeySyncDeltaText(
+			followerEffectiveKey,
+			masterEffectiveKey,
+			keySyncPlan.deltaSemitones
+		);
 	});
 	const keySyncTitle: string = $derived(
 		!keySyncAvailable
@@ -152,29 +170,35 @@
 					? 'KEY SYNC OFF - exact target is unavailable'
 					: `KEY SYNC OFF - ${keySyncDeltaText}`
 	);
-	const keySyncBullets: readonly string[] = $derived(
-		keySyncPlan === null
-			? ['Load a parseable Camelot-key master and wait for the presented audio state.']
-			: [
-				`Target manual shift: ${keySyncPlan.targetManualShiftSemitones >= 0 ? '+' : ''}${keySyncPlan.targetManualShiftSemitones} semitones.`,
-				'Click KEY SYNC to apply this exact listener-facing target.'
-			]
-	);
+	const keySyncBullets: readonly string[] = $derived.by(() => {
+		if (keySyncPlan === null) {
+			return ['Load a parseable Camelot-key master and wait for the presented audio state.'];
+		}
+		const bullets = [
+			`Target manual shift: ${keySyncPlan.targetManualShiftSemitones >= 0 ? '+' : ''}${keySyncPlan.targetManualShiftSemitones} semitones.`,
+			'Click KEY SYNC to apply this exact listener-facing target.'
+		];
+		const notation = keySyncNotationBullet(followerEffectiveKey, masterEffectiveKey);
+		if (notation !== null) bullets.push(notation);
+		return bullets;
+	});
 	const keySyncWarning: string | null = $derived(
 		!deck.master_tempo_enabled
 			? 'Master Tempo is OFF. Tempo changes affect vocal pitch; KEY SYNC itself does not change playback speed.'
 			: null
 	);
-	/** Show audible Camelot after KEY SYNC / nudge; playhead segments override metadata. */
-	const keyPlayhead = $derived(
-		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
-	);
-	const keyText: string = $derived(keyPlayhead.display ?? '--');
 	const keyColor: string | null = $derived(camelotKeyColor(keyText === '--' ? null : keyText));
 	const keyHover: string | null = $derived.by(() => {
-		if (keyPlayhead.title !== null) return keyPlayhead.title;
 		const effective = keyText === '--' ? null : keyText;
-		const base = camelotKeyHoverLabel(effective);
+		const crossNotation = camelotKeyHoverLabel(effective);
+		const segmentNote = keyPlayhead.title;
+		let base: string | null;
+		if (segmentNote !== null) {
+			base =
+				crossNotation === null ? segmentNote : `${crossNotation} — ${segmentNote}`;
+		} else {
+			base = crossNotation;
+		}
 		const raw = deck.key;
 		if (raw === null || deck.key_shift_semitones === 0) return base;
 		const shift =
@@ -184,6 +208,7 @@
 		const suffix = ` (was ${raw}, shift ${shift})`;
 		return base === null ? `${effective}${suffix}` : `${base}${suffix}`;
 	});
+	const origKeyHover: string | null = $derived(camelotKeyHoverLabel(deck.key));
 	const keyShiftText: string = $derived(
 		deck.key_shift_semitones >= 0
 			? `+${deck.key_shift_semitones}`
@@ -257,9 +282,16 @@
 			? 'Elapsed time --:--.- (no track loaded)'
 			: `Elapsed time ${elapsedText} (MM:SS.d from the start of this track)`
 	);
-	const keyOffTitle: string = $derived(
-		`Key shift ${keyShiftText} semitones from the original key`
-	);
+	const keyOffTitle: string = $derived.by(() => {
+		const base = `Key shift ${keyShiftText} semitones from the original key`;
+		const currentNote = camelotKeyHoverLabel(followerEffectiveKey);
+		const originalNote = camelotKeyHoverLabel(deck.key);
+		if (currentNote === null && originalNote === null) return base;
+		const parts = [base];
+		if (currentNote !== null) parts.push(`Current: ${currentNote}`);
+		if (originalNote !== null) parts.push(`Original: ${originalNote}`);
+		return parts.join(' — ');
+	});
 	const deckNumTitle: string = $derived(`Deck ${deckId}`);
 </script>
 
@@ -341,7 +373,9 @@
 					<span class="readout-key-line">
 						<span style={keyColor !== null ? `color:${keyColor}` : undefined}>{keyText}</span>
 						<span class="from">
-							 (from <span style={origKeyColor !== null ? `color:${origKeyColor}` : undefined}>{deck.key}</span>)
+							 (from <span
+								style={origKeyColor !== null ? `color:${origKeyColor}` : undefined}
+								title={origKeyHover ?? undefined}>{deck.key}</span>)
 						</span>
 					</span>
 				{/if}
