@@ -21,24 +21,34 @@ reproduced on the Air, Sun 27 Sep 2026:
   contradicts hub identity authority (ADR-0074) and the spoke can never
   converge. :func:`stale_identity_remaps` asks the hub for exactly that
   evidence (loser AND survivor both live there); only a remap the hub
-  contradicts is dropped.
+  contradicts is dropped, and only when
+  :func:`stale_remaps_behind_all_divergence` proves the remaps explain
+  every divergent row. A mismatch with any second cause keeps them and
+  raises as before, because the seq-0 re-pull would overwrite that cause.
 """
 from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Collection, Mapping, Sequence
+from typing import Any
 
 from apps.shared.state import normalize_locations
-from apps.sync_hub import digest_diff
-from apps.sync_hub.client_transport_ops import _transaction
+from apps.sync_hub import capabilities, digest_diff, sync_set
+from apps.sync_hub.client_transport_ops import _rows_from, _transaction
 from apps.sync_hub.engine_identity_map import (
     _remove_remap_loser,
     load_identity_remap,
     record_identity_remap,
 )
 from apps.sync_hub.engine_watermark import Watermark, write_watermark
-from apps.sync_hub.protocol import RowChange
-from apps.sync_hub.transport import HubTransport
+from apps.sync_hub.protocol import MEMBERSHIP_TABLE, RowChange, pk_columns
+from apps.sync_hub.transport import API_PREFIX, HubTransport
+
+#: ``table -> {pk: GET /rows sample}``, fetched once per recovery decision.
+HubRows = dict[str, dict[tuple[str, ...], digest_diff.HubRowSample]]
+#: ``(table, pk)`` of one row.
+RowKey = tuple[str, tuple[str, ...]]
 
 log = logging.getLogger(__name__)
 
@@ -103,11 +113,17 @@ def stale_identity_remaps(
     persisted = load_identity_remap(conn)
     if not persisted:
         return []
-    hub_tracks = {pk[0] for pk in digest_diff.fetch_hub_rows(channel, machine_id, "tracks")}
+    return _both_halves_live(persisted, digest_diff.fetch_hub_rows(channel, machine_id, "tracks"))
+
+
+def _both_halves_live(
+    persisted: Mapping[str, str], hub_tracks: Mapping[tuple[str, ...], Any]
+) -> list[tuple[str, str]]:
+    live = {pk[0] for pk in hub_tracks}
     return sorted(
         (loser, survivor)
         for loser, survivor in persisted.items()
-        if loser in hub_tracks and survivor in hub_tracks
+        if loser in live and survivor in live
     )
 
 
@@ -154,6 +170,143 @@ def _survivors_named_by(rows: list[RowChange], survivors: set[str]) -> set[str]:
     return named & survivors
 
 
+def stale_remaps_behind_all_divergence(
+    channel: HubTransport,
+    conn: sqlite3.Connection,
+    machine_id: str,
+    divergent: Sequence[str],
+) -> list[tuple[str, str]]:
+    """Stale remaps, returned ONLY when they explain every divergent row.
+
+    Dropping a remap re-pulls the hub from seq 0, and that replay rewrites
+    any local row the hub ties or beats. Run on a mismatch with a second
+    cause it would overwrite that cause's evidence (an unstamped local edit
+    loses the exact tie) and report success over it. So ``divergent`` is
+    diffed row by row, in full, against the hub, and every differing row
+    must be one of the stale losers' own hub rows
+    (:func:`_hub_rows_owned_by`) or a local row that IS one of them with
+    only ``stable_id`` rewritten to the survivor
+    (:func:`_moved_from_a_loser`). Anything else keeps every remap: the
+    caller's original outcome stands. No ``divergent`` table is nothing to
+    attribute, so it keeps them too.
+    """
+    persisted = load_identity_remap(conn)
+    if not divergent or not persisted:
+        return []
+    hub_rows: HubRows = {"tracks": digest_diff.fetch_hub_rows(channel, machine_id, "tracks")}
+    stale = _both_halves_live(persisted, hub_rows["tracks"])
+    if not stale:
+        return []
+    for table in divergent:
+        if table not in hub_rows:
+            hub_rows[table] = digest_diff.fetch_hub_rows(channel, machine_id, table)
+    claims = _claimed_loser_rows(conn, divergent, stale, hub_rows)
+    owned = _hub_rows_owned_by(channel, machine_id, {loser for loser, _ in stale})
+    unexplained = [row for row, claim in claims if claim not in owned]
+    if unexplained:
+        log.error(
+            "kept %d stale identity remap(s) %s: %d divergent row(s) in %s are "
+            "not the remaps' doing, and the seq-0 re-pull that drops them would "
+            "overwrite that other cause. Examples: %s",
+            len(stale),
+            stale,
+            len(unexplained),
+            sorted({table for table, _pk in unexplained}),
+            [digest_diff.format_pk(table, pk) for table, pk in unexplained[:5]],
+        )
+        return []
+    return stale
+
+
+def _claimed_loser_rows(
+    conn: sqlite3.Connection,
+    divergent: Sequence[str],
+    stale: list[tuple[str, str]],
+    hub_rows: HubRows,
+) -> list[tuple[RowKey, RowKey | None]]:
+    """Every divergent row, paired with the loser hub row it would have to be.
+
+    A hub-only row claims itself. A local row claims the hub row it
+    reproduces once ``stable_id`` is put back (``None`` if none): at its own
+    pk when the hub holds that pk, since a remap rewrites such a row in
+    place, or at any pk when it is local-only, since a copy lands under a
+    new one. Only claims, because whether the claimed row really is a
+    loser's is read from the hub AFTER this walk.
+    """
+    losers_of: dict[str, list[str]] = {}
+    for loser, survivor in stale:
+        losers_of.setdefault(survivor, []).append(loser)
+    claims: list[tuple[RowKey, RowKey | None]] = []
+    for table in divergent:
+        by_pk = hub_rows[table]
+        key_columns = sync_set.spec_for(table).pk
+        local_pks: set[tuple[str, ...]] = set()
+        for pk, local_hex, canonical in digest_diff.iter_eligible_local_rows(conn, table):
+            local_pks.add(pk)
+            hub_row = by_pk.get(pk)
+            if hub_row is not None and hub_row.canonical_hex == local_hex:
+                continue
+            origin = _moved_from_a_loser(canonical, key_columns, losers_of, by_pk)
+            in_place_or_new = hub_row is None or origin == pk
+            claim = (table, origin) if origin is not None and in_place_or_new else None
+            claims.append(((table, pk), claim))
+        claims.extend(((table, pk), (table, pk)) for pk in by_pk if pk not in local_pks)
+    return claims
+
+
+def _hub_rows_owned_by(
+    channel: HubTransport, machine_id: str, losers: Collection[str]
+) -> set[RowKey]:
+    """Every hub row keyed to a loser: its ``tracks`` row, children, memberships.
+
+    Read from the hub's identity-repair bundle (``GET /pull`` with
+    ``bundle_stable_ids``), which returns rows without moving any cursor. A
+    playlist row in it only carries the membership list; the playlist
+    itself is not the loser's.
+    """
+    payload = channel.get(
+        f"{API_PREFIX}/pull",
+        {
+            "machine_id": machine_id,
+            "bundle_stable_ids": sorted(losers),
+            "capabilities": capabilities.QUARANTINE_V1,
+        },
+    )
+    membership_pk = pk_columns(MEMBERSHIP_TABLE)
+    owned: set[RowKey] = set()
+    for row in _rows_from(payload, "pull"):
+        if row.table != "playlists":
+            owned.add((row.table, row.pk))
+            continue
+        owned.update(
+            (MEMBERSHIP_TABLE, tuple(str(member[column]) for column in membership_pk))
+            for member in row.members or ()
+            if member.get("stable_id") in losers
+        )
+    return owned
+
+
+def _moved_from_a_loser(
+    canonical: Mapping[str, Any],
+    key_columns: Sequence[str],
+    losers_of: Mapping[str, list[str]],
+    by_pk: Mapping[tuple[str, ...], digest_diff.HubRowSample],
+) -> tuple[str, ...] | None:
+    """The hub pk this local row reproduces byte for byte once ``stable_id``
+    is put back to one of its survivor's losers, else ``None``. A table with
+    no ``stable_id`` column holds no moved rows."""
+    survivor = canonical.get("stable_id")
+    if not isinstance(survivor, str):
+        return None
+    for loser in losers_of.get(survivor, ()):
+        origin = {**canonical, "stable_id": loser}
+        origin_pk = tuple(str(origin[column]) for column in key_columns)
+        hub_row = by_pk.get(origin_pk)
+        if hub_row is not None and hub_row.canonical_hex == digest_diff.canonical_hex(origin):
+            return origin_pk
+    return None
+
+
 def drop_identity_remaps(
     conn: sqlite3.Connection, stale: list[tuple[str, str]], replay: Watermark
 ) -> None:
@@ -198,5 +351,6 @@ __all__ = [
     "drop_identity_remaps",
     "restore_identity_remaps",
     "stale_identity_remaps",
+    "stale_remaps_behind_all_divergence",
     "stale_remaps_the_offer_would_spread",
 ]

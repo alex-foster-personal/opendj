@@ -96,7 +96,12 @@ def _newer_side(
 
 
 def _canonical_hex(table: str, columns: Sequence[str], row: Sequence[Any]) -> str:
-    return hashlib.sha256(canonical_bytes(canonical_row(table, columns, row))).hexdigest()
+    return canonical_hex(canonical_row(table, columns, row))
+
+
+def canonical_hex(canonical: Mapping[str, Any]) -> str:
+    """The ``GET /rows`` ``canonical_hex`` of one canonical row mapping."""
+    return hashlib.sha256(canonical_bytes(canonical)).hexdigest()
 
 
 def _pk_column_types(
@@ -439,6 +444,7 @@ __all__ = [
     "DEFAULT_SAMPLE_LIMIT",
     "DigestDiffRow",
     "HubRowSample",
+    "canonical_hex",
     "divergent_rows",
     "fetch_hub_rows",
     "format_diff_line",
