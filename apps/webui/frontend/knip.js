@@ -112,7 +112,9 @@ export default {
 		'vite.config.ts',
 		'svelte.config.js',
 		'webui-port-config.ts',
-		'scripts/**/*.{js,ts,mjs}'
+		'scripts/**/*.{js,ts,mjs}',
+		// Keyframe catalogue for ControlExplainer demos; consumed by unit tests, not runtime UI.
+		'src/lib/rb/explainer-demo-keyframes.ts'
 	],
 	project: ['src/**/*.{js,ts,svelte}', 'tests/**/*.{js,ts,mjs}', 'scripts/**/*.{js,ts,mjs}'],
 	ignoreBinaries: ['uv'],

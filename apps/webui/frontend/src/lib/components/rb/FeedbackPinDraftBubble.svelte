@@ -18,6 +18,7 @@
 	import { readShellBuild } from '$lib/rb/build-identity';
 	import { attachmentSizeRefusal, pastedImageFile } from '$lib/rb/feedback-pin-attachment';
 	import type { ClientErrorContext } from '$lib/client-error-reporting';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 
 	/** Signature of `$lib/stores.svelte`'s `pushToast`, taken as a prop
 	 * instead of imported directly: the parent (FeedbackWidget.svelte)
@@ -67,7 +68,8 @@
 	const bodyStyle = $derived.by(() => {
 		if (pinDraft === null) return '';
 		const pos = measuredPos;
-		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
 	function _reposition(): void {
@@ -323,7 +325,6 @@
 <style>
 	.fb-bubble {
 		position: fixed;
-		z-index: 310;
 		width: 200px;
 		max-height: 320px;
 		overflow-y: auto;
