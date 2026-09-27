@@ -254,7 +254,10 @@ export async function loadAnalysisSource(): Promise<void> {
 	const poll = ++_latestPollIssued;
 	const body = await unwrap(api.GET('/api/v1/analysis/source'));
 	const isSuperseded = (): boolean => mutation !== _latestMutation || poll < _latestPollAdopted;
-	if (isSuperseded()) return;
+	if (isSuperseded()) {
+		await _drainPendingRecordRefresh();
+		return;
+	}
 	_latestPollAdopted = poll;
 	const features = _featuresOf(body);
 	await _adopt(features, isSuperseded, true);
@@ -286,6 +289,11 @@ export async function setAnalysisSource(
 	const lane = _LANE_OF_FEATURE[feature];
 	const attemptedToggle = _TOGGLE_OF_UI_SOURCE[source];
 	const mutation = ++_latestMutation;
+	// A local PUT must retire any poll GET already in flight: mutation alone
+	// orders against older PUTs, but a GET that started before this PUT shares
+	// the same captured mutation until it returns and must not adopt after this
+	// write confirms (analysis-source.test.mjs "GET begun before a local PUT").
+	_latestPollAdopted = ++_latestPollIssued;
 	const body = await unwrap(
 		api.PUT('/api/v1/analysis/source', {
 			body: { lane, toggle: attemptedToggle }
@@ -383,6 +391,7 @@ async function _rollBackFailedSwitch(
 		return;
 	}
 	_latestMutation++;
+	_latestPollAdopted = ++_latestPollIssued;
 	// The failed switch's own refresh already bumped the fetch generation and
 	// may have wiped or partially repopulated the shared ANLZ cache before it
 	// failed. A retry timer or an unrelated prefetch (`ensureAnlz`) that
@@ -595,7 +604,11 @@ let _drainInFlightGeneration: number | null = null;
 async function _drainPendingRecordRefresh(): Promise<void> {
 	if (!_recordRefreshPending) return;
 	if (_drainInFlight !== null && _drainInFlightGeneration === _recordRefreshGeneration) {
-		return _drainInFlight;
+		await _drainInFlight;
+		if (_recordRefreshPending) {
+			return _drainPendingRecordRefresh();
+		}
+		return;
 	}
 	const generation = _recordRefreshGeneration;
 	_drainInFlightGeneration = generation;
