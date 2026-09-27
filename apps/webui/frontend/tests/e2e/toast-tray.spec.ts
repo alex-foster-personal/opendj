@@ -188,22 +188,116 @@ test('at most three toasts are visible when more are pushed', async ({ page }) =
 // REQ: UX-TOAST-03
 // [if] fourth toast evicts oldest [then] exiting class uses ~100ms transition [else stop].
 test('the fourth toast evicts the oldest with an exiting marker', async ({ page }) => {
+	type ExitEvidence = {
+		exitingFound: boolean;
+		transformMs: number;
+		opacityMs: number;
+		exitMs: number;
+		exitPx: number;
+		transformFound: boolean;
+		opacityFound: boolean;
+	};
+
 	const first = await raise(page, 'oldest toast', 'error', 120_000);
 	await raise(page, 'toast two', 'error', 120_000);
 	await raise(page, 'toast three', 'error', 120_000);
-	await raise(page, 'toast four', 'error', 120_000);
-	await page.waitForTimeout(30);
-	const exiting = page.locator(`[data-toast-exiting="${first}"]`);
-	await expect(exiting).toHaveCount(1);
-	const transitionMs = await exiting.evaluate((node) => {
-		const style = getComputedStyle(node);
-		const transform = style.transitionDuration.split(',')[0]?.trim() ?? '';
-		const parsed = parseFloat(transform);
-		return Number.isFinite(parsed) ? parsed * (transform.endsWith('ms') ? 1 : 1000) : NaN;
-	});
-	expect(transitionMs).toBeGreaterThanOrEqual(90);
-	expect(transitionMs).toBeLessThanOrEqual(120);
+
+	const evidence = await page.evaluate(
+		async ([store, oldestId]): Promise<ExitEvidence> => {
+			const parseMs = (raw: string): number => {
+				const trimmed = raw.trim();
+				const msMatch = /^(-?\d+(?:\.\d+)?)ms$/.exec(trimmed);
+				if (msMatch) return Number(msMatch[1]);
+				const sMatch = /^(-?\d+(?:\.\d+)?)s$/.exec(trimmed);
+				if (sMatch) return Number(sMatch[1]) * 1000;
+				return NaN;
+			};
+			const parsePx = (raw: string): number => {
+				const trimmed = raw.trim();
+				const pxMatch = /^(-?\d+(?:\.\d+)?)px$/.exec(trimmed);
+				if (pxMatch) return Number(pxMatch[1]);
+				return NaN;
+			};
+			const transitionDurationMs = (transition: CSSTransition | undefined): number => {
+				if (transition?.effect === null || transition?.effect === undefined) return NaN;
+				const timing = transition.effect.getTiming();
+				const duration = timing.duration;
+				return typeof duration === 'number' && Number.isFinite(duration) ? duration : NaN;
+			};
+			const raf = (): Promise<void> =>
+				new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+			const mod = await import(/* @vite-ignore */ store as string);
+			mod.pushToast('toast four', 'error', 120_000);
+
+			await raf();
+			await raf();
+
+			const findExiting = (): HTMLElement | null =>
+				document.querySelector(`[data-toast-exiting="${oldestId}"]`);
+
+			const collect = (node: HTMLElement): ExitEvidence => {
+				const cssTransitions = node
+					.getAnimations()
+					.filter((animation): animation is CSSTransition => animation instanceof CSSTransition);
+				const transformTransition = cssTransitions.find((t) => t.transitionProperty === 'transform');
+				const opacityTransition = cssTransitions.find((t) => t.transitionProperty === 'opacity');
+				const style = getComputedStyle(node);
+				return {
+					exitingFound: true,
+					transformMs: transitionDurationMs(transformTransition),
+					opacityMs: transitionDurationMs(opacityTransition),
+					exitMs: parseMs(style.getPropertyValue('--toast-exit-ms')),
+					exitPx: parsePx(style.getPropertyValue('--toast-exit-px')),
+					transformFound: transformTransition !== undefined,
+					opacityFound: opacityTransition !== undefined
+				};
+			};
+
+			for (let frame = 0; frame < 8; frame += 1) {
+				const node = findExiting();
+				if (node === null) {
+					await raf();
+					continue;
+				}
+				const sample = collect(node);
+				if (sample.transformFound === true && sample.opacityFound === true) {
+					return sample;
+				}
+				await raf();
+			}
+
+			const node = findExiting();
+			if (node === null) {
+				return {
+					exitingFound: false,
+					transformMs: NaN,
+					opacityMs: NaN,
+					exitMs: NaN,
+					exitPx: NaN,
+					transformFound: false,
+					opacityFound: false
+				};
+			}
+			return collect(node);
+		},
+		[STORE, first] as const
+	);
+
+	expect(evidence.exitingFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.transformFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.opacityFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.transformMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(90);
+	expect(evidence.transformMs, JSON.stringify(evidence)).toBeLessThanOrEqual(120);
+	expect(evidence.opacityMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(90);
+	expect(evidence.opacityMs, JSON.stringify(evidence)).toBeLessThanOrEqual(120);
+	expect(evidence.exitMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(95);
+	expect(evidence.exitMs, JSON.stringify(evidence)).toBeLessThanOrEqual(105);
+	expect(evidence.exitPx, JSON.stringify(evidence)).toBeGreaterThanOrEqual(95);
+	expect(evidence.exitPx, JSON.stringify(evidence)).toBeLessThanOrEqual(105);
+
 	await expect(page.locator('[data-toast-id]')).toHaveCount(3);
+	await expect(page.locator(`[data-toast-exiting="${first}"]`)).toHaveCount(0, { timeout: 5000 });
 });
 
 // REQ: UX-TOAST-03
