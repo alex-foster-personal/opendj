@@ -733,11 +733,11 @@ class TestFallbackPaths:
         t1.start()
         t2.start()
         t1.join(timeout=join_timeout_seconds)
+        t2.join(timeout=join_timeout_seconds)
         assert not t1.is_alive(), (
             f"worker a did not finish within join timeout "
             f"{join_timeout_seconds}s"
         )
-        t2.join(timeout=join_timeout_seconds)
         assert not t2.is_alive(), (
             f"worker b did not finish within join timeout "
             f"{join_timeout_seconds}s"
