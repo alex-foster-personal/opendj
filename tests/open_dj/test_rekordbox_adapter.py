@@ -1,9 +1,9 @@
 """Tests for :mod:`apps.open_dj.adapters.rekordbox`."""
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -20,6 +20,21 @@ from apps.open_dj.validate import validate_document
 # envelope is that it reports when ROW was last modified, not when the
 # export happened to run.
 _RB_UPDATED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
+# modified_at is stamped to the second, so a longer gap puts the two exports in
+# different wall-clock seconds: a leaked now() would then change the bytes.
+_CROSS_A_WALL_CLOCK_SECOND_S = 1.1
+
+
+def _all_modified_at(node: object) -> set[str]:
+    """Every provenance ``modified_at`` anywhere in an exported document."""
+    if isinstance(node, dict):
+        found = {node["modified_at"]} if "modified_at" in node else set()
+        for value in node.values():
+            found |= _all_modified_at(value)
+        return found
+    if isinstance(node, list):
+        return set().union(*(_all_modified_at(item) for item in node))
+    return set()
 
 
 def _rb_track(**overrides) -> RBTrackInput:
@@ -58,24 +73,17 @@ class TestExport:
     def test_export_never_touches_wall_clock(self) -> None:
         """Regression for PR #4119 fast-tier CI flake.
 
-        ``test_export_deterministic`` above only proves the bug is gone if
-        the two calls actually risk landing in different wall-clock
-        seconds -- which is exactly what flaked: two exports of the same
-        untouched library disagreed on bytes because ``bpm``/``rating``
-        ``modified_at`` was silently stamped from ``datetime.now()``
-        rather than the rekordbox row's own ``updated_at``. Make
-        ``datetime.now()`` explode if the export path ever calls it, then
-        prove two calls still produce byte-identical output.
+        Two exports of the same untouched library disagreed on bytes because
+        ``bpm``/``rating`` ``modified_at`` was stamped from ``datetime.now()``
+        rather than the rekordbox row's own ``updated_at``. Run two real
+        exports that straddle a wall-clock second, prove they agree byte for
+        byte, and prove every modified_at in the document is the row's own.
         """
-        with patch("apps.open_dj.provenance.datetime") as fake_dt:
-            fake_dt.now.side_effect = AssertionError(
-                "export path must not call datetime.now() -- modified_at "
-                "must come from the source row (PR #4119 regression)"
-            )
-            a = to_canonical_bytes(build_library([_rb_track()]).document)
-            b = to_canonical_bytes(build_library([_rb_track()]).document)
-        fake_dt.now.assert_not_called()
-        assert a == b
+        a = to_canonical_bytes(build_library([_rb_track()]).document)
+        time.sleep(_CROSS_A_WALL_CLOCK_SECOND_S)
+        document = build_library([_rb_track()]).document
+        assert a == to_canonical_bytes(document)
+        assert _all_modified_at(document) == {"2026-01-05T12:30:00Z"}
 
     def test_export_raises_when_provenance_field_missing_source_timestamp(
         self,

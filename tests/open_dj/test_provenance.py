@@ -1,4 +1,7 @@
-"""Tests for :mod:`apps.open_dj.provenance`."""
+"""Tests for :mod:`apps.open_dj.provenance`.
+
+[if] wrap() stamps any time but the caller's modified_at [then] fail, [else stop].
+"""
 from __future__ import annotations
 
 from datetime import UTC, datetime
