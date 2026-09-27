@@ -91,12 +91,20 @@ if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
   # loaded, and its plist in LaunchAgents is reloaded at every login. Unload and remove
   # it, or the unit this flag exists to prevent keeps failing every 10 minutes.
   health_plist="$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
-  if launchctl print "gui/$uid/com.af.perf-kpi-health" >/dev/null 2>&1; then
+  # launchctl print exits 113 for "service not found"; any other nonzero means the
+  # loaded state is unknown, so stop before the plist is removed.
+  print_rc=0
+  launchctl print "gui/$uid/com.af.perf-kpi-health" >/dev/null 2>&1 || print_rc=$?
+  if [[ "$print_rc" -eq 0 ]]; then
     if ! launchctl bootout "gui/$uid/com.af.perf-kpi-health"; then
       echo "[ERROR] com.af.perf-kpi-health is loaded and would not unload; run" \
         "launchctl bootout gui/$uid/com.af.perf-kpi-health, then re-run" >&2
       exit 1
     fi
+  elif [[ "$print_rc" -ne 113 ]]; then
+    echo "[ERROR] launchctl print gui/$uid/com.af.perf-kpi-health exited $print_rc, so" \
+      "whether the health agent is loaded is unknown; plist left in place" >&2
+    exit 1
   fi
   if [[ -e "$health_plist" ]]; then
     rm -f "$health_plist"

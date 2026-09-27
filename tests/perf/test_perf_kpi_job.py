@@ -310,7 +310,7 @@ def _install_with_fake_launchctl(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *args: str,
-    health_loaded: bool = True,
+    print_rc: int = 0,
     bootout_rc: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path, list[str]]:
     """Run the real installer with --install against a launchctl that only records its
@@ -322,7 +322,6 @@ def _install_with_fake_launchctl(
     bin_dir.mkdir(exist_ok=True)
     calls = tmp_path / "launchctl.calls"
     fake = bin_dir / "launchctl"
-    print_rc = 0 if health_loaded else 113
     fake.write_text(
         "#!/bin/sh\n"
         f'echo "$*" >> "{calls}"\n'
@@ -393,11 +392,28 @@ def test_install_nightly_only_removes_a_plist_whose_agent_is_not_loaded(
     stale.parent.mkdir(parents=True)
     stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
     completed, _launch_agents, calls = _install_with_fake_launchctl(
-        monkeypatch, tmp_path, "--nightly-only", health_loaded=False
+        monkeypatch, tmp_path, "--nightly-only", print_rc=113
     )
     assert completed.returncode == 0, completed.stderr
     assert not any(c.startswith("bootout ") and "perf-kpi-health" in c for c in calls), calls
     assert not stale.exists()
+
+
+def test_install_nightly_only_keeps_the_plist_when_launchctl_cannot_inspect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If launchctl print fails with anything but 113 (not found) then the loaded state
+    is unknown: --nightly-only fails loudly, runs no bootout, and keeps the plist."""
+    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
+    completed, _launch_agents, calls = _install_with_fake_launchctl(
+        monkeypatch, tmp_path, "--nightly-only", print_rc=5
+    )
+    assert completed.returncode != 0
+    assert "exited 5" in completed.stderr and "unknown" in completed.stderr
+    assert not any(c.startswith("bootout ") and "perf-kpi-health" in c for c in calls), calls
+    assert stale.exists()
 
 
 def test_plain_install_still_bootstraps_the_health_agent(
