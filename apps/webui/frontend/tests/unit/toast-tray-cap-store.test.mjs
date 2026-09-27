@@ -3,7 +3,7 @@
  * [if] five error toasts pushed [then] visible slice length is at most three [else stop].
  */
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -79,7 +79,20 @@ afterEach(() => {
 	delete globalThis.window;
 });
 
-test('five pushed toasts yield at most three visible in policy slice', async () => {
+test('five pushed toasts yield at most three visible in policy slice', async (t) => {
+	// pushToast(..., 120_000) arms a REAL dismissal setTimeout per toast
+	// (stores.svelte.ts _armTimer) that this test never dismisses. Three of
+	// the five toasts stay non-exiting (TOAST_MAX_VISIBLE caps the rest as
+	// "exiting", which does clear their timers), so three live 120s timers
+	// were left running past the end of the test, holding the process open
+	// until they fired and blowing the file's --test-timeout budget with a
+	// testTimeoutFailure despite every assertion already having passed.
+	// Faking the timer means _armTimer's setTimeout is registered against
+	// the mock clock instead of a real OS timer, so nothing keeps the
+	// process alive once the test function returns.
+	mock.timers.enable({ apis: ['setTimeout'] });
+	t.after(() => mock.timers.reset());
+
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts', {
 		viteApiBase: API_BASE
 	});
