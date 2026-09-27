@@ -201,7 +201,7 @@ def hub_sync_row_page(
     return rows, next_cursor
 
 
-def _fetch_hub_rows(
+def fetch_hub_rows(
     channel: HubTransport,
     machine_id: str,
     table: str,
@@ -302,7 +302,7 @@ def sample_divergence(
     """Fetch hub rows and return up to ``limit`` divergent samples."""
     hub_by_table: dict[str, dict[tuple[str, ...], HubRowSample]] = {}
     for table in tables:
-        hub_by_table[table] = _fetch_hub_rows(channel, machine_id, table)
+        hub_by_table[table] = fetch_hub_rows(channel, machine_id, table)
     found: list[DigestDiffRow] = []
     for table in tables:
         hub_rows = hub_by_table[table]
@@ -440,6 +440,7 @@ __all__ = [
     "DigestDiffRow",
     "HubRowSample",
     "divergent_rows",
+    "fetch_hub_rows",
     "format_diff_line",
     "format_mismatch_message",
     "format_pk",
