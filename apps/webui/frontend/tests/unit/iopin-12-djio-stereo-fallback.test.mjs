@@ -24,10 +24,13 @@
 // [if] the page is already on ?djio= (including a stereo-fallback page) or on
 //   ?extroute= [then] the controller redirect does not fire again [⛔️ if
 //   location.replace can loop or produce a URL whose graph cannot build]
+// [if] the shell's MIDI boot runs twice before the redirect lands [then] it
+//   replaces once and subscribes nothing on the leaving page [⛔️ if a Tauri
+//   listener survives into the reload and doubles every press]
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { after, before, beforeEach, describe, test } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -367,10 +370,96 @@ describe('IOPIN-12: the controller redirect into djio fires once and never loops
 		);
 	});
 
-	test('IOPIN-12: webmidi routes the redirect through djioRedirectTarget behind a one-shot guard', () => {
-		const runtime = readFileSync(`${SRC}/lib/rb/midi/webmidi.svelte.ts`, 'utf8');
-		assert.match(runtime, /djioRedirectTarget\(window\.location\.href, \[\.\.\.profiles\]\[0\]\)/);
-		assert.match(runtime, /if \(target !== null && !_djioRedirectIssued\) \{\s*_djioRedirectIssued = true;\s*window\.location\.replace\(target\);/);
+});
+
+//-----------------------------------------------------------------------------
+// re-entry: the installed shell's MIDI boot, driven for real
+//-----------------------------------------------------------------------------
+
+describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscribes on a page that is leaving', () => {
+	// Page boot runs maybeAutoEnableMidi() twice more often than not (TopBar
+	// onMount, then the prefs hydration), so initMidi() runs twice before the
+	// redirect's navigation lands. A Tauri listener registered on the leaving
+	// page stays alive after reload and doubles every physical message.
+	let webmidi;
+	let shell;
+	// Every interval the module starts is cleared after each case. The reset
+	// hook clears the one handle it holds, but a double subscribe overwrites
+	// that handle, and the leaked 1 s hot-plug poll would then keep this file's
+	// process alive forever: a regression here must fail, not hang the suite.
+	const realSetInterval = globalThis.setInterval;
+	const shellIntervals = [];
+
+	before(async () => {
+		webmidi = await loadTypeScriptModule('src/lib/rb/midi/webmidi.svelte.ts');
+		const { RELOOP_MIXTOUR_PRO_MAP } = await loadTypeScriptModule('src/lib/rb/midi/maps/reloop-mixtour-pro.ts');
+		shell = { map: RELOOP_MIXTOUR_PRO_MAP };
+	});
+
+	/**
+	 * The installed shell as the page sees it: Tauri's IPC entry point and a
+	 * location whose replace() is recorded. href does not change on replace(),
+	 * exactly as in a browser: the old document keeps its URL until it is gone.
+	 * The snapshot is the Air's Mixtour Pro as CoreMIDI names it.
+	 */
+	function installShell(search) {
+		installWindow(search);
+		const record = { replaced: [], invoked: [] };
+		window.location.replace = (url) => record.replaced.push(String(url));
+		window.__TAURI_INTERNALS__ = {
+			invoke: async (cmd) => {
+				record.invoked.push(cmd);
+				if (cmd === 'native_midi_snapshot') {
+					return [{ id: 'mixtour-pro', name: 'Reloop Mixtour Pro', manufacturer: 'Reloop', hasOutput: true }];
+				}
+				if (cmd === 'plugin:event|listen') return 1;
+				if (cmd === 'plugin:event|unlisten' || cmd === 'native_midi_send') return null;
+				throw new Error(`unexpected shell command ${cmd}`);
+			},
+			transformCallback: () => 1
+		};
+		window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+		globalThis.setInterval = (...args) => {
+			const handle = realSetInterval(...args);
+			shellIntervals.push(handle);
+			return handle;
+		};
+		webmidi._resetMidiForTests();
+		webmidi.registerDeviceMap(shell.map);
+		return record;
+	}
+
+	const listens = (record) => record.invoked.filter((cmd) => cmd === 'plugin:event|listen').length;
+
+	afterEach(() => {
+		webmidi._resetMidiForTests();
+		for (const handle of shellIntervals.splice(0)) clearInterval(handle);
+		globalThis.setInterval = realSetInterval;
+		installWindow('');
+	});
+
+	test('IOPIN-12: two sequential boots on a page without djio replace() once and subscribe nothing', async () => {
+		const record = installShell('');
+		await webmidi.initMidi();
+		await webmidi.initMidi();
+		assert.deepEqual(record.replaced, [`http://127.0.0.1:9427/performance?djio=${DJIO}`]);
+		assert.equal(record.replaced.length, 1, 'if the one-shot guard resets then every boot or rescan re-issues location.replace - broken');
+		assert.equal(listens(record), 0, 'if the second boot subscribes on the leaving page then every Mixtour press arrives twice after reload - broken');
+	});
+
+	test('IOPIN-12: two concurrent boots on a page without djio replace() once and subscribe nothing', async () => {
+		const record = installShell('');
+		await Promise.all([webmidi.initMidi(), webmidi.initMidi()]);
+		assert.equal(record.replaced.length, 1);
+		assert.equal(listens(record), 0, 'if the boot that loses the race subscribes then the leaving page keeps a live Tauri listener - broken');
+	});
+
+	test('IOPIN-12 control: a page already on djio never redirects and does subscribe', async () => {
+		const record = installShell(`?djio=${DJIO}`);
+		await webmidi.initMidi();
+		await webmidi.initMidi();
+		assert.deepEqual(record.replaced, [], 'if a djio page replaces itself then the reload loops forever - broken');
+		assert.equal(listens(record), 1, 'if the fix stops subscribing altogether then the Mixtour is dead on its own page - broken');
 	});
 });
 

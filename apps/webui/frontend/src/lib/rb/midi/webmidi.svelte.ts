@@ -335,11 +335,15 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): boolean {
 	} else if (profiles.size === 1) {
 		// IOPIN-12: a page already on djio (a stereo-fallback page keeps its
 		// param) or on extroute returns null, so a rescan can never loop the
-		// reload; the flag stops repeat replace() calls before navigation lands.
+		// reload. A non-null target means this page is leaving, so every snapshot
+		// until navigation lands answers "navigating": a later initMidi() must not
+		// subscribe here, and the flag keeps replace() to one call.
 		const target = djioRedirectTarget(window.location.href, [...profiles][0]);
-		if (target !== null && !_djioRedirectIssued) {
-			_djioRedirectIssued = true;
-			window.location.replace(target);
+		if (target !== null) {
+			if (!_djioRedirectIssued) {
+				window.location.replace(target);
+				_djioRedirectIssued = true;
+			}
 			return true;
 		}
 	}
@@ -829,6 +833,7 @@ export function _resetMidiForTests(): void {
 	}
 	_access = null;
 	_transport = 'none';
+	_djioRedirectIssued = false;
 	midiState.permission = 'prompt';
 	midiState.devices = [];
 	midiState.shiftHeld = false;
