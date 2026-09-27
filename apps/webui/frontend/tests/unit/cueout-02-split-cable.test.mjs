@@ -99,12 +99,12 @@ test('split-cable graph uses ChannelMerger L/R assignment and mono downmix', asy
 test('applyHeadphoneMix ramps split gains with setTargetAtTime, not hard gain.value', async () => {
 	const hpSrc = await readFile('src/lib/player/headphones.ts', 'utf8');
 	const applyStart = hpSrc.indexOf('export function applyHeadphoneMix');
-	const applyEnd = hpSrc.indexOf('export function setHeadphoneOutputMode', applyStart);
+	const applyEnd = hpSrc.indexOf('export function setHeadDelayMs', applyStart);
 	const applyBody = hpSrc.slice(applyStart, applyEnd === -1 ? undefined : applyEnd);
-	assert.match(applyBody, /splitCableGains\(/);
-	assert.match(applyBody, /nodes\.splitLeftGain\.gain/);
-	assert.match(applyBody, /nodes\.splitRightCueGain\.gain/);
-	assert.match(applyBody, /nodes\.splitRightMasterGain\.gain/);
+	assert.match(applyBody, /headphoneMixTargetGains\(/);
+	assert.match(applyBody, /nodes\.splitLeftGain\.gain, targets\.splitLeft/);
+	assert.match(applyBody, /nodes\.splitRightCueGain\.gain, targets\.splitRightCue/);
+	assert.match(applyBody, /nodes\.splitRightMasterGain\.gain, targets\.splitRightMaster/);
 	assert.match(applyBody, /_setMonitorParam/);
 	assert.doesNotMatch(applyBody, /splitLeftGain\.gain\.value\s*=/);
 	assert.doesNotMatch(applyBody, /splitRightCueGain\.gain\.value\s*=/);

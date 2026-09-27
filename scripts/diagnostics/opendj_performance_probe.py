@@ -518,7 +518,19 @@ def _run_sampling_loop(probe: OpenDJProbe, args: argparse.Namespace) -> int:
         lock_handle.close()
 
 
+def _set_probe_process_identity() -> None:
+    """Best-effort opendj-* title when setproctitle is available on the host."""
+    try:
+        import setproctitle
+    except ImportError:
+        return
+    setproctitle.setproctitle(
+        "opendj-performance-probe --name opendj-performance-probe"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
+    _set_probe_process_identity()
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
     _reject_impossible_args(args)
     if args.summary:

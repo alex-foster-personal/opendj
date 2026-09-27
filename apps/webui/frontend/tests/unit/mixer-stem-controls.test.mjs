@@ -17,7 +17,7 @@ async function source(relative) {
 	return readFile(`src/lib/components/rb/${relative}`, 'utf8');
 }
 
-test('channel strip compiles and renders the shared StemRow below its fader', async () => {
+test('1e63026e90e8: channel strip compiles STEM label and shared StemRow below its fader', async () => {
 	const strip = await source('mixer/ChannelStrip.svelte');
 	assert.doesNotThrow(() => compile(strip, { filename: 'ChannelStrip.svelte', generate: 'server' }));
 	assert.match(strip, /import StemRow from '\.\.\/deck\/StemRow\.svelte';/);
@@ -26,6 +26,7 @@ test('channel strip compiles and renders the shared StemRow below its fader', as
 		/<div class="fader-slot">[\s\S]*?<\/div>\s*<button[\s\S]*class="stem-label"[\s\S]*>STEM<\/button[\s\S]*<div class="stem-slot">\s*<StemRow/,
 		'StemRow must occupy the reserved STEM slot directly below the fader'
 	);
+	assert.match(strip, /onclick=\{\(\) => onStemEqMode/);
 });
 
 test('mixer routes strip gestures through the existing typed stem commands', async () => {

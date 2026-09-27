@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
+import shutil
+import signal
 import socket
 import sqlite3
+import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -77,7 +80,12 @@ SID_SLOW_ABSENT = "slow-absent-track"
 #: BLOCKING).
 SID_MIK_BPM = "real-track-mik-bpm-no-own-analysis"
 
-_DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
+#: Per-run scratch dir OUTSIDE the tracked tree. Opening the state db
+#: regenerates a sibling AGENTS.md (apps/shared/state/db.py), so a db kept
+#: beside this file rewrote a tracked file and leaked db/-wal/-shm on every run.
+#: `SCRATCH <dir>` is printed before READY so the hygiene test can prove removal.
+_SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="analysis-source-anlz-server-"))
+_DB_PATH = _SCRATCH_DIR / "state.db"
 
 #: Beats per bar, so ``bar_count`` still reads as bars at the call sites.
 BEATS_PER_BAR = 4
@@ -274,6 +282,13 @@ def create_app() -> FastAPI:
     def _get_requests() -> list[str]:
         return app.state.requests
 
+    @app.post("/test/shutdown")
+    def _shutdown() -> dict[str, bool]:
+        # Cooperative stop: `ChildProcess.kill()` on Windows terminates the process
+        # outright, so neither the SIGTERM handler nor main()'s cleanup would run.
+        app.state.server.should_exit = True
+        return {"stopping": True}
+
     @app.post("/test/delay-next-analysis-source-get")
     def _delay_next_analysis_source_get() -> dict[str, bool]:
         app.state.delay_next_analysis_source_get = True
@@ -327,6 +342,18 @@ async def _hold_if_armed(app: FastAPI, kind: str, request: Request, suffix_of) -
 
 
 def main() -> int:
+    # Preferred stop is POST /test/shutdown (portable). A SIGTERM fallback still
+    # cleans up on POSIX: uvicorn shuts down, restores the handler installed before
+    # it, then re-raises the signal, and the default handler would skip the cleanup.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        _serve()
+    finally:
+        shutil.rmtree(_SCRATCH_DIR)
+    return 0
+
+
+def _serve() -> None:
     _seed_db(_DB_PATH)
     app = create_app()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -337,11 +364,12 @@ def main() -> int:
     # listen() here queues any early connection in the backlog instead.
     sock.listen()
     port = sock.getsockname()[1]
+    print(f"SCRATCH {_SCRATCH_DIR}", flush=True)
     print(f"READY {port}", flush=True)
     config = uvicorn.Config(app, fd=sock.fileno(), log_level="warning")
     server = uvicorn.Server(config)
+    app.state.server = server
     server.run()
-    return 0
 
 
 if __name__ == "__main__":

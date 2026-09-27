@@ -54,6 +54,7 @@ test('the x dismisses that toast and leaves the others', async ({ page }) => {
 	await expect(page.locator(`[data-toast-id="${first}"]`)).toBeVisible();
 });
 
+// REQ: UX-TOAST-01
 test('a pointer over a toast holds it past its dismissal delay', async ({ page }) => {
 	const id = await raise(page, 'hover holds me', 'info', 1200);
 	const toast = page.locator(`[data-toast-id="${id}"]`);
@@ -77,6 +78,7 @@ test('an untouched toast still fades, so the hold is doing the work', async ({ p
 	await expect(toast).toHaveCount(0, { timeout: 5000 });
 });
 
+// REQ: UX-TOAST-01
 test('clicking a toast copies a report whose id matches the logged id', async ({
 	page,
 	context
@@ -161,4 +163,32 @@ test('a warn toast paints its own colour, between info and error', async ({ page
 		return resolved;
 	});
 	expect(warnBorder).toBe(declared);
+});
+
+test('at most three toasts are visible when more are pushed', async ({ page }) => {
+	const ids: string[] = [];
+	for (let i = 0; i < 5; i++) {
+		ids.push(await raise(page, `stack toast ${i}`, 'error', 120_000));
+	}
+	await page.waitForTimeout(50);
+	const visible = page.locator('[data-toast-id]');
+	await expect(visible).toHaveCount(3, { timeout: 3000 });
+});
+
+test('the fourth toast evicts the oldest with an exiting marker', async ({ page }) => {
+	const first = await raise(page, 'oldest toast', 'error', 120_000);
+	await raise(page, 'toast two', 'error', 120_000);
+	await raise(page, 'toast three', 'error', 120_000);
+	await raise(page, 'toast four', 'error', 120_000);
+	await page.waitForTimeout(30);
+	await expect(page.locator(`[data-toast-exiting="${first}"]`)).toHaveCount(1);
+});
+
+test('a long error toast width stays within one third of the viewport', async ({ page }) => {
+	const longMessage =
+		'selection load failed: ' + 'x'.repeat(400);
+	const id = await raise(page, longMessage, 'error', 60_000);
+	const width = await page.locator(`[data-toast-id="${id}"]`).evaluate((node) => node.getBoundingClientRect().width);
+	const viewport = page.viewportSize()?.width ?? 1280;
+	expect(width).toBeLessThanOrEqual(viewport / 3 + 4);
 });

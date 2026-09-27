@@ -26,6 +26,7 @@ def _seed_db(path) -> None:
     conn.close()
 
 
+# REQ: ADMIN-02
 def test_select_happy_path(client, tmp_path):
     db_path = tmp_path / "state.db"
     _seed_db(db_path)

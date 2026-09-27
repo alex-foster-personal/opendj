@@ -39,7 +39,7 @@ None``, keep ``not file_path.exists()``):
      state-layer ``file_path``;
   2. that path is local -- not a streaming URI. Streaming detection reuses
      the reconcile app's own helper
-     (:func:`apps.shared.rekordbox_db.is_streaming_path`: spotify:/tidal:/
+     (:func:`apps.shared.platform_paths.is_unplayable_path`: spotify:/tidal:/
      http(s), plus empty) unioned with the webui prefixes
      (:func:`rb_vendor.is_streaming_path`: tidal:/soundcloud:/spotify:);
   3. the path does not exist on disk -- disk truth via
@@ -66,7 +66,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
+from apps.shared.platform_paths import is_unplayable_path
 
 from .. import rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
@@ -161,10 +161,10 @@ def _iter_all_tracks(backend: StateBackend) -> list[Track]:
 def _is_local_path(path: str | None) -> bool:
     """True iff ``path`` is a real local file path (reconcile-app semantics).
 
-    ``_rb_app_is_streaming`` already treats empty/None as streaming, which
+    ``is_unplayable_path`` already treats empty/None as unplayable, which
     matches list_broken skipping ``file_path is None`` rows.
     """
-    if _rb_app_is_streaming(path):
+    if is_unplayable_path(path):
         return False
     if rb_vendor.is_streaming_path(path):
         return False

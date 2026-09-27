@@ -423,6 +423,7 @@ test('redetect re-asks the detect endpoint specifically', async () => {
 	assert.equal(wizard.detection.installed, false);
 });
 
+// REQ: SETUP-11
 test('loadFolderCandidates fills folderCandidates from the endpoint', async () => {
 	routeFetch({
 		'/api/v1/setup/detect/music-folders': {
@@ -548,6 +549,21 @@ test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async
 	await wizard.beginImport({ refreshDecrypt: true });
 
 	assert.deepEqual(body, { refresh_decrypt: true });
+});
+
+// REQ: SETUP-11
+test('applyFolderSuggestion fills the path and runs detect/folder for that path', async () => {
+	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+	wizard.folderRows = [folderRow('')];
+
+	wizard.applyFolderSuggestion('/Users/dj/Music');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	const url = new URL(requests[0].url);
+	assert.equal(url.pathname, '/api/v1/setup/detect/folder');
+	assert.equal(url.searchParams.get('path'), '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
 });
 
 test('checkFolderRow scans without importing, and carries the path as a query', async () => {

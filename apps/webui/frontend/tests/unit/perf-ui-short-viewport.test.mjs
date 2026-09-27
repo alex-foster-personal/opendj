@@ -38,8 +38,8 @@ const TOPBAR_PATH = fileURLToPath(
 const BROWSER_PANEL_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
 );
-const HISTORY_PANEL_PATH = fileURLToPath(
-	new URL('../../src/lib/components/rb/browser/PlaylistHistoryPanel.svelte', import.meta.url)
+const LIBRARY_TABS_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/browser/LibrarySourceTabs.svelte', import.meta.url)
 );
 const THEME_PATH = fileURLToPath(new URL('../../src/lib/rb/theme.css', import.meta.url));
 const SUPPORT_PATH = fileURLToPath(
@@ -168,16 +168,15 @@ test('BrowserPanel auto-collapses Next/Recommended at the same 799px breakpoint 
 	);
 });
 
-test('playlist history list hides at max-height 799px so All Tracks stays in the tree viewport', () => {
-	const source = readFileSync(HISTORY_PANEL_PATH, 'utf8');
-	const media = firstMatch(
-		source,
-		/@media\s*\(max-height:\s*799px\)\s*\{([\s\S]*?)\n\t\}/,
-		'a @media (max-height: 799px) rule on PlaylistHistoryPanel.svelte'
+test('playlist history list is hover-only popover, not a permanent tree chrome row', () => {
+	const tree = readFileSync(
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url)
+		),
+		'utf8'
 	);
-	assert.match(
-		media[1],
-		/\.history-list[\s\S]*display:\s*none/,
-		'.history-list (max-height 72px) must hide at short viewports so tree-scroll is not crushed'
-	);
+	const tabs = readFileSync(LIBRARY_TABS_PATH, 'utf8');
+	assert.doesNotMatch(tree, /PlaylistHistoryPanel/);
+	assert.match(tabs, /history-popover/);
+	assert.match(tabs, /data-testid="library-tree-toolbar"/);
 });

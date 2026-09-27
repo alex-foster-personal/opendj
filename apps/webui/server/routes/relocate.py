@@ -61,10 +61,9 @@ from typing import Literal, TypeVar
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from apps.reconcile import locate
 from apps.shared import audio_files, fs_residency, paths
 from apps.shared.events import publish
-from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
+from apps.shared.platform_paths import is_unplayable_path
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from .. import rb_vendor
@@ -135,7 +134,7 @@ class CandidateFile:
 def _is_local(path: str | None) -> bool:
     if path is None:
         return False
-    if _rb_app_is_streaming(path):
+    if is_unplayable_path(path):
         return False
     if rb_vendor.is_streaming_path(path):
         return False
@@ -332,6 +331,8 @@ def get_candidates(
             stable_id=stable_id, original_path=None, vendor_id=vendor_id,
             total=0, candidates=[],
         )
+
+    from apps.reconcile import locate
 
     index = locate.FsIndex.build(audio_files.scan_music_files())
     row: dict[str, str] = {
@@ -559,6 +560,8 @@ def apply_relocate(
         body.new_path, body.expected_candidate_identity,
     )
     os.close(descriptor)
+    from apps.reconcile import locate
+
     index = locate.FsIndex.build(audio_files.scan_music_files())
     row = {
         "original_path": original_path,

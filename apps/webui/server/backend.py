@@ -262,9 +262,42 @@ def compute_mytag_catalog_revision(tracks: Sequence[Track]) -> str:
     return f'"{sha256(encoded).hexdigest()}"'
 
 
+def compute_library_revision(tracks: Sequence[Track]) -> str:
+    """Return a stable revision for the rows exposed by the track library."""
+    catalog = [
+        [track.stable_id, asdict(track)]
+        for track in sorted(tracks, key=lambda item: item.stable_id)
+    ]
+    return _library_revision_digest(catalog)
+
+
+def compute_library_revision_summary(
+    track_count: int,
+    track_updated_at: str,
+    field_updated_at: str,
+    changelog_sequence: int,
+) -> str:
+    """Return a stable revision from the database's cheap change signals."""
+    return _library_revision_digest([
+        "summary",
+        track_count,
+        track_updated_at,
+        field_updated_at,
+        changelog_sequence,
+    ])
+
+
+def _library_revision_digest(catalog: object) -> str:
+    encoded = json.dumps(
+        catalog, separators=(",", ":"), ensure_ascii=False, sort_keys=True
+    ).encode("utf-8")
+    return f'"{sha256(encoded).hexdigest()}"'
+
+
 class StateBackend(Protocol):
     """Narrow surface the web UI needs from the state layer."""
     def list_tracks(self, flt: TrackFilter) -> Page: ...
+    def library_revision(self) -> str: ...
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
@@ -359,6 +392,11 @@ class InMemoryBackend:
         page = tracks[start : start + limit]
         next_cursor = page[-1].stable_id if len(page) == limit else None
         return Page(items=page, next_cursor=next_cursor)
+
+    def library_revision(self) -> str:
+        with self._mutex:
+            tracks = list(self._tracks.values())
+        return compute_library_revision(tracks)
 
     def get_track(self, stable_id: str) -> Track:
         with self._mutex:
