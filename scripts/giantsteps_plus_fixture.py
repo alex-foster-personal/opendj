@@ -92,25 +92,87 @@ class _HTTPRangeFile:
         return self._pos
 
     def read(self, n: int = -1) -> bytes:
+        start = self._pos
         end = self._size - 1 if n is None or n < 0 else min(self._pos + n, self._size) - 1
-        if end < self._pos:
+        if end < start:
             return b""
         req = urllib.request.Request(
-            self._url, headers={"Range": f"bytes={self._pos}-{end}"}
+            self._url, headers={"Range": f"bytes={start}-{end}"}
         )
+        expected_len = end - start + 1
         with urllib.request.urlopen(req, timeout=120) as resp:
-            if resp.status not in (200, 206):
+            if resp.status != 206:
                 raise SystemExit(
-                    f"[giantsteps+] range fetch got HTTP {resp.status} for "
-                    f"bytes={self._pos}-{end}"
+                    f"[giantsteps+] range fetch expected HTTP 206 for "
+                    f"bytes={start}-{end}, got HTTP {resp.status} "
+                    "(a 200 streams the whole archive and defeats range reads)"
+                )
+            content_range = resp.headers.get("Content-Range")
+            if content_range is None:
+                raise SystemExit(
+                    f"[giantsteps+] range fetch for bytes={start}-{end} "
+                    "missing Content-Range header"
+                )
+            parsed = _parse_content_range(content_range)
+            if parsed is None:
+                raise SystemExit(
+                    f"[giantsteps+] range fetch Content-Range unparsable: "
+                    f"{content_range!r}"
+                )
+            cr_start, cr_end, _cr_total = parsed
+            if cr_start != start or cr_end != end:
+                raise SystemExit(
+                    f"[giantsteps+] range fetch Content-Range {content_range!r} "
+                    f"does not match requested bytes={start}-{end}"
                 )
             data = resp.read()
+            if len(data) != expected_len:
+                raise SystemExit(
+                    f"[giantsteps+] range fetch body length {len(data)} for "
+                    f"bytes={start}-{end}, expected {expected_len}"
+                )
         self._pos += len(data)
         return data
 
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _parse_content_range(header: str) -> tuple[int, int, int | None] | None:
+    """Parse ``bytes start-end/total`` (total may be ``*``)."""
+    if not header.startswith("bytes "):
+        return None
+    spec, _, total_part = header[6:].partition("/")
+    if "-" not in spec:
+        return None
+    start_s, end_s = spec.split("-", 1)
+    try:
+        start = int(start_s)
+        end = int(end_s)
+    except ValueError:
+        return None
+    total: int | None
+    if total_part == "*":
+        total = None
+    else:
+        try:
+            total = int(total_part)
+        except ValueError:
+            return None
+    return start, end, total
+
+
+def verify_mp3_digest(mp3_path: Path, expected_sha256: str) -> None:
+    """Fail closed when cached MP3 bytes do not match the manifest digest."""
+    if not mp3_path.is_file():
+        raise FileNotFoundError(f"fixture MP3 not found: {mp3_path}")
+    digest = _sha256_bytes(mp3_path.read_bytes())
+    if digest != expected_sha256:
+        raise ValueError(
+            f"MP3 sha256 mismatch for {mp3_path.name}: got {digest}, "
+            f"manifest pins {expected_sha256}"
+        )
 
 
 def _load_manifest() -> dict:
