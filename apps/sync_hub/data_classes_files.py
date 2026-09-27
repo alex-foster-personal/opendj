@@ -450,6 +450,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "*.pyc",
         ".mypy_cache/",
         ".pnpm-store/",
+        ".xdg-cache/",
         ".venv/",
         "*.egg-info/",
         "/dist/",

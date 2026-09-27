@@ -332,7 +332,7 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "pairings",
         "Track pairings",
-        state_tables("pairings"),
+        state_tables("pairings", "http_pairings"),
         "not_yet_built",
         f"User-authored relationships between tracks. {_OUTSIDE_SYNC_SET}",
         (logical("library-tracks"),),

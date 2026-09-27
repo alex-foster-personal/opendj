@@ -757,43 +757,12 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
     source = selection.source(lane)
     if source == "own":
         if not selection.projection_available:
-            if field_name not in _RBX_FIELDS:
-                return "NULL"
-            track_fields = (
-                "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
-                f"WHERE tf.stable_id = {table}.stable_id "
-                f"AND tf.field_name = {_sql_text(field_name)} LIMIT 1)"
-            )
-            unmapped = (
-                f"NOT EXISTS (SELECT 1 FROM track_vendor_ids tv "
-                f"WHERE tv.stable_id = {table}.stable_id AND tv.vendor = 'rekordbox')"
-            )
-            # STANDALONE-03/06: before analysis_projection exists, unmapped
-            # tracks still filter on tag/manual track_fields values.
-            return f"(CASE WHEN {unmapped} THEN {track_fields} ELSE NULL END)"
-        projection = (
+            return "NULL"
+        return (
             "(SELECT ap.value FROM analysis_projection ap "
             f"WHERE ap.stable_id = {table}.stable_id "
             f"AND ap.field = {_sql_text(field_name)} "
             "AND ap.status = 'ok' LIMIT 1)"
-        )
-        if field_name not in _RBX_FIELDS:
-            return projection
-        # STANDALONE-03/06: unmapped tracks with no own row still read tag
-        # BPM from track_fields under an own-resolved lane; the smartlist
-        # compiler must COALESCE the same way effective_fields does.
-        track_fields = (
-            "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
-            f"WHERE tf.stable_id = {table}.stable_id "
-            f"AND tf.field_name = {_sql_text(field_name)} LIMIT 1)"
-        )
-        unmapped = (
-            f"NOT EXISTS (SELECT 1 FROM track_vendor_ids tv "
-            f"WHERE tv.stable_id = {table}.stable_id AND tv.vendor = 'rekordbox')"
-        )
-        return (
-            f"(CASE WHEN {unmapped} THEN COALESCE({projection}, {track_fields}) "
-            f"ELSE {projection} END)"
         )
     if field_name not in _RBX_FIELDS:
         return "NULL"

@@ -83,6 +83,12 @@ export type DiskConfirmPatch = {
 	dblclick_load_play?: boolean | null;
 };
 
+const KNOWN_CONFIRM_KEYS = new Set([
+	'delete_playlist',
+	'playlist_drop_mode',
+	'dblclick_load_play'
+]);
+
 function _hydrateConfirmFromDisk(uiPrefs: PrefsHydrateTarget, diskConfirm: DiskConfirmPatch): void {
 	const next: LiveConfirmPrefs & Record<string, unknown> = { ...uiPrefs.confirm };
 	for (const [key, value] of Object.entries(diskConfirm)) {
@@ -91,16 +97,25 @@ function _hydrateConfirmFromDisk(uiPrefs: PrefsHydrateTarget, diskConfirm: DiskC
 			continue;
 		}
 		if (value === undefined) continue;
-		if (key === 'delete_playlist' && typeof value === 'boolean') {
-			next.delete_playlist = value;
+		if (key === 'delete_playlist') {
+			if (typeof value === 'boolean') {
+				next.delete_playlist = value;
+			}
 			continue;
 		}
-		if (key === 'playlist_drop_mode' && (value === 'add' || value === 'move')) {
-			next.playlist_drop_mode = value;
+		if (key === 'playlist_drop_mode') {
+			if (value === 'add' || value === 'move') {
+				next.playlist_drop_mode = value;
+			}
 			continue;
 		}
-		if (key === 'dblclick_load_play' && typeof value === 'boolean') {
-			next.dblclick_load_play = value;
+		if (key === 'dblclick_load_play') {
+			if (typeof value === 'boolean') {
+				next.dblclick_load_play = value;
+			}
+			continue;
+		}
+		if (KNOWN_CONFIRM_KEYS.has(key)) {
 			continue;
 		}
 		if (typeof value === 'boolean') {

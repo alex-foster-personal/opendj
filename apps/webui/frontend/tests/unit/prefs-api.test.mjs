@@ -573,6 +573,22 @@ test('hydrateConfirmPrefsFromDisk ignores invalid confirm values for known keys'
 	assert.equal(prefs.uiPrefs.confirm.dblclick_load_play, undefined);
 });
 
+test('hydrateConfirmPrefsFromDisk still hydrates unknown boolean confirm keys', async () => {
+	prefs.uiPrefs.confirm = {};
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			theme: 'dark',
+			confirm: {
+				future_confirm_flag: true
+			}
+		});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.confirm.future_confirm_flag, true);
+});
+
 test('setLibraryWatcherFolders fires PUT with library_watcher_folders body', async () => {
 	let body;
 	let release;
