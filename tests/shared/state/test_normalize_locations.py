@@ -170,8 +170,15 @@ def test_an_exact_stamp_tie_keeps_the_smaller_location_id_like_the_hub(
     # The larger id goes in FIRST, so row order alone would elect it.
     _seed_location(state_conn, location_id="loc-b", file_path=_NFD_PATH, updated_at=_LATE)
     _seed_location(state_conn, location_id="loc-a", file_path=_NFC_PATH, updated_at=_LATE)
+    # The exact read ``scan`` makes: no covering index, so rowid order. A
+    # ``location_id``-only select is answered from the pk index instead and
+    # hides the bug behind pk order.
     row_order = [
-        str(row[0]) for row in state_conn.execute("SELECT location_id FROM track_locations")
+        str(row[0])
+        for row in state_conn.execute(
+            "SELECT location_id, machine_id, stable_id, kind, file_path, "
+            "remote_url, updated_at, origin_device_id FROM track_locations"
+        )
     ]
     assert row_order == ["loc-b", "loc-a"], "control: row order must favor the wrong row"
 
