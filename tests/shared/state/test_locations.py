@@ -1,4 +1,5 @@
 """track_locations picker: local>remote, works>broken, venue window."""
+
 from __future__ import annotations
 
 import unicodedata
@@ -43,7 +44,9 @@ def test_pick_prefers_working_local_over_remote(state_conn, tmp_path: Path) -> N
     writer = _init_track(state_conn, file_path=str(local))
     try:
         writer.upsert_track_location(
-            stable_id=SID, kind="remote", file_path=str(remote),
+            stable_id=SID,
+            kind="remote",
+            file_path=str(remote),
         )
         picked = locations.pick_playable(state_conn, SID)
     finally:
@@ -54,14 +57,17 @@ def test_pick_prefers_working_local_over_remote(state_conn, tmp_path: Path) -> N
 
 
 def test_pick_skips_broken_and_uses_working_alternate(
-    state_conn, tmp_path: Path,
+    state_conn,
+    tmp_path: Path,
 ) -> None:
     missing = tmp_path / "gone.flac"
     working = _flac(tmp_path / "ok.flac")
     writer = _init_track(state_conn, file_path=str(missing))
     try:
         writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(working),
+            stable_id=SID,
+            kind="local",
+            file_path=str(working),
         )
         picked = locations.pick_playable(state_conn, SID)
     finally:
@@ -71,7 +77,9 @@ def test_pick_skips_broken_and_uses_working_alternate(
 
 
 def test_pick_share_window_prefers_lossy_when_both_work(
-    state_conn, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    state_conn,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lossless = _flac(tmp_path / "master.flac")
     lossy = tmp_path / "radio.mp3"
@@ -90,11 +98,15 @@ def test_pick_share_window_prefers_lossy_when_both_work(
     )
     try:
         writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(lossy),
+            stable_id=SID,
+            kind="local",
+            file_path=str(lossy),
         )
         monkeypatch.setenv("MDT_AUDIO_SHARE_MAX_VENUE", "warehouse")
         picked = locations.pick_playable(
-            state_conn, SID, policy=locations.policy_from_env(share=True),
+            state_conn,
+            SID,
+            policy=locations.policy_from_env(share=True),
         )
     finally:
         writer.close()
@@ -112,7 +124,8 @@ def test_pick_returns_none_when_nothing_works(state_conn, tmp_path: Path) -> Non
 
 
 def test_pick_accepts_an_explicit_replica_ledger_path(
-    state_conn, tmp_path: Path,
+    state_conn,
+    tmp_path: Path,
 ) -> None:
     missing_owner_path = tmp_path / "owner-missing.flac"
     replica = _flac(tmp_path / "crate" / "indexed.flac")
@@ -148,9 +161,7 @@ def test_fresh_db_migrates_locations_table(state_db_path: Path) -> None:
 # ----- round 2 finding N2: one file, two Unicode spellings ------------------
 
 
-def test_two_unicode_spellings_of_one_path_are_one_row(
-    state_conn, tmp_path: Path
-) -> None:
+def test_two_unicode_spellings_of_one_path_are_one_row(state_conn, tmp_path: Path) -> None:
     """Round 2 finding N2, reproduced as a permanent regression.
 
     macOS hands back NFD from the filesystem, rekordbox and the Windows/Linux
@@ -175,10 +186,14 @@ def test_two_unicode_spellings_of_one_path_are_one_row(
     writer = _init_track(state_conn)
     try:
         first = writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=nfd_path,
+            stable_id=SID,
+            kind="local",
+            file_path=nfd_path,
         )
         second = writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=nfc_path,
+            stable_id=SID,
+            kind="local",
+            file_path=nfc_path,
         )
     finally:
         writer.close()
@@ -197,9 +212,7 @@ def test_two_unicode_spellings_of_one_path_are_one_row(
     assert rows[0][0] == nfc_path, "storage settles on the NFC spelling"
 
 
-def test_a_remote_url_is_normalized_at_the_storage_boundary(
-    state_conn, tmp_path: Path
-) -> None:
+def test_a_remote_url_is_normalized_at_the_storage_boundary(state_conn, tmp_path: Path) -> None:
     """Same root as N2, one column over. The wire NFC-normalizes every non-pk
     string, so storage that does not would disagree with the digest."""
     nfc_url = unicodedata.normalize("NFC", "https://example/café.flac")
@@ -207,19 +220,25 @@ def test_a_remote_url_is_normalized_at_the_storage_boundary(
     writer = _init_track(state_conn)
     try:
         first = writer.upsert_track_location(
-            stable_id=SID, kind="remote", remote_url=nfd_url,
+            stable_id=SID,
+            kind="remote",
+            remote_url=nfd_url,
         )
         second = writer.upsert_track_location(
-            stable_id=SID, kind="remote", remote_url=nfc_url,
+            stable_id=SID,
+            kind="remote",
+            remote_url=nfc_url,
         )
     finally:
         writer.close()
     assert first == second
-    assert state_conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE stable_id = ? "
-        "AND kind = 'remote'",
-        (SID,),
-    ).fetchone()[0] == 1
+    assert (
+        state_conn.execute(
+            "SELECT COUNT(*) FROM track_locations WHERE stable_id = ? AND kind = 'remote'",
+            (SID,),
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
@@ -232,25 +251,28 @@ def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
 
 @pytest.mark.requirement("LIBM-130")
 def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
-    state_conn, tmp_path: Path,
+    state_conn,
+    tmp_path: Path,
 ) -> None:
     """[if] the listing batches path resolution
     [then] every id resolves as local_audio_path does, [else stop].
 
     Includes the one shape where the two used to differ: an id whose FIRST
     ordered local location has an empty path. The per-id reader takes that
-    row (LIMIT 1) and drops it; the bulk reader used to fall through to the
-    next location instead, so the listing could report a file its own
-    single-track routes cannot find.
+    row (LIMIT 1) and drops it before falling back to ``tracks.file_path``;
+    the bulk reader used to fall through to the next location instead, so the
+    listing could report a file its own single-track routes cannot find.
     """
     present = _flac(tmp_path / "present.flac")
     via_location = _flac(tmp_path / "via-location.flac")
+    via_track_fallback = _flac(tmp_path / "via-track-fallback.flac")
     # A path is one location row per machine, so c's fallback is its own file.
     c_fallback = _flac(tmp_path / "c-fallback.flac")
     shapes = {
         "a" * 40: str(present),
         "b" * 40: str(tmp_path / "moved.flac"),
         "c" * 40: str(tmp_path / "missing.flac"),
+        "d" * 40: str(via_track_fallback),
         "e" * 40: "spotify:track:1",
         "f" * 40: None,
     }
@@ -266,17 +288,25 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     try:
         writer.upsert_track_location(stable_id="b" * 40, kind="local", file_path=str(via_location))
         empty_first = writer.upsert_track_location(
-            stable_id="c" * 40, kind="local", file_path=str(tmp_path / "placeholder.flac"),
+            stable_id="c" * 40,
+            kind="local",
+            file_path=str(tmp_path / "placeholder.flac"),
             role="primary",
         )
         writer.upsert_track_location(stable_id="c" * 40, kind="local", file_path=str(c_fallback))
+        empty_before_track = writer.upsert_track_location(
+            stable_id="d" * 40,
+            kind="local",
+            file_path=str(tmp_path / "placeholder-d.flac"),
+            role="primary",
+        )
     finally:
         writer.close()
     # The schema CHECK admits an empty path only beside a remote_url.
     state_conn.execute(
         "UPDATE track_locations SET file_path = '', remote_url = 'https://example.invalid/c' "
-        "WHERE location_id = ?",
-        (empty_first,),
+        "WHERE location_id IN (?, ?)",
+        (empty_first, empty_before_track),
     )
     state_conn.commit()
 
@@ -285,11 +315,13 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     # Control: the fixture reaches both answers, so equality is not vacuous.
     assert per_id["a" * 40] == present and per_id["b" * 40] == via_location
     assert per_id["c" * 40] is None
+    assert per_id["d" * 40] == via_track_fallback
 
 
 @pytest.mark.requirement("LIBM-130")
 def test_bulk_local_audio_paths_issues_one_select_per_bind_batch(
-    state_conn, tmp_path: Path,
+    state_conn,
+    tmp_path: Path,
 ) -> None:
     """[if] a bulk path read crosses the 500-id bind batch
     [then] it issues one SELECT per batch per table and every id still
@@ -331,7 +363,9 @@ def test_bulk_local_audio_paths_issues_one_select_per_bind_batch(
         finally:
             state_conn.set_trace_callback(None)
         per_table = Counter(
-            table for sql in statements for table in ("track_locations", "tracks")
+            table
+            for sql in statements
+            for table in ("track_locations", "tracks")
             if f"FROM {table} WHERE stable_id IN (" in sql
         )
         return per_table, len(statements) - sum(per_table.values())
