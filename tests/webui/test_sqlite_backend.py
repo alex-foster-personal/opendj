@@ -713,6 +713,7 @@ class TestFallbackPaths:
         # overwriting the winner.
         start = threading.Barrier(2)
         results: dict = {}
+        join_timeout_seconds = 5.0
 
         def _worker(tag: str, note: str) -> None:
             start.wait()
@@ -724,13 +725,23 @@ class TestFallbackPaths:
                 results[tag] = ("ok", out.notes)
             except ConflictError as exc:
                 results[tag] = ("conflict", exc)
+            except BaseException as exc:  # noqa: BLE001 - report thread failures
+                results[tag] = ("error", repr(exc))
 
         t1 = threading.Thread(target=_worker, args=("a", "note-A"))
         t2 = threading.Thread(target=_worker, args=("b", "note-B"))
         t1.start()
         t2.start()
-        t1.join(timeout=5.0)
-        t2.join(timeout=5.0)
+        t1.join(timeout=join_timeout_seconds)
+        assert not t1.is_alive(), (
+            f"worker a did not finish within join timeout "
+            f"{join_timeout_seconds}s"
+        )
+        t2.join(timeout=join_timeout_seconds)
+        assert not t2.is_alive(), (
+            f"worker b did not finish within join timeout "
+            f"{join_timeout_seconds}s"
+        )
 
         outcomes = sorted(v[0] for v in results.values())
         assert outcomes == ["conflict", "ok"], (
