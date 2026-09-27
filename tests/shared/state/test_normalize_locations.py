@@ -14,6 +14,8 @@ Acceptance criteria, one assertion block each:
   the brick is unrepaired -- broken.
 - if the surviving row is not the LWW winner, the collapse invented a winner
   the fleet will not agree on -- broken.
+- if an exact stamp tie does not keep the smaller location_id, the rule the
+  hub applies to the same pair, the spoke deletes the hub's survivor -- broken.
 - if the survivor's stored path is not NFC afterwards, the next NFC upsert
   mints the duplicate again -- broken.
 - if a lone NFD row (no twin) is not rewritten NFC in place -- broken.
@@ -155,6 +157,28 @@ def test_nfd_winner_keeps_its_row_but_stored_nfc(
     assert len(rows) == 1
     assert rows[0][0] == "loc-nfd"
     assert rows[0][1] == _NFC_PATH, "the winning NFD row was not rewritten NFC"
+
+
+def test_an_exact_stamp_tie_keeps_the_smaller_location_id_like_the_hub(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Twins with identical ``(updated_at, origin_device_id)``: the hub keeps
+    the smaller primary key (``engine_apply._duplicate_incoming_wins``), so
+    the spoke must too, whatever order SQLite hands the rows back in.
+    """
+    _seed_machine_and_track(state_conn)
+    # The larger id goes in FIRST, so row order alone would elect it.
+    _seed_location(state_conn, location_id="loc-b", file_path=_NFD_PATH, updated_at=_LATE)
+    _seed_location(state_conn, location_id="loc-a", file_path=_NFC_PATH, updated_at=_LATE)
+    row_order = [
+        str(row[0]) for row in state_conn.execute("SELECT location_id FROM track_locations")
+    ]
+    assert row_order == ["loc-b", "loc-a"], "control: row order must favor the wrong row"
+
+    collapses = normalize_locations.scan(state_conn)
+
+    assert collapses[0].winner.location_id == "loc-a", "the tie ignored the hub's pk rule"
+    assert [loser.location_id for loser in collapses[0].losers] == ["loc-b"]
 
 
 # ----- the lone-NFD case: rewrite in place, no delete ----------------------

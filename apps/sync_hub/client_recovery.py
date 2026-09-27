@@ -31,6 +31,7 @@ from apps.shared.state import normalize_locations
 from apps.sync_hub import digest_diff
 from apps.sync_hub.client_transport_ops import _transaction
 from apps.sync_hub.engine_identity_map import _remove_remap_loser, load_identity_remap
+from apps.sync_hub.engine_watermark import Watermark, write_watermark
 from apps.sync_hub.transport import HubTransport
 
 log = logging.getLogger(__name__)
@@ -42,10 +43,15 @@ log = logging.getLogger(__name__)
 def collapse_location_twins(conn: sqlite3.Connection) -> int:
     """Collapse NFD/NFC ``track_locations`` twins before the offer.
 
-    Returns the number of natural keys repaired (0 on a clean library). A
-    group holding an unorderable stamp is left alone and reported: hard-deleting
-    on a comparison that was never made is the loss ``normalize_locations``
-    refuses, and the brick it leaves is loud, bounded and fixed by one command.
+    Returns the number of twin GROUPS collapsed, each of which deleted at
+    least one loser (0 on a clean library). A lone NFD row rewritten NFC in
+    place is repaired too but is not a twin, so it is logged, not counted. A
+    group holding an unorderable stamp is left alone and reported:
+    hard-deleting on a comparison that was never made is the loss
+    ``normalize_locations`` refuses, and the brick it leaves is loud, bounded
+    and fixed by one command. The unlocked :func:`normalize_locations.scan`
+    only decides whether to take the write lock; the winners are elected
+    again under it by :func:`normalize_locations.collapse_all`.
     """
     quarantined = normalize_locations.quarantined_groups(conn)
     if quarantined:
@@ -56,18 +62,20 @@ def collapse_location_twins(conn: sqlite3.Connection) -> int:
             len(quarantined),
             [member.location_id for member in quarantined[0]],
         )
-    collapses = normalize_locations.scan(conn)
-    if not collapses:
+    if not normalize_locations.scan(conn):
         return 0
-    repaired = normalize_locations.apply_collapses(conn, collapses)
+    collapses = normalize_locations.collapse_all(conn)
+    twins = [collapse for collapse in collapses if collapse.losers]
     log.warning(
         "collapsed %d track_locations NFC twin group(s) before the offer, "
-        "dropping %d loser row(s) that lost last-writer-wins to their twin: %s",
-        repaired,
-        sum(len(collapse.losers) for collapse in collapses),
+        "dropping %d loser row(s) that lost last-writer-wins to their twin, "
+        "and rewrote %d lone non-NFC location(s) in place: %s",
+        len(twins),
+        sum(len(collapse.losers) for collapse in twins),
+        len(collapses) - len(twins),
         [collapse.describe() for collapse in collapses[:5]],
     )
-    return repaired
+    return len(twins)
 
 
 # ----- stale persisted identity remaps -----------------------------------------
@@ -92,12 +100,22 @@ def stale_identity_remaps(
     )
 
 
-def drop_identity_remaps(conn: sqlite3.Connection, stale: list[tuple[str, str]]) -> None:
-    """Delete the stale remap rows in one transaction, loudly."""
+def drop_identity_remaps(
+    conn: sqlite3.Connection, stale: list[tuple[str, str]], replay: Watermark
+) -> None:
+    """Delete the stale remap rows AND record the seq-0 replay, in one transaction.
+
+    ``replay`` is the watermark the re-pull starts from. Committing it with
+    the deletes is what makes the recovery resumable: once the remaps are
+    gone this spoke can no longer see that it needs one, so a replay cut off
+    by a transport error must still be owed. The next sync then starts its
+    ordinary pull from seq 0 and lands the losers itself.
+    """
     remap = load_identity_remap(conn)
     with _transaction(conn):
         for loser, _survivor in stale:
             _remove_remap_loser(conn, remap, loser)
+        write_watermark(conn, replay)
     log.warning(
         "dropped %d persisted identity remap(s) the hub contradicts: it serves "
         "each loser as an independent live track (ADR-0074 hub identity "

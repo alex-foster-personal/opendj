@@ -240,6 +240,21 @@ def quarantined_groups(conn: sqlite3.Connection) -> list[list[LocationRow]]:
     return _repairable_groups(conn)[1]
 
 
+def _lww_winner(members: list[LocationRow]) -> LocationRow:
+    """The newest stamp; an exact stamp tie keeps the SMALLER ``location_id``.
+
+    The tie rule is the one ``apps.sync_hub.engine_apply._duplicate_incoming_wins``
+    applies to the same two rows, so this spoke elects the survivor the hub
+    already kept. ``max`` alone would keep whichever tied row SQLite returned
+    first, delete the hub's survivor, and re-offer the row the hub dropped.
+    """
+    newest = max(member.lww_key for member in members)
+    return min(
+        (member for member in members if member.lww_key == newest),
+        key=lambda member: member.location_id,
+    )
+
+
 def scan(conn: sqlite3.Connection) -> list[Collapse]:
     """Every natural key holding a non-NFC path, or a duplicate to collapse.
 
@@ -251,7 +266,7 @@ def scan(conn: sqlite3.Connection) -> list[Collapse]:
     repairable, _quarantined = _repairable_groups(conn)
     collapses: list[Collapse] = []
     for members in repairable:
-        winner = max(members, key=lambda m: m.lww_key)
+        winner = _lww_winner(members)
         losers = tuple(m for m in members if m.location_id != winner.location_id)
         collapses.append(
             Collapse(
@@ -277,52 +292,72 @@ def apply_collapses(conn: sqlite3.Connection, collapses: list[Collapse]) -> int:
     if not collapses:
         return 0
     with sync_stamp.stamped_transaction(conn):
-        received_at = sync_stamp.canonical_now()
-        for collapse in collapses:
-            for loser in collapse.losers:
-                conn.execute(
-                    f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
-                    (loser.location_id,),
-                )
-                loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
-                for changelog in CHANGELOG_TABLES:
-                    conn.execute(
-                        f"DELETE FROM {changelog} "
-                        f"WHERE table_name = ? AND row_pk = ?",
-                        (LOCATIONS_TABLE, loser_pk),
-                    )
-            conn.execute(
-                f"UPDATE {LOCATIONS_TABLE} SET file_path = ?, remote_url = ? "
-                f"WHERE location_id = ?",
-                (
-                    collapse.nfc_file_path,
-                    collapse.nfc_remote_url,
-                    collapse.winner.location_id,
-                ),
-            )
-            conn.execute(
-                f"INSERT INTO {sync_stamp.LOCAL_CHANGELOG_TABLE}("
-                "table_name, row_pk, updated_at, origin_device_id, received_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    LOCATIONS_TABLE,
-                    sync_stamp.encode_row_pk((collapse.winner.location_id,)),
-                    # VERBATIM (round 5). Nothing orders
-                    # local_changelog.updated_at -- the push fence reads
-                    # (seq, table_name, row_pk) -- so the honest value is the
-                    # row's own. A NULL has no verbatim value and the column
-                    # is NOT NULL, so it takes the storable floor.
-                    (
-                        sync_stamp.FLOOR_STAMP
-                        if collapse.winner.updated_at is None
-                        else collapse.winner.updated_at
-                    ),
-                    collapse.winner.origin_device_id or "",
-                    received_at,
-                ),
-            )
+        _collapse_in_transaction(conn, collapses)
     return len(collapses)
 
+
+def collapse_all(conn: sqlite3.Connection) -> list[Collapse]:
+    """Scan AND collapse under one write lock; returns what was collapsed.
+
+    :func:`scan` then :func:`apply_collapses` leaves a gap: a writer that
+    commits a newer stamp onto a planned loser between the two has its edit
+    hard-deleted on a decision made before it existed. ``BEGIN IMMEDIATE``
+    takes the write lock before the rows are read, so the winner is elected
+    over exactly the rows the delete sees. The automatic pre-offer repair in
+    ``apps.sync_hub.client_recovery`` runs this, not the two-step form.
+    """
+    with sync_stamp.stamped_transaction(conn):
+        collapses = scan(conn)
+        _collapse_in_transaction(conn, collapses)
+    return collapses
+
+
+def _collapse_in_transaction(conn: sqlite3.Connection, collapses: list[Collapse]) -> None:
+    """The deletes and rewrites of :func:`apply_collapses`; caller holds the lock."""
+    received_at = sync_stamp.canonical_now()
+    for collapse in collapses:
+        for loser in collapse.losers:
+            conn.execute(
+                f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
+                (loser.location_id,),
+            )
+            loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
+            for changelog in CHANGELOG_TABLES:
+                conn.execute(
+                    f"DELETE FROM {changelog} "
+                    f"WHERE table_name = ? AND row_pk = ?",
+                    (LOCATIONS_TABLE, loser_pk),
+                )
+        conn.execute(
+            f"UPDATE {LOCATIONS_TABLE} SET file_path = ?, remote_url = ? "
+            f"WHERE location_id = ?",
+            (
+                collapse.nfc_file_path,
+                collapse.nfc_remote_url,
+                collapse.winner.location_id,
+            ),
+        )
+        conn.execute(
+            f"INSERT INTO {sync_stamp.LOCAL_CHANGELOG_TABLE}("
+            "table_name, row_pk, updated_at, origin_device_id, received_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                LOCATIONS_TABLE,
+                sync_stamp.encode_row_pk((collapse.winner.location_id,)),
+                # VERBATIM (round 5). Nothing orders
+                # local_changelog.updated_at -- the push fence reads
+                # (seq, table_name, row_pk) -- so the honest value is the
+                # row's own. A NULL has no verbatim value and the column
+                # is NOT NULL, so it takes the storable floor.
+                (
+                    sync_stamp.FLOOR_STAMP
+                    if collapse.winner.updated_at is None
+                    else collapse.winner.updated_at
+                ),
+                collapse.winner.origin_device_id or "",
+                received_at,
+            ),
+        )
 
 def state_db_path(data_dir: Path) -> Path:
     """``<data-dir>/state/state.db`` -- the layout spec D1 fixes."""
@@ -419,6 +454,7 @@ __all__ = [
     "Collapse",
     "LocationRow",
     "apply_collapses",
+    "collapse_all",
     "main",
     "quarantined_groups",
     "scan",
