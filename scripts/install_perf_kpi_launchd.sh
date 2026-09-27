@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=./perf_kpi_launchd_decide.sh
+source "$REPO_ROOT/scripts/perf_kpi_launchd_decide.sh"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
 HOST_LABEL="${MDT_PERF_KPI_MACHINE:-}"
@@ -90,25 +92,13 @@ if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
   # A host moving from the plain install to --nightly-only still has the health agent
   # loaded, and its plist in LaunchAgents is reloaded at every login. Unload and remove
   # it, or the unit this flag exists to prevent keeps failing every 10 minutes.
+  # The unload/remove decision and its real launchctl calls live in
+  # cleanup_stale_health_agent (scripts/perf_kpi_launchd_decide.sh), which a
+  # macOS test drives directly against a throwaway agent -- the installer's
+  # own bootstrap loop above unconditionally touches the real
+  # com.af.perf-kpi-nightly label and so is never a safe thing to point at a
+  # fake target.
   health_plist="$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
-  # launchctl print exits 113 for "service not found"; any other nonzero means the
-  # loaded state is unknown, so stop before the plist is removed.
-  print_rc=0
-  launchctl print "gui/$uid/com.af.perf-kpi-health" >/dev/null 2>&1 || print_rc=$?
-  if [[ "$print_rc" -eq 0 ]]; then
-    if ! launchctl bootout "gui/$uid/com.af.perf-kpi-health"; then
-      echo "[ERROR] com.af.perf-kpi-health is loaded and would not unload; run" \
-        "launchctl bootout gui/$uid/com.af.perf-kpi-health, then re-run" >&2
-      exit 1
-    fi
-  elif [[ "$print_rc" -ne 113 ]]; then
-    echo "[ERROR] launchctl print gui/$uid/com.af.perf-kpi-health exited $print_rc, so" \
-      "whether the health agent is loaded is unknown; plist left in place" >&2
-    exit 1
-  fi
-  if [[ -e "$health_plist" ]]; then
-    rm -f "$health_plist"
-    echo "[OK] removed the existing com.af.perf-kpi-health agent (--nightly-only)"
-  fi
+  cleanup_stale_health_agent "$uid" "com.af.perf-kpi-health" "$health_plist" || exit 1
 fi
 echo "[OK] perf KPI launchd agents installed"

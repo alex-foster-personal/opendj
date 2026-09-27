@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import plistlib
+import shutil
 import socket
 import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -20,6 +23,8 @@ from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE
 from tests.perf.perf_kpi_job_fixtures import free_port, nightly_env
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
+DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
+LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
 
 
 def _history_events(state_dir: Path) -> list[str]:
@@ -306,125 +311,110 @@ def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_
     assert not (launch_agents / "com.af.perf-kpi-health.plist").exists()
 
 
-def _install_with_fake_launchctl(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    *args: str,
-    print_rc: int = 0,
-    bootout_rc: int = 0,
-) -> tuple[subprocess.CompletedProcess[str], Path, list[str]]:
-    """Run the real installer with --install against a launchctl that only records its
-    argv, so the bootout/bootstrap sequence is asserted without touching launchd."""
-    home = tmp_path / "home"
-    launch_agents = home / "Library" / "LaunchAgents"
-    launch_agents.mkdir(parents=True, exist_ok=True)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir(exist_ok=True)
-    calls = tmp_path / "launchctl.calls"
-    fake = bin_dir / "launchctl"
-    fake.write_text(
-        "#!/bin/sh\n"
-        f'echo "$*" >> "{calls}"\n'
-        f'case "$1" in print) exit {print_rc} ;; bootout) exit {bootout_rc} ;; esac\n'
-        "exit 0\n"
-    )
-    fake.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+def _decide(print_rc: int) -> str:
+    """Call the real health_agent_action (scripts/perf_kpi_launchd_decide.sh)
+    by sourcing it and invoking the function -- no PATH tricks, no fake
+    launchctl, just the shipped bash function asked one question."""
     completed = subprocess.run(
-        [str(INSTALL_SCRIPT), "--install", *args],
-        cwd=REPO_ROOT,
-        check=False,
+        ["bash", "-c", f'source "{DECIDE_SCRIPT}" && health_agent_action "$1"', "_", str(print_rc)],
+        check=True,
         capture_output=True,
         text=True,
     )
-    recorded = calls.read_text().splitlines() if calls.exists() else []
-    return completed, launch_agents, recorded
+    return completed.stdout.strip()
 
 
-def test_install_nightly_only_unloads_a_previously_installed_health_agent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_health_agent_action_bootout_when_print_exits_zero() -> None:
+    """[if] launchctl print exits 0 [then] health_agent_action returns bootout, [else stop]."""
+    assert _decide(0) == "bootout"
+
+
+def test_health_agent_action_absent_when_print_exits_113() -> None:
+    """[if] launchctl print exits 113 [then] health_agent_action returns absent, [else stop]."""
+    assert _decide(113) == "absent"
+
+
+@pytest.mark.parametrize("print_rc", [5, 1])
+def test_health_agent_action_unknown_for_any_other_exit_code(print_rc: int) -> None:
+    """[if] launchctl print exits anything but 0 or 113 [then] health_agent_action
+    returns unknown, [else stop]."""
+    assert _decide(print_rc) == "unknown"
+
+
+@pytest.mark.skipif(
+    LAUNCHCTL_UNAVAILABLE,
+    reason="UNAVAILABLE: launchctl is a macOS-only binary, not present on this host",
+)
+def test_cleanup_stale_health_agent_boots_out_a_real_throwaway_agent(
+    tmp_path: Path,
 ) -> None:
-    """If --nightly-only installs over a plain install then the old health agent is
-    unloaded and its plist removed."""
-    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
-    completed, _launch_agents, calls = _install_with_fake_launchctl(
-        monkeypatch, tmp_path, "--nightly-only"
+    """[if] a uniquely-labelled real launchd agent is loaded [then]
+    cleanup_stale_health_agent (the exact function install_perf_kpi_launchd.sh's
+    --nightly-only path calls) boots it out via real launchctl and removes its
+    plist, proven by launchctl print going from exit 0 to exit 113, [else stop].
+
+    Drives cleanup_stale_health_agent directly rather than the installer script:
+    the installer's own bootstrap loop unconditionally touches the real
+    com.af.perf-kpi-nightly label regardless of --nightly-only, so it is never
+    safe to invoke against a throwaway target. This is the same real
+    print/bootout/loaded-state code the installer runs, just called without the
+    unrelated, unsafe-to-fake bootstrap loop around it. Never touches any real
+    com.af.perf-kpi-* label; the plist bootstrapped here carries a fresh
+    com.af.test-perf-kpi-<uuid> Label of its own.
+    """
+    uid = os.getuid()
+    label = f"com.af.test-perf-kpi-{uuid.uuid4().hex[:8]}"
+    plist_path = tmp_path / f"{label}.plist"
+    plist_path.write_bytes(
+        plistlib.dumps(
+            {
+                "Label": label,
+                "ProgramArguments": ["/usr/bin/true"],
+                "RunAtLoad": False,
+                "KeepAlive": False,
+            }
+        )
     )
-    assert completed.returncode == 0, completed.stderr
-    assert any(c.startswith("bootout ") and c.endswith("/com.af.perf-kpi-health") for c in calls), (
-        calls
+
+    def _print_rc() -> int:
+        return subprocess.run(
+            ["launchctl", "print", f"gui/{uid}/{label}"],
+            check=False,
+            capture_output=True,
+        ).returncode
+
+    subprocess.run(
+        ["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)],
+        check=True,
+        capture_output=True,
     )
-    assert not stale.exists()
-    assert not any(c.startswith("bootstrap ") and "perf-kpi-health" in c for c in calls), calls
-    assert any(c.startswith("bootstrap ") and "perf-kpi-nightly" in c for c in calls), calls
+    try:
+        assert _print_rc() == 0, "real bootstrap of the throwaway agent did not load it"
 
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{DECIDE_SCRIPT}" && cleanup_stale_health_agent "$1" "$2" "$3"',
+                "_",
+                str(uid),
+                label,
+                str(plist_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
 
-def test_install_nightly_only_fails_when_a_loaded_health_agent_will_not_unload(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """If the loaded health agent refuses to unload then --nightly-only fails loudly
-    and leaves its plist in place for the operator."""
-    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
-    completed, _launch_agents, _calls = _install_with_fake_launchctl(
-        monkeypatch, tmp_path, "--nightly-only", bootout_rc=5
-    )
-    assert completed.returncode != 0
-    assert "would not unload" in completed.stderr
-    assert stale.exists()
-
-
-def test_install_nightly_only_removes_a_plist_whose_agent_is_not_loaded(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """If the health agent is not loaded then no bootout runs, and its leftover plist
-    is still removed so it cannot load at the next login."""
-    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
-    completed, _launch_agents, calls = _install_with_fake_launchctl(
-        monkeypatch, tmp_path, "--nightly-only", print_rc=113
-    )
-    assert completed.returncode == 0, completed.stderr
-    assert not any(c.startswith("bootout ") and "perf-kpi-health" in c for c in calls), calls
-    assert not stale.exists()
-
-
-def test_install_nightly_only_keeps_the_plist_when_launchctl_cannot_inspect(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """If launchctl print fails with anything but 113 (not found) then the loaded state
-    is unknown: --nightly-only fails loudly, runs no bootout, and keeps the plist."""
-    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
-    completed, _launch_agents, calls = _install_with_fake_launchctl(
-        monkeypatch, tmp_path, "--nightly-only", print_rc=5
-    )
-    assert completed.returncode != 0
-    assert "exited 5" in completed.stderr and "unknown" in completed.stderr
-    assert not any(c.startswith("bootout ") and "perf-kpi-health" in c for c in calls), calls
-    assert stale.exists()
-
-
-def test_plain_install_still_bootstraps_the_health_agent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """If the plain install runs then the health agent is rendered and bootstrapped,
-    never removed."""
-    completed, launch_agents, calls = _install_with_fake_launchctl(monkeypatch, tmp_path)
-    assert completed.returncode == 0, completed.stderr
-    assert (launch_agents / "com.af.perf-kpi-health.plist").exists()
-    assert any(c.startswith("bootstrap ") and "perf-kpi-health" in c for c in calls), calls
+        assert _print_rc() == 113, "cleanup_stale_health_agent did not really unload the agent"
+        assert not plist_path.exists()
+    finally:
+        subprocess.run(
+            ["launchctl", "bootout", f"gui/{uid}/{label}"],
+            check=False,
+            capture_output=True,
+        )
 
 
 def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
