@@ -65,9 +65,7 @@ def _ledger_entries(tmp_path: Path) -> list[dict]:
     return ledger["entries"]
 
 
-def test_nightly_fails_when_data_dir_unset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_fails_when_data_dir_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If MDT_PERF_KPI_DATA_DIR is unset then nightly exits non-zero with engine_unavailable."""
     state_dir = nightly_env(monkeypatch, tmp_path)
     monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
@@ -218,9 +216,7 @@ def test_nightly_fails_fast_when_engine_exits_before_healthy(
     assert not _listening(port)
 
 
-def test_base_url_starts_no_engine(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_base_url_starts_no_engine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If --base-url is passed then no engine is started and DATA_DIR is not required."""
     scratch_port = free_port()
     closed_port = free_port()
@@ -276,21 +272,15 @@ def test_install_render_includes_data_dir_and_path(
     )
     assert completed.returncode == 0
 
-    nightly = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-nightly.plist").read_bytes()
-    )
-    health = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-health.plist").read_bytes()
-    )
+    nightly = plistlib.loads((launch_agents / "com.af.perf-kpi-nightly.plist").read_bytes())
+    health = plistlib.loads((launch_agents / "com.af.perf-kpi-health.plist").read_bytes())
     env = nightly["EnvironmentVariables"]
     assert env["MDT_PERF_KPI_DATA_DIR"] == "/abs/lib"
     assert ".local/bin" in env["PATH"] or ".venv/bin" in env["PATH"]
     assert "MDT_PERF_KPI_DATA_DIR" not in health.get("EnvironmentVariables", {})
 
 
-def test_install_nightly_only_skips_health(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """--nightly-only renders and would bootstrap the nightly agent only, for a host
     (e.g. demon-llama) with no live-review-preview service for the health leg to probe."""
     home = tmp_path / "home"
@@ -314,6 +304,69 @@ def test_install_nightly_only_skips_health(
     assert completed.returncode == 0, completed.stderr
     assert (launch_agents / "com.af.perf-kpi-nightly.plist").exists()
     assert not (launch_agents / "com.af.perf-kpi-health.plist").exists()
+
+
+def _install_with_fake_launchctl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *args: str
+) -> tuple[subprocess.CompletedProcess[str], Path, list[str]]:
+    """Run the real installer with --install against a launchctl that only records its
+    argv, so the bootout/bootstrap sequence is asserted without touching launchd."""
+    home = tmp_path / "home"
+    launch_agents = home / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True, exist_ok=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "launchctl.calls"
+    fake = bin_dir / "launchctl"
+    fake.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 0\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
+    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
+    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
+    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
+    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+    completed = subprocess.run(
+        [str(INSTALL_SCRIPT), "--install", *args],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    recorded = calls.read_text().splitlines() if calls.exists() else []
+    return completed, launch_agents, recorded
+
+
+def test_install_nightly_only_unloads_a_previously_installed_health_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If --nightly-only installs over a plain install then the old health agent is
+    unloaded and its plist removed."""
+    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
+    completed, _launch_agents, calls = _install_with_fake_launchctl(
+        monkeypatch, tmp_path, "--nightly-only"
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert any(c.startswith("bootout ") and c.endswith("/com.af.perf-kpi-health") for c in calls), (
+        calls
+    )
+    assert not stale.exists()
+    assert not any(c.startswith("bootstrap ") and "perf-kpi-health" in c for c in calls), calls
+    assert any(c.startswith("bootstrap ") and "perf-kpi-nightly" in c for c in calls), calls
+
+
+def test_plain_install_still_bootstraps_the_health_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If the plain install runs then the health agent is rendered and bootstrapped,
+    never removed."""
+    completed, launch_agents, calls = _install_with_fake_launchctl(monkeypatch, tmp_path)
+    assert completed.returncode == 0, completed.stderr
+    assert (launch_agents / "com.af.perf-kpi-health.plist").exists()
+    assert any(c.startswith("bootstrap ") and "perf-kpi-health" in c for c in calls), calls
 
 
 def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -360,7 +413,6 @@ def test_install_requires_host_label(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     assert completed.returncode == 2
     assert "--host-label" in completed.stderr
-
 
 
 def test_load_config_does_not_require_machine_label(

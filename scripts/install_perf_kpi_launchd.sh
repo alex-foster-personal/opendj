@@ -86,4 +86,15 @@ for label in "${labels[@]}"; do
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$uid" "$HOME/Library/LaunchAgents/$label.plist"
 done
+if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
+  # A host moving from the plain install to --nightly-only still has the health agent
+  # loaded, and its plist in LaunchAgents is reloaded at every login. Unload and remove
+  # it, or the unit this flag exists to prevent keeps failing every 10 minutes.
+  health_plist="$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+  launchctl bootout "gui/$uid/com.af.perf-kpi-health" 2>/dev/null || true
+  if [[ -e "$health_plist" ]]; then
+    rm -f "$health_plist"
+    echo "[OK] removed the existing com.af.perf-kpi-health agent (--nightly-only)"
+  fi
+fi
 echo "[OK] perf KPI launchd agents installed"
