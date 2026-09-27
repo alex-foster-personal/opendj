@@ -264,8 +264,11 @@ def test_an_unreadable_library_is_unknown_and_an_all_deleted_one_is_empty(
 
 def test_unreadable_library_restore_fails_with_503(data_dir: Path) -> None:
     _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
-    (data_dir / "state" / "state.db").write_bytes(b"not-a-sqlite-db")
     app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=8787))
+    # Corrupted AFTER boot: an engine refuses to boot on an unreadable
+    # state.db (GUARD-09), and since #3965 it serves its own data dir's store,
+    # so the case rescue must survive is a library that goes bad at runtime.
+    (data_dir / "state" / "state.db").write_bytes(b"not-a-sqlite-db")
     with TestClient(app, base_url="http://127.0.0.1") as client:
         response = client.post(RESTORE_PATH, json={"play": True})
     assert response.status_code == 503

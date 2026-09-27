@@ -25,6 +25,7 @@ import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
+import { stemWorkSignal } from './stem-decode-policy';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -102,6 +103,14 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+export async function fetchTrackifyLibraryRevision(): Promise<string> {
+	const payload = await _fetchJson<{ revision: unknown }>('/api/v1/tracks/revision', 'no-store');
+	if (typeof payload.revision !== 'string' || payload.revision === '') {
+		throw new Error('Trackify: library revision response is invalid');
+	}
+	return payload.revision;
 }
 
 /** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
@@ -379,9 +388,11 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
-	key_status?: 'ok' | 'failed' | 'missing';
+	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
@@ -746,6 +757,14 @@ export async function fetchAnlzBypassingHttpCache(
 	return data;
 }
 
+/** GET /tracks/{sid} with `cache: 'reload'`, paired with
+ * `fetchAnlzBypassingHttpCache` on analysis-source switches: the openapi
+ * client's ordinary `getTrack` can otherwise replay a pre-switch row while
+ * `/anlz` already reflects the new lane. */
+export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
+	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
+}
+
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
@@ -1018,7 +1037,7 @@ export async function fetchStemAudioArrayBuffers(
 ): Promise<Partial<Record<StemPartName, ArrayBuffer>>> {
 	const entries = await Promise.all(
 		STEM_LAYOUT_PART_NAMES[layout].map(async (part) => {
-			const response = await fetch(stemAudioUrl(stableId, part));
+			const response = await fetch(stemAudioUrl(stableId, part), { signal: stemWorkSignal() });
 			if (!response.ok) await _throwRbApiError(response);
 			return [part, await response.arrayBuffer()] as const;
 		})

@@ -34,12 +34,14 @@ class SetupRecord:
 
     dismissed: bool = False
     last_import: dict[str, Any] | None = None
+    folder_watch_roots: list[str] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "version": RECORD_VERSION,
             "dismissed": self.dismissed,
             "last_import": self.last_import,
+            "folder_watch_roots": self.folder_watch_roots,
         }
 
 
@@ -78,7 +80,18 @@ def read(data_dir: Path) -> SetupRecord:
             f"setup record {path} field 'last_import' must be an object or "
             f"null, got {type(last_import).__name__}"
         )
-    return SetupRecord(dismissed=dismissed, last_import=last_import)
+    folder_watch_roots = raw.get("folder_watch_roots", [])
+    if not isinstance(folder_watch_roots, list) or not all(
+        isinstance(root, str) for root in folder_watch_roots
+    ):
+        raise SetupRecordError(
+            f"setup record {path} field 'folder_watch_roots' must be a list of strings"
+        )
+    return SetupRecord(
+        dismissed=dismissed,
+        last_import=last_import,
+        folder_watch_roots=folder_watch_roots,
+    )
 
 
 def write(data_dir: Path, record: SetupRecord) -> SetupRecord:
@@ -108,15 +121,27 @@ def set_dismissed(data_dir: Path, dismissed: bool) -> SetupRecord:
     current = read(data_dir)
     return write(
         data_dir,
-        SetupRecord(dismissed=dismissed, last_import=current.last_import),
+        SetupRecord(
+            dismissed=dismissed,
+            last_import=current.last_import,
+            folder_watch_roots=current.folder_watch_roots,
+        ),
     )
 
 
 def set_last_import(data_dir: Path, outcome: dict[str, Any]) -> SetupRecord:
     """Record what the last import did, keeping the dismissal flag."""
     current = read(data_dir)
+    roots = current.folder_watch_roots
+    if outcome.get("kind") == "folder":
+        roots = list(dict.fromkeys([*roots, *outcome.get("roots", [])]))
     return write(
-        data_dir, SetupRecord(dismissed=current.dismissed, last_import=outcome)
+        data_dir,
+        SetupRecord(
+            dismissed=current.dismissed,
+            last_import=outcome,
+            folder_watch_roots=roots,
+        ),
     )
 
 

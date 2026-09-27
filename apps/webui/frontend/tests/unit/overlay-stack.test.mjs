@@ -94,3 +94,18 @@ test('feedback pin placement sits above root modals and below brand launch', () 
 	assert.ok(z.feedbackPinPlacement < z.preflightBoot);
 	assert.ok(z.feedbackPinPlacement < z.brandLaunch);
 });
+
+test('feedback dock stays above boot preflight and quit confirm (#3981)', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.feedbackDock > z.quitConfirm);
+	assert.ok(z.quitConfirm > z.preflightBoot);
+	assert.ok(z.feedbackDock > z.preflightBoot);
+	assert.ok(z.feedbackDock > z.brandLaunch);
+});
+
+test('feedback pin bubble paints above dock and root modals (#3981)', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.feedbackPinBubble > z.feedbackDock);
+	assert.ok(z.feedbackPinBubble > z.settings);
+	assert.ok(z.feedbackDock > z.settings);
+});

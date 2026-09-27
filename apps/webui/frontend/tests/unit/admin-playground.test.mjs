@@ -49,6 +49,7 @@ test('unknown tab query resolves to kpi', () => {
 	assert.equal(adminTab.adminTabFromUrl(new URL('https://x.test/admin?tab=other')), 'kpi');
 });
 
+// REQ: ADMIN-02
 test('tab=playground resolves to playground', () => {
 	assert.equal(
 		adminTab.adminTabFromUrl(new URL('https://x.test/admin?tab=playground')),
@@ -88,6 +89,7 @@ test('parsePlaygroundPath rejects unsafe paths without calling fetch', async () 
 	}
 });
 
+// REQ: ADMIN-02
 test('GET sends no body even when bodyText is non-empty', async () => {
 	stubFetch(async () =>
 		new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } })

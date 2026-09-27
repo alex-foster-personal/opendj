@@ -72,6 +72,15 @@ describe('planned explainers', () => {
 		assert.throws(() => plannedTitle('no-such-control'), /planned-explainers/);
 	});
 
+	it('plannedExplainerBullets returns description and not-built line', () => {
+		const { plannedExplainerBullets, NOT_BUILT_MARK } = mod;
+		const bullets = plannedExplainerBullets('split-view');
+		assert.equal(bullets.length, 2);
+		assert.match(bullets[0], /browser and the decks/i);
+		assert.ok(bullets[1].includes(NOT_BUILT_MARK));
+		assert.throws(() => plannedExplainerBullets('missing-id'), /planned-explainers/);
+	});
+
 	// The audit half of pin 552a810ba13b: the point was that FOURTEEN controls
 	// shared one string, so a test that only checks the catalogue would pass
 	// while the topbar still rendered the old constant.
@@ -88,17 +97,22 @@ describe('planned explainers', () => {
 		assert.match(topbar, /plannedTitle\(/);
 	});
 
-	test('the planned two-track AutoPlay option remains inert while IPC can report its status', () => {
+	test('5ccbce4970bb: the planned two-track AutoPlay option remains inert while IPC can report its status', () => {
 		const topbar = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
 			'utf8'
 		);
 		assert.match(topbar, /class="ap-row ap-two-track rb-inert"/);
-		assert.match(topbar, /disabled/);
+		assert.match(
+			topbar,
+			/class="ap-row ap-two-track rb-inert"[\s\S]*?\bdisabled\b[\s\S]*?Two-track AutoPlay/
+		);
+		assert.match(topbar, /ap-planned/);
 		assert.match(topbar, /plannedTitle\('autoplay-two-track'\)/);
 		assert.match(mod.PLANNED_CONTROLS['autoplay-two-track'], /second automatic track/i);
 	});
 
+	// REQ: LIBUX-17
 	test('the browser MASTER dropdown wires the master-dropdown explainer', () => {
 		const panel = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),

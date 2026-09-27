@@ -28,15 +28,13 @@ THREAD_PIN_VARS: tuple[str, ...] = (
 
 #: The fatal signals :mod:`faulthandler` installs a handler for. A worker
 #: killed by anything outside this set leaves no Python-level trace, so the
-#: operator must not be sent looking for one.
+#: operator must not be sent looking for one. Looked up by name because the set
+#: differs by platform: Windows has no ``SIGBUS``, and faulthandler does not
+#: trace it there either, so omitting it is the accurate answer, not a gap.
 TRACED_SIGNALS: frozenset[int] = frozenset(
-    {
-        int(signal.SIGSEGV),
-        int(signal.SIGFPE),
-        int(signal.SIGABRT),
-        int(signal.SIGBUS),
-        int(signal.SIGILL),
-    }
+    int(getattr(signal, name))
+    for name in ("SIGSEGV", "SIGFPE", "SIGABRT", "SIGBUS", "SIGILL")
+    if hasattr(signal, name)
 )
 
 #: What :class:`~concurrent.futures.ProcessPoolExecutor` sends to the workers

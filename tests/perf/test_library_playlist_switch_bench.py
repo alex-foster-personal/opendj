@@ -65,6 +65,7 @@ def _run_live_playlist_switch_bench() -> dict:
     return json.loads(_FIXTURE.read_text())
 
 
+# REQ: PERF-UI-05
 @pytest.mark.requirement("PERF-UI-05")
 @pytest.mark.slow  # full Playwright bench: never in the CI fast tier (scripts/pytest_fast_tier.py)
 def test_playlist_switch_bench_meets_post_fix_caps() -> None:

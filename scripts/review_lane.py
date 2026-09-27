@@ -624,6 +624,6 @@ def post_review(
         ],
     }
     endpoint = f"repos/{REPO}/pulls/{pr}/reviews"
-    out = _gh(["api", endpoint, "--input", "-", "-q", ".html_url"], payload)
+    out = _gh(["api", endpoint, "--input", "-", "-q", ".html_url"], payload, as_human=True)
     print(f"{tag} posted {len(inline)} inline thread(s)")
     return out.strip()
