@@ -5,6 +5,18 @@
 // Every case here drives the armed recovery itself (rebind, then the engine's
 // recreate), the same entry the liveness poll's `stalled` verdict calls.
 //
+// [if] the rebuild's new graph cannot be built (an ?extroute page whose
+//   interface dropped to 2 channels) [then] every deck it detached is unloaded
+//   with the cause on the deck, and a load on a fixed output works [⛔️ if a
+//   deck keeps its track while play() rejects "no track loaded"]
+// [if] closing the OLD graph rejects during the rebuild [then] the graph state
+//   is still reset, so the next load builds a fresh graph [⛔️ if every later
+//   load fails "audio graph is missing" for the rest of the session]
+// [if] the rebuild succeeds [then] the loaded deck keeps its track and gets a
+//   processor on the new context, and only that context stays registered
+//   (control: the unload above must not overshoot)
+// [if] the rebuild re-attaches deck 1 and then fails on deck 2 [then] only deck
+//   2 is unloaded (control: a deck that got its processor back keeps its track)
 // [if] a master output selection is parked on setSinkId across a rebuild
 //   [then] it rejects as stale and publishes nothing [⛔️ if the rebuild is
 //   handed the failed-build headphone release, which retires nothing]
@@ -107,6 +119,124 @@ after(async () => {
 	delete globalThis.requestAnimationFrame;
 	delete globalThis.cancelAnimationFrame;
 	delete globalThis.window;
+});
+
+const recreateFailedToast = () => stores.toasts.find((toast) => /graph recreate failed/.test(toast.message));
+
+/** Load deck 1 for real and prove it holds its track before a case rebuilds under it. */
+async function loadDeckOne() {
+	await audio.engine.load(1, SID);
+	assert.equal(audio.getDeckState(1).stable_id, SID, 'precondition: deck 1 is loaded');
+	assert.equal(audio.getDeckState(1).processor_error, null, 'precondition: deck 1 has no processor error');
+}
+
+//-----------------------------------------------------------------------------
+// a failed rebuild never leaves a deck that shows a track it cannot play
+//-----------------------------------------------------------------------------
+
+test('IOPIN-12: a rebuild whose new graph cannot be built unloads the deck it detached, names the cause, and the next load plays', async () => {
+	installWindow('?extroute=1:3');
+	FakeAudioContext.maxChannelCount = 4;
+	await loadDeckOne();
+	// The interface drops to a 2-channel device; extroute still needs 4, so the
+	// rebuild's own graph build throws with no injected failure.
+	FakeAudioContext.maxChannelCount = 2;
+	await instrumentation._recoverOutputStallForTests();
+	assert.ok(recreateFailedToast(), 'precondition: the recreate really failed and said so');
+	assert.equal(audio.gigDeckGraphIsPresent(), false, 'precondition: the failed rebuild was discarded');
+	const deck = audio.getDeckState(1);
+	assert.equal(
+		deck.stable_id,
+		null,
+		'if the deck keeps its track after its processor is gone then the deck shows a track play() rejects as "no track loaded" - broken'
+	);
+	assert.match(deck.processor_error ?? '', /audio graph recreate failed/, 'if the deck carries no error then the operator sees an empty deck with no reason - broken');
+	assert.match(deck.processor_error ?? '', /extroute needs 4 output channels/, 'the deck names the build error that caused it');
+	assert.match(deck.processor_error ?? '', /reload the track/, 'the deck names the fix');
+	assert.equal(registry.countRegisteredAudioContexts(), 0, 'neither the replaced context nor the failed one stays registered');
+
+	FakeAudioContext.maxChannelCount = 4;
+	await audio.engine.load(1, SID);
+	assert.equal(audio.getDeckState(1).stable_id, SID, 'the next load on a fixed output works');
+	assert.equal(audio.getDeckState(1).processor_error, null, 'and clears the rebuild error');
+	await audio.engine.play(1);
+	assert.equal(audio.getDeckState(1).playing, true, 'and the reloaded deck plays');
+});
+
+test('IOPIN-12: a rebuild whose teardown of the old graph rejects still resets the graph, so the next load builds a fresh one', async () => {
+	installWindow('');
+	await loadDeckOne();
+	const old = FakeAudioContext.instances.at(-1);
+	// A browser that rejects close() on the stalled context: the teardown throws
+	// BEFORE the rebuild ever reaches its own graph build.
+	old.close = async () => {
+		throw new Error('InvalidStateError: the stalled context refused to close');
+	};
+	try {
+		await instrumentation._recoverOutputStallForTests();
+		assert.ok(recreateFailedToast(), 'precondition: the recreate failed on the teardown and said so');
+		assert.equal(
+			audio.gigDeckGraphIsPresent(),
+			false,
+			'if the old context stays installed with its deck nodes cleared then every later load fails "audio graph is missing" - broken'
+		);
+		assert.equal(audio.getDeckState(1).stable_id, null, 'the deck the rebuild detached is unloaded, not left showing a dead track');
+		assert.match(audio.getDeckState(1).processor_error ?? '', /refused to close/);
+
+		await audio.engine.load(1, SID);
+		assert.equal(audio.getDeckState(1).stable_id, SID, 'if the next load fails then the deck is dead for the rest of the session - broken');
+		assert.notEqual(FakeAudioContext.instances.at(-1), old, 'the next load built a new context');
+	} finally {
+		// Only this case's close refuses; a later case's teardown must not trip on it.
+		delete old.close;
+	}
+});
+
+test('IOPIN-12 control: a rebuild that succeeds keeps the loaded deck, re-attaches it on the new context, and registers only that context', async () => {
+	installWindow('');
+	await loadDeckOne();
+	const old = FakeAudioContext.instances.at(-1);
+	await instrumentation._recoverOutputStallForTests();
+	assert.equal(recreateFailedToast(), undefined, 'precondition: the recreate succeeded');
+	assert.notEqual(FakeAudioContext.instances.at(-1), old, 'precondition: the rebuild made a new context');
+	assert.equal(audio.getDeckState(1).stable_id, SID, 'if a successful rebuild unloads decks then every stall recovery ejects the set - broken');
+	assert.equal(audio.getDeckState(1).processor_error, null);
+	await audio.engine.play(1);
+	assert.equal(audio.getDeckState(1).playing, true, 'the re-attached deck plays on the new context');
+	assert.equal(
+		registry.countRegisteredAudioContexts(),
+		1,
+		'if the replaced context stays registered then library mode reports a leaked context after every stall recovery (PERFMODE-14) - broken'
+	);
+});
+
+test('IOPIN-12 control: a rebuild that re-attaches deck 1 and then fails on deck 2 unloads deck 2 only', async () => {
+	installWindow('');
+	await loadDeckOne();
+	await audio.engine.load(2, SID_2);
+	assert.equal(audio.getDeckState(2).stable_id, SID_2, 'precondition: deck 2 is loaded');
+	const realCreate = stretch.StretchDeckProcessor.create;
+	let creates = 0;
+	// The re-attach makes one processor per loaded deck, deck 1 first. Deck 2's
+	// fails the way a worklet that cannot start on the new context does.
+	stretch.StretchDeckProcessor.create = async (...args) => {
+		creates += 1;
+		if (creates === 2) throw new Error('AudioWorkletNode could not start on the new context');
+		return realCreate.apply(stretch.StretchDeckProcessor, args);
+	};
+	try {
+		await instrumentation._recoverOutputStallForTests();
+	} finally {
+		stretch.StretchDeckProcessor.create = realCreate;
+	}
+	assert.equal(creates, 2, 'precondition: the rebuild re-attached deck 1 and failed on deck 2');
+	assert.ok(recreateFailedToast(), 'precondition: the recreate failed and said so');
+	assert.equal(audio.getDeckState(1).stable_id, SID, 'if a deck the rebuild DID re-attach is unloaded too then one failed deck ejects the whole set - broken');
+	assert.equal(audio.getDeckState(1).processor_error, null);
+	assert.equal(audio.getDeckState(2).stable_id, null, 'the deck left without a processor is unloaded');
+	assert.match(audio.getDeckState(2).processor_error ?? '', /could not start on the new context/);
+	await audio.engine.play(1);
+	assert.equal(audio.getDeckState(1).playing, true, 'the re-attached deck still plays');
 });
 
 //-----------------------------------------------------------------------------

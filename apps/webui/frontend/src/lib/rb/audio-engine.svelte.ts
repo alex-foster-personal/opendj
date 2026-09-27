@@ -750,14 +750,28 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
-	});
+	}).catch(_unloadDecksOrphanedByFailedRebuild);
 	await _resumeContext();
 }
 
-/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing. A rebuild passes
- * disposeHeadphoneMonitor (retires in-flight headphone operations); a failed build must not (IOPIN-12). */
+/** IOPIN-12: a failed rebuild leaves each deck it detached with a buffer but no processor, so the deck
+ * showed its track while play() rejected "no track loaded". Unload those decks with the cause on the
+ * deck, then rethrow for the stall recovery's own report. */
+function _unloadDecksOrphanedByFailedRebuild(error: unknown): never {
+	const cause = error instanceof Error ? error.message : String(error);
+	for (const deck of DECK_IDS) {
+		if (_rt[deck].audioBuffer === null || _rt[deck].processor !== null) continue;
+		_recordProcessorFailure(deck, new Error(`audio graph recreate failed, reload the track: ${cause}`));
+	}
+	throw error;
+}
+
+/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing, and unregister the
+ * dropped context (PERFMODE-14 counts registered contexts). A rebuild passes disposeHeadphoneMonitor
+ * (retires in-flight headphone operations); a failed build must not (IOPIN-12). */
 function _resetGraphState(releaseHeadphones: () => void): void {
 	releaseHeadphones();
+	if (_ctx !== null) unregisterAudioContext(_ctx);
 	_rafId = null;
 	_masterGain = null;
 	releaseMasterMeterTap();
@@ -789,7 +803,6 @@ function _discardFailedGraph(): void {
 	disarmContextInstrumentation();
 	const closing = disposeAudioResources({ rafId: _rafId, processors: [], nodes, masterGain: _masterGain, context: failed });
 	_resetGraphState(releaseHeadphoneGraphOfFailedBuild);
-	if (failed !== null) unregisterAudioContext(failed);
 	void closing.catch((error: unknown) => recordPerfEvent('audio-graph-discard-failed', `failed graph teardown: ${String(error)}`, null, 'error'));
 }
 

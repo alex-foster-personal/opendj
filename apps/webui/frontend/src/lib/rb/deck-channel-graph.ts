@@ -222,8 +222,14 @@ export async function rebuildKeepingLoadedDecks(deps: {
 	}
 	deps.disarmInstrumentation();
 	nodes.push(...deps.extraDisposeNodes());
-	await deps.disposeResources({ processors, nodes });
-	deps.resetGraphState();
+	try {
+		await deps.disposeResources({ processors, nodes });
+	} finally {
+		// IOPIN-12: reset even when the old graph's teardown rejects. Every deck above
+		// has had its nodes cleared, so a skipped reset keeps the old context installed
+		// and each later load fails "audio graph is missing" for the rest of the session.
+		deps.resetGraphState();
+	}
 	const ctx = deps.ensureGraph();
 	await deps.reattach(ctx, snaps);
 }
