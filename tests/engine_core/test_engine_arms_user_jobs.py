@@ -114,6 +114,7 @@ def default_probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
     return _probe_payload(_run_probe(tmp_path_factory.mktemp("default"), {}))
 
 
+# REQ: PERFBATCH-05
 @pytest.mark.requirement("PERFBATCH-05")
 def test_engine_runs_the_library_jobs_drain_by_default(default_probe: dict) -> None:
     """[if] library jobs is left unset [then] the engine boots the drain thread, [else stop]."""
@@ -183,6 +184,7 @@ def test_local_mode_stems_miss_stays_the_ordinary_empty_state(default_probe: dic
     assert default_probe["stems_miss_code"] == "STEM_BUNDLE_NOT_FOUND"
 
 
+# REQ: PERFBATCH-05
 @pytest.mark.requirement("PERFBATCH-05")
 def test_invalid_library_jobs_value_refuses_to_boot(tmp_path: Path) -> None:
     """[if] MUSIC_DJ_LIBRARY_JOBS is invalid [then] the engine refuses to boot, [else stop]."""

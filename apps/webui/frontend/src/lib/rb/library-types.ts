@@ -164,7 +164,7 @@ export interface PlaylistNode {
 	 * 'missing_tracks' is the reserved Missing Tracks view (playlist_id
 	 * 'missing'), never matched by a user playlist's display name. */
 	kind: 'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist';
-	/** Below server min-available ratio; tree row renders dimmed. */
+	/** Below server min playable-track count; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** When true, extra copies of an already-present track are rejected on add. */
 	forbid_duplicates?: boolean;
