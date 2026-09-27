@@ -54,6 +54,7 @@ test('the x dismisses that toast and leaves the others', async ({ page }) => {
 	await expect(page.locator(`[data-toast-id="${first}"]`)).toBeVisible();
 });
 
+// REQ: UX-TOAST-01
 test('a pointer over a toast holds it past its dismissal delay', async ({ page }) => {
 	const id = await raise(page, 'hover holds me', 'info', 1200);
 	const toast = page.locator(`[data-toast-id="${id}"]`);
@@ -77,6 +78,7 @@ test('an untouched toast still fades, so the hold is doing the work', async ({ p
 	await expect(toast).toHaveCount(0, { timeout: 5000 });
 });
 
+// REQ: UX-TOAST-01
 test('clicking a toast copies a report whose id matches the logged id', async ({
 	page,
 	context
@@ -161,4 +163,150 @@ test('a warn toast paints its own colour, between info and error', async ({ page
 		return resolved;
 	});
 	expect(warnBorder).toBe(declared);
+});
+
+// REQ: UX-TOAST-03
+// [if] five toasts pushed [then] DOM never shows more than three [else stop].
+test('at most three toasts are visible when more are pushed', async ({ page }) => {
+	await page.evaluate(
+		async ([store]) => {
+			const mod = await import(/* @vite-ignore */ store as string);
+			for (let i = 0; i < 5; i += 1) {
+				mod.pushToast(`stack toast ${i}`, 'error', 120_000);
+			}
+		},
+		[STORE] as const
+	);
+	for (let frame = 0; frame < 8; frame += 1) {
+		const count = await page.locator('[data-toast-id]').count();
+		expect(count).toBeLessThanOrEqual(3);
+		await page.waitForTimeout(16);
+	}
+	await expect(page.locator('[data-toast-id]')).toHaveCount(3, { timeout: 3000 });
+});
+
+// REQ: UX-TOAST-03
+// [if] fourth toast evicts oldest [then] exiting class uses ~100ms transition [else stop].
+test('the fourth toast evicts the oldest with an exiting marker', async ({ page }) => {
+	type ExitEvidence = {
+		exitingFound: boolean;
+		transformMs: number;
+		opacityMs: number;
+		exitMs: number;
+		exitPx: number;
+		transformFound: boolean;
+		opacityFound: boolean;
+	};
+
+	const first = await raise(page, 'oldest toast', 'error', 120_000);
+	await raise(page, 'toast two', 'error', 120_000);
+	await raise(page, 'toast three', 'error', 120_000);
+
+	const evidence = await page.evaluate(
+		async ([store, oldestId]): Promise<ExitEvidence> => {
+			const parseMs = (raw: string): number => {
+				const trimmed = raw.trim();
+				const msMatch = /^(-?\d+(?:\.\d+)?)ms$/.exec(trimmed);
+				if (msMatch) return Number(msMatch[1]);
+				const sMatch = /^(-?\d+(?:\.\d+)?)s$/.exec(trimmed);
+				if (sMatch) return Number(sMatch[1]) * 1000;
+				return NaN;
+			};
+			const parsePx = (raw: string): number => {
+				const trimmed = raw.trim();
+				const pxMatch = /^(-?\d+(?:\.\d+)?)px$/.exec(trimmed);
+				if (pxMatch) return Number(pxMatch[1]);
+				return NaN;
+			};
+			const transitionDurationMs = (transition: CSSTransition | undefined): number => {
+				if (transition?.effect === null || transition?.effect === undefined) return NaN;
+				const timing = transition.effect.getTiming();
+				const duration = timing.duration;
+				return typeof duration === 'number' && Number.isFinite(duration) ? duration : NaN;
+			};
+			const raf = (): Promise<void> =>
+				new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+			const mod = await import(/* @vite-ignore */ store as string);
+			mod.pushToast('toast four', 'error', 120_000);
+
+			await raf();
+			await raf();
+
+			const findExiting = (): HTMLElement | null =>
+				document.querySelector(`[data-toast-exiting="${oldestId}"]`);
+
+			const collect = (node: HTMLElement): ExitEvidence => {
+				const cssTransitions = node
+					.getAnimations()
+					.filter((animation): animation is CSSTransition => animation instanceof CSSTransition);
+				const transformTransition = cssTransitions.find((t) => t.transitionProperty === 'transform');
+				const opacityTransition = cssTransitions.find((t) => t.transitionProperty === 'opacity');
+				const style = getComputedStyle(node);
+				return {
+					exitingFound: true,
+					transformMs: transitionDurationMs(transformTransition),
+					opacityMs: transitionDurationMs(opacityTransition),
+					exitMs: parseMs(style.getPropertyValue('--toast-exit-ms')),
+					exitPx: parsePx(style.getPropertyValue('--toast-exit-px')),
+					transformFound: transformTransition !== undefined,
+					opacityFound: opacityTransition !== undefined
+				};
+			};
+
+			for (let frame = 0; frame < 8; frame += 1) {
+				const node = findExiting();
+				if (node === null) {
+					await raf();
+					continue;
+				}
+				const sample = collect(node);
+				if (sample.transformFound === true && sample.opacityFound === true) {
+					return sample;
+				}
+				await raf();
+			}
+
+			const node = findExiting();
+			if (node === null) {
+				return {
+					exitingFound: false,
+					transformMs: NaN,
+					opacityMs: NaN,
+					exitMs: NaN,
+					exitPx: NaN,
+					transformFound: false,
+					opacityFound: false
+				};
+			}
+			return collect(node);
+		},
+		[STORE, first] as const
+	);
+
+	expect(evidence.exitingFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.transformFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.opacityFound, JSON.stringify(evidence)).toBe(true);
+	expect(evidence.transformMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(90);
+	expect(evidence.transformMs, JSON.stringify(evidence)).toBeLessThanOrEqual(120);
+	expect(evidence.opacityMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(90);
+	expect(evidence.opacityMs, JSON.stringify(evidence)).toBeLessThanOrEqual(120);
+	expect(evidence.exitMs, JSON.stringify(evidence)).toBeGreaterThanOrEqual(95);
+	expect(evidence.exitMs, JSON.stringify(evidence)).toBeLessThanOrEqual(105);
+	expect(evidence.exitPx, JSON.stringify(evidence)).toBeGreaterThanOrEqual(95);
+	expect(evidence.exitPx, JSON.stringify(evidence)).toBeLessThanOrEqual(105);
+
+	await expect(page.locator('[data-toast-id]')).toHaveCount(3);
+	await expect(page.locator(`[data-toast-exiting="${first}"]`)).toHaveCount(0, { timeout: 5000 });
+});
+
+// REQ: UX-TOAST-03
+// [if] long selection-load error [then] toast width stays within viewport third [else stop].
+test('a long error toast width stays within one third of the viewport', async ({ page }) => {
+	const longMessage =
+		'selection load failed: ' + 'x'.repeat(400);
+	const id = await raise(page, longMessage, 'error', 60_000);
+	const width = await page.locator(`[data-toast-id="${id}"]`).evaluate((node) => node.getBoundingClientRect().width);
+	const viewport = page.viewportSize()?.width ?? 1280;
+	expect(width).toBeLessThanOrEqual(viewport / 3 + 4);
 });

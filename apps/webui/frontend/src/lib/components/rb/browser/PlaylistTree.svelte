@@ -28,10 +28,11 @@
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
 	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
-	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
+	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 
 	let {
 		nodes,
+		mode = 'tree',
 		playlistsLoading,
 		playlistsError,
 		hiddenBrokenPlaylistCount,
@@ -54,7 +55,7 @@
 		ondroptracks,
 		oncreatesmartlist,
 		onfolderdrop
-	}: PlaylistTreeProps = $props();
+	}: PlaylistTreeProps & { mode?: PlaylistTreeViewMode } = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
@@ -133,7 +134,6 @@
 		() => oncreateplaylist
 	);
 
-	let mode = $state<'tree' | 'column'>('tree');
 	// ColumnBrowser mounts lazily on first activation (its onMount walks
 	// every /tracks cursor page - no point paying that for users who never
 	// open column mode) but then STAYS mounted (visibility toggled via CSS
@@ -159,7 +159,7 @@
 		if (allTracksCount === null || allTracksBrokenCount === null) {
 			return 'loading non-broken and broken track counts';
 		}
-		return `${allTracksCount} non-broken tracks, ${allTracksBrokenCount} broken tracks`;
+		return `${allTracksCount} unique library-wide non-broken tracks, ${allTracksBrokenCount} broken tracks`;
 	}
 
 	function _playlistCountTitle(node: PlaylistNode): string {
@@ -195,29 +195,20 @@
 </script>
 
 <div class="tree-root" data-testid="playlist-tree-panel">
-	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
-	{#if mode === 'tree'}
-		<button
-			type="button"
-			class="view-toggle"
-			data-testid="playlist-column-view"
-			onclick={() => (mode = 'column')}
-		>
-			Columns
-		</button>
-	{:else}
-		<button type="button" class="view-toggle" onclick={() => (mode = 'tree')}>Tree</button>
-	{/if}
 	{#if columnMounted}
-		<div class="tree-scroll column-mode" class:hidden={mode !== 'column'}>
+		<div
+			class="tree-scroll column-mode"
+			class:hidden={mode !== 'column'}
+			data-testid="playlist-column-view"
+		>
 			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
 		</div>
 	{/if}
-	<TreeCurrentFold fold={foldTracker.current} onjump={() => foldTracker.jumpToCurrent()} />
 	<div
 		class="tree-scroll"
 		class:hidden={mode === 'column'}
+		class:has-fold={foldTracker.current !== null}
 		class:folder-drop-target={folderDropActive}
 		bind:this={foldTracker.scrollEl}
 		bind:clientHeight={foldTracker.viewportHeight}
@@ -226,6 +217,7 @@
 		ondragleave={_onFolderDragLeave}
 		ondrop={_onFolderDrop}
 	>
+		<TreeCurrentFold fold={foldTracker.current} onjump={() => foldTracker.jumpToCurrent()} />
 		<div
 			class="row"
 			class:selected={selectedId === 'all'}
@@ -396,27 +388,16 @@
 	.row.child.tint-multi:not(.selected):hover {
 		background: color-mix(in srgb, var(--rb-accent) 40%, transparent);
 	}
-	.view-toggle {
-		display: block;
-		width: calc(100% - 12px);
-		margin: 2px 6px;
-		padding: 2px 0;
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		color: var(--rb-text-dim);
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		cursor: pointer;
-	}
-	.view-toggle:hover {
-		color: var(--rb-text);
-		border-color: var(--rb-accent);
-	}
 	.tree-scroll {
+		position: relative;
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
 		padding: 2px 0;
+		z-index: 1;
+	}
+	.tree-scroll.has-fold {
+		padding-top: 26px;
 	}
 	.tree-scroll.column-mode {
 		/* ColumnBrowser owns its own column padding/scroll regions. */

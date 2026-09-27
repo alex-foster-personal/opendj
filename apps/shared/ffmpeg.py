@@ -6,6 +6,10 @@ R1 ok   Resolve the ffmpeg binary honoring ``MDT_FFMPEG`` first, then PATH.
 R2 ok   Fail loudly: an absent binary, or a set-but-unusable ``MDT_FFMPEG``,
         raises :class:`FfmpegUnavailable`. There is no second decoder to fall
         back to and no silent PATH lookup behind a broken override.
+R3 ok   :func:`probe_duration_s` reports the length ffmpeg's demuxer states for
+        a file, or ``None`` when it states none; never an estimate of ours
+        (NATIVE-10: a payload has no mutagen, so folder imports carry no
+        duration and the backfill queue asks the decoder instead).
 
 Acceptance
 ----------
@@ -36,7 +40,9 @@ change wearing a de-duplication's clothes, so they are left alone.
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 FFMPEG_BINARY = "ffmpeg"
@@ -85,4 +91,36 @@ def resolve_ffmpeg() -> str:
     return exe
 
 
-__all__ = ["FFMPEG_BINARY", "FfmpegUnavailable", "resolve_ffmpeg"]
+#: ``Duration: HH:MM:SS.ss`` in ffmpeg's input report; ``N/A`` does not match.
+_DURATION_LINE = re.compile(r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE)
+PROBE_TIMEOUT_S = 30
+
+
+def probe_duration_s(path: Path) -> float | None:
+    """Seconds ffmpeg's demuxer reports for ``path``, or ``None`` if it reports none.
+
+    Reads the container header only (``ffmpeg -i`` with no output exits 1 by
+    design after printing the input report), so it costs a process spawn, not
+    a decode. ``None`` covers a file ffmpeg cannot open and one whose length
+    is ``N/A``; a missing ffmpeg raises :class:`FfmpegUnavailable` instead,
+    because that is a host fault, not a fact about the file.
+    """
+    report = subprocess.run(
+        [resolve_ffmpeg(), "-hide_banner", "-nostdin", "-i", str(path)],
+        capture_output=True, text=True, errors="replace", check=False,
+        timeout=PROBE_TIMEOUT_S,
+    ).stderr
+    match = _DURATION_LINE.search(report)
+    if match is None:
+        return None
+    hours, minutes, seconds = match.groups()
+    total = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    return total if total > 0 else None
+
+
+__all__ = [
+    "FFMPEG_BINARY",
+    "FfmpegUnavailable",
+    "probe_duration_s",
+    "resolve_ffmpeg",
+]

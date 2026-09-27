@@ -24,7 +24,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { before, describe, it } from 'node:test';
+import { afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -97,5 +97,29 @@ describe('the master meter publishes only what it measured', () => {
 		assert.match(source, /RENDERING_RMS_FLOOR = 0\.05/);
 		assert.match(source, /audioOutputHealth\.snapshot\?\.browser\?\.verdict === 'stalled'/);
 		assert.match(source, /output-stalled-while-rendering/);
+	});
+});
+
+describe('the source PCM reader stays off the non-quiet master path', () => {
+	let report;
+
+	before(async () => {
+		report = await loadTypeScriptModule('src/lib/rb/master-silence-report.ts');
+	});
+
+	afterEach(() => {
+		report.resetMasterSilenceWatch();
+		report.setSilenceSourceReader(null);
+	});
+
+	it('does not read deck buffers on the no-analyser path', () => {
+		let readerCalls = 0;
+		report.setSilenceSourceReader(() => {
+			readerCalls += 1;
+			return [];
+		});
+		report.resetMasterSilenceWatch();
+		report.noteMasterSilence(null, null, true, 1_000);
+		assert.equal(readerCalls, 0, 'no-meter sentinel must not trigger source PCM scans');
 	});
 });

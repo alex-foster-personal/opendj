@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.11,<3.13"
 # dependencies = [
 #     "beat-this==1.1.0",
 #     "torch==2.14.0",
@@ -9,11 +9,21 @@
 #     "soundfile==0.14.0",
 # ]
 # [tool.uv.sources]
-# torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-# torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+# torch = [
+#     { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+#     { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+# ]
+# torchaudio = [
+#     { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+#     { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+# ]
 # [[tool.uv.index]]
 # name = "pytorch-cpu"
 # url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
+# [[tool.uv.index]]
+# name = "pytorch-cu126"
+# url = "https://download.pytorch.org/whl/cu126"
 # explicit = true
 # ///
 """Beat This! 1.1.0 as the backfill beat/downbeat producer for the beatgrid lane.
@@ -27,6 +37,23 @@ actually names -- nucbox-wsl has 32 cores and no NVIDIA GPU, and agentbox has
 none either -- so the producer could not run where it is supposed to run,
 while working fine on this Mac. Measured Wed 9 Sep 2026 on nucbox-wsl: the pin
 resolves torch 2.14.0+cpu with torchaudio 2.11.0+cpu and the runner completes.
+
+WINDOWS NEEDS ITS OWN CUDA INDEX, cu126: without an explicit override here,
+`torch`/`torchaudio` resolve to whatever default PyPI publishes for win32,
+which on a CUDA-equipped Windows box is CPU-only -- never the acceleration
+that box actually has (the same reasoning the linux pytorch-cpu pin above
+already applies, in the opposite direction). `pytorch-cu124` was tried
+first and reverted before merge: it publishes torch only up to 2.6.0, so
+torch==2.14.0 never resolves there for ANY Python version -- confirmed
+against the index directly (download.pytorch.org/whl/cu124/torch/), not
+inferred. `pytorch-cu126` carries both torch 2.14.0 and torchaudio 2.11.0
+win_amd64 wheels. Separately, an open-ended `requires-python` makes `uv
+export --script --locked` (a UNIVERSAL resolve across every marker
+environment the range implies, not just the active interpreter) fail on
+the python_full_version >= '3.12' split the moment win32 has ANY
+exact-pinned index at all, because it also tries to satisfy that split --
+`scripts/stem_bundle_worker.py` already caps its own range for the same
+reason, so this runner's cap matches that precedent, not a new pattern.
 
 A PEP 723 SCRIPT, NOT A REPO MODULE. torch and the model weights never enter
 the repo venv (CLAUDE.md). Everything downstream of the beat times -- the

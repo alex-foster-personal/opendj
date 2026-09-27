@@ -465,6 +465,7 @@ test('run notes open on the newest run and are untracked against a refetch', () 
 // - if the perf section moves above the farm cards or below the ratchet then
 //   the dashboard order the maintainer asked for (farm, then perf) is lost
 
+// REQ: PERF-DASH-01
 test('the perf ledger parse keeps the start date and the undeclared list', () => {
 	const raw = {
 		since_label: 'Wed 22 Jul 2026',
@@ -483,6 +484,7 @@ test('the perf ledger parse keeps the start date and the undeclared list', () =>
 	);
 });
 
+// REQ: PERF-DASH-01
 test('perf KPI cards are the second card set: after the farm cards, before the ratchet', () => {
 	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
 	const farm = source.indexOf('<h3>Demucs farm KPI ledger</h3>');
@@ -491,6 +493,13 @@ test('perf KPI cards are the second card set: after the farm cards, before the r
 	assert.ok(farm > 0 && perf > farm && ratchet > perf, `order farm=${farm} perf=${perf} ratchet=${ratchet}`);
 	assert.match(source, /fetchPerfKpiLedger\(\)/);
 	assert.match(source, /perf\.sinceLabel/, 'the time period must be stated from the first measurement');
+});
+
+// REQ: PERF-DASH-01
+test('an undeclared KPI paints an UNDECLARED banner, not a plotted number', () => {
+	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
+	assert.match(source, /\{#if perf\.undeclared\.length > 0\}/);
+	assert.match(source, /UNDECLARED: \{perf\.undeclared\.join\(', '\)\}/);
 });
 
 // PERF-DASH-02: perf sparklines use calendar-date x; farm cards stay index-spaced.

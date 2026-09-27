@@ -92,6 +92,7 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	}
 });
 
+// REQ: LIBM-95
 test('Add to playlist opens the picker and Escape closes it', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
@@ -107,6 +108,7 @@ test('Add to playlist opens the picker and Escape closes it', async ({ page }) =
 	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toHaveCount(0);
 });
 
+// REQ: DECKUX-18
 test('a mounted context menu does not steal arrows after focus leaves it', async ({ page }) => {
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });

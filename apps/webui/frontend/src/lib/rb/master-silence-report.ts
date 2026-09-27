@@ -24,6 +24,7 @@
 
 import { recordPerfEvent, readPerfEvents } from '$lib/rb/perf-event-log';
 import {
+	SILENCE_RMS_FLOOR,
 	SILENT_WHILE_PLAYING_MS,
 	foldSilenceSample,
 	type SilenceState,
@@ -185,9 +186,13 @@ export function noteMasterSilence(
 		_lastMasterRms = masterRms;
 		_lastMasterRmsAtMs = Date.now();
 	}
-	const sourceSnaps = _readSilenceSource?.() ?? [];
-	const source_explains_silence =
-		sourceSnaps.length > 0 && claimedLiveSourceIsSilent(sourceSnaps);
+	const claimedLive = playing || _anyDeckAudible(ctx);
+	let source_explains_silence = false;
+	if (analyser !== null && claimedLive && masterRms < SILENCE_RMS_FLOOR) {
+		const sourceSnaps = _readSilenceSource?.() ?? [];
+		source_explains_silence =
+			sourceSnaps.length > 0 && claimedLiveSourceIsSilent(sourceSnaps);
+	}
 	_state = foldSilenceSample(_state, {
 		playing,
 		audible: _anyDeckAudible(ctx),
