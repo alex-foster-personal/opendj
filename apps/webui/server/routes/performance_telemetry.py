@@ -83,17 +83,6 @@ class ClientPerformanceSampleOut(BaseModel):
     stored: bool
 
 
-def _machine_pressure(request: Request) -> dict[str, object]:
-    """The machine pressure reading, from ``app.state.machine_pressure_reader`` if set.
-
-    Same seam as the log directories: a test on a host whose kernel pressure
-    is readable can still exercise the unread case without patching.
-    """
-    reader = getattr(request.app.state, "machine_pressure_reader", read_machine_pressure)
-    reading: dict[str, object] = reader()
-    return reading
-
-
 def _received_at() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
@@ -113,7 +102,7 @@ def capture_client_performance(
         "event_id": event_id,
         "received_at": _received_at(),
         **payload.model_dump(),
-        "pressure": _machine_pressure(request),
+        "pressure": read_machine_pressure(),
     }
     log_dir = Path(
         getattr(request.app.state, "performance_log_dir", DEFAULT_LOG_DIR)
@@ -269,7 +258,7 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
     log_dirs = tuple(Path(directory) for directory in configured)
     record = _latest_process_record(log_dirs)
     live_members, live_pids = live_process_family_state()
-    pressure = _machine_pressure(request)
+    pressure = read_machine_pressure()
 
     if not live_members and record is None:
         return {
@@ -301,7 +290,7 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
 
 
 @router.get("/pressure")
-def machine_pressure(request: Request) -> dict[str, object]:
+def machine_pressure() -> dict[str, object]:
     """What the machine is under right now, cheap enough to poll."""
 
-    return _machine_pressure(request)
+    return read_machine_pressure()

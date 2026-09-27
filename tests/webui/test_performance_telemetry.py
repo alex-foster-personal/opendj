@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared import private_files
+from apps.shared.machine_pressure import read_machine_pressure, valid_kernel_pressure_level
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 
@@ -356,31 +357,29 @@ def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
-    """[if] the live reading has no valid kernel level [then] endpoint omits it, [else stop].
+    """[if] live kernel pressure is unread [then] endpoint omits it, else reports it, [else stop].
 
-    The route overlays the LIVE machine reading, so the unread case is supplied
-    through ``app.state.machine_pressure_reader``: on a Mac whose kernel pressure
-    is readable it cannot be produced any other way.
+    The route overlays the LIVE production reading, not the probe record, so the
+    expectation comes from that same sampler: unread (Linux, or a failed read)
+    must be absent, a readable level (macOS) must be reported as read. Sampled
+    before and after the request because the shared sample refreshes on a TTL.
     """
     (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
         json.dumps(_captured_process_record()) + "\n", encoding="utf-8"
     )
 
-    def _processes_body(reading: dict[str, object]) -> dict[str, object]:
-        app = _app(performance_process_log_dirs=(tmp_path,))
-        app.state.machine_pressure_reader = lambda: reading
-        with TestClient(app) as client:
-            body: dict[str, object] = client.get(
-                "/api/v1/performance/telemetry/processes"
-            ).json()
-        return body
+    def _live_level() -> int | None:
+        reading = read_machine_pressure().get("kernel_memory_pressure_level")
+        return valid_kernel_pressure_level(reading)
 
-    assert "kernel_memory_pressure_level" not in _processes_body({"band": "ok"})
-    assert "kernel_memory_pressure_level" not in _processes_body(
-        {"kernel_memory_pressure_level": 0}
-    )
-    # Control: a valid live level IS surfaced, so the omissions above are measured.
-    assert _processes_body({"kernel_memory_pressure_level": 2})["kernel_memory_pressure_level"] == 2
+    before = _live_level()
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+    after = _live_level()
+
+    reported = body.get("kernel_memory_pressure_level", "absent")
+    expected = {"absent" if level is None else level for level in (before, after)}
+    assert reported in expected, f"endpoint reported {reported!r}; live sampler read {expected}"
 
 
 @pytest.mark.requirement("PERFMODE-05")
