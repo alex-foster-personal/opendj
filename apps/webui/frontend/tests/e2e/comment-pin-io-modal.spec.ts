@@ -29,6 +29,35 @@ async function readParkedDraftAnchor(page: import('@playwright/test').Page): Pro
 	});
 }
 
+async function expectDraftBubbleAboveModal(
+	page: import('@playwright/test').Page,
+	modal: import('@playwright/test').Locator
+): Promise<void> {
+	const bubble = page.locator('.fb-bubble');
+	await expect(bubble).toBeVisible({ timeout: 5_000 });
+	const bubbleBox = await bubble.boundingBox();
+	expect(bubbleBox).not.toBeNull();
+	const center = {
+		x: bubbleBox!.x + bubbleBox!.width / 2,
+		y: bubbleBox!.y + bubbleBox!.height / 2
+	};
+	const hitBubble = await page.evaluate(({ x, y }) => {
+		const el = document.elementFromPoint(x, y);
+		return el?.closest('.fb-bubble') !== null;
+	}, center);
+	expect(hitBubble, 'draft bubble must paint above the modal').toBe(true);
+	const modalBox = await modal.boundingBox();
+	expect(modalBox).not.toBeNull();
+	const modalCoversBubbleCenter =
+		center.x >= modalBox!.x &&
+		center.x <= modalBox!.x + modalBox!.width &&
+		center.y >= modalBox!.y &&
+		center.y <= modalBox!.y + modalBox!.height;
+	if (modalCoversBubbleCenter) {
+		expect(hitBubble, 'bubble center must not be occluded by modal when overlapping').toBe(true);
+	}
+}
+
 test.describe('comment pin on Audio I/O modal', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto('/performance');
@@ -45,8 +74,9 @@ test.describe('comment pin on Audio I/O modal', () => {
 		const menu = page.locator('.hp-menu');
 		await expect(menu).toBeVisible();
 
-		// Topbar pin, not FB-18c's dock pin of the same name (#3981).
-		await page.getByRole('banner').getByRole('button', { name: 'Drop a comment pin' }).click();
+		const dockPin = page.locator('.fb-dock .fb-shell-pin');
+		await expect(dockPin).toBeVisible();
+		await dockPin.click();
 		await expect
 			.poll(async () => (await readFeedbackState(page)).placementArmed)
 			.toBe(true);
@@ -57,7 +87,7 @@ test.describe('comment pin on Audio I/O modal', () => {
 		expect(box).not.toBeNull();
 		await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
 
-		await expect(page.locator('.fb-bubble')).toBeVisible({ timeout: 5_000 });
+		await expectDraftBubbleAboveModal(page, menu);
 		// An empty draft is never parked (persistParkedPinDraft), so type first.
 		await page.locator('.fb-bubble-text').fill('io modal anchor probe');
 		await expect
@@ -126,7 +156,7 @@ test.describe('comment pin on Audio I/O modal', () => {
 		expect(box).not.toBeNull();
 		await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
 
-		await expect(page.locator('.fb-bubble')).toBeVisible({ timeout: 5_000 });
+		await expectDraftBubbleAboveModal(page, settings);
 		// An empty draft is never parked (persistParkedPinDraft), so type first.
 		await page.locator('.fb-bubble-text').fill('settings anchor probe');
 		await expect
@@ -134,6 +164,13 @@ test.describe('comment pin on Audio I/O modal', () => {
 				message: 'draft anchor must name an element inside Settings'
 			})
 			.toMatch(/so-search|Search settings|Settings/i);
+
+		const support = page.getByRole('button', { name: 'Open support and feedback' });
+		await expect(support).toBeVisible();
+		await support.click();
+		await expect(page.getByRole('dialog', { name: 'Support and feedback' })).toBeVisible({
+			timeout: 5_000
+		});
 	});
 
 	test('feedback explainer does not overlap the open Audio I/O menu', async ({ page }) => {
