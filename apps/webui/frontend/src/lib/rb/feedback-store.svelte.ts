@@ -541,14 +541,15 @@ export async function refreshPins(): Promise<void> {
     // than what this GET started from, so applying this snapshot now would
     // roll the board back.
     if (data && generation === _pinGeneration) feedbackState.pins = data.comments;
-    if (generation === _pinGeneration) await _refreshPinSummary();
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       feedbackState.availability = "missing";
       return;
     }
     // stays on the last-known board; polling itself never surfaces an error
+    return;
   }
+  if (generation === _pinGeneration) await _refreshPinSummary();
 }
 
 export function startPinWatch(): void {

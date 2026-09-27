@@ -57,13 +57,18 @@ const EMPTY_PIN_SUMMARY = {
   },
 };
 
+function feedbackPathname(request) {
+  const { pathname } = new URL(request.url);
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
 function mockFeedbackFetch(handlers) {
   return async (request) => {
-    const { pathname } = new URL(request.url);
-    if (pathname.endsWith("/api/v1/feedback/comments/summary")) {
+    const pathname = feedbackPathname(request);
+    if (pathname === "/api/v1/feedback/comments/summary") {
       return handlers.summary?.() ?? jsonResponse(EMPTY_PIN_SUMMARY);
     }
-    if (pathname.endsWith("/api/v1/feedback/comments")) {
+    if (pathname === "/api/v1/feedback/comments") {
       return handlers.comments(request);
     }
     throw new Error(`unexpected feedback poll fetch: ${pathname}`);
@@ -119,7 +124,7 @@ test("refreshPins GETs comments and replaces feedbackState.pins", async () => {
   store.feedbackState.pins = [{ id: "abc123", status: "open" }];
   await store.refreshPins();
 
-  assert.equal(seen.url, `${API_BASE}/api/v1/feedback/comments`);
+  assert.equal(feedbackPathname(seen), "/api/v1/feedback/comments");
   assert.equal(seen.method, "GET");
   assert.deepEqual(store.feedbackState.pins, fresh);
 });
