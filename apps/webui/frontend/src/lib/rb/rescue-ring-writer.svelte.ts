@@ -38,7 +38,12 @@ const TRANSPORT_COMMANDS = new Set<PerformanceCommand['type']>([
 	'output_mode',
 	'headphone_mix',
 	'headphone_level',
-	'channel_cue'
+	'channel_cue',
+	// RESCUE-05: a sink picked while nothing plays must still reach the ring;
+	// the periodic snapshot only runs while a deck is playing.
+	'headphone_output_select',
+	'headphone_master_select',
+	'headphone_output_acquire'
 ]);
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
