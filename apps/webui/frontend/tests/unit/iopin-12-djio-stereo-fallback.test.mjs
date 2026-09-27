@@ -21,6 +21,9 @@
 //   3/4 (control: a fix that always falls back to stereo fails here)
 // [if] graph construction throws once [then] the next build starts from a fresh
 //   context and every deck is wired [⛔️ if the half-built context is reused]
+// [if] that throw happens inside a headphone or master output selection [then]
+//   the selection rejects with the build's own error and the I/O panel error is
+//   set [⛔️ if it reports "stale headphone operation" instead]
 // [if] the page is already on ?djio= (including a stereo-fallback page) or on
 //   ?extroute= [then] the controller redirect does not fire again [⛔️ if
 //   location.replace can loop or produce a URL whose graph cannot build]
@@ -187,6 +190,7 @@ let topology;
 let audio;
 let stores;
 let status;
+let player;
 
 before(async () => {
 	installWindow('');
@@ -198,6 +202,7 @@ before(async () => {
 	audio = entry.audio;
 	stores = entry.stores;
 	status = entry.status;
+	player = entry.player;
 });
 
 beforeEach(async () => {
@@ -340,6 +345,101 @@ describe('IOPIN-12: a failed graph build never leaves a deck dead', () => {
 		const retry = FakeAudioContext.instances.at(-1);
 		assert.notEqual(audio.peekDeckFaderGain(2), null, 'deck 2 has a channel graph to load into');
 		assert.ok(retry.edges.every((edge) => edge.to.kind === undefined || edge.to.context === retry), 'nothing from the failed context is wired into the retry');
+	});
+});
+
+//-----------------------------------------------------------------------------
+// a failed build inside an output selection reports ITS cause
+//-----------------------------------------------------------------------------
+
+describe('IOPIN-12: a graph build that fails inside an output selection reports its real cause', () => {
+	const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	// The selections build the graph lazily through the engine's monitor source,
+	// inside their own try block. Both triggers below are real URL-borne ones.
+	const cases = [
+		{
+			name: 'selectHeadphoneOutput with ?djio=bogus',
+			select: (id) => audio.engine.selectHeadphoneOutput(id),
+			search: '?djio=bogus',
+			channels: 2,
+			expected: /^headphone output selection failed: djio: unsupported profile 'bogus'/
+		},
+		{
+			name: 'selectMasterOutput with ?extroute=1:3 on a 2-channel output',
+			select: (id) => audio.engine.selectMasterOutput(id),
+			search: '?extroute=1:3',
+			channels: 2,
+			expected: /^master output selection failed: extroute needs 4 output channels but the current output device exposes 2/
+		}
+	];
+
+	beforeEach(() => {
+		// A device-selection API double, as the browser presents it: the build
+		// throws before any sink call is made, so no sink method is reached.
+		const mediaDevices = { enumerateDevices: async () => [], addEventListener() {}, removeEventListener() {} };
+		Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices }, configurable: true, writable: true });
+		player.mixerState.headphones.outputs = [{ id: 'dev-a', label: 'dev-a' }];
+	});
+
+	afterEach(() => {
+		if (savedNavigator === undefined) delete globalThis.navigator;
+		else Object.defineProperty(globalThis, 'navigator', savedNavigator);
+		const hp = player.mixerState.headphones;
+		hp.outputs = [];
+		hp.error = null;
+		hp.selected_output_device_id = null;
+		hp.selected_master_output_device_id = null;
+		hp.routes = { master: { state: 'default', selected: false }, cue: { state: 'default', selected: false } };
+	});
+
+	for (const { name, select, search, channels, expected } of cases) {
+		test(`IOPIN-12: ${name} rejects with the build's own error and sets the I/O panel error`, async () => {
+			installWindow(search);
+			FakeAudioContext.maxChannelCount = channels;
+			await assert.rejects(
+				select('dev-a'),
+				(error) => {
+					assert.match(
+						error.message,
+						expected,
+						'if the discard retires the selection it ran inside then it reports "stale headphone operation" and drops the real cause - broken'
+					);
+					return true;
+				}
+			);
+			assert.match(
+				player.mixerState.headphones.error ?? '',
+				expected,
+				'if headphones.error stays null then the I/O panel shows no reason for the failed selection - broken'
+			);
+			assert.equal(audio.gigDeckGraphIsPresent(), false, 'the failed build is still discarded');
+			installWindow('');
+			await audio.ensureAudioGraphForCue();
+			assert.deepEqual(wiredDecks(), [1, 2, 3, 4], 'and the next build still wires every deck');
+		});
+	}
+
+	test('IOPIN-12 control: route teardown still retires a selection in flight, so it cannot publish onto the next route', async () => {
+		// The overshoot of the fix above: a failed build must not retire the
+		// selection it runs in, but teardown still must, or a sink call that
+		// lands after the route is gone publishes onto whatever mounts next.
+		installWindow('');
+		let landSink = null;
+		FakeAudioContext.prototype.setSinkId = () => new Promise((resolve) => { landSink = resolve; });
+		try {
+			const pending = audio.engine.selectMasterOutput('dev-a');
+			assert.equal(typeof landSink, 'function', 'precondition: the selection is parked on setSinkId');
+			await audio.engine.dispose();
+			landSink();
+			await assert.rejects(
+				pending,
+				/stale headphone operation/,
+				'if teardown stops retiring in-flight selections then a late sink publishes onto a disposed route - broken'
+			);
+			assert.equal(player.mixerState.headphones.selected_master_output_device_id, null, 'the retired selection published nothing');
+		} finally {
+			delete FakeAudioContext.prototype.setSinkId;
+		}
 	});
 });
 

@@ -256,6 +256,7 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	releaseHeadphoneGraphOfFailedBuild,
 	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
 	selectMasterOutput as selectMonitorMasterOutput,
@@ -716,7 +717,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 				masterGain: _masterGain,
 				context: _ctx
 			}),
-		resetGraphState: _resetGraphState,
+		resetGraphState: () => _resetGraphState(disposeHeadphoneMonitor),
 		ensureGraph: () => _ensureGraph(),
 		resetPresentation: (deck, positionSec) => {
 			_rt[deck].presentation = createPresentedTransportTimeline(positionSec);
@@ -753,9 +754,10 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 	await _resumeContext();
 }
 
-/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing. */
-function _resetGraphState(): void {
-	disposeHeadphoneMonitor();
+/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing. A rebuild passes
+ * disposeHeadphoneMonitor (retires in-flight headphone operations); a failed build must not (IOPIN-12). */
+function _resetGraphState(releaseHeadphones: () => void): void {
+	releaseHeadphones();
 	_rafId = null;
 	_masterGain = null;
 	releaseMasterMeterTap();
@@ -786,7 +788,7 @@ function _discardFailedGraph(): void {
 	if (_masterDelay !== null) nodes.push(_masterDelay);
 	disarmContextInstrumentation();
 	const closing = disposeAudioResources({ rafId: _rafId, processors: [], nodes, masterGain: _masterGain, context: failed });
-	_resetGraphState();
+	_resetGraphState(releaseHeadphoneGraphOfFailedBuild);
 	if (failed !== null) unregisterAudioContext(failed);
 	void closing.catch((error: unknown) => recordPerfEvent('audio-graph-discard-failed', `failed graph teardown: ${String(error)}`, null, 'error'));
 }

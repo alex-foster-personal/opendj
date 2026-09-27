@@ -1696,9 +1696,22 @@ export function disposeHeadphoneMonitor(): void {
 	_lastMonitorSource = undefined;
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
+	_unwatchHeadphoneDeviceChanges();
+	releaseHeadphoneGraphOfFailedBuild();
+}
+
+/**
+ * IOPIN-12: release the monitor graph of an engine graph build that THREW,
+ * and nothing else. The build ran lazily inside a headphone or master output
+ * selection (`monitorSource()` in its try block), so retiring in-flight
+ * operations here, as route teardown does, would make that selection's own
+ * catch report "stale headphone operation" in place of the build's real
+ * error. Route state (remembered cue, device watch, monitor source) belongs
+ * to the still-mounted route and is kept for the next build.
+ */
+export function releaseHeadphoneGraphOfFailedBuild(): void {
 	_masterDelayNode = null;
 	_multichannelMonitorActive = false;
-	_unwatchHeadphoneDeviceChanges();
 	_disposeHeadphoneGraph();
 }
 
