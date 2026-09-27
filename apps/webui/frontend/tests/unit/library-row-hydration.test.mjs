@@ -56,8 +56,7 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 		'lib/player/beatgrid-upgrade.ts',
 		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
 	],
-	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row'],
-	['lib/rb/performance-ipc.svelte.ts', 'deck load']
+	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row']
 ]);
 
 let rowVocals;

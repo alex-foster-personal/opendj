@@ -65,7 +65,6 @@ import { createPairing } from '$lib/api';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
-import { ensureAnlzPrefetch } from '$lib/components/rb/wave/anlz-cache.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
@@ -1960,7 +1959,6 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// for the origin's six connections (PERF-R6). The beacon is a
 		// counter, not a lock -- it cannot fail the load, and the scheduler
 		// releases on its own ceiling if a load never settles.
-		ensureAnlzPrefetch(command.stable_id);
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
 			const loadOptions = command.stems === undefined ? undefined : { stems: command.stems };
