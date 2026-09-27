@@ -27,6 +27,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import type { PerformanceCommand, PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import { MASTER_READY_TIMEOUT_MS } from './support/preview-cue-master-ready';
 
 const TRACK_ROW = '[data-testid="track-row"]';
 
@@ -183,7 +184,10 @@ test('clicking the mini-waveform of the track on air previews it and leaves the 
 				const deck = (await _query(page)).decks[1];
 				return deck.playing && deck.is_master && deck.position_ms > 500;
 			},
-			{ timeout: 30_000, message: 'deck 1 must be playing, master and moving before the click' }
+			{
+				timeout: MASTER_READY_TIMEOUT_MS,
+				message: 'deck 1 must be playing, master and moving before the click'
+			}
 		)
 		.toBe(true);
 
