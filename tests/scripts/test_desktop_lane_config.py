@@ -148,6 +148,8 @@ def test_arch_is_refused_rather_than_defaulted() -> None:
 
 
 # ----- the real config ---------------------------------------------------
+# REQ: INSTALL-16
+@pytest.mark.requirement("INSTALL-16")
 def test_shipped_config_does_not_ask_tauri_for_a_dmg() -> None:
     """#1711: Tauri's dmg target cannot be built where nobody is logged in.
 
@@ -165,6 +167,8 @@ def test_shipped_config_does_not_ask_tauri_for_a_dmg() -> None:
 
     Bundling itself must stay ON: with ``active`` false there is no .app at
     all and the recipe has nothing to package.
+
+    [if] the desktop config ships [then] Tauri is not asked for a dmg, [else stop].
     """
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     assert conf["bundle"]["active"] is True
@@ -191,6 +195,8 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
+# REQ: INSTALL-16
+@pytest.mark.requirement("INSTALL-16")
 def test_the_image_is_created_outside_the_signing_branch() -> None:
     """An unsigned run must still produce the artifact.
 
@@ -204,6 +210,8 @@ def test_the_image_is_created_outside_the_signing_branch() -> None:
 
     Nesting is what this asserts: the create must sit at the same indent
     as the signing branch, so it belongs to neither arm of it.
+
+    [if] a run is unsigned [then] hdiutil still creates the image, [else stop].
     """
     body = _dmg_recipe_body()
     creates = [line for line in body if line.strip().startswith("hdiutil create")]
