@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from apps.open_dj import SCHEMA_VERSION
@@ -61,6 +62,14 @@ class RBTrackInput:
     ``(size_bytes, mtime, file_path)`` and marks the track with
     ``x_content_hash_mode = "inferred"``.
     """
+    updated_at: datetime | None = None
+    """The rekordbox DjmdContent row's own ``updated_at`` (StatsFull mixin,
+    ``onupdate=datetime.now`` -- rekordbox stamps this itself whenever the
+    row changes). This is the SOURCE timestamp for the ``bpm``/``key``/
+    ``rating`` provenance envelopes: it says when rekordbox last touched
+    the value, not when this tool happened to run an export. Required
+    whenever ``bpm``/``key``/``rating`` is set -- see ``_build_track``.
+    """
 
 
 @dataclass(slots=True)
@@ -97,6 +106,7 @@ def from_rbtrack(rb) -> RBTrackInput:
         bpm=rb.bpm,
         rating=rb.rating,
         genre=rb.genre,
+        updated_at=rb.updated_at,
     )
 
 
@@ -194,12 +204,7 @@ def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
         track["isrc"] = normalised
     if t.size_bytes is not None:
         track["size_bytes"] = int(t.size_bytes)
-    if t.bpm is not None:
-        track["bpm"] = wrap(float(t.bpm), source="rekordbox")
-    if t.key:
-        track["key"] = wrap(t.key, source="rekordbox")
-    if t.rating is not None:
-        track["rating"] = wrap(int(t.rating), source="rekordbox")
+    _apply_provenance_fields(track, t)
     if t.beatgrid:
         track["beatgrid"] = dict(t.beatgrid)
     if include_cues and t.cue_points:
@@ -210,6 +215,42 @@ def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
         track["x_content_hash_mode"] = "inferred"
     cues = len(track.get("cue_points", []))
     return track, cues
+
+
+def _apply_provenance_fields(track: dict, t: RBTrackInput) -> None:
+    """Wrap ``bpm``/``key``/``rating`` in a ``ProvenanceValue`` stamped
+    from the rekordbox row's own ``updated_at`` -- see ``RBTrackInput
+    .updated_at``'s docstring. Split out of ``_build_track`` to keep that
+    function's branching under the repo's cyclomatic-complexity ratchet.
+    """
+    if t.bpm is None and not t.key and t.rating is None:
+        return
+    source_modified_at = t.updated_at
+    if source_modified_at is None:
+        # RuntimeError, not ValueError: build_library() catches
+        # ValueError per-track to skip malformed rows and keep exporting
+        # the rest (see the `except ValueError` there). A missing
+        # provenance timestamp is a caller/config bug, not a per-track
+        # data-quality issue -- letting it collapse to a buried warning
+        # would silently ship a wrong-by-construction export (exactly
+        # the failure mode this fix exists to close).
+        raise RuntimeError(
+            f"track {t.rb_id}: bpm/key/rating is set but no updated_at "
+            "timestamp is available. Rekordbox's DjmdContent row always "
+            "carries one (StatsFull.updated_at) -- populate "
+            "RBTrackInput.updated_at from it rather than letting the "
+            "provenance envelope silently stamp the wall clock."
+        )
+    if t.bpm is not None:
+        track["bpm"] = wrap(
+            float(t.bpm), source="rekordbox", modified_at=source_modified_at
+        )
+    if t.key:
+        track["key"] = wrap(t.key, source="rekordbox", modified_at=source_modified_at)
+    if t.rating is not None:
+        track["rating"] = wrap(
+            int(t.rating), source="rekordbox", modified_at=source_modified_at
+        )
 
 
 def _content_hash(t: RBTrackInput) -> tuple[str, bool]:

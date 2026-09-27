@@ -1,6 +1,9 @@
 """Tests for :mod:`apps.open_dj.adapters.rekordbox`."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from unittest.mock import patch
+
 import pytest
 
 from apps.open_dj.adapters.rekordbox import (
@@ -10,6 +13,12 @@ from apps.open_dj.adapters.rekordbox import (
 )
 from apps.open_dj.canon import to_canonical_bytes
 from apps.open_dj.validate import validate_document
+
+# Fixed rekordbox-side "row last touched" timestamp. Deliberately not
+# "now" anywhere in this file: the whole point of OPEN-02's provenance
+# envelope is that it reports when ROW was last modified, not when the
+# export happened to run.
+_RB_UPDATED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
 
 
 def _rb_track(**overrides) -> RBTrackInput:
@@ -25,6 +34,7 @@ def _rb_track(**overrides) -> RBTrackInput:
         mtime=1700000000.0,
         bpm=128.0,
         rating=5,
+        updated_at=_RB_UPDATED_AT,
     )
     defaults.update(overrides)
     return RBTrackInput(**defaults)
@@ -43,6 +53,45 @@ class TestExport:
         a = to_canonical_bytes(build_library([_rb_track()]).document)
         b = to_canonical_bytes(build_library([_rb_track()]).document)
         assert a == b
+
+    def test_export_never_touches_wall_clock(self) -> None:
+        """Regression for PR #4119 fast-tier CI flake.
+
+        ``test_export_deterministic`` above only proves the bug is gone if
+        the two calls actually risk landing in different wall-clock
+        seconds -- which is exactly what flaked: two exports of the same
+        untouched library disagreed on bytes because ``bpm``/``rating``
+        ``modified_at`` was silently stamped from ``datetime.now()``
+        rather than the rekordbox row's own ``updated_at``. Make
+        ``datetime.now()`` explode if the export path ever calls it, then
+        prove two calls still produce byte-identical output.
+        """
+        with patch("apps.open_dj.provenance.datetime") as fake_dt:
+            fake_dt.now.side_effect = AssertionError(
+                "export path must not call datetime.now() -- modified_at "
+                "must come from the source row (PR #4119 regression)"
+            )
+            a = to_canonical_bytes(build_library([_rb_track()]).document)
+            b = to_canonical_bytes(build_library([_rb_track()]).document)
+        fake_dt.now.assert_not_called()
+        assert a == b
+
+    def test_export_raises_when_provenance_field_missing_source_timestamp(
+        self,
+    ) -> None:
+        """Fail fast: a track with bpm/key/rating but no updated_at must
+        error loudly rather than have the export silently substitute the
+        wall clock for the missing rekordbox-side timestamp."""
+        with pytest.raises(RuntimeError, match="updated_at"):
+            build_library([_rb_track(updated_at=None)], include_cues=False)
+
+    def test_bpm_and_rating_modified_at_matches_source_row(self) -> None:
+        """Control: modified_at carries the INTENDED value (the source
+        row's updated_at), not merely *some* timestamp."""
+        result = build_library([_rb_track()])
+        track = result.document["tracks"][0]
+        assert track["bpm"]["modified_at"] == "2026-01-05T12:30:00Z"
+        assert track["rating"]["modified_at"] == "2026-01-05T12:30:00Z"
 
     def test_track_id_matches_stable_id(self) -> None:
         """D2: exported track_id == apps.shared.state.ids.stable_id for the same ISRC."""
