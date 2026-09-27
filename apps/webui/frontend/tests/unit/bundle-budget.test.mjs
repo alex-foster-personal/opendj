@@ -131,18 +131,19 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 259072: the inherited 256000 plus three reviewed KiB', () => {
+test('the library limit is exactly 261120: the inherited 256000 plus five reviewed KiB', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 259072,/,
+    /\{ name: 'library', limit: 261120,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
+  assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

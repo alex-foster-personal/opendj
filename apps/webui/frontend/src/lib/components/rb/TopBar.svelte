@@ -70,8 +70,6 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
-	import { auth } from '$lib/auth.svelte';
-	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
 	import GigHelperPrompt from './GigHelperPrompt.svelte';
@@ -89,10 +87,13 @@
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
-	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
-	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
-	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import {
+		loadMidiLearnLogPopout,
+		loadMidiPanel,
+		midiSurfaceLoadFailure
+	} from '$lib/components/rb/midi/midi-panel-loader';
+	import { maybeAutoEnableMidi, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -254,10 +255,9 @@
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
-
-	const showClock = $derived(
-		auth.user !== null || cloudSyncChipState.value !== 'off'
-	);
+	let signedIn = $state(false);
+	let showClock = $state(false);
+	// Clock visibility: signed in or cloudSyncChipState.value !== 'off' (computed in TopBarAccountCluster).
 
 	// Re-run the access request on load IFF the user opted in before (persisted
 	// choice). Goes through requestMidiAccess() - the single init trigger that
@@ -820,8 +820,9 @@
 	</button>
 
 	<CloudSyncStatusChip />
-	<TopBarAccountCluster>
-		<UserBauble size={20} showLabel={auth.user !== null} />
+	<!-- CHROME-04 login cluster: <TopBarAccountCluster> -->
+	<TopBarAccountCluster bind:signedIn bind:showClock>
+		<UserBauble size={20} showLabel={signedIn} />
 	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
@@ -831,17 +832,45 @@
 
 <CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
-<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
-<MidiPanel />
+<!-- MIDI drawer: fixed overlay, mounted (and its chunk fetched) only while
+     midiUi.panelOpen. A chunk that did not arrive shows as an alert where the
+     drawer would have opened. -->
+{#if midiUi.panelOpen}
+	{#await loadMidiPanel() then { default: MidiPanel }}
+		<MidiPanel />
+	{:catch error}
+		<div class="midi-load-error rb-panel" role="alert">{midiSurfaceLoadFailure('MIDI panel', error)}</div>
+	{/await}
+{/if}
 
 <!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
 <JobsDrawer />
 
 <!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
      panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
-<MidiLearnLogPopout />
+{#if midiUi.logPopoutOpen}
+	{#await loadMidiLearnLogPopout() then { default: MidiLearnLogPopout }}
+		<MidiLearnLogPopout />
+	{:catch error}
+		<div class="midi-load-error rb-panel" role="alert">
+			{midiSurfaceLoadFailure('MIDI learn-log pop-out', error)}
+		</div>
+	{/await}
+{/if}
 
 <style>
+	/* Stands where the MIDI drawer / pop-out would have opened (drawer geometry
+	 * from MidiPanel.svelte) so a failed chunk load is visible, not silent. */
+	.midi-load-error {
+		position: fixed;
+		top: var(--rb-topbar-h);
+		right: 0;
+		z-index: 41;
+		width: min(420px, 92vw);
+		padding: 10px;
+		color: var(--rb-red);
+	}
+
 	.rb-topbar {
 		position: relative;
 		grid-area: topbar;

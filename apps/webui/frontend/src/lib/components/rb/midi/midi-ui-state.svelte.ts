@@ -37,10 +37,6 @@
  *       registry is not reloaded [then ⛔️] broken
  */
 
-import { initMidi } from '$lib/rb/midi/webmidi.svelte';
-import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
-import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
-import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
@@ -52,6 +48,17 @@ import {
 } from './midi-enabled-choice';
 
 export { midiEnabledPersisted };
+
+// The MIDI engine (device-map registry, action glue, takeover policy, installed
+// maps) is fetched on demand, not on first paint: nothing in it can act until
+// requestMidiAccess() has granted access, and most boots never connect a
+// controller. Every use below awaits this BEFORE initMidi() installs the port
+// message handlers, so the maps are registered and the glue is attached before
+// any MIDI message can be dispatched, exactly as with a static import. The
+// import() promise is module-cached, so this costs one fetch per page.
+function _loadMidiEngine(): Promise<typeof import('$lib/rb/midi/midi-engine')> {
+	return import('$lib/rb/midi/midi-engine');
+}
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -70,6 +77,7 @@ let _installedMapsLiveRefreshArmed = false;
 // writing the same registry.
 const _reloadInstalledMaps = coalesce(async () => {
 	try {
+		const { loadInstalledDeviceMaps } = await _loadMidiEngine();
 		await loadInstalledDeviceMaps();
 		midiUi.installedMapsError = null;
 	} catch (exc) {
@@ -199,6 +207,8 @@ export async function requestMidiAccess(): Promise<void> {
 	midiUi.requestPending = true;
 	let attachedForThisRequest = false;
 	try {
+		const { initMidi, registerAllDeviceMaps, attachMidiGlue, loadInstalledDeviceMaps } =
+			await _loadMidiEngine();
 		if (!_mapsRegistered) {
 			registerAllDeviceMaps();
 			_mapsRegistered = true;

@@ -169,7 +169,7 @@ import {
 import {
 	midiTakeoverUi,
 	setMidiTakeoverMode
-} from '$lib/rb/midi/takeover-state.svelte';
+} from '$lib/rb/midi/takeover-ui.svelte';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on

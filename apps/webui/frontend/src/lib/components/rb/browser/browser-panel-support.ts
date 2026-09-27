@@ -70,3 +70,15 @@ export function isRemovedStickRow(row: {
 export function usbPaneSource(): Promise<typeof import('$lib/rb/usb-library.svelte')> {
 	return import('$lib/rb/usb-library.svelte');
 }
+
+// Re-exported so BrowserPanel.svelte, already coupled to this barrel, does not
+// take three more direct fan-out edges for IOPIN-01 keyboard nav and the MIDI
+// browse adapter.
+export { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
+export {
+	browserNavigationMayHandle,
+	browserSelectionDelta,
+	moveBrowserFocus,
+	type BrowserFocusZone
+} from '$lib/rb/browser-navigation';
+export { openIoView } from '$lib/rb/io-surface.svelte';

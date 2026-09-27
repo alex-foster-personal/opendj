@@ -87,7 +87,13 @@
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs,
 		usbPaneSource,
-		isRemovedStickRow
+		isRemovedStickRow,
+		registerBrowseAdapter,
+		browserNavigationMayHandle,
+		browserSelectionDelta,
+		moveBrowserFocus,
+		type BrowserFocusZone,
+		openIoView
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -115,13 +121,6 @@
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
-	import {
-		browserNavigationMayHandle,
-		browserSelectionDelta,
-		moveBrowserFocus,
-		type BrowserFocusZone
-	} from '$lib/rb/browser-navigation';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -170,7 +169,6 @@
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
-	import { openIoView } from '$lib/rb/io-surface.svelte';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {

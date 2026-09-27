@@ -5,8 +5,9 @@
  * Split out of the former lib/rb/types.ts god module.
  */
 
-import type { DeckId } from './deck-slots';
 import type { HeadphoneAlignmentMode } from '$lib/player/constants';
+import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
+import type { DeckId } from './deck-slots';
 
 /** EQ band selector for AudioEngine.setEq. */
 export type EqBand = 'low' | 'mid' | 'high';
@@ -181,6 +182,8 @@ export interface HeadphoneState {
 	supported: boolean;
 	active: boolean;
 	error: string | null;
+	/** Live output liveness verdict from the monitor path; absent until probed. */
+	liveness_verdict?: LivenessVerdict;
 }
 
 /** Whole mixer surface including the real headphone cue bus. */

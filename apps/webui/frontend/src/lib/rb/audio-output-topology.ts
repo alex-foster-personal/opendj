@@ -8,7 +8,7 @@
 
 import { DECK_IDS } from '$lib/player/constants';
 import type { DeckState } from '$lib/rb/deck-state-types';
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import type { MixerState } from '$lib/rb/mixer-types';
 
 export type DjOutputProfile = 'master12-cue34';

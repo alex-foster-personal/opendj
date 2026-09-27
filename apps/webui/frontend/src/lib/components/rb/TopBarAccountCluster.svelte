@@ -6,8 +6,18 @@
 	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
 	import { auth } from '$lib/auth.svelte';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
+	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 
-	let { children }: { children: Snippet } = $props();
+	let {
+		children,
+		signedIn = $bindable(false),
+		showClock = $bindable(false)
+	}: { children: Snippet; signedIn?: boolean; showClock?: boolean } = $props();
+
+	$effect(() => {
+		signedIn = auth.user !== null;
+		showClock = signedIn || cloudSyncChipState.value !== 'off';
+	});
 
 	const loginGatedBullets = [
 		'Google sign-in for account panel and CloudSync fleet adopt',

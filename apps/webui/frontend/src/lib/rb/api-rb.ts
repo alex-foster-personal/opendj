@@ -20,19 +20,13 @@ import { api, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
-import type { AnlzCue, AnlzData } from './anlz-types';
+import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
+export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
-import {
-	clearSessionHotCue,
-	restoreSessionHotCue,
-	saveSessionHotCue,
-	withSessionHotCues,
-	withSessionHotCueSlots
-} from './stick-session-edits';
-import { isUsbTrackId, refuseStickRead, trackApiPath } from './track-source';
+import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
 import { stemWorkSignal } from './stem-decode-policy';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
@@ -768,13 +762,13 @@ export async function fetchAnlzBypassingHttpCache(
  * payload stamped with any other id would make that loop spin (spec 4b). A
  * stick payload also carries this session's hot cue edits (decision 2), so
  * the waveform markers and the display loop match the pads. */
-function _checkedAnlz(stable_id: string, data: AnlzWithVocals): AnlzWithVocals {
+async function _checkedAnlz(stable_id: string, data: AnlzWithVocals): Promise<AnlzWithVocals> {
 	vocalsOf(data);
 	if (!isUsbTrackId(stable_id)) return data;
 	if (data.stable_id !== stable_id) {
 		throw new Error(`/anlz for ${stable_id} answered for ${data.stable_id}`);
 	}
-	return withSessionHotCues(stable_id, data);
+	return (await loadStickSessionEdits()).withSessionHotCues(stable_id, data);
 }
 
 /** GET /tracks/{sid} with `cache: 'reload'`, paired with
@@ -804,27 +798,12 @@ export async function fetchQualityLadder(): Promise<QualityRung[]> {
 // backend route param type rejects them with 422 before this client is
 // even asked to serialize one.
 
-export interface HotCueReversal {
-	reversal_id: string;
-}
-
-export interface HotCueMutation {
-	cue: AnlzCue | null;
-	revision: string;
-	reversal?: HotCueReversal;
-}
-
-export interface HotCueSlotState {
-	slot: HotCueSlot;
-	cue: AnlzCue | null;
-	revision: string;
-}
-
 /** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
  * stick track's slots carry this session's edits (decision 2). */
 export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
 	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
-	return isUsbTrackId(stable_id) ? withSessionHotCueSlots(stable_id, slots) : slots;
+	if (!isUsbTrackId(stable_id)) return slots;
+	return (await loadStickSessionEdits()).withSessionHotCueSlots(stable_id, slots);
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
@@ -837,7 +816,9 @@ export async function saveHotCue(
 	comment?: string | null
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
-	if (isUsbTrackId(stable_id)) return saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
+	if (isUsbTrackId(stable_id)) {
+		return (await loadStickSessionEdits()).saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
+	}
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		{ in_ms, comment: comment ?? null },
@@ -852,7 +833,7 @@ export async function clearHotCue(
 	revision: string
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
-	if (isUsbTrackId(stable_id)) return clearSessionHotCue(stable_id, slot, revision);
+	if (isUsbTrackId(stable_id)) return (await loadStickSessionEdits()).clearSessionHotCue(stable_id, slot, revision);
 	return _deleteRequest<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		revision
@@ -867,7 +848,9 @@ export async function restoreHotCue(
 	reversal_id: string
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
-	if (isUsbTrackId(stable_id)) return restoreSessionHotCue(stable_id, slot, revision, reversal_id);
+	if (isUsbTrackId(stable_id)) {
+		return (await loadStickSessionEdits()).restoreSessionHotCue(stable_id, slot, revision, reversal_id);
+	}
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
 		{ reversal_id },

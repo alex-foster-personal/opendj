@@ -31,7 +31,7 @@
 		unregisterKnob
 	} from '$lib/rb/knob-control.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** Stable control id from knobId(deckId, role) - the knob-control registry key. */

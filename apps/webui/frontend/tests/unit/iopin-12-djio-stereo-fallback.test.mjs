@@ -422,7 +422,9 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 			record.replaced.push(String(url));
 			record.timeline.push('replace');
 		};
-		window.__TAURI_INTERNALS__ = {
+		// In a browser window IS globalThis, and the shell probe reads the bridge
+		// off globalThis, so the double is installed on both.
+		window.__TAURI_INTERNALS__ = globalThis.__TAURI_INTERNALS__ = {
 			invoke: async (cmd) => {
 				record.invoked.push(cmd);
 				record.timeline.push(cmd);
@@ -464,6 +466,7 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 
 	afterEach(() => {
 		webmidi._resetMidiForTests();
+		delete globalThis.__TAURI_INTERNALS__;
 		for (const handle of shellIntervals.splice(0)) realClearInterval(handle);
 		globalThis.setInterval = realSetInterval;
 		globalThis.clearInterval = realClearInterval;

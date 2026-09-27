@@ -100,3 +100,20 @@ export function copyDeckAudioSnapshot(snapshot: unknown): DeckAudioSnapshot {
 		timeDomain: [...timeDomain]
 	});
 }
+
+export type DeckPcmEstimateInput = { audioBuffer: AudioBuffer | null; stemsReady: boolean };
+
+/** Estimated decoded PCM retained for memory tracking.
+ * Mix buffer always; when stems are ready, add 4 aligned part buffers
+ * (AlignedStemDeckProcessor keeps vocals/drums/bass/other at the same geometry). */
+export function estimateDeckPcmBytes(decks: Iterable<DeckPcmEstimateInput>): number {
+	let total = 0;
+	for (const deck of decks) {
+		const buffer = deck.audioBuffer;
+		if (buffer === null) continue;
+		const mixBytes = buffer.length * buffer.numberOfChannels * 4;
+		total += mixBytes;
+		if (deck.stemsReady) total += mixBytes * 4;
+	}
+	return total;
+}

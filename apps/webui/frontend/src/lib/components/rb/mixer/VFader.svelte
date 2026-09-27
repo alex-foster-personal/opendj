@@ -19,7 +19,7 @@
 	} from '$lib/rb/fader-ghost.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** 0..1; 1 = full (thumb at top). */

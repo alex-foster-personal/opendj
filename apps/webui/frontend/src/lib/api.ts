@@ -24,8 +24,7 @@ import { ApiError, api, API_BASE, apiErrorFrom, requireBody, unwrap } from './ap
 import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import { rememberOptionalResources } from './rb/optional-resource-availability';
-import { withSessionRating } from './rb/stick-session-edits';
-import { isUsbTrackId, refuseStickWrite, trackApiPath } from './rb/track-source';
+import { isUsbTrackId, loadStickSessionEdits, refuseStickWrite, trackApiPath } from './rb/track-source';
 
 export { API_BASE } from './api/client';
 export {
@@ -164,7 +163,7 @@ async function _getUsbTrack(stable_id: string): Promise<{ data: Track; response:
 	});
 	if (!response.ok) throw await apiErrorFrom(response);
 	const { data } = requireBody({ data: (await response.json()) as Track | null, response });
-	return { data: withSessionRating(stable_id, data), response };
+	return { data: (await loadStickSessionEdits()).withSessionRating(stable_id, data), response };
 }
 
 export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];

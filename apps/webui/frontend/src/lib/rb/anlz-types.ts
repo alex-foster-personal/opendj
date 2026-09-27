@@ -126,6 +126,29 @@ export interface AnlzCue {
 	comment: string | null;
 }
 
+/** A save/clear reversal token: single-use, redeemable to undo one hot-cue
+ * mutation. Lives here (not hot-cue-types.ts) because it is typed against
+ * AnlzCue and hot-cue-types.ts is upstream of this module. */
+export interface HotCueReversal {
+	reversal_id: string;
+}
+
+/** Result of a hot-cue save/rename/clear: the resulting cue (or null when
+ * cleared), the slot's fresh revision, and a reversal when the change can be
+ * undone. */
+export interface HotCueMutation {
+	cue: AnlzCue | null;
+	revision: string;
+	reversal?: HotCueReversal;
+}
+
+/** One hot-cue bank slot as read back from GET /hot-cues. */
+export interface HotCueSlotState {
+	slot: HotCueSlot;
+	cue: AnlzCue | null;
+	revision: string;
+}
+
 /** One phrase from ANLZ .EXT PSSI; response field may be an empty array. */
 export interface AnlzPhrase {
 	/** Phrase start in seconds. */
