@@ -121,7 +121,7 @@ test('duckedLowEqKnob cuts the requested fraction from flat (0.5)', () => {
 });
 
 // PLAY-11 / issue #3532: downbeat-aligned beat_loop planner.
-test('planAutoPlayNextBeatLoop snaps a non-downbeat window start to the next n===1 beat', () => {
+test('fc60002b81a8: planAutoPlayNextBeatLoop snaps a non-downbeat window start to the next n===1 beat', () => {
 	const beats = _beats(32);
 	const window = { startBeatIdx: 9, endBeatIdx: 17 };
 	const plan = planAutoPlayNextBeatLoop(beats, window, DURATION_SEC * 2);

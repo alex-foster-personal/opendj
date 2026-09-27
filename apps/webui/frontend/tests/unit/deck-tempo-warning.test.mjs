@@ -6,10 +6,17 @@ import { compile } from 'svelte/compiler';
 const filename = new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url);
 const source = readFileSync(filename, 'utf8');
 const theme = readFileSync(new URL('../../src/lib/rb/theme.css', import.meta.url), 'utf8');
+const jogDial = readFileSync(
+	new URL('../../src/lib/components/rb/deck/JogDial.svelte', import.meta.url),
+	'utf8'
+);
 
-test('deck warning uses the rendered jog warning instead of independent sync thresholds', () => {
+test('d155a187d458: whole-deck pulse shares jog-off-tempo from isTempoLockedToMaster', () => {
 	assert.match(theme, /\.perf-root \.rb-deck:has\(\.jog-off-tempo\)::before/);
 	compile(source, { filename: filename.pathname, generate: 'client' });
+	assert.match(jogDial, /isTempoLockedToMaster/);
+	assert.match(jogDial, /offTempoTitle/);
+	assert.match(jogDial, /class:jog-off-tempo=\{offTempoTitle !== null\}/);
 });
 
 test('deck warning is non-interactive and respects reduced motion', () => {

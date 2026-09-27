@@ -8,6 +8,7 @@ import {
 	REANALYZE_BACKEND,
 	REANALYZE_LANE,
 	REANALYZE_TOAST_GROUP,
+	toReanalyzeToastPresentation,
 	watchReanalyzeBatch
 } from '$lib/rb/reanalyze-batch-feedback';
 import { revealTrack } from '$lib/rb/api-track-reveal';
@@ -119,15 +120,16 @@ function _pushReanalyzeToast(
 	push: typeof pushToast,
 	presentation: { message: string; kind: 'info' | 'warn' | 'error'; title?: string }
 ): void {
+	const { headline, detail, kind } = toReanalyzeToastPresentation(presentation);
 	push(
 		presentation.message,
-		presentation.kind,
+		kind,
 		undefined,
 		undefined,
 		{},
 		REANALYZE_TOAST_GROUP,
 		undefined,
-		presentation.title ? { headline: presentation.title } : undefined
+		{ headline, detail, feature: 'Analysis' }
 	);
 }
 
