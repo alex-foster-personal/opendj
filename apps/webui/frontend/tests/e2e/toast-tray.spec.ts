@@ -26,6 +26,96 @@ async function raise(page: Page, message: string, kind = 'info', dismissMs = 60_
 	);
 }
 
+/** Push a toast with the real store after arming a tray MutationObserver for `data-toast-exiting`. */
+async function raiseAndObserveExitMarker(
+	page: Page,
+	message: string,
+	kind: 'info' | 'warn' | 'error' = 'error',
+	dismissMs = 120_000
+): Promise<string> {
+	return page.evaluate(
+		async ([store, msg, k, ms]) => {
+			const tray = document.querySelector('.toast-stack');
+			if (!tray) {
+				throw new Error('toast-tray e2e: .toast-stack not found before push');
+			}
+
+			return new Promise<string>((resolve, reject) => {
+				const timeoutMs = 5000;
+				let settled = false;
+				let observer: MutationObserver;
+
+				const finish = (exitId: string) => {
+					if (settled) return;
+					settled = true;
+					observer.disconnect();
+					clearTimeout(timer);
+					resolve(exitId);
+				};
+
+				const fail = (reason: string) => {
+					if (settled) return;
+					settled = true;
+					observer.disconnect();
+					clearTimeout(timer);
+					reject(new Error(reason));
+				};
+
+				const readExitId = (root: Node): string | null => {
+					if (root.nodeType !== Node.ELEMENT_NODE) return null;
+					const el = root as Element;
+					const direct = el.getAttribute('data-toast-exiting');
+					if (direct) return direct;
+					const nested = el.querySelector('[data-toast-exiting]');
+					return nested?.getAttribute('data-toast-exiting') ?? null;
+				};
+
+				const timer = setTimeout(() => {
+					fail('toast-tray e2e: exit marker not observed');
+				}, timeoutMs);
+
+				observer = new MutationObserver((mutations) => {
+					for (const mutation of mutations) {
+						if (mutation.type === 'attributes' && mutation.attributeName === 'data-toast-exiting') {
+							const val = (mutation.target as Element).getAttribute('data-toast-exiting');
+							if (val) {
+								finish(val);
+								return;
+							}
+						}
+						if (mutation.type === 'childList') {
+							for (const node of mutation.addedNodes) {
+								const val = readExitId(node);
+								if (val) {
+									finish(val);
+									return;
+								}
+							}
+						}
+					}
+				});
+
+				observer.observe(tray, {
+					subtree: true,
+					childList: true,
+					attributes: true,
+					attributeFilter: ['data-toast-exiting']
+				});
+
+				void (async () => {
+					try {
+						const mod = await import(/* @vite-ignore */ store as string);
+						mod.pushToast(msg as string, k as 'info' | 'warn' | 'error', ms as number);
+					} catch (err) {
+						fail(`toast-tray e2e: pushToast failed: ${String(err)}`);
+					}
+				})();
+			});
+		},
+		[STORE, message, kind, dismissMs] as const
+	);
+}
+
 test.beforeEach(async ({ page }) => {
 	// The dev server here has no daemon behind it, so the app shell can still be
 	// laying out when the first assertion runs. Waiting for the tray container
@@ -179,9 +269,8 @@ test('the fourth toast evicts the oldest with an exiting marker', async ({ page 
 	const first = await raise(page, 'oldest toast', 'error', 120_000);
 	await raise(page, 'toast two', 'error', 120_000);
 	await raise(page, 'toast three', 'error', 120_000);
-	await raise(page, 'toast four', 'error', 120_000);
-	await page.waitForTimeout(30);
-	await expect(page.locator(`[data-toast-exiting="${first}"]`)).toHaveCount(1);
+	const exitingId = await raiseAndObserveExitMarker(page, 'toast four', 'error', 120_000);
+	expect(exitingId).toBe(first);
 });
 
 test('a long error toast width stays within one third of the viewport', async ({ page }) => {
