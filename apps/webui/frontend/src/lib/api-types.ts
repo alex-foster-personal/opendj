@@ -1554,6 +1554,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Comments Summary */
+        get: operations["comments_summary_api_v1_feedback_comments_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -1775,23 +1792,6 @@ export interface paths {
          * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
          */
         post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/feedback/comments/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Comments Summary */
-        get: operations["comments_summary_api_v1_feedback_comments_summary_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;

@@ -4634,6 +4634,27 @@
         }
       }
     },
+    "/api/v1/feedback/comments/summary": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Comments Summary",
+        "operationId": "comments_summary_api_v1_feedback_comments_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentSummaryOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feedback/general": {
       "get": {
         "tags": [
@@ -5069,27 +5090,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/feedback/comments/summary": {
-      "get": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Comments Summary",
-        "operationId": "comments_summary_api_v1_feedback_comments_summary_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommentSummaryOut"
                 }
               }
             }

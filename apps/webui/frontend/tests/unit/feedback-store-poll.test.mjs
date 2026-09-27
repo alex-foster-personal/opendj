@@ -34,6 +34,42 @@ function jsonResponse(body) {
   });
 }
 
+const EMPTY_PIN_SUMMARY = {
+  operator: {
+    total: 0,
+    sent_to_queue: 0,
+    in_progress: 0,
+    delegated: 0,
+    fixed: 0,
+    merged: 0,
+    blocked: 0,
+    harvested: 0,
+  },
+  lifecycle: {
+    total: 0,
+    untriaged: 0,
+    open: 0,
+    issued: 0,
+    blocked: 0,
+    fixed: 0,
+    merged: 0,
+    harvested: 0,
+  },
+};
+
+function mockFeedbackFetch(handlers) {
+  return async (request) => {
+    const { pathname } = new URL(request.url);
+    if (pathname.endsWith("/api/v1/feedback/comments/summary")) {
+      return handlers.summary?.() ?? jsonResponse(EMPTY_PIN_SUMMARY);
+    }
+    if (pathname.endsWith("/api/v1/feedback/comments")) {
+      return handlers.comments(request);
+    }
+    throw new Error(`unexpected feedback poll fetch: ${pathname}`);
+  };
+}
+
 before(async () => {
   store = await loadTypeScriptModule("src/lib/rb/feedback-store.svelte.ts", {
     viteApiBase: API_BASE,
@@ -72,10 +108,12 @@ test("refreshPins does nothing before the store is known 'ok'", async () => {
 test("refreshPins GETs comments and replaces feedbackState.pins", async () => {
   let seen;
   const fresh = [{ id: "abc123", status: "fixed" }];
-  globalThis.fetch = async (request) => {
-    seen = request;
-    return jsonResponse({ comments: fresh });
-  };
+  globalThis.fetch = mockFeedbackFetch({
+    comments: (request) => {
+      seen = request;
+      return jsonResponse({ comments: fresh });
+    },
+  });
 
   store.feedbackState.availability = "ok";
   store.feedbackState.pins = [{ id: "abc123", status: "open" }];
@@ -131,11 +169,13 @@ test("stopPinWatch clears the timer so it does not outlive the component", () =>
 });
 
 test("the poll tick calls refreshPins", async () => {
-  let fetches = 0;
-  globalThis.fetch = async () => {
-    fetches += 1;
-    return jsonResponse({ comments: [] });
-  };
+  let commentFetches = 0;
+  globalThis.fetch = mockFeedbackFetch({
+    comments: () => {
+      commentFetches += 1;
+      return jsonResponse({ comments: [] });
+    },
+  });
   let tick;
   globalThis.setInterval = (fn) => {
     tick = fn;
@@ -147,7 +187,7 @@ test("the poll tick calls refreshPins", async () => {
   assert.ok(tick, "if setInterval was never called then this guard asserts nothing");
   await tick();
 
-  assert.equal(fetches, 1);
+  assert.equal(commentFetches, 1);
 });
 
 test("refreshPins discards a snapshot that started before a local mutation landed", async () => {
