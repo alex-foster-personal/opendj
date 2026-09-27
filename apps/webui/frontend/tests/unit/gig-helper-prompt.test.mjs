@@ -1,8 +1,10 @@
+// requirement: PERFMODE-16
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// [if] posture gig and pref unset [then] shouldOffer is true, [else stop].
 test('shouldOfferGigHelper only when gig posture and unset pref', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/gig-helper-prompt.ts');
 	assert.equal(mod.shouldOfferGigHelper('gig', 'unset'), true);
@@ -11,6 +13,7 @@ test('shouldOfferGigHelper only when gig posture and unset pref', async () => {
 	assert.equal(mod.shouldOfferGigHelper('gig', 'on'), false);
 });
 
+// [if] user chose off [then] prep-to-gig does not reopen prompt, [else stop].
 test('tryOfferGigHelperPromptOnPostureChange opens only on prep to gig with unset pref', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/gig-helper-prompt.svelte.ts');
 	mod.dismissGigHelperPrompt();

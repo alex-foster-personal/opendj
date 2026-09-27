@@ -475,6 +475,31 @@ export function formatBuildIdentityReport(input: BuildIdentityReportInput): stri
 	return lines.join('\n');
 }
 
+/** Minimal clipboard surface for copy-all parity (browser API and unit tests). */
+export interface BuildIdentityClipboard {
+	writeText(text: string): Promise<void>;
+}
+
+/**
+ * Copy the full build identity report. Returns the foldout note string; never
+ * silent success and never silent failure.
+ */
+export async function copyBuildIdentityToClipboard(
+	input: BuildIdentityReportInput,
+	clipboard: BuildIdentityClipboard | undefined
+): Promise<string> {
+	const text = formatBuildIdentityReport(input);
+	if (clipboard === undefined) {
+		return 'this browser offers no clipboard API; select the text in the foldout instead';
+	}
+	try {
+		await clipboard.writeText(text);
+		return 'copied all details';
+	} catch (err) {
+		return `copy refused: ${err instanceof Error ? err.message : String(err)}`;
+	}
+}
+
 export function explainSide(
 	side: 'shell' | 'engine',
 	state: SideState<ShellStamp | EngineStamp>
