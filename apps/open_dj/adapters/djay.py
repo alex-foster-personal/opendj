@@ -225,7 +225,7 @@ def _apply_provenance_fields(
         track["bpm"] = wrap(float(t.bpm), source="djay", modified_at=modified_at)
     if t.key:
         track["key"] = wrap(t.key, source="djay", modified_at=modified_at)
-    if has_rating:
+    if has_rating and t.rating is not None:
         track["rating"] = wrap(int(t.rating), source="djay", modified_at=modified_at)
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +23,7 @@ _RB_UPDATED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
 
 
 def _rb_track(**overrides) -> RBTrackInput:
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         rb_id="rb1",
         title="Strobe",
         artists=["deadmau5"],
