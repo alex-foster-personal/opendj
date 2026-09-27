@@ -12,9 +12,12 @@ test('playlist rows contain no fabricated EXTRA badge or name-based analysis sta
 	assert.doesNotMatch(source, /_hasExtraBadge|badge-extra|CUE Analysis Playlist/);
 });
 
-// REQ: LIBM-105
+// REQ: LIBM-105 (issue #3883 AC6; #3534 adds unique library-wide wording)
 test('All Tracks count hover quotes non-broken tracks, not playable (issue #3883 AC6)', () => {
-	assert.match(source, /\$\{allTracksCount\} non-broken tracks, \$\{allTracksBrokenCount\} broken tracks/);
+	assert.match(
+		source,
+		/\$\{allTracksCount\} unique library-wide non-broken tracks, \$\{allTracksBrokenCount\} broken tracks/
+	);
 	assert.doesNotMatch(source, /playable tracks/);
 });
 
