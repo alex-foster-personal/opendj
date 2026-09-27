@@ -8,12 +8,16 @@
  * Rune module: the I/O panel reads `audioOutputStatus` reactively.
  */
 
-import { pushToast } from '$lib/stores.svelte';
 import type {
 	DjOutputFallback,
 	DjOutputProfile,
 	DjOutputResolution
 } from '$lib/rb/audio-output-topology';
+
+export { djioFallbackTitle } from '$lib/rb/audio-output-topology';
+
+/** Raises the warn toast; injected by the engine so this module stays off the global store. */
+export type WarnToast = (message: string, dismissMs: number, groupKey: string) => void;
 
 export interface AudioOutputStatus {
 	requested_profile: DjOutputProfile | null;
@@ -34,19 +38,12 @@ export const audioOutputStatus: AudioOutputStatus = $state({
 	fallback: null
 });
 
-export function publishDjOutputResolution(resolution: DjOutputResolution): void {
+export function publishDjOutputResolution(resolution: DjOutputResolution, warnToast: WarnToast): void {
 	audioOutputStatus.requested_profile = resolution.requested;
 	audioOutputStatus.active_profile = resolution.profile;
 	audioOutputStatus.fallback = resolution.fallback;
 	if (resolution.fallback !== null) {
-		pushToast(
-			resolution.fallback.message,
-			'warn',
-			DJIO_FALLBACK_TOAST_MS,
-			undefined,
-			{},
-			DJIO_FALLBACK_TOAST_GROUP
-		);
+		warnToast(resolution.fallback.message, DJIO_FALLBACK_TOAST_MS, DJIO_FALLBACK_TOAST_GROUP);
 	}
 }
 

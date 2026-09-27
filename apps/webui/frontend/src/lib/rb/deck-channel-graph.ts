@@ -409,3 +409,4 @@ export {
 	wireAudioOutputTopology,
 	type DjOutputProfile
 } from '$lib/rb/audio-output-topology';
+export { clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/audio-output-status.svelte';

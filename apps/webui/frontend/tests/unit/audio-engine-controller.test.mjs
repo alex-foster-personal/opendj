@@ -12,6 +12,7 @@ const REAL_PQTZ_BEATS = [
 ];
 let audio;
 let presentation;
+let contextWait;
 let headphones;
 let computeFollowerSyncPlan;
 // The pure SLIP hidden-timeline math lives in the player's pure leaf
@@ -39,6 +40,7 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	presentation = await loadTypeScriptModule('src/lib/player/transport/presentation.ts');
+	contextWait = await loadTypeScriptModule('src/lib/player/transport/context-time-wait.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ disposeAudioResources } = await loadTypeScriptModule(
 		'src/lib/rb/audio-resource-disposal.ts'
@@ -1421,15 +1423,15 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 	// The default clock is the real one, and these three reject before any
 	// sleep, so they exercise it end to end without waiting on a timer.
 	await assert.rejects(
-		audio.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
+		contextWait.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
 		/not running/i
 	);
 	await assert.rejects(
-		audio.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
+		contextWait.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
 		/finite and non-negative/i
 	);
 	await assert.rejects(
-		audio.waitForAdvancingContextTime(
+		contextWait.waitForAdvancingContextTime(
 			{ currentTime: 0, state: 'running' },
 			1,
 			() => false,
@@ -1438,14 +1440,14 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 		/state changed/i
 	);
 	// The one part of the real clock the rejections above cannot reach.
-	assert.ok(Number.isFinite(audio.REAL_CONTEXT_WAIT_CLOCK.nowMs()));
-	await audio.REAL_CONTEXT_WAIT_CLOCK.sleep(1);
+	assert.ok(Number.isFinite(contextWait.REAL_CONTEXT_WAIT_CLOCK.nowMs()));
+	await contextWait.REAL_CONTEXT_WAIT_CLOCK.sleep(1);
 
 	// A context whose time never moves: the wait must give up inside its stall
 	// timeout instead of polling all the way to the target.
 	const stalled = virtualContextWaitClock();
 	await assert.rejects(
-		audio.waitForAdvancingContextTime(
+		contextWait.waitForAdvancingContextTime(
 			{ currentTime: 0, state: 'running' },
 			1,
 			() => true,
@@ -1471,7 +1473,7 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 		},
 		state: 'running'
 	};
-	await audio.waitForAdvancingContextTime(advancingContext, 1, () => true, 100, advancing);
+	await contextWait.waitForAdvancingContextTime(advancingContext, 1, () => true, 100, advancing);
 	assert.equal(advancing.elapsedMs(), 1000, 'the wait must stop at the target, not past it');
 });
 
