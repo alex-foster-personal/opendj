@@ -307,7 +307,11 @@ def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 def _install_with_fake_launchctl(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *args: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *args: str,
+    health_loaded: bool = True,
+    bootout_rc: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path, list[str]]:
     """Run the real installer with --install against a launchctl that only records its
     argv, so the bootout/bootstrap sequence is asserted without touching launchd."""
@@ -318,7 +322,13 @@ def _install_with_fake_launchctl(
     bin_dir.mkdir(exist_ok=True)
     calls = tmp_path / "launchctl.calls"
     fake = bin_dir / "launchctl"
-    fake.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 0\n')
+    print_rc = 0 if health_loaded else 113
+    fake.write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> "{calls}"\n'
+        f'case "$1" in print) exit {print_rc} ;; bootout) exit {bootout_rc} ;; esac\n'
+        "exit 0\n"
+    )
     fake.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
     monkeypatch.setenv("HOME", str(home))
@@ -356,6 +366,38 @@ def test_install_nightly_only_unloads_a_previously_installed_health_agent(
     assert not stale.exists()
     assert not any(c.startswith("bootstrap ") and "perf-kpi-health" in c for c in calls), calls
     assert any(c.startswith("bootstrap ") and "perf-kpi-nightly" in c for c in calls), calls
+
+
+def test_install_nightly_only_fails_when_a_loaded_health_agent_will_not_unload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If the loaded health agent refuses to unload then --nightly-only fails loudly
+    and leaves its plist in place for the operator."""
+    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
+    completed, _launch_agents, _calls = _install_with_fake_launchctl(
+        monkeypatch, tmp_path, "--nightly-only", bootout_rc=5
+    )
+    assert completed.returncode != 0
+    assert "would not unload" in completed.stderr
+    assert stale.exists()
+
+
+def test_install_nightly_only_removes_a_plist_whose_agent_is_not_loaded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If the health agent is not loaded then no bootout runs, and its leftover plist
+    is still removed so it cannot load at the next login."""
+    stale = tmp_path / "home" / "Library" / "LaunchAgents" / "com.af.perf-kpi-health.plist"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(plistlib.dumps({"Label": "com.af.perf-kpi-health"}))
+    completed, _launch_agents, calls = _install_with_fake_launchctl(
+        monkeypatch, tmp_path, "--nightly-only", health_loaded=False
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not any(c.startswith("bootout ") and "perf-kpi-health" in c for c in calls), calls
+    assert not stale.exists()
 
 
 def test_plain_install_still_bootstraps_the_health_agent(
