@@ -3,7 +3,7 @@
  * [if] five error toasts pushed [then] visible slice length is at most three [else stop].
  */
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, mock, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -80,18 +80,6 @@ afterEach(() => {
 });
 
 test('five pushed toasts yield at most three visible in policy slice', async (t) => {
-	// pushToast(..., 120_000) arms a REAL dismissal setTimeout per toast
-	// (stores.svelte.ts _armTimer) that this test never dismisses. Three of
-	// the five toasts stay non-exiting (TOAST_MAX_VISIBLE caps the rest as
-	// "exiting", which does clear their timers), so three live 120s timers
-	// were left running past the end of the test, holding the process open
-	// until they fired and blowing the file's --test-timeout budget with a
-	// testTimeoutFailure despite every assertion already having passed.
-	// Faking the timer means _armTimer's setTimeout is registered against
-	// the mock clock instead of a real OS timer, so nothing keeps the
-	// process alive once the test function returns.
-	mock.timers.enable({ apis: ['setTimeout'] });
-	t.after(() => mock.timers.reset());
 
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts', {
 		viteApiBase: API_BASE
@@ -100,6 +88,15 @@ test('five pushed toasts yield at most three visible in policy slice', async (t)
 	for (let i = 0; i < 5; i += 1) {
 		stores.pushToast(`burst ${i}`, 'error', 120_000);
 	}
+	// pushToast(..., 120_000) arms a REAL 120 s dismissal timer per toast
+	// (stores.svelte.ts _armTimer). Left armed, the three uncapped toasts held
+	// the process open past the suite's 120 s --test-timeout, failing the file
+	// after every assertion had passed. Dismiss through the production path so
+	// the real handles are cleared the moment the test ends.
+	t.after(() => {
+		for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
+		assert.equal(stores.toasts.length, 0, 'every toast dismissed, no timer left armed');
+	});
 	const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
 	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
 	const visible = policy.selectVisibleToasts(stores.toasts);
