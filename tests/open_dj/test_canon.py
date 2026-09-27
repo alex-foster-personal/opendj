@@ -61,6 +61,7 @@ class TestIdempotent:
         assert len(hashes) == 1
 
 
+# REQ: OPEN-03
 @pytest.mark.requirement("OPEN-03")
 def test_sha256_hex_matches_raw_hash(full_bytes: bytes, full_doc: dict) -> None:
     """sha256_hex(doc) == sha256(canon_bytes) (independent spelling)."""
