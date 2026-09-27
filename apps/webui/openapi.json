@@ -4603,6 +4603,17 @@
             ],
             "title": "Agent Note"
           },
+          "agent_snapshot_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Snapshot At"
+          },
           "anchor": {
             "anyOf": [
               {
@@ -19798,6 +19809,19 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackLibraryRevisionOut": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "TrackLibraryRevisionOut",
+        "type": "object"
+      },
       "TrackLifecycleOut": {
         "properties": {
           "deleted_at": {
@@ -21080,6 +21104,21 @@
             "title": "Confirm",
             "type": "object"
           },
+          "deck_right_mirror": {
+            "default": false,
+            "title": "Deck Right Mirror",
+            "type": "boolean"
+          },
+          "gig_helper": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "off",
+              "on"
+            ],
+            "title": "Gig Helper",
+            "type": "string"
+          },
           "hide_broken_links": {
             "default": false,
             "title": "Hide Broken Links",
@@ -21166,6 +21205,15 @@
               "high"
             ],
             "title": "Perf Tier",
+            "type": "string"
+          },
+          "playlist_tree_view": {
+            "default": "tree",
+            "enum": [
+              "tree",
+              "column"
+            ],
+            "title": "Playlist Tree View",
             "type": "string"
           },
           "remixes_filter": {
@@ -21312,6 +21360,33 @@
               }
             ],
             "title": "Confirm"
+          },
+          "deck_right_mirror": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Right Mirror"
+          },
+          "gig_helper": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unset",
+                  "off",
+                  "on"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gig Helper"
           },
           "hide_broken_links": {
             "anyOf": [
@@ -21491,6 +21566,21 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "playlist_tree_view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tree",
+                  "column"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Tree View"
           },
           "remixes_filter": {
             "anyOf": [
@@ -36236,6 +36326,28 @@
           }
         },
         "summary": "Get Quality Ladder",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/revision": {
+      "get": {
+        "description": "Return a cheap revision probe for clients holding library snapshots.",
+        "operationId": "get_library_revision_api_v1_tracks_revision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLibraryRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Revision",
         "tags": [
           "tracks"
         ]

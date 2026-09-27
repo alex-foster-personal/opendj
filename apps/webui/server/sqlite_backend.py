@@ -76,6 +76,7 @@ from .backend import (
     TrackFilter,
     TrackPlaylistHit,
     TrackUpdate,
+    compute_library_revision_summary,
     compute_mytag_catalog_revision,
     resolve_tempo_pref_write,
 )
@@ -96,7 +97,9 @@ class StaleStateSchemaError(RuntimeError):
     """
 
 
-def read_tracks_schema_version(path: Path) -> tuple[bool, int]:
+def read_tracks_schema_version(
+    path: Path, *, busy_timeout_s: float,
+) -> tuple[bool, int]:
     """Return ``(has_tracks_table, schema_meta_version)`` read fresh off disk.
 
     Shared by :func:`_stale_tracks_schema_version` (the boot-time construction
@@ -106,8 +109,12 @@ def read_tracks_schema_version(path: Path) -> tuple[bool, int]:
     with no ``tracks`` table at all (not yet a Phase 5 db) reads back version
     0 alongside ``has_tracks_table=False`` so a caller can tell "nothing here
     yet" from "here, but behind".
+
+    ``busy_timeout_s`` is required so each caller states its own lock wait:
+    boot passes :data:`apps.shared.state.db.BOOT_BUSY_TIMEOUT_S`. A lock held
+    past it raises ``database is locked``; it is never read as "not stale".
     """
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = _state_db.open_ro(path, busy_timeout_s=busy_timeout_s)
     try:
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
@@ -134,7 +141,9 @@ def _stale_tracks_schema_version(path: Path) -> int | None:
     dbs like this and must keep working) or "already current". A non-None
     result means a real Phase 5 db exists but predates SCHEMA_VERSION.
     """
-    has_tracks, version = read_tracks_schema_version(path)
+    has_tracks, version = read_tracks_schema_version(
+        path, busy_timeout_s=_state_db.BOOT_BUSY_TIMEOUT_S,
+    )
     if not has_tracks:
         return None
     return version if version < _state_schema.SCHEMA_VERSION else None
@@ -147,8 +156,11 @@ def _tracks_table_missing_schema_meta(path: Path) -> bool:
     migration ladder. Without it, migration starts at v0 and ``CREATE TABLE
     IF NOT EXISTS tracks`` retains an incompatible pre-existing table, so
     later v0 statements leak a low-level missing-column error.
+
+    Boot-path only, so it waits :data:`apps.shared.state.db.BOOT_BUSY_TIMEOUT_S`
+    for a peer boot's lock (see that constant) and raises past it.
     """
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = _state_db.open_ro(path, busy_timeout_s=_state_db.BOOT_BUSY_TIMEOUT_S)
     try:
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
@@ -586,6 +598,30 @@ class SqliteBackend:
                 scan_cursor = rows[-1]["stable_id"]
             next_cursor = page[-1].stable_id if len(page) == limit else None
             return Page(items=page, next_cursor=next_cursor)
+
+    def library_revision(self) -> str:
+        with self._ro() as conn:
+            if not self._table_exists(conn, "tracks"):
+                _warn_fallback_once("library_revision", "no tracks table")
+                return self._fallback.library_revision()
+            track_summary = conn.execute(
+                "SELECT COUNT(*), COALESCE(MAX(updated_at), '') "
+                "FROM tracks WHERE deleted_at IS NULL"
+            ).fetchone()
+            field_summary = conn.execute(
+                "SELECT COALESCE(MAX(modified_at), '') FROM track_fields "
+                "WHERE deleted_at IS NULL"
+            ).fetchone()
+            changelog_summary = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) FROM local_changelog "
+                "WHERE table_name IN ('tracks', 'track_fields')"
+            ).fetchone()
+        return compute_library_revision_summary(
+            int(track_summary[0]),
+            str(track_summary[1]),
+            str(field_summary[0]),
+            int(changelog_summary[0]),
+        )
 
     def get_track(self, stable_id: str) -> Track:
         with self._ro() as conn:
@@ -1036,7 +1072,9 @@ def _migrate_before_serving(target: Path) -> None:
     of a real one.
     """
     try:
-        _state_db.open_rw(target).close()
+        _state_db.open_rw(
+            target, busy_timeout_s=_state_db.BOOT_BUSY_TIMEOUT_S,
+        ).close()
     except Exception:
         log.error(
             "state DB migration failed for %s; refusing to boot against a "

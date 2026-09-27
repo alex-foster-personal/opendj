@@ -38,7 +38,7 @@ from apps.sync_hub import client, enrollment_credentials, maintenance
 from apps.sync_hub import config as sync_config
 from apps.sync_hub.scheduler import CloudSyncScheduler
 from apps.sync_hub.scheduler_owed import owed_path
-from apps.sync_hub.single_flight import sync_lock_for
+from apps.sync_hub.single_flight import sync_flock_for, sync_lock_for
 from apps.webui.server.app import create_app
 from apps.webui.server.local_operator import is_loopback_ip
 from apps.webui.server.share_gate import AUTH_TOKEN, ShareConfig
@@ -246,6 +246,36 @@ def test_post_sync_force_true_still_busy_when_lock_held(enroll_spoke_dir: Path) 
     assert status["recent_results"] == []
 
 
+def test_post_sync_is_409_not_500_when_a_standalone_cli_holds_the_flock(
+    enroll_spoke_dir: Path,
+) -> None:
+    """[if] a standalone CLI process holds the cross-process sync flock when
+    ``POST /sync`` calls in [then] the route answers 409 CLOUDSYNC_SYNC_IN_PROGRESS,
+    not an uncaught 500 (Codex review, PR #3831, P2/NON-BLOCKING).
+
+    Distinct from `test_post_sync_force_true_still_busy_when_lock_held`
+    above: that test holds ``sync_lock_for`` (the IN-PROCESS lock
+    ``_one_sync_at_a_time`` checks BEFORE ever calling ``maintenance.sync``)
+    to prove the pre-check. This test leaves that in-process lock free and
+    holds ONLY ``sync_flock_for`` (the cross-process ``fcntl.flock`` a
+    standalone CLI in another process would hold), so the pre-check passes
+    and ``maintenance.sync`` itself is the one that hits contention and
+    raises ``SyncDeferredError`` -- proving the route's OWN try/except
+    around that call, not the earlier gate.
+    """
+    with ops_client(enroll_spoke_dir) as http:
+        with sync_flock_for(enroll_spoke_dir):
+            response = http.post(
+                "/api/v1/cloudsync/sync",
+                json={"hub_url": "http://127.0.0.1:9", "force": True},
+            )
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
+    assert status["recent_results"] == []
+
+
 def test_post_sync_returns_409_when_deck_playing(
     enroll_live_hub: str, enroll_spoke_dir: Path
 ) -> None:
@@ -346,6 +376,35 @@ def test_a_scheduler_round_is_busy_while_the_sync_lock_is_held(enroll_spoke_dir:
     assert held == "busy"
     assert released == "error", "control: with the lock free the round runs (a dead hub errors)"
     assert len(calls) == 1, "only the unlocked round reached the sync"
+
+
+def test_a_scheduler_round_is_busy_when_a_standalone_cli_holds_the_flock(
+    enroll_spoke_dir: Path,
+) -> None:
+    """[if] a standalone CLI process holds the cross-process sync flock while
+    a scheduler round starts [then] the round outcome is "busy" without
+    growing the failure backoff, not "error" (Codex review, PR #3831,
+    P2/NON-BLOCKING).
+
+    Distinct from `test_a_scheduler_round_is_busy_while_the_sync_lock_is_held`
+    above: that test holds ``sync_lock_for`` (the scheduler's own IN-PROCESS
+    round lock, checked by ``run_round`` BEFORE ``_sync_once`` is ever
+    called). This test leaves that lock free and holds ONLY
+    ``single_flight.sync_flock_for`` (the cross-process ``fcntl.flock`` a
+    standalone CLI in another process would hold), so ``run_round`` proceeds
+    into ``_sync_once`` -- the real ``maintenance.sync`` (the scheduler's own
+    default ``sync_fn``, unmocked) is the one that hits the contention, which
+    is the code path this fix targets.
+    """
+    scheduler = CloudSyncScheduler(enroll_spoke_dir, env={})
+    with sync_flock_for(enroll_spoke_dir):
+        outcome = scheduler.run_round(f"http://127.0.0.1:{free_port()}", None)
+
+    assert outcome == "busy"
+    assert scheduler.busy_refusals == 1
+    assert scheduler.consecutive_failures == 0, (
+        "an expected flock busy-skip must not grow the failure backoff"
+    )
 
 
 def test_a_refused_config_put_writes_nothing(enroll_spoke_dir: Path) -> None:

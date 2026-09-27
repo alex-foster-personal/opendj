@@ -41,6 +41,7 @@
 		explainSide,
 		fetchEngineBuild,
 		formatAge,
+		copyBuildIdentityToClipboard,
 		formatStamp,
 		readShellBuild,
 		shortLabel,
@@ -159,24 +160,13 @@
 	);
 
 	/**
-	 * Copy the address. No silent success and no silent failure: a clipboard
-	 * the browser refuses (no permission, an insecure origin) must say so,
-	 * because a copy button that appears to work and did not is worse than no
-	 * button. The URL stays selectable either way.
+	 * Copy the full build identity report. No silent success and no silent failure.
 	 */
-	async function copyUrl(): Promise<void> {
-		if (engineUrl.kind !== 'ok') return;
-		const clipboard = navigator.clipboard;
-		if (clipboard === undefined) {
-			copyNote = 'this browser offers no clipboard API; select the address instead';
-			return;
-		}
-		try {
-			await clipboard.writeText(engineUrl.url);
-			copyNote = 'copied';
-		} catch (err) {
-			copyNote = `copy refused: ${err instanceof Error ? err.message : String(err)}`;
-		}
+	async function copyAllDetails(): Promise<void> {
+		copyNote = await copyBuildIdentityToClipboard(
+			{ shell, engine, engineUrl, drift, updateSummary },
+			navigator.clipboard
+		);
 	}
 
 	onMount(() => {
@@ -255,7 +245,34 @@
 	</button>
 
 	{#if expanded}
-		<dl class="detail">
+		<div class="detail-wrap">
+			<button
+				type="button"
+				class="copy-icon"
+				aria-label="Copy build identity to clipboard"
+				title="Copy the full engine and shell stamp to the clipboard (same as copy all details)."
+				onclick={() => void copyAllDetails()}
+			>
+				<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+					<rect
+						x="8"
+						y="8"
+						width="12"
+						height="14"
+						rx="1"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					/>
+					<path
+						d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					/>
+				</svg>
+			</button>
+			<dl class="detail">
 			<dt title="Release channel conferred on this sha, plus the evidence file timestamp for a stable install.">
 				channel
 			</dt>
@@ -301,16 +318,13 @@
 			<dd>
 				{#if engineUrl.kind === 'ok'}
 					<span class="url-row">
-						<!-- user-select: all, so one click selects the whole address. -->
-						<code class="url" title={explainEngineUrl(engineUrl)}>{engineUrl.url}</code>
-						<button
-							type="button"
-							class="copy"
-							onclick={() => void copyUrl()}
-							title={`Copy ${engineUrl.url} to the clipboard.`}
+						<a
+							class="url"
+							href={engineUrl.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							title={explainEngineUrl(engineUrl)}>{engineUrl.url}</a
 						>
-							copy
-						</button>
 					</span>
 					<span class="meta" title={explainEngineUrl(engineUrl)}>
 						{engineUrl.source === 'served'
@@ -318,7 +332,7 @@
 							: 'from VITE_API_BASE: a dev build pointed at a daemon elsewhere'}
 					</span>
 					{#if copyNote !== null}
-						<span class="meta" class:reason={copyNote !== 'copied'}>{copyNote}</span>
+						<span class="meta" class:reason={copyNote !== 'copied all details'}>{copyNote}</span>
 					{/if}
 				{:else}
 					<span class="reason">{engineUrl.reason}</span>
@@ -411,7 +425,20 @@
 					<span class="reason">{shell.kind === 'loading' ? 'reading...' : shell.reason}</span>
 				{/if}
 			</dd>
+
+			<dt class="detail-actions-label">actions</dt>
+			<dd class="detail-footer">
+				<button
+					type="button"
+					class="copy"
+					onclick={() => void copyAllDetails()}
+					title="Copy engine and shell identity, drift, channel, URL, and update status as plain text."
+				>
+					copy all details
+				</button>
+			</dd>
 		</dl>
+		</div>
 	{/if}
 </div>
 
@@ -480,11 +507,15 @@
 	}
 	/* Opens UPWARD from the tray and is anchored to its right edge, so it
 	   never resizes the tray row and never runs off the window. */
-	.detail {
+	.detail-wrap {
 		position: absolute;
 		right: 0;
 		bottom: 100%;
 		margin: 0 0 2px 0;
+		z-index: 1;
+	}
+	.detail {
+		position: relative;
 		min-width: 22rem;
 		max-width: min(38rem, calc(100vw - 1rem));
 		display: grid;
@@ -499,6 +530,34 @@
 	}
 	.detail dt {
 		font-weight: 700;
+	}
+	.detail-actions-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.copy-icon {
+		position: absolute;
+		top: 0.25rem;
+		right: 0.35rem;
+		padding: 0.1rem 0.25rem;
+		border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+		border-radius: 3px;
+		background: var(--bg, #1b1b1b);
+		color: inherit;
+		cursor: pointer;
+		line-height: 0;
+		z-index: 1;
+	}
+	.detail-footer {
+		grid-column: 2;
+		margin: 0.25rem 0 0;
 	}
 	.detail dd {
 		margin: 0;
@@ -516,6 +575,10 @@
 	.url {
 		user-select: all;
 		color: var(--accent, #d97757);
+		text-decoration: none;
+	}
+	.url:hover {
+		text-decoration: underline;
 	}
 	.copy {
 		padding: 0 0.35rem;

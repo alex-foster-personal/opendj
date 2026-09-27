@@ -24,6 +24,10 @@
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import {
+		rememberOptionalResources,
+		shouldFetchArtwork
+	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
@@ -179,7 +183,6 @@
 
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
-	const masterKeyColor = $derived(camelotKeyColor(masterKey));
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
 	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
@@ -189,7 +192,7 @@
 	);
 
 	function keyCompat(key: string | null): boolean {
-		return camelotKeysAreCompatible(key, masterKey);
+		return camelotKeysAreCompatible(key, keyCompatRef);
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
@@ -337,6 +340,8 @@
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey = null as string | null,
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
 		onaddtoplaylist = undefined
@@ -437,7 +442,16 @@
 		suggestHoverId?: string | null;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey?: string | null;
 	} = $props();
+
+	const keyCompatRef = $derived(
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null
+			? compatibleReferenceKey
+			: masterKey
+	);
+	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
 	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
 	 * height is density-dependent (`--tt-row-h`), so a constant would drift
@@ -987,8 +1001,23 @@
 		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
-	function _hideBrokenImg(event: Event): void {
-		(event.currentTarget as HTMLImageElement).style.display = 'none';
+	let artworkLoadFailed = $state<ReadonlySet<string>>(new Set());
+
+	function _onArtworkLoad(event: Event): void {
+		(event.currentTarget as HTMLImageElement).classList.add('art-loaded');
+	}
+
+	function _onArtworkError(stableId: string): void {
+		rememberOptionalResources(stableId, { artwork: false });
+		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
+	}
+
+	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
+		return (
+			artworkAvailable === true &&
+			shouldFetchArtwork(stableId) &&
+			!artworkLoadFailed.has(stableId)
+		);
 	}
 
 	// ----------------------------------------- drag-to-reorder (native DnD)
@@ -1731,12 +1760,15 @@
 						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.artwork_available === true}
-								<img
-									src={artworkUrl(row.stable_id, 's')}
-									alt=""
-									loading="lazy"
-									onerror={_hideBrokenImg}
-								/>
+								{#if _showArtworkImg(row.stable_id, row.artwork_available)}
+									<img
+										src={artworkUrl(row.stable_id, 's')}
+										alt=""
+										loading="lazy"
+										onload={_onArtworkLoad}
+										onerror={() => _onArtworkError(row.stable_id)}
+									/>
+								{/if}
 							{/if}
 						</td>
 						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
@@ -2471,9 +2503,14 @@
 		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
+	/* position without a z-index on purpose: `z-index: 0` here made every
+	 * cell its own stacking context (#4009), which trapped a cell's
+	 * `position: fixed` popovers (the analysis-dots hover tile, z-index 9600)
+	 * at that cell's level, so every LATER row's cells painted over them and
+	 * took their pointer events. The row separator (`tbody tr::after`,
+	 * z-index 1) still paints above z-index:auto cells. */
 	tbody td {
 		position: relative;
-		z-index: 0;
 	}
 	thead th {
 		border-bottom: 1px solid var(--rb-border);
@@ -2988,10 +3025,14 @@
 	.c-art img {
 		position: absolute;
 		inset: 0;
-		width: var(--tt-art);
-		height: var(--tt-art);
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
+		object-position: center 66.67%;
 		display: block;
+	}
+	.c-art:has(img.art-loaded) .art-slate {
+		display: none;
 	}
 
 	.empty {

@@ -17,6 +17,7 @@ from apps.shared.state.order_key import (
 pytestmark = pytest.mark.requirement("LIBM-20")
 
 
+# REQ: LIBM-02
 def test_from_index_matches_printf() -> None:
     assert from_index(0) == "00000000"
     assert from_index(1) == "00000001"

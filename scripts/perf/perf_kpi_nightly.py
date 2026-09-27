@@ -44,12 +44,31 @@ class WarmMedian:
     denominator: str
 
 
+class NightlyRunFailed(RuntimeError):
+    """`run_nightly` raised after appending rows to the ledger (Codex, PR #3827,
+    P1/BLOCKING, "Recover rows when the nightly measurement raises").
+
+    Carries exactly the batches it wrote, so the caller can park them in the
+    outbox and restore the checkout. Otherwise the next run's pre-run snapshot
+    would take them as baseline and never publish them. The original error
+    is the ``__cause__``."""
+
+    def __init__(self, append_batches: tuple[list[dict[str, Any]], ...]) -> None:
+        rows = sum(len(batch) for batch in append_batches)
+        super().__init__(f"the nightly run failed after appending {rows} ledger row(s)")
+        self.append_batches = append_batches
+
+
 @dataclass(frozen=True)
 class NightlyOutcome:
     entries: list[dict[str, Any]]
     breaches: list[dict[str, Any]]
     unknowns: list[dict[str, Any]]
     exit_code: int
+    #: Every ``append_entries`` batch this run wrote to the ledger, in order,
+    #: so the caller can prove the file holds nothing else (Codex, PR #3827,
+    #: P1/BLOCKING, "Guard edits during the measurement window").
+    append_batches: tuple[list[dict[str, Any]], ...]
 
 
 def warm_median_ms(samples: list[ProbeResult]) -> tuple[float | None, str | None]:
@@ -471,20 +490,52 @@ def run_nightly(
     file_issue: bool = True,
 ) -> NightlyOutcome:
     today = today or dt.datetime.now(dt.UTC).date()
-    capture_id = f"perf-kpi-{today.isoformat()}"
     measurements: list[WarmMedian] = []
     for track in config.tracks:
         measurements.extend(
             measure_track(config, base_url, track.key, track.stable_id, probe=probe)
         )
+    written: list[list[dict[str, Any]]] = []
+    try:
+        return _append_and_judge(
+            config,
+            written,
+            base_url=base_url,
+            git_sha=git_sha,
+            today=today,
+            measurements=measurements,
+            repository=repository,
+            file_issue=file_issue,
+        )
+    except Exception as exc:
+        if not written:
+            raise
+        raise NightlyRunFailed(tuple(written)) from exc
+
+
+def _append_and_judge(
+    config: PerfKpiConfig,
+    written: list[list[dict[str, Any]]],
+    *,
+    base_url: str,
+    git_sha: str,
+    today: dt.date,
+    measurements: list[WarmMedian],
+    repository: str,
+    file_issue: bool,
+) -> NightlyOutcome:
+    """Append tonight's rows, then judge them. Records each batch in
+    ``written`` as soon as it is on disk, so `run_nightly` can report exactly
+    what reached the ledger if anything after it raises."""
     rows = build_ledger_rows(
         config,
-        capture_id=capture_id,
+        capture_id=f"perf-kpi-{today.isoformat()}",
         git_sha=git_sha,
         today=today,
         measurements=measurements,
     )
     append_entries(config.ledger_path, rows)
+    written.append(rows)
     s5_rows = capture_s5_against_engine(
         engine=base_url,
         ledger=config.ledger_path,
@@ -494,6 +545,7 @@ def run_nightly(
         stemmed=_track_stable_id(config, "stemmed_mp3"),
         sha=git_sha,
     )
+    written.append(s5_rows)
     for s5_row in s5_rows:
         print(format_appended(s5_row))
     ledger = load_ledger(config.ledger_path)
@@ -534,4 +586,5 @@ def run_nightly(
         breaches=breaches,
         unknowns=unknowns,
         exit_code=exit_code,
+        append_batches=tuple(written),
     )

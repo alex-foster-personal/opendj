@@ -583,6 +583,7 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	}
 });
 
+// REQ: CLOUDSYNC-16
 test('identityBacklogNote states the consequence and hands over no command (#3252)', () => {
 	/** if a zero or missing backlog still shows a note then broken */
 	assert.equal(view.identityBacklogNote(null), null);
