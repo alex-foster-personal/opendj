@@ -41,6 +41,11 @@ def test_bar_duration_at_the_end_uses_the_last_bar() -> None:
     assert bar_duration_at(grid, 999.0) == pytest.approx(BAR_S)
 
 
+def test_bar_duration_at_before_the_grid_uses_the_first_bar() -> None:
+    grid = BarGrid(starts=(0.0, 3.0, 5.0), ends=(3.0, 5.0, 7.0))
+    assert bar_duration_at(grid, -1.0) == pytest.approx(3.0)
+
+
 def test_a_boundary_within_one_bar_matches() -> None:
     grid = _grid(20)
     # Annotated at bar 10 (t=20.0); detected half a bar early.

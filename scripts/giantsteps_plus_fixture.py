@@ -118,6 +118,22 @@ def _load_manifest() -> dict:
         return json.load(fh)
 
 
+def _decode_verified_mp3(mp3_path: Path, wav_path: Path) -> None:
+    """Decode verified MP3 bytes to WAV, overwriting any existing file on disk."""
+    proc = subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-i", str(mp3_path),
+            "-ac", "1", "-ar", "44100", str(wav_path),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"[giantsteps+] {mp3_path.stem}: ffmpeg decode failed: "
+            f"{proc.stderr.strip()[-300:]}"
+        )
+
+
 def fetch(out_dir: Path) -> int:
     manifest = _load_manifest()
     source = manifest["source"]
@@ -138,7 +154,6 @@ def fetch(out_dir: Path) -> int:
             tid = row["id"]
             mp3_path = audio_dir / f"{tid}.mp3"
             wav_path = audio_dir / f"{tid}.wav"
-            mp3_replaced = False
             if mp3_path.exists() and _sha256_bytes(mp3_path.read_bytes()) == row["mp3_sha256"]:
                 print(f"[giantsteps+] {tid}.mp3 already cached and verified")
             else:
@@ -152,31 +167,12 @@ def fetch(out_dir: Path) -> int:
                         "cache a mismatched fixture"
                     )
                 mp3_path.write_bytes(data)
-                mp3_replaced = True
                 print(f"[giantsteps+]   wrote {mp3_path} ({len(data)} bytes, sha256 verified)")
 
-            # A replaced MP3 must invalidate any existing WAV: an
-            # `mp3_path.exists()` hash mismatch above (corruption, a bumped
-            # manifest digest) means whatever WAV is already on disk was
-            # decoded from the OLD bytes, and the measurement test reads only
-            # the WAV -- so a stale WAV would silently keep serving the wrong
-            # audio as the real test subject even though the MP3 hash just
-            # passed (sol-review #3948 P1 BLOCKING).
-            if mp3_replaced and wav_path.exists():
-                wav_path.unlink()
-            if not wav_path.exists():
-                proc = subprocess.run(
-                    [
-                        "ffmpeg", "-y", "-v", "error", "-i", str(mp3_path),
-                        "-ac", "1", "-ar", "44100", str(wav_path),
-                    ],
-                    capture_output=True, text=True, check=False,
-                )
-                if proc.returncode != 0:
-                    raise SystemExit(
-                        f"[giantsteps+] {tid}: ffmpeg decode failed: {proc.stderr.strip()[-300:]}"
-                    )
-                print(f"[giantsteps+]   decoded {wav_path}")
+            # MP3 bytes are verified above; always re-decode so a stale WAV
+            # left from an earlier run or manual copy cannot be trusted.
+            _decode_verified_mp3(mp3_path, wav_path)
+            print(f"[giantsteps+]   decoded {wav_path}")
 
     print(f"[giantsteps+] {len(fixtures)} fixtures ready under {audio_dir}")
     return 0

@@ -47,13 +47,17 @@ from apps.analysis_key.segments import BarGrid
 def bar_duration_at(grid: BarGrid, t: float) -> float:
     """The duration in seconds of the bar covering time `t`.
 
-    `t` at or past the grid's last bar start uses the last bar's duration
-    (there is no bar after it to be "covering" it, and the last bar's own
-    extent is the only honest answer). Raises if the grid has no bars at all,
-    since there is then no honest bar duration to report.
+    `t` before the grid's first bar start uses the first bar's duration (no bar
+    covers that time yet, but the first bar is the only honest pre-grid
+    reference). `t` at or past the grid's last bar start uses the last bar's
+    duration (there is no bar after it to be "covering" it, and the last bar's
+    own extent is the only honest answer). Raises if the grid has no bars at
+    all, since there is then no honest bar duration to report.
     """
     if grid.n_bars == 0:
         raise ValueError("a bar grid with zero bars has no bar duration")
+    if t < grid.starts[0]:
+        return grid.ends[0] - grid.starts[0]
     for start, end in zip(grid.starts, grid.ends, strict=True):
         if start <= t < end:
             return end - start
