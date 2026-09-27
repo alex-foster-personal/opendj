@@ -32,14 +32,14 @@
 // [if] the shell's MIDI boot runs twice before the redirect lands [then] it
 //   replaces once and subscribes nothing on the leaving page [⛔️ if a Tauri
 //   listener survives into the reload and doubles every press]
+// [if] a fallback is live [then] the rendered I/O panel and the agent ui-mirror
+//   both carry it [⛔️ if either surface omits it]
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
 
+import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const DJIO = 'master12-cue34';
 
 //-----------------------------------------------------------------------------
@@ -198,6 +198,7 @@ let stores;
 let status;
 let player;
 let registry;
+let mirror;
 
 before(async () => {
 	installWindow('');
@@ -211,6 +212,7 @@ before(async () => {
 	status = entry.status;
 	player = entry.player;
 	registry = entry.registry;
+	mirror = entry.mirror;
 });
 
 beforeEach(async () => {
@@ -600,16 +602,76 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 //-----------------------------------------------------------------------------
 
 describe('IOPIN-12: the fallback is visible in the I/O panel and to agents', () => {
-	test('IOPIN-12: the I/O panel renders the fallback message inline with a hover title for its channel count', () => {
-		const panel = readFileSync(`${SRC}/lib/components/rb/mixer/HeadphoneCluster.svelte`, 'utf8');
-		assert.match(panel, /\{#if audioOutputStatus\.fallback !== null\}/);
-		assert.match(panel, /data-djio-fallback-notice/);
-		assert.match(panel, /\{audioOutputStatus\.fallback\.message\}/);
-		assert.match(panel, /title=\{djioFallbackTitle\(audioOutputStatus\.fallback\)\}/);
+	// The real HeadphoneCluster, compiled for the server and rendered by
+	// svelte's own renderer (see load-svelte-ssr.mjs for what that can and
+	// cannot prove). Its own bundle, so it reads its own status store.
+	const PANEL_ENTRY = [
+		"export { default as Panel } from '$lib/components/rb/mixer/HeadphoneCluster.svelte';",
+		"export { ioSurface } from '$lib/rb/io-surface.svelte';",
+		"export { audioOutputStatus, clearDjOutputResolution } from '$lib/rb/audio-output-status.svelte';",
+		"export { resolveDjOutputProfile } from '$lib/rb/audio-output-topology';",
+		"export { mixerState } from '$lib/player/state.svelte';",
+		"export { render } from 'svelte/server';"
+	].join('\n');
+	let panel;
+
+	before(async () => {
+		panel = await loadSvelteSsrModule(PANEL_ENTRY);
 	});
 
-	test('IOPIN-12: the ui-mirror publishes output_topology for agents', () => {
-		const mirror = readFileSync(`${SRC}/lib/rb/ui-mirror.ts`, 'utf8');
-		assert.match(mirror, /output_topology: outputTopologyMirror\(\)/);
+	/** Render the open I/O panel for one fallback (or none); return its markup. */
+	function renderIoPanel(fallback) {
+		panel.clearDjOutputResolution();
+		if (fallback !== null) panel.audioOutputStatus.fallback = fallback;
+		panel.ioSurface.open = true;
+		const noop = () => {};
+		const props = Object.fromEntries(
+			['onmix', 'onlevel', 'ondelay', 'onrefresh', 'onacquire', 'onselect', 'onmaster', 'oninput', 'onmode', 'oncalibrate', 'onAlignmentMode'].map((name) => [name, noop])
+		);
+		try {
+			return panel.render(panel.Panel, { props: { state: panel.mixerState.headphones, ...props } }).body;
+		} finally {
+			panel.ioSurface.open = false;
+			panel.clearDjOutputResolution();
+		}
+	}
+
+	test('IOPIN-12: the open I/O panel renders the fallback inline, with a hover title for its channel count', () => {
+		const html = renderIoPanel(panel.resolveDjOutputProfile(DJIO, 2).fallback);
+		const notice = html.match(/<p\b[^>]*\bdata-djio-fallback-notice\b[^>]*>([^<]*)<\/p>/);
+		assert.ok(notice, `if the notice does not render then the I/O panel never says why cue 3/4 is silent - broken; rendered: ${html.slice(0, 400)}`);
+		assert.match(notice[1], /Select the Mixtour Pro as the macOS output device and reload/);
+		assert.match(notice[0], /role="status"/);
+		assert.match(notice[0], /title="2 = output channels the current macOS output device exposes/, 'numeric readouts carry a hover title');
+	});
+
+	test('IOPIN-12 control: with no fallback the open I/O panel renders no notice at all', () => {
+		const html = renderIoPanel(null);
+		assert.match(html, /hp-context/, 'precondition: the open I/O section did render');
+		assert.equal(html.includes('data-djio-fallback-notice'), false, 'if the notice renders without a fallback then a healthy 4-channel set carries a false warning - broken');
+	});
+
+	test('IOPIN-12: the ui-mirror an agent reads carries the same fallback after a 2-channel build', async () => {
+		installWindow(`?djio=${DJIO}`);
+		FakeAudioContext.maxChannelCount = 2;
+		await audio.ensureAudioGraphForCue();
+		// buildUiMirror also lists controls and overlays from the page; an empty
+		// document stands in for them, scoped to this one call because the
+		// engine arms document listeners whenever a document exists.
+		globalThis.document = { querySelectorAll: () => [] };
+		let published;
+		try {
+			published = mirror.buildUiMirror();
+		} finally {
+			delete globalThis.document;
+		}
+		assert.equal(
+			published.output_topology?.fallback?.available_channels,
+			2,
+			'if the mirror omits output_topology then an agent cannot see the stereo fallback the operator sees - broken'
+		);
+		assert.equal(published.output_topology.requested_profile, DJIO);
+		assert.equal(published.output_topology.active_profile, null);
+		assert.match(published.output_topology.fallback.message, /Select the Mixtour Pro as the macOS output device and reload/);
 	});
 });
