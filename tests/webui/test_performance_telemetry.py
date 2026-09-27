@@ -20,9 +20,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared import private_files
-from apps.shared.machine_pressure import read_machine_pressure, valid_kernel_pressure_level
+from apps.shared.machine_pressure import (
+    MachinePressureCache,
+    read_machine_pressure,
+    valid_kernel_pressure_level,
+)
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
+from apps.webui.server.routes.performance_telemetry import _pressure_overlay_fields
 
 
 def _app(
@@ -380,6 +385,34 @@ def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
     reported = body.get("kernel_memory_pressure_level", "absent")
     expected = {"absent" if level is None else level for level in (before, after)}
     assert reported in expected, f"endpoint reported {reported!r}; live sampler read {expected}"
+
+
+@pytest.mark.requirement("PERFMODE-05")
+@pytest.mark.parametrize(
+    ("kernel_read", "expected"),
+    [
+        ({"load_average_1m": 1.0}, "absent"),
+        ({"load_average_1m": 1.0, "kernel_memory_pressure_level": 0}, "absent"),
+        ({"load_average_1m": 1.0, "kernel_memory_pressure_level": 2}, 2),
+    ],
+    ids=["unread", "zero-is-unread", "control-readable"],
+)
+def test_route_overlay_omits_kernel_pressure_the_sampler_could_not_read(
+    kernel_read: dict[str, object], expected: object
+) -> None:
+    """[if] the kernel read yields no valid level [then] the route overlay omits it, [else stop].
+
+    Deterministic on every host: the production sampler cache runs normally,
+    with only the raw kernel read (its sampler boundary) fixed, and its reading
+    goes through the route's own overlay.
+    """
+    reading = MachinePressureCache().read(
+        now=0.0, sampler=lambda: dict(kernel_read), vm_stat_reader=lambda: None
+    )
+
+    overlay = _pressure_overlay_fields(reading)
+
+    assert overlay.get("kernel_memory_pressure_level", "absent") == expected
 
 
 @pytest.mark.requirement("PERFMODE-05")
