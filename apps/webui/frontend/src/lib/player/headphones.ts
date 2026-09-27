@@ -259,7 +259,10 @@ export function headphoneMixTargetGains(params: {
 	const { mix, level, active, output_mode, selected_output_device_id } = params;
 	const gains = headphoneMixGains(mix);
 	const monitorLive = output_mode === 'two_outputs' && active;
-	const practice = practiceMainGains(output_mode, selected_output_device_id, mix);
+	// MAIN/practice always blends cue into the speaker path; a stale cue device id left
+	// in state after leaving two_outputs must not silence channel CUE on speakers.
+	const practiceDeviceId = output_mode === 'practice' ? null : selected_output_device_id;
+	const practice = practiceMainGains(output_mode, practiceDeviceId, mix);
 	const split = splitCableGains(output_mode, mix, level);
 	return {
 		monitorLive,

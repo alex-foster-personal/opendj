@@ -64,6 +64,14 @@ test('FeedbackDock provides always-on pin and support affordance', () => {
 	assert.match(DOCK, /OVERLAY_Z_INDEX\.feedbackDock/);
 });
 
+test('FeedbackPinDraftBubble uses feedbackPinBubble z-index above modals (#3981)', () => {
+	const BUBBLE = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinDraftBubble.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(BUBBLE, /OVERLAY_Z_INDEX\.feedbackPinBubble/);
+});
+
 test('global m hotkey installer is registered from +layout onMount', () => {
 	assert.match(LAYOUT, /installCommentPinHotkeys/);
 });
