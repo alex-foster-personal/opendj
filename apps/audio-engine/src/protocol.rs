@@ -168,7 +168,12 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
             let time_ms = num(b, ty, "time_ms")?;
             let downbeat = match b.get("n") {
                 None | Some(Value::Null) => i % 4 == 0,
-                Some(n) => n.as_u64().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}].n must be 1..4")))? == 1,
+                Some(n) => {
+                    n.as_u64()
+                        .filter(|n| (1..=4).contains(n))
+                        .ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}].n must be 1..4")))?
+                        == 1
+                }
             };
             out.push(Beat { time_ms, downbeat });
         }
@@ -441,6 +446,10 @@ mod tests {
         };
         assert_eq!(l.beats.iter().filter(|b| b.downbeat).count(), 2);
         assert!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 500, 400]})).is_err());
+        for n in [0, 5] {
+            let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
+            assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
+        }
     }
 
     #[test]

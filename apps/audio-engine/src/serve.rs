@@ -123,12 +123,15 @@ impl AudioSide {
     /// commands, publishing a snapshot when one is due. Returns the rendered
     /// interleaved stereo.
     pub fn process(&mut self, frames: usize) -> &[f32] {
-        while let Ok((seq, cmd)) = self.cmd_rx.pop() {
+        // Take a command only while its result has a slot to go to: a result
+        // dropped here would free a retired track on this thread. With the
+        // result ring full, the rest wait in the command ring until the pump
+        // drains it, so nothing is lost and nothing is freed here.
+        while self.res_tx.slots() > 0 {
+            let Ok((seq, cmd)) = self.cmd_rx.pop() else { break };
             let r = self.engine.apply(cmd);
-            // A full result ring would drop the result (and free a retired
-            // track here); the pump drains it every few ms, far faster than
-            // any sender fills 1024 slots.
-            let _ = self.res_tx.push((seq, r));
+            let pushed = self.res_tx.push((seq, r));
+            debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
         }
         let n = frames.min(self.scratch.len() / 2);
         self.engine.render(&mut self.scratch[..n * 2]);
@@ -146,6 +149,9 @@ enum Msg {
     Line(String),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
+    /// The audio side returned. Before `stop` is set that means it failed to
+    /// start or died, e.g. the output device would not open.
+    AudioExited,
 }
 
 /// Work parked behind a deck's pending load.
@@ -180,11 +186,15 @@ impl Control {
         seq
     }
 
-    fn push_seq(&mut self, seq: u64, cmd: EngineCmd) {
+    /// Enqueue for the audio side; false (and an error reply) when the
+    /// mailbox is full and the command was dropped.
+    fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         if self.cmd_tx.push((seq, cmd)).is_err() {
             let id = self.ids.lock().unwrap().remove(&seq).flatten();
             self.reply(id.as_deref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            return false;
         }
+        true
     }
 
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
@@ -210,7 +220,7 @@ impl Control {
             }
         }
         let seq = self.seq(id);
-        self.push_seq(seq, cmd);
+        let _ = self.push_seq(seq, cmd);
     }
 
     fn load(&mut self, id: Option<String>, spec: LoadSpec) {
@@ -230,16 +240,32 @@ impl Control {
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
-        match result {
-            Ok(track) => self.push_seq(seq, EngineCmd::Load { deck, track }),
+        let dropped = match result {
+            Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
             Err(e) => {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
                 self.reply(id.as_deref(), Err(e));
+                false
             }
+        };
+        let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
+        if dropped {
+            // The load never reached the engine, so the work queued behind it
+            // would run against the previous track. Fail it instead: the
+            // caller sees every command after the dropped load refused.
+            for item in q {
+                let id = match item {
+                    Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+                };
+                self.reply(
+                    id.as_deref(),
+                    Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on was dropped; command dropped")),
+                );
+            }
+            return;
         }
         // Release this deck's queue in order. A queued load re-arms the wait,
         // and everything after it stays parked behind that load.
-        let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         for item in q {
             match item {
                 Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
@@ -285,6 +311,15 @@ pub fn serve_threaded(
     clock: &'static str,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
 ) -> io::Result<()> {
+    serve_threaded_from(io::BufReader::new(io::stdin()), sample_rate, clock, run_audio)
+}
+
+fn serve_threaded_from(
+    input: impl BufRead + Send + 'static,
+    sample_rate: u32,
+    clock: &'static str,
+    run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+) -> io::Result<()> {
     let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(1024);
     let (res_tx, mut res_rx) = rtrb::RingBuffer::<AudioResult>::new(1024);
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
@@ -309,10 +344,13 @@ pub fn serve_threaded(
         epoch: Instant::now(),
         scratch: vec![0.0; MAX_BLOCK * 2 * 8],
     };
+    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let audio_stop = stop.clone();
-    let audio_thread = std::thread::Builder::new()
-        .name("odj-audio".into())
-        .spawn(move || run_audio(audio, audio_stop))?;
+    let exit_tx = msg_tx.clone();
+    let audio_thread = std::thread::Builder::new().name("odj-audio".into()).spawn(move || {
+        run_audio(audio, audio_stop);
+        let _ = exit_tx.send(Msg::AudioExited);
+    })?;
 
     // Pump: results and snapshots out to stdout; retired tracks freed here.
     let pump_stop = stop.clone();
@@ -340,10 +378,9 @@ pub fn serve_threaded(
         }
     });
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let reader_tx = msg_tx.clone();
     std::thread::spawn(move || {
-        for line in io::stdin().lock().lines() {
+        for line in input.lines() {
             match line {
                 Ok(l) => {
                     if reader_tx.send(Msg::Line(l)).is_err() {
@@ -365,6 +402,7 @@ pub fn serve_threaded(
         waiting: Default::default(),
         state_req,
     };
+    let mut audio_failed = false;
     while let Ok(msg) = msg_rx.recv() {
         match msg {
             Msg::Line(l) => {
@@ -375,6 +413,10 @@ pub fn serve_threaded(
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
+            Msg::AudioExited => {
+                audio_failed = true;
+                break;
+            }
         }
     }
     // Let the audio side apply what is already queued before stopping.
@@ -382,6 +424,9 @@ pub fn serve_threaded(
     stop.store(true, Ordering::Relaxed);
     let _ = audio_thread.join();
     let _ = pump.join();
+    if audio_failed {
+        return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
+    }
     Ok(())
 }
 
@@ -400,5 +445,64 @@ pub fn run_wall(block_frames: usize) -> impl FnOnce(AudioSide, Arc<AtomicBool>) 
                 std::thread::sleep(due - now);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn side(res_slots: usize) -> (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>) {
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(16);
+        let (res_tx, res_rx) = rtrb::RingBuffer::new(res_slots);
+        let (state_tx, _state_rx) = rtrb::RingBuffer::new(4);
+        let side = AudioSide {
+            engine: Engine::new(48000),
+            cmd_rx,
+            res_tx,
+            state_tx,
+            state_req: Arc::new(AtomicBool::new(false)),
+            frames_per_state: u64::MAX,
+            frames_since_state: 0,
+            epoch: Instant::now(),
+            scratch: vec![0.0; MAX_BLOCK * 2],
+        };
+        (side, cmd_tx, res_rx)
+    }
+
+    #[test]
+    fn a_full_result_ring_holds_commands_back_instead_of_dropping_results() {
+        let (mut side, mut cmd_tx, mut res_rx) = side(2);
+        for seq in 0..5 {
+            cmd_tx.push((seq, EngineCmd::MasterMute { muted: seq % 2 == 0 })).unwrap();
+        }
+        side.process(64);
+        // Two slots, two results; the other three stay queued, not lost.
+        assert_eq!(res_rx.slots(), 2);
+        assert_eq!(cmd_tx.slots(), 16 - 3);
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            while let Ok((seq, r)) = res_rx.pop() {
+                assert!(r.is_ok());
+                seen.push(seq);
+            }
+            side.process(64);
+        }
+        assert_eq!(seen, vec![0, 1, 2, 3, 4]);
+        assert_eq!(cmd_tx.slots(), 16);
+    }
+
+    #[test]
+    fn an_audio_side_that_fails_to_start_ends_serve_with_an_error() {
+        // As the device clock does when the output stream will not open: the
+        // audio side returns before shutdown. serve must end, not wait forever.
+        // stdin held open with nothing on it, as a live supervisor's is.
+        let (reader, _writer) = io::pipe().unwrap();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), 48000, "wall", |_side, _stop| {}));
+        });
+        let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
+        assert!(r.is_err());
     }
 }
