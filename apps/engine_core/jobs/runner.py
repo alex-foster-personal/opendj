@@ -15,6 +15,7 @@ is no lenient parse and no partial credit.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sqlite3
@@ -51,6 +52,15 @@ _RECONCILERS: dict[str, ReconcileHook] = {}
 _OBSERVERS: dict[str, ProgressObserver] = {}
 
 _TAIL_LINES: int = 20
+
+# At most one progress write per job per this interval, and never on the event
+# loop (#3964). The contract is a line per unit of work -- the folder import
+# writes one per FILE -- and a StreamReader with buffered data hands back line
+# after line without yielding, so writing each one synchronously held the loop
+# for a whole backlog of sqlite commits: a 10,000-file import on a busy disk
+# left /api/v1/health unanswered for about two minutes. 4 Hz is plenty for a
+# progress bar, and every line still reaches its kind's observer.
+PROGRESS_WRITE_INTERVAL_S: float = 0.25
 
 # sqlite3.Error is NOT an OSError, so without it here a store write failing
 # mid-run escaped the guard entirely and left the row 'running' forever with
@@ -586,6 +596,42 @@ class JobRunner:
         stream = proc.stdout
         if stream is None:
             raise RuntimeError("worker was spawned without a stdout pipe")
+        writer = _ProgressWriter(self.store, job_id, PROGRESS_WRITE_INTERVAL_S)
+        reader = asyncio.create_task(self._read_progress(stream, tail, writer))
+        try:
+            # Race the reader against the writer: a failed write must fail
+            # the run NOW, as the inline write did, not when the worker next
+            # prints a line or exits. A worker that goes quiet after its last
+            # line would otherwise keep running on a store that is refusing
+            # writes.
+            await asyncio.wait(
+                {reader, writer.stopped}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if not reader.done():
+                writer.raise_if_stopped()
+            broken = reader.result()
+        except BaseException:
+            reader.cancel()
+            await asyncio.wait([reader])
+            await writer.abort()
+            raise
+        # Every line read is on disk before the caller writes a terminal
+        # status, so no late progress write can land after it. Cancelled
+        # mid-flush (shutdown or a job cancel), the in-flight write still has
+        # to land before cancellation reaches the caller's terminal write.
+        try:
+            await writer.close()
+        except asyncio.CancelledError:
+            await writer.abort()
+            raise
+        return broken
+
+    @staticmethod
+    async def _read_progress(
+        stream: asyncio.StreamReader,
+        tail: deque[str],
+        writer: _ProgressWriter,
+    ) -> str | None:
         while True:
             try:
                 raw = await stream.readline()
@@ -602,12 +648,106 @@ class JobRunner:
                 progress, message, parsed = _parse_progress(line)
             except WorkerProtocolError as exc:
                 return str(exc)
-            # The observer runs AFTER the write, on the row the write
-            # produced, so a kind that turns a progress line into a domain
-            # event can never announce something the store has not recorded.
-            observe_progress(
-                self.store.set_progress(job_id, progress, message), parsed
+            writer.offer(progress, message, parsed)
+
+
+class _ProgressWriter:
+    """Coalesce one job's progress lines into rate-bounded, off-loop writes.
+
+    The pump only queues a line; this task writes the LATEST queued line in a
+    worker thread, then waits out ``interval_s`` before the next write. Every
+    queued line is then handed to the kind's observer, in order, on the row
+    that write produced -- so an observer still sees every line, and still
+    never announces a line the store has not recorded.
+
+    A failed write is not swallowed: the pump waits on ``stopped`` alongside
+    its reader and re-raises the error the moment the write fails, so the
+    runner fails the job and reaps the worker exactly as it did when the
+    write ran inline. ``offer`` and ``close`` re-raise it too.
+    """
+
+    def __init__(self, store: JobStore, job_id: str, interval_s: float) -> None:
+        self._store = store
+        self._job_id = job_id
+        self._interval_s = interval_s
+        self._pending: list[tuple[float, str | None, dict[str, Any]]] = []
+        self._wake = asyncio.Event()
+        self._closed = asyncio.Event()
+        self._task = asyncio.create_task(self._drain())
+
+    @property
+    def stopped(self) -> asyncio.Task[None]:
+        """The drain task. It finishes before close() only on a failed write."""
+        return self._task
+
+    def raise_if_stopped(self) -> None:
+        if self._task.done():
+            # Raises the write error that stopped it; a clean stop before
+            # close() is impossible, so that is a bug worth naming.
+            self._task.result()
+            raise RuntimeError(
+                f"progress writer for job {self._job_id} stopped before its "
+                "worker did"
             )
+
+    def offer(
+        self, progress: float, message: str | None, parsed: dict[str, Any]
+    ) -> None:
+        self.raise_if_stopped()
+        self._pending.append((progress, message, parsed))
+        self._wake.set()
+
+    async def close(self) -> None:
+        """Flush what is still queued, then stop. Raises a failed write.
+
+        Shielded: cancelling the caller must not cancel the drain task, whose
+        write thread would then commit behind the caller's back (see abort).
+        """
+        self._closed.set()
+        self._wake.set()
+        await asyncio.shield(self._task)
+
+    async def abort(self) -> None:
+        """The run is already failing: drop what is queued, keep its own error.
+
+        A write already handed to its thread cannot be called back, and
+        cancelling the task that awaits it only stops the WAITING: the thread
+        still commits, possibly after the caller's terminal write, leaving a
+        progress update and its event on a finished row. So abort drains the
+        in-flight write to completion instead of cancelling, and the caller's
+        terminal write is always the last word on the row.
+        """
+        self._pending.clear()
+        self._closed.set()
+        self._wake.set()
+        await asyncio.wait([self._task])
+        if not self._task.cancelled() and self._task.exception() is not None:
+            log.error(
+                "progress writer for job %s had also failed: %r",
+                self._job_id,
+                self._task.exception(),
+            )
+
+    async def _drain(self) -> None:
+        while self._pending or not self._closed.is_set():
+            await self._wake.wait()
+            self._wake.clear()
+            await self._write_pending()
+            if self._closed.is_set():
+                continue
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._closed.wait(), self._interval_s)
+
+    async def _write_pending(self) -> None:
+        if not self._pending:
+            return
+        batch, self._pending = self._pending, []
+        progress, message, _parsed = batch[-1]
+        row = await asyncio.to_thread(
+            self._store.set_progress, self._job_id, progress, message
+        )
+        for _progress, _message, parsed in batch:
+            observe_progress(row, parsed)
 
 
 def _parse_progress(line: str) -> tuple[float, str | None, dict[str, Any]]:
@@ -671,6 +811,7 @@ def _log_supervisor_exit(task: asyncio.Task[None]) -> None:
 
 __all__ = [
     "ORPHANED_WORKER_ERROR",
+    "PROGRESS_WRITE_INTERVAL_S",
     "RECONCILE_RESULTS",
     "JobRunner",
     "ProgressObserver",

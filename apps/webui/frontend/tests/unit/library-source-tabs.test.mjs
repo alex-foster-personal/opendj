@@ -8,6 +8,15 @@ function source(relativePath) {
 	return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), 'utf8');
 }
 
+test('pin ad663c171fd0 library chrome is Playlists Taglists Autolists USBs', () => {
+	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
+	const playlists = tabs.indexOf('Playlists');
+	const taglists = tabs.indexOf('Taglists');
+	const autolists = tabs.indexOf('Autolists');
+	const usbs = tabs.indexOf('USBs');
+	assert.ok(playlists >= 0 && taglists > playlists && autolists > taglists && usbs > autolists);
+});
+
 test('library source tabs list Playlists, Taglists, Autolists, USBs in order', () => {
 	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
 	const nav = source('src/lib/components/rb/browser/LibraryNav.svelte');

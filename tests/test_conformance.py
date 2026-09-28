@@ -293,6 +293,7 @@ ALL_ADAPTERS = ["serato", "traktor", "rekordbox", "djay"]
 # ================================================================== tests
 
 
+# REQ: OPEN-03c
 @pytest.mark.conformance
 @pytest.mark.requirement("OPEN-03c")
 @pytest.mark.parametrize("fixture_id", ALL_FIXTURES)
@@ -303,6 +304,7 @@ def test_fixture_has_required_files(fixture_id: str) -> None:
     assert (root / "capabilities.yaml").exists()
 
 
+# REQ: OPEN-03c
 @pytest.mark.conformance
 @pytest.mark.requirement("OPEN-03c")
 @pytest.mark.parametrize("fixture_id", ALL_FIXTURES)
