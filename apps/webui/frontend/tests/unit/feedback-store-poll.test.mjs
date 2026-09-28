@@ -91,7 +91,7 @@ after(() => {
 });
 
 afterEach(() => {
-  store.stopPinWatch();
+  store._resetPinPollStateForTests();
   store.feedbackState.availability = "unknown";
   store.feedbackState.pins = [];
 });
@@ -201,7 +201,11 @@ test("refreshPins discards a snapshot that started before a local mutation lande
   // PRE-archive board, so applying it after would resurrect the archived pin.
   let resolveGet;
   globalThis.fetch = async (request) => {
-    if (request.method === "GET") {
+    const pathname = feedbackPathname(request);
+    if (pathname === "/api/v1/feedback/comments/summary") {
+      return jsonResponse(EMPTY_PIN_SUMMARY);
+    }
+    if (request.method === "GET" && pathname === "/api/v1/feedback/comments") {
       return new Promise((resolve) => {
         resolveGet = () => resolve(jsonResponse({ comments: [{ id: "abc123", status: "fixed" }] }));
       });

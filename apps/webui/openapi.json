@@ -4434,59 +4434,20 @@
         }
       }
     },
-    "/api/v1/feedback/todos": {
-      "get": {
+    "/api/v1/feedback/archive": {
+      "post": {
         "tags": [
           "feedback"
         ],
-        "summary": "List Todos",
-        "operationId": "list_todos_api_v1_feedback_todos_get",
+        "summary": "Archive Feedback",
+        "operationId": "archive_feedback_api_v1_feedback_archive_post",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoListOut"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Create Todo",
-        "operationId": "create_todo_api_v1_feedback_todos_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TodoCreateIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TodoOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ArchiveOut"
                 }
               }
             }
@@ -4494,43 +4455,30 @@
         }
       }
     },
-    "/api/v1/feedback/todos/{todo_id}": {
-      "patch": {
+    "/api/v1/feedback/attachments/{attachment_id}": {
+      "get": {
         "tags": [
           "feedback"
         ],
-        "summary": "Patch Todo",
-        "operationId": "patch_todo_api_v1_feedback_todos__todo_id__patch",
+        "summary": "Get Attachment",
+        "description": "Stream a stored attachment's bytes back - the agent-native fetch half.",
+        "operationId": "get_attachment_api_v1_feedback_attachments__attachment_id__get",
         "parameters": [
           {
-            "name": "todo_id",
+            "name": "attachment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Todo Id"
+              "title": "Attachment Id"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TodoPatchIn"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TodoOut"
-                }
-              }
+              "image/png": {}
             }
           },
           "422": {
@@ -4655,239 +4603,6 @@
         }
       }
     },
-    "/api/v1/feedback/general": {
-      "get": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Get General",
-        "operationId": "get_general_api_v1_feedback_general_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GeneralNoteOut"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Put General",
-        "operationId": "put_general_api_v1_feedback_general_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GeneralNotePutIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GeneralNoteOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/feedback/archive": {
-      "post": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Archive Feedback",
-        "operationId": "archive_feedback_api_v1_feedback_archive_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ArchiveOut"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/feedback/comments/{comment_id}/attachment": {
-      "post": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Upload Attachment",
-        "description": "Attach one screenshot to an existing pin (issue #1333).\n\nType and size are checked, and the bytes are verified to actually decode\nas the claimed image type, BEFORE anything touches disk or comments.json -\na declared Content-Type header is never trusted alone. Replaces any\nattachment the pin already carried, deleting its old file so attachments\nnever accumulate orphans.",
-        "operationId": "upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
-        "parameters": [
-          {
-            "name": "comment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Comment Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommentOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/feedback/attachments/{attachment_id}": {
-      "get": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Get Attachment",
-        "description": "Stream a stored attachment's bytes back - the agent-native fetch half.",
-        "operationId": "get_attachment_api_v1_feedback_attachments__attachment_id__get",
-        "parameters": [
-          {
-            "name": "attachment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Attachment Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "image/png": {}
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/feedback/performance-marks": {
-      "get": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Get Performance Marks",
-        "operationId": "get_performance_marks_api_v1_feedback_performance_marks_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "feedback"
-        ],
-        "summary": "Create Performance Mark",
-        "operationId": "create_performance_mark_api_v1_feedback_performance_marks_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
         "tags": [
@@ -4967,6 +4682,59 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommentArchiveOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/comments/{comment_id}/attachment": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Upload Attachment",
+        "description": "Attach one screenshot to an existing pin (issue #1333).\n\nType and size are checked, and the bytes are verified to actually decode\nas the claimed image type, BEFORE anything touches disk or comments.json -\na declared Content-Type header is never trusted alone. Replaces any\nattachment the pin already carried, deleting its old file so attachments\nnever accumulate orphans.",
+        "operationId": "upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
                 }
               }
             }
@@ -5097,6 +4865,126 @@
         }
       }
     },
+    "/api/v1/feedback/general": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get General",
+        "operationId": "get_general_api_v1_feedback_general_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Put General",
+        "operationId": "put_general_api_v1_feedback_general_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneralNotePutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/performance-marks": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Performance Marks",
+        "operationId": "get_performance_marks_api_v1_feedback_performance_marks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Create Performance Mark",
+        "operationId": "create_performance_mark_api_v1_feedback_performance_marks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feedback/sync": {
       "post": {
         "tags": [
@@ -5150,6 +5038,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/todos": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "List Todos",
+        "operationId": "list_todos_api_v1_feedback_todos_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoListOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Create Todo",
+        "operationId": "create_todo_api_v1_feedback_todos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/todos/{todo_id}": {
+      "patch": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Patch Todo",
+        "operationId": "patch_todo_api_v1_feedback_todos__todo_id__patch",
+        "parameters": [
+          {
+            "name": "todo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Todo Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoPatchIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
                 }
               }
             }

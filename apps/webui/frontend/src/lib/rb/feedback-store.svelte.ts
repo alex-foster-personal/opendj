@@ -43,7 +43,7 @@
  */
 
 import type { components } from "../api-types";
-import { API_BASE, ApiError, api } from "../api/client";
+import { API_BASE, ApiError, api, unwrap } from "../api/client";
 import { writePinsVisible } from "./feedback-pin-visibility";
 import {
   describePinLifecycleSummaryFromPins,
@@ -536,11 +536,11 @@ export async function refreshPins(): Promise<void> {
   if (feedbackState.availability !== "ok") return;
   const generation = _pinGeneration;
   try {
-    const { data } = await api.GET("/api/v1/feedback/comments");
+    const body = await unwrap(api.GET("/api/v1/feedback/comments"));
     // A mutation landed while this GET was in flight: its response is newer
     // than what this GET started from, so applying this snapshot now would
     // roll the board back.
-    if (data && generation === _pinGeneration) feedbackState.pins = data.comments;
+    if (generation === _pinGeneration) feedbackState.pins = body.comments;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       feedbackState.availability = "missing";
@@ -568,4 +568,10 @@ export function stopPinWatch(): void {
     clearInterval(_pinPollTimer);
     _pinPollTimer = null;
   }
+}
+
+/** Test-only: reset generation guard and any active poll timer between cases. */
+export function _resetPinPollStateForTests(): void {
+  stopPinWatch();
+  _pinGeneration = 0;
 }
