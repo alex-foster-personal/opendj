@@ -18,8 +18,11 @@ Regression lines:
     only, or the unsuffixed `actions-runner` dir is skipped, then broken
   - if runner dirs sharing one .path are probed more than once, or a dir with
     no `.runner` (not a configured runner) makes the run UNKNOWN, then broken
-  - if a configured runner dir with no readable .path does not make every entry
-    UNKNOWN then broken
+  - if a configured runner dir with neither a `.env` PATH= nor a readable .path
+    does not make every entry UNKNOWN then broken
+  - if a runner's stale .path is verified when its `.env` PATH= (which the
+    Listener loads and which wins) is set, or runners are deduplicated on .path
+    rather than on that effective job PATH, then broken
   - if a Playwright revision dir left by an interrupted install (no
     INSTALLATION_COMPLETE) or missing its executable reports OK then broken
 """
@@ -379,15 +382,23 @@ def test_a_readable_runner_path_is_the_path_every_check_uses(tmp_path: Path) -> 
 
 
 def _runner_dir(
-    root: Path, name: str, path_dirs: list[str] | None, configured: bool = True
+    root: Path,
+    name: str,
+    path_dirs: list[str] | None,
+    configured: bool = True,
+    env_path_dirs: list[str] | None = None,
 ) -> Path:
-    """A runner install dir: `.runner` marks it configured, `.path` is its job PATH."""
+    """A runner install dir: `.runner` marks it configured; its job PATH is `.env`'s
+    `PATH=` when present (the Listener loads it and it wins), else `.path`."""
     runner = root / name
     runner.mkdir()
     if configured:
         (runner / ".runner").write_text("{}", encoding="utf-8")
     if path_dirs is not None:
-        (runner / ".path").write_text(":".join(path_dirs), encoding="utf-8")
+        (runner / ".path").write_text(":".join(path_dirs) + "\n", encoding="utf-8")
+    if env_path_dirs is not None:
+        env = f"LANG=en_US.UTF-8\nPATH={':'.join(env_path_dirs)}\nRUSTUP_HOME=/nonexistent\n"
+        (runner / ".env").write_text(env, encoding="utf-8")
     return runner
 
 
@@ -457,6 +468,47 @@ def test_a_configured_runner_without_a_path_makes_the_host_unknown(
     assert {r.status for r in results} == {"UNKNOWN"}, results
     assert str(unreadable) in results[0].got, results
     assert f"{rtv.RECORD} END" not in stdout, stdout
+
+
+@pytest.mark.parametrize(
+    ("path_file", "env_path", "status"),
+    [("stale", "complete", "OK"), ("complete", "stale", "MISSING"), (None, "complete", "OK")],
+)
+def test_the_env_path_is_the_job_path_and_wins_over_the_path_file(
+    tmp_path: Path, path_file: str | None, env_path: str, status: str
+) -> None:
+    """The runner Listener loads `.env`, and a PATH= there wins over `.path`, which
+    runsvc.sh only exports as a fallback. A stale `.path` under a correct `.env` is
+    inert (OK); a correct `.path` under a stale `.env` PATH is not (MISSING)."""
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    entry, outside_dir = _elsewhere_entry(job_dirs)
+    dirs = {"stale": job_dirs, "complete": [outside_dir, *job_dirs]}
+    runner = _runner_dir(
+        tmp_path,
+        "actions-runner",
+        dirs[path_file] if path_file else None,
+        env_path_dirs=dirs[env_path],
+    )
+    [result], _ = _probe_locally([entry], runner)
+    assert result.status == status, result
+
+
+def test_runners_are_deduplicated_on_their_effective_job_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two runners whose `.path` files differ but whose `.env` PATH is the same run
+    jobs under one PATH, so they are one probe, not two."""
+    _discover_runners_under(monkeypatch, tmp_path)
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    entry, outside_dir = _elsewhere_entry(job_dirs)
+    effective = [outside_dir, *job_dirs]
+    first = _runner_dir(tmp_path, "actions-runner", job_dirs, env_path_dirs=effective)
+    stale = [*job_dirs, "/nowhere"]
+    second = _runner_dir(tmp_path, "actions-runner-2", stale, env_path_dirs=effective)
+    results, stdout = _probe_locally([entry], None)
+    assert [r.status for r in results] == ["OK"], results
+    assert stdout.count(f"{rtv.RECORD} PATHSRC ") == 1, stdout
+    assert f"{rtv.RECORD} ALSO {second} {first}" in stdout, stdout
 
 
 # ----- a Playwright browser is its payload, not its cache dir name ------------------------

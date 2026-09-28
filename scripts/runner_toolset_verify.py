@@ -1,8 +1,9 @@
 """Verify a CI runner host against ci/runner-toolset.yml, as the runner user.
 
 Runs every manifest entry's `verify` command on the host, as the runner user,
-under each configured runner's own job PATH (`<runner-dir>/.path`, for every
-runner dir holding `.runner`; dirs sharing a `.path` are probed once), and
+under each configured runner's own job PATH (for every runner dir holding
+`.runner`: its `.env` `PATH=` when set, which the Listener loads and which
+wins, else `<runner-dir>/.path`; runners sharing a job PATH are probed once), and
 checks each `provides` executable resolves on that PATH for kinds apt, binary
 and toolchain. The host verdict per entry is its worst runner's, naming that
 runner. Read-only: it installs, writes and restarts nothing.
@@ -43,7 +44,9 @@ Requirements:
     verified under its own `.path`, and the host verdict is the worst runner's.
     [if] one of several runners lacks a tool the others have [then ⛔️] OK.
     [if] the unsuffixed `actions-runner` dir is skipped [then ⛔️] it is verified.
-    [if] one configured runner has no readable .path [then ⛔️] any entry reports OK.
+    [if] one configured runner has neither a .env PATH= nor a readable .path
+      [then ⛔️] any entry reports OK.
+    [if] a runner's .env sets PATH= [then ⛔️] its .path is what gets verified.
     [if] a pinned tool reports the pin plus a `-nightly`/`-rc` suffix [then ⛔️] OK.
   ✔︎ ✅ R2 exit code follows the contract above.
     [if] one entry is UNKNOWN and the rest OK [then ⛔️] exit 0.
@@ -90,8 +93,11 @@ def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
     """One bash script that runs every verify once per distinct runner job PATH.
 
     Without `runner_dir` it verifies every configured runner dir the user owns:
-    `.path` is per runner install, so one runner's PATH vouches for no other.
-    Dirs whose `.path` is identical get identical verdicts and are probed once."""
+    the job PATH is per runner install, so one runner's vouches for no other.
+    A runner's job PATH is resolved as its Listener does: `.env`'s `PATH=` when
+    set (the Listener loads `.env` and that wins), else `.path` (which runsvc.sh
+    only exports as a fallback). Runners with the same effective PATH get
+    identical verdicts and are probed once."""
     given = shlex.quote(runner_dir) if runner_dir else "''"
     lines = [
         "set -u",
@@ -110,22 +116,35 @@ def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
         f' {CFG_RUNNER_DIR_GLOBS}; refusing to verify against the login PATH" >&2',
         "  exit 96",
         "fi",
+        # Same resolution as ci-hosts' runner-conformance.sh: .env PATH= wins.
+        "job_path() {",
+        '  p="$(grep -m1 \'^PATH=\' "$1/.env" 2>/dev/null | cut -d= -f2-)"',
+        '  [ -n "$p" ] || p="$(head -n1 "$1/.path" 2>/dev/null)"',
+        '  printf %s "$p"',
+        "}",
+        "paths=()",
         'for rd in "${rds[@]}"; do',
-        '  if [ ! -r "$rd/.path" ] || [ ! -s "$rd/.path" ]; then',
-        '    echo "no readable, non-empty runner .path in $rd; refusing to verify'
-        ' against the login PATH" >&2',
+        '  path="$(job_path "$rd")"',
+        '  if [ -z "$path" ]; then',
+        '    echo "no job PATH for $rd: neither a PATH= in .env nor a readable, non-empty'
+        ' .path; refusing to verify against the login PATH" >&2',
         "    exit 96",
         "  fi",
+        '  paths+=("$path")',
         "done",
         "probed=()",
+        "probed_paths=()",
+        "i=0",
         'for rd in "${rds[@]}"; do',
-        '  path="$(cat "$rd/.path")"',
-        "  same=''",
-        '  for p in "${probed[@]:-}"; do',
-        '    [ -n "$p" ] && [ "$(cat "$p/.path")" = "$path" ] && same=$p && break',
+        '  path="${paths[$i]}"; i=$((i + 1)); same=""',
+        "  j=0",
+        '  for p in "${probed_paths[@]:-}"; do',
+        '    [ -n "$p" ] && [ "$p" = "$path" ] && same="${probed[$j]}" && break',
+        "    j=$((j + 1))",
         "  done",
         f'  if [ -n "$same" ]; then echo "{RECORD} ALSO $rd $same"; continue; fi',
         '  probed+=("$rd")',
+        '  probed_paths+=("$path")',
         '  export PATH="$path"',
         f'  echo "{RECORD} PATHSRC $rd"',
         "  cd ~ || exit 97",
