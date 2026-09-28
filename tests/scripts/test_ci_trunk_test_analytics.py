@@ -1,6 +1,7 @@
 """The pytest fast lane's per-test health reaches Trunk Flaky Tests, and only Trunk.
 
-ADR-0127 (Mon 28 Sep 2026): Trunk Flaky Tests is the sole test-analytics uploader;
+ADR-NEW-trunk-flaky-tests-sole-test-analytics (Mon 28 Sep 2026): Trunk Flaky Tests is
+the sole test-analytics uploader;
 Mergify CI Insights (ADR-0078) is gone. The upload is MEASURE ONLY: pytest's own
 exit code is each shard's verdict, quarantine stays off, and a failed or empty
 upload is annotated as UNMEASURED rather than read as a recorded run.
