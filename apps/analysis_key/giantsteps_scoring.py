@@ -18,6 +18,24 @@ returned and reads off the bar covering the queried time, so the tolerance a
 132 BPM track gets is shorter than the one a 90 BPM track gets, which is what
 "1 bar" actually means.
 
+WHY THE TOLERANCE IS A BAR-COORDINATE DISTANCE, NOT A SYMMETRIC SECOND COUNT
+(P1 BLOCKING, sol-review #3948). The original implementation converted "1 bar"
+to a SECONDS tolerance using only the ANNOTATED time's bar duration, then
+compared it against a plain `abs(detected_s - annotated_s)` in seconds. On a
+variable-tempo grid that is not "within one bar" at all: a detection exactly
+one bar away, where that one bar happens to be a LONG bar, could exceed a
+SHORT annotated bar's seconds tolerance and be wrongly rejected; a detection
+several SHORT bars away could fit inside a LONG annotated bar's generous
+seconds tolerance and be wrongly accepted. Both directions are real bugs
+because "1 bar" is a statement about the GRID, not about elapsed seconds.
+`bar_position_at` maps a time to its fractional bar coordinate (bar index plus
+fraction through that bar) by walking the same real grid, and
+`boundary_within_tolerance` now compares the two times' bar-coordinate
+DISTANCE against `tolerance_bars`, which is what "within 1 bar" means on a
+grid whose bar duration moves. A time before the grid's first bar or at/after
+its final extent extrapolates using the first/last bar's own duration, the
+same edge rule `bar_duration_at` already used.
+
 BOUNDARY MATCHING IS MAXIMUM-CARDINALITY, NOT GREEDY. Two annotated
 boundaries could both fall within tolerance of the same detected one (or vice
 versa) on a messy real signal; a naive "any pair within tolerance counts"
@@ -64,17 +82,45 @@ def bar_duration_at(grid: BarGrid, t: float) -> float:
     return grid.ends[-1] - grid.starts[-1]
 
 
+def bar_position_at(grid: BarGrid, t: float) -> float:
+    """`t` as a fractional bar coordinate: bar index plus fraction through it.
+
+    Bar `i` covers the half-open coordinate range `[i, i + 1)`, so two times
+    in the same bar are less than 1.0 apart and two times exactly one bar
+    apart (same fraction, adjacent bar) are exactly 1.0 apart, regardless of
+    how long either bar actually is in seconds. `t` before the grid's first
+    bar start extrapolates backward using the first bar's own duration; `t`
+    at or past the grid's last bar's end extrapolates forward using the last
+    bar's own duration -- the same edge rule `bar_duration_at` uses, so a time
+    outside the grid still gets an honest position rather than clamping to
+    bar 0 or the last bar.
+    """
+    if grid.n_bars == 0:
+        raise ValueError("a bar grid with zero bars has no bar position")
+    if t < grid.starts[0]:
+        first_bar_s = grid.ends[0] - grid.starts[0]
+        return (t - grid.starts[0]) / first_bar_s
+    for index, (start, end) in enumerate(zip(grid.starts, grid.ends, strict=True)):
+        if start <= t < end:
+            return index + (t - start) / (end - start)
+    last_index = grid.n_bars - 1
+    last_bar_s = grid.ends[last_index] - grid.starts[last_index]
+    return last_index + (t - grid.starts[last_index]) / last_bar_s
+
+
 def boundary_within_tolerance(
     detected_s: float, annotated_s: float, grid: BarGrid, *, tolerance_bars: float = 1.0
 ) -> bool:
     """Whether `detected_s` lands within `tolerance_bars` real bars of `annotated_s`.
 
-    The tolerance is measured in the bar covering the ANNOTATED time: that is
-    the ground truth the spec's "1 bar" refers to, not whatever bar the
-    (possibly wrong) detected time happens to fall in.
+    Both times are mapped to fractional bar coordinates on the same grid
+    (`bar_position_at`) and compared by their coordinate DISTANCE, not by a
+    seconds tolerance derived from one side's bar duration -- see the module
+    docstring for why a variable-tempo grid needs this.
     """
-    tolerance_s = tolerance_bars * bar_duration_at(grid, annotated_s)
-    return abs(detected_s - annotated_s) <= tolerance_s
+    detected_bar_position = bar_position_at(grid, detected_s)
+    annotated_bar_position = bar_position_at(grid, annotated_s)
+    return abs(detected_bar_position - annotated_bar_position) <= tolerance_bars
 
 
 @dataclass(frozen=True)
@@ -155,4 +201,10 @@ def score_track(
     )
 
 
-__all__ = ["BoundaryScore", "bar_duration_at", "boundary_within_tolerance", "score_track"]
+__all__ = [
+    "BoundaryScore",
+    "bar_duration_at",
+    "bar_position_at",
+    "boundary_within_tolerance",
+    "score_track",
+]

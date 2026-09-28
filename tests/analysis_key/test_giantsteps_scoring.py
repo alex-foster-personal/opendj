@@ -18,6 +18,7 @@ import pytest
 from apps.analysis_key.giantsteps_scoring import (
     BarGrid,
     bar_duration_at,
+    bar_position_at,
     boundary_within_tolerance,
     score_track,
 )
@@ -153,3 +154,71 @@ def test_no_annotated_and_no_detected_scores_zero_not_a_divide_by_zero() -> None
 def test_zero_bars_in_the_grid_refuses_rather_than_dividing_by_zero() -> None:
     with pytest.raises(ValueError, match="zero bars"):
         bar_duration_at(BarGrid(starts=(), ends=()), 10.0)
+
+
+#-----------------------------------------------------------------------------
+# variable-tempo grid: bar-coordinate distance, not a symmetric seconds count
+# (P1 BLOCKING, sol-review #3948)
+#-----------------------------------------------------------------------------
+
+def _variable_grid() -> BarGrid:
+    """One long bar (4s), then four short bars (1s each): 0-4, 4-5, 5-6, 6-7, 7-8."""
+    starts = (0.0, 4.0, 5.0, 6.0, 7.0)
+    ends = (4.0, 5.0, 6.0, 7.0, 8.0)
+    return BarGrid(starts=starts, ends=ends)
+
+
+def test_bar_position_at_reads_index_plus_fraction() -> None:
+    grid = _variable_grid()
+    assert bar_position_at(grid, 0.0) == pytest.approx(0.0)
+    assert bar_position_at(grid, 2.0) == pytest.approx(0.5)  # mid long bar
+    assert bar_position_at(grid, 4.5) == pytest.approx(1.5)  # mid short bar 1
+
+
+def test_detection_one_preceding_long_bar_away_matches_annotation_in_a_short_bar() -> None:
+    """Annotated at the start of the short bar (bar 1); detected at the start
+    of the preceding LONG bar (bar 0) -- exactly one bar away in bar-coordinate
+    terms. The old symmetric-seconds tolerance (1 short bar = 1.0s) would have
+    rejected a detection 4.0s away, even though it is genuinely one bar back.
+    """
+    grid = _variable_grid()
+    annotated = 4.0  # start of bar 1 (short), position 1.0
+    detected = 0.0  # start of bar 0 (long), position 0.0
+    assert boundary_within_tolerance(detected, annotated, grid) is True
+
+
+def test_detection_several_short_bars_away_does_not_match_annotation_in_a_long_bar() -> None:
+    """Annotated near the end of the LONG bar; detected several SHORT bars
+    later. The old symmetric-seconds tolerance (1 long bar = 4.0s) would have
+    wrongly accepted this: |12.5 - 9.5| = 3.0s <= 4.0s. In bar-coordinate
+    terms the detection is 2.55 bars away, well outside 1 bar.
+    """
+    starts = (0.0, 10.0, 11.0, 12.0, 13.0)
+    ends = (10.0, 11.0, 12.0, 13.0, 14.0)
+    grid = BarGrid(starts=starts, ends=ends)
+    annotated = 9.5  # inside the long bar (0-10), position 0.95
+    detected = 12.5  # inside short bar 3 (12-13), position 3.5
+    assert boundary_within_tolerance(detected, annotated, grid) is False
+
+
+def test_boundary_matching_before_the_grid_extrapolates_from_the_first_bar() -> None:
+    grid = _variable_grid()  # first bar (0-4) is 4s
+    annotated = 0.0  # position 0.0
+    assert boundary_within_tolerance(-2.0, annotated, grid) is True  # position -0.5
+    assert boundary_within_tolerance(-6.0, annotated, grid) is False  # position -1.5
+
+
+def test_boundary_matching_at_or_past_the_grid_extrapolates_from_the_last_bar() -> None:
+    grid = _variable_grid()  # last bar (7-8) is 1s
+    annotated = 7.0  # at the last bar's start, position 4.0
+    assert boundary_within_tolerance(7.5, annotated, grid) is True  # position 4.5
+    assert boundary_within_tolerance(9.0, annotated, grid) is False  # position 6.0
+
+
+def test_constant_tempo_grid_is_unaffected_by_the_bar_coordinate_change() -> None:
+    """Control: on a constant-tempo grid, bar-coordinate distance and the old
+    symmetric-seconds distance agree exactly, so nothing regresses here."""
+    grid = _grid(20)
+    assert boundary_within_tolerance(19.0, 20.0, grid) is True
+    assert boundary_within_tolerance(18.0, 20.0, grid, tolerance_bars=1.0) is True
+    assert boundary_within_tolerance(17.9, 20.0, grid, tolerance_bars=1.0) is False
