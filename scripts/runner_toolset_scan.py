@@ -172,7 +172,7 @@ class _Walker:
     def walk(self) -> None:
         while self.k < len(self.toks):
             tok = self.toks[self.k][0]
-            _note_repo_path(tok, self.ctx)
+            _note_repo_path(tok, self.source, self.ctx)
             if not (self._skipping(tok) or self._structure(tok) or self._operator(tok)):
                 self._word(tok)
 
@@ -299,7 +299,7 @@ def _scan_arguments(name: str, toks: list[tuple[str, int]], k: int, where: str, 
     while end < len(toks) and not lex.is_separator(toks[end][0]) and toks[end][0] != "--":
         end += 1
     args = [tok for tok, _ in toks[k:end]]
-    _note_argument_paths(args, ctx)
+    _note_argument_paths(args, where.rsplit(":", 1)[0], ctx)
     handler = ARGUMENT_HANDLERS.get(name)
     if handler:
         handler(name, args, where, ctx)
@@ -373,10 +373,10 @@ ARGUMENT_HANDLERS: dict[str, Callable[[str, list[str], str, _Ctx], None]] = {
 }
 
 
-def _note_argument_paths(args: list[str], ctx: _Ctx) -> None:
+def _note_argument_paths(args: list[str], source: str, ctx: _Ctx) -> None:
     """Queue repo scripts an argument names (`bash scripts/x.sh`, `python -m scripts.x`)."""
     for idx, arg in enumerate(args):
-        _note_repo_path(arg, ctx)
+        _note_repo_path(arg, source, ctx)
         if arg == "-m" and idx + 1 < len(args) and PY_MODULE_RE.match(args[idx + 1]):
             _queue_python_module(args[idx + 1], ctx)
 
@@ -408,8 +408,9 @@ def _queue_python_imports(text: str, path: Path, ctx: _Ctx) -> None:
             _queue_python_module(module, ctx, entry="__init__.py")
 
 
-def _note_repo_path(tok: str, ctx: _Ctx) -> None:
-    rel = sources.repo_path(tok, ctx.cwd, REPO_ROOT)
+def _note_repo_path(tok: str, source: str, ctx: _Ctx) -> None:
+    """Queue the repo script a token names, resolved exactly as a command token is."""
+    rel = sources.repo_script_for(tok, source, ctx.cwd, REPO_ROOT)
     if rel:
         _queue_repo_file(rel, ctx)
 
