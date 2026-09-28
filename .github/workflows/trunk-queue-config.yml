@@ -1,0 +1,42 @@
+name: Trunk queue config
+
+# ci/trunk-merge-queue.json is the Trunk Merge Queue's desired settings (config as code).
+# A push to main that changes it APPLIES it; the daily run only DIFFS, so a deliberate
+# change made in the Trunk UI is reported as drift instead of being silently reverted.
+# The queue's run state (paused/running) is never part of the file or the apply.
+#
+# The token shares a job with a checkout, which the pull_request lanes never allow. It is
+# safe here because this workflow has no pull_request trigger: only main's own reviewed
+# code runs with it. tests/scripts/test_trunk_queue.py pins that.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ci/trunk-merge-queue.json
+      - scripts/trunk_queue.py
+      - .github/workflows/trunk-queue-config.yml
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trunk-queue-config
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: trunk queue config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Apply on main, diff on schedule
+        env:
+          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
+          MODE: ${{ github.event_name == 'schedule' && 'diff' || 'apply' }}
+        run: python3 -m scripts.trunk_queue "$MODE"

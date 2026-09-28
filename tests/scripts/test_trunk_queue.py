@@ -9,6 +9,8 @@ Regression lines:
   - if the merge method drifts from merge_commit then queue merges differ from the step-7 lane merge
   - if Trunk's status check is enabled while ci_wait does not know its app then every waiter raises
   - if a missing token reaches the network then an unauthenticated call reads like a result
+  - if the config workflow gains a PR trigger then branch code runs with the org token in scope
+  - if the scheduled run applies instead of diffing then a deliberate UI change is silently reverted
 """
 
 from __future__ import annotations
@@ -127,3 +129,28 @@ def test_trunk_status_check_is_known_to_ci_wait_before_it_is_enabled() -> None:
 def test_the_nucbox_shim_label_submits_to_the_queue() -> None:
     assert DESIRED["labelCommandsEnabled"] is True
     assert DESIRED["enqueueingLabel"] == "queue"
+
+
+# -----------------------------------------------------------------------------
+CONFIG_WORKFLOW = WORKFLOWS / "trunk-queue-config.yml"
+
+
+def test_the_config_workflow_never_runs_branch_code_with_the_token() -> None:
+    workflow = yaml.safe_load(CONFIG_WORKFLOW.read_text())
+    triggers = set(workflow.get(True) or workflow["on"])
+    assert triggers == {"push", "schedule", "workflow_dispatch"}, triggers
+    assert (workflow.get(True) or workflow["on"])["push"]["branches"] == ["main"]
+    holders = [
+        f"{path.name}:{job_id}"
+        for path in WORKFLOWS.glob("*.yml")
+        for job_id, job in yaml.safe_load(path.read_text())["jobs"].items()
+        if "secrets.TRUNK_API_TOKEN" in json.dumps(job)
+        and any(str(step.get("uses", "")).startswith("actions/checkout@") for step in job["steps"])
+    ]
+    assert holders == [f"{CONFIG_WORKFLOW.name}:sync"], holders
+
+
+def test_the_scheduled_run_only_diffs() -> None:
+    step = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]["steps"][-1]
+    assert step["env"]["MODE"] == "${{ github.event_name == 'schedule' && 'diff' || 'apply' }}"
+    assert step["run"] == 'python3 -m scripts.trunk_queue "$MODE"'
