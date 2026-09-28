@@ -88,6 +88,8 @@ RECIPE_FLAGS_WITH_VALUE = {"-f", "-C", "--justfile", "--working-directory", "-j"
 WORD_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+-]*$")
 APT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]+$")
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*(\[[^]]*\])?\+?=.*", re.S)
+# `2>x`, `{fd}>x`: shlex splits the fd off, but it belongs to the redirect after it.
+FD_PREFIX_RE = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
 REPO_SCRIPT_RE = re.compile(r"^(?:\./)?((?:scripts|ops|tests|\.github)/[\w./-]+)$")
 PATH_VARIABLE_PREFIX_RE = re.compile(r"^(?:\$\{?[A-Za-z_]\w*\}?|GHEXPR)/")
 PY_MODULE_RE = re.compile(r"^(scripts|ops|apps)(\.[A-Za-z_]\w*)+$")
@@ -209,7 +211,9 @@ class _Walker:
         return True
 
     def _operator(self, tok: str) -> bool:
-        if lex.is_redirect(tok):
+        if self._is_fd_prefix(tok):
+            self.k += 1  # command position is whatever it was before the redirect
+        elif lex.is_redirect(tok):
             self.k += 2  # the next token is the redirect target, never a command
         elif lex.is_separator(tok) or tok in KEYWORDS_BEFORE_COMMAND or tok in {"{", "}"}:
             self.at_command = True
@@ -219,6 +223,10 @@ class _Walker:
         else:
             return False
         return True
+
+    def _is_fd_prefix(self, tok: str) -> bool:
+        following = self.toks[self.k + 1][0] if self.k + 1 < len(self.toks) else ""
+        return bool(FD_PREFIX_RE.fullmatch(tok)) and lex.is_redirect(following)
 
     def _word(self, tok: str) -> None:
         """A word in command position.
