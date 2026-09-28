@@ -45,6 +45,7 @@ OPERATIONAL_KEYS = frozenset({"state"})
 UNORDERED_KEYS = frozenset({"allowedBotSubmitters", "requiredStatuses"})
 # Success bodies that carry no data (measured Mon 28 Sep 2026: submitPullRequest returns `OK`).
 PLAIN_SUCCESS_BODIES = frozenset({b"", b"OK"})
+READ_ENDPOINTS = frozenset({"getQueue"})
 
 
 class TrunkApiError(RuntimeError):
@@ -89,12 +90,22 @@ def _token() -> str:
     return token
 
 
-def parse_body(raw: bytes) -> dict[str, Any]:
-    """Write endpoints (submitPullRequest) answer a bare `OK`; any other body must be JSON."""
+def parse_body(raw: bytes, *, endpoint: str) -> dict[str, Any]:
+    """Parse a 2xx body; a body that cannot be the endpoint's answer is unmeasured (exit 2).
+
+    Write endpoints (updateQueue, submitPullRequest) may answer a bare `OK`. A read must answer a
+    JSON object: an `OK`, empty or non-object read would otherwise diff as every setting drifted.
+    """
     body = raw.strip()
-    if body in PLAIN_SUCCESS_BODIES:
+    if endpoint not in READ_ENDPOINTS and body in PLAIN_SUCCESS_BODIES:
         return {}
-    return json.loads(body)
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        raise TrunkApiError(f"POST {endpoint} -> 2xx body is not JSON: {body[:120]!r}") from None
+    if not isinstance(parsed, dict):
+        raise TrunkApiError(f"POST {endpoint} -> 2xx body is not a JSON object: {body[:120]!r}")
+    return parsed
 
 
 def _post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -117,7 +128,7 @@ def _post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
     except (urllib.error.URLError, TimeoutError) as error:
         # DNS, refused connection, TLS or timeout: the queue state is unmeasured, not drifted.
         raise TrunkApiError(f"POST {endpoint} -> Trunk API unreachable: {error}") from None
-    return parse_body(raw)
+    return parse_body(raw, endpoint=endpoint)
 
 
 def fetch_live(desired: dict[str, Any]) -> dict[str, Any]:

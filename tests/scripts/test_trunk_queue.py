@@ -10,6 +10,7 @@ Regression lines:
   - if Trunk's status check is enabled while ci_wait does not know its app then every waiter raises
   - if a missing token reaches the network then an unauthenticated call reads like a result
   - if an unreachable API exits 1 then an outage reads as drift
+  - if an `OK`, empty or non-JSON read parses as data then an upstream fault reads as drift
   - if a manual dispatch can name a branch ref then branch code runs with the org token
   - if the config workflow gains a PR trigger then branch code runs with the org token in scope
   - if the scheduled run applies instead of diffing then a deliberate UI change is silently reverted
@@ -139,13 +140,26 @@ def test_an_unreachable_api_is_unmeasured_not_drift() -> None:
     [(b"OK", {}), (b"OK\n", {}), (b"", {}), (b'{"state": "running"}', {"state": "running"})],
 )
 def test_a_plain_text_success_body_is_not_an_error(body: bytes, parsed: dict[str, str]) -> None:
-    """Trunk answers submitPullRequest with a bare `OK`; only JSON bodies carry data."""
-    assert trunk_queue.parse_body(body) == parsed
+    """Trunk answers write endpoints with a bare `OK`; only JSON bodies carry data."""
+    assert trunk_queue.parse_body(body, endpoint="updateQueue") == parsed
 
 
-def test_an_unexpected_non_json_body_still_fails_loudly() -> None:
-    with pytest.raises(json.JSONDecodeError):
-        trunk_queue.parse_body(b"<html>")
+@pytest.mark.parametrize("endpoint", ["getQueue", "updateQueue"])
+def test_an_unexpected_non_json_body_is_unmeasured_not_a_traceback(endpoint: str) -> None:
+    with pytest.raises(trunk_queue.TrunkApiError, match="not JSON"):
+        trunk_queue.parse_body(b"<html>", endpoint=endpoint)
+
+
+@pytest.mark.parametrize("body", [b"OK", b"", b"[]", b'"running"'])
+def test_a_read_without_a_json_object_is_unmeasured_not_drift(body: bytes) -> None:
+    """An `OK` or empty read would otherwise diff as every setting drifted (exit 1, not 2)."""
+    with pytest.raises(trunk_queue.TrunkApiError, match="getQueue"):
+        trunk_queue.parse_body(body, endpoint="getQueue")
+
+
+def test_a_read_with_a_json_object_is_data() -> None:
+    """Control for the test above: a real queue read still parses."""
+    assert trunk_queue.parse_body(b'{"state": "running"}', endpoint="getQueue") == {"state": "running"}
 
 
 # -----------------------------------------------------------------------------
