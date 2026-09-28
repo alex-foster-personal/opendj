@@ -1,6 +1,10 @@
 """Tests for :mod:`apps.open_dj.adapters.rekordbox`."""
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
+from typing import Any
+
 import pytest
 
 from apps.open_dj.adapters.rekordbox import (
@@ -11,9 +15,30 @@ from apps.open_dj.adapters.rekordbox import (
 from apps.open_dj.canon import to_canonical_bytes
 from apps.open_dj.validate import validate_document
 
+# Fixed rekordbox-side "row last touched" timestamp. Deliberately not
+# "now" anywhere in this file: the whole point of OPEN-02's provenance
+# envelope is that it reports when ROW was last modified, not when the
+# export happened to run.
+_RB_UPDATED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
+# modified_at is stamped to the second, so a longer gap puts the two exports in
+# different wall-clock seconds: a leaked now() would then change the bytes.
+_CROSS_A_WALL_CLOCK_SECOND_S = 1.1
+
+
+def _all_modified_at(node: object) -> set[str]:
+    """Every provenance ``modified_at`` anywhere in an exported document."""
+    if isinstance(node, dict):
+        found = {node["modified_at"]} if "modified_at" in node else set()
+        for value in node.values():
+            found |= _all_modified_at(value)
+        return found
+    if isinstance(node, list):
+        return set().union(*(_all_modified_at(item) for item in node))
+    return set()
+
 
 def _rb_track(**overrides) -> RBTrackInput:
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         rb_id="rb1",
         title="Strobe",
         artists=["deadmau5"],
@@ -25,6 +50,7 @@ def _rb_track(**overrides) -> RBTrackInput:
         mtime=1700000000.0,
         bpm=128.0,
         rating=5,
+        updated_at=_RB_UPDATED_AT,
     )
     defaults.update(overrides)
     return RBTrackInput(**defaults)
@@ -43,6 +69,38 @@ class TestExport:
         a = to_canonical_bytes(build_library([_rb_track()]).document)
         b = to_canonical_bytes(build_library([_rb_track()]).document)
         assert a == b
+
+    def test_export_never_touches_wall_clock(self) -> None:
+        """Regression for PR #4119 fast-tier CI flake.
+
+        Two exports of the same untouched library disagreed on bytes because
+        ``bpm``/``rating`` ``modified_at`` was stamped from ``datetime.now()``
+        rather than the rekordbox row's own ``updated_at``. Run two real
+        exports that straddle a wall-clock second, prove they agree byte for
+        byte, and prove every modified_at in the document is the row's own.
+        """
+        a = to_canonical_bytes(build_library([_rb_track()]).document)
+        time.sleep(_CROSS_A_WALL_CLOCK_SECOND_S)
+        document = build_library([_rb_track()]).document
+        assert a == to_canonical_bytes(document)
+        assert _all_modified_at(document) == {"2026-01-05T12:30:00Z"}
+
+    def test_export_raises_when_provenance_field_missing_source_timestamp(
+        self,
+    ) -> None:
+        """Fail fast: a track with bpm/key/rating but no updated_at must
+        error loudly rather than have the export silently substitute the
+        wall clock for the missing rekordbox-side timestamp."""
+        with pytest.raises(RuntimeError, match="updated_at"):
+            build_library([_rb_track(updated_at=None)], include_cues=False)
+
+    def test_bpm_and_rating_modified_at_matches_source_row(self) -> None:
+        """Control: modified_at carries the INTENDED value (the source
+        row's updated_at), not merely *some* timestamp."""
+        result = build_library([_rb_track()])
+        track = result.document["tracks"][0]
+        assert track["bpm"]["modified_at"] == "2026-01-05T12:30:00Z"
+        assert track["rating"]["modified_at"] == "2026-01-05T12:30:00Z"
 
     def test_track_id_matches_stable_id(self) -> None:
         """D2: exported track_id == apps.shared.state.ids.stable_id for the same ISRC."""
