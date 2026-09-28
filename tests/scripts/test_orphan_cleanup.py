@@ -41,7 +41,7 @@ from tests.support.spawned_servers import SpawnedServer, spawn_test_server
 pytestmark = pytest.mark.requirement("DEVOPS-17")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REAPER = REPO_ROOT / "scripts" / "orphan_reaper.py"
+REAPER_MODULE = "scripts.orphan_reaper"  # run with -m from REPO_ROOT
 FRONTEND = REPO_ROOT / "apps" / "webui" / "frontend"
 PLAYWRIGHT_BIN = FRONTEND / "node_modules" / ".bin" / "playwright"
 GONE_WITHIN_S = 5.0
@@ -378,7 +378,8 @@ def test_every_playwright_webserver_command_is_guarded() -> None:
 
 def _census_row(pid: int) -> dict:
     out = subprocess.run(
-        [sys.executable, str(REAPER), "census", "--json"],
+        [sys.executable, "-m", REAPER_MODULE, "census", "--json"],
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=True,
@@ -424,12 +425,14 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     result = subprocess.run(
         [
             sys.executable,
-            str(REAPER),
+            "-m",
+            REAPER_MODULE,
             "reap",
             "--min-age-s",
             "0",
             *(f"--only-pid={p}" for p in (service, test_server, agent_server)),
         ],
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=120,
