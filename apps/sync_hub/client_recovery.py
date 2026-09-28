@@ -36,7 +36,11 @@ from typing import Any
 from apps.shared.state import normalize_locations
 from apps.sync_hub import capabilities, digest_diff, engine
 from apps.sync_hub.client_transport_ops import _machines_from, _rows_from, _transaction
-from apps.sync_hub.engine_identity_map import _remove_remap_loser, load_identity_remap
+from apps.sync_hub.engine_identity_map import (
+    _remove_remap_loser,
+    effective_identity_remap,
+    load_identity_remap,
+)
 from apps.sync_hub.protocol import (
     MEMBERSHIP_TABLE,
     RowChange,
@@ -141,25 +145,43 @@ def stale_remaps_the_offer_would_spread(
     the survivor. When the hub contradicts that remap those rows belong to
     the loser: pushing them re-keys the loser's data on the hub, where no
     recovery can tell them from the survivor's own. ``rows`` is the exact
-    offer about to be pushed, so nothing logged later escapes the check. The
-    hub is asked only when the offer names a persisted survivor outside
-    ``tracks``, so an ordinary round sends no request.
+    offer about to be pushed, so nothing logged later escapes the check. A
+    chain ``A -> B -> C`` moves A's rows to C, so a pair matches when the
+    offer names its survivor OR the survivor its chain ends at. The hub is
+    asked only when the offer names one of those outside ``tracks``, so an
+    ordinary round sends no request.
     """
-    at_risk = _survivors_named_by(rows, set(load_identity_remap(conn).values()))
-    if not at_risk:
+    reach = _survivor_reach(conn)
+    named = _ids_named_by(rows)
+    if not any(survivors & named for survivors in reach.values()):
         return []
-    return [pair for pair in stale_identity_remaps(channel, conn, machine_id) if pair[1] in at_risk]
+    stale = stale_identity_remaps(channel, conn, machine_id)
+    return [pair for pair in stale if reach[pair[0]] & named]
 
 
-def _survivors_named_by(rows: list[RowChange], survivors: set[str]) -> set[str]:
-    """Survivors a child row or a playlist's membership bundle points at."""
+def _survivor_reach(conn: sqlite3.Connection) -> dict[str, set[str]]:
+    """Each persisted loser -> its persisted survivor and its chain's terminal one.
+
+    The terminal is what
+    :func:`apps.sync_hub.engine_identity_map.prepare_spoke_identity` moves children to
+    (:func:`effective_identity_remap`); both can key a moved row.
+    """
+    effective = effective_identity_remap(conn)
+    return {
+        loser: {survivor, effective.get(loser, survivor)}
+        for loser, survivor in load_identity_remap(conn).items()
+    }
+
+
+def _ids_named_by(rows: list[RowChange]) -> set[str]:
+    """Track ids a child row or a playlist's membership bundle points at."""
     named: set[str] = set()
     for row in rows:
         if row.table == "tracks":
             continue
         named.add(str(row.values.get("stable_id")))
         named.update(str(member.get("stable_id")) for member in row.members or ())
-    return named & survivors
+    return named
 
 
 def retire_stale_remaps(
@@ -332,11 +354,10 @@ def _claimed_loser_rows(
     A hub-only row claims itself. A local row claims its own pk when it
     reproduces the hub row there once ``stable_id`` is put back from the
     survivor to a loser (a remap rewrites such a row in place), else
-    ``None``.
+    ``None``. The survivor may be the pair's own or its chain's terminal
+    (:func:`_survivor_reach`).
     """
-    losers_of: dict[str, list[str]] = {}
-    for loser, survivor in stale:
-        losers_of.setdefault(survivor, []).append(loser)
+    losers_of = _losers_by_survivor(conn, stale)
     claims: list[tuple[RowKey, RowKey | None]] = []
     for table in divergent:
         by_pk = hub_rows[table]
@@ -350,6 +371,18 @@ def _claimed_loser_rows(
             claims.append(((table, pk), (table, pk) if moved else None))
         claims.extend(((table, pk), (table, pk)) for pk in by_pk if pk not in local_pks)
     return claims
+
+
+def _losers_by_survivor(
+    conn: sqlite3.Connection, stale: list[tuple[str, str]]
+) -> dict[str, list[str]]:
+    """Survivor (own or chain terminal) -> the stale losers whose rows it may hold."""
+    reach = _survivor_reach(conn)
+    losers_of: dict[str, list[str]] = {}
+    for loser, _survivor in stale:
+        for survivor in reach[loser]:
+            losers_of.setdefault(survivor, []).append(loser)
+    return losers_of
 
 
 def _moved_from_a_loser(
