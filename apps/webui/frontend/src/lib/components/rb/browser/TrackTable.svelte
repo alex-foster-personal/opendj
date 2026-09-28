@@ -92,9 +92,8 @@
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
-	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
-	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
+	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
 	import CloudStatusIcon from './CloudStatusIcon.svelte';
 	import MinorIssueSquare from './MinorIssueSquare.svelte';
@@ -151,10 +150,8 @@
 		})();
 	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
-	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
-	let relocateMenu = $state<{ x: number; y: number; stableId: string; title: string | null } | null>(
-		null
-	);
+	let playlistsMenu = $state<PlaylistsMenuAnchor | null>(null);
+	let relocateMenu = $state<RelocateMenuAnchor | null>(null);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -1167,24 +1164,8 @@
 			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
 		}}
 	/>
-	{#if playlistsMenu !== null}
-		<TrackPlaylistsPopover
-			stableId={playlistsMenu.stableId}
-			x={playlistsMenu.x}
-			y={playlistsMenu.y}
-			onclose={() => (playlistsMenu = null)}
-		/>
-	{/if}
-	{#if relocateMenu !== null}
-		<RelocatePopover
-			stableId={relocateMenu.stableId}
-			trackTitle={relocateMenu.title}
-			x={relocateMenu.x}
-			y={relocateMenu.y}
-			onclose={() => (relocateMenu = null)}
-			onrelocated={() => onrelocated?.()}
-		/>
-	{/if}
+	<!-- TrackPlaylistsPopover and RelocatePopover, fetched by the pick that opens them. -->
+	<TrackRowPopovers bind:playlistsMenu bind:relocateMenu {onrelocated} />
 	{#if masterFold === 'above'}
 		<button
 			type="button"

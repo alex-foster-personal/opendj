@@ -96,7 +96,7 @@
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
 	import type { Component } from 'svelte';
-	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
+	import MidiPanelLoader from '$lib/components/rb/midi/MidiPanelLoader.svelte';
 	import { maybeAutoEnableMidi, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
@@ -866,7 +866,7 @@
 <CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen. -->
-<MidiPanel />
+<MidiPanelLoader />
 
 <!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
 <JobsDrawer />

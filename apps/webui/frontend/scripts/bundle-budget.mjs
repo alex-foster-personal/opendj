@@ -275,7 +275,28 @@ const BUDGETS = [
   // ceil-to-KiB rule on 238,822. This is deferred-code weight: none of it is on
   // the boot or first-paint path, which is the point of moving it here.
   // Decision record: the CI-infra lane comment on #3913, Thu 24 Sep 2026 12:15Z.
-  { name: 'other-lazy', limit: 250880, measured: 238825, note: 'all other routes plus deferred shell' },
+  // RAISED Mon 28 Sep 2026: 245 -> 263 KiB for PR #3896 (emoji block scan, tray
+  // MIDI opens the I/O menu). That PR put `performance` 1,704 bytes over its
+  // 241,664 ceiling, and the directive was to pay for it by deferring the
+  // click-gated UI it adds rather than raising the boot budget. Measured locally,
+  // one build each, against the PR head before the deferral (f5dea9a49), which is
+  // origin/main df4942441 plus the PR:
+  //   +2,240  the MIDI drawer (MidiPanel), fetched by the open flip of the TopBar
+  //           label or the mixer tray's MIDI button (MidiPanelLoader)
+  //     +783  the learn-log console, now shared only by the drawer and its pop-out
+  //   +1,295  RelocatePopover, fetched by the row menu's Relocate pick
+  //   +1,098  TrackPlaylistsPopover, fetched by the Show in playlists pick
+  //     +689  the rekordbox write-back gate, reached now only from lazy code
+  //   = +6,105, 249,612 -> 255,703 over 51 -> 56 files.
+  // Payback: `performance` 243,368 -> 240,867, 797 bytes under its UNCHANGED
+  // 241,664 ceiling, so every /performance boot is 2,501 bytes lighter than the
+  // PR was and the boot budget is not raised. The lazy side costs more than the
+  // boot side saves (separate small chunks compress worse than one large one and
+  // each restates its shared imports), which is the price of keeping it off the
+  // boot path. A deferred pad-mode list was also tried and measured: -19 bytes
+  // boot for +665 lazy, so it was not kept. The ceiling follows the +5%
+  // ceil-to-KiB rule on 255,703: +5% => 268,489, ceil to KiB => 269,312 (263 KiB).
+  { name: 'other-lazy', limit: 269312, measured: 255703, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
