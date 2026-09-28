@@ -135,6 +135,23 @@ class PlaylistStore:
 
     # --- internal helpers -------------------------------------------------
     def _load(self, playlist_id: str) -> PlaylistRow:
+        row = self._load_header(playlist_id)
+        row.items = [
+            r[0] for r in self._conn.execute(
+                "SELECT stable_id FROM playlist_memberships "
+                f"WHERE playlist_id = ? AND deleted_at IS NULL "
+                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
+                (playlist_id,),
+            )
+        ]
+        return row
+
+    def _load_header(self, playlist_id: str) -> PlaylistRow:
+        """The live playlist row with ``items`` still EMPTY, or NotFoundError.
+
+        Split from :meth:`_load` so a write that must not read every member
+        (the ``:add`` path, #3963) can read the header alone.
+        """
         row = self._conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id, "
             "       created_at, updated_at, forbid_duplicates "
@@ -143,18 +160,10 @@ class PlaylistStore:
         ).fetchone()
         if row is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
-        items = [
-            r[0] for r in self._conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                f"WHERE playlist_id = ? AND deleted_at IS NULL "
-                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
-                (playlist_id,),
-            )
-        ]
         return PlaylistRow(
             playlist_id=row["playlist_id"], name=row["name"],
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"],
-            items=items, created_at=row["created_at"],
+            items=[], created_at=row["created_at"],
             updated_at=row["updated_at"],
             forbid_duplicates=bool(row["forbid_duplicates"]),
         )
