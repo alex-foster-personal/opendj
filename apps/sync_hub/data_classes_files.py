@@ -457,7 +457,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         ".pytest_cache/",
         ".coverage",
         ".coverage.*",
-        "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Mergify CI Insights
+        "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Trunk Flaky Tests
         "htmlcov/",
         "coverage-matrix.md",
         "apps/webui/frontend/node_modules/",
