@@ -51,6 +51,7 @@ VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
+MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
@@ -265,6 +266,9 @@ _VERBS: tuple[Verb, ...] = (
     Verb("output_mode", "output_mode", (
         arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),
     ), note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split."),
+    Verb("midi_takeover_mode", "midi_takeover_mode", (
+        arg("mode", "enum", enum_value(MIDI_TAKEOVER_MODE_VALUES), "pickup|jump"),
+    ), note="IOPIN-06: pickup holds a MIDI dial until the hardware crosses the software value."),
     Verb("analysis_source", "analysis_source", (
         arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
         arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
