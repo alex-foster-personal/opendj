@@ -18,6 +18,7 @@ from scripts.perf.perf_kpi_config import REPO_ROOT
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
 DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
 LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
+CHFLAGS_UNAVAILABLE = not hasattr(os, "chflags")
 
 _INSTALLER_ENV_VARS = (
     "MDT_PERF_KPI_SMALL_STABLE_ID",
@@ -151,6 +152,10 @@ def _unlock_for_cleanup(path: Path) -> None:
     os.chflags(path, 0)
 
 
+@pytest.mark.skipif(
+    CHFLAGS_UNAVAILABLE,
+    reason="UNAVAILABLE: os.chflags (BSD/macOS immutable flag) is not present on this platform",
+)
 def test_remove_stale_health_plist_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
     """[if] the stale health plist cannot be deleted [then] remove_stale_health_plist returns
     non-zero, even under `set -e` with `|| exit 1` (which disables set -e inside the function).
@@ -211,6 +216,10 @@ def test_remove_stale_health_plist_removes_a_present_plist_and_tolerates_absence
         "UNAVAILABLE: without launchctl, cleanup_stale_health_agent returns via its "
         "unknown branch before rm"
     ),
+)
+@pytest.mark.skipif(
+    CHFLAGS_UNAVAILABLE,
+    reason="UNAVAILABLE: os.chflags (BSD/macOS immutable flag) is not present on this platform",
 )
 def test_cleanup_stale_health_agent_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
     """[if] the stale health plist cannot be deleted [then] cleanup_stale_health_agent
