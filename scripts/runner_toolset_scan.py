@@ -53,13 +53,13 @@ from pathlib import Path
 import yaml
 
 from scripts import runner_toolset_shell_lex as lex
+from scripts import runner_toolset_sources as sources
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "ci" / "runner-toolset.yml"
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 RECIPE_FILES = {"just": REPO_ROOT / "justfile", "make": REPO_ROOT / "Makefile"}
 TESTS_DIR = REPO_ROOT / "tests"
-SELF_HOSTED_MARKER = "CI_RUNS_ON"
 MANIFEST_REQUIRED = {"name", "kind", "version", "source", "install", "verify", "needed_by"}
 
 # ----- shell grammar knobs -------------------------------------------------------
@@ -109,19 +109,12 @@ class Usage:
 
 
 @dataclass
-class _Recipe:
-    deps: list[str]
-    body: list[str]
-    header_line: int
-
-
-@dataclass
 class _Ctx:
     usage: Usage
     shell_queue: list[Path] = field(default_factory=list)
     python_queue: list[Path] = field(default_factory=list)
     recipe_queue: list[tuple[str, str]] = field(default_factory=list)
-    recipes: dict[str, dict[str, _Recipe]] = field(default_factory=dict)
+    recipes: dict[str, dict[str, sources.Recipe]] = field(default_factory=dict)
     seen_recipes: set[str] = field(default_factory=set)
 
 
@@ -469,35 +462,11 @@ def scan_python_source(text: str, source: str, base_line: int, ctx: _Ctx) -> Non
 # ----- workflows and recipes ------------------------------------------------------------
 
 
-def _mapping(node: yaml.Node | None) -> dict[str, yaml.Node]:
-    if not isinstance(node, yaml.MappingNode):
-        return {}
-    return {k.value: v for k, v in node.value if isinstance(k, yaml.ScalarNode)}
-
-
-def _scalar(node: yaml.Node | None) -> str:
-    return node.value if isinstance(node, yaml.ScalarNode) else ""
-
-
-def _self_hosted_steps(path: Path) -> list[dict[str, yaml.Node]]:
-    """Steps of every job whose runs-on reads a CI_RUNS_ON_* variable."""
-    root = yaml.compose(path.read_text(encoding="utf-8"))
-    steps: list[dict[str, yaml.Node]] = []
-    for job in _mapping(_mapping(root).get("jobs")).values():
-        fields = _mapping(job)
-        if SELF_HOSTED_MARKER in _scalar(fields.get("runs-on")):
-            seq = fields.get("steps")
-            steps += [
-                _mapping(s) for s in (seq.value if isinstance(seq, yaml.SequenceNode) else [])
-            ]
-    return steps
-
-
 def scan_workflows(ctx: _Ctx) -> None:
     for path in sorted(WORKFLOW_DIR.glob("*.yml")):
-        for step in _self_hosted_steps(path):
+        for step in sources.self_hosted_steps(path):
             ctx.usage.scanned_files.add(_rel(path))
-            run, shell = step.get("run"), _scalar(step.get("shell"))
+            run, shell = step.get("run"), sources.yaml_scalar(step.get("shell"))
             if not isinstance(run, yaml.ScalarNode) or shell in {"pwsh", "powershell", "cmd"}:
                 continue
             first_line = run.start_mark.line + (1 if run.style in {"|", ">"} else 0)
@@ -505,43 +474,9 @@ def scan_workflows(ctx: _Ctx) -> None:
             scan(run.value, _rel(path), first_line, ctx)
 
 
-def _resolve_make_variables(text: str) -> str:
-    """`$(PY)` -> its value, `$(shell cmd)` -> `$(cmd)`, anything else -> placeholder."""
-    variables = dict(re.findall(r"^([A-Za-z_]\w*)\s*[:?+]?=\s*(.*)$", text, re.M))
-    text = re.sub(r"\$\(shell ([^)]*)\)", r"$(\1)", text.replace("$$", "\x00"))
-    for _ in range(5):  # variables reference variables: $(PY) -> $(VENV)/bin/python
-        text = re.sub(
-            r"\$[({]([A-Za-z_]\w*)[)}]",
-            lambda m: (variables.get(m.group(1)) or lex.PLACEHOLDER).split(" ")[0],
-            text,
-        )
-    return text.replace("\x00", "$")
-
-
-def _parse_recipes(path: Path) -> dict[str, _Recipe]:
-    """justfile or Makefile recipe -> dependencies, body lines, header line."""
-    text = path.read_text(encoding="utf-8")
-    if path.name == "Makefile":
-        text = _resolve_make_variables(text)
-    recipes: dict[str, _Recipe] = {}
-    header = re.compile(r"^@?([A-Za-z_][\w.-]*)([^:=]*?):(?!=)(.*)$")
-    skip = ("set ", "export ", "import ", "alias ", "mod ", ".")
-    current: str | None = None
-    for n, line in enumerate(text.split("\n")):
-        if (not line or line[:1].isspace()) and current is not None:
-            recipes[current].body.append(line)
-        elif line:
-            match = header.match(line)
-            current = match.group(1) if match and not line.startswith(skip) else None
-            if match and current:
-                deps = re.findall(r"\(?([A-Za-z_][\w.-]*)", match.group(3).split("#")[0])
-                recipes[current] = _Recipe(deps=deps, body=[], header_line=n)
-    return recipes
-
-
 def _scan_recipe(runner: str, name: str, ctx: _Ctx) -> None:
     path = RECIPE_FILES[runner]
-    recipes = ctx.recipes.setdefault(runner, _parse_recipes(path))
+    recipes = ctx.recipes.setdefault(runner, sources.parse_recipes(path))
     if f"{runner}:{name}" in ctx.seen_recipes or name not in recipes:
         return
     ctx.seen_recipes.add(f"{runner}:{name}")
@@ -555,16 +490,7 @@ def _scan_recipe(runner: str, name: str, ctx: _Ctx) -> None:
         text = "\n".join(line[indent:] for line in body)
         scan_python_source(text, path.name, recipe.header_line + 1, ctx)
     else:
-        scan_shell(_recipe_shell(body, shebang), path.name, recipe.header_line + 1, ctx)
-
-
-def _recipe_shell(body: list[str], shebang: str) -> str:
-    """A recipe body as one shell text; a leading @ or - is recipe syntax, not shell."""
-    lines: list[str] = []
-    for line in body:
-        continued = bool(lines) and lines[-1].endswith("\\")
-        lines.append(line.strip() if continued or shebang else line.strip().lstrip("@-"))
-    return "\n".join(lines)
+        scan_shell(sources.recipe_shell(body, shebang), path.name, recipe.header_line + 1, ctx)
 
 
 # ----- entry points ------------------------------------------------------------------

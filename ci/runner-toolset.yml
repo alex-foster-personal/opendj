@@ -15,6 +15,8 @@
 #   - tests/scripts/test_runner_toolset_complete.py: scans workflows, the scripts
 #     and justfile/Makefile recipes they call, and tests/, and fails when CI uses
 #     an executable, apt package or Playwright browser not declared here.
+#   - tests/scripts/test_runner_toolset_repo_pins.py: fails when a `repo:`
+#     entry's version drifts from the file its source names.
 #   - scripts/runner_toolset_verify.py: runs every `verify` on a host as the
 #     runner user and prints OK / MISMATCH / MISSING / UNKNOWN.
 #   - the Ansible CI-host playbook and the host audit (outside this repo),
