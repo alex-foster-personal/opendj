@@ -45,6 +45,18 @@
 	import { switchDeviceOutput } from '$lib/rb/device-output-probe-control';
 
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
+	const splitViewBullets = plannedExplainerBullets('split-view');
+	const listViewBullets = plannedExplainerBullets('list-view');
+	const fxBullets = plannedExplainerBullets('fx');
+	const twoDeckBullets = plannedExplainerBullets('2-deck-view');
+	const gridViewBullets = plannedExplainerBullets('grid-view');
+	const fourWaveformBullets = plannedExplainerBullets('4-waveform-view');
+	const scopeView1Bullets = plannedExplainerBullets('scope-view-1');
+	const scopeView2Bullets = plannedExplainerBullets('scope-view-2');
+	const linkBullets = [
+		...plannedExplainerBullets('link'),
+		'When built, tempo and phase align across laptops on the same network; this button joins or leaves that session.'
+	];
 	let switchOutputBusy = $state(false);
 
 	async function handleSwitchOutput(): Promise<void> {
@@ -65,13 +77,16 @@
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
+	import GigHelperMonitor from './GigHelperMonitor.svelte';
+	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
+	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import TransitioningChip from './TransitioningChip.svelte';
@@ -92,6 +107,7 @@
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
+	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -135,6 +151,7 @@
 	);
 
 	function _selectAppMode(modeId: (typeof APP_MODES)[number]['id']): void {
+		if (modeId === 'library') markLibraryModeExit();
 		setAppMode(modeId);
 	}
 
@@ -406,72 +423,90 @@
 		</div>
 	</details>
 	<AppPostureChip />
+	<GigHelperMonitor />
+	<GigHelperPrompt />
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('list-view')} aria-label="list view">
-			<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
-				<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
-				<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
-				<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
-				<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
-			</svg>
-		</button>
+		<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="list view">
+				<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
+					<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
+					<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
+					<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
+					<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- FX panel toggle -->
-		<button class="tb-icon fx rb-inert" disabled title={plannedTitle('fx')}>FX</button>
+		<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
+			<button class="tb-icon fx rb-inert" disabled aria-label="FX panel">FX</button>
+		</ControlExplainer>
 		<!-- split-view icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('split-view')} aria-label="split view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
-				<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="Split view" bullets={splitViewBullets} demo="split-view" showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="split view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
+					<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 2up icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('2-deck-view')} aria-label="2 deck view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="2-deck view" bullets={twoDeckBullets} demo="2-deck-view" showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="2 deck view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- grid icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('grid-view')} aria-label="grid view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="1" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="Grid view" bullets={gridViewBullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="grid view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="1" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
 		     stacked jagged polylines - must NOT read as a plain list glyph or
 		     a dotted grid (SCREENSHOT-SPEC 1). -->
-		<button class="tb-icon active rb-inert" disabled title={plannedTitle('4-waveform-view')} aria-label="4 waveform view">
-			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
-				{#each WAVE_ICON_ROWS as row (row.cy)}
-					<polyline
-						points={_waveIconPoints(row)}
-						fill="none"
-						stroke="currentColor"
-						stroke-width="0.9"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				{/each}
-			</svg>
-		</button>
+		<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
+			<button class="tb-icon active rb-inert" disabled aria-label="4 waveform view">
+				<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+					{#each WAVE_ICON_ROWS as row (row.cy)}
+						<polyline
+							points={_waveIconPoints(row)}
+							fill="none"
+							stroke="currentColor"
+							stroke-width="0.9"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					{/each}
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 2 circular scope icons -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-1')} aria-label="scope view 1">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-				<circle cx="6" cy="6" r="1.4" fill="currentColor" />
-			</svg>
-		</button>
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-2')} aria-label="scope view 2">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-				<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
-			</svg>
-		</button>
+		<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="scope view 1">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+					<circle cx="6" cy="6" r="1.4" fill="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
+		<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="scope view 2">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+					<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
+				</svg>
+			</button>
+		</ControlExplainer>
 	</div>
 
 	<!-- center-left: LINK, given clear room from the left icon cluster so it
@@ -479,7 +514,9 @@
 	     (SCREENSHOT-SPEC 1). -->
 	<div class="spacer-left"></div>
 
-	<button class="link-btn rb-inert" disabled title={plannedTitle('link')}>LINK</button>
+	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" showDelayMs={60}>
+		<button class="link-btn rb-inert" disabled aria-label="LINK">LINK</button>
+	</ControlExplainer>
 
 	<div class="spacer"></div>
 
@@ -575,7 +612,7 @@
 		<button
 			type="button"
 			class="bsm-toggle ap-next-btn"
-			class:on={autoPlayNextState.armed}
+			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
 			title={autoPlayNextState.armed
 				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
@@ -747,8 +784,9 @@
 
 		<!-- master output level meter: REAL -> engine master bus, post master
 		     gain (pin 5a5c3b8033d8's still-open half; the ten-segment channel
-		     meters shipped in PR #1062 tap post-EQ/pre-fader and so do not move
-		     with this control). Distinct from the output-health-bar below,
+		     meters tap post-trim/post-EQ/post-channel-fader per #3529 and track
+		     each deck fader, not this master control). Distinct from the
+		     output-health-bar below,
 		     which answers "is a device receiving audio" rather than "how loud
 		     is the master bus". -->
 		<MasterLevelMeter active={masterMeterActive} />
@@ -1090,6 +1128,9 @@
 		border-bottom-left-radius: 0;
 		padding-left: 6px;
 		padding-right: 6px;
+	}
+	.ap-wrap > .ap-next-btn:hover {
+		color: var(--rb-accent);
 	}
 	/* The ">|" split is the least essential control in this row (an early-
 	   trigger shortcut, not a required transport) - drop it first, at the

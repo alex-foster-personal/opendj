@@ -276,8 +276,11 @@ def a_failed_ledger_still_fails_the_job(workflow: dict) -> bool:
     )
 
 
+@pytest.mark.requirement("DEVOPS-13")
 def test_the_ledger_step_survives_its_own_failure() -> None:
-    """A broken credential must not take the alarm steps down with it."""
+    """[if] the ledger step fails [then] the alarm steps still run, [else stop].
+
+    A broken credential must not take the alarm steps down with it."""
     ledger = _step(_workflow(), LEDGER_STEP)
     assert ledger.get("continue-on-error") is True, (
         "the ledger step has no continue-on-error, so a failed credential skips "
@@ -286,8 +289,11 @@ def test_the_ledger_step_survives_its_own_failure() -> None:
     )
 
 
+@pytest.mark.requirement("DEVOPS-13")
 def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
-    """WARN, STOP, and a failed ledger reuse the same alert-issue step."""
+    """[if] the ledger step fails [then] the alert-issue step fires, [else stop].
+
+    WARN, STOP, and a failed ledger reuse the same alert-issue step."""
     workflow = _workflow()
     assert alert_issue_step_fires_on_ledger_failure(workflow), (
         f"{ALERT_STEP!r} does not gate on steps.ledger.outcome == 'failure', so a "
@@ -301,8 +307,11 @@ def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
         )
 
 
+@pytest.mark.requirement("DEVOPS-13")
 def test_a_ledger_failure_still_keeps_the_job_red() -> None:
-    """continue-on-error on the ledger step must not let a blind run go green."""
+    """[if] the ledger step fails [then] the job still ends red, [else stop].
+
+    continue-on-error on the ledger step must not let a blind run go green."""
     assert a_failed_ledger_still_fails_the_job(_workflow()), (
         "no step between the ledger and the sentinel fails the job on "
         "steps.ledger.outcome == 'failure', so continue-on-error alone would "
@@ -310,8 +319,11 @@ def test_a_ledger_failure_still_keeps_the_job_red() -> None:
     )
 
 
+@pytest.mark.requirement("DEVOPS-13")
 def test_the_alert_issue_step_also_fires_on_an_unknown_state() -> None:
-    """The ledger's own UNKNOWN verdict is the same 'cannot measure' bug."""
+    """[if] the ledger reads UNKNOWN [then] the alert-issue step fires, [else stop].
+
+    The ledger's own UNKNOWN verdict is the same 'cannot measure' bug."""
     assert alert_issue_step_fires_on_unknown_state(_workflow()), (
         f"{ALERT_STEP!r} does not gate on steps.ledger.outputs.state == 'UNKNOWN', "
         "so a stale or missing billing feed exits 0 with no WARN/STOP and no alert"

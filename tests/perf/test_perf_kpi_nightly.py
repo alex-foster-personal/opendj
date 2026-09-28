@@ -62,6 +62,7 @@ def test_run_nightly_appends_and_flags_ceiling(tmp_path: Path) -> None:
         samples=3,
         machine="air",
         tracks=(TrackProfile("small_mp3", "sid-small", "small"),),
+        ledger_worktree=state_dir / "ledger-worktree",
     )
 
     def probe(_base: str, path: str) -> tuple[int, float]:
@@ -113,6 +114,7 @@ def test_run_nightly_unknown_ceiling_without_history(tmp_path: Path) -> None:
         samples=3,
         machine="air",
         tracks=(TrackProfile("small_mp3", "sid-small", "small"),),
+        ledger_worktree=state_dir / "ledger-worktree",
     )
 
     def probe(_base: str, path: str) -> tuple[int, float]:

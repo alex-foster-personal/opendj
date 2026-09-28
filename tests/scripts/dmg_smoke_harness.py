@@ -26,29 +26,41 @@ def _write(path: Path, content: str, executable: bool = False) -> None:
 
 def _gh_shim(fixture_dir: Path, comment_file: Path) -> str:
     return textwrap.dedent(
-        f"""#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -euo pipefail
 comment_file="{comment_file}"
 fixture_dir="{fixture_dir}"
 _apply_jq() {{
   local payload="$1"
   if [[ -n "$jq_filter" ]]; then
-    printf '%s' "$payload" | jq -r "$jq_filter"
+    if [[ "$paginate" == "1" ]]; then
+      # Real gh applies --jq per page (not to a slurped array of pages), so
+      # the fixture's outer page-array is unwrapped one level here before
+      # the caller's filter runs against each page's own array of records.
+      printf '%s' "$payload" | jq -r ".[] as \$__page | (\$__page | ${{jq_filter}})"
+    else
+      printf '%s' "$payload" | jq -r "$jq_filter"
+    fi
   else
     printf '%s' "$payload"
   fi
 }}
 if [[ "$1" == "api" ]]; then
   shift
-  paginate=0 slurp=0 jq_filter=""
+  paginate=0 slurp=0 jq_filter="" template=""
   while (($#)); do
     case "$1" in
       --paginate) paginate=1; shift ;;
       --slurp) slurp=1; shift ;;
       --jq) jq_filter="$2"; shift 2 ;;
+      --template) template="$2"; shift 2 ;;
       *) endpoint="$1"; shift ;;
     esac
   done
+  if [[ "$slurp" == "1" ]] && {{ [[ -n "$jq_filter" ]] || [[ -n "$template" ]]; }}; then
+    echo "gh: the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+    exit 1
+  fi
   if [[ "$endpoint" == *"/commits/main" ]]; then
     _apply_jq "$(cat "$fixture_dir/commits_main.json")"
     exit 0
@@ -365,6 +377,9 @@ def run_smoke(
         "MDT_DMG_BUILD_WORKTREE": str(paths["build_root"]),
         "MDT_HEADLESS_DMG_BUILD": str(paths["headless"]),
         "MDT_DMG_SMOKE_SCRATCH": str(paths["scratch"]),
+        # Required by run.sh (no hidden "air" default); tests that need a
+        # different label, or none, override it via extra_env.
+        "MDT_DMG_SMOKE_HOST_LABEL": "test-host",
         "DMG_SMOKE_OPEN_CALLED": str(paths["open_called"]),
         "DMG_SMOKE_OPEN_LOG": str(paths["open_log"]),
         "DMG_SMOKE_SCRATCH_STATE": str(paths["scratch_state"]),

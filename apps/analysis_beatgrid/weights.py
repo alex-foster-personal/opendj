@@ -36,11 +36,11 @@ against :data:`CHECKPOINT_SHA256`, and the record's `model_sha256` is that
 verified value rather than a hopeful constant.
 
 WHAT THIS MODULE DOES NOT DO. It does not provision the INTERPRETER the runner
-needs. `scripts/build_engine_payload.py` ships neither the analysis dependency
-closure nor a `uv` binary, so on a fresh install the runner still has nothing to
-run in; closing that is `native-analysis-queue`'s "Runtime packaging" item.
-Correct weights with no interpreter to load them into is still a backfill that
-does not run, and this module makes no claim about that half.
+needs. A packaged build gets both halves from `scripts/payload_beatgrid.py`
+(NATIVE-10): the runner's own pinned site plus `bin/opendj-beatgrid-python`
+for `MDT_BEATGRID_RUNNER_PYTHON`, and this checkpoint at
+`models/beatgrid/` for `MDT_BEATGRID_WEIGHTS`, both exported by the payload
+launchers.
 
 -Claude
 """

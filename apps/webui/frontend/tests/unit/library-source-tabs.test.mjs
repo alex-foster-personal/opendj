@@ -8,6 +8,15 @@ function source(relativePath) {
 	return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), 'utf8');
 }
 
+test('pin ad663c171fd0 library chrome is Playlists Taglists Autolists USBs', () => {
+	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
+	const playlists = tabs.indexOf('Playlists');
+	const taglists = tabs.indexOf('Taglists');
+	const autolists = tabs.indexOf('Autolists');
+	const usbs = tabs.indexOf('USBs');
+	assert.ok(playlists >= 0 && taglists > playlists && autolists > taglists && usbs > autolists);
+});
+
 test('library source tabs list Playlists, Taglists, Autolists, USBs in order', () => {
 	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
 	const nav = source('src/lib/components/rb/browser/LibraryNav.svelte');
@@ -19,11 +28,12 @@ test('library source tabs list Playlists, Taglists, Autolists, USBs in order', (
 	assert.ok(playlists >= 0 && taglists > playlists && autolists > taglists && usbs > autolists);
 });
 
-test('PlaylistTree no longer exposes Tree View / Column View top-level tabs', () => {
+test('PlaylistTree column mode uses data-testid playlist-column-view without a full-width toggle row', () => {
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
-	assert.doesNotMatch(tree, /Tree View/);
-	assert.doesNotMatch(tree, />\s*Column View\s*</);
-	assert.match(tree, /playlist-column-view/);
+	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
+	assert.doesNotMatch(tree, /class="view-toggle"/);
+	assert.match(tree, /data-testid="playlist-column-view"/);
+	assert.match(tabs, /playlist-tree-view-toggle/);
 });
 
 test('LibraryNav mounts taglists, autolists, usbs, and playlists bodies', () => {

@@ -11,7 +11,7 @@
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
-	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
+	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
@@ -78,20 +78,25 @@
 	);
 	const livenessAlert = $derived(headphoneLivenessAlertText(livenessVerdict));
 	const mixBullets = [
-		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
-		'In MAIN, master always plays at full on the speakers and MIX sets how much cue is blended on top (full cue at left). In two outputs, MIX feeds headphones only.'
+		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
+		'Single-click the knob to step toward the other extreme.',
+		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
+		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
 	];
 	const levelBullets = [
 		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
 		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
 	];
 	const mainBullets = [
-		'Cue and master share the speakers. Clears a selected headphone CUE sink.',
-		'Use this when you have one device (laptop speakers, or Bluetooth as the only output).'
+		'1) Press MAIN for laptop or a single output (practice mode).',
+		'2) Turn CUE on for each channel you want in the headphone blend.',
+		'3) With no HEADPHONE CUE device picked, MIX left adds more cue into the speaker mix; master stays full.',
+		'4) Picking HEADPHONE CUE in I/O switches to two outputs: room on MASTER/MAIN, cue on the phones.'
 	];
 	const splitBullets = [
-		'Mono master on LEFT, mono cue on RIGHT of the same output.',
-		'Needs a DJ splitter cable. A Y cable will not separate the legs.'
+		'1) Press SPLIT for a DJ splitter cable: mono master on LEFT, mono cue on RIGHT.',
+		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
+		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
 	const ioBullets = [
 		'MASTER/MAIN is the room mix (the four channels). Pin it to speakers so plugging headphones in cannot steal it.',
@@ -118,9 +123,9 @@
 		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
 	];
 	const modeBullets = [
-		'practice: cue and master share the speakers.',
-		'two outputs: MASTER/MAIN is the room, HEADPHONE CUE is headphones.',
-		'split cable: mono master on LEFT, mono cue on RIGHT of one device.'
+		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
+		'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
+		'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
 	];
 	const sinksBullets = [
 		'M is the pinned MASTER/MAIN room sink. C is the HEADPHONE CUE sink.',
@@ -136,6 +141,11 @@
 	const inputPickBullets = [
 		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
+
+	function stepHeadDelay(delta: number): void {
+		const next = Math.min(500, Math.max(0, state.head_delay_ms + delta));
+		ondelay(next);
+	}
 
 	function toggleSplit(): void {
 		if (state.output_mode === 'split_cable') {
@@ -158,7 +168,7 @@
 		<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 		<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 	</svg>
-	<ControlExplainer title="MIX" bullets={mixBullets} showDelayMs={60}>
+	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" showDelayMs={60}>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
 			label="MIX"
@@ -179,10 +189,10 @@
 			onchange={onlevel}
 		/>
 	</ControlExplainer>
-	<ControlExplainer title="Output mode" bullets={modeBullets} showDelayMs={60}>
+	<ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}>
 		<span class="hp-mode" data-output-mode={state.output_mode}>{modeLabel}</span>
 	</ControlExplainer>
-	<ControlExplainer title="MAIN" bullets={mainBullets} showDelayMs={60}>
+	<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}>
 		<button
 			type="button"
 			class="hp-btn"
@@ -191,7 +201,7 @@
 			onclick={() => onmode('practice')}>MAIN</button
 		>
 	</ControlExplainer>
-	<ControlExplainer title="SPLIT" bullets={splitBullets} showDelayMs={60}>
+	<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}>
 		<button
 			type="button"
 			class="hp-btn"
@@ -249,20 +259,23 @@
 	</ControlExplainer>
 	{#if state.output_mode === 'two_outputs'}
 		<ControlExplainer title="HEAD DELAY" bullets={delayBullets} showDelayMs={60}>
-			<label class="hp-delay">
+			<div class="hp-delay" data-performance-control="head-delay">
 				<span class="hp-delay-label">HEAD DELAY</span>
-				<input
-					type="number"
-					min="0"
-					max="500"
-					step="1"
-					value={state.head_delay_ms}
-					aria-label="head delay milliseconds"
-					data-performance-control="head-delay"
-					onchange={(event) => ondelay(Number(event.currentTarget.value))}
-				/>
+				<span class="hp-delay-stepper" role="group" aria-label="head delay stepper">
+					<button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}>
+						<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+							<path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" />
+						</svg>
+					</button>
+					<button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}>
+						<svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+							<path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" />
+						</svg>
+					</button>
+				</span>
+				<span class="hp-delay-value" title={`${state.head_delay_ms} ms head delay on the cue path`}>{state.head_delay_ms}</span>
 				<span class="hp-delay-unit">ms</span>
-			</label>
+			</div>
 		</ControlExplainer>
 		{#if state.master_delay_ms > 0}
 			<ControlExplainer title="ROOM" bullets={roomBullets} showDelayMs={60}>
@@ -421,21 +434,36 @@
 	.hp-delay {
 		display: inline-flex;
 		align-items: center;
-		gap: 2px;
+		gap: 3px;
 		font-size: 7px;
 		color: var(--rb-text-dim, #838990);
 	}
 	.hp-delay-label {
 		letter-spacing: 0.04em;
 	}
-	.hp-delay input {
+	.hp-delay-stepper {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+	}
+	.hp-delay-step {
 		font: inherit;
-		font-size: 7px;
-		width: 36px;
-		padding: 0 2px;
+		line-height: 0;
+		padding: 1px 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
+	.hp-delay-step:hover {
+		color: var(--rb-text, #c8cdd2);
+		border-color: var(--rb-accent, #2f6fd6);
+	}
+	.hp-delay-value {
+		min-width: 24px;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 	.hp-delay-unit {
 		letter-spacing: 0.04em;

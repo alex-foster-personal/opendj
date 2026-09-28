@@ -207,6 +207,38 @@ test('scrollTopForRowIndex: compact row 10 with thead and one-third viewport off
 	assert.equal(withoutHeader, withHeader - 20);
 });
 
+test('scrollTopForDeckLayoutAnchor: zero prior viewport centers the anchored row', () => {
+	const next = mod.scrollTopForDeckLayoutAnchor({
+		rowIndex: 10,
+		rowHeight: 22,
+		headerOffsetPx: mod.TRACK_TABLE_THEAD_PX,
+		viewportHeight: 150,
+		priorScrollTop: 0,
+		priorViewportHeight: 0
+	});
+	assert.ok(next > 0);
+});
+
+test('scrollTopToKeepRowVisible: shrinking viewport keeps the anchored row visible', () => {
+	const priorViewportHeight = 206;
+	const priorScrollTop = 88;
+	const rowIndex = 6;
+	const rowHeight = 22;
+	const header = mod.TRACK_TABLE_THEAD_PX;
+	const next = mod.scrollTopToKeepRowVisible({
+		rowIndex,
+		rowHeight,
+		headerOffsetPx: header,
+		viewportHeight: 147,
+		priorScrollTop,
+		priorViewportHeight
+	});
+	const rowTop = header + rowIndex * rowHeight;
+	const rowBottom = rowTop + rowHeight;
+	assert.ok(next + 147 >= rowBottom - 1, 'row bottom stays in viewport after shrink');
+	assert.ok(next + header <= rowTop + 1, 'row top stays in viewport after shrink');
+});
+
 test('masterFoldVisibility: absent index or zero viewport returns null', () => {
 	assert.equal(
 		mod.masterFoldVisibility({

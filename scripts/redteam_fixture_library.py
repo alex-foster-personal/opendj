@@ -12,10 +12,17 @@ Requirements:
     - [if] the library is built twice [then] both trees carry identical content
     - [if] a pod opens the fixture state.db [then] every file_path resolves
     - [if] a build is interrupted part way [then] the next build starts clean
+    - [if] a pod reads a mapped track through the rekordbox readers [then] no
+      table or column is missing
 
-Acceptance tests (mapped to :mod:`tests.scripts.test_redteam_guardrails`):
+Acceptance tests (mapped to :mod:`tests.scripts.test_redteam_guardrails` and
+:mod:`tests.scripts.test_redteam_fixture_library`):
     - [if] two builds differ in a track row or a WAV byte [then] deterministic is broken
     - [if] a track's file_path is missing from disk [then] the library is unplayable
+    - [if] a mapped track 500s on the listing or rb-meta [then] the fixture
+      schema drifted from the readers
+    - [if] a fixture table or column is absent from pyrekordbox's model [then]
+      it is not rekordbox-shaped
 
 Rows are written through the PRODUCTION writer (``apps.shared.state.writer``),
 never through a test helper: this module is imported by
@@ -23,7 +30,10 @@ never through a test helper: this module is imported by
 and no dev extra, so a ``pytest`` import anywhere on this path breaks the
 trigger before it can even read the kill switch (Codex P1 on PR #3706). The
 vendor-side ``master.plain.db`` is generated here for the same reason: it is
-rekordbox's schema, not ours, and no production module creates one.
+rekordbox's schema, not ours, and no production module creates one. Its DDL is
+the committed snapshot :data:`REKORDBOX_SCHEMA_PATH`, rendered from
+pyrekordbox by :mod:`scripts.redteam_fixture_schema`, which this module must
+not import (pyrekordbox is a project dependency).
 """
 
 from __future__ import annotations
@@ -41,11 +51,14 @@ from apps.shared.state.writer import StateWriter
 FIXTURE_TRACK_COUNT = 12
 SAMPLE_RATE = 22050
 TONE_FRAMES = SAMPLE_RATE // 4
+TONE_LENGTH_S = TONE_FRAMES // SAMPLE_RATE  # rekordbox Length is whole seconds
 TONE_AMPLITUDE = 6000
 TONE_BASE_FREQUENCY = 220.0
 DATA_DIR_NAME = "data"
 MUSIC_DIR_NAME = "music"
 UNMAPPED_TRACK_STRIDE = 5  # every 5th track has no rekordbox mapping at all
+REKORDBOX_SCHEMA_PATH = Path(__file__).with_name("redteam_fixture_rekordbox_schema.sql")
+REKORDBOX_TIMESTAMP = "2026-01-01 00:00:00.000 +00:00"  # rekordbox's created_at format
 FIXTURE_GENRES = (
     ("g-fixture-techno", "Peak Time Techno"),
     ("g-fixture-house", "Jackin House"),
@@ -103,27 +116,43 @@ def _write_tone(path: Path, frequency: float) -> None:
         handle.writeframes(bytes(frames))
 
 
-def _seed_master_db(path: Path) -> None:
-    """Write the rekordbox-side tables the library surface reads genres from."""
+def _seed_master_db(path: Path, wav_paths: list[Path]) -> None:
+    """Write a rekordbox-schema master.plain.db holding the mapped tracks.
+
+    The whole schema comes from :data:`REKORDBOX_SCHEMA_PATH`, so every table
+    and column a webui reader selects exists and a mapped track never 500s on
+    ``no such column`` / ``no such table``. ``ImagePath`` stays NULL (the
+    fixture ships no artwork) and ``djmdCue`` stays empty (no cues).
+    """
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute(
-            "CREATE TABLE djmdGenre (ID VARCHAR(255) PRIMARY KEY, Name VARCHAR(255), "
-            "rb_local_deleted TINYINT(1) DEFAULT 0)"
+        conn.executescript(REKORDBOX_SCHEMA_PATH.read_text())
+        conn.executemany(
+            "INSERT INTO djmdGenre (ID, Name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            [
+                (genre_id, name, REKORDBOX_TIMESTAMP, REKORDBOX_TIMESTAMP)
+                for genre_id, name in FIXTURE_GENRES
+            ],
         )
-        conn.execute(
-            "CREATE TABLE djmdContent (ID VARCHAR(255) PRIMARY KEY, GenreID VARCHAR(255), "
-            "FolderPath VARCHAR(255), AnalysisDataPath VARCHAR(255), Commnt VARCHAR(255), "
-            "DJPlayCount INTEGER, rb_local_deleted TINYINT(1) DEFAULT 0)"
-        )
-        conn.executemany("INSERT INTO djmdGenre (ID, Name) VALUES (?, ?)", FIXTURE_GENRES)
         rows = [
-            (f"v-fixture-{index:03d}", FIXTURE_GENRES[index % len(FIXTURE_GENRES)][0], index)
-            for index in range(1, FIXTURE_TRACK_COUNT + 1)
+            (
+                f"v-fixture-{index:03d}",
+                str(wav_path),
+                wav_path.name,
+                f"Fixture Track {index:02d}",
+                FIXTURE_GENRES[index % len(FIXTURE_GENRES)][0],
+                TONE_LENGTH_S,
+                index,
+                REKORDBOX_TIMESTAMP,
+                REKORDBOX_TIMESTAMP,
+            )
+            for index, wav_path in enumerate(wav_paths, start=1)
             if _is_mapped(index)
         ]
         conn.executemany(
-            "INSERT INTO djmdContent (ID, GenreID, DJPlayCount) VALUES (?, ?, ?)", rows
+            "INSERT INTO djmdContent (ID, FolderPath, FileNameL, Title, GenreID, Length, "
+            "DJPlayCount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
         )
         conn.commit()
     finally:
@@ -168,7 +197,7 @@ def build_fixture_library(root: Path) -> FixtureLibrary:
     for index, wav_path in enumerate(wav_paths, start=1):
         _write_tone(wav_path, TONE_BASE_FREQUENCY * index)
     _seed_state_db(state_dir / "state.db", wav_paths)
-    _seed_master_db(data_dir / "master.plain.db")
+    _seed_master_db(data_dir / "master.plain.db", wav_paths)
     return FixtureLibrary(
         root=root,
         data_dir=data_dir,

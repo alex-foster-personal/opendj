@@ -71,7 +71,7 @@ from apps.sync_hub import protocol
 #: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
 #: field older peers ignore, advertised by the ``identity-reject/v1``
 #: capability token: NOT a wire change under the rule above, so no bump.
-WIRE_VERSION: int = 5
+WIRE_VERSION: int = 6
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -90,6 +90,8 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     # v5: track_fields LWW falls back to modified_at when updated_at is NULL
     # (issue #3101). Row shape unchanged; semantic contract marker below.
     5: "8945d178ba66d099",
+    # v6: tracks.audio_hash (tag-independent audio identity, issue #3864).
+    6: "087fd8afdbb6c91b",
 }
 
 #: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
@@ -98,6 +100,7 @@ WIRE_FINGERPRINTS: dict[int, str] = {
 #: :func:`measure_wire_shape`.
 WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
     5: "track_fields_modified_at_lww_fallback",
+    6: "track_fields_modified_at_lww_fallback",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

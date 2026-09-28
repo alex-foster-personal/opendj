@@ -1,5 +1,5 @@
 /**
- * The three library filter checkboxes (Next / Remixes / Vocals): type,
+ * The library filter checkboxes (Next / Remixes / Vocals / Available offline): type,
  * defaults, the fail-fast validator for the persisted blob, and the setters.
  * Split out of prefs.svelte.ts exactly the way lyrics-prefs.ts is - that
  * module sits against the 600-line file-size gate.
@@ -19,6 +19,8 @@ interface LibraryFilterPrefs {
 	remixes_filter: boolean;
 	/** Keep only rows with real word-level lyrics over several lines. */
 	vocals_filter: boolean;
+	/** Keep only rows with local audio present (not cloud-only or streaming). */
+	available_offline_filter: boolean;
 }
 
 /** All OFF: a fresh session that hid most of the library with no visible
@@ -26,10 +28,16 @@ interface LibraryFilterPrefs {
 export const LIBRARY_FILTER_PREF_DEFAULTS: LibraryFilterPrefs = {
 	next_only_filter: false,
 	remixes_filter: false,
-	vocals_filter: false
+	vocals_filter: false,
+	available_offline_filter: false
 };
 
-const LIBRARY_FILTER_KEYS = ['next_only_filter', 'remixes_filter', 'vocals_filter'] as const;
+const LIBRARY_FILTER_KEYS = [
+	'next_only_filter',
+	'remixes_filter',
+	'vocals_filter',
+	'available_offline_filter'
+] as const;
 
 /**
  * Validate the three filter fields of a parsed prefs blob. Each is optional -
@@ -61,6 +69,7 @@ interface LibraryFilterSetters {
 	toggleNextOnlyFilter(): void;
 	setRemixesFilter(next: boolean): void;
 	setVocalsFilter(next: boolean): void;
+	setAvailableOfflineFilter(next: boolean): void;
 }
 
 /**
@@ -83,6 +92,7 @@ export function makeLibraryFilterSetters(
 		setNextOnlyFilter: (next) => _write('next_only_filter', next),
 		toggleNextOnlyFilter: () => _write('next_only_filter', !state.next_only_filter),
 		setRemixesFilter: (next) => _write('remixes_filter', next),
-		setVocalsFilter: (next) => _write('vocals_filter', next)
+		setVocalsFilter: (next) => _write('vocals_filter', next),
+		setAvailableOfflineFilter: (next) => _write('available_offline_filter', next)
 	};
 }

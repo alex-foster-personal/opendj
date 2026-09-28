@@ -17,6 +17,10 @@
 	raising it belongs to.
 -->
 <script lang="ts">
+	import { classifyToastError } from '$lib/toast-error-classification';
+	import { formatToastPresentation } from '$lib/toast-presentation';
+	import { buildToastReport, writeToastReport } from '$lib/toast-report';
+
 	// Presentational: the parent owns the deck identity, the id and the dismiss
 	// action. `deckId` is a plain number here because it is only stamped into
 	// the test hook and the label; Deck.svelte keeps the typed DeckId.
@@ -32,6 +36,60 @@
 		errorId,
 		onDismiss
 	}: { deckId: number; error: string; errorId: string | null; onDismiss: () => void } = $props();
+
+	const diagnostic = $derived(
+		classifyToastError({
+			kind: 'error',
+			message: error,
+			context: { deck_id: deckId, source: 'deck-error-banner' }
+		})
+	);
+
+	const presentation = $derived(
+		formatToastPresentation({
+			kind: 'error',
+			message: error,
+			diagnostic
+		})
+	);
+
+	let copyNote = $state<string | null>(null);
+
+	async function copyReport(): Promise<void> {
+		if (errorId === null) return;
+		const href = typeof window === 'undefined' ? '' : (window.location?.href ?? '');
+		const page = href === '' ? 'unknown' : href.split('?')[0].split('#')[0];
+		const text = buildToastReport({
+			id: errorId,
+			kind: 'error',
+			headline: presentation.headline,
+			message: error,
+			detail: presentation.detail,
+			classification: diagnostic.classification,
+			settingsSummary: diagnostic.settingsSummary,
+			hint: diagnostic.hint,
+			createdAt: new Date().toISOString(),
+			env: {
+				machine: 'unknown',
+				user: 'signed out',
+				client: { name: 'unknown', version: 'unknown' },
+				url: page
+			}
+		});
+		try {
+			await writeToastReport(
+				text,
+				typeof navigator === 'undefined' ? undefined : navigator.clipboard,
+				typeof window !== 'undefined' && window.isSecureContext === true
+			);
+			copyNote = 'copied';
+			setTimeout(() => {
+				copyNote = null;
+			}, 1500);
+		} catch (exc) {
+			copyNote = exc instanceof Error ? exc.message : String(exc);
+		}
+	}
 </script>
 
 <div
@@ -39,13 +97,22 @@
 	role="alert"
 	data-performance-error={deckId}
 	data-performance-error-id={errorId}
-	title={errorId === null ? error : `${error}\n\nError id ${errorId} - search the console or __mdtPerfLog() for it to find this exact failure.`}
+	title={errorId === null
+		? presentation.headline
+		: `${presentation.headline}\n\nError id ${errorId} - click to copy full report.`}
 >
-	<span class="deck-error-text">{error}</span>
+	<button type="button" class="deck-error-body" onclick={() => copyReport()}>
+		<span class="deck-error-text">{presentation.headline}</span>
+		<span class="deck-error-copy-hint">Click to copy</span>
+		{#if copyNote !== null}
+			<span class="deck-error-copy-note">{copyNote}</span>
+		{/if}
+	</button>
 	{#if errorId !== null}
 		<span
 			class="deck-error-id"
-			title={`Error id ${errorId}. This exact string is in the console line and the perf-event ring row for this failure.`}>{errorId}</span
+			title={`Error id ${errorId}. This exact string is in the console line and the perf-event ring row for this failure.`}
+			>{errorId}</span
 		>
 	{/if}
 	<button
@@ -72,16 +139,38 @@
 		background: rgba(30, 5, 5, 0.94);
 		color: #ff8e87;
 		font-size: var(--rb-fs-label);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+	}
+
+	.deck-error-body {
+		flex: 1 1 auto;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		padding: 0;
+		cursor: pointer;
 	}
 
 	.deck-error-text {
-		flex: 1 1 auto;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		max-width: 100%;
+	}
+
+	.deck-error-copy-hint {
+		font-size: 0.85em;
+		opacity: 0.75;
+	}
+
+	.deck-error-copy-note {
+		font-size: 0.85em;
+		opacity: 0.9;
 	}
 
 	/* Dimmer and monospace: the id is a search term a reader copies, not part

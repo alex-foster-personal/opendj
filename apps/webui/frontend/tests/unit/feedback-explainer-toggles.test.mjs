@@ -22,6 +22,14 @@ const WIDGET = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackWidget.svelte', import.meta.url),
 	'utf8'
 );
+// pagePins gating, the __mdtPinsVisible programmatic twin, and the
+// agent-pins filter moved out of FeedbackWidget into the app-root pin
+// layer (FB-16, #3888) - the toggle button stays in the widget, but what
+// it actually gates now lives here.
+const PIN_LAYER = readFileSync(
+	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url),
+	'utf8'
+);
 const EXPLAINER = readFileSync(
 	new URL('../../src/lib/components/rb/deck/ControlExplainer.svelte', import.meta.url),
 	'utf8'
@@ -78,23 +86,37 @@ test('a working, per-viewer "show feedback comment pins" toggle defaults new vie
 	);
 	// The visible pins on the canvas must actually be gated by the toggle -
 	// otherwise the checkbox is decorative and every viewer still sees pins.
-	const pagePinsAt = WIDGET.indexOf('const pagePins = $derived(');
+	const pagePinsAt = PIN_LAYER.indexOf('const pagePins = $derived(');
 	assert.notEqual(pagePinsAt, -1);
-	const pagePinsBody = WIDGET.slice(pagePinsAt, pagePinsAt + 250);
+	const pagePinsBody = PIN_LAYER.slice(pagePinsAt, pagePinsAt + 250);
 	assert.match(pagePinsBody, /pinsVisible/, 'pagePins must be gated on pinsVisible, or the toggle does nothing');
 });
 
 test('the "show feedback comment pins" toggle has an agent-facing programmatic twin, like pinSeen does', () => {
-	assert.match(WIDGET, /__mdtPinsVisible/, 'the pins-visible preference lives only in the browser, so it needs a twin');
+	assert.match(PIN_LAYER, /__mdtPinsVisible/, 'the pins-visible preference lives only in the browser, so it needs a twin');
+});
+
+test('the topbar pins checkbox follows writes from the twin and the M reveal, not just its mount read', () => {
+	// FeedbackPinLayer writes the preference too (M reveal, __mdtPinsVisible.set);
+	// a widget that only reads on mount shows a stale checkbox after either.
+	assert.match(WIDGET, /import\s*\{[^}]*\bonPinsVisibleChanged\b[^}]*\}\s*from\s*'\$lib\/rb\/feedback-pin-visibility'/s);
+	const onMountAt = WIDGET.indexOf('onMount(() => {');
+	assert.notEqual(onMountAt, -1);
+	const onMountBody = WIDGET.slice(onMountAt, WIDGET.indexOf('});', onMountAt));
+	assert.match(onMountBody, /onPinsVisibleChanged\(\s*syncPinsVisible\s*\)/, 'the widget must subscribe while mounted');
+	assert.match(onMountBody, /return\s*\(\)\s*=>\s*\{[\s\S]*offPinsVisibleChanged\(\)/, 'and unsubscribe on destroy');
+	assert.match(WIDGET, /function syncPinsVisible\(\): void \{\s*pinsVisible = readPinsVisible\(window\.localStorage\);/);
 });
 
 test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs preference', () => {
 	assert.match(WIDGET, /show_agent_pins/);
 	assert.match(WIDGET, /setShowAgentPins/);
 	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
-	// #3790 rewrote the filter as an early return; either spelling is the same gate.
+	// #3790 rewrote the filter as an early return; either spelling is the same
+	// gate. The predicate itself moved into PIN_LAYER's pagePins derivation
+	// alongside the rest of the pin-visibility gating (FB-16, #3888).
 	assert.match(
-		WIDGET,
+		PIN_LAYER,
 		/p\.author !== 'agent' \|\| uiPrefs\.show_agent_pins|p\.author === 'agent' && !uiPrefs\.show_agent_pins/
 	);
 });

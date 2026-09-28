@@ -9,7 +9,7 @@ rules:
       # workflow_run by design. These run the default branch's workflow code, never
       # check out the triggering run's head, and read its metadata only through env:
       # (error-sink checks out the default branch explicitly).
-      - ci-cost-guard.yml:3
+      # ci-cost-guard.yml left workflow_run for a schedule on Tue 22 Sep 2026.
       - error-sink.yml:8
       - stable-evidence.yml:9
       - trunk-job-verdict.yml:24
