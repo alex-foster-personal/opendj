@@ -38,6 +38,14 @@ class SyncResult:
     #: this spoke last synced against, so both floors were reset and the
     #: library re-offered.
     hub_restore_detected: bool = False
+    #: ``track_locations`` natural keys whose NFD/NFC twins this sync collapsed
+    #: before its offer (:mod:`apps.sync_hub.client_recovery`). 0 on a clean
+    #: library; non-zero once per legacy twin, never again.
+    location_twins_repaired: int = 0
+    #: Persisted identity remaps this sync dropped because the hub serves
+    #: their loser as an independent live track, followed by one re-pull
+    #: from seq 0 (:mod:`apps.sync_hub.client_recovery`).
+    stale_identity_remaps_dropped: int = 0
     #: push -> pull passes this sync made. 2 means the first comparison found
     #: the two sides still moving (a third machine pushed, or a local write
     #: landed mid-sync) and the sync settled instead of raising.
