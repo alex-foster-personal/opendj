@@ -54,8 +54,11 @@ def discovered_fixed_ports(roots: tuple[Path, ...] = (E2E_DIR, DESKTOP_DIR)) -> 
     return discovered
 
 
+@pytest.mark.requirement("INFRA-08")
 def test_every_declared_fixed_port_is_discovered_and_excluded() -> None:
-    """if a configuration gains a pinned port without RESERVED_FIXED_PORTS
+    """[if] a config pins a port [then] it is discovered and reserved, [else stop].
+
+    if a configuration gains a pinned port without RESERVED_FIXED_PORTS
     gaining it -- or stops declaring one the set still excludes -- then broken
     (issue #1613)"""
     discovered = discovered_fixed_ports()
