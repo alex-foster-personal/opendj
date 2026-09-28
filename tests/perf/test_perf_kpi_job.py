@@ -311,6 +311,72 @@ def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_
     assert not (launch_agents / "com.af.perf-kpi-health.plist").exists()
 
 
+def test_install_nightly_only_render_removes_a_stale_health_plist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] --nightly-only runs render-only (no --install) over a health plist left by an
+    earlier render [then] that plist is removed, so it cannot reload the unwanted health
+    agent at the next login (sol-review #4079 P2); launchctl is not touched."""
+    home = tmp_path / "home"
+    launch_agents = home / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    stale = launch_agents / "com.af.perf-kpi-health.plist"
+    stale.write_text("<plist/>")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
+    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
+    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
+    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
+    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+
+    completed = subprocess.run(
+        [str(INSTALL_SCRIPT), "--nightly-only"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (launch_agents / "com.af.perf-kpi-nightly.plist").exists()
+    assert not stale.exists(), "render-only --nightly-only left the stale health plist"
+
+
+def test_cleanup_stale_health_agent_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
+    """[if] the stale health plist cannot be deleted [then] cleanup_stale_health_agent
+    returns non-zero and does not report it removed, even when called as `... || exit 1`,
+    which disables set -e inside the function (sol-review #4079 P1). The label is one no
+    agent uses, so launchctl print reports it absent and only the rm step is exercised."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    plist = locked / "com.af.perf-kpi-health.plist"
+    plist.write_text("<plist/>")
+    locked.chmod(0o555)
+    try:
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'set -e; source "{DECIDE_SCRIPT}"; '
+                'cleanup_stale_health_agent "$1" "$2" "$3" || exit 1; echo REACHED',
+                "_",
+                str(os.getuid()),
+                "com.af.perf-kpi-health-absent-probe",
+                str(plist),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        locked.chmod(0o755)
+
+    assert plist.exists(), "control: the locked directory must really block deletion"
+    assert completed.returncode != 0, completed.stdout
+    assert "REACHED" not in completed.stdout
+    assert "[OK] removed" not in completed.stdout
+
+
 def _decide(print_rc: int) -> str:
     """Call the real health_agent_action (scripts/perf_kpi_launchd_decide.sh)
     by sourcing it and invoking the function -- no PATH tricks, no fake

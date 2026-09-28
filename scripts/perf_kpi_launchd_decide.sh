@@ -51,7 +51,19 @@ cleanup_stale_health_agent() {
       ;;
   esac
   if [[ -e "$plist_path" ]]; then
-    rm -f "$plist_path"
+    remove_stale_health_plist "$plist_path" || return 1
     echo "[OK] removed the existing $label agent (--nightly-only)"
+  fi
+}
+
+# remove_stale_health_plist <plist_path>: delete the health plist if present, so it cannot
+# reload the agent at the next login. Checked explicitly rather than via set -e, because the
+# callers invoke this as `... || exit 1`, which disables set -e inside the function.
+remove_stale_health_plist() {
+  local plist_path=$1
+  [[ -e "$plist_path" ]] || return 0
+  if ! rm -f "$plist_path" || [[ -e "$plist_path" ]]; then
+    echo "[ERROR] could not remove $plist_path; delete it by hand, then re-run" >&2
+    return 1
   fi
 }

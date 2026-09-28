@@ -79,6 +79,10 @@ if [[ "$NIGHTLY_ONLY" -ne 1 ]]; then
 fi
 
 if [[ "$INSTALL" -ne 1 ]]; then
+  if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
+    # A health plist left by an earlier render would still load at the next login.
+    remove_stale_health_plist "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist" || exit 1
+  fi
   echo "[OK] rendered perf KPI launchd plists (launchctl not touched)"
   exit 0
 fi
