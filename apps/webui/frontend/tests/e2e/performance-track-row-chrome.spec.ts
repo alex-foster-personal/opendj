@@ -45,6 +45,8 @@ test('performance: title text is vertically centered in the row and separator sp
 	const geometry = await page.evaluate(() => {
 		const selected = document.querySelector('[data-testid="track-row"].rb-row-selected');
 		const nextRow = selected?.nextElementSibling;
+		const titleCell = selected?.querySelector('.c-title');
+		const artistCell = selected?.querySelector('.c-artist');
 		const title = selected?.querySelector('.title-text');
 		const art = selected?.querySelector('.c-art');
 		const artImg = selected?.querySelector('.c-art img');
@@ -52,6 +54,11 @@ test('performance: title text is vertically centered in the row and separator sp
 		if (!(selected instanceof HTMLElement) || !(title instanceof HTMLElement)) {
 			return null;
 		}
+		if (!(titleCell instanceof HTMLElement) || !(artistCell instanceof HTMLElement)) {
+			return { error: 'missing title or artist table cell' as const };
+		}
+		const titleCellDisplay = window.getComputedStyle(titleCell).display;
+		const artistCellDisplay = window.getComputedStyle(artistCell).display;
 		const rowBox = selected.getBoundingClientRect();
 		const titleBox = title.getBoundingClientRect();
 		const rowCenterY = (rowBox.top + rowBox.bottom) / 2;
@@ -86,6 +93,8 @@ test('performance: title text is vertically centered in the row and separator sp
 		}
 
 		return {
+			titleCellDisplay,
+			artistCellDisplay,
 			titleCenterDelta: Math.abs(rowCenterY - titleCenterY),
 			rowWidth: rowBox.width,
 			separatorSpanPx,
@@ -96,8 +105,10 @@ test('performance: title text is vertically centered in the row and separator sp
 	});
 	expect(geometry).not.toBeNull();
 	if (geometry && 'error' in geometry) {
-		throw new Error(`artwork precondition failed: ${geometry.error}`);
+		throw new Error(`row chrome precondition failed: ${geometry.error}`);
 	}
+	expect(geometry!.titleCellDisplay).toBe('table-cell');
+	expect(geometry!.artistCellDisplay).toBe('table-cell');
 	expect(geometry!.titleCenterDelta).toBeLessThan(4);
 	expect(geometry!.rowWidth).toBeGreaterThan(200);
 	expect(geometry!.artWidth).toBeGreaterThan(4);
