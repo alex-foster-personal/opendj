@@ -107,9 +107,11 @@ class CFG:
     SESSION_HOST_RE = re.compile(
         r"(^|/)(tmux|screen|sshd|Runner\.Listener|runsvc\.sh|systemd|launchd|login|zellij|herdr)(\s|:|$)"
     )
-    # An agent session's own id (Claude profiles set one); inherited by all
-    # its children, so it is AGENT provenance, never a service to protect.
-    AGENT_SERVICE_ID_RE = re.compile(r"claude|codex|cursor|grok", re.IGNORECASE)
+    # An agent SESSION's own id namespace (Claude profiles set one), inherited
+    # by all its children, so it is AGENT provenance, never a service to protect.
+    # Matched by exact namespace, never by substring: a service whose NAME
+    # mentions an agent (com.af.codex-transcript-cleanup) is still a service.
+    AGENT_SESSION_SERVICE_ID_RE = re.compile(r"^com\.af\.claude-profiles\.")
     TEST_SERVICE_MARKER = ".test."
 
 
@@ -129,6 +131,9 @@ class Proc:
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict)  # allowlisted values only
     env_markers: list[str] = field(default_factory=list)  # key names only
+    # False when the env could not be read at all: another user's process, a SIP
+    # binary, or (macOS) a process that rewrote its title over its env area.
+    env_readable: bool = False
     supervisor: str = (
         ""  # "job" (launchd job / systemd unit MainPID) | "app" (a GUI app launchd tracks) | ""
     )
@@ -149,7 +154,7 @@ class Row:
     env_markers: list[str]
     tree: str  # orphaned | supervised-job | supervised-app | session | attached
     attribution: str  # runner | agent | test-harness | service | unknown
-    verdict: str  # reapable | service | active | zombie | unattributed-orphan
+    verdict: str  # reapable | service | active | zombie | unattributed-orphan | unreadable-orphan
 
 
 # ---------------------------------------------------------------- snapshot (imperative shell)
@@ -220,6 +225,7 @@ def _read_envs_darwin(procs: dict[int, Proc]) -> None:
             continue
         pairs = re.findall(r"(?:^|\s)([A-Z][A-Z0-9_]*)=(\S*)", text)
         procs[int(pid_s)].env, procs[int(pid_s)].env_markers = _filter_env(pairs)
+        procs[int(pid_s)].env_readable = bool(pairs)
 
 
 def _read_cwds_darwin(procs: dict[int, Proc], pids: list[int]) -> None:
@@ -298,6 +304,7 @@ def _read_envs_linux(procs: dict[int, Proc]) -> None:
             tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv
         ]
         proc.env, proc.env_markers = _filter_env(pairs)  # type: ignore[arg-type]
+        proc.env_readable = bool(pairs)
 
 
 def _read_cwds_linux(procs: dict[int, Proc], pids: list[int]) -> None:
@@ -422,7 +429,7 @@ def _attribution(procs: dict[int, Proc], chain: list[int]) -> str:
     # service launched from a checkout, by a runner job or inside an agent
     # session is still a service (DEVOPS-17). An agent session's own id
     # (e.g. a Claude profile's) is provenance, not a service, so it falls through.
-    if own_id and not CFG.AGENT_SERVICE_ID_RE.search(own_id):
+    if own_id and not CFG.AGENT_SESSION_SERVICE_ID_RE.search(own_id):
         return "service"
     service_ids = [e.get("AF_SERVICE_ID", "") for e in envs if e.get("AF_SERVICE_ID")]
     if any(CFG.TEST_SERVICE_MARKER in s for s in service_ids):
@@ -434,7 +441,7 @@ def _attribution(procs: dict[int, Proc], chain: list[int]) -> str:
     if (
         any(k in e for e in envs for k in CFG.AGENT_ENV_KEYS)
         or any(procs[p].env_markers for p in chain)
-        or any(CFG.AGENT_SERVICE_ID_RE.search(s) for s in service_ids)
+        or any(CFG.AGENT_SESSION_SERVICE_ID_RE.search(s) for s in service_ids)
         or any(CFG.WORKTREE_CWD_RE.search(procs[p].cwd) for p in chain)
     ):
         return "agent"
@@ -447,6 +454,10 @@ def _verdict(proc: Proc, tree: str, attribution: str) -> str:
     """reapable only for an ORPHANED tree with positive test/runner/agent provenance."""
     if proc.state.startswith("Z"):
         return "zombie"
+    if tree == "orphaned" and not proc.env_readable:
+        # Its OWN AF_SERVICE_ID is unknown, so it may be a service: fail closed.
+        # Reported, never reaped; the owner guard is what kills test servers.
+        return "unreadable-orphan"
     if tree == "orphaned" and attribution in ("runner", "agent", "test-harness"):
         return "reapable"
     if tree == "orphaned" and attribution == "service":

@@ -14,6 +14,8 @@ Regression lines:
     then broken
   - if a `systemd --user` adoptee is not orphaned, or a tmux child is then broken
   - if reap reports a target it never signalled as killed then broken
+  - if a service id that merely mentions codex/claude/cursor/grok is reaped then broken
+  - if an orphan whose own environment cannot be read is reapable then broken
 """
 
 from __future__ import annotations
@@ -136,7 +138,82 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
 
 
 def _proc(pid: int, ppid: int, command: str, **extra: object) -> Proc:
+    """A synthetic process whose environment WAS read, unless the test says otherwise."""
+    extra.setdefault("env_readable", True)
     return Proc(pid, ppid, pid, 3600, "S", "dev", command, start=f"t{pid}", **extra)  # type: ignore[arg-type]
+
+
+def _orphan_verdict(own_env: dict[str, str], *, env_readable: bool = True) -> str:
+    """Verdict for an orphaned, test-shaped server run from a checkout inside an agent session."""
+    procs = {
+        1: _proc(1, 0, "/sbin/init"),
+        50: _proc(
+            50,
+            1,
+            "uvicorn apps.engine_core",
+            env={"CLAUDECODE": "1", **own_env},
+            cwd="/home/dev/music-dj-tools",
+            env_readable=env_readable,
+        ),
+    }
+    return {r.pid: r for r in classify(procs)}[50].verdict
+
+
+def test_a_service_id_is_protected_whatever_names_it_contains() -> None:
+    """Only an agent SESSION's own id namespace is provenance; a service whose
+    name merely mentions an agent (codex, claude...) is still a service."""
+    assert _orphan_verdict({"AF_SERVICE_ID": "com.af.codex-transcript-cleanup"}) == "service"
+    assert _orphan_verdict({"AF_SERVICE_ID": "com.opendj.claude-helper"}) == "service"
+    # the control: a Claude session's own profile id IS agent provenance
+    assert _orphan_verdict({"AF_SERVICE_ID": "com.af.claude-profiles.account3"}) == "reapable"
+
+
+def test_an_orphan_whose_environment_cannot_be_read_is_never_reapable() -> None:
+    """macOS hides a retitled process's env from `ps -E`: its own service id is
+    then unknown, so the census must fail closed instead of trusting heuristics."""
+    assert _orphan_verdict({}, env_readable=False) == "unreadable-orphan"
+    assert _orphan_verdict({}, env_readable=True) == "reapable"  # control: same tree, env read
+
+
+RETITLE_CODE = (
+    "import setproctitle, time; "
+    "setproctitle.setproctitle('uvicorn apps.engine_core retitled-control'); time.sleep(600)"
+)
+
+
+def test_a_retitled_service_survives_reap(cleanup_pids: list[int]) -> None:
+    """Real process: a daemonized service that rewrites its title, run from a
+    checkout with an agent marker. On macOS its env is unreadable (unreadable-
+    orphan); where it stays readable its own id makes it a service. Never reaped."""
+    service = orphan(
+        [sys.executable, "-c", RETITLE_CODE],
+        {
+            "PATH": os.environ["PATH"],
+            "HOME": os.environ.get("HOME", "/"),
+            "AF_SERVICE_ID": "com.opendj.control-retitled",
+            "CLAUDECODE": "1",
+        },
+        str(REPO_ROOT),
+    )
+    cleanup_pids.append(service)
+    wait_for(lambda: alive(service), 10, "retitled control to start")
+    wait_for(lambda: "retitled-control" in _census_row(service)["command"], 10, "the title rewrite")
+    verdict = _census_row(service)["verdict"]
+    expected = (
+        {"unreadable-orphan"} if sys.platform == "darwin" else {"unreadable-orphan", "service"}
+    )
+    assert verdict in expected, verdict
+    result = subprocess.run(
+        [sys.executable, "-m", REAPER_MODULE, "reap", "--min-age-s", "0", f"--only-pid={service}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["killed"] == 0
+    assert alive(service), "the reaper killed a service whose own id it could not read"
 
 
 def test_a_subreaper_adoptee_is_orphaned_and_a_tmux_child_is_not() -> None:
