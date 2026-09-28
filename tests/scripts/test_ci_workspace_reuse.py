@@ -35,8 +35,8 @@ Acceptance tests:
 - [if] a self-hosted checkout drops `fetch-depth: 0` (or sets any other depth)
   [then] this fails [⛔️ a depth-1 fetch writes .git/shallow, and the next
   full-history job on that runner pays an `--unshallow` re-download: measured
-  6.1 GB of the 11.2 GB of pack writes on nucbox in 48 h, ADR on the branch
-  af--ci-partial-clone].
+  6.8 GB of the 11.2 GB of pack writes on nucbox in 48 h; see the
+  uniform-checkout-depth ADR in docs/decisions/].
 - [if] the selector stops finding the history-dependent jobs (ci.yml test,
   fast, contracts, quality; adr-check) [then] this fails [⛔️ the depth rule
   would pass vacuously for the jobs whose results depend on history].
