@@ -26,6 +26,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -138,3 +139,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             f"\n[spawned_servers] stopped {len(leaked)} server(s) a test never stopped: {names}",
             file=sys.stderr,
         )
+
+
+@pytest.fixture
+def cleanup_pids() -> Iterator[list[int]]:
+    """Belt and braces: whatever a test leaves alive by FAILING is killed here."""
+    pids: list[int] = []
+    yield pids
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
