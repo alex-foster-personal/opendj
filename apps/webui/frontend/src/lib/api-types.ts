@@ -600,6 +600,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-engine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audio Engine Status */
+        get: operations["audio_engine_status_api_v1_audio_engine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-engine/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Audio Engine Start */
+        post: operations["audio_engine_start_api_v1_audio_engine_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-engine/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Audio Engine Stop */
+        post: operations["audio_engine_stop_api_v1_audio_engine_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audio/output-health": {
         parameters: {
             query?: never;
@@ -6346,6 +6397,50 @@ export interface components {
             size_bytes: number;
             /** Url */
             url: string;
+        };
+        /** AudioEngineOut */
+        AudioEngineOut: {
+            /** Binary */
+            binary?: string | null;
+            /** Binary Source */
+            binary_source?: string | null;
+            /** Clock */
+            clock?: string | null;
+            /** Engine */
+            engine?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Generation */
+            generation: number;
+            /** Last Exit Code */
+            last_exit_code?: number | null;
+            /** Pid */
+            pid?: number | null;
+            /** Protocol */
+            protocol?: number | null;
+            /** Restarts */
+            restarts: number;
+            /** Sample Rate */
+            sample_rate?: number | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "off" | "starting" | "running" | "restarting" | "stopped" | "failed" | "unavailable";
+            /** Stderr Tail */
+            stderr_tail: string[];
+            /** Token */
+            token?: string | null;
+            /** Ws Url */
+            ws_url?: string | null;
+        };
+        /** AudioEngineStartIn */
+        AudioEngineStartIn: {
+            /**
+             * Clock
+             * @enum {string}
+             */
+            clock: "wall" | "device";
         };
         /** AudioOutputHealthOut */
         AudioOutputHealthOut: {
@@ -15735,6 +15830,93 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    audio_engine_status_api_v1_audio_engine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioEngineOut"];
+                };
+            };
+        };
+    };
+    audio_engine_start_api_v1_audio_engine_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudioEngineStartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioEngineOut"];
+                };
+            };
+            /** @description running on another clock */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description no odj-audio binary */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    audio_engine_stop_api_v1_audio_engine_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioEngineOut"];
                 };
             };
         };

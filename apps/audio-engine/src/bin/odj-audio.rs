@@ -2,13 +2,16 @@
 //!
 //!   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
+//!                   [--ws 127.0.0.1:0]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
 //! sha256, when each event fired, which decks are heard when (the timeline
 //! and its overlaps), and each deck's tempo. `--decks-out` also writes each
 //! loaded deck's own audio as `deckN.wav`. `serve` speaks protocol v1 on
-//! stdin/stdout; see `src/protocol.rs`.
+//! stdin/stdout; see `src/protocol.rs`. With `--ws`
+//! (wall and device clocks) it also listens on a loopback WebSocket for the
+//! renderer and agents, each presenting `ODJ_AUDIO_WS_TOKEN`; see `src/ws.rs`.
 
 use std::fs::File;
 use std::io::{self, BufWriter};
@@ -24,6 +27,7 @@ use sha2::{Digest, Sha256};
 const USAGE: &str = "usage:
   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
+                  [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
   odj-audio version";
 
 struct Args {
@@ -158,10 +162,23 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             .ok_or(format!("--block must be 16..{}", odj_audio::engine::MAX_BLOCK))?,
     };
     let record = args.take("--record")?.map(PathBuf::from);
+    let ws_addr = args.take("--ws")?;
     args.done()?;
     if record.is_some() && clock != "fake" {
         return Err("--record works on the fake clock only".into());
     }
+    let ws = match ws_addr {
+        None => None,
+        // The fake clock is a single-threaded simulator driven by one sender.
+        Some(_) if clock == "fake" => return Err("--ws works on the wall and device clocks only".into()),
+        Some(a) => {
+            let addr: std::net::SocketAddr = a.parse().map_err(|_| format!("--ws needs HOST:PORT, got {a}"))?;
+            let token = std::env::var("ODJ_AUDIO_WS_TOKEN").map_err(|_| "--ws needs ODJ_AUDIO_WS_TOKEN in the environment")?;
+            odj_audio::ws::check_token(&token)?;
+            let listener = odj_audio::ws::bind(addr).map_err(|e| format!("--ws {a}: {e}"))?;
+            Some(serve::WsListen { listener, token })
+        }
+    };
     match clock.as_str() {
         "fake" => {
             let sr = sr.unwrap_or(48000);
@@ -175,25 +192,25 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             }
             Ok(())
         }
-        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", serve::run_wall(block)).map_err(|e| e.to_string()),
-        "device" => device(sr),
+        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", serve::run_wall(block), ws).map_err(|e| e.to_string()),
+        "device" => device(sr, ws),
         other => Err(format!("unknown clock {other}; use fake, wall or device")),
     }
 }
 
 #[cfg(feature = "device")]
-fn device(sr: Option<u32>) -> Result<(), String> {
+fn device(sr: Option<u32>, ws: Option<serve::WsListen>) -> Result<(), String> {
     let (rate, _channels) = odj_audio::device::default_output_format()?;
     if let Some(want) = sr {
         if want != rate {
             return Err(format!("the output device runs at {rate} Hz; --sample-rate {want} does not match"));
         }
     }
-    serve::serve_threaded(rate, "device", odj_audio::device::run_device()).map_err(|e| e.to_string())
+    serve::serve_threaded(rate, "device", odj_audio::device::run_device(), ws).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "device"))]
-fn device(_sr: Option<u32>) -> Result<(), String> {
+fn device(_sr: Option<u32>, _ws: Option<serve::WsListen>) -> Result<(), String> {
     Err("this build has no device output; rebuild with --features device".into())
 }
 

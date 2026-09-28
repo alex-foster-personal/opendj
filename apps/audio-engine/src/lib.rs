@@ -17,3 +17,4 @@ pub mod plan;
 pub mod protocol;
 pub mod serve;
 pub mod wav;
+pub mod ws;

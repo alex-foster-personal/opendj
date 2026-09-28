@@ -27,6 +27,9 @@ symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "f
 rtrb = "0.4"
 sha2 = "0.10"
 cpal = { version = "0.18", optional = true }
+# Loopback WebSocket for the renderer and agents (plan 20-02). Blocking std
+# I/O on per-client threads, so no async runtime enters the engine.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [profile.release]
 opt-level = 3

@@ -15,10 +15,17 @@
 //! Loads decode on worker threads; a deck's later commands wait behind its own
 //! pending load so the mailbox order holds per deck, while other decks and the
 //! mixer stay responsive.
+//!
+//! The threaded modes can also listen on a loopback WebSocket (`crate::ws`,
+//! plan 20-02). Stdio and every socket are equal clients of one mailbox: a
+//! `result` goes back only to the client that sent the command, and `state` goes
+//! to everyone. Stdio stays the supervisor's line: closing it stops the engine,
+//! and only it may send `engine_shutdown`.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -36,6 +43,99 @@ fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *out, v)?;
     out.write_all(b"\n")?;
     out.flush()
+}
+
+/// Who sent a command, so its result goes back to the same place.
+pub type ClientId = u32;
+
+/// The supervisor's stdio line. Always connected while the engine runs.
+pub const STDIO: ClientId = 0;
+
+/// Lines queued for one socket client before it counts as stalled. At 30 state
+/// messages a second this is several seconds of backlog.
+pub const CLIENT_QUEUE: usize = 256;
+
+/// Socket clients connected at once, beside stdio.
+pub const MAX_WS_CLIENTS: usize = 16;
+
+enum Sink {
+    Stdout(io::Stdout),
+    Socket(mpsc::SyncSender<String>),
+}
+
+/// Every connected client and how to reach it. Writing to stdout happens under
+/// the lock (as before the socket existed); a socket client only gets a line
+/// queued, and one that stops draining its queue is dropped rather than
+/// allowed to hold up the rest.
+pub struct Hub {
+    clients: Mutex<HashMap<ClientId, Sink>>,
+    next: AtomicU32,
+}
+
+impl Hub {
+    pub fn new() -> Hub {
+        let mut clients = HashMap::new();
+        clients.insert(STDIO, Sink::Stdout(io::stdout()));
+        Hub { clients: Mutex::new(clients), next: AtomicU32::new(STDIO + 1) }
+    }
+
+    /// Register a socket client. `None` when `MAX_WS_CLIENTS` are connected.
+    pub fn add_socket(&self, tx: mpsc::SyncSender<String>) -> Option<ClientId> {
+        let mut c = self.clients.lock().unwrap();
+        if c.len() > MAX_WS_CLIENTS {
+            return None;
+        }
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        c.insert(id, Sink::Socket(tx));
+        Some(id)
+    }
+
+    pub fn remove(&self, id: ClientId) {
+        if id != STDIO {
+            self.clients.lock().unwrap().remove(&id);
+        }
+    }
+
+    pub fn socket_clients(&self) -> usize {
+        self.clients.lock().unwrap().len() - 1
+    }
+
+    fn deliver(c: &mut HashMap<ClientId, Sink>, id: ClientId, line: &str) {
+        let stalled = match c.get_mut(&id) {
+            None => false,
+            Some(Sink::Stdout(o)) => {
+                let _ = o.write_all(line.as_bytes()).and_then(|_| o.write_all(b"\n")).and_then(|_| o.flush());
+                false
+            }
+            Some(Sink::Socket(tx)) => tx.try_send(line.to_owned()).is_err(),
+        };
+        if stalled {
+            // Dropping the sender is what tells the socket thread to close.
+            c.remove(&id);
+        }
+    }
+
+    /// Send one message to one client. A client that has gone is skipped.
+    pub fn send_to(&self, id: ClientId, v: &Value) {
+        let line = v.to_string();
+        Self::deliver(&mut self.clients.lock().unwrap(), id, &line);
+    }
+
+    /// Send one message to every client.
+    pub fn broadcast(&self, v: &Value) {
+        let line = v.to_string();
+        let mut c = self.clients.lock().unwrap();
+        let ids: Vec<ClientId> = c.keys().copied().collect();
+        for id in ids {
+            Self::deliver(&mut c, id, &line);
+        }
+    }
+}
+
+impl Default for Hub {
+    fn default() -> Hub {
+        Hub::new()
+    }
 }
 
 /// Serve on the fake clock. `record`, when given, receives every rendered
@@ -142,24 +242,27 @@ impl AudioSide {
     }
 }
 
-enum Msg {
-    Line(String),
+pub(crate) enum Msg {
+    Line(ClientId, String),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
 }
 
+/// Where a result goes: the sending client and the command's own id.
+type Origin = (ClientId, Option<String>);
+
 /// Work parked behind a deck's pending load.
 enum Queued {
-    Cmd(Option<String>, EngineCmd),
-    Load(Option<String>, LoadSpec),
+    Cmd(Origin, EngineCmd),
+    Load(Origin, LoadSpec),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
 /// queues and the id bookkeeping. Runs on the main thread.
 struct Control {
     cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
-    ids: Arc<Mutex<HashMap<u64, Option<String>>>>,
-    out: Arc<Mutex<io::Stdout>>,
+    ids: Arc<Mutex<HashMap<u64, Origin>>>,
+    hub: Arc<Hub>,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
     /// Per deck: Some while a load is decoding, holding work queued behind it.
@@ -168,22 +271,22 @@ struct Control {
 }
 
 impl Control {
-    fn reply(&self, id: Option<&str>, res: Result<(), ProtoError>) {
-        let mut o = self.out.lock().unwrap();
-        let _ = send(&mut *o, &protocol::result_json(id, &res));
+    fn reply(&self, (client, id): &Origin, res: Result<(), ProtoError>) {
+        self.hub.send_to(*client, &protocol::result_json(id.as_deref(), &res));
     }
 
-    fn seq(&mut self, id: Option<String>) -> u64 {
+    fn seq(&mut self, origin: Origin) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.ids.lock().unwrap().insert(seq, id);
+        self.ids.lock().unwrap().insert(seq, origin);
         seq
     }
 
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) {
         if self.cmd_tx.push((seq, cmd)).is_err() {
-            let id = self.ids.lock().unwrap().remove(&seq).flatten();
-            self.reply(id.as_deref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            if let Some(origin) = self.ids.lock().unwrap().remove(&seq) {
+                self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            }
         }
     }
 
@@ -202,24 +305,24 @@ impl Control {
         self.waiting[deck as usize - 1].as_mut()
     }
 
-    fn dispatch(&mut self, id: Option<String>, cmd: EngineCmd) {
+    fn dispatch(&mut self, origin: Origin, cmd: EngineCmd) {
         if let Some(d) = Self::deck_of(&cmd) {
             if let Some(q) = self.queue_for(d) {
-                q.push_back(Queued::Cmd(id, cmd));
+                q.push_back(Queued::Cmd(origin, cmd));
                 return;
             }
         }
-        let seq = self.seq(id);
+        let seq = self.seq(origin);
         self.push_seq(seq, cmd);
     }
 
-    fn load(&mut self, id: Option<String>, spec: LoadSpec) {
+    fn load(&mut self, origin: Origin, spec: LoadSpec) {
         let deck = spec.deck;
         if let Some(q) = self.queue_for(deck) {
-            q.push_back(Queued::Load(id, spec));
+            q.push_back(Queued::Load(origin, spec));
             return;
         }
-        let seq = self.seq(id);
+        let seq = self.seq(origin);
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
         let tx = self.msg_tx.clone();
         std::thread::spawn(move || {
@@ -233,8 +336,9 @@ impl Control {
         match result {
             Ok(track) => self.push_seq(seq, EngineCmd::Load { deck, track }),
             Err(e) => {
-                let id = self.ids.lock().unwrap().remove(&seq).flatten();
-                self.reply(id.as_deref(), Err(e));
+                if let Some(origin) = self.ids.lock().unwrap().remove(&seq) {
+                    self.reply(&origin, Err(e));
+                }
             }
         }
         // Release this deck's queue in order. A queued load re-arms the wait,
@@ -242,24 +346,25 @@ impl Control {
         let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         for item in q {
             match item {
-                Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
-                Queued::Load(id, spec) => self.load(id, spec),
+                Queued::Cmd(origin, cmd) => self.dispatch(origin, cmd),
+                Queued::Load(origin, spec) => self.load(origin, spec),
             }
         }
     }
 
-    fn handle_line(&mut self, line: &str, clock: &str) -> bool {
+    fn handle_line(&mut self, client: ClientId, line: &str, clock: &str) -> bool {
         if line.trim().is_empty() {
             return true;
         }
         let (id, parsed) = protocol::parse_line(line);
+        let origin: Origin = (client, id);
         match parsed {
-            Err(e) => self.reply(id.as_deref(), Err(e)),
-            Ok(Command::Load(spec)) => self.load(id, spec),
-            Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_deref(), Ok(())),
+            Err(e) => self.reply(&origin, Err(e)),
+            Ok(Command::Load(spec)) => self.load(origin, spec),
+            Ok(Command::Apply(c)) => self.dispatch(origin, c),
+            Ok(Command::NoOp) => self.reply(&origin, Ok(())),
             Ok(Command::Advance(_)) => self.reply(
-                id.as_deref(),
+                &origin,
                 Err(ProtoError::new(
                     ErrorCode::WrongClock,
                     format!("engine_advance needs the fake clock; this engine runs on the {clock} clock"),
@@ -267,10 +372,17 @@ impl Control {
             ),
             Ok(Command::State) => {
                 self.state_req.store(true, Ordering::Relaxed);
-                self.reply(id.as_deref(), Ok(()));
+                self.reply(&origin, Ok(()));
             }
+            Ok(Command::Shutdown) if client != STDIO => self.reply(
+                &origin,
+                Err(ProtoError::new(
+                    ErrorCode::Unsupported,
+                    "engine_shutdown belongs to the supervisor on stdio; a socket client disconnects instead",
+                )),
+            ),
             Ok(Command::Shutdown) => {
-                self.reply(id.as_deref(), Ok(()));
+                self.reply(&origin, Ok(()));
                 return false;
             }
         }
@@ -278,25 +390,51 @@ impl Control {
     }
 }
 
+/// A bound loopback WebSocket listener and the token its clients must present.
+pub struct WsListen {
+    pub listener: TcpListener,
+    pub token: String,
+}
+
 /// Serve on a threaded clock. `run_audio` owns the audio side for the life of
-/// the process and must return once `stop` is set.
+/// the process and must return once `stop` is set. With `ws`, the same
+/// mailbox also accepts socket clients, and the stdout `hello` carries the
+/// socket's URL (without the token) as `ws`.
 pub fn serve_threaded(
     sample_rate: u32,
     clock: &'static str,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+    ws: Option<WsListen>,
 ) -> io::Result<()> {
     let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(1024);
     let (res_tx, mut res_rx) = rtrb::RingBuffer::<AudioResult>::new(1024);
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
-    let out = Arc::new(Mutex::new(io::stdout()));
-    let ids: Arc<Mutex<HashMap<u64, Option<String>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let hub = Arc::new(Hub::new());
+    let ids: Arc<Mutex<HashMap<u64, Origin>>> = Arc::new(Mutex::new(HashMap::new()));
+    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
 
-    {
-        let mut o = out.lock().unwrap();
-        send(&mut *o, &protocol::hello_json(clock, sample_rate))?;
+    let hello = protocol::hello_json(clock, sample_rate);
+    let mut stdio_hello = hello.clone();
+    if let Some(w) = ws {
+        let url = crate::ws::url(w.listener.local_addr()?);
+        stdio_hello["ws"] = Value::String(url);
+        let line_tx = msg_tx.clone();
+        crate::ws::spawn_accept(
+            w.listener,
+            w.token,
+            hub.clone(),
+            hello,
+            state_req.clone(),
+            move |client, line| {
+                let _ = line_tx.send(Msg::Line(client, line));
+            },
+        )?;
     }
+    // Written straight to stdout, before any socket client can be answered:
+    // the supervisor learns the socket's URL from this line.
+    send(&mut io::stdout().lock(), &stdio_hello)?;
 
     let audio = AudioSide {
         engine: Engine::new(sample_rate),
@@ -314,23 +452,23 @@ pub fn serve_threaded(
         .name("odj-audio".into())
         .spawn(move || run_audio(audio, audio_stop))?;
 
-    // Pump: results and snapshots out to stdout; retired tracks freed here.
+    // Pump: results to their sender, snapshots to everyone; retired tracks
+    // freed here.
     let pump_stop = stop.clone();
-    let pump_out = out.clone();
+    let pump_hub = hub.clone();
     let pump_ids = ids.clone();
     let pump = std::thread::spawn(move || loop {
         let mut idle = true;
         while let Ok((seq, r)) = res_rx.pop() {
             idle = false;
-            let id = pump_ids.lock().unwrap().remove(&seq).flatten();
             let res = r.map(drop).map_err(ProtoError::from);
-            let mut o = pump_out.lock().unwrap();
-            let _ = send(&mut *o, &protocol::result_json(id.as_deref(), &res));
+            if let Some((client, id)) = pump_ids.lock().unwrap().remove(&seq) {
+                pump_hub.send_to(client, &protocol::result_json(id.as_deref(), &res));
+            }
         }
         while let Ok((snap, host_ns)) = state_rx.pop() {
             idle = false;
-            let mut o = pump_out.lock().unwrap();
-            let _ = send(&mut *o, &protocol::state_json(&snap, Some(host_ns)));
+            pump_hub.broadcast(&protocol::state_json(&snap, Some(host_ns)));
         }
         if pump_stop.load(Ordering::Relaxed) && idle {
             break;
@@ -340,13 +478,12 @@ pub fn serve_threaded(
         }
     });
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let reader_tx = msg_tx.clone();
     std::thread::spawn(move || {
         for line in io::stdin().lock().lines() {
             match line {
                 Ok(l) => {
-                    if reader_tx.send(Msg::Line(l)).is_err() {
+                    if reader_tx.send(Msg::Line(STDIO, l)).is_err() {
                         return;
                     }
                 }
@@ -359,7 +496,7 @@ pub fn serve_threaded(
     let mut control = Control {
         cmd_tx,
         ids,
-        out,
+        hub,
         msg_tx,
         next_seq: 0,
         waiting: Default::default(),
@@ -367,8 +504,8 @@ pub fn serve_threaded(
     };
     while let Ok(msg) = msg_rx.recv() {
         match msg {
-            Msg::Line(l) => {
-                if !control.handle_line(&l, clock) {
+            Msg::Line(client, l) => {
+                if !control.handle_line(client, &l, clock) {
                     break;
                 }
             }
