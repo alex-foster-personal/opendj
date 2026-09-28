@@ -175,7 +175,7 @@ export interface PlaylistNode {
 		| 'taglist'
 		| 'autolist'
 		| 'usb';
-	/** Below server min-available ratio; tree row renders dimmed. */
+	/** Below server min playable-track count; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** When true, extra copies of an already-present track are rejected on add. */
 	forbid_duplicates?: boolean;

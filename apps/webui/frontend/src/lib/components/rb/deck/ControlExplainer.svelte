@@ -20,6 +20,8 @@
 		| 'slip'
 		| 'split-view'
 		| 'link'
+		| 'fx'
+		| '2-deck-view'
 		| 'headphone-mix'
 		| 'headphone-mode'
 		| 'headphone-practice'
@@ -311,6 +313,22 @@
 					<rect x="90" y="12" width="22" height="14" rx="2" class="link-deck" />
 					<line x1="32" y1="19" x2="88" y2="19" class="link-line" />
 					<circle cx="60" cy="19" r="3" class="link-beat" />
+				</svg>
+			{:else if demo === 'fx'}
+				<svg class="demo demo-tall" viewBox="0 0 120 48" aria-hidden="true">
+					<line x1="28" y1="8" x2="28" y2="40" class="fx-rail" />
+					<line x1="60" y1="8" x2="60" y2="40" class="fx-rail" />
+					<line x1="92" y1="8" x2="92" y2="40" class="fx-rail" />
+					<rect x="22" y="28" width="12" height="10" rx="1" class="fx-bar fx-bar-a" />
+					<rect x="54" y="18" width="12" height="20" rx="1" class="fx-bar fx-bar-b" />
+					<rect x="86" y="24" width="12" height="14" rx="1" class="fx-bar fx-bar-a" />
+				</svg>
+			{:else if demo === '2-deck-view'}
+				<svg class="demo demo-tall" viewBox="0 0 120 48" aria-hidden="true">
+					<rect x="4" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-grow" />
+					<rect x="32" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-grow" />
+					<rect x="64" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-hide two-deck-hide-l" />
+					<rect x="92" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-hide two-deck-hide-r" />
 				</svg>
 			{:else if demo === 'headphone-mix'}
 				<svg class="demo demo-tall" viewBox="0 0 120 48" aria-hidden="true">
@@ -634,21 +652,26 @@
 	}
 	@keyframes hp-route-dot {
 		0%,
-		15% {
+		10% {
 			transform: translate(0, 0);
 			opacity: 1;
 		}
-		40% {
+		30% {
+			transform: translate(28px, 0);
+			opacity: 1;
+		}
+		48%,
+		58% {
 			transform: translate(28px, -12px);
 			opacity: 1;
 		}
-		55% {
-			transform: translate(28px, -12px);
-			opacity: 1;
+		75% {
+			transform: translate(28px, 0);
+			opacity: 0.9;
 		}
-		80% {
+		100% {
 			transform: translate(0, 0);
-			opacity: 0.85;
+			opacity: 1;
 		}
 	}
 	@keyframes mode-fade-practice {
@@ -684,6 +707,83 @@
 		}
 		50% {
 			opacity: 1;
+		}
+	}
+	.fx-rail {
+		stroke: var(--rb-border);
+		stroke-width: 1;
+	}
+	.fx-bar {
+		fill: var(--rb-accent);
+		transform-origin: center bottom;
+		opacity: 0.55;
+	}
+	.fx-bar-a {
+		animation: fx-send-a 1.4s ease-in-out infinite;
+		will-change: transform, opacity;
+	}
+	.fx-bar-b {
+		animation: fx-send-b 1.9s ease-in-out infinite;
+		will-change: transform, opacity;
+	}
+	.two-deck-slot {
+		fill: #141a22;
+		stroke: var(--rb-border);
+		stroke-width: 1;
+	}
+	.two-deck-grow {
+		transform-origin: center center;
+		animation: two-deck-grow 2.6s ease-in-out infinite;
+		will-change: transform;
+	}
+	.two-deck-hide {
+		transform-origin: center center;
+		animation: two-deck-hide 2.6s ease-in-out infinite;
+		will-change: transform, opacity;
+	}
+	.two-deck-hide-r {
+		animation-delay: 0.08s;
+	}
+	@keyframes fx-send-a {
+		0%,
+		100% {
+			transform: scaleY(0.45);
+			opacity: 0.45;
+		}
+		50% {
+			transform: scaleY(1);
+			opacity: 1;
+		}
+	}
+	@keyframes fx-send-b {
+		0%,
+		100% {
+			transform: scaleY(0.35);
+			opacity: 0.4;
+		}
+		50% {
+			transform: scaleY(0.95);
+			opacity: 0.95;
+		}
+	}
+	@keyframes two-deck-hide {
+		0% {
+			transform: scale(1);
+			opacity: 1;
+		}
+		35%,
+		100% {
+			transform: scale(0.6);
+			opacity: 0;
+		}
+	}
+	@keyframes two-deck-grow {
+		0% {
+			transform: scaleX(0.55);
+		}
+		35%,
+		100% {
+			transform: scaleX(1.08);
 		}
 	}
 </style>

@@ -75,8 +75,25 @@ export interface RescueSnapshot {
 			output_mode: HeadphoneOutputMode;
 			selected_master_output_device_id: string | null;
 			selected_output_device_id: string | null;
+			/** RESCUE-05: the enumerated label of each selected sink at capture, the
+			 * half of the descriptor that survives the per-origin id salt (see
+			 * `$lib/player/output-device-resolve`). Null when nothing is selected or
+			 * the label was hidden; ABSENT on snapshots written before RESCUE-05. */
+			selected_master_output_device_label?: string | null;
+			selected_output_device_label?: string | null;
 		};
 	};
+}
+
+/** The label to persist beside a selected sink id: null when nothing is
+ * selected, the id is not enumerated, or the browser hid the label. */
+function _selectedOutputLabel(
+	outputs: readonly { id: string; label: string }[],
+	deviceId: string | null
+): string | null {
+	if (deviceId === null) return null;
+	const label = outputs.find((output) => output.id === deviceId)?.label ?? '';
+	return label.trim() === '' ? null : label;
 }
 
 export function buildRescueSnapshot(
@@ -151,7 +168,15 @@ export function buildRescueSnapshot(
 				output_mode: state.mixer.headphones.output_mode,
 				selected_master_output_device_id:
 					state.mixer.headphones.selected_master_output_device_id,
-				selected_output_device_id: state.mixer.headphones.selected_output_device_id
+				selected_output_device_id: state.mixer.headphones.selected_output_device_id,
+				selected_master_output_device_label: _selectedOutputLabel(
+					state.mixer.headphones.outputs,
+					state.mixer.headphones.selected_master_output_device_id
+				),
+				selected_output_device_label: _selectedOutputLabel(
+					state.mixer.headphones.outputs,
+					state.mixer.headphones.selected_output_device_id
+				)
 			}
 		}
 	};

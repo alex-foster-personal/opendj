@@ -160,7 +160,7 @@
 		if (allTracksCount === null || allTracksBrokenCount === null) {
 			return 'loading non-broken and broken track counts';
 		}
-		return `${allTracksCount} non-broken tracks, ${allTracksBrokenCount} broken tracks`;
+		return `${allTracksCount} unique library-wide non-broken tracks, ${allTracksBrokenCount} broken tracks`;
 	}
 
 	function _playlistCountTitle(node: PlaylistNode): string {

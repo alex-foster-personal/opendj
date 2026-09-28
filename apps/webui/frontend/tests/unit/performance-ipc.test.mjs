@@ -1481,6 +1481,7 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 	);
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed', async () => {
 	globalThis.window = {};
 	ipc.resetQuantizedLaunchArmedForTest();

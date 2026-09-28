@@ -41,7 +41,7 @@
 		explainSide,
 		fetchEngineBuild,
 		formatAge,
-		formatBuildIdentityReport,
+		copyBuildIdentityToClipboard,
 		formatStamp,
 		readShellBuild,
 		shortLabel,
@@ -163,24 +163,10 @@
 	 * Copy the full build identity report. No silent success and no silent failure.
 	 */
 	async function copyAllDetails(): Promise<void> {
-		const text = formatBuildIdentityReport({
-			shell,
-			engine,
-			engineUrl,
-			drift,
-			updateSummary
-		});
-		const clipboard = navigator.clipboard;
-		if (clipboard === undefined) {
-			copyNote = 'this browser offers no clipboard API; select the text in the foldout instead';
-			return;
-		}
-		try {
-			await clipboard.writeText(text);
-			copyNote = 'copied all details';
-		} catch (err) {
-			copyNote = `copy refused: ${err instanceof Error ? err.message : String(err)}`;
-		}
+		copyNote = await copyBuildIdentityToClipboard(
+			{ shell, engine, engineUrl, drift, updateSummary },
+			navigator.clipboard
+		);
 	}
 
 	onMount(() => {

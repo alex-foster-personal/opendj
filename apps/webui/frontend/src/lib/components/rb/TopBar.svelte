@@ -46,6 +46,13 @@
 
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
 	const splitViewBullets = plannedExplainerBullets('split-view');
+	const listViewBullets = plannedExplainerBullets('list-view');
+	const fxBullets = plannedExplainerBullets('fx');
+	const twoDeckBullets = plannedExplainerBullets('2-deck-view');
+	const gridViewBullets = plannedExplainerBullets('grid-view');
+	const fourWaveformBullets = plannedExplainerBullets('4-waveform-view');
+	const scopeView1Bullets = plannedExplainerBullets('scope-view-1');
+	const scopeView2Bullets = plannedExplainerBullets('scope-view-2');
 	const linkBullets = [
 		...plannedExplainerBullets('link'),
 		'When built, tempo and phase align across laptops on the same network; this button joins or leaves that session.'
@@ -413,16 +420,20 @@
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('list-view')} aria-label="list view">
-			<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
-				<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
-				<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
-				<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
-				<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
-			</svg>
-		</button>
+		<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="list view">
+				<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
+					<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
+					<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
+					<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
+					<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- FX panel toggle -->
-		<button class="tb-icon fx rb-inert" disabled title={plannedTitle('fx')}>FX</button>
+		<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
+			<button class="tb-icon fx rb-inert" disabled aria-label="FX panel">FX</button>
+		</ControlExplainer>
 		<!-- split-view icon -->
 		<ControlExplainer title="Split view" bullets={splitViewBullets} demo="split-view" showDelayMs={60}>
 			<button class="tb-icon rb-inert" disabled aria-label="split view">
@@ -433,51 +444,61 @@
 			</button>
 		</ControlExplainer>
 		<!-- 2up icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('2-deck-view')} aria-label="2 deck view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="2-deck view" bullets={twoDeckBullets} demo="2-deck-view" showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="2 deck view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- grid icon -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('grid-view')} aria-label="grid view">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="1" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-				<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-			</svg>
-		</button>
+		<ControlExplainer title="Grid view" bullets={gridViewBullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="grid view">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="1" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+					<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
 		     stacked jagged polylines - must NOT read as a plain list glyph or
 		     a dotted grid (SCREENSHOT-SPEC 1). -->
-		<button class="tb-icon active rb-inert" disabled title={plannedTitle('4-waveform-view')} aria-label="4 waveform view">
-			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
-				{#each WAVE_ICON_ROWS as row (row.cy)}
-					<polyline
-						points={_waveIconPoints(row)}
-						fill="none"
-						stroke="currentColor"
-						stroke-width="0.9"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				{/each}
-			</svg>
-		</button>
+		<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
+			<button class="tb-icon active rb-inert" disabled aria-label="4 waveform view">
+				<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+					{#each WAVE_ICON_ROWS as row (row.cy)}
+						<polyline
+							points={_waveIconPoints(row)}
+							fill="none"
+							stroke="currentColor"
+							stroke-width="0.9"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					{/each}
+				</svg>
+			</button>
+		</ControlExplainer>
 		<!-- 2 circular scope icons -->
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-1')} aria-label="scope view 1">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-				<circle cx="6" cy="6" r="1.4" fill="currentColor" />
-			</svg>
-		</button>
-		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-2')} aria-label="scope view 2">
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-				<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
-			</svg>
-		</button>
+		<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="scope view 1">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+					<circle cx="6" cy="6" r="1.4" fill="currentColor" />
+				</svg>
+			</button>
+		</ControlExplainer>
+		<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
+			<button class="tb-icon rb-inert" disabled aria-label="scope view 2">
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+					<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
+				</svg>
+			</button>
+		</ControlExplainer>
 	</div>
 
 	<!-- center-left: LINK, given clear room from the left icon cluster so it

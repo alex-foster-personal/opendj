@@ -37,7 +37,8 @@
  * module, one import, both halves of a load's telemetry.
  */
 
-import type { ClientErrorContext } from '$lib/client-error-reporting';
+import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
+import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
 import { pressureLabels, readMachinePressure } from '$lib/rb/machine-pressure';
 import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
@@ -307,19 +308,26 @@ export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,
 	cause: unknown,
-	stages: Readonly<Record<string, number>>
+	stages: Readonly<Record<string, number>>,
+	options: DeckLoadOptions
 ): void {
 	const failureContext = deckLoadFailureContext(deck, stages);
-	const stickWords = stickLoadFailureWords(cause);
-	pushToast(
-		`Deck ${deck} load failed - ${message}`,
-		'error',
-		undefined,
-		cause,
-		failureContext,
-		undefined,
-		undefined,
-		stickWords === null ? undefined : { headline: stickWords }
-	);
+	// A load whose caller shows its own toast (Trackify, #4036) still owes the
+	// server this report: it is the only record of which stage the load died in.
+	if (options.suppressFailureToast === true) {
+		reportClientError(cause, failureContext);
+	} else {
+		const stickWords = stickLoadFailureWords(cause);
+		pushToast(
+			`Deck ${deck} load failed - ${message}`,
+			'error',
+			undefined,
+			cause,
+			failureContext,
+			undefined,
+			undefined,
+			stickWords === null ? undefined : { headline: stickWords }
+		);
+	}
 	recordPerfEvent('deck-load-fail', message, deck);
 }

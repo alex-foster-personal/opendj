@@ -28,12 +28,14 @@ def _grid_master(path: Path, fill: tuple[int, int, int, int]) -> Path:
     return path
 
 
+# REQ: INSTALL-17
 @pytest.mark.requirement("INSTALL-17")
 def test_committed_icon_set_is_complete() -> None:
     """[if] any Tauri slot is missing [then] payload verify must refuse the build, [else stop]."""
     verify_desktop_icons(ICONS_DIR)
 
 
+# REQ: INSTALL-17
 @pytest.mark.requirement("INSTALL-17")
 def test_incomplete_icon_set_is_refused(tmp_path: Path) -> None:
     """[if] verify runs on an empty icon directory [then] it raises incomplete, [else stop]."""
@@ -43,6 +45,7 @@ def test_incomplete_icon_set_is_refused(tmp_path: Path) -> None:
         verify_desktop_icons(icons)
 
 
+# REQ: INSTALL-17
 @pytest.mark.requirement("INSTALL-17")
 def test_icns_missing_1024_slot_is_refused(tmp_path: Path) -> None:
     """[if] icon.icns lacks the 1024px slot [then] verify names 1024, [else stop]."""

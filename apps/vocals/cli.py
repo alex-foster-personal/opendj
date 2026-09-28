@@ -292,7 +292,7 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
                 master.execute(
                     "SELECT ID, Title, Length, FolderPath, AnalysisDataPath "
                     "FROM djmdContent "
-                    f"WHERE ID IN ({marks}) AND rb_local_deleted = 0",
+                    f"WHERE ID IN ({marks}) AND +rb_local_deleted = 0",
                     chunk,
                 ).fetchall()
             )
