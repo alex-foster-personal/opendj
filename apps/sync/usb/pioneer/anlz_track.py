@@ -55,8 +55,6 @@ from pathlib import Path
 from typing import Any, ClassVar, TypedDict, TypeVar
 
 import numpy as np
-from pyrekordbox.anlz.file import XOR_MASK
-from pyrekordbox.anlz.tags import TAGS
 
 from apps.analysis_waveform.bands import _bands_payload, _mono_bands, _tri_bands
 
@@ -135,6 +133,10 @@ def read_stick_track_analysis(
     """
     if points < 1:
         raise ValueError(f"points must be >= 1, got {points}")
+    # Fail fast when pyrekordbox is absent, before any per-tag decode can
+    # record it as an unreadable lane (see _anlz_tags).
+    _anlz_tags()
+    _pssi_xor_mask()
     tags = _TrackTags.read(_resolve_anlz_files(volume_root, analyze_path))
     beatgrid, times = _beatgrid(tags)
     cues = _select_cues(tags)
@@ -292,12 +294,36 @@ class _TrackTags:
             return None
 
 
+# ----- pyrekordbox, imported on first decode ---------------------------------
+
+
+def _anlz_tags() -> dict[str, Any]:
+    """pyrekordbox's per-tag structs, keyed by fourcc.
+
+    Imported here rather than at module top because ``apps.webui`` imports
+    this module while building its routes, and ``create_app`` must boot with
+    pyrekordbox absent (STANDALONE-01). ``read_stick_track_analysis`` calls
+    this before any tag is decoded, so a missing package fails the whole read
+    loudly instead of surfacing as one ``unreadable_anlz`` entry per tag.
+    """
+    from pyrekordbox.anlz.tags import TAGS
+
+    return TAGS
+
+
+def _pssi_xor_mask() -> bytearray:
+    """The PSSI XOR mask pyrekordbox's file parser applies; see :func:`_anlz_tags`."""
+    from pyrekordbox.anlz.file import XOR_MASK
+
+    return XOR_MASK
+
+
 # ----- beatgrid + phrases (pinned to the library helpers by a parity test) ----
 
 
 def _beatgrid(tags: _TrackTags) -> tuple[dict[str, Any], list[float]]:
     """Same shape as own_beatgrid_overlay._beatgrid_payload, from the .DAT PQTZ."""
-    pqtz = tags.decode_first(".DAT", "PQTZ", lambda tag: TAGS["PQTZ"](tag.data))
+    pqtz = tags.decode_first(".DAT", "PQTZ", lambda tag: _anlz_tags()["PQTZ"](tag.data))
     if pqtz is None:
         return {"source": BEATGRID_SOURCE, "beat_count": 0, "beats": []}, []
     beats = pqtz.get_beats()
@@ -320,8 +346,9 @@ def _unmask_pssi(data: bytes) -> bytes:
         return data
     len_entries = int.from_bytes(data[16:18], "big")
     unmasked = bytearray(data)
+    xor_mask = _pssi_xor_mask()
     for index in range(len(unmasked) - 18):
-        unmasked[18 + index] ^= (XOR_MASK[index % len(XOR_MASK)] + len_entries) % 256
+        unmasked[18 + index] ^= (xor_mask[index % len(xor_mask)] + len_entries) % 256
     return bytes(unmasked)
 
 
@@ -331,7 +358,7 @@ def _phrases(tags: _TrackTags, times: list[float]) -> list[dict[str, Any]]:
         return []
 
     def phrases_of(tag: _RawTag) -> list[dict[str, Any]]:
-        pssi = TAGS["PSSI"](_unmask_pssi(tag.data)).content
+        pssi = _anlz_tags()["PSSI"](_unmask_pssi(tag.data)).content
 
         def time_of_beat(beat: int) -> float:
             return round(times[min(max(beat - 1, 0), len(times) - 1)], 3)
@@ -379,16 +406,19 @@ def _pwv5_mono_bands(tag: _RawTag) -> dict[str, np.ndarray]:
 
 
 def _waveform(tags: _TrackTags, points: int) -> dict[str, Any]:
-    preview = tags.decode_first(".2EX", "PWV6", lambda tag: _tri_bands(TAGS["PWV6"](tag.data)))
-    detail = tags.decode_first(".2EX", "PWV7", lambda tag: _tri_bands(TAGS["PWV7"](tag.data)))
+    structs = _anlz_tags()
+    preview = tags.decode_first(".2EX", "PWV6", lambda tag: _tri_bands(structs["PWV6"](tag.data)))
+    detail = tags.decode_first(".2EX", "PWV7", lambda tag: _tri_bands(structs["PWV7"](tag.data)))
     kind = "tri"
     if preview is None or detail is None:
         kind = "mono"
-        preview = tags.decode_first(".DAT", "PWAV", lambda tag: _mono_bands(TAGS["PWAV"](tag.data)))
+        preview = tags.decode_first(
+            ".DAT", "PWAV", lambda tag: _mono_bands(structs["PWAV"](tag.data))
+        )
         detail = tags.decode_first(".EXT", "PWV5", _pwv5_mono_bands)
         if detail is None:
             detail = tags.decode_first(
-                ".EXT", "PWV3", lambda tag: _mono_bands(TAGS["PWV3"](tag.data))
+                ".EXT", "PWV3", lambda tag: _mono_bands(structs["PWV3"](tag.data))
             )
     return {
         "kind": kind,
@@ -457,7 +487,7 @@ def _decode_pco2(tag: _RawTag) -> tuple[int, list[_Cue]]:
 
 
 def _decode_pcob(tag: _RawTag) -> tuple[str, int, list[_Cue]]:
-    content = TAGS["PCOB"](tag.data).content
+    content = _anlz_tags()["PCOB"](tag.data).content
     list_names = {"hotcue": _HOT_LIST, "memory": _MEMORY_LIST}
     if str(content.cue_type) not in list_names:
         raise ValueError(f"PCOB list type {content.cue_type!r} is neither hotcue nor memory")

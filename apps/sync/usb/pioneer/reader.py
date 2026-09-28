@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any
 
 from kaitaistruct import KaitaiStream
-from pyrekordbox.anlz import AnlzFile, walk_anlz_paths
 
 from ._vendor.rekordbox_pdb import RekordboxPdb
 
@@ -280,6 +279,11 @@ def _anlz_summary(anlz_root: Path) -> dict[str, Any]:
     """
     if not anlz_root.exists():
         return {"total_dirs": 0, "tag_counts": {}, "dirs_by_track": {}}
+    # Imported here, not at module top: the Play from USB routes import this
+    # module (through stick_library) while create_app builds them, and the
+    # app must boot with pyrekordbox absent (STANDALONE-01). Outside the try
+    # below, so a missing package fails the walk instead of every .DAT.
+    from pyrekordbox.anlz import AnlzFile, walk_anlz_paths
 
     tag_counts: Counter[str] = Counter()
     dirs_by_track: dict[str, dict[str, str]] = {}
@@ -326,6 +330,8 @@ def read_anlz_dir(anlz_dir: Path) -> dict[str, Any]:
     carry extended waveforms and colour cue labels that we don't surface
     in Prototype A.
     """
+    from pyrekordbox.anlz import AnlzFile  # lazy for STANDALONE-01; see _anlz_summary
+
     dat = anlz_dir / "ANLZ0000.DAT"
     if not dat.exists():
         raise FileNotFoundError(f"ANLZ0000.DAT not found under {anlz_dir}")
