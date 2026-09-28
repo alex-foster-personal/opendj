@@ -21,6 +21,7 @@ Requirements:
 - ✔︎ Under UV_OFFLINE=1 a cold cache fails loud instead of fetching.
 
 Acceptance tests:
+- [if] a warm cache provisions from a lock [then] zero index requests go out, [else stop].
 - [if] provisioning revalidates index pages on a warm cache [then ⛔️] the
   zero-request test fails with the logged paths.
 - [if] a stray package survives provisioning in a reused venv [then ⛔️] the

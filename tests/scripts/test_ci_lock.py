@@ -13,6 +13,7 @@ Requirements:
 - ✔︎ The pytest lock carries the pyproject `observability` extra verbatim.
 
 Acceptance tests:
+- [if] a lock lags its requirements source [then] the check reports drift, [else stop].
 - [if] requirements.txt gains, loses or re-pins a requirement without a
   recompile [then ⛔️] the check reports the lock stale.
 - [if] only a comment changes [then ⛔️] the check still passes (overshoot control).
