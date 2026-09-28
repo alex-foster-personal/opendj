@@ -75,10 +75,22 @@ def assert_clean_origin_base(repo: Path, base_ref: str) -> None:
         )
 
 
-def create_worker_worktree(repo: Path, target: Path, branch: str, base_ref: str) -> None:
-    """Create one worker branch, proving the source is safe first."""
+def create_worker_worktree(
+    repo: Path,
+    target: Path,
+    branch: str,
+    base_ref: str,
+    *,
+    floor_gb: float = worktree_lifecycle.DISK_CREATE_FLOOR_GB,
+) -> None:
+    """Create one worker branch, proving the source is safe first.
+
+    floor_gb is the lifecycle guard's free-disk floor, measured at `repo`.
+    """
     assert_clean_origin_base(repo, base_ref)
-    lifecycle_status = worktree_lifecycle.main(["guard", "--repo", str(repo)])
+    lifecycle_status = worktree_lifecycle.main(
+        ["guard", "--repo", str(repo), "--floor-gb", str(floor_gb)]
+    )
     if lifecycle_status != 0:
         raise PreflightError("worktree lifecycle guard refused worker creation")
     process = subprocess.run(
@@ -139,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--target", type=Path, required=True)
     create.add_argument("--branch", required=True)
     create.add_argument("--base", required=True)
+    create.add_argument("--floor-gb", type=float, default=worktree_lifecycle.DISK_CREATE_FLOOR_GB)
     scope = subparsers.add_parser("scope")
     scope.add_argument("--repo", type=Path, required=True)
     scope.add_argument("--base", required=True)
@@ -149,7 +162,9 @@ def main(argv: list[str] | None = None) -> int:
         assert_clean_origin_base(args.repo, args.base)
         print(f"[worker-preflight] OK: clean source at {args.base}")
     elif args.command == "create":
-        create_worker_worktree(args.repo, args.target, args.branch, args.base)
+        create_worker_worktree(
+            args.repo, args.target, args.branch, args.base, floor_gb=args.floor_gb
+        )
         print(f"[worker-worktree] OK: {args.branch} at {args.target} from {args.base}")
     elif args.command == "scope":
         measured = measure_scope(args.repo, args.base)

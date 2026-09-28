@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from scripts import worker_worktree_guard as guard
+from scripts import worktree_lifecycle
 
 pytestmark = pytest.mark.requirement("OPS-41")
 
@@ -96,15 +97,41 @@ def test_preflight_refuses_source_local_base(origin_repo: tuple[Path, Path]) -> 
 def test_create_worktree_starts_at_explicit_origin_base(
     origin_repo: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    """[if] a worker worktree is created [then] HEAD equals origin/main, [else stop]."""
+    """[if] a worker worktree is created [then] HEAD equals origin/main, [else stop].
+
+    floor_gb=0 keeps the real disk probe in the path while making the test
+    independent of the host: tmp_path lives under RUNNER_TEMP, a 2G tmpfs on
+    the nucbox runners (#4099), which is below the 15G production floor.
+    """
     _, checkout = origin_repo
     target = tmp_path / "worker"
     branch = "af--issue-3352-guard-test"
 
-    guard.create_worker_worktree(checkout, target, branch, "origin/main")
+    guard.create_worker_worktree(checkout, target, branch, "origin/main", floor_gb=0)
 
     assert _git(target, "rev-parse", "HEAD") == _git(checkout, "rev-parse", "origin/main")
     assert _git(target, "branch", "--show-current").strip() == branch
+
+
+def test_create_worktree_refuses_below_disk_floor(
+    origin_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """[if] measured free disk is below the floor [then] no worker worktree is
+    created, [else stop].
+
+    Control for floor_gb=0 above: a floor far above the real free space must
+    refuse, so a guard that stopped consulting the disk would fail here.
+    """
+    _, checkout = origin_repo
+    target = tmp_path / "worker"
+    unreachable_floor_gb = worktree_lifecycle.free_gb(checkout) + 1_000_000
+
+    with pytest.raises(guard.PreflightError, match="lifecycle guard refused"):
+        guard.create_worker_worktree(
+            checkout, target, "af--floor-control", "origin/main", floor_gb=unreachable_floor_gb
+        )
+
+    assert not target.exists()
 
 
 def test_scope_check_refuses_large_branch(origin_repo: tuple[Path, Path]) -> None:
