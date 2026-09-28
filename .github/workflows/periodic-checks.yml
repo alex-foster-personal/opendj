@@ -1213,15 +1213,22 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Provision duplicate-writer venv
+        # Synced from the hash-pinned lock, never resolved (issue #4252). A
+        # separate step, so a provisioning failure cannot read as a verdict.
+        run: scripts/ci_venv.sh 3.11 --lock ops/fleet/pylock.duplicate-writer.toml
+
       - name: Duplicate-writer check
         run: |
           set -uo pipefail
-          pip install --quiet pyyaml
           # NOT `... || true` followed by `$?`: after a pipeline or an
           # `|| true`, `$?` reads 0 and the verdict is lost. scripts/
           # shell_construct_lint.py bans that construct for exactly this
           # reason. if/else captures the real code.
-          if python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
+          if .venv/bin/python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
             code=0
           else
             code=$?

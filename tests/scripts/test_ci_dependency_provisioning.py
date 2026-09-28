@@ -67,14 +67,10 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
         assert install_command in contents, workflow
 
     forbidden_installs = ("pip install", "python -m pip install", ".venv/bin/pip install")
-    # Row 14 duplicate-writer (DEVOPS-10, #1580) is a cheap hosted periodic
-    # job with no persistent workspace: it installs PyYAML once before
-    # `python -m scripts.duplicate_writer_check`. scripts/ci_duplicate_writer_check.sh
-    # is the uv-provisioned replacement; until periodic-checks.yml adopts it,
-    # this one line is the only bare-pip install left in the workflow tree.
-    allowed_bare_pip = {
-        "periodic-checks.yml": frozenset({"pip install --quiet pyyaml"}),
-    }
+    # Row 14 duplicate-writer (DEVOPS-10, #1580) used to `pip install pyyaml`;
+    # it now syncs ops/fleet/pylock.duplicate-writer.toml (issue #4252), so no
+    # bare-pip install is left in the workflow tree.
+    allowed_bare_pip: dict[str, frozenset[str]] = {}
     for workflow_path in WORKFLOWS.glob("*.yml"):
         allowed = allowed_bare_pip.get(workflow_path.name, frozenset())
         lines = workflow_path.read_text(encoding="utf-8").splitlines()
