@@ -1,8 +1,11 @@
 """scripts/runner_toolset_verify.py classifies a host truthfully.
 
-The probe itself needs a real runner host (it is run by hand, and by the host
-audit, against agentbox); these tests pin the classification and exit-code
-contract the host audit depends on, using the probe's own record format.
+A verdict about a real runner host comes only from running the probe against
+that host (by hand, and from the host audit, against agentbox). These tests pin
+the classification and exit-code contract the host audit depends on, using the
+probe's own record format, and run the probe script itself under bash against
+the real executables installed where the tests run (no stand-ins: a missing
+toolchain is reported UNAVAILABLE and skipped).
 
 Regression lines:
   - if a verify that prints another version reports OK then broken
@@ -14,14 +17,20 @@ Regression lines:
     (it would push hosts to downgrade security fixes)
   - if an apt package on an OLDER revision than the pin reports OK then broken
   - if a `provision: job` entry absent from the host fails the run then broken
+  - if a pin followed by a prerelease or build suffix reports OK then broken
+  - if cargo and rustc share one entry, or one's pin decides the other's verdict,
+    then broken
+  - if a probe with no readable runner .path verifies against the login PATH then broken
 """
 
 from __future__ import annotations
 
 import base64
 import os
+import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -229,25 +238,22 @@ def test_every_manifest_pin_matches_a_plain_rendering_of_itself() -> None:
     assert not bad, bad
 
 
-# ----- the probe itself, run for real against test-local executables ----------------
+# ----- the probe itself, run for real against the installed executables -------------
+
+PROBE_NEEDS = ("bash", "timeout", "base64", "head", "cat")
 
 
-def _fake_tool(bindir: Path, name: str, prints: str) -> None:
-    path = bindir / name
-    path.write_text(f"#!/bin/sh\necho '{prints}'\n", encoding="utf-8")
-    path.chmod(0o755)
+def _dirs_of(*tools: str) -> list[str]:
+    """Real directories holding `tools`; a probe prerequisite missing here fails loud."""
+    found = {tool: shutil.which(tool) for tool in tools}
+    missing = sorted(tool for tool, path in found.items() if not path)
+    assert not missing, f"probe prerequisites absent on this host: {missing}"
+    return sorted({str(Path(path).parent) for path in found.values() if path})
 
 
-def _host_path(bindir: Path) -> str:
-    """The job PATH a runner .path would hold: the fakes first, then what the
-    probe itself needs (bash, timeout, base64, head, cat)."""
-    needed = ("bash", "timeout", "base64", "head", "cat", "printf")
-    found = {tool: shutil.which(tool) for tool in needed}
-    assert all(found.values()), f"probe prerequisites absent on this host: {found}"
-    return ":".join([str(bindir), *sorted({str(Path(p).parent) for p in found.values() if p})])
-
-
-def _probe_locally(entries: list[dict], runner_dir: Path, home: Path) -> tuple[list, str]:
+def _probe_locally(
+    entries: list[dict], runner_dir: Path, home: Path, login_path: str | None = None
+) -> tuple[list, str]:
     """Run the verifier's own probe script under bash, as this user, no sudo."""
     proc = subprocess.run(
         ["bash", "-s"],
@@ -255,18 +261,17 @@ def _probe_locally(entries: list[dict], runner_dir: Path, home: Path) -> tuple[l
         capture_output=True,
         text=True,
         timeout=120,
-        env={"PATH": os.environ["PATH"], "HOME": str(home)},
+        env={"PATH": login_path or os.environ["PATH"], "HOME": str(home)},
         check=False,
     )
     return rtv.classify(entries, proc.returncode, proc.stdout, proc.stderr), proc.stdout
 
 
-def _runner_with_path(tmp_path: Path) -> tuple[Path, Path]:
-    bindir, runner = tmp_path / "bin", tmp_path / "actions-runner-1"
-    bindir.mkdir()
+def _runner_with_path(tmp_path: Path, dirs: list[str]) -> Path:
+    runner = tmp_path / "actions-runner-1"
     runner.mkdir()
-    (runner / ".path").write_text(_host_path(bindir), encoding="utf-8")
-    return bindir, runner
+    (runner / ".path").write_text(":".join(dirs), encoding="utf-8")
+    return runner
 
 
 def _rust_entries() -> tuple[str, str, list[dict]]:
@@ -281,40 +286,60 @@ def _rust_entries() -> tuple[str, str, list[dict]]:
     return cargo["name"], rustc["name"], [cargo, rustc]
 
 
-def test_rustc_drift_is_caught_even_when_cargo_is_pinned(tmp_path: Path) -> None:
-    """The manifest's own Rust entries, verified on a host whose cargo is 1.96.0
-    and whose rustc is not. A combined verify matched anywhere would say OK."""
-    bindir, runner = _runner_with_path(tmp_path)
-    _fake_tool(bindir, "cargo", "cargo 1.96.0 (5ffbef321 2026-07-20)")
-    _fake_tool(bindir, "rustc", "rustc 1.92.0 (ded5c06cf 2025-12-08)")
+def _installed_version(tool: str) -> str:
+    """The real toolchain's own reported version, or UNAVAILABLE."""
+    if not shutil.which(tool):
+        pytest.skip(f"UNAVAILABLE: no real {tool} installed here, so its probe cannot run")
+    out = subprocess.run([tool, "--version"], capture_output=True, text=True, check=True).stdout
+    found = re.match(rf"{tool} (\d+\.\d+\.\d+)\b", out)
+    assert found, f"unexpected `{tool} --version` output: {out!r}"
+    return found.group(1)
+
+
+@pytest.mark.parametrize(
+    ("moved", "expected"),
+    [
+        (None, {"cargo": "OK", "rustc": "OK"}),
+        ("rustc", {"cargo": "OK", "rustc": "MISMATCH"}),
+        ("cargo", {"cargo": "MISMATCH", "rustc": "OK"}),
+    ],
+)
+def test_each_rust_executable_is_verified_against_its_own_pin(
+    tmp_path: Path, moved: str | None, expected: dict[str, str]
+) -> None:
+    """The manifest's own Rust entries, probed against the real installed toolchain.
+
+    Pinning both at the installed versions is OK (the overshoot control). Moving
+    one entry's pin off its installed version flips only that entry: a pinned
+    cargo cannot vouch for rustc, or the reverse. Each verdict also quotes its own
+    executable's output, which a combined `cargo --version && rustc --version`
+    would not."""
     cargo, rustc, entries = _rust_entries()
-    results, _ = _probe_locally(entries, runner, tmp_path)
-    status = {r.name: r.status for r in results}
-    assert status == {cargo: "OK", rustc: "MISMATCH"}, results
-    assert rtv.exit_code(results) == 1
-
-
-def test_cargo_drift_is_caught_even_when_rustc_is_pinned(tmp_path: Path) -> None:
-    bindir, runner = _runner_with_path(tmp_path)
-    _fake_tool(bindir, "cargo", "cargo 1.92.0 (5ffbef321 2025-12-08)")
-    _fake_tool(bindir, "rustc", "rustc 1.96.0 (17067e9ac 2026-08-01)")
-    cargo, rustc, entries = _rust_entries()
-    results, _ = _probe_locally(entries, runner, tmp_path)
-    assert {r.name: r.status for r in results} == {cargo: "MISMATCH", rustc: "OK"}, results
-    assert rtv.exit_code(results) == 1
-
-
-def test_a_pinned_rust_toolchain_reports_ok(tmp_path: Path) -> None:
-    """Overshoot control: splitting the check must not fail a correct host."""
-    bindir, runner = _runner_with_path(tmp_path)
-    _fake_tool(bindir, "cargo", "cargo 1.96.0 (5ffbef321 2026-07-20)")
-    _fake_tool(bindir, "rustc", "rustc 1.96.0 (17067e9ac 2026-08-01)")
-    results, _ = _probe_locally(_rust_entries()[2], runner, tmp_path)
-    assert {r.status for r in results} == {"OK"}, results
-    assert rtv.exit_code(results) == 0
+    installed = {"cargo": _installed_version("cargo"), "rustc": _installed_version("rustc")}
+    pins = {tool: "0.0.1" if tool == moved else version for tool, version in installed.items()}
+    pinned = [{**entries[0], "version": pins["cargo"]}, {**entries[1], "version": pins["rustc"]}]
+    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "cargo", "rustc"))
+    results, _ = _probe_locally(pinned, runner, tmp_path)
+    by_name = {r.name: r for r in results}
+    assert {"cargo": by_name[cargo].status, "rustc": by_name[rustc].status} == expected, results
+    assert by_name[cargo].got.startswith("cargo "), by_name[cargo]
+    assert by_name[rustc].got.startswith("rustc "), by_name[rustc]
+    assert rtv.exit_code(results) == (0 if moved is None else 1)
 
 
 # ----- the job PATH is a prerequisite, never replaced by the login PATH ------------------
+
+
+def _bash_entry(job_dirs: list[str] | None = None) -> dict:
+    """An entry pinned to the bash that `job_dirs` (or the login PATH) resolves."""
+    bash = shutil.which("bash", path=":".join(job_dirs) if job_dirs else None)
+    assert bash, f"no bash on {job_dirs or 'the login PATH'}"
+    out = subprocess.run([bash, "--version"], capture_output=True, text=True, check=True).stdout
+    version = re.search(r"version (\d+\.\d+\.\d+)", out)
+    assert version, out
+    entry = _entry("bash", version.group(1), kind="binary", provides=["bash"])
+    entry["verify"] = "bash --version | head -1"
+    return entry
 
 
 @pytest.mark.parametrize("setup", ["no-runner-dir", "no-path-file", "empty-path-file"])
@@ -326,22 +351,35 @@ def test_no_readable_runner_path_is_unknown_for_every_entry(tmp_path: Path, setu
         runner.mkdir()
     if setup == "empty-path-file":
         (runner / ".path").write_text("", encoding="utf-8")
-    entries = [_entry("bash", "1", kind="binary", provides=["bash"])]
-    entries[0]["verify"] = "bash --version | head -1"
-    results, stdout = _probe_locally(entries, runner, tmp_path)
+    results, stdout = _probe_locally([_bash_entry()], runner, tmp_path)
     assert {r.status for r in results} == {"UNKNOWN"}, results
     assert ".path" in results[0].got, results
     assert rtv.exit_code(results) == 2
     assert f"{rtv.RECORD} END" not in stdout, stdout
 
 
-def test_a_readable_runner_path_is_used_for_every_check(tmp_path: Path) -> None:
-    """Positive control: with a readable .path the probe runs to END under it, and a
-    tool present only on that PATH resolves."""
-    bindir, runner = _runner_with_path(tmp_path)
-    _fake_tool(bindir, "onlyonjobpath", "onlyonjobpath 4.5.6")
-    entry = _entry("t", "4.5.6", kind="binary", provides=["onlyonjobpath"])
-    entry["verify"] = "onlyonjobpath --version"
-    [result], stdout = _probe_locally([entry], runner, tmp_path)
+def _only_on_login_path(job_dirs: list[str]) -> tuple[str, str]:
+    """(name, dir) of a real executable in this interpreter's bin dir that no job
+    PATH directory holds."""
+    bindir = Path(sys.executable).parent
+    for exe in sorted(bindir.iterdir()):
+        on_job_path = any((Path(d) / exe.name).exists() for d in job_dirs)
+        if exe.is_file() and os.access(exe, os.X_OK) and not on_job_path:
+            return exe.name, str(bindir)
+    raise AssertionError(f"no executable in {bindir} is absent from the job PATH {job_dirs}")
+
+
+def test_a_readable_runner_path_is_the_path_every_check_uses(tmp_path: Path) -> None:
+    """Positive control, with real executables: a readable .path is used, a tool on
+    it is OK, and a tool present only on the invoking shell's PATH is MISSING."""
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    runner = _runner_with_path(tmp_path, job_dirs)
+    outside, outside_dir = _only_on_login_path(job_dirs)
+    elsewhere = _entry("elsewhere", "1", kind="binary", provides=[outside])
+    login_path = f"{outside_dir}:{os.environ['PATH']}"
+    entries = [_bash_entry(job_dirs), elsewhere]
+    results, stdout = _probe_locally(entries, runner, tmp_path, login_path)
     assert f"{rtv.RECORD} PATHSRC {runner}" in stdout, stdout
-    assert result.status == "OK", result
+    status = {r.name: (r.status, r.got) for r in results}
+    assert status["bash"][0] == "OK", status
+    assert status["elsewhere"][0] == "MISSING" and "PATH" in status["elsewhere"][1], status
