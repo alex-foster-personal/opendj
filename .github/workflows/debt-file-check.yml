@@ -46,6 +46,9 @@ env:
 
 jobs:
   gate:
+    # Trunk merge-queue drafts (trunk-merge/*) re-test PRs that already passed this PR-metadata
+    # gate; the draft has no PR body of its own, so the gate would fail on a body it never had.
+    if: ${{ !startsWith(github.head_ref, 'trunk-merge/') }}
     name: debt file check
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
