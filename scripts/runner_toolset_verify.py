@@ -11,6 +11,12 @@ Per entry it prints one of:
   MISSING   verify exited nonzero, or a provided executable is not on PATH
   UNKNOWN   the probe could not run at all (ssh, sudo or timeout failure).
             UNKNOWN is never OK.
+  INFO      a `provision: job` entry the job installs itself on first use;
+            reported for visibility, never a failure.
+
+Version matching (`match`, see ci/runner-toolset.yml): apt entries default to
+`min`, compared with dpkg's own ordering, so a newer Ubuntu security revision
+(`-4ubuntu3.3` over `-4ubuntu3.2`) is OK and an older one is a MISMATCH.
 
 Exit codes (a stable contract; scripts/ci_runner_host_audit.sh calls this):
   0  every entry OK
@@ -120,19 +126,75 @@ def _run_probe(script: str, host: str | None, user: str) -> tuple[int, str, str]
 # ----- classification ---------------------------------------------------------
 
 
+def default_match(entry: dict) -> str:
+    """apt pins are floors: a newer Ubuntu security revision must never read as drift."""
+    return entry.get("match", "min" if entry["kind"] == "apt" else "exact")
+
+
 def _version_matches(version: str, match: str, output: str) -> bool:
     if match == "exact":
         return re.search(rf"(?<![\d.]){re.escape(version)}(?![\d])(?!\.\d)", output) is not None
     if match == "prefix":
         return re.search(rf"(?<![\d.]){re.escape(version)}(\.\d+)*(?![\d.])", output) is not None
     if match == "min":
-        found = re.search(r"\d+(?:\.\d+)+", output)
-        return found is not None and _as_tuple(found.group(0)) >= _as_tuple(version)
+        found = re.search(r"(?<![\w.])(?:\d+:)?\d[\w.+~:-]*", output)
+        return found is not None and dpkg_compare(found.group(0), version) >= 0
     raise ValueError(f"unknown match mode {match!r}")
 
 
-def _as_tuple(version: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in version.split("."))
+# ----- Debian version ordering (dpkg's verrevcmp, deb-version(7)) ----------------
+
+
+def dpkg_compare(a: str, b: str) -> int:
+    """-1, 0 or 1 as `a` sorts before, equal to or after `b`, exactly as dpkg orders them."""
+    epoch_a, upstream_a, revision_a = _split_debian(a)
+    epoch_b, upstream_b, revision_b = _split_debian(b)
+    order = (
+        (epoch_a > epoch_b) - (epoch_a < epoch_b)
+        or _verrevcmp(upstream_a, upstream_b)
+        or _verrevcmp(revision_a, revision_b)
+    )
+    return (order > 0) - (order < 0)
+
+
+def _split_debian(version: str) -> tuple[int, str, str]:
+    """epoch, upstream, revision (a missing revision compares as "0")."""
+    epoch, _, rest = version.partition(":") if ":" in version else ("0", "", version)
+    upstream, _, revision = rest.rpartition("-") if "-" in rest else (rest, "", "0")
+    return int(epoch), upstream, revision
+
+
+def _char_order(ch: str) -> int:
+    if ch == "~":
+        return -1
+    if ch.isalpha():
+        return ord(ch)
+    return ord(ch) + 256
+
+
+def _verrevcmp(a: str, b: str) -> int:
+    """Alternate non-digit runs (by _char_order, `~` first) and digit runs (numerically)."""
+    while a or b:
+        text_a, a = _leading(a, digits=False)
+        text_b, b = _leading(b, digits=False)
+        width = max(len(text_a), len(text_b))
+        for x, y in zip(text_a.ljust(width, "\0"), text_b.ljust(width, "\0"), strict=True):
+            cx = 0 if x == "\0" else _char_order(x)
+            cy = 0 if y == "\0" else _char_order(y)
+            if cx != cy:
+                return cx - cy
+        num_a, a = _leading(a, digits=True)
+        num_b, b = _leading(b, digits=True)
+        if int(num_a or 0) != int(num_b or 0):
+            return int(num_a or 0) - int(num_b or 0)
+    return 0
+
+
+def _leading(text: str, digits: bool) -> tuple[str, str]:
+    n = 0
+    while n < len(text) and text[n].isdigit() == digits:
+        n += 1
+    return text[:n], text[n:]
 
 
 @dataclass
@@ -166,13 +228,15 @@ def _classify_one(entry: dict, records: _Records, unreached: str) -> tuple[str, 
         return "UNKNOWN", unreached
     code, output = records.verified[name]
     first = output.strip().splitlines()[0] if output.strip() else "(no output)"
+    if entry.get("provision") == "job":
+        return "INFO", f"installed by the job on first use; host verify exit {code}: {first}"
     if code in {124, 137}:
         return "UNKNOWN", f"verify timed out: {first}"
     if code != 0:
         return "MISSING", f"verify exit {code}: {first}"
     if name in records.off_path:
         return "MISSING", f"not on runner PATH: {', '.join(records.off_path[name])}"
-    if _version_matches(entry["version"], entry.get("match", "exact"), output):
+    if _version_matches(entry["version"], default_match(entry), output):
         return "OK", first
     return "MISMATCH", first
 
@@ -220,7 +284,7 @@ def _print_report(results: list[Result], header: dict[str, str], as_json: bool) 
     for r in results:
         detail = r.got if r.status == "OK" else f"wanted {r.wanted}, got: {r.got}"
         print(f"{r.status:8} {r.kind:13} {r.name:36} {detail}")
-    statuses = ("OK", "MISMATCH", "MISSING", "UNKNOWN")
+    statuses = ("OK", "MISMATCH", "MISSING", "UNKNOWN", "INFO")
     counts = " ".join(f"{s}={sum(r.status == s for r in results)}" for s in statuses)
     print(f"{counts} total={len(results)}")
 

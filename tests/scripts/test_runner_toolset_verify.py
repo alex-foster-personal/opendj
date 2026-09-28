@@ -10,6 +10,10 @@ Regression lines:
   - if a provided executable absent from the runner PATH reports OK then broken
   - if a probe that never ran (ssh or sudo failure) reports OK or MISSING then broken
   - if one UNKNOWN among OKs exits 0, or one MISSING exits other than 1, then broken
+  - if an apt package on a NEWER Ubuntu revision than the pin reports MISMATCH then broken
+    (it would push hosts to downgrade security fixes)
+  - if an apt package on an OLDER revision than the pin reports OK then broken
+  - if a `provision: job` entry absent from the host fails the run then broken
 """
 
 from __future__ import annotations
@@ -120,3 +124,49 @@ def test_probe_script_runs_every_verify_and_checks_path_kinds_only() -> None:
     assert script.count(" V ") == 2
     assert "command -v unzip" in script and "command -v uv" not in script
     assert script.rstrip().endswith(f'echo "{rtv.RECORD} END"')
+
+
+# ----- apt floors: newer security revisions pass, older ones do not ------------------
+
+
+@pytest.mark.parametrize(
+    ("pinned", "installed", "status"),
+    [
+        ("2:4.0.4-4ubuntu3.2", "2:4.0.4-4ubuntu3.3", "OK"),  # procps on agbox2/3
+        ("0.9.0-1ubuntu0.1", "0.9.0-1ubuntu0.3", "OK"),  # bubblewrap on agbox2/3
+        ("3.4.4-5ubuntu0.7", "3.4.4-5ubuntu0.8", "OK"),  # libsoup-3.0-dev on agbox2/3
+        ("2:4.0.4-4ubuntu3.2", "2:4.0.4-4ubuntu3.2", "OK"),
+        ("2:4.0.4-4ubuntu3.2", "2:4.0.4-4ubuntu3.1", "MISMATCH"),
+        ("0.9.0-1ubuntu0.1", "0.9.0-1", "MISMATCH"),
+        ("1:3.10-1ubuntu0.1", "3.10-1ubuntu0.1", "MISMATCH"),  # the epoch outranks everything
+    ],
+)
+def test_apt_pins_are_floors_under_dpkg_ordering(pinned: str, installed: str, status: str) -> None:
+    entry = {**_entry("pkg", pinned), "match": None}
+    del entry["match"]  # the apt default, not an explicit mode
+    [result] = _classify([entry], [_record("pkg", 0, f"ii {installed}")])
+    assert result.status == status, result
+
+
+def test_an_explicit_exact_pin_on_apt_still_rejects_a_newer_revision() -> None:
+    entry = _entry("pkg", "2:4.0.4-4ubuntu3.2", match="exact")
+    [result] = _classify([entry], [_record("pkg", 0, "ii 2:4.0.4-4ubuntu3.3")])
+    assert result.status == "MISMATCH", result
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "order"),
+    [("1.0~rc1", "1.0", -1), ("1.0+b1", "1.0", 1), ("1.10", "1.9", 1), ("1:0.1", "2.0", 1)],
+)
+def test_dpkg_compare_agrees_with_dpkg(a: str, b: str, order: int) -> None:
+    """Expected values checked with `dpkg --compare-versions` on agentbox, Mon 28 Sep 2026."""
+    assert rtv.dpkg_compare(a, b) == order
+    assert rtv.dpkg_compare(b, a) == -order
+
+
+def test_job_provisioned_entry_is_info_and_does_not_fail_the_run() -> None:
+    entry = {**_entry("cargo-audit", "0.22.2", kind="binary"), "provision": "job"}
+    records = [_record("cargo-audit", 101, "error: no such command: `audit`")]
+    [result] = _classify([entry], records)
+    assert result.status == "INFO", result
+    assert rtv.exit_code([result]) == 0
