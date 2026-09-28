@@ -16,6 +16,9 @@ Requirements:
   behind is removed.
 - ✔︎ The legacy `--upgrade` install DOES hit the index on a warm cache
   (positive control: the request log can fire).
+- ✔︎ A cold cache never resolves: it fetches only the locked wheel files by
+  URL and hash, and says so loudly with a CACHE_MISS annotation.
+- ✔︎ Under UV_OFFLINE=1 a cold cache fails loud instead of fetching.
 
 Acceptance tests:
 - [if] provisioning revalidates index pages on a warm cache [then ⛔️] the
@@ -25,6 +28,10 @@ Acceptance tests:
 - [if] the request log cannot see uv's requests [then ⛔️] the positive
   control fails, so a zero count cannot come from a deaf instrument.
 - [if] `--lock` names a missing file [then ⛔️] provisioning exits nonzero.
+- [if] a cold cache reads an index page, or fetches without the CACHE_MISS
+  warning [then ⛔️] the cold-fetch test fails.
+- [if] the CACHE_MISS warning fires on a warm cache [then ⛔️] the warm test
+  fails (overshoot control: the warning must mean something).
 """
 
 from __future__ import annotations
@@ -55,6 +62,8 @@ SIMPLE_CACHE_CONTROL = "max-age=600, public"
 FILE_CACHE_CONTROL = "max-age=365000000, immutable, public"
 # alpha depends on beta, so the lock carries a transitive pin; stray is never locked.
 DISTRIBUTIONS = {"alpha": ["beta"], "beta": [], "stray": []}
+# The annotation title ci_venv.sh emits when the warm-cache sync cannot complete.
+CACHE_MISS = "CI venv cache miss"
 
 pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not on PATH")
 
@@ -258,11 +267,40 @@ def test_warm_lock_provisioning_sends_zero_index_requests(job: Job, index: Index
 
     index.requests.clear()
     shutil.rmtree(job.workdir / ".venv")
-    _ok(_provision(job, "--lock", "pylock.test.toml"))  # fresh venv, warm cache
-    _ok(_provision(job, "--lock", "pylock.test.toml"))  # reused venv, warm cache
+    fresh = _provision(job, "--lock", "pylock.test.toml")  # fresh venv, warm cache
+    reused = _provision(job, "--lock", "pylock.test.toml")  # reused venv, warm cache
 
+    _ok(fresh)
+    _ok(reused)
     assert index.requests == [], f"warm provisioning contacted the index: {index.requests}"
     assert _installed(job) == {"alpha", "beta"}
+    for result in (fresh, reused):
+        assert CACHE_MISS not in result.stdout + result.stderr, "warm cache reported a miss"
+
+
+def test_cold_lock_provisioning_fetches_pinned_files_without_resolving(
+    job: Job, index: Index
+) -> None:
+    index.requests.clear()  # the fixture's compile read index pages; provisioning must not
+
+    result = _provision(job, "--lock", "pylock.test.toml")
+
+    _ok(result)
+    assert index.requests, "control: a cold cache must fetch the locked wheels"
+    resolving = [r for r in index.requests if not r.startswith("GET /files/")]
+    assert not resolving, f"cold provisioning read more than locked files: {resolving}"
+    assert f"::warning title={CACHE_MISS}" in result.stderr, result.stderr
+    assert _installed(job) == {"alpha", "beta"}
+
+
+def test_cold_cache_under_uv_offline_fails_loud(job: Job, index: Index) -> None:
+    index.requests.clear()
+
+    result = _provision(job, "--lock", "pylock.test.toml", extra_env={"UV_OFFLINE": "1"})
+
+    assert result.returncode != 0, "a cold cache with the network forbidden must fail"
+    assert CACHE_MISS in result.stderr, result.stderr
+    assert index.requests == [], f"UV_OFFLINE=1 still contacted the index: {index.requests}"
 
 
 def test_warm_lock_provisioning_succeeds_offline(job: Job) -> None:
