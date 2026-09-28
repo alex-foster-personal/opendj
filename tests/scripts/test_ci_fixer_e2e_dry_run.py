@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from scripts import ci_fixer
@@ -45,7 +46,7 @@ def test_e2e_dry_run_against_a_real_deliberately_failing_branch(tmp_path):
     # Run the REAL failing test with the REAL test runner and capture REAL output --
     # this is the log excerpt a self-hosted runner's `gh run view --log-failed`
     # would hand the lane in --poll mode.
-    result = _run(["python3", "-m", "pytest", "-q", "test_deliberately_failing.py"], cwd=repo)
+    result = _run([sys.executable, "-m", "pytest", "-q", "test_deliberately_failing.py"], cwd=repo)
     assert result.returncode != 0, "fixture must actually fail, or this test proves nothing"
     log_excerpt = result.stdout + result.stderr
     assert "test_deliberately_wrong" in log_excerpt
