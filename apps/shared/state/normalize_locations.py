@@ -30,8 +30,12 @@ differs, and:
 * **an NFD row plus its NFC twin** collapse to ONE row -- the last-writer-wins
   winner survives (``(updated_at, origin_device_id)``, the same comparison
   ``apps.sync_hub.protocol.lww_key`` makes), the loser is hard-deleted, and
-  the survivor's path is stored NFC. In a longer chain of collisions a row
-  is dropped only for a newer row it collides with that survives.
+  the survivor's path is stored NFC;
+* **a collision chain** (two rows joined only through a third, e.g. one
+  shares the path, the other the URL) is left alone and reported: the hub
+  resolved it row by row as the rows arrived, so its survivors depend on
+  that order, which nothing here records. Only a group whose rows ALL
+  collide pairwise ends with the LWW newest alone in every order.
 
 The loser is hard-deleted, not tombstoned, for the reason
 ``apps.sync_hub.engine_apply._drop_superseded`` gives: a partial UNIQUE index cannot
@@ -57,6 +61,7 @@ Usage (nothing happens without ``--live``)::
 from __future__ import annotations
 
 import argparse
+import itertools
 import sqlite3
 import sys
 import unicodedata
@@ -209,8 +214,8 @@ def _read_rows(conn: sqlite3.Connection) -> list[LocationRow]:
 
 def _repairable_groups(
     conn: sqlite3.Connection,
-) -> tuple[list[list[LocationRow]], list[list[LocationRow]]]:
-    """Groups needing repair, split into (orderable, quarantined).
+) -> tuple[list[list[LocationRow]], list[list[LocationRow]], list[list[LocationRow]]]:
+    """Groups needing repair, split into (orderable, quarantined, chains).
 
     A group is quarantined when ANY member's stored stamp cannot be ordered.
     Not "the faulted member is dropped from the comparison": this pass picks
@@ -218,19 +223,30 @@ def _repairable_groups(
     one of its members can delete the row carrying the most recent edit. File
     identity would survive (the rows are NFD/NFC twins of one path); edit
     provenance would not, and nothing anywhere would record that it had gone.
+    A chain is held for the reason :func:`collision_chains` gives.
     """
     if not _table_exists(conn, LOCATIONS_TABLE):
-        return [], []
+        return [], [], []
     repairable: list[list[LocationRow]] = []
     quarantined: list[list[LocationRow]] = []
+    chains: list[list[LocationRow]] = []
     for members in _colliding_groups(_read_rows(conn)):
         if not (len(members) > 1 or any(not m.stored_is_nfc for m in members)):
             continue
-        if all(member.is_orderable for member in members):
-            repairable.append(members)
-        else:
+        if not all(member.is_orderable for member in members):
             quarantined.append(members)
-    return repairable, quarantined
+        elif not _all_collide_pairwise(members):
+            chains.append(members)
+        else:
+            repairable.append(members)
+    return repairable, quarantined, chains
+
+
+def _all_collide_pairwise(members: list[LocationRow]) -> bool:
+    return all(
+        set(first.normalized_keys) & set(second.normalized_keys)
+        for first, second in itertools.combinations(members, 2)
+    )
 
 
 def _colliding_groups(rows: list[LocationRow]) -> list[list[LocationRow]]:
@@ -271,48 +287,33 @@ def quarantined_groups(conn: sqlite3.Connection) -> list[list[LocationRow]]:
     return _repairable_groups(conn)[1]
 
 
-def _lww_order(members: list[LocationRow]) -> list[LocationRow]:
-    """Newest stamp first; an exact stamp tie puts the SMALLER ``location_id`` first.
+def collision_chains(conn: sqlite3.Connection) -> list[list[LocationRow]]:
+    """Groups joined only through a third row, which this pass REFUSES to collapse.
+
+    The hub decided such a group row by row as the rows arrived: ``C``,
+    ``B``, ``A`` can leave ``A`` alone where ``A`` first leaves ``A`` and
+    ``C``. Nothing records that order, so any local rule is a guess that
+    either deletes a row the hub kept or keeps one it dropped, and the
+    digest stays divergent with no row to say why. Left alone, the group
+    stays divergent too, but named: settling it needs the hub's rows
+    (``GET /rows?table=track_locations``) and a human decision.
+    """
+    return _repairable_groups(conn)[2]
+
+
+def _lww_winner(members: list[LocationRow]) -> LocationRow:
+    """The newest stamp; an exact stamp tie keeps the SMALLER ``location_id``.
 
     The tie rule is the one ``apps.sync_hub.engine_apply._duplicate_incoming_wins``
     applies to the same two rows, so this spoke elects the survivor the hub
-    already kept. Stamp order alone would keep whichever tied row SQLite
-    returned first, delete the hub's survivor, and re-offer the row the hub
-    dropped.
+    already kept. ``max`` alone would keep whichever tied row SQLite returned
+    first, delete the hub's survivor, and re-offer the row the hub dropped.
     """
-    by_id = sorted(members, key=lambda member: member.location_id)
-    return sorted(by_id, key=lambda member: member.lww_key, reverse=True)
-
-
-def _collapses_of(members: list[LocationRow]) -> list[Collapse]:
-    """Keep rows in LWW order; a row colliding with a kept one is its loser.
-
-    A row is dropped only for a newer row it collides with that survives,
-    never for colliding with another loser: hard-deleting a row no UNIQUE
-    index requires gone is a loss with nothing to show for it. Kept rows
-    share no normalized key, so every one of them can be stored NFC at once.
-    """
-    holders: dict[tuple[str, ...], LocationRow] = {}
-    kept: list[LocationRow] = []
-    losers: dict[str, list[LocationRow]] = {}
-    for row in _lww_order(members):
-        beaten_by = next((holders[key] for key in row.normalized_keys if key in holders), None)
-        if beaten_by is not None:
-            losers[beaten_by.location_id].append(row)
-            continue
-        kept.append(row)
-        losers[row.location_id] = []
-        holders.update(dict.fromkeys(row.normalized_keys, row))
-    return [
-        Collapse(
-            winner=survivor,
-            losers=tuple(losers[survivor.location_id]),
-            nfc_file_path=_nfc(survivor.file_path),
-            nfc_remote_url=_nfc(survivor.remote_url),
-        )
-        for survivor in kept
-        if losers[survivor.location_id] or not survivor.stored_is_nfc
-    ]
+    newest = max(member.lww_key for member in members)
+    return min(
+        (member for member in members if member.lww_key == newest),
+        key=lambda member: member.location_id,
+    )
 
 
 def scan(conn: sqlite3.Connection) -> list[Collapse]:
@@ -321,10 +322,21 @@ def scan(conn: sqlite3.Connection) -> list[Collapse]:
     A table missing from the DB is skipped rather than raising, matching
     :func:`apps.shared.state.normalize_stamps.scan`: this pass runs against
     legacy files. A group holding an unorderable stored stamp is NOT here --
-    it is reported by :func:`quarantined_groups` instead.
+    it is reported by :func:`quarantined_groups` instead, and a collision
+    chain by :func:`collision_chains`.
     """
-    repairable, _quarantined = _repairable_groups(conn)
-    return [collapse for members in repairable for collapse in _collapses_of(members)]
+    collapses: list[Collapse] = []
+    for members in _repairable_groups(conn)[0]:
+        winner = _lww_winner(members)
+        collapses.append(
+            Collapse(
+                winner=winner,
+                losers=tuple(m for m in members if m.location_id != winner.location_id),
+                nfc_file_path=_nfc(winner.file_path),
+                nfc_remote_url=_nfc(winner.remote_url),
+            )
+        )
+    return collapses
 
 
 def apply_collapses(conn: sqlite3.Connection, collapses: list[Collapse]) -> int:
@@ -361,25 +373,21 @@ def collapse_all(conn: sqlite3.Connection) -> list[Collapse]:
 
 
 def _collapse_in_transaction(conn: sqlite3.Connection, collapses: list[Collapse]) -> None:
-    """The deletes and rewrites of :func:`apply_collapses`; caller holds the lock.
-
-    EVERY loser goes before ANY survivor is rewritten: a loser can collide
-    with a survivor other than the one it lost to, and still be holding the
-    spelling that survivor is about to store.
-    """
+    """The deletes and rewrites of :func:`apply_collapses`; caller holds the lock."""
     received_at = sync_stamp.canonical_now()
-    for loser in (loser for collapse in collapses for loser in collapse.losers):
-        conn.execute(
-            f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
-            (loser.location_id,),
-        )
-        loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
-        for changelog in CHANGELOG_TABLES:
-            conn.execute(
-                f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?",
-                (LOCATIONS_TABLE, loser_pk),
-            )
     for collapse in collapses:
+        for loser in collapse.losers:
+            conn.execute(
+                f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
+                (loser.location_id,),
+            )
+            loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
+            for changelog in CHANGELOG_TABLES:
+                conn.execute(
+                    f"DELETE FROM {changelog} "
+                    f"WHERE table_name = ? AND row_pk = ?",
+                    (LOCATIONS_TABLE, loser_pk),
+                )
         conn.execute(
             f"UPDATE {LOCATIONS_TABLE} SET file_path = ?, remote_url = ? "
             f"WHERE location_id = ?",
@@ -439,7 +447,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 #: Exit code when the safe repairs ran but some group could not be touched
-#: because a member's stored stamp is unorderable. NOT 0: a partial repair
+#: because a member's stored stamp is unorderable, or because it is a collision
+#: chain (:func:`collision_chains`). NOT 0: a partial repair
 #: reported as success is the "clean binary answer for a case that should be
 #: messy" .claude/rules/verification.md names, and the operator has one more
 #: command to run before this pass can finish its job.
@@ -465,6 +474,23 @@ def _report_quarantined(groups: list[list[LocationRow]]) -> None:
     )
 
 
+def _report_chains(groups: list[list[LocationRow]]) -> None:
+    for members in groups:
+        first = members[0]
+        print(
+            f"[CHAIN] {LOCATIONS_TABLE} {first.machine_id}/{first.stable_id}/"
+            f"{first.kind}: " + ", ".join(m.location_id for m in members)
+            + " collide only through one another; not collapsed",
+            file=sys.stderr,
+        )
+    print(
+        f"[WARN] {len(groups)} collision chain(s) skipped: their survivors depend "
+        f"on the order the hub received them. Compare with the hub's rows and "
+        f"delete the ones it does not hold",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     target = state_db_path(args.data_dir)
@@ -475,26 +501,30 @@ def main(argv: list[str] | None = None) -> int:
     try:
         collapses = scan(conn)
         held_back = quarantined_groups(conn)
+        chains = collision_chains(conn)
         for collapse in collapses:
             print(collapse.describe())
         if held_back:
             _report_quarantined(held_back)
+        if chains:
+            _report_chains(chains)
+        unfinished = EXIT_QUARANTINED if held_back or chains else 0
         if not collapses:
             print("[OK] every track_locations path is NFC; nothing to do")
-            return EXIT_QUARANTINED if held_back else 0
+            return unfinished
         dropped = sum(len(c.losers) for c in collapses)
         if args.dry_run:
             print(
                 f"[DRY-RUN] {len(collapses)} natural key(s) would be repaired "
                 f"({dropped} duplicate row(s) dropped)"
             )
-            return EXIT_QUARANTINED if held_back else 0
+            return unfinished
         repaired = apply_collapses(conn, collapses)
         print(
             f"[OK] repaired {repaired} natural key(s), dropped {dropped} "
             f"duplicate row(s)"
         )
-        return EXIT_QUARANTINED if held_back else 0
+        return unfinished
     finally:
         conn.close()
 
@@ -507,6 +537,7 @@ __all__ = [
     "LocationRow",
     "apply_collapses",
     "collapse_all",
+    "collision_chains",
     "main",
     "quarantined_groups",
     "scan",

@@ -225,37 +225,74 @@ def test_twins_with_different_urls_collapse_on_their_shared_path(
     assert _changelog_rows(state_conn, "loc-nfd") == [], "loser changelog not pruned"
 
 
-def test_a_row_colliding_only_with_a_dropped_twin_survives(
-    state_conn: sqlite3.Connection,
-) -> None:
-    """if a row is hard-deleted without colliding with any surviving row then broken
 
-    ``newest`` shares the path with ``middle``, which shares its URL with
-    ``oldest``. ``middle`` loses to ``newest``; ``oldest`` collides with no
-    survivor, so deleting it would drop a row no UNIQUE index requires gone.
+def _seed_a_collision_chain(conn: sqlite3.Connection) -> None:
+    """``newest`` shares a path with ``middle``, which shares a URL with ``oldest``.
+
+    ``newest`` and ``oldest`` share nothing, so which rows the hub kept
+    depends on the order it received them: ``oldest``, ``middle``, ``newest``
+    leaves only ``newest``, while ``newest`` first leaves ``newest`` and
+    ``oldest``.
     """
-    print("if a row is hard-deleted without colliding with any surviving row then broken")
-    _seed_machine_and_track(state_conn)
-    other_path = "/music/other.mp3"
+    _seed_machine_and_track(conn)
     _seed_location(
-        state_conn, location_id="newest", file_path=_NFC_PATH, updated_at=_LATE,
+        conn, location_id="newest", file_path=_NFC_PATH, updated_at=_LATE,
         remote_url="https://a.example/x.mp3",
     )
     _seed_location(
-        state_conn, location_id="middle", file_path=_NFD_PATH, updated_at=_EARLY,
+        conn, location_id="middle", file_path=_NFD_PATH, updated_at=_EARLY,
         remote_url=unicodedata.normalize("NFD", "https://b.example/café.mp3"),
     )
     _seed_location(
-        state_conn, location_id="oldest", file_path=other_path, updated_at=_OLDEST,
+        conn, location_id="oldest", file_path="/music/other.mp3", updated_at=_OLDEST,
         remote_url="https://b.example/café.mp3",
     )
 
-    normalize_locations.collapse_all(state_conn)
 
-    kept = state_conn.execute(
-        "SELECT location_id FROM track_locations ORDER BY location_id"
+def test_a_collision_chain_is_left_alone_and_reported(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """if a collision chain is collapsed by a guess at the hub's survivors then broken
+
+    Only a group whose rows ALL collide pairwise has one survivor in every
+    order (the LWW newest). A chain has none this pass can know, so it
+    deletes and rewrites nothing there and reports the group.
+    """
+    print("if a collision chain is collapsed by a guess at the hub's survivors then broken")
+    _seed_a_collision_chain(state_conn)
+    before = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations ORDER BY location_id"
     ).fetchall()
-    assert kept == [("newest",), ("oldest",)], kept
+
+    collapses = normalize_locations.collapse_all(state_conn)
+
+    assert collapses == [], f"a chain was collapsed by a guess: {collapses}"
+    after = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations ORDER BY location_id"
+    ).fetchall()
+    assert after == before, "a chain row was deleted or rewritten"
+    chains = normalize_locations.collision_chains(state_conn)
+    assert [sorted(row.location_id for row in chain) for chain in chains] == [
+        ["middle", "newest", "oldest"]
+    ], "the chain was not reported"
+
+
+def test_the_cli_reports_a_collision_chain_and_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if the CLI reports success over a chain it left alone then broken"""
+    print("if the CLI reports success over a chain it left alone then broken")
+    data_dir, db_path = _data_dir_with_db(tmp_path)
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_a_collision_chain(conn)
+    finally:
+        conn.close()
+
+    exit_code = normalize_locations.main(["--data-dir", str(data_dir), "--live"])
+
+    assert exit_code == normalize_locations.EXIT_QUARANTINED
+    assert "[CHAIN]" in capsys.readouterr().err, "the chain was not named on stderr"
 
 
 # ----- the lone-NFD case: rewrite in place, no delete ----------------------

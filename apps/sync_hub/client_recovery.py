@@ -94,9 +94,11 @@ def collapse_location_twins(conn: sqlite3.Connection) -> int:
     group holding an unorderable stamp is left alone and reported:
     hard-deleting on a comparison that was never made is the loss
     ``normalize_locations`` refuses, and the brick it leaves is loud, bounded
-    and fixed by one command. The unlocked :func:`normalize_locations.scan`
-    only decides whether to take the write lock; the winners are elected
-    again under it by :func:`normalize_locations.collapse_all`.
+    and fixed by one command. A collision chain is left alone and reported
+    too (:func:`normalize_locations.collision_chains`). The unlocked
+    :func:`normalize_locations.scan` only decides whether to take the write
+    lock; the winners are elected again under it by
+    :func:`normalize_locations.collapse_all`.
     """
     quarantined = normalize_locations.quarantined_groups(conn)
     if quarantined:
@@ -106,6 +108,16 @@ def collapse_location_twins(conn: sqlite3.Connection) -> int:
             "--live` on this machine, then sync again. Example location ids: %s",
             len(quarantined),
             [member.location_id for member in quarantined[0]],
+        )
+    chains = normalize_locations.collision_chains(conn)
+    if chains:
+        log.error(
+            "%d track_locations collision chain(s) were NOT collapsed: rows joined "
+            "only through one another, whose survivors depend on the order the hub "
+            "received them. Compare with the hub's rows and delete the ones it does "
+            "not hold. Example location ids: %s",
+            len(chains),
+            [member.location_id for member in chains[0]],
         )
     if not normalize_locations.scan(conn):
         return 0
