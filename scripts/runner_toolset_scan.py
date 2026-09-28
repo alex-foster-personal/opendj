@@ -68,7 +68,8 @@ MANIFEST_REQUIRED = {"name", "kind", "version", "source", "install", "verify", "
 # ----- shell grammar knobs -------------------------------------------------------
 
 KEYWORDS_BEFORE_COMMAND = {"then", "do", "else", "elif", "if", "while", "until", "time", "!"}
-KEYWORDS_IGNORED = {"fi", "done", "esac", "in", "function", "select", "coproc", "}", "{"}
+COMPOUND_OPENERS = {"{", "(", "((", "[[", "if", "while", "until", "for", "case", "select"}
+KEYWORDS_IGNORED = {"fi", "done", "esac", "in", "function", "select", "}", "{"}
 # Wrappers that run a command given as their arguments. Value: (flags that take
 # a value, positional args before the wrapped command, is itself an executable).
 WRAPPERS: dict[str, tuple[set[str], int, bool]] = {
@@ -92,8 +93,6 @@ APT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]+$")
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*(\[[^]]*\])?\+?=.*", re.S)
 # `2>x`, `{fd}>x`: shlex splits the fd off, but it belongs to the redirect after it.
 FD_PREFIX_RE = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
-REPO_SCRIPT_RE = re.compile(r"^(?:\./)?((?:scripts|ops|tests|\.github)/[\w./-]+)$")
-PATH_VARIABLE_PREFIX_RE = re.compile(r"^(?:\$\{?[A-Za-z_]\w*\}?|GHEXPR)/")
 PY_MODULE_RE = re.compile(r"^(scripts|ops|apps)(\.[A-Za-z_]\w*)+$")
 GH_EXPR_RE = re.compile(r"\$\{\{.*?\}\}", re.S)
 JUST_INTERP_RE = re.compile(r"\{\{.*?\}\}", re.S)
@@ -121,6 +120,7 @@ class _Ctx:
     recipe_queue: list[tuple[str, str]] = field(default_factory=list)
     recipes: dict[str, dict[str, sources.Recipe]] = field(default_factory=dict)
     seen_recipes: set[str] = field(default_factory=set)
+    cwd: str = ""  # the workflow step's working directory, while its text is walked
 
 
 def _rel(path: Path) -> str:
@@ -217,6 +217,10 @@ class _Walker:
             self.k += 1  # command position is whatever it was before the redirect
         elif lex.is_redirect(tok):
             self.k += 2  # the next token is the redirect target, never a command
+        elif tok == "coproc":  # `coproc [NAME] command`: a NAME only precedes a compound command
+            named = self.k + 2 < len(self.toks) and self.toks[self.k + 2][0] in COMPOUND_OPENERS
+            self.at_command = True
+            self.k += 2 if named else 1
         elif lex.is_separator(tok) or tok in KEYWORDS_BEFORE_COMMAND or tok in {"{", "}"}:
             self.at_command = True
             self.k += 1
@@ -242,7 +246,7 @@ class _Walker:
         self.at_command = False
         base = tok.rsplit("/", 1)[-1]
         where = self._where()
-        repo_script = _repo_script_for(tok, self.source)
+        repo_script = sources.repo_script_for(tok, self.source, self.ctx.cwd, REPO_ROOT)
         if base in WRAPPERS:
             if WRAPPERS[base][2]:
                 self.ctx.usage.executables[base].add(where)
@@ -250,7 +254,7 @@ class _Walker:
         elif tok in KEYWORDS_IGNORED or tok in self.functions or tok == lex.PLACEHOLDER:
             self.k += 1
         elif repo_script:
-            _note_repo_path(repo_script, self.ctx)
+            _queue_repo_file(repo_script, self.ctx)
             self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
             self._after_reaper(base)
         elif tok in lex.FIND_ACTIONS:  # find's next action, after an escaped `\;` separator
@@ -281,21 +285,6 @@ class _Walker:
         if base == "ci_reap_port_holders.sh" and self.k < len(self.toks):
             self.at_command = self.toks[self.k][0] == "--"
             self.k += self.at_command
-
-
-def _repo_script_for(tok: str, source: str) -> str | None:
-    """The repo path a command token runs, when it names a repo script:
-    `scripts/x.sh`, `"${ROOT}/scripts/x.sh"`, or `"$HERE/x.sh"` beside its caller."""
-    direct = REPO_SCRIPT_RE.match(tok)
-    if direct:
-        return direct.group(1)
-    tail = PATH_VARIABLE_PREFIX_RE.sub("", tok, count=1)
-    if tail == tok:
-        return None
-    for candidate in (tail, str(Path(source).parent / tail)):
-        if REPO_SCRIPT_RE.match(candidate) and (REPO_ROOT / candidate).is_file():
-            return candidate
-    return None
 
 
 # ----- shell: arguments that carry nested programs -------------------------------------
@@ -420,9 +409,14 @@ def _queue_python_imports(text: str, path: Path, ctx: _Ctx) -> None:
 
 
 def _note_repo_path(tok: str, ctx: _Ctx) -> None:
-    match = REPO_SCRIPT_RE.match(tok)
-    path = REPO_ROOT / match.group(1) if match else None
-    if path is None or not path.is_file():
+    rel = sources.repo_path(tok, ctx.cwd, REPO_ROOT)
+    if rel:
+        _queue_repo_file(rel, ctx)
+
+
+def _queue_repo_file(rel: str, ctx: _Ctx) -> None:
+    path = REPO_ROOT / rel
+    if not path.is_file():
         return
     if path.suffix == ".py":
         ctx.python_queue.append(path)
@@ -488,7 +482,7 @@ def workflow_files(root: Path = REPO_ROOT) -> list[Path]:
 def scan_workflows(ctx: _Ctx, root: Path = REPO_ROOT) -> None:
     for path in workflow_files(root):
         rel = str(path.relative_to(root))
-        for step in sources.self_hosted_steps(path):
+        for step, ctx.cwd in sources.self_hosted_steps(path):
             ctx.usage.scanned_files.add(rel)
             run, shell = step.get("run"), sources.yaml_scalar(step.get("shell"))
             if not isinstance(run, yaml.ScalarNode) or shell in {"pwsh", "powershell", "cmd"}:
@@ -496,6 +490,7 @@ def scan_workflows(ctx: _Ctx, root: Path = REPO_ROOT) -> None:
             first_line = run.start_mark.line + (1 if run.style in {"|", ">"} else 0)
             scan = scan_python_source if shell.startswith("python") else scan_shell
             scan(run.value, rel, first_line, ctx)
+    ctx.cwd = ""
 
 
 def _scan_recipe(runner: str, name: str, ctx: _Ctx) -> None:
