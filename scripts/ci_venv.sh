@@ -2,30 +2,31 @@
 # Reuse the persistent workspace's .venv when it runs the interpreter
 # `uv venv --python <version>` would pick right now; recreate it otherwise.
 #
-# Usage: scripts/ci_venv.sh <python-version> [--sync] [--requirements <file> ...]
+# Usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]
 #
 # With no provisioning flags, behavior is unchanged: create or reuse the venv
-# and return. With --sync or --requirements, dependency install runs in the
-# same invocation as venv setup so reuse and exact fill stay atomic.
+# and return. With --sync or --lock, dependency install runs in the same
+# invocation as venv setup so reuse and exact fill stay atomic.
 #
-#   --sync                 run `uv sync` after venv setup (exact already)
-#   --requirements <file>  run `uv pip install --exact --upgrade` for each file
+#   --sync                run `uv sync` after venv setup (exact already)
+#   --lock <pylock.toml>  run `uv pip sync` from that hash-pinned PEP 751 lock
 #
-# Reuse is only half the contract when the caller provisions separately. The
-# install MUST be exact:
-#   uv pip install --exact --upgrade --python .venv/bin/python -r <requirements>
-# `--exact` removes packages that are not in this job's requirements (another
-# branch's dependency, the wheel the contracts job installs), and `--upgrade`
-# re-resolves to what a fresh install would pick instead of keeping whatever an
-# earlier job left behind. Without both, a reused venv silently tests a
-# different environment than a fresh one would. `uv sync` is exact already.
+# Both installs are EXACT: they remove packages the lock does not name
+# (another branch's dependency, the wheel the contracts job installs), so a
+# reused venv holds what a fresh fill would. And neither resolves: a pylock
+# names every wheel by URL and hash, so with a warm uv cache `--lock` makes
+# zero requests to the package index (issue #4252; the `uv pip install
+# --exact --upgrade -r` form it replaced revalidated ~150 index pages per job
+# and turned trunk red whenever PyPI was slow). Locks are compiled and checked
+# by scripts/ci_lock.py.
 #
-# Pinned by tests/scripts/test_ci_workspace_reuse.py.
+# Pinned by tests/scripts/test_ci_workspace_reuse.py and
+# tests/scripts/test_ci_offline_provisioning.py.
 set -euo pipefail
 
 want=""
 do_sync=false
-requirements_files=()
+lock=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,12 +34,12 @@ while [[ $# -gt 0 ]]; do
       do_sync=true
       shift
       ;;
-    --requirements)
-      requirements_files+=("${2:?--requirements requires a file path}")
+    --lock)
+      lock="${2:?--lock requires a pylock.toml path}"
       shift 2
       ;;
     -*)
-      echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--requirements <file> ...]" >&2
+      echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
       exit 2
       ;;
     *)
@@ -46,7 +47,7 @@ while [[ $# -gt 0 ]]; do
         want="$1"
         shift
       else
-        echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--requirements <file> ...]" >&2
+        echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
         exit 2
       fi
       ;;
@@ -54,9 +55,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$want" ]] || {
-  echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--requirements <file> ...]" >&2
+  echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
   exit 2
 }
+
+if [ -n "$lock" ] && [ ! -f "$lock" ]; then
+  echo "[venv] lock not found: $lock (compile it with: python -m scripts.ci_lock compile)" >&2
+  exit 2
+fi
 
 venv=.venv
 
@@ -87,18 +93,13 @@ if ! $reused; then
   uv venv --python "$base" "$venv"
 fi
 
-if ! $do_sync && [ "${#requirements_files[@]}" -eq 0 ]; then
-  exit 0
-fi
-
 if $do_sync; then
   echo "[venv] syncing dependencies"
   uv sync --python "$venv/bin/python"
 fi
 
-if [ "${#requirements_files[@]}" -gt 0 ]; then
-  for req in "${requirements_files[@]}"; do
-    echo "[venv] installing exact requirements from $req"
-    uv pip install --exact --upgrade --python "$venv/bin/python" -r "$req"
-  done
+if [ -n "$lock" ]; then
+  echo "[venv] syncing exactly from $lock"
+  # pylock support is a uv preview feature; opting in names that on purpose.
+  uv pip sync --preview-features pylock --python "$venv/bin/python" "$lock"
 fi
