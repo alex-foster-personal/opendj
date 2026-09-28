@@ -16,6 +16,7 @@ import {
 } from './playwright.preflight-gate.config';
 
 test.describe('preflight boot gate', () => {
+	// REQ: PREFLIGHT-01
 	test('a healthy library lands straight in the app, no gate shown', async ({ page }) => {
 		await page.goto(`${PREFLIGHT_GATE_HEALTHY_ORIGIN}/`);
 

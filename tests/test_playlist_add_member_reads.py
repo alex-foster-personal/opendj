@@ -17,9 +17,11 @@ add to a 40-member one, one per extra member, never two or three.
 
 Regression one-liners:
   - if adding one track reads an existing member more than once then broken
-  - if the bounded neighbor lookup picks different order_keys than the full member list then broken
+  - if a positioned add executes another membership scan after the one full read then broken
+  - if neighbor selection from the full member read picks different order_keys then broken
   - if the undo snapshot or response items differ from an independent membership read then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -30,7 +32,11 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.webui.server.playlist_add import _load_live_members, _neighbor_order_keys
+from apps.webui.server.playlist_add import (
+    _effective_order_key,
+    _load_live_members,
+    _neighbor_order_keys,
+)
 from apps.webui.server.playlist_store import PlaylistStore
 from tests.webui.sql_trace import RowCounter
 
@@ -63,7 +69,9 @@ def store(tmp_path: Path) -> Iterator[PlaylistStore]:
 def _playlist(store: PlaylistStore, size: int) -> str:
     row = store.create_playlist(f"{size} members")
     row = store.replace_memberships(
-        row.playlist_id, [_sid(i) for i in range(size)], expected_etag=row.etag,
+        row.playlist_id,
+        [_sid(i) for i in range(size)],
+        expected_etag=row.etag,
     )
     return row.playlist_id
 
@@ -95,8 +103,37 @@ def test_one_add_reads_each_existing_member_once(store: PlaylistStore, where: st
     )
 
 
+def test_positioned_add_executes_only_the_required_full_membership_read(
+    store: PlaylistStore,
+) -> None:
+    """[if] a positioned add runs [then] sqlite scans membership once, [else stop]."""
+    playlist_id = _playlist(store, LARGE)
+    statements: list[str] = []
+    store._conn.set_trace_callback(statements.append)
+    try:
+        store.add_memberships(
+            playlist_id,
+            [_sid(LARGE + 4)],
+            position=LARGE - 1,
+        )
+    finally:
+        store._conn.set_trace_callback(None)
+
+    membership_reads = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith("SELECT")
+        and "FROM playlist_memberships" in statement
+        and "deleted_at IS NULL" in statement
+    ]
+    assert len(membership_reads) == 1, membership_reads
+    assert "ORDER BY" in membership_reads[0]
+    assert " OFFSET " not in membership_reads[0]
+    assert "COUNT(" not in membership_reads[0]
+
+
 def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> None:
-    """[if] neighbors come from a bounded read [then] they match the full list, [else stop]."""
+    """[if] neighbors come from the full read [then] they match its order, [else stop]."""
     playlist_id = _playlist(store, 12)
     conn = store._conn
     # Legacy rows with no order_key sort by their zero-padded position, the
@@ -111,10 +148,21 @@ def test_neighbor_lookup_matches_the_full_member_list(store: PlaylistStore) -> N
     assert len(members) == 11
     for index in range(len(members) + 1):
         expected = (
-            members[index - 1].order_key if index > 0 else None,
-            members[index].order_key if index < len(members) else None,
+            (
+                _effective_order_key(
+                    members[index - 1].order_key,
+                    members[index - 1].position,
+                )
+                if index > 0
+                else None
+            ),
+            (
+                _effective_order_key(members[index].order_key, members[index].position)
+                if index < len(members)
+                else None
+            ),
         )
-        assert _neighbor_order_keys(conn, playlist_id, index, len(members)) == expected, index
+        assert _neighbor_order_keys(members, index) == expected, index
 
 
 def test_response_and_undo_snapshot_match_independent_reads(store: PlaylistStore) -> None:
@@ -126,9 +174,51 @@ def test_response_and_undo_snapshot_match_independent_reads(store: PlaylistStore
     after = [m.stable_id for m in _load_live_members(conn, playlist_id)]
     assert row.items == after
     assert after == [*before[:7], _sid(LARGE + 2), _sid(3), *before[7:]]
-    payload = json.loads(conn.execute(
-        "SELECT payload_json FROM events WHERE kind = 'playlist.edit' ORDER BY id DESC LIMIT 1"
-    ).fetchone()[0])
+    payload = json.loads(
+        conn.execute(
+            "SELECT payload_json FROM events WHERE kind = 'playlist.edit' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+    )
     assert payload["op"] == "memberships"
     assert payload["before"]["items"] == before
     assert payload["after"]["items"] == after
+
+
+def test_a_concurrent_write_cannot_land_between_the_member_reads(
+    store: PlaylistStore,
+    tmp_path: Path,
+) -> None:
+    """[if] a peer writes during an add's member reads [then] it is locked out, [else stop]."""
+    playlist_id = _playlist(store, 12)
+    last_item = _load_live_members(store._conn, playlist_id)[-1].item_id
+    peer = sqlite3.connect(str(tmp_path / "state.db"), timeout=0.1, isolation_level=None)
+    peer_outcomes: list[str] = []
+
+    def _peer_deletes_the_last_member(statement: str) -> None:
+        # Fires during the one ordered membership read. The writer transaction
+        # must already exclude a peer mutation before the snapshot is derived.
+        if "SELECT item_id, stable_id, position, order_key" not in statement or peer_outcomes:
+            return
+        try:
+            peer.execute(
+                "UPDATE playlist_memberships SET deleted_at = ? WHERE item_id = ?",
+                (NOW, last_item),
+            )
+            peer_outcomes.append("landed")
+        except sqlite3.OperationalError as exc:
+            peer_outcomes.append(f"refused: {exc}")
+
+    store._conn.set_trace_callback(_peer_deletes_the_last_member)
+    try:
+        # Insert between the last two members: the snapshot supplies both.
+        row = store.add_memberships(playlist_id, [_sid(LARGE + 3)], position=11)
+    finally:
+        store._conn.set_trace_callback(None)
+        peer.close()
+
+    # Positive control: the peer really attempted its write inside the gap.
+    assert len(peer_outcomes) == 1, "the neighbor read never ran: the probe is not attached"
+    assert peer_outcomes[0].startswith("refused: database is locked"), peer_outcomes
+    members = [m.stable_id for m in _load_live_members(store._conn, playlist_id)]
+    assert row.items == members
+    assert members[10:] == [_sid(10), _sid(LARGE + 3), _sid(11)]
