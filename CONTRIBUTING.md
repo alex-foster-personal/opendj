@@ -83,8 +83,12 @@ Optional local linting via [Trunk](https://docs.trunk.io/code-quality) (config i
 ```bash
 npm ci            # once: installs the trunk launcher into ./node_modules
 npm run lint      # trunk check: new issues on lines changed vs main only
-npm run fmt       # trunk fmt: formatters on changed files only
+npm run fmt       # trunk fmt: changed files only; near no-op today (see below)
 ```
+
+`npm run fmt` currently has only dotenv-linter to run: black, prettier, ruff format,
+shfmt, taplo and rustfmt are disabled because none is an existing gate and each
+rewrites whole files. Enabling one is a separate decision.
 
 Trunk's git hooks are disabled on purpose (shared checkouts); run it on demand.
 Without a TTY (agents, CI) `trunk check` applies autofixes without asking, so
