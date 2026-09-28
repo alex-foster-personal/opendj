@@ -2,8 +2,10 @@
 
 [if] the reaper kills a service or spares an orphaned test server [then] fail, [else stop].
 
-Real processes only for reap; classification is also checked on synthetic
-process tables, which is the functional core the census feeds.
+Real processes only: every test here runs the real snapshot (``ps``/``/proc``)
+and classification against live pids. The synthetic-table UNIT tests of the
+same functional core live in ``test_process_census_unit.py`` and are not
+DEVOPS-17 release evidence.
 
 Regression lines:
   - if orphan_reaper kills a long-lived service carrying a non-test AF_SERVICE_ID then broken
@@ -12,10 +14,11 @@ Regression lines:
     runner or checkout markers then broken
   - if an orphan carrying only a `.test.` marker (unrecognized command) is not reaped
     then broken
-  - if a `systemd --user` adoptee is not orphaned, or a tmux child is then broken
-  - if reap reports a target it never signalled as killed then broken
-  - if a service id that merely mentions codex/claude/cursor/grok is reaped then broken
-  - if an orphan whose own environment cannot be read is reapable then broken
+  - if a real double-forked orphan is not classified orphaned, or a live child
+    of a running test is, then broken
+  - if a real orphan whose own id merely mentions codex is not a service then broken
+  - if a real process adopted by a Linux subreaper is not classified orphaned then broken
+  - if a real retitled service (env unreadable on macOS) is reaped then broken
 """
 
 from __future__ import annotations
@@ -24,12 +27,12 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
 
-from scripts.orphan_reaper import reap
-from scripts.process_census import Proc, Row, classify
+from scripts.process_census import Row, classify, snapshot
 from tests.support.process_probes import GONE_WITHIN_S, alive, orphan, wait_for
 
 pytestmark = pytest.mark.requirement("DEVOPS-17")
@@ -137,44 +140,6 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     )
 
 
-def _proc(pid: int, ppid: int, command: str, **extra: object) -> Proc:
-    """A synthetic process whose environment WAS read, unless the test says otherwise."""
-    extra.setdefault("env_readable", True)
-    return Proc(pid, ppid, pid, 3600, "S", "dev", command, start=f"t{pid}", **extra)  # type: ignore[arg-type]
-
-
-def _orphan_verdict(own_env: dict[str, str], *, env_readable: bool = True) -> str:
-    """Verdict for an orphaned, test-shaped server run from a checkout inside an agent session."""
-    procs = {
-        1: _proc(1, 0, "/sbin/init"),
-        50: _proc(
-            50,
-            1,
-            "uvicorn apps.engine_core",
-            env={"CLAUDECODE": "1", **own_env},
-            cwd="/home/dev/music-dj-tools",
-            env_readable=env_readable,
-        ),
-    }
-    return {r.pid: r for r in classify(procs)}[50].verdict
-
-
-def test_a_service_id_is_protected_whatever_names_it_contains() -> None:
-    """Only an agent SESSION's own id namespace is provenance; a service whose
-    name merely mentions an agent (codex, claude...) is still a service."""
-    assert _orphan_verdict({"AF_SERVICE_ID": "com.af.codex-transcript-cleanup"}) == "service"
-    assert _orphan_verdict({"AF_SERVICE_ID": "com.opendj.claude-helper"}) == "service"
-    # the control: a Claude session's own profile id IS agent provenance
-    assert _orphan_verdict({"AF_SERVICE_ID": "com.af.claude-profiles.account3"}) == "reapable"
-
-
-def test_an_orphan_whose_environment_cannot_be_read_is_never_reapable() -> None:
-    """macOS hides a retitled process's env from `ps -E`: its own service id is
-    then unknown, so the census must fail closed instead of trusting heuristics."""
-    assert _orphan_verdict({}, env_readable=False) == "unreadable-orphan"
-    assert _orphan_verdict({}, env_readable=True) == "reapable"  # control: same tree, env read
-
-
 RETITLE_CODE = (
     "import setproctitle, time; "
     "setproctitle.setproctitle('uvicorn apps.engine_core retitled-control'); time.sleep(600)"
@@ -216,44 +181,123 @@ def test_a_retitled_service_survives_reap(cleanup_pids: list[int]) -> None:
     assert alive(service), "the reaper killed a service whose own id it could not read"
 
 
-def test_a_subreaper_adoptee_is_orphaned_and_a_tmux_child_is_not() -> None:
-    """Pure classification: a `systemd --user` subreaper that adopted a test
-    server is ABOVE the tree, never its session host (and never its supervisor)."""
-    test_env = {"AF_SERVICE_ID": "com.opendj.test.adopted"}
-    procs = {
-        1: _proc(1, 0, "/sbin/init"),
-        10: _proc(10, 1, "/usr/lib/systemd/systemd --user", supervisor="job"),
-        20: _proc(20, 10, "uvicorn apps.engine_core", env=dict(test_env)),
-        30: _proc(30, 1, "tmux new-session -d"),
-        40: _proc(40, 30, "uvicorn apps.engine_core", env=dict(test_env)),
+def _classify_live(pids: list[int]) -> dict[int, Row]:
+    """The real census, in process: snapshot this host, classify, pick ``pids``."""
+    rows = {r.pid: r for r in classify(snapshot())}
+    missing = [p for p in pids if p not in rows]
+    assert not missing, f"pids {missing} are not in the census scope: the assertions cannot fail"
+    return {p: rows[p] for p in pids}
+
+
+SLEEP_600 = "import time; time.sleep(600)"
+
+
+def test_the_census_orphans_a_real_double_forked_process_and_not_a_live_child(
+    cleanup_pids: list[int],
+) -> None:
+    clean = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/")}
+    orphaned_test_server = orphan(
+        [sys.executable, "-c", SLEEP_600, "uvicorn-real-orphan"],
+        {**clean, "AF_SERVICE_ID": "com.opendj.test.realorphan"},
+        "/",
+    )
+    orphaned_service = orphan(
+        [sys.executable, "-c", SLEEP_600, "uvicorn-real-service"],
+        {**clean, "AF_SERVICE_ID": "com.af.codex-transcript-cleanup", "CLAUDECODE": "1"},
+        "/",
+    )
+    # The control: same command shape and id, but a live child of this test.
+    attached = subprocess.Popen(
+        [sys.executable, "-c", SLEEP_600, "uvicorn-real-attached"],
+        env={**clean, "AF_SERVICE_ID": "com.opendj.test.realattached"},
+    )
+    cleanup_pids.extend([orphaned_test_server, orphaned_service, attached.pid])
+    wait_for(
+        lambda: all(alive(p) for p in (orphaned_test_server, orphaned_service, attached.pid)),
+        10,
+        "real processes to start",
+    )
+    rows = _classify_live([orphaned_test_server, orphaned_service, attached.pid])
+    assert (rows[orphaned_test_server].tree, rows[orphaned_test_server].verdict) == (
+        "orphaned",
+        "reapable",
+    ), rows[orphaned_test_server]
+    assert (rows[orphaned_service].tree, rows[orphaned_service].verdict) == (
+        "orphaned",
+        "service",
+    ), rows[orphaned_service]
+    assert rows[attached.pid].tree != "orphaned", rows[attached.pid]
+    assert rows[attached.pid].verdict != "reapable", rows[attached.pid]
+
+
+# A real Linux subreaper, titled like the `systemd --user` the census knows,
+# that double-forks a test server so the kernel reparents it to the subreaper.
+SUBREAPER_CODE = textwrap.dedent(
+    """
+    import ctypes, json, os, sys, time
+    import setproctitle
+    PR_SET_CHILD_SUBREAPER = 36
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        raise SystemExit(f"[ERROR] prctl subreaper failed: errno {ctypes.get_errno()}")
+    setproctitle.setproctitle("/usr/lib/systemd/systemd --user subreaper-control")
+    argv, env, out = json.loads(sys.argv[1])
+    if os.fork() == 0:
+        pid = os.fork()
+        if pid == 0:
+            os.execve(argv[0], argv, env)
+        with open(out + ".tmp", "w") as fh:
+            fh.write(str(pid))
+        os.replace(out + ".tmp", out)
+        os._exit(0)
+    while True:
+        try:
+            os.waitpid(-1, 0)
+        except ChildProcessError:
+            time.sleep(1)
+    """
+)
+
+
+def _linux_ppid(pid: int) -> int | None:
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    return int(text[text.rfind(")") + 2 :].split()[1])
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="UNAVAILABLE: PR_SET_CHILD_SUBREAPER is Linux-only; macOS reparents every orphan "
+    "to launchd, which the real double-fork test covers",
+)
+def test_the_census_orphans_a_real_subreaper_adoptee(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    pid_file = tmp_path / "adoptee.pid"
+    adoptee_argv = [sys.executable, "-c", SLEEP_600, "uvicorn-real-adoptee"]
+    adoptee_env = {
+        "PATH": os.environ["PATH"],
+        "HOME": os.environ.get("HOME", "/"),
+        "AF_SERVICE_ID": "com.opendj.test.adoptee",
     }
-    rows = {r.pid: r for r in classify(procs)}
-    assert (rows[20].tree, rows[20].verdict) == ("orphaned", "reapable"), rows[20]
-    assert (rows[40].tree, rows[40].verdict) == ("session", "active"), rows[40]
-
-
-def test_reap_reports_a_target_that_vanished_before_its_signal_as_not_killed() -> None:
-    gone = subprocess.Popen([sys.executable, "-c", "pass"])
-    gone.wait()
-    procs = {gone.pid: _proc(gone.pid, 1, "pytest leftover", env={"CLAUDECODE": "1"})}
-    rows = [
-        Row(
-            pid=gone.pid,
-            ppid=1,
-            pgid=gone.pid,
-            root_pid=gone.pid,
-            root_command="pytest leftover",
-            age_s=3600,
-            state="S",
-            cwd="/",
-            command="pytest leftover",
-            env={"CLAUDECODE": "1"},
-            env_markers=[],
-            tree="orphaned",
-            attribution="agent",
-            verdict="reapable",
-        )
-    ]
-    report = reap(procs, rows, min_age_s=0, dry_run=False)
-    assert [k["outcome"] for k in report["kills"]] == ["gone-before-signal"]
-    assert report["killed"] == 0
+    subreaper = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            SUBREAPER_CODE,
+            json.dumps([adoptee_argv, adoptee_env, str(pid_file)]),
+        ]
+    )
+    cleanup_pids.append(subreaper.pid)
+    wait_for(pid_file.exists, 30, "the subreaper to fork its adoptee")
+    adoptee = int(pid_file.read_text())
+    cleanup_pids.append(adoptee)
+    wait_for(
+        lambda: _linux_ppid(adoptee) == subreaper.pid,
+        10,
+        f"the kernel to reparent {adoptee} to subreaper {subreaper.pid}",
+    )
+    row = _classify_live([adoptee])[adoptee]
+    assert (row.tree, row.verdict, row.root_pid) == ("orphaned", "reapable", adoptee), row
