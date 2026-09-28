@@ -36,6 +36,9 @@ Acceptance tests (tests/scripts/test_ci_required_gate.py):
 Standard library only (it imports nothing but `scripts.ci_pr_scope`), so the runner
 image's own `python3` runs it with no venv and no install step on any host the light
 pool can land on.
+
+Supersedes: nothing ran on a docs-only pull request before; the trigger-level path
+filters that skipped the whole workflow now live in `scripts.ci_pr_scope`.
 """
 
 from __future__ import annotations

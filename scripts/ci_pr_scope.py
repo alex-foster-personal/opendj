@@ -10,6 +10,9 @@ run only when it says in-scope, and one always-created aggregator check-run (`ci
 `e2e verdict`) reports the verdict either way. ADR: docs/decisions/
 ADR-NEW-required-check-aggregators.md.
 
+Supersedes: the `pull_request` `paths` / `paths-ignore` trigger filters that ci.yml and
+e2e.yml carried; both lists were moved here verbatim and deleted from the YAML.
+
 Both lists keep GitHub's own filter semantics, evaluated by
 `workflow_would_run_for_files` below (also `scripts.ci_wait`'s evaluator):
 
