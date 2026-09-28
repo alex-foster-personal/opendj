@@ -75,10 +75,22 @@ def assert_clean_origin_base(repo: Path, base_ref: str) -> None:
         )
 
 
-def create_worker_worktree(repo: Path, target: Path, branch: str, base_ref: str) -> None:
-    """Create one worker branch, proving the source is safe first."""
+def create_worker_worktree(
+    repo: Path, target: Path, branch: str, base_ref: str, *, floor_gb: float | None = None
+) -> None:
+    """Create one worker branch, proving the source is safe first.
+
+    `floor_gb` forwards to the lifecycle guard's own `--floor-gb`. Leave it
+    None in production so the guard's real disk-floor policy applies; tests
+    that are not about the disk floor pass an explicit low value so the
+    guard's live `shutil.disk_usage` read of the HOST (not of `repo`'s
+    content) cannot fail them on a host with little real free space.
+    """
     assert_clean_origin_base(repo, base_ref)
-    lifecycle_status = worktree_lifecycle.main(["guard", "--repo", str(repo)])
+    guard_argv = ["guard", "--repo", str(repo)]
+    if floor_gb is not None:
+        guard_argv += ["--floor-gb", str(floor_gb)]
+    lifecycle_status = worktree_lifecycle.main(guard_argv)
     if lifecycle_status != 0:
         raise PreflightError("worktree lifecycle guard refused worker creation")
     process = subprocess.run(
@@ -139,6 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--target", type=Path, required=True)
     create.add_argument("--branch", required=True)
     create.add_argument("--base", required=True)
+    create.add_argument(
+        "--floor-gb", type=float, default=None,
+        help="override the lifecycle guard's disk floor (default: its own policy)",
+    )
     scope = subparsers.add_parser("scope")
     scope.add_argument("--repo", type=Path, required=True)
     scope.add_argument("--base", required=True)
@@ -149,7 +165,9 @@ def main(argv: list[str] | None = None) -> int:
         assert_clean_origin_base(args.repo, args.base)
         print(f"[worker-preflight] OK: clean source at {args.base}")
     elif args.command == "create":
-        create_worker_worktree(args.repo, args.target, args.branch, args.base)
+        create_worker_worktree(
+            args.repo, args.target, args.branch, args.base, floor_gb=args.floor_gb
+        )
         print(f"[worker-worktree] OK: {args.branch} at {args.target} from {args.base}")
     elif args.command == "scope":
         measured = measure_scope(args.repo, args.base)
