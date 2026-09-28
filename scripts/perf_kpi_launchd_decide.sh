@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Decision + cleanup helpers for scripts/install_perf_kpi_launchd.sh's --nightly-only
 # health-agent teardown. Sourced, never executed directly.
+#
+# Supersedes: install_perf_kpi_launchd.sh's prior unconditional-health-install
+# behavior, which always rendered and bootstrapped com.af.perf-kpi-health and had
+# no path to unload a stale one once a host (e.g. demon-llama) moved to
+# --nightly-only. This file's helpers are what --nightly-only calls to detect and
+# remove that stale agent instead of leaving it beside the new nightly-only unit.
 
 # health_agent_action <print_rc> echoes exactly one of:
 #   bootout  -- print_rc == 0:   the agent is loaded, bootout then remove the plist.

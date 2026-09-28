@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import plistlib
 import shutil
+import stat
 import subprocess
 import sys
 import uuid
@@ -18,24 +19,49 @@ INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
 DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
 LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
 
+_INSTALLER_ENV_VARS = (
+    "MDT_PERF_KPI_SMALL_STABLE_ID",
+    "MDT_PERF_KPI_LARGE_STABLE_ID",
+    "MDT_PERF_KPI_STEMMED_STABLE_ID",
+    "MDT_PERF_KPI_DATA_DIR",
+    "MDT_PERF_KPI_MACHINE",
+)
 
-def test_install_render_includes_data_dir_and_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+
+def _installer_env(home: Path, **overrides: str) -> dict[str, str]:
+    """Env for a real install_perf_kpi_launchd.sh subprocess, passed explicitly via
+    subprocess.run(env=...) rather than monkeypatched onto the test process (that
+    rewrote the shared os.environ ahead of a subprocess call that never reads it,
+    so the subprocess only worked because it happens to inherit the test process's
+    environment -- passing env= is both the fix and the more direct assertion of
+    what the installer actually sees). Starts from the real environment so PATH
+    etc. still resolve `uv`/`python3`, drops this job's own vars so a caller must
+    set every one it wants present, then applies overrides."""
+    env = {**os.environ, "HOME": str(home)}
+    for name in _INSTALLER_ENV_VARS:
+        env.pop(name, None)
+    env.update(overrides)
+    return env
+
+
+def test_install_render_includes_data_dir_and_path(tmp_path: Path) -> None:
     """If the launchd installer renders plists then nightly gets DATA_DIR and a uv-capable PATH."""
     home = tmp_path / "home"
     launch_agents = home / "Library" / "LaunchAgents"
     launch_agents.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "air")
+    env = _installer_env(
+        home,
+        MDT_PERF_KPI_SMALL_STABLE_ID="sid-small",
+        MDT_PERF_KPI_LARGE_STABLE_ID="sid-large",
+        MDT_PERF_KPI_STEMMED_STABLE_ID="sid-stemmed",
+        MDT_PERF_KPI_DATA_DIR="/abs/lib",
+        MDT_PERF_KPI_MACHINE="air",
+    )
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT)],
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -44,28 +70,31 @@ def test_install_render_includes_data_dir_and_path(
 
     nightly = plistlib.loads((launch_agents / "com.af.perf-kpi-nightly.plist").read_bytes())
     health = plistlib.loads((launch_agents / "com.af.perf-kpi-health.plist").read_bytes())
-    env = nightly["EnvironmentVariables"]
-    assert env["MDT_PERF_KPI_DATA_DIR"] == "/abs/lib"
-    assert ".local/bin" in env["PATH"] or ".venv/bin" in env["PATH"]
+    nightly_env = nightly["EnvironmentVariables"]
+    assert nightly_env["MDT_PERF_KPI_DATA_DIR"] == "/abs/lib"
+    assert ".local/bin" in nightly_env["PATH"] or ".venv/bin" in nightly_env["PATH"]
     assert "MDT_PERF_KPI_DATA_DIR" not in health.get("EnvironmentVariables", {})
 
 
-def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_install_nightly_only_skips_health(tmp_path: Path) -> None:
     """--nightly-only renders and would bootstrap the nightly agent only, for a host
     (e.g. demon-llama) with no live-review-preview service for the health leg to probe."""
     home = tmp_path / "home"
     launch_agents = home / "Library" / "LaunchAgents"
     launch_agents.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+    env = _installer_env(
+        home,
+        MDT_PERF_KPI_SMALL_STABLE_ID="sid-small",
+        MDT_PERF_KPI_LARGE_STABLE_ID="sid-large",
+        MDT_PERF_KPI_STEMMED_STABLE_ID="sid-stemmed",
+        MDT_PERF_KPI_DATA_DIR="/abs/lib",
+        MDT_PERF_KPI_MACHINE="demon-llama",
+    )
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT), "--nightly-only"],
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -76,9 +105,7 @@ def test_install_nightly_only_skips_health(monkeypatch: pytest.MonkeyPatch, tmp_
     assert not (launch_agents / "com.af.perf-kpi-health.plist").exists()
 
 
-def test_install_nightly_only_render_removes_a_stale_health_plist(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_install_nightly_only_render_removes_a_stale_health_plist(tmp_path: Path) -> None:
     """[if] --nightly-only runs render-only (no --install) over a health plist left by an
     earlier render [then] that plist is removed, so it cannot reload the unwanted health
     agent at the next login (sol-review #4079 P2); launchctl is not touched."""
@@ -87,16 +114,19 @@ def test_install_nightly_only_render_removes_a_stale_health_plist(
     launch_agents.mkdir(parents=True)
     stale = launch_agents / "com.af.perf-kpi-health.plist"
     stale.write_text("<plist/>")
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "demon-llama")
+    env = _installer_env(
+        home,
+        MDT_PERF_KPI_SMALL_STABLE_ID="sid-small",
+        MDT_PERF_KPI_LARGE_STABLE_ID="sid-large",
+        MDT_PERF_KPI_STEMMED_STABLE_ID="sid-stemmed",
+        MDT_PERF_KPI_DATA_DIR="/abs/lib",
+        MDT_PERF_KPI_MACHINE="demon-llama",
+    )
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT), "--nightly-only"],
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -107,15 +137,28 @@ def test_install_nightly_only_render_removes_a_stale_health_plist(
     assert not stale.exists(), "render-only --nightly-only left the stale health plist"
 
 
+def _lock_against_deletion(path: Path) -> None:
+    """Block deletion of `path` for the executing UID, root included. A `chmod 0o555`
+    on the parent directory only stops a non-root UID -- root ignores directory
+    permissions and `rm` succeeds straight through it, so that lock silently passed
+    under a root-run test job (sol-review #4079 P2). The BSD/macOS immutable flag
+    (`chflags uchg`, `stat.UF_IMMUTABLE`) refuses unlink for root and non-root alike,
+    so this is one technique effective for both rather than a UID-conditional branch."""
+    os.chflags(path, stat.UF_IMMUTABLE)
+
+
+def _unlock_for_cleanup(path: Path) -> None:
+    os.chflags(path, 0)
+
+
 def test_remove_stale_health_plist_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
     """[if] the stale health plist cannot be deleted [then] remove_stale_health_plist returns
     non-zero, even under `set -e` with `|| exit 1` (which disables set -e inside the function).
-    Calls the helper directly, so it runs on every host, launchctl or not (sol-review #4079 P1)."""
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    plist = locked / "com.af.perf-kpi-health.plist"
+    Calls the helper directly, so it runs on every host, launchctl or not, and the lock is
+    effective for the executing UID including root (sol-review #4079 P1, P2)."""
+    plist = tmp_path / "com.af.perf-kpi-health.plist"
     plist.write_text("<plist/>")
-    locked.chmod(0o555)
+    _lock_against_deletion(plist)
     try:
         completed = subprocess.run(
             [
@@ -131,9 +174,9 @@ def test_remove_stale_health_plist_fails_when_the_plist_cannot_be_removed(tmp_pa
             text=True,
         )
     finally:
-        locked.chmod(0o755)
+        _unlock_for_cleanup(plist)
 
-    assert plist.exists(), "control: the locked directory must really block deletion"
+    assert plist.exists(), "control: the immutable flag must really block deletion"
     assert completed.returncode != 0, completed.stdout
     assert "REACHED" not in completed.stdout
 
@@ -172,13 +215,12 @@ def test_remove_stale_health_plist_removes_a_present_plist_and_tolerates_absence
 def test_cleanup_stale_health_agent_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
     """[if] the stale health plist cannot be deleted [then] cleanup_stale_health_agent
     returns non-zero and does not report it removed, even when called as `... || exit 1`,
-    which disables set -e inside the function (sol-review #4079 P1). The label is one no
+    which disables set -e inside the function, and the lock is effective for the
+    executing UID including root (sol-review #4079 P1, P2). The label is one no
     agent uses, so launchctl print reports it absent and only the rm step is exercised."""
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    plist = locked / "com.af.perf-kpi-health.plist"
+    plist = tmp_path / "com.af.perf-kpi-health.plist"
     plist.write_text("<plist/>")
-    locked.chmod(0o555)
+    _lock_against_deletion(plist)
     try:
         completed = subprocess.run(
             [
@@ -196,9 +238,9 @@ def test_cleanup_stale_health_agent_fails_when_the_plist_cannot_be_removed(tmp_p
             text=True,
         )
     finally:
-        locked.chmod(0o755)
+        _unlock_for_cleanup(plist)
 
-    assert plist.exists(), "control: the locked directory must really block deletion"
+    assert plist.exists(), "control: the immutable flag must really block deletion"
     assert completed.returncode != 0, completed.stdout
     assert "REACHED" not in completed.stdout
     assert "[OK] removed" not in completed.stdout
@@ -310,19 +352,21 @@ def test_cleanup_stale_health_agent_boots_out_a_real_throwaway_agent(
         )
 
 
-def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_install_requires_data_dir(tmp_path: Path) -> None:
     """If MDT_PERF_KPI_DATA_DIR is unset then the installer exits non-zero."""
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
+    env = _installer_env(
+        home,
+        MDT_PERF_KPI_SMALL_STABLE_ID="sid-small",
+        MDT_PERF_KPI_LARGE_STABLE_ID="sid-large",
+        MDT_PERF_KPI_STEMMED_STABLE_ID="sid-stemmed",
+    )
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT)],
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -331,22 +375,24 @@ def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert completed.returncode == 2
 
 
-def test_install_requires_host_label(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_install_requires_host_label(tmp_path: Path) -> None:
     """No hidden 'air' default (claude-review, PR #3827, round 3, P1/BLOCKING):
     an install without --host-label or MDT_PERF_KPI_MACHINE must refuse
     rather than silently attributing a second Mac's runs to Air."""
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+    env = _installer_env(
+        home,
+        MDT_PERF_KPI_SMALL_STABLE_ID="sid-small",
+        MDT_PERF_KPI_LARGE_STABLE_ID="sid-large",
+        MDT_PERF_KPI_STEMMED_STABLE_ID="sid-stemmed",
+        MDT_PERF_KPI_DATA_DIR="/abs/lib",
+    )
 
     completed = subprocess.run(
         [str(INSTALL_SCRIPT)],
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
