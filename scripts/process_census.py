@@ -68,7 +68,7 @@ class CFG:
         r"|ms-playwright|chrome-headless-shell|headless_shell|--headless"
         r"|pw_run\.sh|Playwright\.app|MiniBrowser|-juggler"
         r"|@playwright/test|playwright test|playwright/cli"
-        r"|\bpytest\b|xdist|node --test|\bvitest\b|esbuild --service"
+        r"|\bpytest\b|xdist|node\s+--test|\bvitest\b|esbuild --service"
         r"|\bffmpeg\b|\bffprobe\b|-m http\.server"
         r"|Open ?DJ\.app|open-dj",
         re.IGNORECASE,

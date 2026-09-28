@@ -57,6 +57,8 @@ always:
   - "tests/live/"
   - "tests/lyrics_search/"
   - "tests/ops/"
+  # Global helper: the root conftest registers tests.support.spawned_servers (DEVOPS-17).
+  - "tests/support/"
 
 scopes:
   - name: adapters
