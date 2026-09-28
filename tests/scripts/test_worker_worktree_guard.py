@@ -120,29 +120,37 @@ def test_create_worktree_starts_at_explicit_origin_base(
 
 
 def test_create_worktree_still_refuses_below_the_disk_floor(
-    origin_repo: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    origin_repo: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     """[if] real free disk is below the floor [then] worktree creation still
     refuses, [else stop].
 
     Control for the floor_gb override above: proves the fix is "inject the
-    measurement", not "disable the guard". Forces free_gb low exactly the
-    way test_guard_refuses_loudly_below_the_disk_floor does in
-    test_worktree_lifecycle.py, then goes through the create-worktree path
-    with no override (floor_gb=None, the production default) and confirms
-    the refusal still fires and names the disk floor (not just "raised
-    something"), and that no worktree directory is created.
+    floor", not "disable the guard". It reads the REAL free space of this
+    host and sets the floor 1000G above it, so the live measurement path is
+    exercised with no monkeypatch, then asserts the refusal fires, names the
+    disk floor, and creates no worktree.
     """
     _, checkout = origin_repo
     target = tmp_path / "worker"
-    monkeypatch.setattr(worktree_lifecycle, "free_gb", lambda path: 1.9)
+    floor_above_real_free = worktree_lifecycle.free_gb(checkout) + 1000
 
     with pytest.raises(guard.PreflightError, match="worktree lifecycle guard refused"):
-        guard.create_worker_worktree(checkout, target, "af--disk-floor-refusal", "origin/main")
+        guard.create_worker_worktree(
+            checkout, target, "af--disk-floor-refusal", "origin/main",
+            floor_gb=floor_above_real_free,
+        )
 
-    assert "disk floor breached: 1.9G free" in capsys.readouterr().err
+    assert "disk floor breached:" in capsys.readouterr().err
     assert not target.exists()
+
+
+def test_create_cli_offers_no_disk_floor_override() -> None:
+    """[if] the worker `create` CLI is given --floor-gb [then] it is rejected,
+    [else stop]: production callers always get the lifecycle floor policy."""
+    with pytest.raises(SystemExit):
+        guard.main(["create", "--repo", ".", "--target", "x", "--branch", "b",
+                    "--base", "origin/main", "--floor-gb", "0"])
 
 
 def test_scope_check_refuses_large_branch(origin_repo: tuple[Path, Path]) -> None:

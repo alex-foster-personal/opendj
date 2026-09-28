@@ -80,8 +80,9 @@ def create_worker_worktree(
 ) -> None:
     """Create one worker branch, proving the source is safe first.
 
-    `floor_gb` forwards to the lifecycle guard's own `--floor-gb`. Leave it
-    None in production so the guard's real disk-floor policy applies; tests
+    `floor_gb` forwards to the lifecycle guard's own `--floor-gb`. It is not
+    exposed on the `create` CLI, so production always gets the guard's real
+    disk-floor policy; tests
     that are not about the disk floor pass an explicit low value so the
     guard's live `shutil.disk_usage` read of the HOST (not of `repo`'s
     content) cannot fail them on a host with little real free space.
@@ -151,10 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--target", type=Path, required=True)
     create.add_argument("--branch", required=True)
     create.add_argument("--base", required=True)
-    create.add_argument(
-        "--floor-gb", type=float, default=None,
-        help="override the lifecycle guard's disk floor (default: its own policy)",
-    )
     scope = subparsers.add_parser("scope")
     scope.add_argument("--repo", type=Path, required=True)
     scope.add_argument("--base", required=True)
@@ -165,9 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         assert_clean_origin_base(args.repo, args.base)
         print(f"[worker-preflight] OK: clean source at {args.base}")
     elif args.command == "create":
-        create_worker_worktree(
-            args.repo, args.target, args.branch, args.base, floor_gb=args.floor_gb
-        )
+        create_worker_worktree(args.repo, args.target, args.branch, args.base)
         print(f"[worker-worktree] OK: {args.branch} at {args.target} from {args.base}")
     elif args.command == "scope":
         measured = measure_scope(args.repo, args.base)
