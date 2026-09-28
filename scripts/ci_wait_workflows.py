@@ -6,20 +6,21 @@ Parses this repo's `.github/workflows/*.yml` pull_request `paths` /
 not run at the current head (the contraction case from PR #1685 review thread
 r3976977757) without reintroducing the false-SUCCESS class #1608 closes.
 
-GitHub's negation ordering for inclusive `paths` lists ("later patterns win",
-as documented in `.github/workflows/ci.yml`) is reproduced here; `paths-ignore`
-uses the complementary rule (the workflow runs when at least one changed file is
-not ignored). Nothing here calls `gh` or the network.
+GitHub's negation ordering for inclusive `paths` lists ("later patterns win")
+and the complementary `paths-ignore` rule (the workflow runs when at least one
+changed file is not ignored) are evaluated by `scripts.ci_pr_scope`, which the
+in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network.
 """
 
 from __future__ import annotations
 
-import fnmatch
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from scripts.ci_pr_scope import IN_RUN_PULL_REQUEST_SCOPES, workflow_would_run_for_files
 
 #: Check names that a workflow on main USED to emit and no head can emit again. A pull
 #: request whose earlier head ran one of these carries it in its baseline, and the
@@ -33,47 +34,6 @@ RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
         "affected-test canary (non-blocking early signal)",
     }
 )
-
-# ----- path filter evaluation ------------------------------------------------
-
-
-def _github_glob_matches(pattern: str, path: str) -> bool:
-    return fnmatch.fnmatch(path, pattern)
-
-
-def _file_matches_paths_list(path: str, patterns: Sequence[str]) -> bool:
-    """Inclusive `paths` filter with `!` negation; later patterns win."""
-    included = False
-    for pattern in patterns:
-        if pattern.startswith("!"):
-            if _github_glob_matches(pattern[1:], path):
-                included = False
-        elif _github_glob_matches(pattern, path):
-            included = True
-    return included
-
-
-def _file_matches_paths_ignore(path: str, patterns: Sequence[str]) -> bool:
-    return any(_github_glob_matches(pattern, path) for pattern in patterns)
-
-
-def workflow_would_run_for_files(
-    changed_files: Sequence[str],
-    *,
-    paths: Sequence[str] | None = None,
-    paths_ignore: Sequence[str] | None = None,
-) -> bool:
-    """True when a `pull_request` workflow would schedule for `changed_files`."""
-    if not changed_files:
-        return False
-    if paths is not None:
-        return any(_file_matches_paths_list(path, paths) for path in changed_files)
-    if paths_ignore is not None:
-        return any(
-            not _file_matches_paths_ignore(path, paths_ignore) for path in changed_files
-        )
-    return True
-
 
 # ----- workflow catalog ------------------------------------------------------
 
@@ -147,6 +107,19 @@ class WorkflowCatalog:
                 continue
             paths = tuple(trigger.get("paths") or ()) or None
             paths_ignore = tuple(trigger.get("paths-ignore") or ()) or None
+            in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(path.name)
+            if in_run_scope is not None:
+                # ci.yml and e2e.yml trigger on every pull request and scope the run
+                # from its own `scope` job (scripts/ci_pr_scope.py), so their heavy
+                # jobs are skipped, not absent, out of scope. Reading that scope here
+                # keeps ci-wait and docs-only detection answering exactly as they did
+                # when the same list was a trigger filter.
+                if paths is not None or paths_ignore is not None:
+                    raise ValueError(
+                        f"{path.name} declares a pull_request path filter AND an in-run "
+                        "scope in scripts/ci_pr_scope.py; one list must be the only one"
+                    )
+                paths, paths_ignore = in_run_scope
             workflow_filters[path.name] = (paths, paths_ignore)
             for job_id, job in (document.get("jobs") or {}).items():
                 if not isinstance(job, dict):
@@ -165,9 +138,7 @@ class WorkflowCatalog:
         applicable: set[str] = set()
         for name, workflow in self.check_to_workflow.items():
             paths, paths_ignore = self.workflow_filters[workflow]
-            if workflow_would_run_for_files(
-                changed_files, paths=paths, paths_ignore=paths_ignore
-            ):
+            if workflow_would_run_for_files(changed_files, paths=paths, paths_ignore=paths_ignore):
                 applicable.add(name)
         return frozenset(applicable)
 
