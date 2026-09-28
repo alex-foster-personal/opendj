@@ -166,13 +166,13 @@ entries:
   - name: cargo-audit
     kind: binary
     version: "0.22.2"
-    source: "crates.io max_stable_version, Mon 28 Sep 2026 (not installed on agentbox)"
+    source: "repo:.github/workflows/periodic-checks.yml (Ensure cargo-audit: CARGO_AUDIT_VERSION)"
     provides: [cargo-audit]
     needed_by: [periodic]
     provision: job
-    install: "periodic-checks.yml (dependency-audit, monthly, CI_RUNS_ON_LINUX pool) runs `cargo install cargo-audit --locked` when absent; to preinstall: cargo install cargo-audit --locked --version 0.22.2 as the runner user"
+    install: "periodic-checks.yml (dependency-audit, monthly, CI_RUNS_ON_LINUX pool) runs `cargo install cargo-audit --locked --force --version $CARGO_AUDIT_VERSION` whenever the runner's cargo-audit is absent or another version; to preinstall: cargo install cargo-audit --locked --version 0.22.2 as the runner user"
     verify: "cargo audit --version"
-    notes: "job-provisioned: the only consumer is a monthly job on the linux-light pool (agentbox runners today, not agbox2/3), and it self-installs. The workflow installs it UNPINNED; 0.22.2 records the version current when this entry was written"
+    notes: "job-provisioned: the only consumer is a monthly job on the linux-light pool (agentbox runners today, not agbox2/3), and it installs the pinned version itself, replacing any other. The completeness test checks this version against the workflow's CARGO_AUDIT_VERSION"
 
   #----- toolchains for the runner user (provisioning items 6, 7) -------------
   - name: node-system
@@ -280,6 +280,7 @@ entries:
     notes: "tests/scripts/test_ci_fixer_e2e_dry_run.py runs a bare `python3 -m pytest`, which resolves to this interpreter. Removable once PR #4181 (sys.executable) merges"
 
   #----- Playwright browsers (repo pin: playwright 1.61.1 in pnpm-lock.yaml) ---
+  # revisions derived from playwright-core@1.61.1/browsers.json; re-derive on every playwright bump
   - {name: playwright-chromium, kind: playwright, version: "1228", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps chromium", verify: "ls -d ~/.cache/ms-playwright/chromium-1228"}
   - {name: playwright-chromium-headless-shell, kind: playwright, version: "1228", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "installed with playwright-chromium", verify: "ls -d ~/.cache/ms-playwright/chromium_headless_shell-1228"}
   - {name: playwright-webkit, kind: playwright, version: "2311", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps webkit", verify: "ls -d ~/.cache/ms-playwright/webkit-2311"}
