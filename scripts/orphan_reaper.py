@@ -40,7 +40,7 @@ than the allowlisted non-secret keys below.
 
 Requirements (mini-PRD):
   ✔︎ census lists in-scope processes with pid, ppid chain root, age, cwd, command, allowlisted env
-    - [if] a test server is reparented to init with CLAUDECODE=1 in its env [then ⛔️ unless class=orphan/agent]
+    - [if] a test server reparented to init with CLAUDECODE=1 is not reapable/agent [then ⛔️]
     - [if] a launchd/systemd job's main process carries AF_SERVICE_ID [then ⛔️ unless class=service]
     - [if] a token-bearing env key (GITHUB_TOKEN) appears in census output [then ⛔️]
   ✔︎ reap kills orphaned attributed trees and never a service
@@ -62,10 +62,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
 
 # ---------------------------------------------------------------- config
 
@@ -111,7 +108,9 @@ class CFG:
     RUNNER_ENV_KEYS = ("GITHUB_RUN_ID", "RUNNER_NAME")
     AGENT_ENV_KEYS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     # A cwd in one of these is an agent's (or a human's) checkout of the repo.
-    WORKTREE_CWD_RE = re.compile(r"/music-dj-tools(-[\w.-]+)?(/|$)|/\.claude/worktrees/|/lanes/|/_idd/")
+    WORKTREE_CWD_RE = re.compile(
+        r"/music-dj-tools(-[\w.-]+)?(/|$)|/\.claude/worktrees/|/lanes/|/_idd/"
+    )
     RUNNER_WORK_RE = re.compile(r"/_work(/|$)")
     # Roots that legitimately outlive their parent and host other people's
     # live sessions. A tree hanging under one of these is attached, not
@@ -141,9 +140,11 @@ class Proc:
     command: str
     start: str = ""  # identity: start time, re-checked before every signal
     cwd: str = ""
-    env: Dict[str, str] = field(default_factory=dict)  # allowlisted values only
-    env_markers: List[str] = field(default_factory=list)  # key names only
-    supervisor: str = ""  # "job" (launchd job / systemd unit MainPID) | "app" (a GUI app launchd tracks) | ""
+    env: dict[str, str] = field(default_factory=dict)  # allowlisted values only
+    env_markers: list[str] = field(default_factory=list)  # key names only
+    supervisor: str = (
+        ""  # "job" (launchd job / systemd unit MainPID) | "app" (a GUI app launchd tracks) | ""
+    )
 
 
 @dataclass
@@ -157,8 +158,8 @@ class Row:
     state: str
     cwd: str
     command: str
-    env: Dict[str, str]
-    env_markers: List[str]
+    env: dict[str, str]
+    env_markers: list[str]
     tree: str  # orphaned | supervised-job | supervised-app | session | attached
     attribution: str  # runner | agent | test-harness | service | unknown
     verdict: str  # reapable | service | active | zombie | unattributed-orphan
@@ -167,7 +168,7 @@ class Row:
 # ---------------------------------------------------------------- snapshot (imperative shell)
 
 
-def _run(argv: List[str]) -> str:
+def _run(argv: list[str]) -> str:
     return subprocess.run(argv, capture_output=True, text=True, check=False).stdout
 
 
@@ -179,24 +180,40 @@ def _parse_etime(etime: str) -> int:
     return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
 
 
-def _filter_env(pairs: List[Tuple[str, str]]) -> Tuple[Dict[str, str], List[str]]:
+def _filter_env(pairs: list[tuple[str, str]]) -> tuple[dict[str, str], list[str]]:
     env = {k: v for k, v in pairs if k in CFG.PRINTABLE_ENV_KEYS}
     markers = sorted({k for k, _ in pairs if k.startswith(CFG.MARKER_ENV_PREFIXES)})
     return env, markers
 
 
-def _snapshot_darwin() -> Dict[int, Proc]:
-    procs: Dict[int, Proc] = {}
+def _snapshot_darwin() -> dict[int, Proc]:
+    procs: dict[int, Proc] = {}
     # LC_ALL=C pins lstart to exactly five tokens ("Mon Sep 28 09:17:09 2026"),
     # so the command is reliably everything after the eleventh field.
-    out = _run(["env", "LC_ALL=C", "ps", "-axww", "-o", "pid=,ppid=,pgid=,etime=,stat=,user=,lstart=,command="])
+    out = _run(
+        [
+            "env",
+            "LC_ALL=C",
+            "ps",
+            "-axww",
+            "-o",
+            "pid=,ppid=,pgid=,etime=,stat=,user=,lstart=,command=",
+        ]
+    )
     for line in out.splitlines():
         f = line.split(None, 11)
         if len(f) < 11:
             continue
         pid, ppid, pgid, etime, stat, user = f[:6]
         procs[int(pid)] = Proc(
-            int(pid), int(ppid), int(pgid), _parse_etime(etime), stat, user, f[11] if len(f) == 12 else "", " ".join(f[6:11])
+            int(pid),
+            int(ppid),
+            int(pgid),
+            _parse_etime(etime),
+            stat,
+            user,
+            f[11] if len(f) == 12 else "",
+            " ".join(f[6:11]),
         )
     for line in _run(["launchctl", "list"]).splitlines()[1:]:
         pid_s, _, rest = line.partition("\t")
@@ -206,7 +223,7 @@ def _snapshot_darwin() -> Dict[int, Proc]:
     return procs
 
 
-def _enrich_darwin(procs: Dict[int, Proc], pids: List[int]) -> None:
+def _enrich_darwin(procs: dict[int, Proc], pids: list[int]) -> None:
     if not pids:
         return
     joined = ",".join(str(p) for p in pids)
@@ -226,7 +243,7 @@ def _enrich_darwin(procs: Dict[int, Proc], pids: List[int]) -> None:
             procs[pid].cwd = line[1:]
 
 
-def _read(path: str) -> Optional[bytes]:
+def _read(path: str) -> bytes | None:
     try:
         with open(path, "rb") as fh:
             return fh.read()
@@ -234,8 +251,8 @@ def _read(path: str) -> Optional[bytes]:
         return None
 
 
-def _snapshot_linux() -> Dict[int, Proc]:
-    procs: Dict[int, Proc] = {}
+def _snapshot_linux() -> dict[int, Proc]:
+    procs: dict[int, Proc] = {}
     ticks = os.sysconf("SC_CLK_TCK")
     uptime = float((_read("/proc/uptime") or b"0").split()[0])
     uid_names = {}
@@ -252,7 +269,12 @@ def _snapshot_linux() -> Dict[int, Proc]:
         text = stat.decode(errors="replace")
         fields = text[text.rfind(")") + 2 :].split()
         state, ppid, pgid, start_ticks = fields[0], int(fields[1]), int(fields[2]), int(fields[19])
-        cmd = (_read(f"/proc/{entry}/cmdline") or b"").replace(b"\0", b" ").decode(errors="replace").strip()
+        cmd = (
+            (_read(f"/proc/{entry}/cmdline") or b"")
+            .replace(b"\0", b" ")
+            .decode(errors="replace")
+            .strip()
+        )
         status = (_read(f"/proc/{entry}/status") or b"").decode(errors="replace")
         uid = re.search(r"^Uid:\s+(\d+)", status, re.M)
         procs[int(entry)] = Proc(
@@ -272,16 +294,18 @@ def _snapshot_linux() -> Dict[int, Proc]:
     return procs
 
 
-def _mark_supervised(procs: Dict[int, Proc], line: str) -> None:
+def _mark_supervised(procs: dict[int, Proc], line: str) -> None:
     value = line.partition("=")[2]
     if value.isdigit() and int(value) in procs:
         procs[int(value)].supervisor = "job"
 
 
-def _enrich_linux(procs: Dict[int, Proc], pids: List[int]) -> None:
+def _enrich_linux(procs: dict[int, Proc], pids: list[int]) -> None:
     for pid in pids:
         raw = _read(f"/proc/{pid}/environ") or b""
-        pairs = [tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv]
+        pairs = [
+            tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv
+        ]
         procs[pid].env, procs[pid].env_markers = _filter_env(pairs)  # type: ignore[arg-type]
         try:
             procs[pid].cwd = os.readlink(f"/proc/{pid}/cwd")
@@ -289,7 +313,7 @@ def _enrich_linux(procs: Dict[int, Proc], pids: List[int]) -> None:
             procs[pid].cwd = "?"
 
 
-def snapshot() -> Dict[int, Proc]:
+def snapshot() -> dict[int, Proc]:
     """Every process on the host, with env and cwd for the ones that matter."""
     if sys.platform == "darwin":
         procs, enrich = _snapshot_darwin(), _enrich_darwin
@@ -298,7 +322,9 @@ def snapshot() -> Dict[int, Proc]:
     else:
         raise SystemExit(f"[ERROR] unsupported platform {sys.platform}")
     if not procs:
-        raise SystemExit("[ERROR] process snapshot is empty: the instrument failed, not a clean host")
+        raise SystemExit(
+            "[ERROR] process snapshot is empty: the instrument failed, not a clean host"
+        )
     # Env is needed for candidates AND for every ancestor up to the tree
     # root, because attribution reads the root's environment too.
     wanted = set()
@@ -313,28 +339,32 @@ def snapshot() -> Dict[int, Proc]:
 
 
 def _looks_test_spawned(proc: Proc) -> bool:
-    return bool(CFG.TEST_COMMAND_RE.search(proc.command)) and not CFG.EXCLUDED_COMMAND_RE.search(proc.command)
+    return bool(CFG.TEST_COMMAND_RE.search(proc.command)) and not CFG.EXCLUDED_COMMAND_RE.search(
+        proc.command
+    )
 
 
-def _ancestry(procs: Dict[int, Proc], pid: int) -> List[int]:
+def _ancestry(procs: dict[int, Proc], pid: int) -> list[int]:
     """pid, its parent, ... up to (not including) init. Cycle-safe."""
-    chain: List[int] = []
+    chain: list[int] = []
     while pid in procs and pid not in chain and pid > 1:
         chain.append(pid)
         pid = procs[pid].ppid
     return chain
 
 
-def _subreapers(procs: Dict[int, Proc]) -> set:
+def _subreapers(procs: dict[int, Proc]) -> set:
     """Linux `systemd --user` instances adopt orphans in place of pid 1."""
     return {p.pid for p in procs.values() if re.search(r"(^|/)systemd --user", p.command)}
 
 
-def classify(procs: Dict[int, Proc]) -> List[Row]:
+def classify(procs: dict[int, Proc]) -> list[Row]:
     reapers = _subreapers(procs) | {1}
-    rows: List[Row] = []
+    rows: list[Row] = []
     for pid, proc in sorted(procs.items()):
-        in_scope = _looks_test_spawned(proc) or CFG.TEST_SERVICE_MARKER in proc.env.get("AF_SERVICE_ID", "")
+        in_scope = _looks_test_spawned(proc) or CFG.TEST_SERVICE_MARKER in proc.env.get(
+            "AF_SERVICE_ID", ""
+        )
         if not in_scope:
             continue
         chain = _ancestry(procs, pid)
@@ -363,7 +393,7 @@ def classify(procs: Dict[int, Proc]) -> List[Row]:
     return rows
 
 
-def _tree_kind(procs: Dict[int, Proc], chain: List[int], root: Proc) -> str:
+def _tree_kind(procs: dict[int, Proc], chain: list[int], root: Proc) -> str:
     supervisors = [procs[p].supervisor for p in chain if procs[p].supervisor]
     if supervisors:
         return "supervised-" + supervisors[-1]  # the outermost supervisor owns the tree
@@ -374,7 +404,7 @@ def _tree_kind(procs: Dict[int, Proc], chain: List[int], root: Proc) -> str:
     return "attached"
 
 
-def _attribution(procs: Dict[int, Proc], chain: List[int]) -> str:
+def _attribution(procs: dict[int, Proc], chain: list[int]) -> str:
     """Who started this tree, read from the env it inherited (survives reparenting).
 
     AF_SERVICE_ID is inherited by every descendant, so on its own it names the
@@ -421,7 +451,9 @@ def _verdict(proc: Proc, tree: str, attribution: str) -> str:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
+    # gmtime is UTC by construction, so the Z is true; datetime.UTC would
+    # need Python 3.11 and this file must run on any fleet host's python3.
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _same_process(pid: int, start: str) -> bool:
@@ -429,7 +461,7 @@ def _same_process(pid: int, start: str) -> bool:
     return fresh is not None and fresh.start == start and not fresh.state.startswith("Z")
 
 
-def snapshot_one(pid: int) -> Optional[Proc]:
+def snapshot_one(pid: int) -> Proc | None:
     if sys.platform.startswith("linux"):
         stat = _read(f"/proc/{pid}/stat")
         if stat is None:
@@ -445,16 +477,23 @@ def snapshot_one(pid: int) -> Optional[Proc]:
 
 
 def reap(
-    procs: Dict[int, Proc], rows: List[Row], *, min_age_s: int, dry_run: bool, only_pids: Optional[List[int]] = None
+    procs: dict[int, Proc],
+    rows: list[Row],
+    *,
+    min_age_s: int,
+    dry_run: bool,
+    only_pids: list[int] | None = None,
 ) -> dict:
     targets = [
         r
         for r in rows
-        if r.verdict == "reapable" and r.age_s >= min_age_s and (not only_pids or r.pid in only_pids)
+        if r.verdict == "reapable"
+        and r.age_s >= min_age_s
+        and (not only_pids or r.pid in only_pids)
     ]
     identities = {r.pid: procs[r.pid].start for r in targets}
-    killed: List[dict] = []
-    survivors: List[int] = []
+    killed: list[dict] = []
+    survivors: list[int] = []
     for sig in (signal.SIGTERM, signal.SIGKILL):
         alive = [r for r in targets if _same_process(r.pid, identities[r.pid])]
         if sig == signal.SIGKILL and not alive:
@@ -487,7 +526,7 @@ def reap(
                 "outcome": "would-kill" if dry_run else ("SURVIVED" if still else "killed"),
             }
         )
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for row in rows:
         counts[row.verdict] = counts.get(row.verdict, 0) + 1
     return {
@@ -506,9 +545,9 @@ def reap(
 # ---------------------------------------------------------------- cli
 
 
-def zombies_by_parent(procs: Dict[int, Proc]) -> Dict[str, int]:
+def zombies_by_parent(procs: dict[int, Proc]) -> dict[str, int]:
     """Zombies cannot be killed; only their parent can reap them, so name it."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for proc in procs.values():
         if proc.state.startswith("Z"):
             parent = procs.get(proc.ppid)
@@ -517,19 +556,23 @@ def zombies_by_parent(procs: Dict[int, Proc]) -> Dict[str, int]:
     return counts
 
 
-def _render_table(rows: List[Row]) -> str:
-    head = f"{'pid':>7} {'ppid':>7} {'root':>7} {'age':>8} {'verdict':<20} {'attrib':<12} {'tree':<14} {'AF_SERVICE_ID':<34} command | cwd"
+def _render_table(rows: list[Row]) -> str:
+    head = (
+        f"{'pid':>7} {'ppid':>7} {'root':>7} {'age':>8} {'verdict':<20} {'attrib':<12} "
+        f"{'tree':<14} {'AF_SERVICE_ID':<34} command | cwd"
+    )
     lines = [head, "-" * len(head)]
     for r in rows:
         age = f"{r.age_s // 3600}h{(r.age_s % 3600) // 60:02d}m"
         lines.append(
-            f"{r.pid:>7} {r.ppid:>7} {r.root_pid:>7} {age:>8} {r.verdict:<20} {r.attribution:<12} {r.tree:<14} "
+            f"{r.pid:>7} {r.ppid:>7} {r.root_pid:>7} {age:>8} {r.verdict:<20} "
+            f"{r.attribution:<12} {r.tree:<14} "
             f"{r.env.get('AF_SERVICE_ID', '-'):<34} {r.command[:90]} | {r.cwd}"
         )
     return "\n".join(lines)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
     census = sub.add_parser("census", help="measure; never kills")
@@ -539,7 +582,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     reaper.add_argument("--min-age-s", type=int, default=CFG.DEFAULT_MIN_AGE_S)
     reaper.add_argument("--report", type=Path, help="append the JSON report line here")
     reaper.add_argument(
-        "--only-pid", type=int, action="append", default=[], help="restrict kills to these pids (repeatable)"
+        "--only-pid",
+        type=int,
+        action="append",
+        default=[],
+        help="restrict kills to these pids (repeatable)",
     )
     args = parser.parse_args(argv)
 
@@ -566,7 +613,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             print(_render_table(rows))
         return 0
-    report = reap(procs, rows, min_age_s=args.min_age_s, dry_run=args.dry_run, only_pids=args.only_pid)
+    report = reap(
+        procs, rows, min_age_s=args.min_age_s, dry_run=args.dry_run, only_pids=args.only_pid
+    )
     line = json.dumps(report)
     print(line)
     if args.report:

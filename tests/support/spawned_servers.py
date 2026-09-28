@@ -82,7 +82,16 @@ def spawn_test_server(
     stderr: IO[Any] | int | None = None,
 ) -> SpawnedServer:
     """Start ``argv`` under the guard, owned by THIS pytest process."""
-    guarded = [sys.executable, str(GUARD), "--owner-pid", str(os.getpid()), "--name", name, "--", *argv]
+    guarded = [
+        sys.executable,
+        str(GUARD),
+        "--owner-pid",
+        str(os.getpid()),
+        "--name",
+        name,
+        "--",
+        *argv,
+    ]
     proc = subprocess.Popen(
         guarded,
         cwd=cwd,
@@ -118,4 +127,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         server.stop()
     if leaked:
         names = ", ".join(f"{s.name}(group {s.pgid})" for s in leaked)
-        print(f"\n[spawned_servers] stopped {len(leaked)} server(s) a test never stopped: {names}", file=sys.stderr)
+        print(
+            f"\n[spawned_servers] stopped {len(leaked)} server(s) a test never stopped: {names}",
+            file=sys.stderr,
+        )

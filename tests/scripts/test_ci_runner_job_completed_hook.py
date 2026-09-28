@@ -31,7 +31,10 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="reads /proc")
+pytestmark = [
+    pytest.mark.skipif(sys.platform != "linux", reason="reads /proc"),
+    pytest.mark.requirement("DEVOPS-17"),
+]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = REPO_ROOT / "ops" / "ci" / "runner-hooks" / "job-completed.sh"
@@ -55,7 +58,9 @@ def _sleeper(
     env = {k: v for k, v in os.environ.items() if k != "RUNNER_NAME"}
     if runner_name is not None:
         env["RUNNER_NAME"] = runner_name
-    return subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return subprocess.Popen(
+        argv, cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
 
 
 def _run_hook(env: dict[str, str]) -> subprocess.CompletedProcess:

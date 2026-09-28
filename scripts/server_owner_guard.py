@@ -46,6 +46,7 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import signal
 import subprocess
@@ -53,7 +54,6 @@ import sys
 import time
 import tomllib
 from pathlib import Path
-
 
 # ---------------------------------------------------------------- config
 
@@ -107,10 +107,9 @@ def _log(message: str) -> None:
     owner whose death it is reporting, so the write can hit EPIPE; that must
     never stop the kill, which is why every caller signals FIRST and logs after.
     """
-    try:
+    # The reader is the dead owner; there is nobody left to tell.
+    with contextlib.suppress(BrokenPipeError):
         print(f"[server-owner-guard] {message}", file=sys.stderr, flush=True)
-    except BrokenPipeError:
-        pass  # the reader is the dead owner; there is nobody left to tell
 
 
 def _kill_own_group(reason: str) -> None:
@@ -134,7 +133,9 @@ def _kill_own_group(reason: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--owner-pid", type=int, required=True, help="the test runner that owns this server")
+    parser.add_argument(
+        "--owner-pid", type=int, required=True, help="the test runner that owns this server"
+    )
     parser.add_argument("--name", required=True, help="short server name, e.g. engine or vite")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="-- argv to run")
     args = parser.parse_args(argv)
@@ -144,8 +145,15 @@ def main(argv: list[str] | None = None) -> int:
 
     owner_identity = process_start_time(args.owner_pid)
     if owner_identity is None:
-        raise SystemExit(f"[ERROR] owner pid {args.owner_pid} is not running: refusing to start an unowned server")
-    env = {**os.environ, "AF_SERVICE_ID": testing_service_id(args.name), "OPENDJ_TEST_OWNER_PID": str(args.owner_pid)}
+        raise SystemExit(
+            f"[ERROR] owner pid {args.owner_pid} is not running: "
+            "refusing to start an unowned server"
+        )
+    env = {
+        **os.environ,
+        "AF_SERVICE_ID": testing_service_id(args.name),
+        "OPENDJ_TEST_OWNER_PID": str(args.owner_pid),
+    }
     child = subprocess.Popen(command, env=env)
 
     def _on_signal(signum: int, _frame: object) -> None:

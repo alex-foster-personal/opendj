@@ -6,7 +6,8 @@ Regression lines:
   - if a spawned server is alive after its fixture tears down then broken
   - if a spawned server is alive after a FAILING test's teardown then broken
   - if a spawned server is alive 5 s after pytest is SIGKILLed then broken
-  - if a guarded Playwright webServer is alive 5 s after the runner is SIGTERMed or SIGKILLed then broken
+  - if a guarded Playwright webServer is alive 5 s after the runner is
+    SIGTERMed or SIGKILLed then broken
   - if a spawned server's env lacks AF_SERVICE_ID=com.opendj.test.<name> then broken
   - if the guard starts a server for an owner pid that is not running then broken
   - if orphan_reaper kills a long-lived service carrying a non-test AF_SERVICE_ID then broken
@@ -15,6 +16,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -33,6 +35,8 @@ import pytest
 
 from scripts.server_owner_guard import process_start_time
 from tests.support.spawned_servers import SpawnedServer, spawn_test_server
+
+pytestmark = pytest.mark.requirement("DEVOPS-17")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAPER = REPO_ROOT / "scripts" / "orphan_reaper.py"
@@ -124,10 +128,8 @@ def cleanup_pids() -> Iterator[list[int]]:
     pids: list[int] = []
     yield pids
     for pid in pids:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
 
 def _inner_pytest(tmp_path: Path, body: str) -> subprocess.Popen[str]:
@@ -191,11 +193,15 @@ def test_previous_server_died_at_its_own_teardown():
     [("assert True", "2 passed"), ("assert False, 'deliberate failure'", "1 failed, 1 passed")],
     ids=["passing-test", "failing-test"],
 )
-def test_server_is_gone_after_teardown(tmp_path: Path, cleanup_pids: list[int], tail: str, expect_summary: str) -> None:
+def test_server_is_gone_after_teardown(
+    tmp_path: Path, cleanup_pids: list[int], tail: str, expect_summary: str
+) -> None:
     """The SECOND inner test checks the first one's server, so this pins the
     FIXTURE finalizer; the session-end sweep alone would run too late."""
     info = tmp_path / "server.json"
-    inner = _inner_pytest(tmp_path, INNER_TEMPLATE.format(server_code=SERVER_CODE, info=str(info), tail=tail))
+    inner = _inner_pytest(
+        tmp_path, INNER_TEMPLATE.format(server_code=SERVER_CODE, info=str(info), tail=tail)
+    )
     out, _ = inner.communicate(timeout=120)
     server = _read_server_info(info, timeout_s=1)
     cleanup_pids.append(server["pid"])
@@ -206,14 +212,19 @@ def test_server_is_gone_after_teardown(tmp_path: Path, cleanup_pids: list[int], 
 def test_server_is_gone_after_pytest_is_sigkilled(tmp_path: Path, cleanup_pids: list[int]) -> None:
     info = tmp_path / "server.json"
     inner = _inner_pytest(
-        tmp_path, INNER_TEMPLATE.format(server_code=SERVER_CODE, info=str(info), tail="time.sleep(600)")
+        tmp_path,
+        INNER_TEMPLATE.format(server_code=SERVER_CODE, info=str(info), tail="time.sleep(600)"),
     )
     server = _read_server_info(info)
     cleanup_pids.append(server["pid"])
     assert _alive(server["pid"]), "positive control: the server must be running before the kill"
     inner.kill()  # SIGKILL: no finalizer, no sessionfinish, no atexit
     inner.communicate(timeout=30)
-    _wait_for(lambda: not _alive(server["pid"]), GONE_WITHIN_S, f"server {server['pid']} to die with its owner")
+    _wait_for(
+        lambda: not _alive(server["pid"]),
+        GONE_WITHIN_S,
+        f"server {server['pid']} to die with its owner",
+    )
 
 
 def test_server_carries_its_testing_service_id(tmp_path: Path, cleanup_pids: list[int]) -> None:
@@ -286,12 +297,17 @@ export default defineConfig({{
 
 def _port_holder(port: int) -> int | None:
     out = subprocess.run(
-        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout.split()
     return int(out[0]) if out else None
 
 
-@pytest.mark.skipif(not PLAYWRIGHT_BIN.exists(), reason="frontend node_modules not installed (pnpm install)")
+@pytest.mark.skipif(
+    not PLAYWRIGHT_BIN.exists(), reason="frontend node_modules not installed (pnpm install)"
+)
 @pytest.mark.skipif(shutil.which("lsof") is None, reason="needs lsof to find the port holder")
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGKILL], ids=["SIGTERM", "SIGKILL"])
 def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
@@ -302,7 +318,9 @@ def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
     work.mkdir()
     try:
         server_command = f"{sys.executable} -m http.server {port} --bind 127.0.0.1"
-        (work / "guard.config.ts").write_text(PLAYWRIGHT_CONFIG.format(command=server_command, port=port))
+        (work / "guard.config.ts").write_text(
+            PLAYWRIGHT_CONFIG.format(command=server_command, port=port)
+        )
         (work / "hang.spec.ts").write_text(
             "import { test } from '@playwright/test';\n"
             "test('hang', async () => { await new Promise((r) => setTimeout(r, 290_000)); });\n"
@@ -319,20 +337,29 @@ def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
         cleanup_pids.append(holder)
         runner.send_signal(sig)
         runner.wait(timeout=30)
-        _wait_for(lambda: not _alive(holder), GONE_WITHIN_S, f"webServer {holder} to die with the runner ({sig.name})")
+        _wait_for(
+            lambda: not _alive(holder),
+            GONE_WITHIN_S,
+            f"webServer {holder} to die with the runner ({sig.name})",
+        )
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
 def _playwright_configs() -> list[Path]:
-    return [FRONTEND / "playwright.config.ts", *sorted((FRONTEND / "tests" / "e2e").glob("playwright.*.config.ts"))]
+    return [
+        FRONTEND / "playwright.config.ts",
+        *sorted((FRONTEND / "tests" / "e2e").glob("playwright.*.config.ts")),
+    ]
 
 
 def test_every_playwright_webserver_command_is_guarded() -> None:
     """The class, not an instance: a new config with a bare webServer command
     would leak exactly like the 43 this change wrapped."""
     configs = _playwright_configs()
-    assert len(configs) > 20, f"found only {len(configs)} configs: the glob is wrong, not the tree clean"
+    assert len(configs) > 20, (
+        f"found only {len(configs)} configs: the glob is wrong, not the tree clean"
+    )
     commands = 0
     unguarded: list[str] = []
     for config in configs:
@@ -349,14 +376,20 @@ def test_every_playwright_webserver_command_is_guarded() -> None:
 
 def _census_row(pid: int) -> dict:
     out = subprocess.run(
-        [sys.executable, str(REAPER), "census", "--json"], capture_output=True, text=True, check=True, timeout=120
+        [sys.executable, str(REAPER), "census", "--json"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
     ).stdout
     rows = [r for r in json.loads(out)["rows"] if r["pid"] == pid]
     assert rows, f"pid {pid} is not in the census at all: the control cannot fail"
     return rows[0]
 
 
-def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(cleanup_pids: list[int]) -> None:
+def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
+    cleanup_pids: list[int],
+) -> None:
     clean = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/")}
     # The service's command matches the census scope on purpose ("uvicorn"),
     # so the ONLY thing protecting it is its non-test AF_SERVICE_ID.
@@ -376,7 +409,11 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(cleanup_pi
         "/",
     )
     cleanup_pids.extend([service, test_server, agent_server])
-    _wait_for(lambda: all(_alive(p) for p in (service, test_server, agent_server)), 10, "controls to start")
+    _wait_for(
+        lambda: all(_alive(p) for p in (service, test_server, agent_server)),
+        10,
+        "controls to start",
+    )
 
     assert _census_row(service)["verdict"] == "service"
     assert _census_row(test_server)["verdict"] == "reapable"
@@ -398,7 +435,13 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(cleanup_pi
     )
     report = json.loads(result.stdout)
     assert result.returncode == 0, result.stderr
-    assert sorted(k["pid"] for k in report["kills"] if k["outcome"] == "killed") == sorted([test_server, agent_server])
+    assert sorted(k["pid"] for k in report["kills"] if k["outcome"] == "killed") == sorted(
+        [test_server, agent_server]
+    )
     assert report["killed"] == 2
     assert _alive(service), "the reaper killed a legitimately long-lived service"
-    _wait_for(lambda: not _alive(test_server) and not _alive(agent_server), GONE_WITHIN_S, "reaped servers to exit")
+    _wait_for(
+        lambda: not _alive(test_server) and not _alive(agent_server),
+        GONE_WITHIN_S,
+        "reaped servers to exit",
+    )
