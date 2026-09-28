@@ -21,6 +21,10 @@ Regression lines:
   - if cargo and rustc share one entry, or one's pin decides the other's verdict,
     then broken
   - if a probe with no readable runner .path verifies against the login PATH then broken
+  - if a rustup with no default fails the Rust probe tests instead of pinning an
+    installed toolchain (or skipping UNAVAILABLE when none is installed) then broken
+  - if the Rust probe tests skip or pin when the rustup default already runs then broken
+  - if the verifier reports anything but MISSING for a rustup with no default then broken
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -252,16 +257,22 @@ def _dirs_of(*tools: str) -> list[str]:
 
 
 def _probe_locally(
-    entries: list[dict], runner_dir: Path, home: Path, login_path: str | None = None
+    entries: list[dict],
+    runner_dir: Path,
+    login_path: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[list, str]:
-    """Run the verifier's own probe script under bash, as this user, no sudo."""
+    """Run the verifier's own probe script under bash, as this user, no sudo.
+
+    HOME stays this user's real one: the verifier's `sudo -H` gives the probe the
+    runner user's real HOME, and rustup reads its default toolchain from there."""
     proc = subprocess.run(
         ["bash", "-s"],
         input=rtv._probe_script(entries, str(runner_dir)),
         capture_output=True,
         text=True,
         timeout=120,
-        env={"PATH": login_path or os.environ["PATH"], "HOME": str(home)},
+        env={**(env or _passthrough_env()), "PATH": login_path or os.environ["PATH"]},
         check=False,
     )
     return rtv.classify(entries, proc.returncode, proc.stdout, proc.stderr), proc.stdout
@@ -286,14 +297,182 @@ def _rust_entries() -> tuple[str, str, list[dict]]:
     return cargo["name"], rustc["name"], [cargo, rustc]
 
 
-def _installed_version(tool: str) -> str:
-    """The real toolchain's own reported version, or UNAVAILABLE."""
-    if not shutil.which(tool):
-        pytest.skip(f"UNAVAILABLE: no real {tool} installed here, so its probe cannot run")
-    out = subprocess.run([tool, "--version"], capture_output=True, text=True, check=True).stdout
+# ----- a rustup with no default: pin an installed toolchain, or skip UNAVAILABLE ------------
+
+RUST_ENV_KEYS = ("HOME", "RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN")
+RUST_TOOLS = ("cargo", "rustc")
+TOOLCHAIN_LINE_RE = re.compile(r"^([A-Za-z0-9][\w.+-]*)(?: \(.*\))?$")
+
+
+@dataclass(frozen=True)
+class RustChoice:
+    """What the Rust probe tests do: run as-is, pin RUSTUP_TOOLCHAIN, or skip."""
+
+    pin: str | None
+    skip: str | None
+
+
+def _passthrough_env() -> dict[str, str]:
+    """PATH plus the real HOME and rustup/cargo state this user's tools read."""
+    kept = {key: os.environ[key] for key in RUST_ENV_KEYS if key in os.environ}
+    return {"PATH": os.environ["PATH"], **kept}
+
+
+def _installed_toolchains(listing: str) -> list[str]:
+    """Toolchain names from `rustup toolchain list`, which prints one per line
+    (suffixed `(default)` or `(active, default)`), or `no installed toolchains`."""
+    lines = (TOOLCHAIN_LINE_RE.match(line.strip()) for line in listing.splitlines())
+    return [line.group(1) for line in lines if line]
+
+
+def _choose_rust_toolchain(default_runs: bool, listing: str | None) -> RustChoice:
+    """Never a failure: a working default runs as-is, a rustup with no default is
+    pinned to an installed toolchain, and only no toolchain at all is UNAVAILABLE.
+    `listing` is None when no rustup is installed."""
+    if default_runs:
+        return RustChoice(pin=None, skip=None)
+    if listing is None:
+        return RustChoice(pin=None, skip="UNAVAILABLE: cargo/rustc do not run and no rustup")
+    toolchains = _installed_toolchains(listing)
+    if not toolchains:
+        return RustChoice(pin=None, skip="UNAVAILABLE: rustup has no installed toolchain")
+    return RustChoice(pin=toolchains[0], skip=None)
+
+
+def _all_rust_tools_run(env: dict[str, str]) -> bool:
+    """Availability is running the tool to exit 0, not finding it on PATH: a rustup
+    proxy with no default is on PATH and cannot run."""
+    for tool in RUST_TOOLS:
+        try:
+            proc = subprocess.run(
+                [tool, "--version"], env=env, capture_output=True, timeout=60, check=False
+            )
+        except FileNotFoundError:
+            return False
+        if proc.returncode != 0:
+            return False
+    return True
+
+
+def _rustup_listing(env: dict[str, str]) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["rustup", "toolchain", "list"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    assert proc.returncode == 0, f"`rustup toolchain list` failed: {proc.stderr}"
+    return proc.stdout
+
+
+def _rust_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """An env where the real cargo and rustc both run, or pytest.skip UNAVAILABLE."""
+    env = base or _passthrough_env()
+    default_runs = _all_rust_tools_run(env)
+    choice = _choose_rust_toolchain(default_runs, None if default_runs else _rustup_listing(env))
+    if choice.skip:
+        pytest.skip(choice.skip)
+    pinned = {**env, "RUSTUP_TOOLCHAIN": choice.pin} if choice.pin else env
+    assert _all_rust_tools_run(pinned), f"cargo/rustc do not run with RUSTUP_TOOLCHAIN={choice.pin}"
+    return pinned
+
+
+def _installed_version(tool: str, env: dict[str, str]) -> str:
+    """The real toolchain's own reported version."""
+    out = subprocess.run(
+        [tool, "--version"], env=env, capture_output=True, text=True, check=True
+    ).stdout
     found = re.match(rf"{tool} (\d+\.\d+\.\d+)\b", out)
     assert found, f"unexpected `{tool} --version` output: {out!r}"
     return found.group(1)
+
+
+LISTED = "1.98.1-x86_64-unknown-linux-gnu\nnightly-x86_64-unknown-linux-gnu\n"
+
+
+@pytest.mark.parametrize(
+    ("default_runs", "listing", "expected"),
+    [
+        (True, None, RustChoice(pin=None, skip=None)),
+        (True, "stable-aarch64-apple-darwin (default)\n", RustChoice(pin=None, skip=None)),
+        (True, LISTED, RustChoice(pin=None, skip=None)),
+        (False, LISTED, RustChoice(pin="1.98.1-x86_64-unknown-linux-gnu", skip=None)),
+        (
+            False,
+            "stable-x86_64-unknown-linux-gnu (active, default)\n",
+            RustChoice(pin="stable-x86_64-unknown-linux-gnu", skip=None),
+        ),
+        (
+            False,
+            "no installed toolchains\n",
+            RustChoice(pin=None, skip="UNAVAILABLE: rustup has no installed toolchain"),
+        ),
+        (False, "", RustChoice(pin=None, skip="UNAVAILABLE: rustup has no installed toolchain")),
+        (
+            False,
+            None,
+            RustChoice(pin=None, skip="UNAVAILABLE: cargo/rustc do not run and no rustup"),
+        ),
+    ],
+)
+def test_a_rustup_with_no_default_pins_or_skips_and_a_default_runs_as_is(
+    default_runs: bool, listing: str | None, expected: RustChoice
+) -> None:
+    """The choice the Rust probe tests make, over real `rustup toolchain list`
+    output shapes. No default is never a failure; a working default is never
+    skipped or re-pinned (the overshoot)."""
+    assert _choose_rust_toolchain(default_runs, listing) == expected
+
+
+def _rustup_home_without_default(tmp_path: Path, link_toolchains: bool) -> dict[str, str]:
+    """An env whose RUSTUP_HOME is a fresh dir with no settings.toml, so rustup has
+    no default; its toolchains dir links the real installed ones when asked."""
+    env = _rust_env()
+    try:
+        real_home = subprocess.run(
+            ["rustup", "show", "home"], env=env, capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except FileNotFoundError:
+        pytest.skip("UNAVAILABLE: no rustup here, so a rustup with no default cannot be built")
+    rustup_home = tmp_path / "rustup-home"
+    rustup_home.mkdir()
+    if link_toolchains:
+        (rustup_home / "toolchains").symlink_to(Path(real_home) / "toolchains")
+    bare = {key: value for key, value in env.items() if key != "RUSTUP_TOOLCHAIN"}
+    return {**bare, "RUSTUP_HOME": str(rustup_home)}
+
+
+def test_the_verifier_reports_missing_for_a_rustup_with_no_default(tmp_path: Path) -> None:
+    """The host state behind the runner failure: rustup proxies on PATH, toolchains
+    installed, no default. cargo/rustc cannot run there, so the verifier is right
+    to say MISSING; the tests pin RUSTUP_TOOLCHAIN and the same probe is OK."""
+    no_default = _rustup_home_without_default(tmp_path, link_toolchains=True)
+    assert not _all_rust_tools_run(no_default), "the no-default state still runs cargo/rustc"
+    cargo, rustc, entries = _rust_entries()
+    pinned_env = _rust_env(no_default)
+    assert pinned_env.get("RUSTUP_TOOLCHAIN"), pinned_env
+    versions = {tool: _installed_version(tool, pinned_env) for tool in RUST_TOOLS}
+    pinned = [
+        {**entries[0], "version": versions["cargo"]},
+        {**entries[1], "version": versions["rustc"]},
+    ]
+    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, *RUST_TOOLS))
+    missing, _ = _probe_locally(pinned, runner, env=no_default)
+    assert {r.name: r.status for r in missing} == {cargo: "MISSING", rustc: "MISSING"}, missing
+    ok, _ = _probe_locally(pinned, runner, env=pinned_env)
+    assert {r.name: r.status for r in ok} == {cargo: "OK", rustc: "OK"}, ok
+
+
+def test_a_rustup_with_no_toolchain_skips_unavailable(tmp_path: Path) -> None:
+    """With nothing installed there is nothing to pin: a named skip, not a failure."""
+    empty = _rustup_home_without_default(tmp_path, link_toolchains=False)
+    with pytest.raises(pytest.skip.Exception, match=r"^UNAVAILABLE: rustup has no installed"):
+        _rust_env(empty)
 
 
 @pytest.mark.parametrize(
@@ -314,12 +493,13 @@ def test_each_rust_executable_is_verified_against_its_own_pin(
     cargo cannot vouch for rustc, or the reverse. Each verdict also quotes its own
     executable's output, which a combined `cargo --version && rustc --version`
     would not."""
+    env = _rust_env()
     cargo, rustc, entries = _rust_entries()
-    installed = {"cargo": _installed_version("cargo"), "rustc": _installed_version("rustc")}
+    installed = {tool: _installed_version(tool, env) for tool in RUST_TOOLS}
     pins = {tool: "0.0.1" if tool == moved else version for tool, version in installed.items()}
     pinned = [{**entries[0], "version": pins["cargo"]}, {**entries[1], "version": pins["rustc"]}]
-    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "cargo", "rustc"))
-    results, _ = _probe_locally(pinned, runner, tmp_path)
+    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, *RUST_TOOLS))
+    results, _ = _probe_locally(pinned, runner, env=env)
     by_name = {r.name: r for r in results}
     assert {"cargo": by_name[cargo].status, "rustc": by_name[rustc].status} == expected, results
     assert by_name[cargo].got.startswith("cargo "), by_name[cargo]
@@ -351,7 +531,7 @@ def test_no_readable_runner_path_is_unknown_for_every_entry(tmp_path: Path, setu
         runner.mkdir()
     if setup == "empty-path-file":
         (runner / ".path").write_text("", encoding="utf-8")
-    results, stdout = _probe_locally([_bash_entry()], runner, tmp_path)
+    results, stdout = _probe_locally([_bash_entry()], runner)
     assert {r.status for r in results} == {"UNKNOWN"}, results
     assert ".path" in results[0].got, results
     assert rtv.exit_code(results) == 2
@@ -378,7 +558,7 @@ def test_a_readable_runner_path_is_the_path_every_check_uses(tmp_path: Path) -> 
     elsewhere = _entry("elsewhere", "1", kind="binary", provides=[outside])
     login_path = f"{outside_dir}:{os.environ['PATH']}"
     entries = [_bash_entry(job_dirs), elsewhere]
-    results, stdout = _probe_locally(entries, runner, tmp_path, login_path)
+    results, stdout = _probe_locally(entries, runner, login_path)
     assert f"{rtv.RECORD} PATHSRC {runner}" in stdout, stdout
     status = {r.name: (r.status, r.got) for r in results}
     assert status["bash"][0] == "OK", status
