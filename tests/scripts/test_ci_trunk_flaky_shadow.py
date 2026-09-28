@@ -20,6 +20,9 @@ Regression lines:
   - if the junit glob stops matching the staged per-shard reports then the
     upload sends nothing while the step still reads as having run
   - if the guard is dropped then a failed upload reads the same as a success
+  - if the guard stops counting report files then an upload given zero reports
+    (the uploader allows missing files) prints TRUNK_UPLOAD: success while
+    Trunk recorded nothing
   - if the steps stop gating on the token then every run annotates before the
     secret exists, which is pure noise
 """
@@ -27,8 +30,11 @@ Regression lines:
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -128,3 +134,43 @@ def test_trunk_guard_reports_a_failed_upload() -> None:
     guard = _step_by_name(INSIGHTS_JOB, GUARD_NAME)
     assert guard["env"]["TRUNK_UPLOAD"] == "${{ steps.trunk-flaky-tests.outcome }}"
     assert "::warning" in guard["run"] and "success" in guard["run"]
+
+
+def _run_guard(workdir: Path, outcome: str) -> str:
+    """Execute the guard's own run block, as the runner's default bash would."""
+    guard = _step_by_name(INSIGHTS_JOB, GUARD_NAME)
+    bash = shutil.which("bash")
+    assert bash, "bash is required to execute the guard"
+    done = subprocess.run(
+        [bash, "-e", "-c", guard["run"]],
+        cwd=workdir,
+        env={"TRUNK_UPLOAD": outcome, "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    return done.stdout
+
+
+@pytest.mark.parametrize("staged", [(), ("staged-1/outcome.txt",)])
+def test_trunk_guard_reports_zero_report_files_as_unmeasured(
+    tmp_path: Path, staged: tuple[str, ...]
+) -> None:
+    for rel in staged:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("success")
+    out = _run_guard(tmp_path, "success")
+    assert "Trunk shadow UNMEASURED" in out, out
+    assert "TRUNK_UPLOAD: success" not in out, out
+
+
+def test_trunk_guard_reports_success_when_reports_were_uploaded(tmp_path: Path) -> None:
+    for shard in (1, 3):
+        (tmp_path / f"staged-{shard}").mkdir()
+        (tmp_path / f"staged-{shard}" / f"junit-shard-{shard}.xml").write_text("<testsuites/>")
+    out = _run_guard(tmp_path, "success")
+    assert "TRUNK_UPLOAD: success (2 report files)" in out, out
+    assert "UNMEASURED" not in out, out
+    failed = _run_guard(tmp_path, "failure")
+    assert "Trunk shadow UNMEASURED" in failed and "outcome=failure" in failed, failed
