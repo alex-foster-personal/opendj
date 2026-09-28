@@ -39,7 +39,9 @@ const TRACK_TABLE = join(SRC, 'lib/components/rb/browser/TrackTable.svelte');
 /** Every ANLZ fetch entry point. Anything calling these can hit the network. */
 // ensureAnlzPrefetch is the shed-gated row-select variant PERFMODE-04 split out
 // of ensureAnlz (2f4981be0); it still starts a fetch, so it is an entry point.
-const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz'];
+// prefetchDeckStripAnlz is the deck strip's untracked wrapper around it (PR
+// #4011): listed so its callers stay penned in here, not just the wrapper.
+const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz', 'prefetchDeckStripAnlz'];
 
 /**
  * Files allowed to reach an /anlz fetch, and why. Each is O(1) in the number of
@@ -56,7 +58,11 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 		'lib/player/beatgrid-upgrade.ts',
 		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
 	],
-	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row']
+	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row'],
+	[
+		'lib/components/rb/deck/strip-anlz-prefetch.ts',
+		"StripWaveform's untracked warm-up; itself an entry point, so its callers are listed too"
+	]
 ]);
 
 let rowVocals;
