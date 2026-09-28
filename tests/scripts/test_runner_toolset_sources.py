@@ -1,8 +1,8 @@
-"""scripts/runner_toolset_sources.py reads every recipe the scan may reach.
+"""The runner toolset scan reads every workflow and recipe CI may reach.
 
-A recipe the parser drops is a recipe the completeness scan never reads, so a
-tool it runs could stay undeclared while the test passes. `just` itself is the
-reference: its `--dump` names every recipe and its dependencies.
+A workflow or recipe the scan drops is one it never reads, so a tool it runs
+could stay undeclared while the completeness test passes. For recipes, `just`
+itself is the reference: its `--dump` names every recipe and its dependencies.
 
 Regression lines:
   - if a justfile recipe with a default-valued parameter (`out="a:b"`, `N='2'`)
@@ -10,6 +10,8 @@ Regression lines:
     then broken
   - if a `:=` assignment, a Makefile `X = http://h:1` variable or a quoted `:`
     inside a recipe body parses as a recipe header then broken
+  - if a self-hosted workflow saved as `.yaml` is not scanned, or a `.yaml`
+    elsewhere under `.github/` is scanned as a workflow, then broken
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import runner_toolset_scan as scan
 from scripts import runner_toolset_sources as sources
 from scripts.runner_toolset_scan import REPO_ROOT
 
@@ -103,3 +106,30 @@ def test_assignments_and_quoted_colons_are_not_recipe_headers(
     assert {name: recipe.deps for name, recipe in parsed.items()} == expected, parsed
     first = next(iter(expected))
     assert any(":" in line for line in parsed[first].body), parsed[first]
+
+
+WORKFLOW = """\
+on: push
+jobs:
+  build:
+    runs-on: ${{{{ vars.CI_RUNS_ON_LINUX }}}}
+    steps:
+      - run: {tool} --version
+"""
+
+
+def test_a_yaml_workflow_is_scanned_and_other_yaml_under_github_is_not(tmp_path: Path) -> None:
+    """GitHub runs `.github/workflows/*.yml` and `*.yaml` alike; a `.yaml` file
+    elsewhere under `.github/` (dependabot, a template) is not a workflow."""
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "build.yml").write_text(WORKFLOW.format(tool="unzip"), encoding="utf-8")
+    (workflows / "lint.yaml").write_text(WORKFLOW.format(tool="zipinfo"), encoding="utf-8")
+    (tmp_path / ".github" / "dependabot.yaml").write_text(
+        WORKFLOW.format(tool="xmllint"), encoding="utf-8"
+    )
+    ctx = scan._Ctx(usage=scan.Usage())
+    scan.scan_workflows(ctx, tmp_path)
+    assert {"unzip", "zipinfo"} <= set(ctx.usage.executables), ctx.usage.executables
+    assert "xmllint" not in ctx.usage.executables, ctx.usage.executables
+    assert ctx.usage.scanned_files == {".github/workflows/build.yml", ".github/workflows/lint.yaml"}

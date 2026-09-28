@@ -8,8 +8,9 @@ that against `ci/runner-toolset.yml`, the declared toolset
 declared before a host first fails on it rather than after.
 
 Surfaces scanned:
-  1. `run:` blocks of every workflow job whose `runs-on` reads a
-     `vars.CI_RUNS_ON_*` variable (the self-hosted pool). Jobs pinned to
+  1. `run:` blocks of every workflow (`.github/workflows/*.yml` and `*.yaml`)
+     job whose `runs-on` reads a `vars.CI_RUNS_ON_*` variable (the
+     self-hosted pool). Jobs pinned to
      GitHub-hosted images (ubuntu-latest, macos-*, windows-*) run on an image
      GitHub provisions, so they are out of scope.
   2. Repo shell and Python scripts those blocks call, followed transitively
@@ -462,16 +463,23 @@ def scan_python_source(text: str, source: str, base_line: int, ctx: _Ctx) -> Non
 # ----- workflows and recipes ------------------------------------------------------------
 
 
-def scan_workflows(ctx: _Ctx) -> None:
-    for path in sorted(WORKFLOW_DIR.glob("*.yml")):
+def workflow_files(root: Path = REPO_ROOT) -> list[Path]:
+    """Every workflow GitHub runs: `.github/workflows/*.yml` and `*.yaml`, nothing else."""
+    workflows = root / WORKFLOW_DIR.relative_to(REPO_ROOT)
+    return sorted([*workflows.glob("*.yml"), *workflows.glob("*.yaml")])
+
+
+def scan_workflows(ctx: _Ctx, root: Path = REPO_ROOT) -> None:
+    for path in workflow_files(root):
+        rel = str(path.relative_to(root))
         for step in sources.self_hosted_steps(path):
-            ctx.usage.scanned_files.add(_rel(path))
+            ctx.usage.scanned_files.add(rel)
             run, shell = step.get("run"), sources.yaml_scalar(step.get("shell"))
             if not isinstance(run, yaml.ScalarNode) or shell in {"pwsh", "powershell", "cmd"}:
                 continue
             first_line = run.start_mark.line + (1 if run.style in {"|", ">"} else 0)
             scan = scan_python_source if shell.startswith("python") else scan_shell
-            scan(run.value, _rel(path), first_line, ctx)
+            scan(run.value, rel, first_line, ctx)
 
 
 def _scan_recipe(runner: str, name: str, ctx: _Ctx) -> None:
