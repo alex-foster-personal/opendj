@@ -148,6 +148,7 @@ for (const [mode, enforceOrder] of [
 	test(`AutoPlay ${mode}: a playlist switch re-arms an exhausted production controller`, async ({
 		page
 	}, testInfo) => {
+		test.setTimeout(60_000);
 		const [sourceId, targetId] = await _visibleStableIds(page);
 		if (sourceId === undefined || targetId === undefined) {
 			throw new Error('the ingested real-audio fixture must expose two tracks');

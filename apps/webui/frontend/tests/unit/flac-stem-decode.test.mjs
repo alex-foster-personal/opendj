@@ -204,6 +204,7 @@ test('the container is sniffed from the bytes, not assumed', () => {
 	assert.equal(decode.isFlacContainer(new ArrayBuffer(0)), false);
 });
 
+// REQ: PERF-STEMDEC-01
 test('four FLAC parts decode in four workers, concurrently, and every worker is parked', async () => {
 	const ctx = fakeContext();
 	const { factory, state } = fakeDecoderFactory();
@@ -236,6 +237,7 @@ test('four FLAC parts decode in four workers, concurrently, and every worker is 
 	});
 });
 
+// REQ: PERF-STEMDEC-01
 test('a non-FLAC bundle falls back rather than failing the load', async () => {
 	const ctx = fakeContext();
 	const { factory, state } = fakeDecoderFactory();
@@ -255,6 +257,7 @@ test('a non-FLAC bundle falls back rather than failing the load', async () => {
 	assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_refused, 'not-flac');
 });
 
+// REQ: PERF-STEMDEC-01
 test('a decode at the wrong sample rate is refused, not resampled by hope', async () => {
 	// THE trap: decodeAudioData resamples to the context rate and a WASM
 	// decoder does not. Four 48kHz stems in a 44.1kHz context agree with each
@@ -668,6 +671,7 @@ function lifecycleDecoderFactory({ readyRejects = false, resetRejects = false } 
 	return { factory, state };
 }
 
+// REQ: PERF-STEMDEC-01
 test('a decoder that never becomes ready is freed, not leaked per load', async () => {
 	// The leak this catches is not one worker: the failed checkout is not
 	// recorded as a lane trial, so every later stem load retries and strands
@@ -688,6 +692,7 @@ test('a decoder that never becomes ready is freed, not leaked per load', async (
 	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
 });
 
+// REQ: PERF-STEMDEC-01
 test('a pooled decoder that cannot reset is freed, not returned to the pool', async () => {
 	const ctx = fakeContext();
 	// Park four healthy decoders first, then make reset reject on reuse.
@@ -721,6 +726,7 @@ test('a pooled decoder that cannot reset is freed, not returned to the pool', as
 	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
 });
 
+// REQ: PERF-STEMDEC-01
 test('a decode the decoder complained about is refused, and its worker discarded', async () => {
 	// `decodeFile` RESOLVES on a damaged stream: it hands back the frames it
 	// managed plus an `errors` array. Everything else about that result looks

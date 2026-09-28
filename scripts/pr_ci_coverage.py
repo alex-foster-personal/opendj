@@ -23,6 +23,7 @@ MINI-PRD
             [then] paginate the full listing and still find it [else stop]
        [if] GitHub returns an incomplete or malformed API response
             [then] exit 10 with an explicit precondition error [else stop]
+       [if] a files listing is empty [then] see scripts/pr_ci_coverage_files.py (PR #3771)
        [if] an open non-docs PR head has mergeable_state dirty [then] name it unbuildable,
             not uncovered, and do not fail the run [else stop] (issue #1782)
     R2 Merge-race correction ..................................... done + regression
@@ -64,6 +65,7 @@ try:
         _parse_github_timestamp,
         _run_gh,
     )
+    from scripts.pr_ci_coverage_files import require_corroborated_empty_diff
     from scripts.review_docs_only import is_docs_only
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -206,8 +208,8 @@ def _recently_merged_prs(cutoff: datetime) -> list[tuple[int, str]]:
         page += 1
 
 
-def _changed_files(pr_number: int) -> list[str]:
-    """Read every changed filename for one PR, without a partial-page blind spot."""
+def _changed_files(pr_number: int, head_sha: str) -> list[str]:
+    """Read every changed filename for one PR head, without a partial-page blind spot."""
     files: list[str] = []
     for payload in _pages(f"repos/{REPO}/pulls/{pr_number}/files"):
         for item in payload:
@@ -218,7 +220,8 @@ def _changed_files(pr_number: int) -> list[str]:
                 )
             files.append(filename)
     if not files:
-        raise PreconditionError(f"PR #{pr_number} has no changed files")
+        pull = _gh_api_json(f"repos/{REPO}/pulls/{pr_number}")
+        require_corroborated_empty_diff(pr_number, head_sha, pull)
     return files
 
 
@@ -357,12 +360,9 @@ def _has_actions_run_at_head(head_sha: str) -> bool:
 def _requires_ci(files: list[str]) -> bool:
     """A PR needs CI if any changed file is outside ci.yml's docs exclusions.
 
-    ``files`` is non-empty for every real caller (``_changed_files`` raises on
-    an empty PR rather than returning one), so this is exactly the negation of
-    ``is_docs_only``: "at least one file is not docs" iff "not every file is
-    docs". Delegates to ``scripts.review_docs_only.is_docs_only``, which
-    parses ci.yml's own `pull_request.paths` filter, instead of a
-    hand-maintained prefix list that could drift from it.
+    Exactly ``not is_docs_only``, so ``[]`` still requires CI (a PROVEN-empty diff is
+    ``_inspect_pr``'s call). Delegates to ``scripts.review_docs_only.is_docs_only``, which
+    parses ci.yml's `pull_request.paths` filter rather than a drift-prone prefix list.
     """
     return not is_docs_only(files)
 
@@ -371,7 +371,8 @@ def _inspect_pr(pr: tuple[int, str] | OpenPr) -> Inspection:
     """Return one PR's number, head, docs-only state, coverage, and unbuildable flag."""
     number, head_sha, mergeable_state = (*pr, None)[:3]
     unbuildable = mergeable_state == "dirty"
-    requires_ci = _requires_ci(_changed_files(number))
+    files = _changed_files(number, head_sha)
+    requires_ci = bool(files) and _requires_ci(files)
     covered = False if unbuildable or not requires_ci else _has_actions_run_at_head(head_sha)
     return number, head_sha, requires_ci, covered, unbuildable
 
