@@ -342,6 +342,68 @@ def test_install_nightly_only_render_removes_a_stale_health_plist(
     assert not stale.exists(), "render-only --nightly-only left the stale health plist"
 
 
+def test_remove_stale_health_plist_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
+    """[if] the stale health plist cannot be deleted [then] remove_stale_health_plist returns
+    non-zero, even under `set -e` with `|| exit 1` (which disables set -e inside the function).
+    Calls the helper directly, so it runs on every host, launchctl or not (sol-review #4079 P1)."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    plist = locked / "com.af.perf-kpi-health.plist"
+    plist.write_text("<plist/>")
+    locked.chmod(0o555)
+    try:
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'set -e; source "{DECIDE_SCRIPT}"; '
+                'remove_stale_health_plist "$1" || exit 1; echo REACHED',
+                "_",
+                str(plist),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        locked.chmod(0o755)
+
+    assert plist.exists(), "control: the locked directory must really block deletion"
+    assert completed.returncode != 0, completed.stdout
+    assert "REACHED" not in completed.stdout
+
+
+def test_remove_stale_health_plist_removes_a_present_plist_and_tolerates_absence(
+    tmp_path: Path,
+) -> None:
+    """[if] the plist exists and can be deleted [then] it is removed and the helper exits 0;
+    [if] it is already absent [then] the helper exits 0 (control for the failure test above)."""
+    plist = tmp_path / "com.af.perf-kpi-health.plist"
+    plist.write_text("<plist/>")
+    for _ in range(2):
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{DECIDE_SCRIPT}" && remove_stale_health_plist "$1"',
+                "_",
+                str(plist),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert not plist.exists()
+
+
+@pytest.mark.skipif(
+    LAUNCHCTL_UNAVAILABLE,
+    reason=(
+        "UNAVAILABLE: without launchctl, cleanup_stale_health_agent returns via its "
+        "unknown branch before rm"
+    ),
+)
 def test_cleanup_stale_health_agent_fails_when_the_plist_cannot_be_removed(tmp_path: Path) -> None:
     """[if] the stale health plist cannot be deleted [then] cleanup_stale_health_agent
     returns non-zero and does not report it removed, even when called as `... || exit 1`,
