@@ -150,7 +150,7 @@ def test_a_leftover_outside_work_with_my_runner_name_dies(workspace: Path, tmp_p
         line = json.loads(report.read_text().splitlines()[-1])
         assert line["runner"] == TEST_RUNNER_NAME
         assert line["leftovers"] == 1 and line["remaining"] == 0
-        assert [k["pid"] for k in line["kills"]] == [mine.pid]
+        assert [(k["pid"], k["outcome"]) for k in line["kills"]] == [(mine.pid, "signalled")]
     finally:
         for proc in (mine, other_runner, unnamed):
             proc.kill()
