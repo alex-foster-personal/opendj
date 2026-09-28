@@ -728,8 +728,8 @@ class TestFallbackPaths:
             except BaseException as exc:  # noqa: BLE001 - report thread failures
                 results[tag] = ("error", repr(exc))
 
-        t1 = threading.Thread(target=_worker, args=("a", "note-A"))
-        t2 = threading.Thread(target=_worker, args=("b", "note-B"))
+        t1 = threading.Thread(target=_worker, args=("a", "note-A"), daemon=True)
+        t2 = threading.Thread(target=_worker, args=("b", "note-B"), daemon=True)
         t1.start()
         t2.start()
         t1.join(timeout=join_timeout_seconds)

@@ -250,6 +250,12 @@ async function _adopt(
  * middle of a PREPARE/START or another deck mutation
  * (discussion_r3968214009 P1 BLOCKING). */
 export async function loadAnalysisSource(): Promise<void> {
+	// A failed record-change refresh leaves `_recordRefreshPending` set; drain
+	// before mirroring a GET answer so the next poll retries instead of
+	// comparing own-against-own and skipping the deck refetch forever.
+	if (_recordRefreshPending) {
+		await _drainPendingRecordRefresh();
+	}
 	const mutation = _latestMutation;
 	const poll = ++_latestPollIssued;
 	const body = await unwrap(api.GET('/api/v1/analysis/source'));
@@ -425,7 +431,8 @@ async function _rollBackFailedSwitch(
 		if (attemptedToggleRevision !== undefined) {
 			rollbackBody.expected_toggle_revision = attemptedToggleRevision;
 		}
-		await unwrap(api.PUT('/api/v1/analysis/source', { body: rollbackBody }));
+		const body = await unwrap(api.PUT('/api/v1/analysis/source', { body: rollbackBody }));
+		analysisSourceState.features = _featuresOf(body);
 	} catch (exc) {
 		if (
 			(exc instanceof ApiError && exc.status === 409) ||
