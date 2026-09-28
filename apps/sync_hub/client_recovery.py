@@ -36,7 +36,12 @@ from typing import Any
 
 from apps.shared.state import normalize_locations
 from apps.sync_hub import capabilities, digest_diff, engine
-from apps.sync_hub.client_transport_ops import _machines_from, _rows_from, _transaction
+from apps.sync_hub.client_transport_ops import (
+    _fetch_hub_digest,
+    _machines_from,
+    _rows_from,
+    _transaction,
+)
 from apps.sync_hub.engine_identity_map import (
     _remove_remap_loser,
     effective_identity_remap,
@@ -224,7 +229,9 @@ def retire_stale_remaps(
     ``[]``. Every hub read happens first: the sync-eligible rows of
     ``tracks`` and of each divergent table (``GET /rows``), and the losers'
     identity-repair bundle (``GET /pull`` with ``bundle_stable_ids``, which
-    moves no cursor). Then ONE ``BEGIN IMMEDIATE`` transaction proves and
+    moves no cursor). A closing ``GET /digest`` must then show the hub where
+    the settle compared it (:func:`_hub_moved_since`), so every read saw
+    one hub state. Then ONE ``BEGIN IMMEDIATE`` transaction proves and
     repairs together (:func:`_retire_if_every_row_is_theirs`), so no local
     write can land between the proof and the change, and a crash rolls it
     all back: no moment exists with the remap gone and a moved row left.
@@ -247,12 +254,14 @@ def retire_stale_remaps(
         return []
     hub_rows.update(_hub_rows_of(channel, machine_id, divergent, skip=hub_rows.keys()))
     bundle = _loser_bundles(channel, machine_id, [loser for loser, _ in stale])
-    evidence = _Evidence(persisted, measured, divergent, stale, hub_rows, bundle)
-    refusal = _retire_if_every_row_is_theirs(conn, hub_machine_id, evidence)
+    refusal = _hub_moved_since(channel, machine_id, hub_digest)
+    if refusal is None:
+        evidence = _Evidence(persisted, measured, divergent, stale, hub_rows, bundle)
+        refusal = _retire_if_every_row_is_theirs(conn, hub_machine_id, evidence)
     if refusal is not None:
         log.error(
-            "kept %d stale identity remap(s) %s: %s. Retiring them would "
-            "overwrite that other cause, so the original outcome stands.",
+            "kept %d stale identity remap(s) %s: %s. The original outcome "
+            "stands; the next sync proves it again.",
             len(stale),
             stale,
             refusal,
@@ -280,6 +289,23 @@ def _hub_rows_of(
         for table in tables
         if table not in skip
     }
+
+
+def _hub_moved_since(
+    channel: HubTransport, machine_id: str, compared: SyncDigest
+) -> str | None:
+    """Why the hub reads may span two hub states, or ``None``.
+
+    A spoke cannot lock the hub, so the reads are bracketed instead
+    (optimistic concurrency): the settle's hub digest before them, and this
+    second one after the last. An unchanged changelog ``seq`` means the hub
+    accepted no write in between; an unchanged ``overall`` means no other
+    path moved its content either. A moved hub is proven again next sync.
+    """
+    now = _fetch_hub_digest(channel, machine_id)
+    if (now.seq, now.overall) == (compared.seq, compared.overall):
+        return None
+    return f"the hub moved during the proof (seq {compared.seq} -> {now.seq})"
 
 
 def _retire_if_every_row_is_theirs(
