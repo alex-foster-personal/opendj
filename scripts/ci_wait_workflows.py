@@ -14,6 +14,7 @@ in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,11 @@ RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
         "affected-test canary (non-blocking early signal)",
     }
 )
+
+#: A job `if:` that reads the in-run scope decision (`needs.<scope job>.outputs.in_scope`).
+_READS_IN_RUN_SCOPE = re.compile(r"needs\.[\w-]+\.outputs\.in_scope\b")
+#: Status functions that stop a job inheriting a skipped `needs` entry's skip.
+_RUNS_PAST_SKIPPED_NEEDS = re.compile(r"\b(?:always|cancelled)\(\)")
 
 # ----- workflow catalog ------------------------------------------------------
 
@@ -74,6 +80,37 @@ def _expand_matrix_job_name(name: str, matrix: dict) -> list[str]:
     return [name.replace(expr, str(value)) for value in values]
 
 
+def _needs_ids(job: dict) -> list[str]:
+    needs = job.get("needs") or []
+    return [needs] if isinstance(needs, str) else list(needs)
+
+
+def _scope_gated_job_ids(jobs: dict[str, dict]) -> frozenset[str]:
+    """Jobs of an in-run-scoped workflow that the scope decision can skip.
+
+    A job is scope-gated when its `if:` reads the scope output, or when it needs a
+    gated job and has no `always()` / `cancelled()` to run past that job's skip.
+    Every other job (the scope job itself, the `ci gate` / `e2e verdict` aggregators)
+    is created on every pull request, docs-only or not.
+    """
+    gated: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for job_id, job in jobs.items():
+            if job_id in gated:
+                continue
+            condition = str(job.get("if") or "")
+            reads_scope = bool(_READS_IN_RUN_SCOPE.search(condition))
+            inherits_skip = not _RUNS_PAST_SKIPPED_NEEDS.search(condition) and any(
+                need in gated for need in _needs_ids(job)
+            )
+            if reads_scope or inherits_skip:
+                gated.add(job_id)
+                changed = True
+    return frozenset(gated)
+
+
 def _job_display_names(job_id: str, job: dict) -> list[str]:
     raw_name = job.get("name", job_id)
     if not isinstance(raw_name, str):
@@ -91,12 +128,16 @@ class WorkflowCatalog:
     check_to_workflow: dict[str, str]
     workflow_filters: dict[str, tuple[tuple[str, ...] | None, tuple[str, ...] | None]]
     all_job_names: frozenset[str]
+    #: Names an in-run-scoped workflow creates on every pull request whatever the
+    #: changed paths, so a docs-only head must keep waiting for them.
+    always_created_job_names: frozenset[str] = frozenset()
 
     @classmethod
     def from_workflows_dir(cls, workflows_dir: Path) -> WorkflowCatalog:
         check_to_workflow: dict[str, str] = {}
         workflow_filters: dict[str, tuple[tuple[str, ...] | None, tuple[str, ...] | None]] = {}
         all_names: set[str] = set()
+        always_created: set[str] = set()
 
         for path in sorted(workflows_dir.glob("*.yml")):
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -121,21 +162,28 @@ class WorkflowCatalog:
                     )
                 paths, paths_ignore = in_run_scope
             workflow_filters[path.name] = (paths, paths_ignore)
-            for job_id, job in (document.get("jobs") or {}).items():
-                if not isinstance(job, dict):
-                    continue
+            jobs = {
+                job_id: job
+                for job_id, job in (document.get("jobs") or {}).items()
+                if isinstance(job, dict)
+            }
+            gated = _scope_gated_job_ids(jobs) if in_run_scope is not None else frozenset()
+            for job_id, job in jobs.items():
                 for display_name in _job_display_names(job_id, job):
                     check_to_workflow.setdefault(display_name, path.name)
                     all_names.add(display_name)
+                    if in_run_scope is not None and job_id not in gated:
+                        always_created.add(display_name)
 
         return cls(
             check_to_workflow=check_to_workflow,
             workflow_filters=workflow_filters,
             all_job_names=frozenset(all_names),
+            always_created_job_names=frozenset(always_created),
         )
 
     def applicable_pull_request_job_names(self, changed_files: Sequence[str]) -> frozenset[str]:
-        applicable: set[str] = set()
+        applicable: set[str] = set(self.always_created_job_names)
         for name, workflow in self.check_to_workflow.items():
             paths, paths_ignore = self.workflow_filters[workflow]
             if workflow_would_run_for_files(changed_files, paths=paths, paths_ignore=paths_ignore):
