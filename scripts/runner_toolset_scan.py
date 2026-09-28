@@ -14,8 +14,10 @@ Surfaces scanned:
      GitHub provisions, so they are out of scope.
   2. Repo shell and Python scripts those blocks call, followed transitively
      for shell scripts (`scripts/x.sh`, `python -m scripts.x`, `python
-     scripts/x.py`). A Python entry point is read for its own subprocess calls,
-     not for those of the modules it imports.
+     scripts/x.py`, also through a relative interpreter such as
+     `.venv/bin/python`). A Python entry point is read for its own subprocess
+     calls and, transitively, for those of the repo-local modules it imports
+     (`scripts.*`, `ops.*`, `apps.*`; third-party imports are not followed).
   3. justfile and Makefile recipes those blocks or scripts invoke (`just
      <recipe>`, `make <target>`), with their dependencies.
   4. Every Python file under `tests/`: `subprocess.*([...])` argv literals and
@@ -86,7 +88,8 @@ WORD_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+-]*$")
 APT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]+$")
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*(\[[^]]*\])?\+?=.*", re.S)
 REPO_SCRIPT_RE = re.compile(r"^(?:\./)?((?:scripts|ops|tests|\.github)/[\w./-]+)$")
-PY_MODULE_RE = re.compile(r"^(scripts|ops)(\.[A-Za-z_]\w*)+$")
+PATH_VARIABLE_PREFIX_RE = re.compile(r"^(?:\$\{?[A-Za-z_]\w*\}?|GHEXPR)/")
+PY_MODULE_RE = re.compile(r"^(scripts|ops|apps)(\.[A-Za-z_]\w*)+$")
 GH_EXPR_RE = re.compile(r"\$\{\{.*?\}\}", re.S)
 JUST_INTERP_RE = re.compile(r"\{\{.*?\}\}", re.S)
 SUBPROCESS_FUNCS = {"run", "call", "check_call", "check_output", "Popen", "create_subprocess_exec"}
@@ -224,23 +227,32 @@ class _Walker:
         return True
 
     def _word(self, tok: str) -> None:
-        """A word in command position."""
+        """A word in command position.
+
+        Wrapper and argument handling key on the basename, so `.venv/bin/python
+        -m scripts.x` queues scripts.x like `python -m scripts.x` does. Only a
+        bare name (a PATH lookup) or an absolute path (a host file) is recorded
+        as an executable the runner provides; a relative or variable-prefixed
+        path runs a workspace file, such as a venv's `.venv/bin/pytest`.
+        """
         self.at_command = False
-        name = tok.rsplit("/", 1)[-1] if tok.startswith("/") else tok
-        base = Path(name).name
+        base = tok.rsplit("/", 1)[-1]
         where = self._where()
+        repo_script = _repo_script_for(tok, self.source)
         if base in WRAPPERS:
             if WRAPPERS[base][2]:
                 self.ctx.usage.executables[base].add(where)
             self._skip_wrapper(base)
         elif tok in KEYWORDS_IGNORED or tok in self.functions or tok == lex.PLACEHOLDER:
             self.k += 1
-        elif REPO_SCRIPT_RE.match(tok):
+        elif repo_script:
+            _note_repo_path(repo_script, self.ctx)
             self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
             self._after_reaper(base)
-        elif WORD_RE.match(name) and not name.isdigit():
-            self.ctx.usage.executables[name].add(where)
-            self.k = _scan_arguments(name, self.toks, self.k + 1, where, self.ctx)
+        elif WORD_RE.match(base) and not base.isdigit():
+            if "/" not in tok or tok.startswith("/"):
+                self.ctx.usage.executables[base].add(where)
+            self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
         else:
             self.k += 1
 
@@ -263,6 +275,21 @@ class _Walker:
         if base == "ci_reap_port_holders.sh" and self.k < len(self.toks):
             self.at_command = self.toks[self.k][0] == "--"
             self.k += self.at_command
+
+
+def _repo_script_for(tok: str, source: str) -> str | None:
+    """The repo path a command token runs, when it names a repo script:
+    `scripts/x.sh`, `"${ROOT}/scripts/x.sh"`, or `"$HERE/x.sh"` beside its caller."""
+    direct = REPO_SCRIPT_RE.match(tok)
+    if direct:
+        return direct.group(1)
+    tail = PATH_VARIABLE_PREFIX_RE.sub("", tok, count=1)
+    if tail == tok:
+        return None
+    for candidate in (tail, str(Path(source).parent / tail)):
+        if REPO_SCRIPT_RE.match(candidate) and (REPO_ROOT / candidate).is_file():
+            return candidate
+    return None
 
 
 # ----- shell: arguments that carry nested programs -------------------------------------
@@ -355,11 +382,31 @@ def _note_argument_paths(args: list[str], ctx: _Ctx) -> None:
             _queue_python_module(args[idx + 1], ctx)
 
 
-def _queue_python_module(module: str, ctx: _Ctx) -> None:
+def _queue_python_module(module: str, ctx: _Ctx, entry: str = "__main__.py") -> None:
+    """Queue the file `module` names: `x.py`, else the package's `entry` file."""
     base = REPO_ROOT / Path(*module.split("."))
-    ctx.python_queue += [p for p in (base.with_suffix(".py"), base / "__main__.py") if p.is_file()][
-        :1
-    ]
+    ctx.python_queue += [p for p in (base.with_suffix(".py"), base / entry) if p.is_file()][:1]
+
+
+def _queue_python_imports(text: str, path: Path, ctx: _Ctx) -> None:
+    """Queue the repo-local modules (scripts.*, ops.*, apps.*) a CI Python file imports,
+    so a subprocess call moved into a helper is still scanned."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return
+    package = path.parent.relative_to(REPO_ROOT).parts
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            parent = package[: len(package) - node.level + 1] if node.level else ()
+            base = ".".join([*parent, *([node.module] if node.module else [])])
+            modules = [base, *(f"{base}.{alias.name}" for alias in node.names)]
+        else:
+            continue
+        for module in filter(PY_MODULE_RE.match, modules):
+            _queue_python_module(module, ctx, entry="__init__.py")
 
 
 def _note_repo_path(tok: str, ctx: _Ctx) -> None:
@@ -538,6 +585,8 @@ def _drain_queues(ctx: _Ctx) -> None:
         text = path.read_text(encoding="utf-8", errors="replace")
         python = not is_shell or text.startswith("#!/usr/bin/env python")
         (scan_python_source if python else scan_shell)(text, _rel(path), 0, ctx)
+        if python:
+            _queue_python_imports(text, path, ctx)
 
 
 def scan_repo() -> Usage:

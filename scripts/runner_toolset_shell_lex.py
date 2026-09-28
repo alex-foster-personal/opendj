@@ -132,10 +132,11 @@ def strip_comments_and_heredocs(text: str) -> tuple[str, list[Heredoc]]:
 
 
 def command_substitutions(text: str) -> list[tuple[int, int, str]]:
-    """(start, end, body) of each `$(...)` / backtick substitution.
+    """(start, end, body) of each `$(...)` / backtick / `<(...)` / `>(...)` substitution.
 
     Nothing inside single quotes or after a backslash counts, and a
-    double-quoted apostrophe (`"can't"`) does not open a quote.
+    double-quoted apostrophe (`"can't"`) does not open a quote. Process
+    substitution, like bash, only counts outside any quotes.
     """
     bodies: list[tuple[int, int, str]] = []
     quote = ""
@@ -149,7 +150,9 @@ def command_substitutions(text: str) -> list[tuple[int, int, str]]:
             i += 1
         elif ch in "'\"":
             quote = _toggle_quote(quote, ch)
-        elif text.startswith("$(", i) and not text.startswith("$((", i):
+        elif (text.startswith("$(", i) and not text.startswith("$((", i)) or (
+            not quote and text.startswith(("<(", ">("), i)
+        ):
             end = _matching_paren(text, i + 2)
             bodies.append((i, end, text[i + 2 : end - 1]))
         elif ch == "`" and text.find("`", i + 1) > 0:
