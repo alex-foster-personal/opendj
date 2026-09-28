@@ -496,9 +496,12 @@ def test_a_playwright_revision_dir_without_its_payload_is_missing(
     )
 
 
-def test_a_complete_playwright_install_verifies_ok(tmp_path: Path) -> None:
-    """Overshoot control on the real cache: a revision Playwright itself marked
-    INSTALLATION_COMPLETE, with its payload, verifies OK."""
+def test_a_complete_playwright_install_verifies_ok_and_its_marker_is_what_counts(
+    tmp_path: Path,
+) -> None:
+    """On the real cache: a revision Playwright itself marked INSTALLATION_COMPLETE
+    verifies OK (the overshoot control), and the same real payload without that
+    marker, as an install interrupted after unpacking leaves it, is MISSING."""
     cache = Path.home() / ".cache" / "ms-playwright"
     entries = _playwright_entries()
     absent = [d for _, d in entries if not (cache / d / "INSTALLATION_COMPLETE").is_file()]
@@ -507,3 +510,12 @@ def test_a_complete_playwright_install_verifies_ok(tmp_path: Path) -> None:
     runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "ls", "test"))
     results, _ = _probe_locally([e for e, _ in entries], runner)
     assert {r.status for r in results} == {"OK"}, results
+    home = tmp_path / "home"
+    for _, dirname in entries:
+        unmarked = home / ".cache" / "ms-playwright" / dirname
+        unmarked.mkdir(parents=True)
+        for part in (cache / dirname).iterdir():
+            if part.name != "INSTALLATION_COMPLETE":
+                (unmarked / part.name).symlink_to(part)
+    results, _ = _probe_locally([e for e, _ in entries], runner, env={"HOME": str(home)})
+    assert {r.status for r in results} == {"MISSING"}, results
