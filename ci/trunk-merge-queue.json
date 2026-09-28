@@ -47,14 +47,7 @@
     "renovate[bot]"
   ],
   "requiredStatuses": [
-    "e2e gate (webkit artifact + hermetic chromium)",
-    "frontend unit + check + build",
-    "pytest fast lane (shard 1 of 5)",
-    "pytest fast lane (shard 2 of 5)",
-    "pytest fast lane (shard 3 of 5)",
-    "pytest fast lane (shard 4 of 5)",
-    "pytest fast lane (shard 5 of 5)",
-    "quality ratchet (lint debt, complexity, coupling, dead code)",
-    "reqs-check + native wheel + contract drift"
+    "ci gate",
+    "e2e verdict"
   ]
 }

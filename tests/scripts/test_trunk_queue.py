@@ -5,6 +5,8 @@ Regression lines:
   - if settings_drift treats a reordered bot list as drift then every diff run is red for nothing
   - if the config file may carry `state` then a config push resumes a queue paused for an incident
   - if a required status names no pull_request job then the queue waits on a check that never comes
+  - if a required status is path-filtered or skippable then a docs-only draft times out in the queue
+  - if requiredStatuses drops an aggregator then the queue merges without that workflow's verdict
   - if directMergeMode is on then a PR can merge untested by the queue while e2e skips PR heads
   - if the merge method drifts from merge_commit then queue merges differ from the step-7 lane merge
   - if Trunk's status check is enabled while ci_wait does not know its app then every waiter raises
@@ -18,6 +20,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import ast
 import itertools
 import json
 import os
@@ -50,6 +53,77 @@ def _pull_request_check_names() -> set[str]:
         for job_id, job in workflow["jobs"].items():
             names.update(_expanded_job_names(job_id, job))
     return names
+
+
+def _every_pull_request_check_names(workflows: Path, target_branch: str) -> set[str]:
+    """Check-run names that RUN (not skip) on every pull request to `target_branch`, docs-only too.
+
+    A queue draft whose PRs are all docs-only must still produce every required status, or
+    Trunk waits out `testingTimeoutMinutes` and fails it (#3976, #4118, #4194). So a name counts
+    only when its workflow's pull_request trigger carries no path filter and admits the target
+    branch, and the job's `if` is PROVEN true on a pull_request event. An `if` this cannot
+    evaluate is unproven, never assumed true.
+    """
+    names: set[str] = set()
+    for path in sorted(workflows.glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text())
+        triggers = workflow.get(True) or workflow.get("on") or {}
+        if "pull_request" not in triggers:
+            continue
+        pr_filter = (triggers.get("pull_request") if isinstance(triggers, dict) else None) or {}
+        if "paths" in pr_filter or "paths-ignore" in pr_filter:
+            continue
+        if target_branch not in pr_filter.get("branches", [target_branch]):
+            continue
+        for job_id, job in workflow["jobs"].items():
+            if _job_runs_on_every_pull_request(job):
+                names.update(_expanded_job_names(job_id, job))
+    return names
+
+
+_IF_TOKEN = re.compile(
+    r"\s+|always\(\)|github\.event_name|inputs\.[A-Za-z0-9_-]+|'[^']*'|==|!=|&&|\|\||!(?=\s*\()|[()]"
+)
+_IF_TRANSLATION = {"&&": " and ", "||": " or ", "!": " not ", "always()": "True"}
+
+
+def _job_runs_on_every_pull_request(job: dict[str, Any]) -> bool:
+    """True only when the job's `if` evaluates true for pull_request with no workflow inputs."""
+    condition = str(job.get("if", "")).strip()
+    if condition.startswith("${{") and condition.endswith("}}"):
+        condition = condition[3:-2].strip()
+    if job.get("needs") and "always()" not in condition:
+        return False  # a skipped or failed dependency skips the job, so its check never passes
+    if not condition:
+        return True
+    tokens = _IF_TOKEN.findall(condition)
+    if "".join(tokens) != condition:
+        return False  # references a context this cannot evaluate: unproven
+    python = "".join(
+        _IF_TRANSLATION.get(tok)
+        or ("'pull_request'" if tok == "github.event_name" else None)
+        or ("''" if tok.startswith("inputs.") else tok)
+        for tok in tokens
+    )
+    return _evaluate_condition(ast.parse(python, mode="eval").body) is True
+
+
+def _evaluate_condition(node: ast.expr) -> object:
+    """Walk the translated `if`: boolean ops, `not`, `==`/`!=` and constants, nothing else."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _evaluate_condition(node.operand)
+    if isinstance(node, ast.BoolOp):
+        values = [_evaluate_condition(value) for value in node.values]
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        left, right = _evaluate_condition(node.left), _evaluate_condition(node.comparators[0])
+        if isinstance(node.ops[0], ast.Eq):
+            return left == right
+        if isinstance(node.ops[0], ast.NotEq):
+            return left != right
+    raise ValueError(f"unsupported workflow `if` construct: {ast.dump(node)}")
 
 
 def _expanded_job_names(job_id: str, job: dict[str, Any]) -> set[str]:
@@ -170,6 +244,54 @@ def test_every_required_status_is_a_pull_request_job() -> None:
     missing = sorted(set(DESIRED["requiredStatuses"]) - produced)
     assert DESIRED["requiredStatuses"], "an empty list tells Trunk to require nothing"
     assert not missing, f"required statuses no pull_request job produces: {missing}"
+
+
+AGGREGATORS = {"ci gate", "e2e verdict"}
+
+
+def test_the_queue_requires_exactly_the_always_created_aggregators() -> None:
+    """Per-job names are path-filtered or scope-skipped on docs-only PRs; the aggregators are not.
+
+    Exact, not a subset: dropping one merges without that workflow's verdict, which the
+    every-pull-request guard below cannot see because a smaller list still passes it.
+    """
+    assert set(DESIRED["requiredStatuses"]) == AGGREGATORS
+    assert len(DESIRED["requiredStatuses"]) == len(AGGREGATORS), "duplicates hide a missing name"
+
+
+def test_every_required_status_runs_on_every_pull_request_docs_only_included() -> None:
+    """Needs PR #4221's `ci gate` and `e2e verdict` on main; red before that merges, by design."""
+    always = _every_pull_request_check_names(WORKFLOWS, DESIRED["targetBranch"])
+    assert always, "no job proven to run on every pull request: the evaluator is broken"
+    not_always = sorted(set(DESIRED["requiredStatuses"]) - always)
+    assert not not_always, (
+        f"required statuses not created and run on a docs-only pull request: {not_always}. "
+        "Trunk waits testingTimeoutMinutes for them, then fails the draft."
+    )
+
+
+@pytest.mark.parametrize(
+    ("job", "runs"),
+    [
+        ({}, True),
+        ({"if": "${{ always() }}", "needs": ["scope", "gate"]}, True),
+        (
+            {
+                "if": "${{ always() && !(github.event_name == 'workflow_dispatch' "
+                "&& inputs.tier == 'fast') }}",
+                "needs": ["scope", "test"],
+            },
+            True,
+        ),
+        ({"needs": "scope"}, False),
+        ({"if": "needs.scope.outputs.in_scope == 'true'", "needs": "scope"}, False),
+        ({"if": "github.event_name == 'push'"}, False),
+        ({"if": "always() && vars.CI_RUNS_ON_LINUX != ''", "needs": "scope"}, False),
+    ],
+)
+def test_the_every_pull_request_evaluator(job: dict[str, Any], runs: bool) -> None:
+    """Both directions: proven-true runs, and scope-gated, push-only or unparseable does not."""
+    assert _job_runs_on_every_pull_request(job) is runs
 
 
 def test_the_queue_tests_every_pr_before_it_merges() -> None:
