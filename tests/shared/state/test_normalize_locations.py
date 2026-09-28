@@ -14,9 +14,13 @@ Acceptance criteria, one assertion block each:
   the brick is unrepaired -- broken.
 - if the surviving row is not the LWW winner, the collapse invented a winner
   the fleet will not agree on -- broken.
+- if an exact stamp tie does not keep the smaller location_id, the rule the
+  hub applies to the same pair, the spoke deletes the hub's survivor -- broken.
 - if the survivor's stored path is not NFC afterwards, the next NFC upsert
   mints the duplicate again -- broken.
 - if a lone NFD row (no twin) is not rewritten NFC in place -- broken.
+- if twins that differ in ``remote_url`` are not collapsed on their shared
+  path, the NFD rewrite raises UNIQUE before every sync -- broken.
 - if the collapse leaves no ``local_changelog`` entry for the survivor, the
   convergence never reaches a peer (ADR 08 point 2) -- broken.
 - if the dropped loser leaves a dangling changelog entry, the next push
@@ -50,6 +54,7 @@ _NFD_PATH = unicodedata.normalize("NFD", _NFC_PATH)
 
 _EARLY = "2026-08-30T09:00:00.000000+00:00"
 _LATE = "2026-08-31T09:00:00.000000+00:00"
+_OLDEST = "2026-08-29T09:00:00.000000+00:00"
 
 
 def _seed_machine_and_track(conn: sqlite3.Connection) -> None:
@@ -71,6 +76,7 @@ def _seed_location(
     location_id: str,
     file_path: str,
     updated_at: str,
+    remote_url: str | None = None,
 ) -> None:
     """Insert a raw local ``track_locations`` row, path bytes stored verbatim.
 
@@ -80,9 +86,9 @@ def _seed_location(
     """
     conn.execute(
         "INSERT INTO track_locations(location_id, stable_id, machine_id, kind, "
-        "role, file_path, available, created_at, updated_at, origin_device_id) "
-        "VALUES (?, ?, ?, 'local', 'primary', ?, 1, ?, ?, ?)",
-        (location_id, SID, MACHINE, file_path, updated_at, updated_at, MACHINE),
+        "role, file_path, remote_url, available, created_at, updated_at, origin_device_id) "
+        "VALUES (?, ?, ?, 'local', 'primary', ?, ?, 1, ?, ?, ?)",
+        (location_id, SID, MACHINE, file_path, remote_url, updated_at, updated_at, MACHINE),
     )
 
 
@@ -155,6 +161,138 @@ def test_nfd_winner_keeps_its_row_but_stored_nfc(
     assert len(rows) == 1
     assert rows[0][0] == "loc-nfd"
     assert rows[0][1] == _NFC_PATH, "the winning NFD row was not rewritten NFC"
+
+
+def test_an_exact_stamp_tie_keeps_the_smaller_location_id_like_the_hub(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Twins with identical ``(updated_at, origin_device_id)``: the hub keeps
+    the smaller primary key (``engine_apply._duplicate_incoming_wins``), so
+    the spoke must too, whatever order SQLite hands the rows back in.
+    """
+    _seed_machine_and_track(state_conn)
+    # The larger id goes in FIRST, so row order alone would elect it.
+    _seed_location(state_conn, location_id="loc-b", file_path=_NFD_PATH, updated_at=_LATE)
+    _seed_location(state_conn, location_id="loc-a", file_path=_NFC_PATH, updated_at=_LATE)
+    # The exact read ``scan`` makes: no covering index, so rowid order. A
+    # ``location_id``-only select is answered from the pk index instead and
+    # hides the bug behind pk order.
+    row_order = [
+        str(row[0])
+        for row in state_conn.execute(
+            "SELECT location_id, machine_id, stable_id, kind, file_path, "
+            "remote_url, updated_at, origin_device_id FROM track_locations"
+        )
+    ]
+    assert row_order == ["loc-b", "loc-a"], "control: row order must favor the wrong row"
+
+    collapses = normalize_locations.scan(state_conn)
+
+    assert collapses[0].winner.location_id == "loc-a", "the tie ignored the hub's pk rule"
+    assert [loser.location_id for loser in collapses[0].losers] == ["loc-b"]
+
+
+def test_twins_with_different_urls_collapse_on_their_shared_path(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """if an NFD row and its NFC twin with different URLs are not collapsed as one then broken
+
+    Each partial UNIQUE index applies on its own
+    (``apps.sync_hub.protocol_common.NATURAL_KEYS``), so the two rows collide
+    on the path alone. Grouped by path and URL together they were two lone
+    rows, and rewriting the NFD path NFC in place raised UNIQUE.
+    """
+    print("if an NFD row and its NFC twin with different URLs are not collapsed as one then broken")
+    _seed_machine_and_track(state_conn)
+    _seed_location(
+        state_conn, location_id="loc-nfd", file_path=_NFD_PATH, updated_at=_EARLY,
+        remote_url="https://a.example/cafe.mp3",
+    )
+    _seed_location(
+        state_conn, location_id="loc-nfc", file_path=_NFC_PATH, updated_at=_LATE,
+        remote_url="https://b.example/cafe.mp3",
+    )
+
+    collapses = normalize_locations.collapse_all(state_conn)
+
+    assert [(c.winner.location_id, [loser.location_id for loser in c.losers])
+            for c in collapses] == [("loc-nfc", ["loc-nfd"])]
+    rows = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations WHERE stable_id = ?",
+        (SID,),
+    ).fetchall()
+    assert rows == [("loc-nfc", _NFC_PATH, "https://b.example/cafe.mp3")], rows
+    assert _changelog_rows(state_conn, "loc-nfd") == [], "loser changelog not pruned"
+
+
+
+def _seed_a_collision_chain(conn: sqlite3.Connection) -> None:
+    """``newest`` shares a path with ``middle``, which shares a URL with ``oldest``.
+
+    ``newest`` and ``oldest`` share nothing, so which rows the hub kept
+    depends on the order it received them: ``oldest``, ``middle``, ``newest``
+    leaves only ``newest``, while ``newest`` first leaves ``newest`` and
+    ``oldest``.
+    """
+    _seed_machine_and_track(conn)
+    _seed_location(
+        conn, location_id="newest", file_path=_NFC_PATH, updated_at=_LATE,
+        remote_url="https://a.example/x.mp3",
+    )
+    _seed_location(
+        conn, location_id="middle", file_path=_NFD_PATH, updated_at=_EARLY,
+        remote_url=unicodedata.normalize("NFD", "https://b.example/café.mp3"),
+    )
+    _seed_location(
+        conn, location_id="oldest", file_path="/music/other.mp3", updated_at=_OLDEST,
+        remote_url="https://b.example/café.mp3",
+    )
+
+
+def test_a_collision_chain_is_left_alone_and_reported(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """if a collision chain is collapsed by a guess at the hub's survivors then broken
+
+    Only a group whose rows ALL collide pairwise has one survivor in every
+    order (the LWW newest). A chain has none this pass can know, so it
+    deletes and rewrites nothing there and reports the group.
+    """
+    print("if a collision chain is collapsed by a guess at the hub's survivors then broken")
+    _seed_a_collision_chain(state_conn)
+    before = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations ORDER BY location_id"
+    ).fetchall()
+
+    collapses = normalize_locations.collapse_all(state_conn)
+
+    assert collapses == [], f"a chain was collapsed by a guess: {collapses}"
+    after = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations ORDER BY location_id"
+    ).fetchall()
+    assert after == before, "a chain row was deleted or rewritten"
+    chains = normalize_locations.collision_chains(state_conn)
+    assert [sorted(row.location_id for row in chain) for chain in chains] == [
+        ["middle", "newest", "oldest"]
+    ], "the chain was not reported"
+
+
+def test_the_cli_reports_a_collision_chain_and_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if the CLI reports success over a chain it left alone then broken"""
+    print("if the CLI reports success over a chain it left alone then broken")
+    data_dir, db_path = _data_dir_with_db(tmp_path)
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_a_collision_chain(conn)
+    finally:
+        conn.close()
+
+    exit_code = normalize_locations.main(["--data-dir", str(data_dir), "--live"])
+
+    assert exit_code == normalize_locations.EXIT_QUARANTINED
+    assert "[CHAIN]" in capsys.readouterr().err, "the chain was not named on stderr"
 
 
 # ----- the lone-NFD case: rewrite in place, no delete ----------------------

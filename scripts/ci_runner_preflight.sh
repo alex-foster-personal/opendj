@@ -17,9 +17,18 @@
 # when python is missing masks a missing runner tool instead of surfacing
 # it, and defeats the point of this script.
 #
+# It then runs scripts/ci_stale_install_guard.py with each of `python` and
+# `python3` on PATH (setup-python's interpreter when the job has one): a job
+# whose interpreter can import music-dj-tools from OUTSIDE the checkout fails
+# here, naming the path, instead of silently testing a stale shared-interpreter
+# install (agentbox toolcache, Mon 28 Sep 2026; rule recorded in ADR PR #4214).
+# Outside a job (no GITHUB_WORKSPACE) the checkout is this script's own repo.
+#
 # Exit codes:
-#   0  -- every named executable resolves on PATH
-#   1  -- at least one is missing; prints the runner name and each culprit
+#   0  -- every named executable resolves on PATH, and no interpreter on PATH
+#         can import the project from outside the checkout
+#   1  -- an executable is missing, or a stale project install shadows the
+#         checkout; prints the runner name and each culprit
 #   2  -- usage error (no executables named)
 #
 # Usage:
@@ -49,3 +58,21 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 
 echo "[ci-runner-preflight] ok: runner '$RUNNER' has $*"
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly WORKSPACE="${GITHUB_WORKSPACE:-$(dirname "$SCRIPT_DIR")}"
+checked=0
+shadowed=0
+for py in python python3; do
+    command -v "$py" >/dev/null 2>&1 || continue
+    checked=$((checked + 1))
+    "$py" "$SCRIPT_DIR/ci_stale_install_guard.py" --workspace "$WORKSPACE" || shadowed=1
+done
+
+if [ "$checked" -eq 0 ]; then
+    echo "[ci-runner-preflight] stale-install guard: no python or python3 on PATH, so this job cannot import the project; nothing to check"
+fi
+if [ "$shadowed" -ne 0 ]; then
+    echo "[ci-runner-preflight] ERROR: runner '$RUNNER' has a music-dj-tools install outside the checkout $WORKSPACE (see above)" >&2
+    exit 1
+fi

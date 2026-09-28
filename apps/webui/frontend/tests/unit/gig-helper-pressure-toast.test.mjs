@@ -1,3 +1,5 @@
+// requirement: PERFMODE-16
+// [if] helper on and pressure warning [then] one warn toast per episode, [else stop].
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 

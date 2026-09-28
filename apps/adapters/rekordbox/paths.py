@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -330,7 +332,30 @@ def local_artwork_available(stable_id: str) -> bool | None:
     exactly the guessed verdict :func:`local_artwork` refuses to give for
     its own 503 -- this sibling used to make it anyway (#795).
     """
-    resolved = _resolve_local_audio_path(stable_id)
+    return _artwork_available_for_resolved(_resolve_local_audio_path(stable_id))
+
+
+def bulk_local_artwork_available(
+    state: sqlite3.Connection, stable_ids: Sequence[str],
+) -> dict[str, bool | None]:
+    """:func:`local_artwork_available` for many rows over ONE open state.db.
+
+    The listing hot path (issue #3962): the per-row function opens a fresh
+    read-only connection and re-runs the locations schema probes for every
+    row, which at 10,000 folder-imported tracks was 30 s to open one playlist.
+    This resolves every path through
+    :func:`apps.shared.state.locations.bulk_local_audio_paths`, whose
+    candidate order is the per-row resolver's, then applies the SAME
+    residency-first verdict, so a listed row and its rb-meta never disagree.
+    The caller owns ``state`` and has already established that state.db
+    exists (the per-row function answers False without one).
+    """
+    resolved = track_locations.bulk_local_audio_paths(state, stable_ids)
+    return {sid: _artwork_available_for_resolved(resolved[sid]) for sid in stable_ids}
+
+
+def _artwork_available_for_resolved(resolved: Path | None) -> bool | None:
+    """Residency first, then reader: the tri-state both callers above share."""
     if resolved is None:
         return False
     if not HAS_MUTAGEN:
@@ -646,6 +671,7 @@ __all__ = [
     "anlz_dir",
     "artwork_file",
     "audio_file",
+    "bulk_local_artwork_available",
     "empty_anlz_payload",
     "empty_hot_cue_slots",
     "is_streaming_path",

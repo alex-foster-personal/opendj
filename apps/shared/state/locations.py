@@ -347,6 +347,41 @@ def local_audio_path_raw(
     return (None, "track_path")
 
 
+def _first_local_location_paths(
+    conn: sqlite3.Connection, stable_ids: Sequence[str], machine_id: str,
+) -> dict[str, str]:
+    """Per id, the path of its FIRST local location row on ``machine_id``.
+
+    Only the first row per id counts, even when its path is empty: the per-id
+    reader (:func:`_local_audio_raw_candidates`) takes LIMIT 1 and then drops
+    an empty path rather than falling through to the next row.
+    """
+    location_by_id: dict[str, str] = {}
+    if not _locations_machine_scoped(conn):
+        return location_by_id
+    first_location_seen: set[str] = set()
+    for batch in _batched(list(stable_ids), ID_BIND_BATCH):
+        placeholders = ",".join("?" * len(batch))
+        rows = conn.execute(
+            f"SELECT stable_id, file_path FROM track_locations "
+            f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
+            f"AND deleted_at IS NULL AND kind = 'local' "
+            f"AND file_path IS NOT NULL "
+            f"ORDER BY stable_id, "
+            f"CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+            f"created_at, location_id",
+            (*batch, machine_id),
+        ).fetchall()
+        for stable_id, file_path in rows:
+            sid = str(stable_id)
+            if sid in first_location_seen:
+                continue
+            first_location_seen.add(sid)
+            if file_path:
+                location_by_id[sid] = str(file_path)
+    return location_by_id
+
+
 def bulk_local_audio_paths(
     conn: sqlite3.Connection,
     stable_ids: Sequence[str],
@@ -354,32 +389,19 @@ def bulk_local_audio_paths(
     machine_id: str | None = None,
     path_map: PathMap | None = None,
 ) -> dict[str, Path | None]:
-    """Materialised local audio paths for many ``stable_ids`` on this machine."""
+    """Materialised local audio paths for many ``stable_ids`` on this machine.
+
+    Answers exactly what :func:`local_audio_path` answers per id (the listing
+    batches through this, and a listed row must agree with its single-track
+    routes): the FIRST local location row in :func:`_local_audio_raw_candidates`
+    order is the location candidate, then ``tracks.file_path``.
+    """
     out: dict[str, Path | None] = {sid: None for sid in stable_ids}
     if not stable_ids:
         return out
     owner = machine_id or _sync_stamp.local_machine_id(conn)
-    location_by_id: dict[str, str] = {}
+    location_by_id = _first_local_location_paths(conn, stable_ids, owner)
     track_paths: dict[str, str | None] = {}
-
-    if _locations_machine_scoped(conn):
-        for batch in _batched(list(stable_ids), ID_BIND_BATCH):
-            placeholders = ",".join("?" * len(batch))
-            rows = conn.execute(
-                f"SELECT stable_id, file_path, role, created_at, location_id "
-                f"FROM track_locations "
-                f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
-                f"AND deleted_at IS NULL AND kind = 'local' "
-                f"AND file_path IS NOT NULL "
-                f"ORDER BY stable_id, "
-                f"CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
-                f"created_at, location_id",
-                (*batch, owner),
-            ).fetchall()
-            for stable_id, file_path, *_rest in rows:
-                sid = str(stable_id)
-                if sid not in location_by_id and file_path:
-                    location_by_id[sid] = str(file_path)
 
     tracks_deleted_filter = (
         " AND deleted_at IS NULL" if _tracks_soft_deletes(conn) else ""
