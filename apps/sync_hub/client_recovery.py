@@ -131,23 +131,30 @@ def stale_identity_remaps(
     counts as independent -- neither collapsed nor held by its own identity
     election. Both halves are required: a live loser beside an ABSENT
     survivor is the hub holding the opposite verdict, which the reversed
-    remap repair in ``apply_hub_identity_rejects`` already settles. A spoke
-    with no persisted remap asks nothing. Sorted for a stable log.
+    remap repair in ``apply_hub_identity_rejects`` already settles. The
+    survivor half is the pair's own OR the one its chain ends at, since a
+    chain ``A -> B -> C`` moves A's rows to C even while the hub lacks B
+    (:func:`_survivor_reach`). A spoke with no persisted remap asks nothing.
+    Sorted for a stable log.
     """
     persisted = load_identity_remap(conn)
     if not persisted:
         return []
-    return _both_halves_live(persisted, digest_diff.fetch_hub_rows(channel, machine_id, "tracks"))
+    hub_tracks = digest_diff.fetch_hub_rows(channel, machine_id, "tracks")
+    return _both_halves_live(conn, persisted, hub_tracks)
 
 
 def _both_halves_live(
-    persisted: Mapping[str, str], hub_tracks: Mapping[tuple[str, ...], Any]
+    conn: sqlite3.Connection,
+    persisted: Mapping[str, str],
+    hub_tracks: Mapping[tuple[str, ...], Any],
 ) -> list[tuple[str, str]]:
     live = {pk[0] for pk in hub_tracks}
+    reach = _survivor_reach(conn)
     return sorted(
         (loser, survivor)
         for loser, survivor in persisted.items()
-        if loser in live and survivor in live
+        if loser in live and reach[loser] & live
     )
 
 
@@ -235,7 +242,7 @@ def retire_stale_remaps(
     if not divergent:
         return []
     hub_rows: HubRows = {"tracks": digest_diff.fetch_hub_rows(channel, machine_id, "tracks")}
-    stale = _both_halves_live(persisted, hub_rows["tracks"])
+    stale = _both_halves_live(conn, persisted, hub_rows["tracks"])
     if not stale:
         return []
     hub_rows.update(_hub_rows_of(channel, machine_id, divergent, skip=hub_rows.keys()))
