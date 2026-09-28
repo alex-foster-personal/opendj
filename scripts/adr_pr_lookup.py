@@ -8,6 +8,7 @@ with no open PR yields None, and the caller falls back to commit messages.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,7 @@ DEFAULT_REPO = "maintainer/music-dj-tools"
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
     proc = subprocess.run(
-        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"],
+        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body,headRefName"],
         capture_output=True,
         text=True,
         timeout=60,
@@ -25,6 +26,31 @@ def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
     if proc.returncode != 0:
         raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
     return json.loads(proc.stdout)
+
+
+# Trunk Merge Queue tests a batch on a PR it opens itself, head ``trunk-merge/pr-<N>/<uuid>``
+# (``-bisection`` suffix when splitting a failed batch). Its body is Trunk's banner, never an
+# ADR declaration, so the batch is judged by its member PRs' own declarations instead.
+TRUNK_BATCH_HEAD_RE = re.compile(r"^trunk-(?:merge|temp)/pr-\d+/")
+_TESTED_SECTION = "## Pull Requests Being Tested"
+_MEMBER_LINK_RE = re.compile(r"github\.com/maintainer/music-dj-tools/pull/(\d+)")
+
+
+def trunk_batch_members(pr: dict) -> list[int] | None:
+    """Member PR numbers of a Trunk batch PR, or None when ``pr`` is not a Trunk batch.
+
+    A batch whose members cannot be read raises, so the caller reports UNKNOWN rather
+    than judging an empty body.
+    """
+    if not TRUNK_BATCH_HEAD_RE.match(pr.get("headRefName") or ""):
+        return None
+    _, found, section = (pr.get("body") or "").partition(_TESTED_SECTION)
+    members = list(dict.fromkeys(int(n) for n in _MEMBER_LINK_RE.findall(section)))
+    if not found or not members:
+        raise RuntimeError(
+            f"Trunk batch PR #{pr.get('number')} lists no member PRs under {_TESTED_SECTION!r}"
+        )
+    return members
 
 
 def pr_files(pr: int, repo: str = DEFAULT_REPO) -> list[str]:

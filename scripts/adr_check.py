@@ -23,6 +23,9 @@ Before any duplicate-id scan the CLI proves ``base`` is an ancestor of
 PR merge refs fail with ``merge ref is stale, update your branch`` instead
 of historical duplicate-id noise. The workflow ``edited`` trigger re-runs
 body declarations; :mod:`scripts.adr_ref_freshness` handles merge refs.
+A Trunk Merge Queue batch PR (head ``trunk-merge/pr-<N>/...``) carries only Trunk's
+banner, so its body is the union of its member PRs' bodies; a batch whose members
+cannot be read is UNKNOWN (exit 2).
 
 What would satisfy this check without satisfying its intent, and why it
 does not: a bare ``ADR: none`` with no ``because`` reason still fails --
@@ -49,7 +52,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.adr_pr_lookup import DEFAULT_REPO, current_pr_number, pr_files, pr_view
+from scripts.adr_pr_lookup import (
+    DEFAULT_REPO,
+    current_pr_number,
+    pr_files,
+    pr_view,
+    trunk_batch_members,
+)
 from scripts.adr_ref_freshness import DEFAULT_GATED_DIR, check_ref_freshness, emit_gate_result
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -464,9 +473,14 @@ def _resolve_body(
     if args.body_file:
         return Path(args.body_file).read_text(encoding="utf-8")
     pr_number = args.pr if args.pr is not None else current_pr_number(repo_root, args.repo)
-    if pr_number is not None:
-        return fetch(pr_number).get("body") or ""
-    return git_commit_body(args.base, repo_root)
+    if pr_number is None:
+        return git_commit_body(args.base, repo_root)
+    pr = fetch(pr_number)
+    members = trunk_batch_members(pr)
+    if members is None:
+        return pr.get("body") or ""
+    # A Trunk batch carries every member's diff, so it carries every member's declaration.
+    return "\n".join(fetch(member).get("body") or "" for member in members)
 
 
 def main(
