@@ -189,3 +189,52 @@ fn wall_clock_refuses_advance_and_reports_state() {
     drop(stdin); // EOF: the engine exits when its supervisor goes away.
     assert!(child.wait().unwrap().success());
 }
+
+/// A load that fails to decode refuses the commands queued behind it rather
+/// than running them against the deck's previous track. A FIFO holds the
+/// decode open, so the queued command is deterministically behind the load.
+#[cfg(unix)]
+#[test]
+fn a_failed_load_refuses_the_commands_queued_behind_it() {
+    let d = temp_dir("cli-failed-load");
+    let good = write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 5.0));
+    let fifo = d.join("slow.wav");
+    assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "wall"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut result_for = |id: &str| -> Value {
+        for line in lines.by_ref() {
+            let v: Value = serde_json::from_str(&line.unwrap()).unwrap();
+            if v["type"] == "result" && v["id"] == id {
+                return v;
+            }
+        }
+        panic!("no result for {id}");
+    };
+    let load = |id: &str, path: &std::path::Path| {
+        json!({"id": id, "cmd": {"type": "load", "deck": 1, "path": path.to_str().unwrap()}})
+    };
+    writeln!(stdin, "{}", load("good", &good)).unwrap();
+    assert_eq!(result_for("good")["ok"], true);
+
+    writeln!(stdin, "{}", load("bad", &fifo)).unwrap();
+    writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+    // Feed the decoder bytes that are not audio, then close: the load fails.
+    std::fs::write(&fifo, b"not audio at all").unwrap();
+    assert_eq!(result_for("bad")["ok"], false);
+    let queued = result_for("queued");
+    assert_eq!(queued["ok"], false, "{queued}");
+    assert!(queued["error"]["message"].as_str().unwrap().contains("waited on failed"), "{queued}");
+
+    // Control: with nothing pending, the same command runs on the old track.
+    writeln!(stdin, "{}", json!({"id": "direct", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+    assert_eq!(result_for("direct")["ok"], true);
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+}

@@ -240,28 +240,21 @@ impl Control {
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
+        // True when the load will not reach the engine.
         let dropped = match result {
             Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
             Err(e) => {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
                 self.reply(id.as_deref(), Err(e));
-                false
+                true
             }
         };
         let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         if dropped {
-            // The load never reached the engine, so the work queued behind it
-            // would run against the previous track. Fail it instead: the
-            // caller sees every command after the dropped load refused.
-            for item in q {
-                let id = match item {
-                    Queued::Cmd(id, _) | Queued::Load(id, _) => id,
-                };
-                self.reply(
-                    id.as_deref(),
-                    Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on was dropped; command dropped")),
-                );
-            }
+            // The load failed to decode or never reached the engine, so the
+            // work queued behind it would run against the previous track.
+            // Fail it instead: every command after the failed load is refused.
+            self.refuse_queued(q);
             return;
         }
         // Release this deck's queue in order. A queued load re-arms the wait,
@@ -271,6 +264,18 @@ impl Control {
                 Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
                 Queued::Load(id, spec) => self.load(id, spec),
             }
+        }
+    }
+
+    fn refuse_queued(&self, q: VecDeque<Queued>) {
+        for item in q {
+            let id = match item {
+                Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+            };
+            self.reply(
+                id.as_deref(),
+                Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on failed; command dropped")),
+            );
         }
     }
 

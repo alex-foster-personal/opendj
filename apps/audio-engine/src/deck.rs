@@ -434,8 +434,12 @@ impl Deck {
             let len = (b - a).min(end);
             let a = (a + delta).clamp(0.0, end - len);
             self.looping = Some((a, a + len));
-            if self.pos < a || self.pos >= a + len {
-                self.pos = self.pos.clamp(a, a + len);
+            // Keep the playhead in [a, a + len): at the loop-out point itself
+            // the end-of-track check would stop a loop that ends at the end.
+            if self.pos < a {
+                self.pos = a;
+            } else if self.pos >= a + len {
+                self.pos = a + (self.pos - (a + len)) % len;
             }
         }
         Ok(())
@@ -682,7 +686,15 @@ mod tests {
         d.seek(18500.0).unwrap();
         d.beat_jump(4.0).unwrap();
         assert_eq!(d.looping, Some((912000.0, 960000.0)));
-        assert!(d.pos >= 912000.0 && d.pos <= 960000.0, "pos {}", d.pos);
+        assert!(d.pos >= 912000.0 && d.pos < 960000.0, "pos {}", d.pos);
+        // The deck keeps looping there rather than stopping at the track end.
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; 480 * 2];
+        for _ in 0..200 {
+            d.render_add(&mut buf, 48000.0);
+            assert!(d.playing, "stopped at pos {}", d.pos);
+        }
+        d.play(false).unwrap();
         // Control: a jump that stays inside the track moves the loop unchanged.
         d.set_loop(Some((4000.0, 6000.0))).unwrap();
         d.seek(5000.0).unwrap();
