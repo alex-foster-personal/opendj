@@ -19,6 +19,8 @@ Surfaces scanned:
      `.venv/bin/python`). A Python entry point is read for its own subprocess
      calls and, transitively, for those of the repo-local modules it imports
      (`scripts.*`, `ops.*`, `apps.*`; third-party imports are not followed).
+     A command launched from another's arguments (`find -exec`, `uv run`,
+     `doppler run --`: scripts/runner_toolset_shell_lex.LAUNCHERS) is walked too.
   3. justfile and Makefile recipes those blocks or scripts invoke (`just
      <recipe>`, `make <target>`), with their dependencies.
   4. Every Python file under `tests/`: `subprocess.*([...])` argv literals and
@@ -251,6 +253,8 @@ class _Walker:
             _note_repo_path(repo_script, self.ctx)
             self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
             self._after_reaper(base)
+        elif tok in lex.FIND_ACTIONS:  # find's next action, after an escaped `\;` separator
+            self.k = _scan_arguments("find", self.toks, self.k, where, self.ctx)
         elif WORD_RE.match(base) and not base.isdigit():
             if "/" not in tok or tok.startswith("/"):
                 self.ctx.usage.executables[base].add(where)
@@ -310,6 +314,10 @@ def _scan_arguments(name: str, toks: list[tuple[str, int]], k: int, where: str, 
     handler = ARGUMENT_HANDLERS.get(name)
     if handler:
         handler(name, args, where, ctx)
+    if name in lex.LAUNCHERS:
+        source, line = where.rsplit(":", 1)
+        for argv in lex.launched_commands(name, [tok for tok, _ in toks[k:]]):
+            scan_shell(shlex.join(argv), source, int(line) - 1, ctx)
     if name == "ci_reap_port_holders.sh" or end >= len(toks) or toks[end][0] != "--":
         return end
     return _scan_arguments(name, toks, end + 1, where, ctx)

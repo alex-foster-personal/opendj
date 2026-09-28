@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass, field
+from itertools import takewhile
 
 PUNCT = set(";&|()<>")
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w-]*)\1")
@@ -220,3 +221,48 @@ def is_separator(tok: str) -> bool:
 
 def is_redirect(tok: str) -> bool:
     return bool(tok) and set(tok) <= PUNCT and ("<" in tok or ">" in tok)
+
+
+# ----- commands launched from inside another command's arguments -------------------
+
+FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+UV_RUN_FLAGS_WITH_VALUE = frozenset(
+    {"--with", "--with-editable", "--with-requirements", "--project", "--directory"}
+    | {"--python", "-p", "--extra", "--group", "--package", "--env-file", "--index"}
+)
+# name: (tokens that start the launched command, flags that take a value before it,
+# the workspace dir it resolves in first, or "" when it is a PATH lookup on the runner).
+LAUNCHERS: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
+    "find": (FIND_ACTIONS, frozenset(), ""),
+    "doppler": (frozenset({"--"}), frozenset(), ""),
+    "uv": (frozenset({"run"}), UV_RUN_FLAGS_WITH_VALUE, ".venv/bin/"),
+    "pnpm": (frozenset({"exec"}), frozenset(), "node_modules/.bin/"),
+}
+
+
+def launched_commands(name: str, toks: list[str]) -> list[list[str]]:
+    """The argv of each command `name` launches from its arguments `toks`.
+
+    `find ... -exec CMD {} +` (a `;` terminator is already a separator token),
+    `doppler run -- CMD`, `uv run [flags] CMD`, `pnpm exec CMD`. A workspace
+    launcher's CMD is prefixed with its workspace dir, which the walker reads as a
+    workspace file rather than an executable the runner provides.
+    """
+    starts, flags_with_value, workspace = LAUNCHERS[name]
+    args = list(takewhile(lambda tok: not is_separator(tok), toks))
+    found: list[list[str]] = []
+    idx = 0
+    while idx < len(args):
+        idx += 1
+        if args[idx - 1] not in starts:
+            continue
+        while name != "find" and idx < len(args) and args[idx].startswith("-"):
+            idx += 2 if args[idx] in flags_with_value else 1
+        end = len(args)
+        if name == "find":
+            end = next((j for j in range(idx + 1, end) if args[j - 1 : j + 1] == ["{}", "+"]), end)
+        if idx < end:
+            cmd = args[idx] if "/" in args[idx] or not workspace else workspace + args[idx]
+            found.append([cmd, *args[idx + 1 : end]])
+        idx = end if name == "find" else len(args)
+    return found
