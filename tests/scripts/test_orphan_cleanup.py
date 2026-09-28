@@ -14,10 +14,12 @@ Regression lines:
   - if the guard starts a server for an owner pid that is not running then broken
   - if orphan_reaper kills a long-lived service carrying a non-test AF_SERVICE_ID then broken
   - if orphan_reaper leaves an orphaned test-harness or agent server alive then broken
+  - if a root-conftest pytest plugin needs more than stdlib + pytest to import then broken
 """
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import os
@@ -371,6 +373,62 @@ def test_every_playwright_webserver_command_is_guarded() -> None:
                 unguarded.append(f"{config.name}: command: {match.group(1)}")
     assert commands >= 40, f"only {commands} webServer commands found: the pattern stopped matching"
     assert not unguarded, "unguarded webServer commands:\n" + "\n".join(unguarded)
+
+
+# A pytest-only toolchain (ci.yml's quality job runs `uv run --isolated
+# --no-project --with pytest`) has the stdlib, pytest and whatever pytest itself
+# loads, plus this repo's own packages from the checkout. Nothing else.
+FIRST_PARTY_PACKAGES = ("apps", "scripts", "tests")
+_BARE_IMPORT_PROBE = """
+import importlib, importlib.abc, sys
+import pytest  # noqa: F401  (loads pytest's own dependencies BEFORE the gate)
+allowed = set(sys.stdlib_module_names) | {m.split(".")[0] for m in sys.modules}
+allowed |= set(sys.argv[1].split(","))
+class RefuseThirdParty(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] not in allowed:
+            raise ImportError(f"not in a pytest-only toolchain: {name}")
+sys.meta_path.insert(0, RefuseThirdParty())
+for module in sys.argv[2:]:
+    importlib.import_module(module)
+print("imported", len(sys.argv) - 2)
+"""
+
+
+def _import_with_pytest_only(modules: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-c", _BARE_IMPORT_PROBE, ",".join(FIRST_PARTY_PACKAGES), *modules],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def _root_conftest_plugins() -> list[str]:
+    tree = ast.parse((REPO_ROOT / "conftest.py").read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "pytest_plugins" for t in node.targets
+        ):
+            return [ast.literal_eval(element) for element in node.value.elts]  # type: ignore[attr-defined]
+    raise AssertionError("root conftest.py has no pytest_plugins list")
+
+
+def test_root_conftest_plugins_import_with_pytest_only() -> None:
+    """The class: the root conftest loads these in EVERY pytest run, including
+    the quality job's pytest-only toolchain, where a psutil import killed
+    collection (PR #4270, first CI run)."""
+    plugins = _root_conftest_plugins()
+    assert "tests.support.spawned_servers" in plugins, plugins
+    blocked = _import_with_pytest_only(["psutil"])
+    assert blocked.returncode != 0 and "not in a pytest-only toolchain: psutil" in blocked.stderr, (
+        "the probe did not refuse psutil, so it cannot catch the defect it exists for"
+    )
+    result = _import_with_pytest_only(plugins)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip() == f"imported {len(plugins)}", result.stdout
 
 
 # ---------------------------------------------------------------- reaper

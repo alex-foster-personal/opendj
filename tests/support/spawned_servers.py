@@ -37,8 +37,6 @@ from typing import IO, Any
 
 import pytest
 
-from apps.shared.process_groups import group_has_live_member, signal_group, wait_group_gone
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "server_owner_guard.py"
 TERM_GRACE_S = 10.0
@@ -60,6 +58,15 @@ class SpawnedServer:
 
     def stop(self) -> None:
         """Kill the whole group; raise if anything in it is still running."""
+        # Lazy on purpose: the root conftest loads this plugin in EVERY pytest
+        # run, including pytest-only toolchains without psutil (ci.yml quality
+        # job). Only a run that actually spawned a server reaches this line.
+        from apps.shared.process_groups import (
+            group_has_live_member,
+            signal_group,
+            wait_group_gone,
+        )
+
         _LIVE.pop(self.pgid, None)
         for sig, grace in ((signal.SIGTERM, TERM_GRACE_S), (signal.SIGKILL, KILL_GRACE_S)):
             if signal_group(self.pgid, sig) is not None:
