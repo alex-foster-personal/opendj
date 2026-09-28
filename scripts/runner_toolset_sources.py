@@ -26,6 +26,15 @@ import yaml
 from scripts import runner_toolset_shell_lex as lex
 
 SELF_HOSTED_MARKER = "CI_RUNS_ON"
+# A recipe header: name, parameters, `:` (never `:=`), dependencies. A parameter
+# default is quoted, backticked or parenthesized (`out="a:b"`, `N='2'`), so a `:`
+# inside quotes is not the header's colon, and a bare `=` (a Makefile `X = y`)
+# never starts a default.
+RECIPE_HEADER_RE = re.compile(
+    r"^@?([A-Za-z_][\w.-]*)"
+    r"((?:\"[^\"]*\"|'[^']*'|`[^`]*`|[^:\"'`=\n]|=(?=[\"'`(]))*?)"
+    r":(?!=)(.*)$"
+)
 
 
 @dataclass
@@ -80,7 +89,7 @@ def parse_recipes(path: Path) -> dict[str, Recipe]:
     if path.name == "Makefile":
         text = resolve_make_variables(text)
     recipes: dict[str, Recipe] = {}
-    header = re.compile(r"^@?([A-Za-z_][\w.-]*)([^:=]*?):(?!=)(.*)$")
+    header = RECIPE_HEADER_RE
     skip = ("set ", "export ", "import ", "alias ", "mod ", ".")
     current: str | None = None
     for n, line in enumerate(text.split("\n")):
