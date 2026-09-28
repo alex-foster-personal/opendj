@@ -347,6 +347,10 @@ def _tied_rows_the_bundle_would_replace(
     only loses a local change that was never stamped. The one tie it is
     meant to win is the remap's own in-place move. Compared on the columns
     both sides carry, so a schema newer on one side cannot fake a change.
+    A tied playlist's members need no check here. A member naming a stored
+    loser holds its whole playlist out of the digest; the hub never offers a
+    held playlist, so its copy then diverges and no loser owns it, and a hold
+    begun after the settle moves the digest instead.
     """
     clobbered: list[RowKey] = []
     for row in rows:
