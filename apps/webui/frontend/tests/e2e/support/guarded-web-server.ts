@@ -38,7 +38,9 @@ export function guardedWebServerCommand(name: string, command: string): string {
 			`guardedWebServerCommand: ${VENV_PYTHON} is missing; run \`uv sync --extra dev\` at ${REPOSITORY_ROOT}`
 		);
 	}
-	return [
+	// `exec` so the guard REPLACES Playwright's detached shell and leads the
+	// webServer's process group; the guard refuses to start otherwise.
+	return `exec ${[
 		VENV_PYTHON,
 		GUARD,
 		'--owner-pid',
@@ -51,5 +53,5 @@ export function guardedWebServerCommand(name: string, command: string): string {
 		command
 	]
 		.map(shellArgument)
-		.join(' ');
+		.join(' ')}`;
 }

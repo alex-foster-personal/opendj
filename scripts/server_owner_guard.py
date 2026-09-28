@@ -19,13 +19,17 @@ start its own session -- when ANY of these happens:
 
   - the OWNER pid dies, or is recycled (its start time changes);
   - the guard receives SIGTERM, SIGINT or SIGHUP;
-  - the child exits (the guard exits with the child's status).
+  - the child exits: anything it backgrounded into the group is killed, the
+    guard itself is spared, and the guard exits with the child's status.
 
 The group, not the child, is the unit on purpose: ``uv run`` and ``sh -c``
 put the real server one or two levels below the child, and a group signal
-reaches all of them at once. Staying in the CALLER'S group (never ``setsid``)
-matters too: Playwright tears a webServer down by signalling that group, so
-its normal teardown still reaches the guard and the server in one step.
+reaches all of them at once. The guard never calls ``setsid``: Playwright
+tears a webServer down by SIGKILLing the group it created for it, so guard and
+server must share that group. The guard must LEAD it, though, and refuses to
+start otherwise, so a group signal can never reach a caller's own processes:
+Playwright's detached webServer shell ``exec``s the guard, and pytest starts it
+with ``start_new_session``.
 
 Callers:
   - Playwright: ``guardedWebServerCommand`` in
@@ -38,6 +42,10 @@ Requirements (mini-PRD):
     - [if] the owner pid is recycled (start time differs) and the server survives [then ⛔️]
   ✔︎ the guarded server dies with its guard
     - [if] the guard gets SIGTERM and the server survives [then ⛔️]
+  ✔︎ nothing the child backgrounded outlives the child
+    - [if] the child backgrounds a server and exits, and that server survives [then ⛔️]
+    - [if] the guard's exit status differs from the child's [then ⛔️]
+    - [if] the guard starts while not leading its process group [then ⛔️]
   ✔︎ every guarded server is attributable
     - [if] the server's env lacks AF_SERVICE_ID=<namespace>.test.<name> [then ⛔️]
     - [if] pyproject has no [tool.af] process_namespace and the guard starts anyway [then ⛔️]
@@ -128,6 +136,44 @@ def _kill_own_group(reason: str) -> None:
     os.killpg(pgid, signal.SIGKILL)
 
 
+def _live_group_members_but_me() -> list[int]:
+    """Live (non-zombie) members of the guard's group, the guard excluded."""
+    pgid, me = os.getpgrp(), os.getpid()
+    out = subprocess.run(
+        ["ps", "-A", "-o", "pid=,pgid=,stat="],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "LC_ALL": "C"},
+        process_group=0,  # else the probe lists ITSELF as a leftover, forever
+    ).stdout
+    rows = [line.split() for line in out.splitlines()]
+    return [
+        int(pid)
+        for pid, member_pgid, state in (r for r in rows if len(r) == 3)
+        if int(member_pgid) == pgid and int(pid) != me and not state.startswith("Z")
+    ]
+
+
+def _kill_group_leftovers(reason: str) -> None:
+    """The child exited, but what it backgrounded is still in the group: kill
+    that, TERM then KILL, and spare the guard so it can return the child's status."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        leftovers = _live_group_members_but_me()
+        if not leftovers:
+            return
+        for pid in leftovers:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, sig)
+        _log(f"{reason}; sent {sig.name} to leftover(s) {leftovers}")
+        deadline = time.monotonic() + CFG.TERM_GRACE_S
+        while time.monotonic() < deadline and _live_group_members_but_me():
+            time.sleep(CFG.POLL_S)
+    survivors = _live_group_members_but_me()
+    if survivors:
+        raise SystemExit(f"[ERROR] {reason}; group members survived SIGKILL: {survivors}")
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -143,6 +189,12 @@ def main(argv: list[str] | None = None) -> int:
     if not command:
         parser.error("no command given after --")
 
+    if os.getpgrp() != os.getpid():
+        raise SystemExit(
+            f"[ERROR] the guard must lead its process group (pgid {os.getpgrp()} != pid "
+            f"{os.getpid()}): exec it from the webServer shell, or start it with "
+            "start_new_session, so its group signals reach only the server"
+        )
     owner_identity = process_start_time(args.owner_pid)
     if owner_identity is None:
         raise SystemExit(
@@ -165,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         status = child.poll()
         if status is not None:
+            _kill_group_leftovers(f"{args.name}: child exited with status {status}")
             return status
         if process_start_time(args.owner_pid) != owner_identity:
             _kill_own_group(f"{args.name}: owner pid {args.owner_pid} is gone")

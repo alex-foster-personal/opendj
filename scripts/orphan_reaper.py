@@ -58,6 +58,19 @@ def _same_process(pid: int, start: str) -> bool:
     return fresh is not None and fresh.start == start and not fresh.state.startswith("Z")
 
 
+def _outcome(*, dry_run: bool, still_alive: bool, signalled: bool) -> str:
+    """``killed`` only for a target this run signalled and then saw gone."""
+    if dry_run:
+        outcome = "would-kill"
+    elif still_alive:
+        outcome = "SURVIVED"
+    elif signalled:
+        outcome = "killed"
+    else:
+        outcome = "gone-before-signal"  # exited or was recycled between census and signal
+    return outcome
+
+
 def reap(
     procs: dict[int, Proc],
     rows: list[Row],
@@ -76,6 +89,7 @@ def reap(
     identities = {r.pid: procs[r.pid].start for r in targets}
     killed: list[dict] = []
     survivors: list[int] = []
+    signalled: set[int] = set()
     for sig in (signal.SIGTERM, signal.SIGKILL):
         alive = [r for r in targets if _same_process(r.pid, identities[r.pid])]
         if sig == signal.SIGKILL and not alive:
@@ -89,6 +103,8 @@ def reap(
                 continue
             except PermissionError:
                 survivors.append(row.pid)
+                continue
+            signalled.add(row.pid)
         if dry_run:
             break
         time.sleep(RCFG.TERM_GRACE_S if sig == signal.SIGTERM else 0.5)
@@ -105,7 +121,9 @@ def reap(
                 "cwd": row.cwd,
                 "command": row.command[:160],
                 "env": row.env,
-                "outcome": "would-kill" if dry_run else ("SURVIVED" if still else "killed"),
+                "outcome": _outcome(
+                    dry_run=dry_run, still_alive=still, signalled=row.pid in signalled
+                ),
             }
         )
     counts: dict[str, int] = {}

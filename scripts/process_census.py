@@ -69,7 +69,7 @@ class CFG:
         r"|pw_run\.sh|Playwright\.app|MiniBrowser|-juggler"
         r"|@playwright/test|playwright test|playwright/cli"
         r"|\bpytest\b|xdist|node --test|\bvitest\b|esbuild --service"
-        r"|\bffmpeg\b|\bffprobe\b"
+        r"|\bffmpeg\b|\bffprobe\b|-m http\.server"
         r"|Open ?DJ\.app|open-dj",
         re.IGNORECASE,
     )
@@ -210,18 +210,22 @@ def _snapshot_darwin() -> dict[int, Proc]:
     return procs
 
 
-def _enrich_darwin(procs: dict[int, Proc], pids: list[int]) -> None:
-    if not pids:
-        return
-    joined = ",".join(str(p) for p in pids)
-    # -E appends the environment after the command. NEVER combine with -a/-e,
-    # which mean "all processes" and silently override -p.
-    for line in _run(["ps", "-Eww", "-o", "pid=,command=", "-p", joined]).splitlines():
+def _read_envs_darwin(procs: dict[int, Proc]) -> None:
+    # -E appends the environment after the command; -ax deliberately means ALL
+    # processes here (with -p it would silently override the pid list). macOS
+    # shows env only for this user's processes and hides it for SIP binaries.
+    for line in _run(["ps", "-axEww", "-o", "pid=,command="]).splitlines():
         pid_s, _, text = line.strip().partition(" ")
         if not pid_s.isdigit() or int(pid_s) not in procs:
             continue
         pairs = re.findall(r"(?:^|\s)([A-Z][A-Z0-9_]*)=(\S*)", text)
         procs[int(pid_s)].env, procs[int(pid_s)].env_markers = _filter_env(pairs)
+
+
+def _read_cwds_darwin(procs: dict[int, Proc], pids: list[int]) -> None:
+    if not pids:
+        return
+    joined = ",".join(str(p) for p in pids)
     pid = None
     for line in _run(["lsof", "-a", "-d", "cwd", "-p", joined, "-Fpn"]).splitlines():
         if line.startswith("p"):
@@ -287,13 +291,17 @@ def _mark_supervised(procs: dict[int, Proc], line: str) -> None:
         procs[int(value)].supervisor = "job"
 
 
-def _enrich_linux(procs: dict[int, Proc], pids: list[int]) -> None:
-    for pid in pids:
+def _read_envs_linux(procs: dict[int, Proc]) -> None:
+    for pid, proc in procs.items():
         raw = _read(f"/proc/{pid}/environ") or b""
         pairs = [
             tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv
         ]
-        procs[pid].env, procs[pid].env_markers = _filter_env(pairs)  # type: ignore[arg-type]
+        proc.env, proc.env_markers = _filter_env(pairs)  # type: ignore[arg-type]
+
+
+def _read_cwds_linux(procs: dict[int, Proc], pids: list[int]) -> None:
+    for pid in pids:
         try:
             procs[pid].cwd = os.readlink(f"/proc/{pid}/cwd")
         except OSError:
@@ -303,22 +311,24 @@ def _enrich_linux(procs: dict[int, Proc], pids: list[int]) -> None:
 def snapshot() -> dict[int, Proc]:
     """Every process on the host, with env and cwd for the ones that matter."""
     if sys.platform == "darwin":
-        procs, enrich = _snapshot_darwin(), _enrich_darwin
+        procs, read_envs, read_cwds = _snapshot_darwin(), _read_envs_darwin, _read_cwds_darwin
     elif sys.platform.startswith("linux"):
-        procs, enrich = _snapshot_linux(), _enrich_linux
+        procs, read_envs, read_cwds = _snapshot_linux(), _read_envs_linux, _read_cwds_linux
     else:
         raise SystemExit(f"[ERROR] unsupported platform {sys.platform}")
     if not procs:
         raise SystemExit(
             "[ERROR] process snapshot is empty: the instrument failed, not a clean host"
         )
-    # Env is needed for candidates AND for every ancestor up to the tree
-    # root, because attribution reads the root's environment too.
+    # Env for EVERY process first: a `.test.` AF_SERVICE_ID must bring a
+    # process into scope whatever its command is. cwd (one lsof call) only for
+    # candidates and their ancestors, which attribution reads.
+    read_envs(procs)
     wanted = set()
     for pid, proc in procs.items():
-        if _looks_test_spawned(proc):
+        if _in_scope(proc):
             wanted.update(_ancestry(procs, pid))
-    enrich(procs, sorted(p for p in wanted if p in procs))
+    read_cwds(procs, sorted(p for p in wanted if p in procs))
     return procs
 
 
@@ -329,6 +339,10 @@ def _looks_test_spawned(proc: Proc) -> bool:
     return bool(CFG.TEST_COMMAND_RE.search(proc.command)) and not CFG.EXCLUDED_COMMAND_RE.search(
         proc.command
     )
+
+
+def _in_scope(proc: Proc) -> bool:
+    return _looks_test_spawned(proc) or CFG.TEST_SERVICE_MARKER in proc.env.get("AF_SERVICE_ID", "")
 
 
 def _ancestry(procs: dict[int, Proc], pid: int) -> list[int]:
@@ -349,16 +363,16 @@ def classify(procs: dict[int, Proc]) -> list[Row]:
     reapers = _subreapers(procs) | {1}
     rows: list[Row] = []
     for pid, proc in sorted(procs.items()):
-        in_scope = _looks_test_spawned(proc) or CFG.TEST_SERVICE_MARKER in proc.env.get(
-            "AF_SERVICE_ID", ""
-        )
-        if not in_scope:
+        if not _in_scope(proc):
             continue
         chain = _ancestry(procs, pid)
         root_pid = next((p for p in chain if procs[p].ppid in reapers), chain[-1] if chain else pid)
         root = procs.get(root_pid, proc)
-        tree = _tree_kind(procs, chain, root)
-        attribution = _attribution(procs, chain)
+        # Only the tree itself counts: whatever sits ABOVE its root (init, or
+        # the `systemd --user` subreaper that adopted it) is not its host.
+        tree_chain = chain[: chain.index(root_pid) + 1] if root_pid in chain else chain
+        tree = _tree_kind(procs, tree_chain, root, reapers)
+        attribution = _attribution(procs, tree_chain)
         rows.append(
             Row(
                 pid=pid,
@@ -380,13 +394,14 @@ def classify(procs: dict[int, Proc]) -> list[Row]:
     return rows
 
 
-def _tree_kind(procs: dict[int, Proc], chain: list[int], root: Proc) -> str:
-    supervisors = [procs[p].supervisor for p in chain if procs[p].supervisor]
+def _tree_kind(procs: dict[int, Proc], tree_chain: list[int], root: Proc, reapers: set) -> str:
+    """``tree_chain`` runs from the process up to its tree ROOT, never above it."""
+    supervisors = [procs[p].supervisor for p in tree_chain if procs[p].supervisor]
     if supervisors:
         return "supervised-" + supervisors[-1]  # the outermost supervisor owns the tree
-    if any(CFG.SESSION_HOST_RE.search(procs[p].command) for p in chain):
+    if any(CFG.SESSION_HOST_RE.search(procs[p].command) for p in tree_chain):
         return "session"
-    if root.ppid in (_subreapers(procs) | {1}):
+    if root.ppid in reapers:
         return "orphaned"
     return "attached"
 
@@ -400,6 +415,15 @@ def _attribution(procs: dict[int, Proc], chain: list[int]) -> str:
     specific marker to the least.
     """
     envs = [procs[p].env for p in chain]
+    own_id = envs[0].get("AF_SERVICE_ID", "") if envs else ""
+    if CFG.TEST_SERVICE_MARKER in own_id:
+        return "test-harness"
+    # The process's OWN non-test service id beats every heuristic below: a
+    # service launched from a checkout, by a runner job or inside an agent
+    # session is still a service (DEVOPS-17). An agent session's own id
+    # (e.g. a Claude profile's) is provenance, not a service, so it falls through.
+    if own_id and not CFG.AGENT_SERVICE_ID_RE.search(own_id):
+        return "service"
     service_ids = [e.get("AF_SERVICE_ID", "") for e in envs if e.get("AF_SERVICE_ID")]
     if any(CFG.TEST_SERVICE_MARKER in s for s in service_ids):
         return "test-harness"

@@ -15,6 +15,15 @@ Regression lines:
   - if orphan_reaper kills a long-lived service carrying a non-test AF_SERVICE_ID then broken
   - if orphan_reaper leaves an orphaned test-harness or agent server alive then broken
   - if a root-conftest pytest plugin needs more than stdlib + pytest to import then broken
+  - if a server the guarded child backgrounded outlives the child, or the guard's
+    status differs from the child's then broken
+  - if the guard starts while not leading its process group then broken
+  - if a process with its OWN non-test AF_SERVICE_ID is reaped despite agent,
+    runner or checkout markers then broken
+  - if an orphan carrying only a `.test.` marker (unrecognized command) is not reaped
+    then broken
+  - if a `systemd --user` adoptee is not orphaned, or a tmux child is then broken
+  - if reap reports a target it never signalled as killed then broken
 """
 
 from __future__ import annotations
@@ -24,6 +33,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -37,6 +47,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.orphan_reaper import reap
+from scripts.process_census import Proc, Row, classify
 from scripts.server_owner_guard import process_start_time
 from tests.support.spawned_servers import SpawnedServer, spawn_test_server
 
@@ -272,11 +284,61 @@ def test_guard_refuses_an_owner_that_is_not_running(tmp_path: Path) -> None:
         text=True,
         timeout=30,
         check=False,
+        start_new_session=True,  # so the refusal is about the owner, not group leadership
     )
     assert result.returncode != 0
     assert "is not running" in result.stderr
     time.sleep(0.5)
     assert not info.exists(), "the guard started a server with no live owner"
+
+
+def _run_guard(argv: list[str], *, new_session: bool) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "server_owner_guard.py"),
+            "--owner-pid",
+            str(os.getpid()),
+            "--name",
+            "leftover",
+            "--",
+            *argv,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        start_new_session=new_session,
+    )
+
+
+def test_a_server_the_child_backgrounded_dies_when_the_child_exits(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    pid_file = tmp_path / "background.pid"
+    sleeper = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(600)'"
+    result = _run_guard(
+        ["/bin/sh", "-c", f"{sleeper} & echo $! > {shlex.quote(str(pid_file))}; exit 3"],
+        new_session=True,
+    )
+    background = int(pid_file.read_text())
+    cleanup_pids.append(background)
+    assert result.returncode == 3, f"the child's status was not preserved: {result.stderr}"
+    _wait_for(
+        lambda: not _alive(background),
+        GONE_WITHIN_S,
+        f"backgrounded server {background} to die with its child",
+    )
+
+
+def test_the_guard_refuses_to_start_unless_it_leads_its_group(tmp_path: Path) -> None:
+    """Without leadership a group signal would hit the CALLER (here, pytest)."""
+    info = tmp_path / "server.json"
+    result = _run_guard(_server_argv(info), new_session=False)
+    assert result.returncode != 0
+    assert "must lead its process group" in result.stderr
+    time.sleep(0.5)
+    assert not info.exists(), "the guard started a server it could not contain"
 
 
 # ---------------------------------------------------------------- playwright side
@@ -454,10 +516,17 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     clean = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/")}
     # The service's command matches the census scope on purpose ("uvicorn"),
     # so the ONLY thing protecting it is its non-test AF_SERVICE_ID.
+    # ...and every agent/runner heuristic points the other way on purpose: an
+    # agent marker, a runner marker and a checkout cwd. Its OWN non-test id must win.
     service = _orphan(
         [sys.executable, "-c", "import time; time.sleep(600)", "uvicorn-control-service"],
-        {**clean, "AF_SERVICE_ID": "com.opendj.control-service"},
-        "/",
+        {
+            **clean,
+            "AF_SERVICE_ID": "com.opendj.control-service",
+            "CLAUDECODE": "1",
+            "GITHUB_RUN_ID": "1",
+        },
+        str(REPO_ROOT),
     )
     test_server = _orphan(
         [sys.executable, "-c", "import time; time.sleep(600)", "uvicorn-control-test-server"],
@@ -466,19 +535,34 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     )
     agent_server = _orphan(
         [sys.executable, "-c", "import time; time.sleep(600)", "pytest-control-agent-server"],
+        # A Claude session stamps its OWN profile id; that is agent provenance,
+        # not a service to protect (the overshoot of the own-id rule).
+        {**clean, "CLAUDECODE": "1", "AF_SERVICE_ID": "com.af.claude-profiles.account9"},
+        "/",
+    )
+    # A command the census does not recognize: ONLY its `.test.` marker can
+    # bring it into scope (a custom binary, a title-rewriting server).
+    marker_only = _orphan(
+        [sys.executable, "-c", "import time; time.sleep(600)", "marker-only-control"],
+        {**clean, "AF_SERVICE_ID": "com.opendj.test.markeronly"},
+        "/",
+    )
+    static_server = _orphan(
+        [sys.executable, "-m", "http.server", "0", "--bind", "127.0.0.1"],
         {**clean, "CLAUDECODE": "1"},
         "/",
     )
-    cleanup_pids.extend([service, test_server, agent_server])
+    doomed = [test_server, agent_server, marker_only, static_server]
+    cleanup_pids.extend([service, *doomed])
     _wait_for(
-        lambda: all(_alive(p) for p in (service, test_server, agent_server)),
+        lambda: all(_alive(p) for p in (service, *doomed)),
         10,
         "controls to start",
     )
 
     assert _census_row(service)["verdict"] == "service"
-    assert _census_row(test_server)["verdict"] == "reapable"
-    assert _census_row(agent_server)["verdict"] == "reapable"
+    for pid in doomed:
+        assert _census_row(pid)["verdict"] == "reapable", pid
 
     result = subprocess.run(
         [
@@ -488,7 +572,7 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
             "reap",
             "--min-age-s",
             "0",
-            *(f"--only-pid={p}" for p in (service, test_server, agent_server)),
+            *(f"--only-pid={p}" for p in (service, *doomed)),
         ],
         cwd=REPO_ROOT,
         capture_output=True,
@@ -498,13 +582,58 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     )
     report = json.loads(result.stdout)
     assert result.returncode == 0, result.stderr
-    assert sorted(k["pid"] for k in report["kills"] if k["outcome"] == "killed") == sorted(
-        [test_server, agent_server]
-    )
-    assert report["killed"] == 2
+    assert sorted(k["pid"] for k in report["kills"] if k["outcome"] == "killed") == sorted(doomed)
+    assert report["killed"] == len(doomed)
     assert _alive(service), "the reaper killed a legitimately long-lived service"
     _wait_for(
-        lambda: not _alive(test_server) and not _alive(agent_server),
+        lambda: not any(_alive(p) for p in doomed),
         GONE_WITHIN_S,
         "reaped servers to exit",
     )
+
+
+def _proc(pid: int, ppid: int, command: str, **extra: object) -> Proc:
+    return Proc(pid, ppid, pid, 3600, "S", "dev", command, start=f"t{pid}", **extra)  # type: ignore[arg-type]
+
+
+def test_a_subreaper_adoptee_is_orphaned_and_a_tmux_child_is_not() -> None:
+    """Pure classification: a `systemd --user` subreaper that adopted a test
+    server is ABOVE the tree, never its session host (and never its supervisor)."""
+    test_env = {"AF_SERVICE_ID": "com.opendj.test.adopted"}
+    procs = {
+        1: _proc(1, 0, "/sbin/init"),
+        10: _proc(10, 1, "/usr/lib/systemd/systemd --user", supervisor="job"),
+        20: _proc(20, 10, "uvicorn apps.engine_core", env=dict(test_env)),
+        30: _proc(30, 1, "tmux new-session -d"),
+        40: _proc(40, 30, "uvicorn apps.engine_core", env=dict(test_env)),
+    }
+    rows = {r.pid: r for r in classify(procs)}
+    assert (rows[20].tree, rows[20].verdict) == ("orphaned", "reapable"), rows[20]
+    assert (rows[40].tree, rows[40].verdict) == ("session", "active"), rows[40]
+
+
+def test_reap_reports_a_target_that_vanished_before_its_signal_as_not_killed() -> None:
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    procs = {gone.pid: _proc(gone.pid, 1, "pytest leftover", env={"CLAUDECODE": "1"})}
+    rows = [
+        Row(
+            pid=gone.pid,
+            ppid=1,
+            pgid=gone.pid,
+            root_pid=gone.pid,
+            root_command="pytest leftover",
+            age_s=3600,
+            state="S",
+            cwd="/",
+            command="pytest leftover",
+            env={"CLAUDECODE": "1"},
+            env_markers=[],
+            tree="orphaned",
+            attribution="agent",
+            verdict="reapable",
+        )
+    ]
+    report = reap(procs, rows, min_age_s=0, dry_run=False)
+    assert [k["outcome"] for k in report["kills"]] == ["gone-before-signal"]
+    assert report["killed"] == 0
