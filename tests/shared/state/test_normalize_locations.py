@@ -19,6 +19,8 @@ Acceptance criteria, one assertion block each:
 - if the survivor's stored path is not NFC afterwards, the next NFC upsert
   mints the duplicate again -- broken.
 - if a lone NFD row (no twin) is not rewritten NFC in place -- broken.
+- if twins that differ in ``remote_url`` are not collapsed on their shared
+  path, the NFD rewrite raises UNIQUE before every sync -- broken.
 - if the collapse leaves no ``local_changelog`` entry for the survivor, the
   convergence never reaches a peer (ADR 08 point 2) -- broken.
 - if the dropped loser leaves a dangling changelog entry, the next push
@@ -52,6 +54,7 @@ _NFD_PATH = unicodedata.normalize("NFD", _NFC_PATH)
 
 _EARLY = "2026-08-30T09:00:00.000000+00:00"
 _LATE = "2026-08-31T09:00:00.000000+00:00"
+_OLDEST = "2026-08-29T09:00:00.000000+00:00"
 
 
 def _seed_machine_and_track(conn: sqlite3.Connection) -> None:
@@ -73,6 +76,7 @@ def _seed_location(
     location_id: str,
     file_path: str,
     updated_at: str,
+    remote_url: str | None = None,
 ) -> None:
     """Insert a raw local ``track_locations`` row, path bytes stored verbatim.
 
@@ -82,9 +86,9 @@ def _seed_location(
     """
     conn.execute(
         "INSERT INTO track_locations(location_id, stable_id, machine_id, kind, "
-        "role, file_path, available, created_at, updated_at, origin_device_id) "
-        "VALUES (?, ?, ?, 'local', 'primary', ?, 1, ?, ?, ?)",
-        (location_id, SID, MACHINE, file_path, updated_at, updated_at, MACHINE),
+        "role, file_path, remote_url, available, created_at, updated_at, origin_device_id) "
+        "VALUES (?, ?, ?, 'local', 'primary', ?, ?, 1, ?, ?, ?)",
+        (location_id, SID, MACHINE, file_path, remote_url, updated_at, updated_at, MACHINE),
     )
 
 
@@ -186,6 +190,72 @@ def test_an_exact_stamp_tie_keeps_the_smaller_location_id_like_the_hub(
 
     assert collapses[0].winner.location_id == "loc-a", "the tie ignored the hub's pk rule"
     assert [loser.location_id for loser in collapses[0].losers] == ["loc-b"]
+
+
+def test_twins_with_different_urls_collapse_on_their_shared_path(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """if an NFD row and its NFC twin with different URLs are not collapsed as one then broken
+
+    Each partial UNIQUE index applies on its own
+    (``apps.sync_hub.protocol_common.NATURAL_KEYS``), so the two rows collide
+    on the path alone. Grouped by path and URL together they were two lone
+    rows, and rewriting the NFD path NFC in place raised UNIQUE.
+    """
+    print("if an NFD row and its NFC twin with different URLs are not collapsed as one then broken")
+    _seed_machine_and_track(state_conn)
+    _seed_location(
+        state_conn, location_id="loc-nfd", file_path=_NFD_PATH, updated_at=_EARLY,
+        remote_url="https://a.example/cafe.mp3",
+    )
+    _seed_location(
+        state_conn, location_id="loc-nfc", file_path=_NFC_PATH, updated_at=_LATE,
+        remote_url="https://b.example/cafe.mp3",
+    )
+
+    collapses = normalize_locations.collapse_all(state_conn)
+
+    assert [(c.winner.location_id, [loser.location_id for loser in c.losers])
+            for c in collapses] == [("loc-nfc", ["loc-nfd"])]
+    rows = state_conn.execute(
+        "SELECT location_id, file_path, remote_url FROM track_locations WHERE stable_id = ?",
+        (SID,),
+    ).fetchall()
+    assert rows == [("loc-nfc", _NFC_PATH, "https://b.example/cafe.mp3")], rows
+    assert _changelog_rows(state_conn, "loc-nfd") == [], "loser changelog not pruned"
+
+
+def test_a_row_colliding_only_with_a_dropped_twin_survives(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """if a row is hard-deleted without colliding with any surviving row then broken
+
+    ``newest`` shares the path with ``middle``, which shares its URL with
+    ``oldest``. ``middle`` loses to ``newest``; ``oldest`` collides with no
+    survivor, so deleting it would drop a row no UNIQUE index requires gone.
+    """
+    print("if a row is hard-deleted without colliding with any surviving row then broken")
+    _seed_machine_and_track(state_conn)
+    other_path = "/music/other.mp3"
+    _seed_location(
+        state_conn, location_id="newest", file_path=_NFC_PATH, updated_at=_LATE,
+        remote_url="https://a.example/x.mp3",
+    )
+    _seed_location(
+        state_conn, location_id="middle", file_path=_NFD_PATH, updated_at=_EARLY,
+        remote_url=unicodedata.normalize("NFD", "https://b.example/café.mp3"),
+    )
+    _seed_location(
+        state_conn, location_id="oldest", file_path=other_path, updated_at=_OLDEST,
+        remote_url="https://b.example/café.mp3",
+    )
+
+    normalize_locations.collapse_all(state_conn)
+
+    kept = state_conn.execute(
+        "SELECT location_id FROM track_locations ORDER BY location_id"
+    ).fetchall()
+    assert kept == [("newest",), ("oldest",)], kept
 
 
 # ----- the lone-NFD case: rewrite in place, no delete ----------------------
