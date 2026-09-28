@@ -55,7 +55,7 @@ const EXPECTED_LABELS = [
 	'Lyrics completion'
 ];
 
-test('browser-sources health dots cover library/vocals/stems/lyrics with shared hover detail in the bottom tray', async ({
+test('pin be1b8f94f167: browser-sources health dots cover library/vocals/stems/lyrics with shared hover detail in the bottom tray', async ({
 	page
 }) => {
 	const coverageResponse = page.waitForResponse((response) =>
