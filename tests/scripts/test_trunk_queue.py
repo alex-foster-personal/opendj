@@ -159,7 +159,8 @@ def test_a_read_without_a_json_object_is_unmeasured_not_drift(body: bytes) -> No
 
 def test_a_read_with_a_json_object_is_data() -> None:
     """Control for the test above: a real queue read still parses."""
-    assert trunk_queue.parse_body(b'{"state": "running"}', endpoint="getQueue") == {"state": "running"}
+    parsed = trunk_queue.parse_body(b'{"state": "running"}', endpoint="getQueue")
+    assert parsed == {"state": "running"}
 
 
 # -----------------------------------------------------------------------------
